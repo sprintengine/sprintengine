@@ -474,6 +474,7 @@ test('every method the server serves has its call in the SDK, under the same sco
     'environment.launchTokens': 'request',
     'environment.launchFiles': 'request',
     'environment.terminalProcesses': 'request',
+    'environment.pluginCopy': 'request',
     'providers.signInStart': 'request',
     'providers.signInPaste': 'request',
     'providers.signInWait': 'request',

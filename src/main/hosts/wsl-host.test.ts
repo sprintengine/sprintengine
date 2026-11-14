@@ -11,9 +11,13 @@ import { afterAll, beforeAll, test } from 'vitest'
 import {
   STUB_AGENT_STATE_SOCKET,
   STUB_HELPER_INFO,
-  STUB_PID_DIR,
+  STUB_PLUGIN_COPY,
   STUB_SERVER_DATA_DIR,
+  STUB_SERVER_FACTS,
+  STUB_SERVER_NODE,
+  STUB_SERVER_RESOURCES,
   STUB_SESSION_DIR,
+  STUB_PID_DIR,
   type StubTerminalHostHandlers,
   stubWslDistributionLink,
   stubWslHelper,
@@ -21,7 +25,7 @@ import {
 import { createPluginRegistry } from '../plugin-registry'
 import { __resetPluginRegistryForTest, __setPluginRegistryForTest } from '../plugin-registry-instance'
 import { createWslHost, nativeGitOutput, wslGitArg, wslHostState } from './wsl-host'
-import type { WslPluginCopy } from './wsl-plugin-copy'
+import type { StudioTerminalPluginCopy } from '../../../packages/studio-protocol/src/environment-access'
 import { WslSetupError } from './wsl-setup-error'
 
 let temp = ''
@@ -41,59 +45,48 @@ afterAll(() => {
   rmSync(temp, { recursive: true, force: true })
 })
 
-const PLUGIN_COPY: WslPluginCopy = {
-  files: [{ path: 'sprintengine-studio/hooks/hooks.json', b64: '' }],
-  digest: 'ab'.repeat(32),
-  tree: 'plugin-abc123def456',
-  root: `${STUB_HELPER_INFO.appDir}/plugin-abc123def456`,
-  pluginDirs: [`${STUB_HELPER_INFO.appDir}/plugin-abc123def456/sprintengine-studio`],
-  skillPluginDirs: { backlog: `${STUB_HELPER_INFO.appDir}/plugin-abc123def456/launch-skills/backlog` },
-  statusLineScriptPath: `${STUB_HELPER_INFO.appDir}/plugin-abc123def456/sprintengine-studio/hooks/status-line.mjs`,
-}
-
 /** A stand-in for the core's WSL servers, answering `socket` for the agent-state socket. */
 function distributionLink(
   socket: () => string | null = () => STUB_AGENT_STATE_SOCKET,
   terminal: StubTerminalHostHandlers = {},
 ) {
-  return stubWslDistributionLink(
-    () => ({
-      agentStateSocket: socket(),
-      dataDir: STUB_SERVER_DATA_DIR,
-      sessionDir: STUB_SESSION_DIR,
-      pidDir: STUB_PID_DIR,
-    }),
-    terminal,
-  )
+  return stubWslDistributionLink(() => ({ ...STUB_SERVER_FACTS, agentStateSocket: socket() }), terminal)
 }
 
 function hostWith(
   handlers: Parameters<typeof stubWslHelper>[1],
   extra: {
-    plugin?: WslPluginCopy | null
+    /** What the server's plugin copy answers; 'fails' throws. */
+    plugin?: StudioTerminalPluginCopy | 'fails'
     launcher?: 'written' | 'failed'
+    skills?: () => readonly string[]
     socket?: () => string | null
     terminal?: StubTerminalHostHandlers
   } = {},
 ) {
   const helper = stubWslHelper('Debian', handlers)
-  const distribution = distributionLink(extra.socket, extra.terminal)
-  const sockets: string[] = []
+  const distribution = distributionLink(extra.socket, {
+    pluginCopy: () => {
+      if (extra.plugin === 'fails') throw new Error('the server could not write it')
+      return extra.plugin ?? STUB_PLUGIN_COPY
+    },
+    ...extra.terminal,
+  })
+  const launchers: Array<{ node: string; payload: string }> = []
   const host = createWslHost('Debian', {
     readSettings: () => undefined,
     listed: () => undefined,
     helper,
     distribution,
-    buildPluginCopy: async (_info, server) => {
-      sockets.push(server.agentStateSocket)
-      return extra.plugin === undefined ? PLUGIN_COPY : extra.plugin
-    },
+    enabledSkills: extra.skills ?? (() => []),
     survivorDelayMs: 0,
-    ensureLauncher: async () => {
+    ensureLauncher: async (_home, server) => {
+      launchers.push({ node: server.nodePath, payload: server.resourcesDir })
       if (extra.launcher === 'failed') throw new Error('the distribution refused the write')
     },
   })
-  return { helper, host, distribution, sockets }
+  const pluginAsks = () => distribution.asked.filter((ask) => ask.method === 'pluginCopy')
+  return { helper, host, distribution, pluginAsks, launchers }
 }
 
 test('a git argument that is a Windows path crosses as the path in the distribution', () => {
@@ -334,23 +327,21 @@ test('a forced detection tells the helper to look again', async () => {
   assert.equal((helper.requests[0].params as { force?: boolean }).force, true)
 })
 
-test('prepare starts the helper, writes the plugin copy only when it changed, and exposes the integration', async () => {
-  const trees: Array<{ digest: string; files: boolean }> = []
-  let current = false
-  const { host } = hostWith({
-    home: () => ({ home: '/home/dev', env: { CLAUDE_CONFIG_DIR: '/home/dev/.claude-work', BAD: 'relative' } }),
-    'files.ensureTree': (params: { digest: string; files?: unknown[] }) => {
-      trees.push({ digest: params.digest, files: Array.isArray(params.files) })
-      const answer = { root: PLUGIN_COPY.root, current: current || Array.isArray(params.files) }
-      return answer
-    },
-  })
+test("prepare asks the distribution's server for the plugin copy with the chosen skills, and exposes the integration", async () => {
+  let skills: readonly string[] = ['studio-canvas']
+  const { host, pluginAsks, launchers } = hostWith(
+    { home: () => ({ home: '/home/dev', env: { CLAUDE_CONFIG_DIR: '/home/dev/.claude-work', BAD: 'relative' } }) },
+    { skills: () => skills },
+  )
   assert.equal(host.agentIntegration(), null, 'nothing before the helper is up')
   await host.prepare()
-  assert.deepEqual(trees, [
-    { digest: PLUGIN_COPY.digest, files: false },
-    { digest: PLUGIN_COPY.digest, files: true },
-  ])
+  // The server builds it from its own resources: only the skill ids cross.
+  assert.deepEqual(
+    pluginAsks().map((ask) => ask.params),
+    [['studio-canvas']],
+  )
+  // The launcher runs the server's Node on its tree's resources.
+  assert.deepEqual(launchers, [{ node: STUB_SERVER_NODE, payload: STUB_SERVER_RESOURCES }])
   const integration = host.agentIntegration()
   assert.ok(integration)
   assert.equal(
@@ -358,15 +349,16 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
     STUB_AGENT_STATE_SOCKET,
     "hooks report to the distribution's server, which relays them here",
   )
-  assert.equal(integration.commandRuntime.executable, STUB_HELPER_INFO.nodePath)
+  assert.equal(integration.commandRuntime.executable, STUB_SERVER_NODE)
   assert.equal(
     integration.commandRuntime.toCommandPath?.('\\\\wsl.localhost\\Debian\\home\\dev\\repo\\x.mjs'),
     '/home/dev/repo/x.mjs',
   )
-  assert.deepEqual(integration.pluginDirs, PLUGIN_COPY.pluginDirs)
+  assert.deepEqual(integration.pluginDirs, STUB_PLUGIN_COPY.pluginDirs)
   // The one-skill plugins travel with it, so a WSL launch that invokes
   // `/backlog` is handed the distribution's own copy of that skill.
-  assert.deepEqual(integration.skillPluginDirs, PLUGIN_COPY.skillPluginDirs)
+  assert.deepEqual(integration.skillPluginDirs, STUB_PLUGIN_COPY.skillPluginDirs)
+  assert.equal(integration.statusLineScriptPath, STUB_PLUGIN_COPY.statusLineScriptPath)
   // Hooks and the gateway run the distribution's own launcher, never the
   // pinned Node or this version's payload folder, which an update prunes.
   assert.deepEqual(integration.commandRuntime.launcher, {
@@ -380,7 +372,7 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
     env: { SPRINTENGINE_USER_DATA_DIR: STUB_SERVER_DATA_DIR },
     envVarNames: ['SPRINTENGINE_MCP_CHANNEL_TOKEN'],
   })
-  assert.equal(JSON.stringify(integration.studioMcpEntry).includes(STUB_HELPER_INFO.appDir), false)
+  assert.equal(JSON.stringify(integration.studioMcpEntry).includes(STUB_SERVER_RESOURCES), false)
   assert.deepEqual(integration.home, {
     host: '/home/dev',
     native: '\\\\wsl.localhost\\Debian\\home\\dev',
@@ -392,26 +384,27 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
   assert.equal(target.kind === 'wsl' && target.sessionDir, STUB_SESSION_DIR)
   assert.equal(target.kind === 'wsl' && target.pidDir, STUB_PID_DIR)
 
-  // A second prepare against the same helper does nothing again.
-  current = true
+  // A second prepare against the same helper and server does nothing again.
   await host.prepare()
-  assert.equal(trees.length, 2)
+  assert.equal(pluginAsks().length, 1)
+  // A skill switched on since is a different copy: the next launch asks again.
+  skills = ['studio-canvas', 'studio-backlog']
+  await host.prepare()
+  assert.deepEqual(pluginAsks()[1]?.params, ['studio-canvas', 'studio-backlog'])
 })
 
-test('a launcher that could not be written leaves hooks and the gateway naming the pinned Node', async () => {
-  const { host } = hostWith(
-    { home: () => ({ home: '/home/dev' }), 'files.ensureTree': () => ({ current: true }) },
-    { launcher: 'failed' },
-  )
+test("a launcher that could not be written leaves hooks and the gateway naming the server's Node", async () => {
+  const { host } = hostWith({ home: () => ({ home: '/home/dev' }) }, { launcher: 'failed' })
   await host.prepare()
   const integration = host.agentIntegration()
   assert.ok(integration)
   assert.equal(integration.commandRuntime.launcher, undefined, 'no command may name a launcher that is not there')
-  assert.equal(integration.studioMcpEntry.command, STUB_HELPER_INFO.nodePath)
+  assert.equal(integration.studioMcpEntry.command, STUB_SERVER_NODE)
+  assert.deepEqual(integration.studioMcpEntry.args, [`${STUB_SERVER_RESOURCES}/automation/mcp-stdio-bridge.mjs`])
 })
 
 test('a helper that cannot start fails prepare with its reason, and one without the copy still launches', async () => {
-  const { helper, host } = hostWith({}, { plugin: null })
+  const { helper, host } = hostWith({}, { plugin: 'fails' })
   helper.failWith = new WslSetupError("Couldn't set up WSL: WSL is not installed on this PC.", {
     fatal: true,
     code: 'wsl-missing',
@@ -419,7 +412,7 @@ test('a helper that cannot start fails prepare with its reason, and one without 
   await assert.rejects(host.prepare(), /WSL is not installed on this PC/u)
   assert.equal(host.agentIntegration(), null)
 
-  const ok = hostWith({ home: () => ({ home: '/home/dev' }) }, { plugin: null })
+  const ok = hostWith({ home: () => ({ home: '/home/dev' }) }, { plugin: 'fails' })
   await ok.host.prepare()
   assert.deepEqual(
     ok.host.agentIntegration()?.pluginDirs,
@@ -442,7 +435,6 @@ test('prepare does not finish on a preparation for a helper that restarted under
       if (homes === 1) current = second
       return { home: '/home/dev' }
     },
-    'files.ensureTree': () => ({ current: true }),
   })
   helper.info = () => current
   helper.start = async () => current
@@ -451,12 +443,12 @@ test('prepare does not finish on a preparation for a helper that restarted under
     listed: () => undefined,
     helper,
     distribution: distributionLink(),
-    buildPluginCopy: async () => PLUGIN_COPY,
+    enabledSkills: () => [],
     survivorDelayMs: 0,
   })
   await host.prepare()
   assert.equal(homes, 2, 'prepared again for the helper that is running now')
-  assert.equal(host.agentIntegration()?.commandRuntime.executable, second.nodePath)
+  assert.equal(host.agentIntegration()?.home.host, '/home/dev', 'and is ready for it')
   assert.equal(host.agentIntegration()?.agentStateSocketPath, STUB_AGENT_STATE_SOCKET)
 
   // One that keeps restarting fails with a reason rather than looping.
@@ -467,7 +459,6 @@ test('prepare does not finish on a preparation for a helper that restarted under
       current = { ...STUB_HELPER_INFO, appDir: `/run/flip-${flips}` }
       return { home: '/home/dev' }
     },
-    'files.ensureTree': () => ({ current: true }),
   })
   flapping.info = () => current
   flapping.start = async () => current
@@ -476,26 +467,23 @@ test('prepare does not finish on a preparation for a helper that restarted under
     listed: () => undefined,
     helper: flapping,
     distribution: distributionLink(),
-    buildPluginCopy: async () => PLUGIN_COPY,
+    enabledSkills: () => [],
   })
   await assert.rejects(unstable.prepare(), /kept restarting/u)
 })
 
-test("a launch is prepared against the distribution's server, and its socket is what the plugin copy names", async () => {
+test("a launch is prepared against the distribution's server, and a server that changed builds its copy again", async () => {
   let socket: string | null = STUB_AGENT_STATE_SOCKET
-  const { host, distribution, sockets } = hostWith(
-    { home: () => ({ home: '/home/dev' }), 'files.ensureTree': () => ({ current: true }) },
-    { socket: () => socket },
-  )
+  const { host, distribution, pluginAsks } = hostWith({ home: () => ({ home: '/home/dev' }) }, { socket: () => socket })
   await host.prepare()
   assert.equal(distribution.connects(), 1, 'the server is started for the launch')
-  assert.deepEqual(sockets, [STUB_AGENT_STATE_SOCKET], 'the copy is built for the socket the server listens on')
+  assert.equal(pluginAsks().length, 1, 'the copy is built by the server the launch runs against')
 
   // The server came back with its socket elsewhere: the next launch prepares
   // again, so its hooks never name a socket nothing listens on.
   socket = '/tmp/sprintengine-1000/agent-state-abc.sock'
   await host.prepare()
-  assert.deepEqual(sockets, [STUB_AGENT_STATE_SOCKET, socket])
+  assert.equal(pluginAsks().length, 2)
   assert.equal(host.agentIntegration()?.agentStateSocketPath, socket)
 
   // A server whose socket did not open: no launch that would report nowhere.
@@ -514,15 +502,15 @@ test('a host with no distribution server prepares no launch, and still reads the
 test("a launch's files are written into the distribution server's launch directory by relative name, and nowhere else", async () => {
   const { host, distribution } = hostWith({
     home: () => ({ home: '/home/dev' }),
-    'files.ensureTree': () => ({ current: true }),
   })
   await host.prepare()
+  const launchAsks = () => distribution.asked.filter((ask) => ask.method !== 'pluginCopy')
   const dir = STUB_SESSION_DIR
   await host.writeLaunchFiles?.([
     { path: `${dir}/sid-1-17.sh`, content: "export A='1'\n" },
     { path: `${dir}/host-context-sid-1/rules/host-context.mdc`, content: 'é' },
   ])
-  assert.deepEqual(distribution.asked[0], {
+  assert.deepEqual(launchAsks()[0], {
     method: 'launchFiles',
     params: {
       write: [
@@ -538,7 +526,7 @@ test("a launch's files are written into the distribution server's launch directo
   )
   host.discardLaunchFiles?.([`${dir}/sid-1-17.sh`, `${dir}/host-context-sid-1`, '/etc/passwd', undefined])
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.deepEqual(distribution.asked[1], {
+  assert.deepEqual(launchAsks()[1], {
     method: 'launchFiles',
     params: { remove: ['sid-1-17.sh', 'host-context-sid-1'] },
     started: false,
@@ -547,7 +535,7 @@ test("a launch's files are written into the distribution server's launch directo
   distribution.running = false
   host.discardLaunchFiles?.([`${dir}/sid-2-18.sh`])
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.equal(distribution.asked.length, 2)
+  assert.equal(launchAsks().length, 2)
 })
 test('at quit the survivor kill gives no grace and starts nothing', async () => {
   const { host, distribution } = hostWith({}, { terminal: { processes: () => ({ killed: [7] }) } })

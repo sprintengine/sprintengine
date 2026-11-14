@@ -152,6 +152,18 @@ export type StudioTerminalProcessesAsk =
   /** End every session this desktop's profile launched there (the desktop quit, or one before it did not). */
   | { op: 'endAll' }
 
+/**
+ * Where a WSL distribution's Studio wrote the app's Claude plugin copy for the
+ * desktop's WSL terminals, as paths in the distribution: what a launch passes
+ * as `--plugin-dir`, the one-skill plugins by skill id, and the status line.
+ * All empty when its build shipped no plugin.
+ */
+export type StudioTerminalPluginCopy = {
+  pluginDirs: string[]
+  skillPluginDirs: Record<string, string>
+  statusLineScriptPath: string | null
+}
+
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
   { ok: true; id: string; url: string; code: string | null; paste: boolean } | { ok: false; message: string }
@@ -218,6 +230,12 @@ export type StudioEnvironmentAccessMethodMap = {
     params: StudioTerminalProcessesAsk
     result: { verdicts?: Record<string, StudioSubtreeLiveReason | null>; killed?: number[] }
   }
+  /**
+   * Build the app's Claude plugin copy for the desktop's WSL terminals from
+   * this Studio's own resources, with the Studio skills the person chose
+   * (`enabledSkills`, by id), and say where it is. The desktop's shell alone asks.
+   */
+  'environment.pluginCopy': { params: { enabledSkills: string[] }; result: StudioTerminalPluginCopy }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
   'providers.signInStart': { params: { commandId: string; providerId: string }; result: StudioSignInStarted }
   /** Send the code the browser showed back to a sign-in that asked for one. */
@@ -251,6 +269,7 @@ const LAUNCHES =
   'It writes, reads and ends what the desktop that holds this Studio launched here in its own terminals, so only that desktop asks.'
 const LAUNCH_ENTRY = /^[A-Za-z0-9._-]{1,200}$/u
 const PID_KEY = /^[A-Za-z0-9._-]{1,200}$/u
+const SKILL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/u
 const terminalHost = {
   scope: null,
   mutation: false,
@@ -485,6 +504,19 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
         return studioParams({ op: 'kill' as const, cliSessionId, key })
       }
       return studioParamsRefused('"op" is snapshot, kill or endAll.')
+    },
+  },
+  'environment.pluginCopy': {
+    ...terminalHost,
+    params: (value) => {
+      const skills = value.enabledSkills
+      if (
+        !Array.isArray(skills) ||
+        skills.length > 64 ||
+        !skills.every((skill) => typeof skill === 'string' && SKILL_ID.test(skill))
+      )
+        return studioParamsRefused('"enabledSkills" lists at most 64 Studio skill ids.')
+      return studioParams({ enabledSkills: [...new Set(skills as string[])] })
     },
   },
   'providers.signInStart': {

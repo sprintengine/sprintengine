@@ -1,11 +1,13 @@
-// A directory tree main writes into the distribution through the helper: the
-// app's Claude plugin copy, with Linux paths already substituted into it.
+// A directory tree a WSL distribution's Studio writes for the desktop's WSL
+// terminals: the app's Claude plugin copy, with this distribution's paths
+// substituted into it (`../distribution-plugin-copy.ts`).
 //
 // The copy is written to a sibling directory and renamed into place, with a
 // marker holding its digest written last, so a CLI starting while it is being
 // replaced reads either the old copy or the new one and never half of each.
-// Every path is checked to stay inside the tree: main is trusted, but a path
-// with `..` in it is a bug that should fail loudly rather than write outside.
+// Every path is checked to stay inside the tree: the copy is built here, but a
+// path with `..` in it is a bug that should fail loudly rather than write
+// outside.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -30,13 +32,13 @@ function readMarker(root) {
 }
 
 /**
- * Makes `<appDir>/<name>` hold exactly `files` under `digest`. Without
+ * Makes `<base>/<name>` hold exactly `files` under `digest`. Without
  * `files`, only reports whether the tree already matches the digest.
  */
-export function ensureTree({ appDir, name, digest, files }) {
+export function ensureTree({ base, name, digest, files }) {
   if (!TREE_NAME.test(name ?? '')) throw new Error('The tree name is not a plain token.')
   if (typeof digest !== 'string' || !/^[a-f0-9]{16,128}$/u.test(digest)) throw new Error('The digest is not hex.')
-  const root = join(appDir, name)
+  const root = join(base, name)
   if (readMarker(root) === digest) return { root, current: true }
   if (!files) return { root, current: false }
   if (!Array.isArray(files)) throw new Error('files must be an array.')
@@ -46,8 +48,8 @@ export function ensureTree({ appDir, name, digest, files }) {
     if (typeof file.b64 !== 'string') throw new Error(`${file.path} has no content.`)
     total += file.b64.length
   }
-  if (total > MAX_TREE_BYTES) throw new Error('The tree is larger than the helper accepts.')
-  const staging = join(appDir, `.${name}.${process.pid}.tmp`)
+  if (total > MAX_TREE_BYTES) throw new Error('The tree is larger than a plugin copy may be.')
+  const staging = join(base, `.${name}.${process.pid}.tmp`)
   rmSync(staging, { recursive: true, force: true })
   mkdirSync(staging, { recursive: true, mode: 0o700 })
   try {
@@ -58,7 +60,7 @@ export function ensureTree({ appDir, name, digest, files }) {
     }
     writeFileSync(join(staging, MARKER), digest, { mode: 0o600 })
     if (existsSync(root)) {
-      const old = join(appDir, `.${name}.${process.pid}.old`)
+      const old = join(base, `.${name}.${process.pid}.old`)
       rmSync(old, { recursive: true, force: true })
       renameSync(root, old)
       renameSync(staging, root)

@@ -15,6 +15,8 @@ export function terminalHostOf(connection: Pick<WslServerConnection, 'owner'>): 
   return {
     launchFiles: (params) => connection.owner.request('environment.launchFiles', params),
     processes: (ask) => connection.owner.request('environment.terminalProcesses', ask),
+    pluginCopy: (enabledSkills) =>
+      connection.owner.request('environment.pluginCopy', { enabledSkills: [...enabledSkills] }),
   }
 }
 

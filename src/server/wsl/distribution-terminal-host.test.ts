@@ -28,6 +28,7 @@ function host(name: string, procRoot?: string, kills: number[] = []) {
     runtimeBase: join(temp, name, 'rt'),
     ...(procRoot ? { procRoot } : {}),
     kill: (pid) => void kills.push(pid),
+    plugin: { resourcesDir: null, dataDir: join(temp, name, 'data'), agentStateSocketPath: '/tmp/agent.sock' },
   })
 }
 
@@ -91,6 +92,22 @@ test("a closed session's shell tree and its CLI are ended, and endAll ends every
     env: {},
     runtimeBase: join(temp, 'procs', 'rt'),
     procRoot: join(temp, 'no-proc'),
+    plugin: { resourcesDir: null, dataDir: join(temp, 'procs', 'data'), agentStateSocketPath: '/tmp/agent.sock' },
   })
   assert.deepEqual((await missing.processes({ op: 'snapshot', keys: ['sid-b-2'] })).verdicts, {})
+})
+
+test("the plugin copy is built from this server's resources and written under its data directory", async () => {
+  const dataDir = join(temp, 'plugin', 'data')
+  mkdirSync(dataDir, { recursive: true })
+  const terminals = createDistributionTerminalHost({
+    profile: 'abc123def456',
+    home: join(temp, 'plugin', 'home'),
+    env: {},
+    runtimeBase: join(temp, 'plugin', 'rt'),
+    plugin: { resourcesDir: join(process.cwd(), 'resources'), dataDir, agentStateSocketPath: '/tmp/agent.sock' },
+  })
+  const copy = await terminals.pluginCopy(['studio-canvas'])
+  assert.deepEqual(copy.pluginDirs, [`${dataDir}/terminal-plugin/sprintengine-studio`])
+  assert.ok(existsSync(join(dataDir, 'terminal-plugin', 'sprintengine-studio', 'skills', 'studio-canvas')))
 })

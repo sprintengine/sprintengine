@@ -224,7 +224,7 @@ export type StudioRpcServiceOptions = {
   /** Records the desktop that holds this Studio hands over (`environment-adopt`): a server a desktop reaches over its front door. */
   adoption?: EnvironmentAdoption
   /** What a WSL distribution does for the desktop's terminals (`environment-terminal-host`). */
-  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
   /** The launch tokens of the desktop's WSL terminal agents, by digest (`environment-launch-tokens`): a WSL distribution's Studio. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** What stopping this Studio would end (`environment-work`): a server a desktop reaches over its front door. */

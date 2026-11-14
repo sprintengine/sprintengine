@@ -458,8 +458,9 @@ Unix socket, `MessagePort`, arbitrary duplex), not a URL only (12.3).
     Windows.
 - **Hooks and agent state.** The server builds the Claude plugin copy and hook
   commands natively (`agent-integration-home.ts` on Linux). They report to the
-  server's own agent-state socket. `wsl-plugin-copy.ts` and the helper's
-  `agentState` relay are not used for chats.
+  server's own agent-state socket. For the desktop's WSL terminals the same
+  server builds their agents' plugin copy from its own resources
+  (`distribution-plugin-copy.ts`, `environment.pluginCopy`).
 - **As built (2026-10-03).**
   - The login environment is the helper's own capture
     (`resources/wsl-helper/lib/login-env.mjs`, bundled into the server with a

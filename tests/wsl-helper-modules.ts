@@ -70,16 +70,6 @@ export type LoginEnvModule = {
   loginShell(uid: number, passwd?: () => string): string
 }
 
-export type FilesModule = {
-  checkTreePath(path: unknown): boolean
-  ensureTree(options: {
-    appDir: string
-    name: string
-    digest: string
-    files?: Array<{ path: string; b64: string; executable?: boolean }>
-  }): { root: string; current: boolean }
-}
-
 export type RunModule = {
   checkRunRequest(request: Record<string, unknown>): string | null
   decodeStdin(stdinB64: unknown): Buffer | null | undefined

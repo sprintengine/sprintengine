@@ -4,11 +4,12 @@
 // the WSL helper is being retired (design-wsl-ssh-direct PR 4):
 //   - the distribution's own Studio server, which this desktop's core starts
 //     and holds (`WslDistributionLink`): the socket a terminal agent's hooks
-//     report to, relayed back to this PC; a WSL terminal holds that server up;
+//     report to, relayed back to this PC; a terminal's launch files, the
+//     processes it leaves, and the plugin copy its agent loads, built there
+//     from that server's own resources; a WSL terminal holds that server up;
 //   - the helper (`resources/wsl-helper/`), over the one `wsl.exe` stdio
-//     channel its client holds (`wsl-helper-client.ts`), for the rest: process
-//     reads for the reaper, the survivor kill, CLI detection, the home folder,
-//     running a program, and git.
+//     channel its client holds (`wsl-helper-client.ts`), for the rest: CLI
+//     detection, the home folder, running a program, git, and watches.
 // Anything that needs the host starts the helper first if it is stopped, and a
 // launch waits for that. There is no second path: when the helper cannot
 // start, the host says why (`WslSetupError`) and the launch fails with that
@@ -16,8 +17,8 @@
 //
 // The one thing not run by the helper is the terminal itself: its pty is
 // `wsl.exe -d <distro> -e bash -li <startup script>` (terminal-launch),
-// because that is what gives the agent a real terminal. The helper writes that
-// script into its private directory inside the distribution first
+// because that is what gives the agent a real terminal. The distribution's
+// server writes that script into its private launch directory first
 // (`writeLaunchFiles`), so it is run from a Linux path and never read through a
 // `/mnt/<drive>` mount. It carries the agent's identity, the agent-state
 // socket and the launch's MCP channel token as `export` lines.
@@ -42,6 +43,7 @@ import type { RunOutcome } from '../process-run'
 import type { GatewayLaunchIdentity } from '../../server/core/gateway-launch-tokens'
 import type {
   StudioLaunchFile,
+  StudioTerminalPluginCopy,
   StudioTerminalProcessesAsk,
 } from '../../../packages/studio-protocol/src/environment-access'
 import type { SubtreeLiveReason } from '../terminal-subtree-probe'
@@ -54,8 +56,7 @@ import type {
 } from './execution-host'
 import { wslSessionPidKey, type WslDistro } from './wsl-distro'
 import type { WslHelperClient, WslHelperInfo } from './wsl-helper-client'
-import { createDefaultWslHelperClient, wslHelperEnvironment } from './wsl-helper-runtime'
-import { buildWslPluginCopy, type WslPluginCopy } from './wsl-plugin-copy'
+import { createDefaultWslHelperClient } from './wsl-helper-runtime'
 import { WslSetupError } from './wsl-setup-error'
 import { WSL_DATA_REL } from './wsl-install'
 import { migrateHostEntries } from '../integrations/integration-boot'
@@ -158,6 +159,8 @@ export type WslTerminalHostClient = {
   processes(
     ask: StudioTerminalProcessesAsk,
   ): Promise<{ verdicts?: Record<string, SubtreeLiveReason | null>; killed?: number[] }>
+  /** The plugin copy a terminal's agent loads, built there with these Studio skills (by id). */
+  pluginCopy(enabledSkills: readonly string[]): Promise<StudioTerminalPluginCopy>
 }
 
 /** What a launch needs to know of the distribution's server. */
@@ -169,6 +172,9 @@ export type WslDistributionFacts = {
   /** Where it writes a launch's files and where each launch's shell records its pid; null where it could not. */
   sessionDir: string | null
   pidDir: string | null
+  /** The Node it runs on, and its resources directory (which holds `hooks/` and `automation/`): what the launcher points at. */
+  nodePath: string
+  resourcesDir: string
 }
 
 export type WslHostDeps = {
@@ -179,12 +185,12 @@ export type WslHostDeps = {
   listed: () => WslDistro | undefined
   /** The helper client; tests pass a stand-in. Absent is the real one. */
   helper?: WslHelperClient
-  /** The plugin copy for a running helper and the distribution's server; tests pass a stand-in. */
-  buildPluginCopy?: (info: WslHelperInfo, server: PreparedServer) => Promise<WslPluginCopy | null>
+  /** The Studio skills the person chose, by id, which the plugin copy carries. Absent: none. */
+  enabledSkills?: () => readonly string[]
   /** How long the survivor kill waits for a killed pty's children to go on their own. */
   survivorDelayMs?: number
   /** Writes the distribution's Studio launcher and its pointer; tests pass a stand-in. */
-  ensureLauncher?: (home: HostHome, info: WslHelperInfo) => Promise<void>
+  ensureLauncher?: (home: HostHome, server: PreparedServer) => Promise<void>
 }
 
 // `electron .` (a development run) sets `defaultApp`; a packaged build does not.
@@ -232,50 +238,47 @@ function failedRun(error: unknown): RunOutcome {
 }
 
 /** The distribution's server as a launch is prepared against it. */
-type PreparedServer = { agentStateSocket: string; dataDir: string; sessionDir: string; pidDir: string }
+type PreparedServer = {
+  agentStateSocket: string
+  dataDir: string
+  sessionDir: string
+  pidDir: string
+  nodePath: string
+  resourcesDir: string
+}
 
 const sameServer = (a: PreparedServer, b: PreparedServer) =>
   a.agentStateSocket === b.agentStateSocket &&
   a.dataDir === b.dataDir &&
   a.sessionDir === b.sessionDir &&
-  a.pidDir === b.pidDir
-
-function defaultPluginCopy(info: WslHelperInfo, server: PreparedServer): Promise<WslPluginCopy | null> {
-  const env = wslHelperEnvironment()
-  if (!env) return Promise.resolve(null)
-  return buildWslPluginCopy(env.pluginSources(), {
-    profile: info.profile,
-    nodeCommand: info.nodePath,
-    appDir: info.appDir,
-    userDataDir: server.dataDir,
-    agentStateSocketPath: server.agentStateSocket,
-  })
-}
+  a.pidDir === b.pidDir &&
+  a.nodePath === b.nodePath &&
+  a.resourcesDir === b.resourcesDir
 
 export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost {
   const id: ExecutionHostId = wslHostId(distro)
   const helper = deps.helper ?? createDefaultWslHelperClient(distro)
-  const buildPluginCopy = deps.buildPluginCopy ?? defaultPluginCopy
+  const enabledSkills = deps.enabledSkills ?? (() => [])
   const survivorDelayMs = deps.survivorDelayMs ?? 2_000
   const settings = () => deps.readSettings(id)
   const toNativePath = (hostPath: string) => wslToWindowsPath(hostPath, { distro })
 
-  // Per running helper: what `home` said, and the plugin copy it holds — for
-  // the Studio skills chosen when it was made (`skills`) and the socket its
-  // hooks report to (`agentStateSocket`, the distribution's server's). A skill
-  // switched on or off since, or another socket, is a different copy, so the
+  // Per running helper: what `home` said, and the plugin copy the
+  // distribution's server built — for the Studio skills chosen when it was
+  // made (`skills`) and that server's socket, Node and resources. A skill
+  // switched on or off since, or another server, is a different copy, so the
   // next launch prepares again.
   let prepared: {
     info: WslHelperInfo
     skills: string
     server: PreparedServer
     home: HostHome
-    plugin: WslPluginCopy | null
+    plugin: StudioTerminalPluginCopy | null
     launcherReady: boolean
   } | null = null
   // The preparation in flight, and the helper, socket and skill choice it is for.
   let preparing: { info: WslHelperInfo; skills: string; server: PreparedServer; done: Promise<void> } | null = null
-  const skillChoice = (): string => (wslHelperEnvironment()?.pluginSources().enabledSkillDirs ?? []).join(',')
+  const skillChoice = (): string => enabledSkills().join(',')
   const isPrepared = (info: WslHelperInfo | null, server: PreparedServer): boolean =>
     info !== null && prepared?.info === info && prepared.skills === skillChoice() && sameServer(prepared.server, server)
 
@@ -296,9 +299,9 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   // the gateway written for it name the launcher. Without it they keep the
   // form that names the pinned Node, which works while this version is
   // installed — better than a launcher path that fails on every event.
-  async function ensureLauncher(home: HostHome, info: WslHelperInfo): Promise<boolean> {
+  async function ensureLauncher(home: HostHome, server: PreparedServer): Promise<boolean> {
     if (deps.ensureLauncher) {
-      await deps.ensureLauncher(home, info)
+      await deps.ensureLauncher(home, server)
       return true
     }
     // A distribution's home only opens as an absolute `\\wsl.localhost` path on
@@ -307,7 +310,13 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     const result = await ensureStudioLauncher({
       nativeHome: home.native,
       shell: 'posix',
-      pointer: { node: info.nodePath, runAsNode: false, payload: info.appDir, packaged: isPackagedProcess() },
+      // The server tree's resources hold `hooks/` and `automation/`, as the launcher wants.
+      pointer: {
+        node: server.nodePath,
+        runAsNode: false,
+        payload: server.resourcesDir,
+        packaged: isPackagedProcess(),
+      },
       pointerTargetExists: (pointer) => existsSync(toNativePath(pointer.node)),
     })
     recordIntegrationWrite(
@@ -337,32 +346,27 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     return true
   }
 
-  async function ensurePluginCopy(info: WslHelperInfo, server: PreparedServer): Promise<WslPluginCopy | null> {
-    const copy = await buildPluginCopy(info, server).catch(() => null)
-    if (!copy) return null
-    const status = await helper.request<{ current: boolean }>('files.ensureTree', {
-      name: copy.tree,
-      digest: copy.digest,
-    })
-    if (!status.current) {
-      await helper.request('files.ensureTree', { name: copy.tree, digest: copy.digest, files: copy.files })
-    }
-    return copy
+  // Built and written by the distribution's server from its own resources:
+  // this desktop says only which Studio skills it carries.
+  async function ensurePluginCopy(skills: readonly string[]): Promise<StudioTerminalPluginCopy | null> {
+    const host = await terminalHost(true)
+    return host ? host.pluginCopy(skills) : null
   }
 
   function prepareFor(info: WslHelperInfo, server: PreparedServer): Promise<void> {
-    const skills = skillChoice()
+    const chosen = enabledSkills()
+    const skills = chosen.join(',')
     if (preparing?.info === info && preparing.skills === skills && sameServer(preparing.server, server))
       return preparing.done
     const done = (async () => {
       const home = await readHome()
       // The launcher and its pointer, before anything that names them is
       // written. A failure is not the launch's: its hooks keep the older form.
-      const launcherReady = await ensureLauncher(home, info).catch(() => false)
+      const launcherReady = await ensureLauncher(home, server).catch(() => false)
       // The copy is what lets a WSL Claude take `--plugin-dir`; without it
       // that CLI falls back to the workspace install, so a failure here is
       // not the launch's failure.
-      const plugin = await ensurePluginCopy(info, server).catch(() => null)
+      const plugin = await ensurePluginCopy(chosen).catch(() => null)
       if (helper.info() === info) prepared = { info, skills, server, home, plugin, launcherReady }
     })()
     const entry = { info, skills, server, done }
@@ -407,7 +411,8 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
         },
       )
     }
-    const { agentStateSocket, dataDir, sessionDir, pidDir } = await deps.distribution.connect(distro)
+    const { agentStateSocket, dataDir, sessionDir, pidDir, nodePath, resourcesDir } =
+      await deps.distribution.connect(distro)
     if (!agentStateSocket) {
       throw new WslSetupError(
         `The Studio server in ${distro} could not open the socket its terminal agents report to, so a terminal agent there would not show what it is doing.`,
@@ -420,7 +425,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
         { fatal: false, code: 'start' },
       )
     }
-    return { agentStateSocket, dataDir, sessionDir, pidDir }
+    return { agentStateSocket, dataDir, sessionDir, pidDir, nodePath, resourcesDir }
   }
 
   function integration(): HostAgentIntegration | null {
@@ -431,10 +436,11 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     // folder, which the next update prunes (see `integrations/launcher.ts`).
     // Only once it is on disk; until then, the older form that names them.
     const launcher = prepared.launcherReady ? launcherRefForHome(prepared.home.host, 'posix') : null
+    const server = prepared.server
     return {
-      agentStateSocketPath: prepared.server.agentStateSocket,
+      agentStateSocketPath: server.agentStateSocket,
       commandRuntime: {
-        executable: info.nodePath,
+        executable: server.nodePath,
         toCommandPath: (nativePath) => toWslPath(nativePath),
         ...(launcher ? { launcher } : {}),
       },
@@ -444,7 +450,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       studioMcpEntry: {
         ...(launcher
           ? buildLauncherMcpServer(launcher)
-          : { command: info.nodePath, args: [`${info.appDir}/automation/mcp-stdio-bridge.mjs`] }),
+          : { command: server.nodePath, args: [`${server.resourcesDir}/automation/mcp-stdio-bridge.mjs`] }),
         // ELECTRON_RUN_AS_NODE is meaningless to Linux Node; the older form
         // carries it because that is how the workspace tidy recognises it.
         // The bridge reaches the gateway of the distribution's own Studio,
@@ -452,7 +458,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
         // reaches the tools of the environment it runs in.
         env: {
           ...(launcher ? {} : { ELECTRON_RUN_AS_NODE: '1' }),
-          SPRINTENGINE_USER_DATA_DIR: prepared.server.dataDir,
+          SPRINTENGINE_USER_DATA_DIR: server.dataDir,
         },
         // The launch token is never written into a config file; the bridge
         // inherits it from the CLI, which inherits it from the startup script,

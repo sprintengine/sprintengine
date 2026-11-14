@@ -635,7 +635,11 @@ b64 }], remove?: [name] }` → `{ paths }`) and `environment.terminalProcesses` 
 'snapshot', keys }` → `{ verdicts }`, `{ op: 'kill', cliSessionId, key }` → `{ killed }`,
 `{ op: 'endAll' }` → `{ killed }`), both the shell's: a WSL terminal's startup files written
 into a private launch directory inside the distribution, and the processes its sessions
-leave read and ended there. Served by a WSL distribution's Studio only. The envelope's `wsl`
+leave read and ended there. `environment.pluginCopy` (`{ enabledSkills: [id] }` →
+`{ pluginDirs, skillPluginDirs, statusLineScriptPath }`, the shell's) builds the app's Claude
+plugin copy a WSL terminal's agent loads from that Studio's own resources, under its data
+directory, and says where it is (all empty when its build shipped no plugin). Served by a WSL
+distribution's Studio only. The envelope's `wsl`
 gained `profile`, and the `ready` frame's `frontDoor` gained `sessionDir` and `pidDir`
 (private to the desktop and the server it starts, one build).
 The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a

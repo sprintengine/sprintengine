@@ -36,11 +36,11 @@ import { WslSetupError } from './wsl-setup-error'
 import { NEEDS_INSTALL_EXIT, parseNeedReport, type NeedReport } from './wsl-install'
 
 /** Must equal `PROTOCOL_VERSION` in `resources/wsl-helper/lib/frames.mjs`. */
-export const WSL_HELPER_PROTOCOL = 3
+export const WSL_HELPER_PROTOCOL = 4
 
 export type WslHelperInfo = {
   uid: number
-  /** The app profile this helper serves; its sockets and plugin copy are this profile's own. */
+  /** The app profile this helper serves. */
   profile: string
   home: string
   arch: string

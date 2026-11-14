@@ -64,7 +64,6 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     let verdicts: Record<string, SubtreeLiveReason | null> | null = null
     const helper = stubWslHelper('Ubuntu', {
       home: () => ({ home: '/home/dev' }),
-      'files.ensureTree': () => ({ current: true }),
     })
     const distribution = stubWslDistributionLink(undefined, {
       processes: (ask) => {

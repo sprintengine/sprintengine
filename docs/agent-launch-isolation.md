@@ -85,8 +85,9 @@ status line run through the Studio launcher rather than `node`, as every hook
 the workspace install wrote there did. (Windows was held back when the flag
 arrived because the copy then shared substituted paths with WSL launches; a WSL
 launch has had its own copy since.) On a WSL machine it is true when the CLI
-declares `launchPlugins` and that distribution's helper has written its own
-copy, with Linux paths substituted into it (`src/main/hosts/wsl-plugin-copy.ts`).
+declares `launchPlugins` and that distribution's Studio server has built its own
+copy from its own resources, with its Linux paths substituted into it
+(`src/server/wsl/distribution-plugin-copy.ts`).
 The launch flag, the agent-state installer and the MCP sync all ask this one
 question, so none of them can write a workspace copy of something the launch is
 also carrying, or skip one it is not. A build whose copy failed still installs

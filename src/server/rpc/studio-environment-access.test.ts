@@ -345,6 +345,14 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
         asked.push(ask)
         return ask.op === 'snapshot' ? { verdicts: { 'sid-a-1': 'busy_cpu' } } : { killed: [7] }
       },
+      pluginCopy: async (skills) => {
+        asked.push(skills)
+        return {
+          pluginDirs: ['/home/dev/data/terminal-plugin/sprintengine-studio'],
+          skillPluginDirs: {},
+          statusLineScriptPath: null,
+        }
+      },
     },
   })
   cleanups.push(() => started.dispose())
@@ -364,6 +372,18 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
     (await shell.request('environment.terminalProcesses', { op: 'kill', cliSessionId: 'aaaa', key: 'sid-a-1' })).result,
     { killed: [7] },
   )
+  // The plugin copy: only skill ids cross, each once.
+  assert.deepEqual(
+    (await shell.request('environment.pluginCopy', { enabledSkills: ['studio-canvas', 'studio-canvas'] })).result,
+    {
+      pluginDirs: ['/home/dev/data/terminal-plugin/sprintengine-studio'],
+      skillPluginDirs: {},
+      statusLineScriptPath: null,
+    },
+  )
+  assert.deepEqual(asked.at(-1), ['studio-canvas'])
+  for (const params of [{}, { enabledSkills: ['C:\\skills\\x'] }, { enabledSkills: ['../up'] }, { enabledSkills: 'x' }])
+    assert.equal(errorCode(await shell.request('environment.pluginCopy', params)), 'invalid_params')
   // Paths that leave the launch directory, and asks of no shape, are refused before they are served.
   for (const params of [
     { write: [{ path: '../../.bashrc', b64: '' }] },
@@ -388,6 +408,7 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
     errorCode(await owner.request('environment.launchFiles', { write: [{ path: 'x.sh', b64: '' }] })),
     'owner_required',
   )
+  assert.equal(errorCode(await owner.request('environment.pluginCopy', { enabledSkills: [] })), 'owner_required')
   assert.equal(asked.length, servedBefore, 'nothing refused reached the distribution')
 
   // A Studio that runs no desktop's terminals does not offer them.

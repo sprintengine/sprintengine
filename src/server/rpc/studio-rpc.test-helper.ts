@@ -416,7 +416,7 @@ export async function startTestServer(
     adoption?: EnvironmentAdoption
     work?: () => StudioEnvironmentWork
     launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
-    terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
+    terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
