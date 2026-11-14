@@ -11,6 +11,7 @@ import type { EnvironmentClients } from '../../shared/environment-clients'
 import { machineStudioClient } from '../../shared/machine-studio-client'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../../shared/workspace-registry'
 import { createEnvironmentReplicas } from './environment-replicas'
+import { machineSpellingOf } from '../../shared/machine-spelling'
 
 // This desktop's copies of an SSH machine's chats: written only from what the
 // machine's own Studio says, a window's record change made there first and here
@@ -65,7 +66,8 @@ function syncOf(workspaces: Workspace[], windowId: string) {
 
 const SSH = { kind: 'ssh' as const, id: 'build-box', label: 'build-box' }
 
-function rig(options: { machine?: Workspace[]; desktop?: Workspace[] } = {}) {
+function rig(options: { machine?: Workspace[]; desktop?: Workspace[]; route?: string } = {}) {
+  const route = options.route ?? ROUTE
   const machine = syncOf(options.machine ?? [workspace('ws-1', '/home/dev/repo')], 'machine-window')
   const desktop = syncOf(
     options.desktop ?? [
@@ -93,10 +95,10 @@ function rig(options: { machine?: Workspace[]; desktop?: Workspace[] } = {}) {
       return () => undefined
     },
   } as unknown as StudioClient
-  const client = machineStudioClient(raw, 'build-box')
+  const client = machineStudioClient(raw, machineSpellingOf(route)!)
   const clients: EnvironmentClients = {
-    async clientFor(route) {
-      if (route !== ROUTE) return { ok: false, code: 'unsupported_route', message: 'Not this one.' }
+    async clientFor(given) {
+      if (given !== route) return { ok: false, code: 'unsupported_route', message: 'Not this one.' }
       return connected
         ? { ok: true, client, name: 'build-box' }
         : { ok: false, code: 'unavailable', message: 'build-box is not connected.' }
@@ -251,4 +253,41 @@ test("a copy born there takes none of the window's own state from the machine", 
   await replicas.follow(ROUTE)
   const born = record(desktop.sync, 'ws-born')
   assert.deepEqual(born?.editorState, { openFiles: [], activeFilePath: null })
+})
+
+const WSL = { kind: 'wsl' as const, id: 'Ubuntu', label: 'WSL: Ubuntu' }
+
+test("a WSL distribution's chats come here as its copies, its share and drives spelled as Windows opens them, and keep its machine", async () => {
+  const { machine, desktop, replicas } = rig({
+    route: 'wsl:Ubuntu',
+    machine: [workspace('ws-1', '/home/dev/repo', { name: 'Renamed there' }), workspace('ws-born', '/mnt/c/code/app')],
+    desktop: [
+      workspace('ws-1', '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo', { environment: WSL, hostId: 'wsl:Ubuntu' }),
+      workspace('ws-local', 'C:\\Users\\dev\\app'),
+    ],
+  })
+  await replicas.follow('wsl:Ubuntu')
+  assert.equal(record(desktop.sync, 'ws-1')?.name, 'Renamed there')
+  const born = record(desktop.sync, 'ws-born')
+  assert.equal(born?.folderPath, 'C:\\code\\app', 'a drive the distribution mounts, as Windows spells it')
+  assert.deepEqual(born?.environment, { ...WSL, label: 'build-box' })
+  // Its terminals and this desktop's git on its folder still run there, through `wsl.exe`.
+  assert.equal(born?.hostId, 'wsl:Ubuntu')
+  assert.ok(record(desktop.sync, 'ws-local'))
+
+  // A window's New chat there is made by the distribution, in its own spelling, with no machine of this PC's.
+  const answer = await replicas.dispatch({
+    type: 'workspace.created',
+    payload: {
+      workspace: workspace('ws-new', '\\\\wsl$\\Ubuntu\\home\\dev\\new', { environment: WSL, hostId: 'wsl:Ubuntu' }),
+      windowId: 'primary',
+      insert: { kind: 'folder_head', folderPath: null },
+      activate: true,
+    },
+  })
+  assert.equal(answer?.ok, true)
+  const there = record(machine.sync, 'ws-new')
+  assert.equal(there?.folderPath, '/home/dev/new')
+  assert.equal(there?.hostId, undefined)
+  assert.equal(there?.environment, undefined)
 })

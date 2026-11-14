@@ -92,7 +92,7 @@ export async function environmentPage(
  */
 export function launchWhereItLives(
   clients: EnvironmentClients | null,
-  recordOf: (workspaceId: string) => { environment?: { kind: 'ssh'; id: string } | null } | null,
+  recordOf: (workspaceId: string) => Parameters<typeof environmentRouteOfRecord>[0] | null,
   launchHere: (request: ConversationLaunchRequest) => Promise<ConversationLaunchResult>,
 ): (request: ConversationLaunchRequest) => Promise<ConversationLaunchResult> {
   return async (request) => {

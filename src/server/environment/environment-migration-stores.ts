@@ -1,17 +1,22 @@
-import { formatEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
 import type { UsageLimitResumer } from '../../main/usage-limits/resume'
 import type { WorkspaceRegistryService } from '../../main/workspace-registry-service'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
-import { parseMachinePath } from '../../shared/machine-paths'
+import { isMachinePath } from '../../shared/machine-paths'
+import { machineRouteOfPath } from '../../shared/machine-spelling'
+import { parseEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { PullRequestRecord } from '../pull-requests/pull-request-record'
+import type { ConversationApprovalRuleStore } from '../../main/conversation-approval-rules'
+import { conversationWorkingRoot } from '../../shared/agent-state'
 import type { EnvironmentMigrationStores, MigratingRecord } from './environment-migration'
+import type { ChatSourceFile } from './environment-chat-sources'
 
 // This desktop's stores as the hand-over reads and empties them
 // (environment-migration.ts): each record that names a chat or folder another
-// environment holds, found by the chat's record here (its `environment`) or
-// by its folder (`ssh://<id>/…`), and taken out through the store's own way.
+// environment holds, found by the chat's record here (its `environment`, or
+// a WSL workspace's `hostId`) or by its folder (`ssh://<id>/…`, a WSL share),
+// and taken out through the store's own way.
 
 export function studioMigrationStores(stores: {
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecords'>
@@ -21,27 +26,79 @@ export function studioMigrationStores(stores: {
   pullRequests: Pick<PullRequestRecord, 'whenLoaded' | 'handingOver' | 'letGo'>
   /** The pictures a schedule's prompt names from this desktop's data directory (`keptImagesIn`). */
   scheduledImages?: (prompt: string) => Promise<Array<{ path: string; name: string; mediaType: string }>>
+  /**
+   * What a chat this desktop ran itself in a WSL distribution's folders keeps
+   * here that the distribution does not have (environment-chat-sources.ts).
+   */
+  chatSources?: (chat: {
+    distro: string
+    workspaceRoot: string
+    workspaceId: string
+    agentId: string
+  }) => Promise<ChatSourceFile[]>
+  /** This desktop's saved approvals, and the way one is let go. */
+  approvalRules?: Pick<ConversationApprovalRuleStore, 'list' | 'revoke'>
 }): EnvironmentMigrationStores {
   return {
     async collect(workspacesOf) {
       const found: MigratingRecord[] = []
       // The chats another environment holds, by the route of their record here.
       const routeOfWorkspace = new Map<string, string>()
+      // The folders a WSL workspace's chats work in, by route.
+      const rootsOf = new Map<string, string>()
       for (const record of stores.workspaceRegistry.getRecords()) {
         const route = environmentRouteOfRecord(record)
         if (!route) continue
         routeOfWorkspace.set(record.id, route)
-        if (workspacesOf(route))
-          found.push({ route, kind: 'workspace', id: record.id, body: record as unknown as Record<string, unknown> })
+        if (!workspacesOf(route)) continue
+        found.push({ route, kind: 'workspace', id: record.id, body: record as unknown as Record<string, unknown> })
+        // A WSL workspace's chats ran through `wsl.exe` on this desktop, which
+        // kept their files: they go with the record, with the folders they work in.
+        const distro = parseEnvironmentRoute(route)
+        if (distro?.kind !== 'wsl') continue
+        for (const [agentId, agent] of Object.entries(record.agents ?? {})) {
+          const workspaceRoot = conversationWorkingRoot(agent, record.folderPath)
+          if (!workspaceRoot) continue
+          rootsOf.set(workspaceRoot, route)
+          if (!agent.conversation || !stores.chatSources) continue
+          const files = await stores.chatSources({
+            distro: distro.distro,
+            workspaceRoot,
+            workspaceId: record.id,
+            agentId,
+          })
+          if (files.length)
+            found.push({
+              route,
+              kind: 'chat',
+              id: `${record.id}:${agentId}`,
+              body: { workspaceId: record.id, agentId, workspaceRoot },
+              chatFiles: files,
+            })
+        }
+        if (record.folderPath) rootsOf.set(record.folderPath, route)
+      }
+      // The approvals saved for the folders those chats work in. (A share's
+      // folder a chat on This PC works in keeps its own: decision R88.)
+      for (const rule of (await stores.approvalRules?.list()) ?? []) {
+        const route = rootsOf.get(rule.workspaceRoot)
+        if (route && workspacesOf(route))
+          found.push({ route, kind: 'approval-rule', id: rule.id, body: rule as unknown as Record<string, unknown> })
       }
       await stores.scheduledAgents.loaded()
       for (const agent of stores.scheduledAgents.list()) {
-        const machine = parseMachinePath(agent.folderPath)
-        if (!machine) continue
+        // Its folder's machine, as a chat's record says it: an SSH machine's
+        // path, or a WSL workspace's machine (its `hostId`, else its folder).
+        // One picked to run on This PC in a distribution's folder stays
+        // (decision R88), as a workspace's record does.
+        const route = isMachinePath(agent.folderPath)
+          ? (machineRouteOfPath(agent.folderPath) ?? null)
+          : environmentRouteOfRecord(agent)
+        if (!route) continue
         // The pictures its prompt names go with it, each by the path the prompt names it by.
         const images = (await stores.scheduledImages?.(agent.prompt)) ?? []
         found.push({
-          route: formatEnvironmentRoute({ kind: 'ssh', machine: machine.id }),
+          route,
           kind: 'schedule',
           id: agent.id,
           body: agent as unknown as Record<string, unknown>,
@@ -119,6 +176,13 @@ export function studioMigrationStores(stores: {
         switch (record.kind) {
           case 'workspace':
             // Stays, as the machine's copy.
+            break
+          case 'chat':
+            // Its files stay where they are, never written again: the
+            // distribution's Studio runs the chat from its own copies.
+            break
+          case 'approval-rule':
+            await stores.approvalRules?.revoke(record.id)
             break
           case 'schedule':
             await stores.scheduledAgents.remove(record.id)

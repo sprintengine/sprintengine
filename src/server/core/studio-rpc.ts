@@ -19,7 +19,7 @@ import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
 import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
 import { keepScheduledImage } from '../../main/scheduled-agents/prompt-images'
-import { resolveMachineIdentity } from '../../shared/machine-identity'
+import { relayedEnvironmentMark } from '../../shared/machine-identity'
 import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioGit } from '../git/studio-git'
 import { createStudioWorktrees } from '../worktrees/studio-worktrees'
@@ -27,6 +27,7 @@ import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
 import type { StudioDiscovery } from '../rpc/studio-rpc-types'
+import { conversationWorkingRoot } from '../../shared/agent-state'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { backgroundWorkOf } from './background-work'
 import { chatsAreWorking } from './chats-working'
@@ -235,14 +236,8 @@ export function createStudioRpc(
       : {
           relayedEnvironments: async () =>
             (await gateway.relayedEnvironments()).map((entry) => {
-              // Marked as this desktop marks the machine's chats, the person's choice applied.
-              const identity = entry.machine
-                ? resolveMachineIdentity(
-                    { kind: 'ssh', host: entry.machine.host, port: entry.machine.port ?? null },
-                    core.agentLaunchSettings.get().machineMarks,
-                  )
-                : null
-              return identity ? { ...entry, mark: { kind: identity.kind, color: identity.colour } } : entry
+              const mark = relayedEnvironmentMark(entry, core.agentLaunchSettings.get().machineMarks)
+              return mark ? { ...entry, mark } : entry
             }),
         }),
     // What the core keeps beside its chats, for every chat at once: the usage
@@ -351,6 +346,10 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
       },
       workspaces: {
         has: (workspaceId) => core.workspaceRegistry.getRecord(workspaceId) !== null,
+        chatRoot: (workspaceId, agentId) => {
+          const record = core.workspaceRegistry.getRecord(workspaceId)
+          return record ? conversationWorkingRoot(record.agents[agentId], record.folderPath) : null
+        },
         // As a window's create is: the sync bus validates it and the registry normalizes and stamps it.
         adopt: (record) => {
           const windowId = primaryWindow()

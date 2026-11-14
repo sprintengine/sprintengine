@@ -33,36 +33,31 @@ additive features. It is not a version and does not follow one; see
 Three wires between this app and the Studio server trees it installs on a WSL
 distribution or an SSH machine are private and are not in this table: the
 bootstrap envelope, the front door's proof preamble (`FRONT_DOOR_PROOF_VERSION`)
-and the conversation backend wire (`BACKEND_WIRE_VERSION`), and the SSH
-relay's multiplexer (`MUX_VERSION` in `resources/wsl-server/relay-mux.mjs`).
-Both ends are this app's own build: the tree is installed per app version and
-checked by digest. An SSH machine can run another version's server (a newer
-desktop installed it); its `run/server.json` says the Studio protocol window
-it speaks, and the desktop attaches it when that window meets its own,
-upgrades an older managed one, and otherwise refuses in words (the backend
-wire is no input since an SSH machine's chats are its own Studio's, and the
-SSH relay opens only `studio` and `ws`; the wire is a WSL server's alone) (`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`).
-An upgrade that does not start falls back to the previous server and is not
-retried on its own (`run/update-failed.json`). Bump
-`BACKEND_WIRE_VERSION` whenever a forwarded member's arguments or answer
-change, and `MUX_VERSION` whenever a frame does. A number once on `main` is
-spent, even before a release, since a nightly may already carry it: two changes
-made side by side take one each. The backend wire went from 2 to 3 when
-`sendTurn` took `origin` (a message Studio sends a chat itself), and to 4 when
-it took `files` (a message's files attached by path), both on 2026-10-07. It
-went to 5 when `sendTurn` took `composedAt` and `confirmedStale` and could
-answer `stale` (2026-10-20), and to 6 when it gained `handoffConversation`, a
-chat handed off to a fresh session, and `sendTurn`'s `origin` the reason
-`auto-compact` (2026-10-21), and to 7 when it gained `messageSubagent`, and
-`sendTurn` `subagentMessage` and the `origin` reason `agent-message` (2026-11-07),
-and to 8 when `backend.sign-in` left it for the Studio protocol's `providers.signIn*`
-(2026-11-13), and to 9 when `backend.machine` left it for `environment.work` (2026-11-13). The front door gained a third purpose, `ws` (2026-11-13): a window's
-socket, which main's loopback route for that machine carries to the server's own
-window listener. The proof says only that the stream came through the front door;
-the listener admits it by the ticket it minted, as it admits a local window. An
-older server tree refuses the purpose in words, and the desktop updates it.
+and the SSH relay's multiplexer (`MUX_VERSION` in
+`resources/wsl-server/relay-mux.mjs`). Both ends are this app's own build: the
+tree is installed per app version and checked by digest. An SSH machine can run
+another version's server (a newer desktop installed it); its `run/server.json`
+says the Studio protocol window it speaks, and the desktop attaches it when that
+window meets its own, upgrades an older managed one, and otherwise refuses in
+words (`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`). An
+upgrade that does not start falls back to the previous server and is not
+retried on its own (`run/update-failed.json`). Bump `MUX_VERSION` whenever a
+frame does. A number once on `main` is spent, even before a release, since a
+nightly may already carry it: two changes made side by side take one each.
 
-A session's summary, which that wire pushes with every chat event, carries
+There was a fourth, the conversation backend wire (`BACKEND_WIRE_VERSION`, last
+9), which carried a WSL distribution's chats to the desktop's router while a
+per-distribution switch sent them there. It went on 2026-11-13 with the router
+and the switch (design-wsl-ssh-direct PR 3c): every WSL chat is the
+distribution's own Studio's, reached on the Studio protocol like an SSH
+machine's. The front door's purposes are now `studio` (the desktop's owner
+connection) and `ws` (2026-11-13): a window's socket, which the desktop's
+loopback route for that machine carries to the server's own window listener.
+The proof says only that the stream came through the front door; the listener
+admits it by the ticket it minted, as it admits a local window. A server tree
+refuses an unknown purpose in words, and the desktop updates it.
+
+A session's summary, which every Studio pushes with every chat event, carries
 three optional clocks a reader must not count on: `lastTurnEndedAt` (when
 the agent last finished a turn), `turnStartedAt` (when the turn now running
 began) and `waitingSince` (when the chat began waiting on the person, by the
@@ -1257,6 +1252,12 @@ does on its own, which a desktop asks over its owner connection to a WSL distrib
 server before stopping it for being idle and for its quit question. It replaced the backend
 wire's `backend.machine`, which went with `BACKEND_WIRE_VERSION` 9. A server without it is
 read as having nothing to say. Served by a WSL distribution's or an SSH machine's Studio.
+The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a
+WSL distribution's Studio says where it mounts the Windows drives (`/mnt/` unless
+its wsl.conf says otherwise, null when it mounts none), so a client on Windows
+spells a drive path for it (`C:\code` is `/mnt/c/code` there). Additive: a
+client that does not read it takes the default root, and a Studio before it
+leaves it out.
 `environment-adopt` (2026-11-13) adds `environment.adopt` (`{ commandId, migrationId,
 records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's): the records a
 desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are

@@ -2,7 +2,7 @@ import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import { parseEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { StudioCapability } from '../../../packages/studio-protocol/src/handshake'
 import type { EnvironmentClients } from '../../shared/environment-clients'
-import { machineStudioClient } from '../../shared/machine-studio-client'
+import { routeStudioClient } from '../../shared/machine-studio-client'
 
 // Main's clients of other environments' Studios (shared/environment-clients.ts):
 // its owner connection to each machine, its paths spelled as this computer
@@ -32,9 +32,7 @@ export function createEnvironmentClients(deps: {
       const parsed = parseEnvironmentRoute(route)
       if (parsed?.kind === 'ssh' && deps.ssh) {
         const owner = await deps.ssh.ownerClient(parsed.machine, capability)
-        return owner.ok
-          ? { ok: true, client: machineStudioClient(owner.client, parsed.machine), name: owner.label }
-          : owner
+        return owner.ok ? { ok: true, client: routeStudioClient(owner.client, route), name: owner.label } : owner
       }
       return { ok: false, code: 'unsupported_route', message: 'That machine cannot be reached from this computer.' }
     },

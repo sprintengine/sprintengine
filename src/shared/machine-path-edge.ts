@@ -1,15 +1,18 @@
-import { machinePath, parseMachinePath } from './machine-paths'
+import type { MachineSpelling } from './machine-spelling'
 
-// Paths at the edge between this computer and one SSH machine's Studio
-// (phase 8, design-wsl-ssh-direct PR 1d). This computer spells a path there
-// `ssh://<id>/home/dev/repo` (machine-paths.ts) so nothing here takes it for one
-// of its own; the machine's Studio speaks the plain path, `/home/dev/repo`.
-// The window's client of that machine respells at its edge, both ways:
+// Paths at the edge between this computer and another machine's Studio, an
+// SSH machine's or a WSL distribution's (phase 8, design-wsl-ssh-direct PR 1d,
+// PR 3c), each spelled as `machine-spelling.ts` says. This computer's records
+// name a folder there as this computer spells it (`ssh://<id>/home/dev/repo`,
+// `\\wsl.localhost\Ubuntu\home\dev\repo`); the machine's Studio speaks
+// the plain path, `/home/dev/repo`. The client of that machine respells at its
+// edge, both ways:
 //
 // - Going there, every string that is a path spelled for this machine, in any
 //   member of what is sent, is the plain path: a chat's key, a folder, a
-//   mention, a skill's source, a stdio MCP server's command. Nothing else is
-//   spelled `ssh://<id>/`, so this is never a guess.
+//   mention, a skill's source, a stdio MCP server's command. An `ssh://<id>/`
+//   string is never words; a drive path may be, so a WSL machine's are not
+//   read in a person's text (`TEXT_MEMBERS`).
 // - Coming back, only the members that name a folder or a file there are
 //   respelled (`MACHINE_PATH_MEMBERS`): a plain absolute path cannot be told
 //   from words, so free text, tool inputs and transcripts are left as the
@@ -29,33 +32,77 @@ export const MACHINE_PATH_MEMBERS: ReadonlySet<string> = new Set([
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype
 
-/** What is sent to the machine `id`, with each of its paths as it spells them. */
-export function machinePathsIn<T>(id: string, value: T): T {
-  if (typeof value === 'string') {
-    const parsed = parseMachinePath(value)
-    return (parsed && parsed.id === id ? parsed.path : value) as T
-  }
-  if (Array.isArray(value)) return value.map((entry) => machinePathsIn(id, entry)) as T
+/** Members of what is sent that hold a person's (or an agent's) words: a path spelling that guesses leaves them. */
+const TEXT_MEMBERS: ReadonlySet<string> = new Set([
+  'text',
+  'content',
+  'message',
+  'query',
+  'body',
+  'data',
+  'prompt',
+  'name',
+  'title',
+  'label',
+  'description',
+  'instructions',
+])
+
+/** What is sent to the machine, with each of its paths as it spells them. */
+export function machinePathsIn<T>(spelling: MachineSpelling, value: T): T {
+  if (typeof value === 'string') return (spelling.toMachine(value) ?? value) as T
+  if (Array.isArray(value)) return value.map((entry) => machinePathsIn(spelling, entry)) as T
   if (!isPlainObject(value)) return value
   const out: Record<string, unknown> = {}
-  for (const [member, entry] of Object.entries(value)) out[member] = machinePathsIn(id, entry)
+  for (const [member, entry] of Object.entries(value))
+    out[member] =
+      spelling.guesses && TEXT_MEMBERS.has(member) && typeof entry === 'string'
+        ? entry
+        : machinePathsIn(spelling, entry)
   return out as T
 }
 
 /**
- * What the machine `id` answered, with each folder or file it names spelled
- * for this computer. `extra` names more members to respell for one answer
- * (a plan document's `path`).
+ * Why the machine cannot open a folder what is sent names (a member in
+ * `MACHINE_PATH_MEMBERS`), in words, or null when it can open every one: a
+ * WSL distribution is never handed another's share, a network share, or a
+ * drive it does not mount, which it would read as a relative name.
  */
-export function machinePathsOut<T>(id: string, value: T, extra: ReadonlySet<string> = new Set()): T {
-  if (Array.isArray(value)) return value.map((entry) => machinePathsOut(id, entry, extra)) as T
+export function machineFolderRefusal(spelling: MachineSpelling, value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const refused = machineFolderRefusal(spelling, entry)
+      if (refused) return refused
+    }
+    return null
+  }
+  if (!isPlainObject(value)) return null
+  for (const [member, entry] of Object.entries(value)) {
+    const refused =
+      typeof entry === 'string'
+        ? MACHINE_PATH_MEMBERS.has(member)
+          ? spelling.refusal(entry)
+          : null
+        : machineFolderRefusal(spelling, entry)
+    if (refused) return refused
+  }
+  return null
+}
+
+/**
+ * What the machine answered, with each folder or file it names spelled for
+ * this computer. `extra` names more members to respell for one answer (a
+ * plan document's `path`).
+ */
+export function machinePathsOut<T>(spelling: MachineSpelling, value: T, extra: ReadonlySet<string> = new Set()): T {
+  if (Array.isArray(value)) return value.map((entry) => machinePathsOut(spelling, entry, extra)) as T
   if (!isPlainObject(value)) return value
   const out: Record<string, unknown> = {}
   for (const [member, entry] of Object.entries(value)) {
     out[member] =
       typeof entry === 'string' && entry.startsWith('/') && (MACHINE_PATH_MEMBERS.has(member) || extra.has(member))
-        ? machinePath(id, entry)
-        : machinePathsOut(id, entry, extra)
+        ? spelling.fromMachine(entry)
+        : machinePathsOut(spelling, entry, extra)
   }
   return out as T
 }
@@ -79,32 +126,32 @@ export const MACHINE_PANE_PATH_MEMBERS: ReadonlySet<string> = new Set([
   'checkoutPath',
 ])
 
-/** What a pane sends the machine `id`, its paths as the machine spells them and its text as written. */
-export function machinePanePathsIn<T>(id: string, value: T): T {
-  if (typeof value === 'string') return machinePathsIn(id, value)
-  if (Array.isArray(value)) return value.map((entry) => machinePanePathsIn(id, entry)) as T
+/** What a pane sends the machine, its paths as the machine spells them and its text as written. */
+export function machinePanePathsIn<T>(spelling: MachineSpelling, value: T): T {
+  if (typeof value === 'string') return (spelling.toMachine(value) ?? value) as T
+  if (Array.isArray(value)) return value.map((entry) => machinePanePathsIn(spelling, entry)) as T
   if (!isPlainObject(value)) return value
   const out: Record<string, unknown> = {}
   for (const [member, entry] of Object.entries(value))
-    out[member] = PANE_TEXT_MEMBERS.has(member) ? entry : machinePanePathsIn(id, entry)
+    out[member] = PANE_TEXT_MEMBERS.has(member) ? entry : machinePanePathsIn(spelling, entry)
   return out as T
 }
 
 /**
- * What the machine `id` answered a pane, each file or folder it names spelled
- * for this computer, and a map keyed by absolute paths keyed by this
- * computer's spelling. A file's contents are never touched.
+ * What the machine answered a pane, each file or folder it names spelled for
+ * this computer, and a map keyed by absolute paths keyed by this computer's
+ * spelling. A file's contents are never touched.
  */
-export function machinePanePathsOut<T>(id: string, value: T): T {
-  if (Array.isArray(value)) return value.map((entry) => machinePanePathsOut(id, entry)) as T
+export function machinePanePathsOut<T>(spelling: MachineSpelling, value: T): T {
+  if (Array.isArray(value)) return value.map((entry) => machinePanePathsOut(spelling, entry)) as T
   if (!isPlainObject(value)) return value
   const out: Record<string, unknown> = {}
   for (const [member, entry] of Object.entries(value)) {
-    const key = member.startsWith('/') ? machinePath(id, member) : member
+    const key = member.startsWith('/') ? spelling.fromMachine(member) : member
     out[key] =
       typeof entry === 'string' && entry.startsWith('/') && MACHINE_PANE_PATH_MEMBERS.has(member)
-        ? machinePath(id, entry)
-        : machinePanePathsOut(id, entry)
+        ? spelling.fromMachine(entry)
+        : machinePanePathsOut(spelling, entry)
   }
   return out as T
 }

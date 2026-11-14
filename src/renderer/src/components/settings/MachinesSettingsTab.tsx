@@ -10,7 +10,7 @@ import {
   type ExecutionHostId,
   type ExecutionHostSettings,
   type ExecutionHostSummary,
-  type WslChatServerSummary,
+  type WslServerSummary,
 } from '../../../../shared/execution-host'
 import type { SshEnvironmentSummary } from '../../../../shared/ssh-environments'
 import { retryEnvironment, useEnvironments } from '../../hooks/useEnvironments'
@@ -54,19 +54,13 @@ export function formatEnvLines(env: Record<string, string>): string {
     .join('\n')
 }
 
-const CHAT_SERVER_ITEMS: Array<{ value: 'off' | 'on'; label: string }> = [
-  { value: 'off', label: 'One process per chat' },
-  { value: 'on', label: 'A Studio server in the distribution (preview)' },
-]
-
 const SERVER_TRANSPORT_ITEMS: Array<{ value: 'auto' | 'stdio'; label: string }> = [
   { value: 'auto', label: 'Loopback, else the bridge' },
   { value: 'stdio', label: 'Always the bridge' },
 ]
 
-/** How a distribution's Studio server stands, in words (phase 7). */
-export function chatServerWords(server: WslChatServerSummary): string {
-  if (!server.on) return 'Chats here run one process each, started from Windows.'
+/** How a distribution's Studio server, which holds its chats, stands, in words (phase 7). */
+export function serverWords(server: WslServerSummary): string {
   const how = server.transport === 'stdio' ? 'through the stdio bridge' : 'over loopback'
   switch (server.state) {
     case 'ready':
@@ -418,49 +412,31 @@ function MachineDetail({
             className="font-mono"
           />
         </SettingsRow>
-        {host.chatServer ? (
-          <ChatServerRows host={host} server={host.chatServer} settings={settings} onChange={onChange} />
-        ) : null}
+        {host.server ? <ServerRow host={host} server={host.server} settings={settings} onChange={onChange} /> : null}
       </div>
     </div>
   )
 }
 
-function ChatServerRows({
+function ServerRow({
   host,
   server,
   settings,
   onChange,
 }: {
   host: ExecutionHostSummary
-  server: WslChatServerSummary
+  server: WslServerSummary
   settings: ExecutionHostSettings
   onChange: (patch: Partial<ExecutionHostSettings>) => void
 }): React.JSX.Element {
   return (
-    <>
-      <SettingsRow
-        label="Chats run in"
-        help="A server inside the distribution runs its agents, git and files natively. A chat already running stays where it started."
-      >
-        <Select
-          ariaLabel={`Where chats in ${host.label} run`}
-          items={CHAT_SERVER_ITEMS}
-          value={server.on ? 'on' : 'off'}
-          disabled={host.wslVersion === 1}
-          onChange={(value) => onChange({ chatServer: value })}
-        />
-      </SettingsRow>
-      {server.on ? (
-        <SettingsRow label="Studio server" help={chatServerWords(server)}>
-          <Select
-            ariaLabel={`How Windows reaches the Studio server in ${host.label}`}
-            items={SERVER_TRANSPORT_ITEMS}
-            value={settings.serverTransport ?? 'auto'}
-            onChange={(value) => onChange({ serverTransport: value })}
-          />
-        </SettingsRow>
-      ) : null}
-    </>
+    <SettingsRow label="Studio server" help={serverWords(server)}>
+      <Select
+        ariaLabel={`How Windows reaches the Studio server in ${host.label}`}
+        items={SERVER_TRANSPORT_ITEMS}
+        value={settings.serverTransport ?? 'auto'}
+        onChange={(value) => onChange({ serverTransport: value })}
+      />
+    </SettingsRow>
   )
 }

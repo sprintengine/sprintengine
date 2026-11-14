@@ -35,8 +35,6 @@ export const FRONT_DOOR_PROOF_VERSION = 1
 
 /** What a connection is for once it is admitted. */
 export type FrontDoorPurpose =
-  /** The conversation backend the front door routes a distribution's chats to. */
-  | 'backend'
   /** A Studio protocol connection, as the shell role (the toolsets the front door offers). */
   | 'studio'
   /**
@@ -46,7 +44,7 @@ export type FrontDoorPurpose =
    */
   | 'ws'
 
-const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['backend', 'studio', 'ws'])
+const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['studio', 'ws'])
 const NONCE_BYTES = 32
 // A preamble line is a few hundred bytes; anything longer is not one.
 const MAX_PREAMBLE_LINE = 4_096

@@ -1,28 +1,11 @@
 // Today's machine keys, as environment routes and chat addresses.
 //
 // Before environments, each part of the app named a machine its own way: a
-// workspace's `hostId` (`local`, `wsl:<distro>`), the conversation router's
-// key (none for this process, a distribution's name, `ssh:<saved id>`), a
-// folder spelled on an SSH machine (`ssh://<saved id>/…`), a workspace's SSH
-// record, a paired machine's pairing id. Each maps here onto one
-// `EnvironmentRoute`, and back where a key has a way back, so a caller can move
-// onto routes and addresses on its own, one at a time, and mean exactly what
-// the key it replaces meant.
-//
-// Nothing here decides where a call goes. A route names the MACHINE a chat
-// runs on; the router's key names the PROCESS that answers for it. The two
-// differ, deliberately, in three cases the router decides at call time:
-//
-//   - a WSL chat whose distribution's chats are not on its server: the route
-//     is `wsl:<distro>`, the router key null (this process starts the CLI in
-//     the distribution);
-//   - a workspace on an SSH machine while SSH machines are off this session:
-//     the route is `ssh:<id>`, and the router answers it here or not at all;
-//   - a router asked without the workspace's folder, which does not see an
-//     `ssh://` folder the record holds.
-//
-// So a router key of null maps to `local` meaning "this process", which is
-// this machine's route but not always the machine the chat runs on.
+// workspace's `hostId` (`local`, `wsl:<distro>`), a folder spelled on an SSH
+// machine (`ssh://<saved id>/…`), a workspace's SSH or WSL record, a paired
+// machine's pairing id. Each maps here onto one `EnvironmentRoute`, and back
+// where a key has a way back, so a caller can move onto routes and addresses
+// on its own, one at a time, and mean exactly what the key it replaces meant.
 //
 // Pure and shared: no fs, no electron.
 
@@ -56,30 +39,6 @@ export function hostIdOfEnvironmentRoute(route: EnvironmentRoute): ExecutionHost
   if (route.kind === 'local') return LOCAL_HOST_ID
   if (route.kind === 'wsl') return wslHostId(route.distro)
   return null
-}
-
-const SSH_ROUTER_KEY = /^ssh:([A-Za-z0-9_-]+)$/u
-
-/**
- * The route a conversation router key names (`RoutedConversationBackend.routeOf`):
- * null is this process, `ssh:<saved id>` an SSH machine, anything else a WSL
- * distribution by name. Null for a key the router never makes.
- */
-export function environmentRouteOfRouterKey(key: string | null): EnvironmentRoute | null {
-  if (key === null) return { kind: 'local' }
-  const ssh = SSH_ROUTER_KEY.exec(key)
-  if (ssh) return { kind: 'ssh', machine: ssh[1]! }
-  const distro = distroOfHostId(wslHostId(key))
-  return distro ? { kind: 'wsl', distro } : null
-}
-
-/** The router key for a machine the router serves (this process, a distribution, an SSH machine). */
-export function routerKeyOfEnvironmentRoute(
-  route: Exclude<EnvironmentRoute, { kind: 'tailnet' } | { kind: 'relay' }>,
-): string | null {
-  if (route.kind === 'local') return null
-  if (route.kind === 'wsl') return route.distro
-  return `ssh:${route.machine}`
 }
 
 /** The SSH machine a folder spelled `ssh://<saved id>/…` is on; null for a path on this computer. */
@@ -119,11 +78,11 @@ export type WorkspaceMachineFacts = {
 
 /**
  * The machine a workspace's chats run on, as a route: the paired desktop it
- * was born on; else its SSH machine (its record, or a folder spelled on one,
- * as the router reads them); else, on Windows, the machine its `hostId`
- * names, or its folder's distribution (`workspaceHostIdOf`); else this
+ * was born on; else its SSH machine (its record, or a folder spelled on
+ * one); else, on Windows, the machine its `hostId` names, or its folder's
+ * distribution (`workspaceHostIdOf`); else this
  * machine. Off Windows a `wsl:` id names nothing (`distroOfHostId`), so the
- * chat runs here, as the router has it.
+ * chat runs here.
  */
 export function environmentRouteOfWorkspace(workspace: WorkspaceMachineFacts, platform: string): EnvironmentRoute {
   if (workspace.remoteOrigin?.connectionId) return environmentRouteOfMeshConnection(workspace.remoteOrigin.connectionId)

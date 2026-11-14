@@ -301,9 +301,7 @@ export type ExecutionHostSettings = {
   env: Record<string, string>
   /** The plain-terminal shell; absent uses the machine's default. */
   shell?: string
-  /** WSL: whether its chats run in a Studio server inside the distribution. */
-  chatServer?: 'on' | 'off'
-  /** WSL: how Windows reaches that server. */
+  /** WSL: how Windows reaches the Studio server inside the distribution, which holds its chats. */
   serverTransport?: 'auto' | 'stdio'
 }
 

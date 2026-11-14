@@ -199,3 +199,21 @@ test('a source closed is not read again', async () => {
   await settle()
   assert.equal(machine.lists(), lists)
 })
+
+test('a client that cannot be held is a refusal its caller hears, never an exception thrown at it', async () => {
+  // No window to hold it in (a node process, as the cross-client gate runs).
+  const source = createEnvironmentChatSource(
+    { route: 'ssh:box', name: 'build-box' },
+    {
+      hold: () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'api')")
+      },
+      settleMs: 1,
+    },
+  )
+  let asked: Promise<unknown> | null = null
+  assert.doesNotThrow(() => {
+    asked = source.client()
+  })
+  await assert.rejects(asked!, /reading 'api'/u)
+})

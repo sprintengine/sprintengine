@@ -159,7 +159,11 @@ export function createEnvironmentChatSource(
     state = 'opening'
   }
 
-  const client = (): Promise<StudioClient> => (closed ? Promise.reject(new Error('Closed.')) : take().client)
+  // Asked on a later tick, so a hold that cannot be taken (no window to hold
+  // it in) is a refusal its caller hears, never an exception thrown from a
+  // retry's timer.
+  const client = (): Promise<StudioClient> =>
+    closed ? Promise.reject(new Error('Closed.')) : Promise.resolve().then(() => take().client)
   const watchOpen = (listener: () => void): (() => void) => {
     openListeners.add(listener)
     return () => openListeners.delete(listener)

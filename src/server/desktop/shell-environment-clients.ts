@@ -4,7 +4,7 @@ import { connect, type StudioClient } from '../../../packages/client-runtime/src
 import { parseEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { StudioCapability } from '../../../packages/studio-protocol/src/handshake'
 import type { EnvironmentClients } from '../../shared/environment-clients'
-import { machineStudioClient } from '../../shared/machine-studio-client'
+import { routeStudioClient } from '../../shared/machine-studio-client'
 import { portDuplex } from '../ipc/port-duplex'
 import type { TunnelPort } from '../ipc/ipc-tunnel'
 import { lineTransport, readTicket } from '../wsl/studio-door'
@@ -113,7 +113,7 @@ export function createShellEnvironmentClients(deps: ShellEnvironmentClientsDeps)
             code: 'outdated',
             message: `The Studio server on ${owner.label} is older than this app. Update it in Settings › Machines.`,
           }
-        return { ok: true, client: machineStudioClient(owner.client, parsed.machine), name: owner.label }
+        return { ok: true, client: routeStudioClient(owner.client, route), name: owner.label }
       } catch (error) {
         deps.log?.(`Could not reach ${route}: ${error instanceof Error ? error.message : String(error)}`)
         return {

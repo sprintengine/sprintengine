@@ -218,22 +218,17 @@ export type NewAgentLaunch = AgentComposerConfirm & {
  * One short line saying so, and which machine is fast, and nothing else.
  *
  *   - a WSL machine on a Windows drive: "On C: — slow from Ubuntu. Run on
- *     This PC for full speed." Shown only where the distribution's chats run
- *     on its Studio server (phase 7), so a machine whose switch is off sees
- *     New chat as it was;
+ *     This PC for full speed." (the distribution's Studio server runs its
+ *     agents, over the drive mount);
  *   - This PC in a folder inside a distribution: "In Ubuntu — slow from
  *     Windows. Run on WSL: Ubuntu for full speed."
  */
-export function slowFolderHint(
-  hostId: ExecutionHostId,
-  folder: string | null | undefined,
-  chatServerOn: boolean,
-): string | null {
+export function slowFolderHint(hostId: ExecutionHostId, folder: string | null | undefined): string | null {
   if (!folder) return null
   const distro = distroOfHostId(hostId)
   const drive = /^([A-Za-z]):[\\/]/u.exec(folder)
   if (distro && drive) {
-    return chatServerOn ? `On ${drive[1].toUpperCase()}: — slow from ${distro}. Run on This PC for full speed.` : null
+    return `On ${drive[1].toUpperCase()}: — slow from ${distro}. Run on This PC for full speed.`
   }
   const folderDistro = hostId === LOCAL_HOST_ID ? distroOfUncPath(folder) : null
   if (folderDistro) return `In ${folderDistro} — slow from Windows. Run on WSL: ${folderDistro} for full speed.`
@@ -664,11 +659,7 @@ export default function NewAgentPanel({
   // An explicit scope wins: skills, the worktree probe and the scope line all
   // have to describe the folder the agent will actually run in.
   const workspaceRoot = folderPath !== undefined ? folderPath : activeWorkspaceRoot
-  const driveAdvisory = slowFolderHint(
-    hostId,
-    workspaceRoot,
-    hostListing?.hosts.some((host) => host.id === hostId && host.chatServer?.on === true) ?? false,
-  )
+  const driveAdvisory = slowFolderHint(hostId, workspaceRoot)
   // Picks were installed and synced into ONE project; a change of project
   // after picking would launch the agent somewhere they are not.
   const pickedForRoot = React.useRef(workspaceRoot)

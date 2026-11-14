@@ -36,6 +36,8 @@ export type EnvironmentAdoptionStores = {
   flush(): Promise<void>
   workspaces: {
     has(workspaceId: string): boolean
+    /** The folder a chat of a workspace here works in (its agent's worktree, else the workspace's), or null. */
+    chatRoot(workspaceId: string, agentId: string): string | null
     /** Keep a workspace record as created: its folder, its chats, its fields. */
     adopt(record: Record<string, unknown>): { ok: true } | { ok: false; message: string }
   }
@@ -279,6 +281,8 @@ export function createEnvironmentAdoption(deps: {
   }
 
   const partsOf = (migrationId: string) => join(deps.dataDir, PARTS_DIR, migrationId)
+  // The parts the chats a hand-over call kept were made of: let go once its ledger is written.
+  const usedParts = new Set<string>()
 
   /** A part a chat's file is made of: staged with this call, or kept from an earlier one of its migration. */
   async function partOf(migrationId: string, files: AdoptedFiles, sha256: string): Promise<Buffer | null> {
@@ -330,8 +334,13 @@ export function createEnvironmentAdoption(deps: {
         if (!read.ok) return read
         if (!stores.workspaces.has(read.chat.workspaceId))
           return { ok: false, reason: 'The workspace the chat is in is not here.' }
+        // Its store is keyed by the folder it works in: one that is not the
+        // folder its record here says would be a store its runtime never reads.
+        if (stores.workspaces.chatRoot(read.chat.workspaceId, read.chat.agentId) !== read.chat.workspaceRoot)
+          return { ok: false, reason: 'The chat names a folder its record here does not.' }
         const kept = await keepAdoptedChatFiles(deps.dataDir, read.chat, (sha) => partOf(migrationId, files, sha))
         if (!kept.ok) return kept
+        for (const file of read.chat.files) for (const part of file.parts) usedParts.add(part)
         return kept.kept.length
           ? { ok: false, reason: `This Studio keeps its own ${kept.kept.join(', ')}, and kept them.` }
           : { ok: true }
@@ -411,6 +420,9 @@ export function createEnvironmentAdoption(deps: {
     records: StudioAdoptedRecord[]
     files?: AdoptedFiles
   }): Promise<StudioAdoptResult> {
+    // Only this call's: a call that stopped before its ledger let go of none,
+    // and its parts are this one's to use (a repeat stages them first).
+    usedParts.clear()
     // Parts staged ahead of the chats they make up: kept, and nothing else.
     if (input.records.length === 0) {
       await keepParts(input.migrationId, input.files ?? new Map())
@@ -497,6 +509,9 @@ export function createEnvironmentAdoption(deps: {
     // written first answer what it had kept as held, not as another copy.
     await stores.flush()
     writeLedger(ledger)
+    // A held chat's parts are in place now: nothing waits for the sweep.
+    for (const part of usedParts) await rm(join(partsOf(input.migrationId), part), { force: true })
+    usedParts.clear()
     if (conflicts.length)
       deps.log?.(`A hand-over kept ${held.length} records and left ${conflicts.length} as this Studio has them.`)
     return { held, conflicts }

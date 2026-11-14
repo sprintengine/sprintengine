@@ -15,8 +15,8 @@ import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/
 import type { WorkspaceFieldsPatch, WorkspaceSyncEvent } from '../../shared/workspace-sync'
 
 // This desktop's copies of the chats another environment holds
-// (design-wsl-ssh-direct PR 1d, decision 1). An SSH machine's Studio owns its
-// chats' records: their folder, agents, name, marks and rest. This desktop's
+// (design-wsl-ssh-direct PR 1d, decision 1; a WSL distribution's, PR 3c). An
+// SSH machine's or a distribution's Studio owns its chats' records: their folder, agents, name, marks and rest. This desktop's
 // registry keeps a copy of each, stamped `environment`, because its windows
 // arrange them (which window, which is active, where in the sidebar), and that
 // arrangement is this desktop's alone.
@@ -164,6 +164,16 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
       moduleState: _modules,
       ...rest
     } = workspace
+    if (machine?.kind === 'wsl')
+      return {
+        ...rest,
+        editorState: { openFiles: [], activeFilePath: null },
+        environment: { kind: 'wsl', id: machine.distro, label: name },
+        // A WSL chat's terminals are still this PC's, run in the distribution
+        // through `wsl.exe` (design-wsl-ssh-direct PR 4), as is the git this
+        // desktop runs on its folder: its machine stays its `hostId`.
+        hostId: `wsl:${machine.distro}`,
+      }
     return {
       ...rest,
       editorState: { openFiles: [], activeFilePath: null },
@@ -306,13 +316,13 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
   /** What the machine is sent: its own window, no environment of its own. */
   function forMachine(command: Record<string, unknown>, windowId: string): Record<string, unknown> {
     if (command.type !== 'workspace.created' || !isRecord(command.payload)) return command
-    const { environment: _environment, ...workspace } = command.payload.workspace as Workspace
+    const { environment: _environment, hostId: _hostId, ...workspace } = command.payload.workspace as Workspace
     return { ...command, payload: { ...command.payload, workspace, windowId } }
   }
 
   const notConnected = (route: string, message?: string) => {
     const machine = parseEnvironmentRoute(route)
-    const name = machine?.kind === 'ssh' ? machine.machine : route
+    const name = machine?.kind === 'ssh' ? machine.machine : machine?.kind === 'wsl' ? `WSL: ${machine.distro}` : route
     return message ?? `${name} is not connected.`
   }
 

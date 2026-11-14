@@ -101,13 +101,13 @@ test('both ends prove themselves over loopback TCP, and the first bytes after th
   assert.ok(doors.port && doors.port > 0)
   const socket = await connectLoopback(doors.port)
   cleanups.push(() => socket.destroy())
-  const stream = await enterFrontDoor(socket, { token: TOKEN, purpose: 'backend' })
+  const stream = await enterFrontDoor(socket, { token: TOKEN, purpose: 'studio' })
   assert.equal(await readLine(stream), '{"after":"admitted"}', 'a line sent with the admission is not lost')
   stream.write('hello\n')
   assert.equal(await readLine(stream), 'echo:hello')
   assert.deepEqual(
     admitted.map((entry) => entry.purpose),
-    ['backend'],
+    ['studio'],
   )
 })
 
@@ -116,7 +116,7 @@ test('a front door with the wrong token learns nothing and is refused; the serve
   const doors = await listeners(admitted)
   const socket = await connectLoopback(doors.port!)
   await assert.rejects(
-    enterFrontDoor(socket, { token: 'seown_some-other-token', purpose: 'backend' }),
+    enterFrontDoor(socket, { token: 'seown_some-other-token', purpose: 'studio' }),
     (error: unknown) => error instanceof FrontDoorRefusedError && /could not prove/u.test(error.message),
   )
   assert.equal(admitted.length, 0)
@@ -156,9 +156,9 @@ test('the server refuses a proof for another purpose than the one it proved', as
   const socket = connect(path)
   await new Promise((resolve) => socket.once('connect', resolve))
   const nonce = 'B'.repeat(43)
-  socket.write(`${JSON.stringify({ t: 'front-door', v: 1, purpose: 'backend', nonce })}\n`)
+  socket.write(`${JSON.stringify({ t: 'front-door', v: 1, purpose: 'studio', nonce })}\n`)
   const challenge = JSON.parse(await readLine(socket)) as { serverNonce: string; proof: string }
-  assert.equal(challenge.proof, serverProof(tokenHash, nonce, challenge.serverNonce, 'backend'))
+  assert.equal(challenge.proof, serverProof(tokenHash, nonce, challenge.serverNonce, 'studio'))
   // Replaying the server's own proof as the client's is refused.
   socket.write(`${JSON.stringify({ t: 'prove', proof: challenge.proof })}\n`)
   await new Promise((resolve) => socket.once('close', resolve))
@@ -210,11 +210,11 @@ test('connections that never prove themselves on loopback cannot shut the bridge
   const bridged = connect(doors.socketPath!)
   await new Promise((resolve) => bridged.once('connect', resolve))
   cleanups.push(() => bridged.destroy())
-  const stream = await enterFrontDoor(bridged, { token: TOKEN, purpose: 'backend' })
+  const stream = await enterFrontDoor(bridged, { token: TOKEN, purpose: 'studio' })
   assert.equal(await readLine(stream), '{"after":"admitted"}')
   assert.deepEqual(
     admitted.map((entry) => entry.purpose),
-    ['backend'],
+    ['studio'],
   )
 })
 

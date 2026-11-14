@@ -1,14 +1,13 @@
-import { readFileSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
 import { readStudioEnvironmentId } from '../environment/environment-id'
-import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
+import { readDriveMountRoot } from '../wsl/drive-mount-root'
 import { chatsAreWorking } from '../core/chats-working'
 import { backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
 import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
-import { serveConversationBackend } from '../wsl/backend-wire'
 import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
@@ -75,21 +74,6 @@ export function headlessUpdates(envelope: Pick<ServerBootstrapEnvelope, 'wsl' | 
   )
 }
 
-/** Where this distribution mounts the Windows drives: what is mounted, else what wsl.conf asks for. */
-export function readDriveMountRoot(read: (path: string) => string | null = readText): string | null {
-  const mounts = read('/proc/mounts')
-  const mounted = mounts ? driveMountRootFromMounts(mounts) : null
-  return mounted ?? driveMountRootFromWslConf(read('/etc/wsl.conf'))
-}
-
-function readText(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
-}
-
 // Loaded on first use, not at start: the desktop's bundle loads its
 // dependencies from node_modules, and a server that never serves a machine's
 // files must not need them to start.
@@ -104,12 +88,7 @@ export function serveFrontDoorPurpose(
   server: Pick<StudioServer, 'core' | 'rpc'>,
   purpose: FrontDoorPurpose,
   stream: Duplex,
-  log: (message: string) => void,
 ): void {
-  if (purpose === 'backend') {
-    serveConversationBackend(server.core.conversations, stream, { log })
-    return
-  }
   // A window's socket: the window listener admits it, or not, by the ticket
   // it minted for it.
   if (purpose === 'ws') {
@@ -208,7 +187,7 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
         tokenHash: envelope.owner.tokenHash,
         runDir: envelope.runDir,
         loopback: door.loopback,
-        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream, log),
+        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream),
         ...(idle ? { onOpenCount: (count: number) => idle.connections(count) } : {}),
         log,
       })
