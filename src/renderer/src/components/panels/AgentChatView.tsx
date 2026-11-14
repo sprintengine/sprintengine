@@ -1571,9 +1571,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       try {
         const result = await sendRecoveringSession({
           sessionId: activeSession,
-          send: (onSession) =>
+          send: (onSession, commandId) =>
             transport.send({
               sessionId: onSession,
+              commandId,
               message: text,
               localTurnId,
               skills: metadata.skillIds.map((id) => ({ id })),

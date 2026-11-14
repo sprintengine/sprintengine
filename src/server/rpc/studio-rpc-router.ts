@@ -374,7 +374,13 @@ function canonicalJson(value: unknown): string {
  * the first one's result.
  */
 export function studioCommandFingerprint(method: string, params: unknown): string {
-  const { commandId: _id, ...rest } = (params ?? {}) as Record<string, unknown>
+  const { commandId: _id, ...named } = (params ?? {}) as Record<string, unknown>
+  // A session command's session is where it went, not what it was: a chat's
+  // session is made again when its server restarts, and a command resent to
+  // the new one under its id is the same command, answered from the receipt
+  // it left in the chat's log.
+  const { sessionId: _session, ...unaddressed } = named
+  const rest = method.startsWith('session.') ? unaddressed : named
   return createHash('sha256')
     .update(`${method}\n${canonicalJson(rest)}`)
     .digest('base64url')
