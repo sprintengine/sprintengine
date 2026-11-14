@@ -146,10 +146,14 @@ export function includeAction(state: IncludeBoxState): 'stage' | 'unstage' {
 /**
  * Whether the include box belongs on this row at all. A branch step is a pair
  * of revisions that are already history; there is no index to put them in, so
- * the box would be a control with nothing behind it.
+ * the box would be a control with nothing behind it. The exception is the step
+ * that IS the working tree against HEAD (`againstHead`): the index sits between
+ * its two sides exactly as it does for a working-tree item.
  */
 export function isIncludable(item: DiffFileItem | null): boolean {
-  return item !== null && item.kind !== 'branch'
+  if (item === null) return false
+  if (item.kind !== 'branch') return true
+  return (item as BranchDiffItem).againstHead === true
 }
 
 /* ------------------------------------------------------------------ *

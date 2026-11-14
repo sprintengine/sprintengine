@@ -692,8 +692,8 @@ export function DiffViewer({
     [status, filterList, pendingList],
   )
   const unfilteredBranchItems = useMemo(
-    () => branchItemsFrom(steps.diff, steps.selection, steps.snapshot, repoRoot),
-    [steps.diff, steps.selection, steps.snapshot, repoRoot],
+    () => branchItemsFrom(steps.diff, steps.selection, steps.snapshot, repoRoot, source !== null),
+    [steps.diff, steps.selection, steps.snapshot, repoRoot, source],
   )
   // The pane steps through the BRANCH, and its file list is a step's diff, not
   // git status — so the filter has to be applied here too, or the pane shows
@@ -1522,8 +1522,9 @@ export function DiffViewer({
   // file's home list for the remainder), so a file that three agents touched
   // reads as three names down one gutter. Empty whenever there is no filter,
   // which is what leaves the ordinary gutter exactly as T7 drew it.
+  const currentIncludable = isIncludable(currentItem)
   const foreignHunkOwners = useMemo(() => {
-    if (!filterList || !currentItem || currentItem.kind === 'branch') return undefined
+    if (!filterList || !currentItem || !currentIncludable) return undefined
     const names = new Map(changelists.map((list) => [list.id, list.name]))
     const owners: Record<string, string> = {}
     for (const hunk of fileHunks.hunks) {
@@ -1532,14 +1533,14 @@ export function DiffViewer({
       owners[hunkKey(hunk)] = names.get(ownerId) ?? ownerId
     }
     return Object.keys(owners).length > 0 ? owners : undefined
-  }, [filterList, changelists, fileHunks.hunks, currentItem?.kind, currentItem?.relativePath])
+  }, [filterList, changelists, fileHunks.hunks, currentIncludable, currentItem?.relativePath])
 
   // The hunks the FILTERED list owns in the file on screen — what its include
   // box acts on, and what its tri-state reads.
   const listHunks = useMemo(() => {
-    if (!filterList || !currentItem || currentItem.kind === 'branch') return []
+    if (!filterList || !currentItem || !currentIncludable) return []
     return fileHunks.hunks.filter((hunk) => hunkOwnerId(changelists, currentItem.relativePath, hunk) === filterList.id)
-  }, [filterList, changelists, fileHunks.hunks, currentItem?.kind, currentItem?.relativePath])
+  }, [filterList, changelists, fileHunks.hunks, currentIncludable, currentItem?.relativePath])
   listStageRef.current = { list: filterList && listHunks.length > 0 ? filterList.id : null, hunks: listHunks }
 
   // The include box under a filter is the LIST's tri-state, not the file's: all

@@ -78,6 +78,10 @@ test('hunkGutterModel', async () => {
     assert.equal(hasHunkGutter(null), false)
   })
 
+  run('the working-tree step of the branch viewer carries boxes: the index is between its sides', () => {
+    assert.equal(hasHunkGutter({ ...step, originalRev: 'HEAD', modifiedRev: 'worktree', againstHead: true }), true)
+  })
+
   run('a box is drawn per hunk, on the modified side, named by its line', () => {
     const boxes = hunkBoxes({
       hunks: [

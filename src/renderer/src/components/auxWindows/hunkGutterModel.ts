@@ -10,6 +10,7 @@
 import type { GitHunkView, HunkInclusionSummary } from '../../../../shared/git/hunks'
 import { hunkGutterLine, hunkKey } from '../../../../shared/git/hunks'
 import type { DiffFileItem } from './diffFileList'
+import { isIncludable } from './diffToolbarModel'
 
 /** One drawn box: where it goes, what it shows, and what it is called. */
 export type HunkBox = {
@@ -89,12 +90,13 @@ export function hunkFileKey(item: DiffFileItem | null): string | null {
 }
 
 /**
- * Whether a file can carry per-hunk boxes at all. A branch step is two commits
- * with no index between them, so there is nothing for a box to put a change
- * into.
+ * Whether a file can carry per-hunk boxes at all: exactly when it can carry the
+ * file's include box. A commit step is two commits with no index between them,
+ * so there is nothing for a box to put a change into; the working tree against
+ * HEAD, in either viewer, has one.
  */
 export function hasHunkGutter(item: DiffFileItem | null): boolean {
-  return item !== null && item.kind !== 'branch'
+  return isIncludable(item)
 }
 
 /**

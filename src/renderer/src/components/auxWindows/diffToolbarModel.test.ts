@@ -131,6 +131,10 @@ test('diffToolbarModel', async () => {
     assert.equal(isIncludable(working()), true)
     assert.equal(isIncludable(working({ kind: 'staged' })), true)
     assert.equal(isIncludable(branch()), false)
+    assert.equal(isIncludable(branch({ againstHead: false })), false)
+    // The working tree against HEAD, stepped to in the branch viewer, has the
+    // index between its two sides like any working-tree item.
+    assert.equal(isIncludable(branch({ originalRev: 'HEAD', modifiedRev: 'worktree', againstHead: true })), true)
     assert.equal(isIncludable(null), false)
   })
 
