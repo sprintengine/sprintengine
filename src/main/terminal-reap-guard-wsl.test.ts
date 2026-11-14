@@ -13,7 +13,7 @@ import { test } from 'vitest'
 import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
-import { stubWslHelper } from '../../tests/wsl-helper-stub'
+import { stubWslHelper, stubWslDistributionLink } from '../../tests/wsl-helper-stub'
 import type { SubtreeLiveReason } from './terminal-subtree-probe'
 import { wslSessionPidKey } from './hosts/wsl-distro'
 
@@ -81,6 +81,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
         platform: 'win32',
         readHostSettings: () => ({}),
         createWslHelper: () => helper,
+        distribution: stubWslDistributionLink(),
       }),
     )
     const runtimeModule = await import('./terminal-runtime')
