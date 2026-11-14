@@ -68,6 +68,8 @@ test("a closed session's shell tree and its CLI are ended, and endAll ends every
   add(101, 100, 1001, ['claude', '--session-id', 'aaaa'])
   add(200, 1, 2000, ['bash', '-li', '/x/sessions/sid-b-2.sh'])
   add(201, 200, 2001, ['codex'])
+  // Another session's CLI, whose id begins with the first one's: never the first's to end.
+  add(202, 200, 2002, ['claude', '--session-id', 'aaaab'])
   const kills: number[] = []
   const terminals = host('procs', procRoot, kills)
   writeFileSync(join(terminals.pidDir, 'sid-a-1.pid'), '100 1000\n')

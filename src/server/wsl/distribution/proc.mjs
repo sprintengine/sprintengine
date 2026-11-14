@@ -258,8 +258,10 @@ export function survivorPids({ procRoot = '/proc', pidDir, cliSessionId, key, ui
   if (!rows) return []
   const pids = new Set()
   if (cliSessionId) {
-    const needle = `--session-id ${cliSessionId}`
-    for (const row of rows) if (row.command.includes(needle)) pids.add(row.pid)
+    // The whole argument, never a prefix: another session's id that begins
+    // with this one is that session's CLI, not this one's.
+    const needle = ` --session-id ${cliSessionId} `
+    for (const row of rows) if (` ${row.command} `.includes(needle)) pids.add(row.pid)
   }
   const dir = pidDir ? trustedPidDir(pidDir, uid) : null
   if (key && dir) {
