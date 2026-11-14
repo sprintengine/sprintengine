@@ -524,10 +524,16 @@ export default function NewAgentPanel({
   }
   const [mode, setMode] = React.useState<NewAgentPanelMode>(editing ? 'scheduled' : initialMode)
   const extensionMode = mode === 'extension'
-  const [cron, setCron] = React.useState(() => editing?.schedule.cron ?? DEFAULT_SCHEDULED_AGENT_CRON)
+  // A scheduled agent's draft reopens on the schedule it was left with.
+  const draftSchedule = editing ? null : (draft?.schedule ?? null)
+  const [cron, setCron] = React.useState(
+    () => editing?.schedule.cron ?? draftSchedule?.cron ?? DEFAULT_SCHEDULED_AGENT_CRON,
+  )
   // A one-time schedule's moment, or null for the cron's repeats. Scheduling
   // from the "+" starts here, at the next whole hour: the prompt, sent later.
-  const [once, setOnce] = React.useState<number | null>(() => editing?.schedule.once ?? null)
+  const [once, setOnce] = React.useState<number | null>(() =>
+    editing ? (editing.schedule.once ?? null) : (draftSchedule?.once ?? null),
+  )
   // Written in this computer's zone: the scheduler runs here, on its clock.
   const [scheduleTimezone] = React.useState(() => editing?.schedule.timezone ?? localTimeZone())
   const scheduledAgentsEnabled = useWorkspaceStore((s) =>
@@ -1102,6 +1108,11 @@ export default function NewAgentPanel({
       skills: composer.skills,
       mcpServers: composer.mcpServers,
       worktreeName: composer.worktreeName,
+      // The draft's kind: a scheduled agent's stays one when it is reopened
+      // from the Drafts list. The mode, not whether scheduling is offered this
+      // moment: the offer waits on the engine list, and a draft must not turn
+      // into a chat because it was written before that arrived.
+      schedule: mode === 'scheduled' ? { cron, once } : null,
     })
   }, [
     draftKey,
@@ -1113,6 +1124,9 @@ export default function NewAgentPanel({
     composer.skills,
     composer.mcpServers,
     composer.worktreeName,
+    mode,
+    cron,
+    once,
   ])
 
   const insertPromptPath = (dropped: string) => {

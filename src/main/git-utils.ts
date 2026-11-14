@@ -22,9 +22,19 @@ export function toAbsolutePath(repoRoot: string, relativePath: string): string {
   return join(repoRoot, ...relativePath.split('/'))
 }
 
+/**
+ * A path a client named, as an absolute path. A relative one is relative to
+ * the REPOSITORY, which is how git status names files and what a client hands
+ * back: never to this process's working directory, which is wherever the
+ * server happened to start (`/` in a container) and has nothing to do with
+ * the repository.
+ */
+export function toRepoAbsolutePath(repoRoot: string, filePath: string): string {
+  return isAbsolute(filePath) ? filePath : resolve(repoRoot, filePath)
+}
+
 export function getRelativeGitPath(repoRoot: string, filePath: string): string {
-  const absolutePath = isAbsolute(filePath) ? filePath : resolve(filePath)
-  return toPosixPath(relative(repoRoot, absolutePath))
+  return toPosixPath(relative(repoRoot, toRepoAbsolutePath(repoRoot, filePath)))
 }
 
 /**

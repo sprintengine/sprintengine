@@ -3081,6 +3081,9 @@ export default function WorkspaceManager() {
         connector: connector ?? null,
         forcedSelection,
         ...(remoteProject ? { remoteProject } : {}),
+        // The draft keeps its kind: a scheduled agent's reopens as one, with
+        // its schedule chip and its Schedule button.
+        ...(parked?.schedule ? { mode: 'scheduled' as const } : {}),
       })
     },
     [activeFolderPath, activeRemoteOrigin, activeWorktreeRepoRoot, workspaceWindowId],
@@ -3112,7 +3115,8 @@ export default function WorkspaceManager() {
   )
   // New chat over a New chat door that holds something keeps that draft, in
   // the sidebar's Drafts, and begins another; over an empty one, or anywhere
-  // else, it opens the door on the draft the window has, as it always did.
+  // else, it opens the door on the draft the window has, as it always did. A
+  // new scheduled agent's door is a draft too, and is kept the same way.
   const newChatPanelStateRef = useRef(newChatPanelState)
   newChatPanelStateRef.current = newChatPanelState
   const openNewChatPanel = useCallback(
@@ -3124,7 +3128,7 @@ export default function WorkspaceManager() {
       const open = newChatPanelStateRef.current
       if (
         open &&
-        (open.mode ?? 'chat') === 'chat' &&
+        open.mode !== 'extension' &&
         !open.editingScheduledAgentId &&
         !open.editingRemoteScheduledAgent &&
         folderPath === undefined &&
