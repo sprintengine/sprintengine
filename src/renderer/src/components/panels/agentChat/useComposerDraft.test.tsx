@@ -47,20 +47,32 @@ test('debounces persistence, flushes on unmount, restores failed sends and clear
     })
     expect(hook.draft).toBe('new unsaved text')
     let token: symbol | null = null
+    const send = (message: string, commandId = 'cmd-1') => ({
+      message,
+      fromDraft: true,
+      commandId,
+      localTurnId: `turn-${commandId}`,
+      attachments: [],
+      metadata: { skillIds: [], mentions: [], files: [] },
+    })
     await act(async () => {
-      token = hook.beginDraftSend(hook.draft)
+      token = hook.beginDraftSend(send(hook.draft))
     })
     expect(hook.draft).toBe('')
-    // Out of storage before the send leaves: a reload mid-send cannot bring it back.
+    // Out of the drafts before the send leaves: a reload mid-send cannot bring
+    // it back as a draft. It is kept as the chat's pending send instead.
     expect(composerDraftStore().getState().read('workspace', 'agent').text).toBe('')
-    expect(window.localStorage.getItem('sprintengine-conversation-drafts') ?? '').not.toContain('new unsaved text')
+    const stored = () => JSON.parse(window.localStorage.getItem('sprintengine-conversation-drafts') ?? '{}')
+    expect(JSON.stringify(stored().state.drafts)).not.toContain('new unsaved text')
+    expect(Object.values(stored().state.sends)).toMatchObject([{ text: 'new unsaved text', commandId: 'cmd-1' }])
     await act(async () => {
       hook.finishDraftSend(token, false)
     })
     expect(hook.draft).toBe('new unsaved text')
-    expect(window.localStorage.getItem('sprintengine-conversation-drafts') ?? '').toContain('new unsaved text')
+    expect(JSON.stringify(stored().state.drafts)).toContain('new unsaved text')
+    expect(stored().state.sends, 'a send answered, even refused, is no longer pending').toEqual({})
     await act(async () => {
-      token = hook.beginDraftSend(hook.draft)
+      token = hook.beginDraftSend(send(hook.draft, 'cmd-2'))
     })
     await act(async () => {
       hook.finishDraftSend(token, true)
@@ -73,7 +85,7 @@ test('debounces persistence, flushes on unmount, restores failed sends and clear
     expect(hook.draft).toBe('')
     await act(async () => {
       hook.setDraft('sending')
-      token = hook.beginDraftSend('sending')
+      token = hook.beginDraftSend(send('sending', 'cmd-3'))
       hook.setDraft('newer draft')
       hook.finishDraftSend(token, true)
     })

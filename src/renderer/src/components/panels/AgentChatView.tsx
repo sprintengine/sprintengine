@@ -665,6 +665,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     beginDraftSend,
     finishDraftSend,
     clearDraft,
+    pendingSend,
+    settlePendingSend,
+    commandIdFor,
   } = useComposerDraft(workspaceId, agentId, '')
   const draftMetadata = useMemo<ComposerDraftMetadata>(
     () => ({
@@ -1544,9 +1547,25 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           },
         ])
       }
+      // Kept until Studio answers it, from now: a reload or a restart while
+      // the chat's session starts, or while the send is out, finds it and
+      // settles it against the log rather than losing it. Its command id is
+      // the one a send of these words was given back with, if it was.
+      const commandId = commandIdFor(text)
+      const draftSend = beginDraftSend({
+        message,
+        fromDraft,
+        commandId,
+        localTurnId,
+        attachments: turnAttachments,
+        metadata,
+      })
+      unlandedDraftSendsRef.current.set(localTurnId, draftSend)
       const activeSession = await ensureSession()
       const thisSend = { text, attachments: turnAttachments, metadata }
       if (!activeSession) {
+        unlandedDraftSendsRef.current.delete(localTurnId)
+        finishDraftSend(draftSend, false)
         // The turn never left: its bubble comes down with the text going back.
         setUserTurns((current) => current.filter((turn) => turn.id !== localTurnId))
         setTurnRequestedAt(null)
@@ -1574,13 +1593,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         }
         return
       }
-      const draftSend = fromDraft ? beginDraftSend(message) : null
-      if (draftSend) unlandedDraftSendsRef.current.set(localTurnId, draftSend)
       setPending('sending')
       recordUserMessage?.(Date.now())
       try {
         const result = await sendRecoveringSession({
           sessionId: activeSession,
+          newCommandId: () => commandId,
           send: (onSession, commandId) =>
             transport.send({
               sessionId: onSession,
@@ -1655,10 +1673,34 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       supportsSkills,
       beginDraftSend,
       finishDraftSend,
+      commandIdFor,
       setDraft,
       setDraftMetadata,
     ],
   )
+
+  // A send a reload or a restart cut off before Studio answered it, settled
+  // once the chat's log is read: there, it is let go of; not there, it is
+  // back in the composer, said so, with its pictures. Its command id stays
+  // with the words, so sending them again cannot run a late copy twice.
+  useEffect(() => {
+    if (!pendingSend || !hydrated) return
+    const landed = events.some(
+      (event) => event.type === 'user_message' && readString(event.payload, 'localTurnId') === pendingSend.localTurnId,
+    )
+    const given = settlePendingSend(landed)
+    if (!given) return
+    if (given.attachments.length > 0) setAttachments((current) => (current.length > 0 ? current : given.attachments))
+    const lostPictures =
+      given.picturesNotKept > 0
+        ? ` ${given.picturesNotKept === 1 ? 'Its picture was' : `${given.picturesNotKept} of its pictures were`} too large to keep: attach ${given.picturesNotKept === 1 ? 'it' : 'them'} again.`
+        : ''
+    showToast({
+      tone: 'warn',
+      title: 'Your last message may not have been sent',
+      description: `Studio stopped before it answered. The message is back in the composer: send it again.${lostPictures}`,
+    })
+  }, [pendingSend, hydrated, events, settlePendingSend])
 
   // Set further down, once the model picker and effort control it drives are
   // known; answers whether it handled the message.
