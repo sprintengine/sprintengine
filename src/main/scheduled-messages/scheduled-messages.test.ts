@@ -300,6 +300,35 @@ test('one due while the app was closed goes out once it is open again, after the
   )
 })
 
+test('a start told to wait sends nothing until it is let go, and what was taken out meanwhile never goes', async () => {
+  const file = join(scratch, 'scheduled-messages-held.json')
+  const first = harness({ storage: scheduledMessagesFileStorage(file) })
+  await started(first)
+  first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Handed over.', sendAt: first.now() + HOUR })
+  first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Stays here.', sendAt: first.now() + HOUR })
+  await first.scheduled.dispose()
+
+  const second = harness({ storage: scheduledMessagesFileStorage(file), now: T0 + 10 * HOUR, idPrefix: 'b' })
+  let letGo: () => void = () => undefined
+  const plan = new Promise<void>((resolve) => (letGo = resolve))
+  await second.scheduled.start({ after: plan })
+  await second.scheduled.loaded()
+  assert.equal(second.scheduled.state().messages.length, 2, 'read back before it is let go, for the plan to see')
+  await second.advance(10 * MINUTE)
+  // Send now too waits.
+  const handed = second.scheduled.state().messages.find((entry) => entry.text === 'Handed over.')!
+  second.scheduled.update({ kind: 'send-now', id: handed.id })
+  assert.equal(second.sent.length, 0, 'nothing goes while the plan runs')
+  // The plan takes one out, as the hand-over releases it.
+  second.scheduled.update({ kind: 'delete', id: handed.id })
+  letGo()
+  await second.advance(MINUTE)
+  assert.deepEqual(
+    second.sent.map((entry) => entry.text),
+    ['Stays here.'],
+  )
+})
+
 test('several due together go one after another', async () => {
   const h = harness()
   await started(h)

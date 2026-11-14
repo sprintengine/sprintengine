@@ -711,6 +711,16 @@ files go in parts of at most 4 MB (`MAX_ADOPTED_PART_BYTES`): a call may name no
 it stages parts, which are kept under `environment-adoptions/parts/<migrationId>/` for the
 records that follow. No capability was added: only a WSL distribution is handed chats, and its
 Studio is always the desktop's own build.
+On 2026-11-14 the answer gained an optional `refused` (`[{ kind, id, reason }]`): records the
+machine did not take (a picture that did not arrive whole, a workspace not there yet, a digest
+that does not match), apart from `conflicts`, which now holds only what the machine keeps its
+own copy of (already there by its id, a chat's file with other bytes, a pull request another
+chat opened). The desktop keeps a refused record planned and sends it again on the next
+connect, and tells the person; a conflict is done with. A Studio before it says both as
+`conflicts`, and its desktop treats them as before. A carried picture or file larger than one
+upload goes ahead in parts, as a chat's do, and its entry names them (`parts`, in order); a
+call stages at most `MAX_ADOPTED_FILES` files, and a hand-over carrying more goes in more calls.
+No capability was added.
 `provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,
 `.signInWait` and `.signInCancel`, each under a `commandId`: a CLI's own login on
 that machine with no terminal (decision R34), named by provider, never by a

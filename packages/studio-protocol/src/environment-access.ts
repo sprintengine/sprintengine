@@ -96,10 +96,17 @@ export type StudioAdoptedRecord = {
 /** A file a handed-over record carries: an upload this connection staged, by the sha-256 of its bytes. */
 export type StudioAdoptedFile = { uploadId: string; digest: string }
 
-/** What a hand-over came to: what the machine now keeps, and what it kept its own copy of instead, and why. */
+/**
+ * What a hand-over came to: what the machine now keeps; what it kept its own
+ * copy of instead (`conflicts`, final: the desktop's copy is done with); and
+ * what it did not take (`refused`: a picture that did not arrive whole, a
+ * chat whose workspace is not there yet), which the desktop keeps and sends
+ * again. A Studio from before `refused` reports both as conflicts.
+ */
 export type StudioAdoptResult = {
   held: Array<{ kind: StudioAdoptedRecordKind; id: string }>
   conflicts: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>
+  refused?: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>
 }
 
 /** The most records one hand-over carries; a longer one is sent in parts under the same migration. */

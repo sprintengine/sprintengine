@@ -21,7 +21,7 @@ import type { ChatSourceFile } from './environment-chat-sources'
 export function studioMigrationStores(stores: {
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecords'>
   scheduledAgents: Pick<ScheduledAgentsService, 'loaded' | 'list' | 'remove'>
-  scheduledMessages: Pick<ScheduledMessages, 'state' | 'carriedOf' | 'update'>
+  scheduledMessages: Pick<ScheduledMessages, 'state' | 'carriedOf' | 'update' | 'loaded'>
   usageLimitResumes: Pick<UsageLimitResumer, 'state' | 'update'>
   pullRequests: Pick<PullRequestRecord, 'whenLoaded' | 'handingOver' | 'letGo'>
   /** The pictures a schedule's prompt names from this desktop's data directory (`keptImagesIn`). */
@@ -107,6 +107,8 @@ export function studioMigrationStores(stores: {
             : {}),
         })
       }
+      // Read from their file first: one not yet read would be left to go from here.
+      await stores.scheduledMessages.loaded()
       for (const message of stores.scheduledMessages.state().messages) {
         const route = routeOfWorkspace.get(message.workspaceId)
         // One on its way into its chat now is left to go; a later plan finds it if it did not.
