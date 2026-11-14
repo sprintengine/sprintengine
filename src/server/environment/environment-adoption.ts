@@ -291,8 +291,14 @@ export function createEnvironmentAdoption(deps: {
       const sha256 = typeof entry.sha256 === 'string' ? entry.sha256 : ''
       const staged = files.get(sha256)
       if (staged) return createHash('sha256').update(staged.bytes).digest('hex') === sha256 ? staged : null
-      const parts = Array.isArray(entry.parts) ? entry.parts.filter((part) => typeof part === 'string') : []
-      if (!sha256 || parts.length === 0) return null
+      const parts = Array.isArray(entry.parts) ? (entry.parts as unknown[]) : []
+      // Each part is named by its digest, which is also its file's name under the migration: nothing else is read.
+      if (
+        !sha256 ||
+        parts.length === 0 ||
+        !parts.every((part): part is string => typeof part === 'string' && /^[0-9a-f]{64}$/.test(part))
+      )
+        return null
       const read: Buffer[] = []
       for (const part of parts) {
         const bytes = await partOf(migrationId, files, part)
