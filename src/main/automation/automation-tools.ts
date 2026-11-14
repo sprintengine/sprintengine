@@ -23,6 +23,9 @@ import {
 } from '../agent-launch-notices'
 import { workspaceStoresRoot } from '../workspace-store'
 import { refuseWorkspaceFolder } from './workspace-folder-guard'
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import { isMachinePath } from '../../shared/machine-paths'
+import { confineToRoots } from '../studio-rpc/studio-file-confinement'
 import type { Workspace } from '../../renderer/src/types/workspace'
 import type {
   BacklogAddOrUpdateLinkInput,
@@ -414,11 +417,38 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     }
   }
 
-  function findWorkspace(workspaceId: string): Workspace | null {
-    return (
+  function findWorkspace(workspaceId: string, context?: McpConnectionContext): Workspace | null {
+    const workspace =
       backends.getWorkspaceSyncSnapshot().state.workspaces.find((candidate) => candidate.id === workspaceId) ?? null
-    )
+    return workspace && (!isPairedDevice(context) || isThisMachines(workspace)) ? workspace : null
   }
+
+  // A paired device reaches this machine's own workspaces and folders, as the
+  // Studio protocol holds it to them (studio-rpc-router.ts, `mayName`). Never
+  // this desktop's copies of the chats an SSH machine or a WSL distribution
+  // holds: what a call names there goes out on this desktop's own connection
+  // to that machine, which a device has no way onto. And never a folder no
+  // workspace here is in: a device names a project this machine already has.
+  function isPairedDevice(context: McpConnectionContext | undefined): boolean {
+    return context?.metadata.kind === 'remote-tailnet'
+  }
+
+  function isThisMachines(workspace: Workspace): boolean {
+    return !environmentRouteOfRecord(workspace) && !isMachinePath(workspace.folderPath)
+  }
+
+  /** Whether a paired device may name this folder: inside one of this machine's own workspaces' folders, links resolved. */
+  async function deviceMayName(folder: string): Promise<boolean> {
+    const roots = backends
+      .getWorkspaceSyncSnapshot()
+      .state.workspaces.flatMap((workspace) =>
+        isThisMachines(workspace) && workspace.folderPath ? [workspace.folderPath] : [],
+      )
+    return (await confineToRoots(folder, roots)).ok
+  }
+
+  const DEVICE_FOLDER_REFUSED =
+    'A paired device names only folders inside the projects this machine has open. Open that project on this machine first.'
 
   // Backlog and Automations services speak absolute workspace roots; tools
   // speak workspace ids. Resolution goes through main's registry, so a tool can
@@ -426,8 +456,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // other workspace now: main persists the real record, so there is
   // no longer a half-known placeholder to refuse or to except a live terminal
   // from.
-  function resolveWorkspaceRoot(workspaceId: string): { root: string } | McpToolResult {
-    const workspace = findWorkspace(workspaceId)
+  function resolveWorkspaceRoot(workspaceId: string, context?: McpConnectionContext): { root: string } | McpToolResult {
+    const workspace = findWorkspace(workspaceId, context)
     if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
     if (!workspace.folderPath) {
       return failure(
@@ -442,16 +472,19 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // connection's advisory workspace identity resolves the folder for
   // Studio-launched agents, and callers outside the app pass an absolute
   // `projectRoot` instead. There is deliberately no open-workspace gate on the
-  // folder — the socket's trust boundary is the local OS user, and
-  // backlog-service validates the folder itself.
-  function resolveBacklogRoot(
+  // folder for the local socket — its trust boundary is the local OS user, and
+  // backlog-service validates the folder itself. A paired device is held to
+  // this machine's own projects (`deviceMayName`).
+  async function resolveBacklogRoot(
     args: Record<string, unknown>,
     context: McpConnectionContext | undefined,
-  ): { root: string } | McpToolResult {
+  ): Promise<{ root: string } | McpToolResult> {
     if (args.projectRoot !== undefined) {
       if (typeof args.projectRoot !== 'string' || !isAbsolute(args.projectRoot)) {
         return failure('invalid_arguments', '"projectRoot" must be an absolute path to the project folder.')
       }
+      if (isPairedDevice(context) && !(await deviceMayName(args.projectRoot)))
+        return failure('folder_refused', DEVICE_FOLDER_REFUSED)
       return { root: args.projectRoot }
     }
     const workspace = connectionWorkspace(context)
@@ -512,12 +545,12 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // record (the agent registry and the renderer launch delegate), so they
   // resolve to the connection's own workspace, or to the open workspace whose
   // folder matches an explicit projectRoot.
-  function resolveBacklogWorkspace(
+  async function resolveBacklogWorkspace(
     args: Record<string, unknown>,
     context: McpConnectionContext | undefined,
-  ): { workspace: Workspace; root: string } | McpToolResult {
+  ): Promise<{ workspace: Workspace; root: string } | McpToolResult> {
     if (args.projectRoot !== undefined) {
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const workspace =
         backends
@@ -931,15 +964,16 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       'Workspaces that survived a restart are listed like any other: main owns the registry, so their name, ' +
       'folder, mode, and agents are real whether or not a window is open.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: async () => {
+    handler: async (_args, context) => {
       const { state } = backends.getWorkspaceSyncSnapshot()
       const usage = backends.projectUsage?.() ?? null
       const listedAt = now()
       // The repository each folder is a clone of rides the listing
       // (one-project-across-machines): it is how a paired Studio recognises
       // its own project on this machine. Read per folder, cached in main.
+      const listed = isPairedDevice(context) ? state.workspaces.filter(isThisMachines) : state.workspaces
       const workspaces = await Promise.all(
-        state.workspaces.map(async (workspace) => {
+        listed.map(async (workspace) => {
           const repository = workspace.folderPath ? await backends.readRepositoryIdentity(workspace.folderPath) : null
           const colorKey = projectColorKey({ folderPath: workspace.folderPath ?? null, repository })
           return {
@@ -971,10 +1005,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const workspace = findWorkspace(workspaceId)
+      const workspace = findWorkspace(workspaceId, context)
       if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
       return success({
         workspace: workspaceProjection(workspace),
@@ -1000,10 +1034,12 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     handler: async (args, context) => {
       const invalid = firstInvalidOptionalString(args, ['name', 'folderPath', 'templateId'])
       if (invalid) return invalid
-      // A paired machine names a folder the person picked in its folder
-      // browser; anything on this machine's socket is held to project folders.
+      // Held to project folders, whoever asks; a paired device further to
+      // folders inside the projects this machine already has open.
       const folderPath = optionalString(args.folderPath)
-      if (folderPath && context?.metadata.kind !== 'remote-tailnet') {
+      if (folderPath && isPairedDevice(context) && !(await deviceMayName(folderPath)))
+        return failure('folder_refused', DEVICE_FOLDER_REFUSED)
+      if (folderPath) {
         const refused = await refuseWorkspaceFolder(folderPath, {
           platform: process.platform,
           homeDir: homedir(),
@@ -1231,10 +1267,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const resolved = resolveWorkspaceRoot(workspaceId)
+      const resolved = resolveWorkspaceRoot(workspaceId, context)
       if (!('root' in resolved)) return resolved
       const checkout = await backends.readWorkspaceCheckout(resolved.root)
       return success({ workspaceId, ...checkout })
@@ -1263,14 +1299,14 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
       const invalid = firstInvalidOptionalString(args, ['cli'])
       if (invalid) return invalid
       if (!backends.readWorkspaceExtensions)
         return failure('unavailable', 'This machine does not list its skills and MCP servers.')
-      const resolved = resolveWorkspaceRoot(workspaceId)
+      const resolved = resolveWorkspaceRoot(workspaceId, context)
       if (!('root' in resolved)) return resolved
       const extensions = await backends.readWorkspaceExtensions(resolved.root, optionalString(args.cli) ?? null)
       return success({ workspaceId, ...extensions })
@@ -1355,12 +1391,12 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId', 'agentId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
       const agentId = requireString(args, 'agentId')
       if (typeof agentId !== 'string') return agentId
-      const workspace = findWorkspace(workspaceId)
+      const workspace = findWorkspace(workspaceId, context)
       if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
       // An agent is reportable if the bus knows it OR a terminal session exists
       // for it (sessions can register before the launch-state event lands),
@@ -1755,7 +1791,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       additionalProperties: false,
     },
     handler: async (args, context) => {
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const listed = await backends.listBacklogItems(resolved.root)
       if (!listed.ok) return failure('backlog_unavailable', listed.message)
@@ -1784,7 +1820,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     handler: async (args, context) => {
       const path = requireString(args, 'path')
       if (typeof path !== 'string') return path
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const read = await backends.readBacklogItem(resolved.root, path)
       if (!read.ok) return failure('backlog_read_failed', read.message)
@@ -2059,7 +2095,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         return failure('invalid_arguments', '"dependenciesPlanned" must be true or false.')
       }
       if (args.status === null) return failure('invalid_arguments', 'Status cannot be cleared, only changed.')
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
 
       // Apply in a fixed order, stopping at the first failure; the services
@@ -2135,7 +2171,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (issue !== 'embedded_nul' && issue !== 'duplicate_id') {
         return failure('invalid_arguments', '"issue" must be one of: embedded_nul, duplicate_id.')
       }
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const repaired = await backends.backlogWrite.repairIntegrity({
         workspaceRoot: resolved.root,
@@ -2173,7 +2209,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof path !== 'string') return path
       const agentId = requireString(args, 'agentId')
       if (typeof agentId !== 'string') return agentId
-      const resolved = resolveBacklogWorkspace(args, context)
+      const resolved = await resolveBacklogWorkspace(args, context)
       if (!('workspace' in resolved)) return resolved
       const { workspace } = resolved
       const agent = workspace.agents[agentId]
@@ -2274,7 +2310,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (invalid) return invalid
       const options = resolveLaunchOptions(args, context)
       if ('content' in options) return options
-      const resolved = resolveBacklogWorkspace(args, context)
+      const resolved = await resolveBacklogWorkspace(args, context)
       if (!('workspace' in resolved)) return resolved
       const workspaceId = resolved.workspace.id
 
