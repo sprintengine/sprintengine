@@ -430,7 +430,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // to that machine, which a device has no way onto. And never a folder no
   // workspace here is in: a device names a project this machine already has.
   function isPairedDevice(context: McpConnectionContext | undefined): boolean {
-    return context?.metadata.kind === 'remote-tailnet'
+    return context?.metadata?.kind === 'remote-tailnet'
   }
 
   function isThisMachines(workspace: Workspace): boolean {
