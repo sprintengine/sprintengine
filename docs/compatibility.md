@@ -378,10 +378,12 @@ kind closes the device's oldest, which covers a client that leaks them or a
 phone's half-open socket. A device holds at most 32 unspent tickets, and a
 tool stream closes when 64 of its requests are waiting for an answer or 8 MiB
 of answers wait for a client that is not reading. A device's requests share
-one budget of 128 waiting or running, over its Studio sockets and tool
-streams together (`MAX_DEVICE_OUTSTANDING_REQUESTS`); past it a request is
-answered busy (`busy` on the Studio protocol, JSON-RPC error `-32000` on a
-tool stream) and not run. A tool stream that closes drops what it had
+one budget of 128 waiting or running, over its Studio sockets, tool
+streams and MCP endpoint POSTs together (`MAX_DEVICE_OUTSTANDING_REQUESTS`);
+past it a request is answered busy (`busy` on the Studio protocol, JSON-RPC
+error `-32000` on a tool stream, the same with HTTP 429 on the MCP endpoint)
+and not run. A tool's answer over 8 MiB (`MAX_DEVICE_ANSWER_BYTES`) is
+replaced by a JSON-RPC error under its id. A tool stream that closes drops what it had
 waiting and cancels the tool call it was running; that call, like a Studio
 request still running when its socket closes, counts against the budget
 until it has stopped. The socket carries no `Origin`, except a desktop window's,

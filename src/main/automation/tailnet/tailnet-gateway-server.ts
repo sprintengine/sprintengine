@@ -306,6 +306,16 @@ const JSONRPC_DEVICE_BUSY = -32000
 /** What a tool stream may have waiting to be written to a client that is not reading, before it is closed. */
 export const MAX_STREAM_UNSENT_BYTES = 8 * 1024 * 1024
 
+/**
+ * The largest answer a device is sent, on the MCP endpoint or a tool stream:
+ * one larger is answered with an error instead. The files a tool reads are
+ * bounded where they are read; this bounds what any tool answers.
+ */
+export const MAX_DEVICE_ANSWER_BYTES = 8 * 1024 * 1024
+
+const DEVICE_BUSY_MESSAGE =
+  'This device has too many requests waiting or running. Try again when some have been answered.'
+
 /** How long a closed tool stream waits for its client to close too before it is destroyed. */
 const STREAM_CLOSE_GRACE_MS = 1_000
 
@@ -811,10 +821,22 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
           }
         }
       }
-      const answer = await handleMessage(body, context, device, versionHeader || null, jsonRpcIdOf(body))
+      // Counted against the device's budget with its streams and Studio
+      // sockets: parallel POSTs are no way around it.
+      const release = acquireDeviceWork(device.id)
+      if (!release) {
+        writeJson(response, 429, jsonRpcErrorResponse(jsonRpcIdOf(body), JSONRPC_DEVICE_BUSY, DEVICE_BUSY_MESSAGE))
+        return
+      }
+      let answer: Record<string, unknown> | null
+      try {
+        answer = await handleMessage(body, context, device, versionHeader || null, jsonRpcIdOf(body))
+      } finally {
+        release()
+      }
       // A notification has no answer; 202 with no body says "accepted".
       if (!answer) writeAccepted(response)
-      else writeJson(response, 200, answer)
+      else writeJsonText(response, 200, encodeDeviceAnswer(answer))
     },
   }
 
@@ -1341,14 +1363,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       // Not JSON: nothing to answer, and nothing was run.
     }
     if (typeof id !== 'string' && typeof id !== 'number') return
-    sendStream(
-      session,
-      jsonRpcErrorResponse(
-        id,
-        JSONRPC_DEVICE_BUSY,
-        'This device has too many requests waiting or running. Try again when some have been answered.',
-      ),
-    )
+    sendStream(session, jsonRpcErrorResponse(id, JSONRPC_DEVICE_BUSY, DEVICE_BUSY_MESSAGE))
   }
 
   async function handleStreamMessage(session: StreamSession, text: string): Promise<void> {
@@ -1371,7 +1386,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     }
     try {
       const answer = await handleMessage(parsed, session.context, device, null, undefined, session.ended.signal)
-      if (answer) sendStream(session, answer)
+      if (answer) sendStreamText(session, encodeDeviceAnswer(answer))
     } catch (error) {
       // A request that failed past its handler (a result JSON cannot encode)
       // is still answered, so the device is not left waiting on its id; a
@@ -1514,6 +1529,10 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
   }
 
   function sendStream(session: StreamSession, payload: Record<string, unknown>): void {
+    sendStreamText(session, JSON.stringify(payload))
+  }
+
+  function sendStreamText(session: StreamSession, text: string): void {
     if (session.socket.destroyed) return
     // A client that does not read what it asked for is let go, not written to without end.
     if (session.socket.writableLength > MAX_STREAM_UNSENT_BYTES) {
@@ -1521,7 +1540,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       session.socket.destroy()
       return
     }
-    session.socket.write(encodeTextFrame(JSON.stringify(payload)))
+    session.socket.write(encodeTextFrame(text))
   }
 
   /**
@@ -1798,11 +1817,30 @@ function decodeHeaderValue(value: string): string | null {
   }
 }
 
+/**
+ * A tool's answer as sent to a device: its JSON, or, past
+ * `MAX_DEVICE_ANSWER_BYTES`, an error that says so under the same id.
+ */
+export function encodeDeviceAnswer(answer: Record<string, unknown>): string {
+  const text = JSON.stringify(answer)
+  if (Buffer.byteLength(text) <= MAX_DEVICE_ANSWER_BYTES) return text
+  return JSON.stringify(
+    jsonRpcErrorResponse(
+      jsonRpcIdOf(answer),
+      JSONRPC_INTERNAL_ERROR,
+      `The answer is over the ${MAX_DEVICE_ANSWER_BYTES / (1024 * 1024)} MB a device is sent. Ask for less.`,
+    ),
+  )
+}
+
 function writeJson(response: ServerResponse, status: number, payload: Record<string, unknown>): void {
+  writeJsonText(response, status, JSON.stringify(payload))
+}
+
+function writeJsonText(response: ServerResponse, status: number, body: string): void {
   // The catch-all 500 in the request handler can fire after a route already
   // answered; writing a second status line would throw over the first one.
   if (response.headersSent || response.writableEnded) return
-  const body = JSON.stringify(payload)
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),

@@ -1,5 +1,18 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, readlink, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  truncate,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,7 +20,10 @@ import { afterEach, beforeEach, describe, test } from 'vitest'
 
 import {
   CONFINED_FILE_CHANGED,
+  CONFINED_FILE_LINKED,
+  CONFINED_READ_MAX_BYTES,
   copyConfinedDirectory,
+  isConfinedFileTooLarge,
   readConfinedFile,
   realFolderPath,
   writeConfinedFile,
@@ -64,6 +80,43 @@ describe.runIf(posix)('confined file reads and writes', () => {
     await assert.rejects(writeConfinedFile(path, 'planted\n'), { message: CONFINED_FILE_CHANGED })
     await assert.rejects(readConfinedFile(path, 'utf-8'), { message: CONFINED_FILE_CHANGED })
     assert.equal(await readFile(secret, 'utf-8'), secretText)
+  })
+
+  test('a file with a second name is neither read nor written, unless the owner’s editor writes it', async () => {
+    const path = join(folder, 'hard.md')
+    await link(secret, path)
+    await assert.rejects(readConfinedFile(path, 'utf-8'), { message: CONFINED_FILE_LINKED })
+    await assert.rejects(writeConfinedFile(path, 'planted\n'), { message: CONFINED_FILE_LINKED })
+    assert.equal(await readFile(secret, 'utf-8'), secretText)
+    await writeConfinedFile(path, 'saved\n', { hardLinks: 'allow' })
+    assert.equal(await readFile(secret, 'utf-8'), 'saved\n')
+  })
+
+  test('a read past its limit is refused from the size, and a write past it is not made', async () => {
+    const path = join(folder, 'big.md')
+    // Sparse: a gigabyte on paper, nothing on disk. Read whole, it would be a gigabyte in memory.
+    await writeFile(path, '')
+    await truncate(path, 1024 * 1024 * 1024)
+    const started = Date.now()
+    await assert.rejects(readConfinedFile(path), (error) => isConfinedFileTooLarge(error))
+    assert.ok(Date.now() - started < 1000, 'refused without reading it')
+
+    await truncate(path, CONFINED_READ_MAX_BYTES + 1)
+    await assert.rejects(readConfinedFile(path, 'utf-8'), { message: /over the 1 MB Studio reads here/ })
+    assert.equal(
+      (await readConfinedFile(path, { maxBytes: CONFINED_READ_MAX_BYTES + 1 })).byteLength,
+      CONFINED_READ_MAX_BYTES + 1,
+    )
+    await truncate(path, CONFINED_READ_MAX_BYTES)
+    assert.equal((await readConfinedFile(path)).byteLength, CONFINED_READ_MAX_BYTES, 'the limit itself reads')
+
+    const small = join(folder, 'small.md')
+    await assert.rejects(writeConfinedFile(small, 'x'.repeat(11), { maxBytes: 10 }), (error) =>
+      isConfinedFileTooLarge(error),
+    )
+    await assert.rejects(stat(small), { code: 'ENOENT' })
+    await writeConfinedFile(small, 'x'.repeat(10), { maxBytes: 10 })
+    assert.equal(await readConfinedFile(small, 'utf-8'), 'x'.repeat(10))
   })
 
   test('a folder is copied file by file, links kept as links, and never into a link', async () => {

@@ -11,7 +11,7 @@ type Handler = (_event: unknown, ...args: unknown[]) => Promise<unknown>
 function writefileHandler(): Handler {
   const files = createStudioFileSystem({ readableRoots: () => [], writableRoots: () => [] })
   return (_event, path, text, options) =>
-    files.writeText(path as string, text as string, (options as { roots?: string[] } | undefined)?.roots ?? [])
+    files.writeText(path as string, text as string, (options as { roots?: string[] } | undefined)?.roots ?? [], true)
 }
 
 describe.skipIf(process.platform === 'win32')('an editor save stays in the project', () => {

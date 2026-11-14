@@ -21,6 +21,7 @@ import type { McpConnectionContext, McpToolRegistration, McpToolResult } from '.
 import {
   classifyAgentPath,
   displayPathFor,
+  hasSecondName,
   isInsideComparable,
   resolveAgentPath,
   type AgentPathContext,
@@ -544,10 +545,43 @@ export function createEditorTools(deps: EditorToolsDeps): McpToolRegistration[] 
     }
     if (changed.length === 0) return failure('nothing_to_show', `There are no ${changes} changes in ${repoRoot}.`)
 
-    // `paths`: a viewer filter over what is left, with a way back to the rest.
+    // A working-tree view draws each file as it is on disk, so a changed file
+    // that is a link (an untracked one, say) leading out of the folders this
+    // caller may show would draw the file it points to: held to the same
+    // folders as `editor.open`. History views draw Git's own copies.
     const entries: FileEntry[] = []
+    let confinedTo: string[] | null = null
+    if (workingTreeView) {
+      const outside = await linksLeadingOut(repoRoot, changed, scope)
+      if (outside.size > 0) {
+        changed = changed.filter((relative) => !outside.has(relative))
+        for (const raw of requestedPaths ?? []) {
+          const relative = relativeForDiff(raw, repoRoot, scope)
+          if (!relative || !outside.has(relative)) continue
+          entries.push({
+            path: raw,
+            displayPath: relative,
+            status: 'refused',
+            reason: 'outside_workspace',
+            message: 'A link to a file outside the workspace is not shown.',
+          })
+        }
+        if (requestedPaths) {
+          requestedPaths = requestedPaths.filter((raw) => !outside.has(relativeForDiff(raw, repoRoot, scope) ?? ''))
+          if (requestedPaths.length === 0)
+            return failure('outside_workspace', 'Each of `paths` is a link to a file outside the workspace, not shown.')
+        }
+        if (changed.length === 0) {
+          return failure('nothing_to_show', 'Every change here is a link to a file outside the workspace, not shown.')
+        }
+        // The viewer lists only what is left, not the whole working tree.
+        confinedTo = changed
+      }
+    }
+
+    // `paths`: a viewer filter over what is left, with a way back to the rest.
     let shownPaths = changed
-    let pathsFilter: string[] | null = null
+    let pathsFilter: string[] | null = confinedTo
     if (requestedPaths) {
       const available = new Set(changed)
       const picked: string[] = []
@@ -633,6 +667,33 @@ export function createEditorTools(deps: EditorToolsDeps): McpToolRegistration[] 
         : {}),
       ...(hint ? { note: hint } : {}),
     })
+  }
+
+  /**
+   * Which of the repository's `changed` files lead, links followed, out of
+   * the folders `editor.open` would show this caller: the workspace's for a
+   * paired device; the agent's own checkouts, and the repository it is
+   * diffing, for an agent here. A file not on disk (a deletion) leads nowhere.
+   */
+  async function linksLeadingOut(repoRoot: string, changed: readonly string[], scope: CallScope): Promise<Set<string>> {
+    const roots = await trustedRootsOf(scope)
+    if (!scope.remote) {
+      const realRepo = await deps.fs.realpath(repoRoot).catch(() => null)
+      if (realRepo) roots.push(realRepo)
+    }
+    const outside = new Set<string>()
+    for (const relative of changed) {
+      const real = await deps.fs.realpath(joinRepo(repoRoot, relative)).catch(() => null)
+      if (!real) continue
+      if (!roots.some((root) => isInsideComparable(root, real))) outside.add(relative)
+      // A paired device is not shown a file with a second name (a hard link)
+      // either: that name may be anywhere on the disk, as `editor.open` holds.
+      else if (scope.remote) {
+        const stat = await deps.fs.stat(real).catch(() => null)
+        if (stat?.isFile() && hasSecondName(stat)) outside.add(relative)
+      }
+    }
+    return outside
   }
 
   /** A path as the diff view names it: repo-relative, posix. Null when it is outside the repository. */
