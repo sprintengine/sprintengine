@@ -130,7 +130,10 @@ export async function buildPluginCopy(sources: PluginSources, tokens: PluginToke
     const skillPluginDirs: Record<string, string> = {}
     const written = await writeLaunchSkillPlugins(destination, sources.launchSkillsSourceRoot).catch(() => ({}))
     for (const skillId of Object.keys(written)) {
-      skillPluginDirs[skillId] = posixJoin(root, posixRel(relative(destination, launchSkillPluginDir(destination, skillId))))
+      skillPluginDirs[skillId] = posixJoin(
+        root,
+        posixRel(relative(destination, launchSkillPluginDir(destination, skillId))),
+      )
     }
     const files = new Map<string, Buffer>()
     for (const path of await walk(destination)) {

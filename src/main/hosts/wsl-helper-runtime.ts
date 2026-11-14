@@ -66,9 +66,7 @@ function appPayload(env: WslHelperEnvironment): AppPayload {
       code: 'install',
     })
   }
-  payloadCache = buildAppPayload([
-    { dir: dirs.helperDir, into: 'wsl-helper', filter: (path) => path.endsWith('.mjs') },
-  ])
+  payloadCache = buildAppPayload([{ dir: dirs.helperDir, into: 'wsl-helper', filter: (path) => path.endsWith('.mjs') }])
   return payloadCache
 }
 

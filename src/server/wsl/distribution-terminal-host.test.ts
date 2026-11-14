@@ -97,7 +97,7 @@ test("a closed session's shell tree and its CLI are ended, and endAll ends every
   assert.deepEqual((await missing.processes({ op: 'snapshot', keys: ['sid-b-2'] })).verdicts, {})
 })
 
-test('the plugin copy is built from this server\'s resources and written under its data directory', async () => {
+test("the plugin copy is built from this server's resources and written under its data directory", async () => {
   const dataDir = join(temp, 'plugin', 'data')
   mkdirSync(dataDir, { recursive: true })
   const terminals = createDistributionTerminalHost({

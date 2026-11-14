@@ -347,7 +347,11 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
       },
       pluginCopy: async (skills) => {
         asked.push(skills)
-        return { pluginDirs: ['/home/dev/data/terminal-plugin/sprintengine-studio'], skillPluginDirs: {}, statusLineScriptPath: null }
+        return {
+          pluginDirs: ['/home/dev/data/terminal-plugin/sprintengine-studio'],
+          skillPluginDirs: {},
+          statusLineScriptPath: null,
+        }
       },
     },
   })
@@ -371,7 +375,11 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
   // The plugin copy: only skill ids cross, each once.
   assert.deepEqual(
     (await shell.request('environment.pluginCopy', { enabledSkills: ['studio-canvas', 'studio-canvas'] })).result,
-    { pluginDirs: ['/home/dev/data/terminal-plugin/sprintengine-studio'], skillPluginDirs: {}, statusLineScriptPath: null },
+    {
+      pluginDirs: ['/home/dev/data/terminal-plugin/sprintengine-studio'],
+      skillPluginDirs: {},
+      statusLineScriptPath: null,
+    },
   )
   assert.deepEqual(asked.at(-1), ['studio-canvas'])
   for (const params of [{}, { enabledSkills: ['C:\\skills\\x'] }, { enabledSkills: ['../up'] }, { enabledSkills: 'x' }])
