@@ -417,6 +417,11 @@ export function conversationSessionsStore(): ConversationSessionsStore {
   return sharedStore
 }
 
+/** Forget the window's store, so a test's sessions do not reach the next test's window. */
+export function resetConversationSessionsStore(): void {
+  sharedStore = null
+}
+
 /** Every conversation session main knows of; the same array until one moves. */
 export function useConversationSessions(): readonly ConversationSessionEntry[] {
   const store = conversationSessionsStore()

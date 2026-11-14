@@ -1986,6 +1986,8 @@ test('a view opened on a chat already waiting on a request answers it, and Stop 
     expect(interrupt).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }))
   } finally {
     await chat.unmount()
+    const { resetConversationSessionsStore } = await import('../../../hooks/conversationSessionsStore')
+    resetConversationSessionsStore()
   }
 })
 
