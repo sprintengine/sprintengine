@@ -124,4 +124,3 @@ test('the default kind reads whole words of the host name, so a near miss does n
   assert.equal(defaultMachineKind({ kind: 'paired', name: 'dev-macbook-air' }), 'laptop')
   assert.equal(defaultMachineKind({ kind: 'paired', name: '100.64.0.7' }), 'desktop')
 })
-

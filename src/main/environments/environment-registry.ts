@@ -166,12 +166,7 @@ export function createEnvironmentRegistry(options: {
   }
 
   function sources(): EnvironmentSource[] {
-    return [
-      local,
-      ...(observed.get('wsl') ?? []),
-      ...(observed.get('ssh') ?? []),
-      ...(observed.get('tailnet') ?? []),
-    ]
+    return [local, ...(observed.get('wsl') ?? []), ...(observed.get('ssh') ?? []), ...(observed.get('tailnet') ?? [])]
   }
 
   function idOf(source: EnvironmentSource): EnvironmentId | null {

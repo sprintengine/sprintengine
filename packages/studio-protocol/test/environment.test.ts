@@ -112,8 +112,7 @@ test('a chat address round-trips through its key, and the key has exactly one co
 })
 
 test('no route reaches a machine through a paired desktop: SSH and WSL machines are reached only from the desktop that holds them', () => {
-  for (const gone of ['relay:pair-1.0b9f-4c', 'relay:pair-1'])
-    assert.equal(parseEnvironmentRoute(gone), null, gone)
+  for (const gone of ['relay:pair-1.0b9f-4c', 'relay:pair-1']) assert.equal(parseEnvironmentRoute(gone), null, gone)
   assert.equal(isEnvironmentRoute({ kind: 'relay', via: 'pair-1', environment: '0b9f-4c' }), false)
   assert.equal(STUDIO_METHODS['environment.relayed' as keyof typeof STUDIO_METHODS], undefined)
   assert.equal(STUDIO_METHODS['environment.deviceTicket' as keyof typeof STUDIO_METHODS], undefined)

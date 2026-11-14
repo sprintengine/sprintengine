@@ -31,9 +31,7 @@ import {
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
-import type {
-  StudioEnvironmentWork,
-} from '../../../packages/studio-protocol/src/environment-access'
+import type { StudioEnvironmentWork } from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'

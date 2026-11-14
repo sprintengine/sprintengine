@@ -1,4 +1,3 @@
-
 import { STUDIO_WINDOW_TICKETS_CAPABILITY } from '../../../packages/studio-protocol/src/handshake'
 import { createLoopbackRoute, type LoopbackRoute } from '../../main/environments/environment-route'
 import type { WslEnvironmentManager, WslServerConnection } from './wsl-environment-manager'

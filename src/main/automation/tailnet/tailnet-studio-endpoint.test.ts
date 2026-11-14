@@ -474,7 +474,10 @@ test('a device reaches no machine through this desktop: naming one buys only thi
   assert.equal(named.status, 200)
   assert.equal((named.body as { studioPath?: string }).studioPath, TAILNET_STUDIO_PATH)
   assert.match(
-    await rawUpgrade(r.port(), `/tailnet/v1/environments/7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f/studio?ticket=${named.body.ticket}`),
+    await rawUpgrade(
+      r.port(),
+      `/tailnet/v1/environments/7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f/studio?ticket=${named.body.ticket}`,
+    ),
     / 404 /u,
   )
 })

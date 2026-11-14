@@ -284,4 +284,3 @@ export function resolveLocalMachineIdentity(
     overridden: Boolean(own?.kind || own?.colour),
   }
 }
-
