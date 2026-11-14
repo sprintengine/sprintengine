@@ -661,7 +661,8 @@ launch. The bullets below are the phase-6 shape:
   them (`terminals.sessions`) on every coalesced sessions broadcast. The
   launch tokens (decision R87) its terminal launches are issued cross as
   SHA-256 digests with their identity (`gateway.launch-tokens`), never the
-  token, so the server's gateway proves those agents' bridges. A server that
+  token, so the server's gateway proves those agents' bridges; a revoke ends
+  every gateway connection the token proved. A server that
   has just started asks the shell for every live one before its gateway
   listens (`shell.launch-tokens.live`): the shell's terminals outlive it, and
   the MCP bridge reconnects with the token it was given the moment the socket

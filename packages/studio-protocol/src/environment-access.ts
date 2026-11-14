@@ -263,8 +263,10 @@ export type StudioEnvironmentAccessMethodMap = {
    * machine (a WSL terminal is the desktop's pty, its agent runs here), by
    * digest: an agent whose MCP bridge presents one to this Studio's gateway
    * is that agent, as on the desktop. The token itself never crosses.
-   * `replace` drops every token the desktop did not name again (a
-   * reconnect, which may have missed a revoke). The desktop's shell alone asks.
+   * `replace` drops every token the desktop told before and did not name
+   * again (a reconnect, which may have missed a revoke); tokens this Studio
+   * issued to its own chats are not the desktop's to drop. A revoked token
+   * ends the gateway connections it proved. The desktop's shell alone asks.
    */
   'environment.launchTokens': {
     params: { tokens: StudioLaunchTokenChange[]; replace?: boolean }

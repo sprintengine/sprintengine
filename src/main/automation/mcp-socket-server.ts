@@ -2,6 +2,8 @@ import { createServer, type Server, type Socket } from 'net'
 import { chmodSync, existsSync, unlinkSync } from 'fs'
 
 import { withOwnerOnlyUmask } from '../private-socket-dir'
+import { onGatewayLaunchTokenEnded } from '../../server/core/gateway-launch-tokens'
+import { gatewayLaunchDigest } from '../../server/tools/client-tool-gateway'
 
 import {
   createMcpDispatcher,
@@ -84,6 +86,7 @@ export type McpSocketServer = {
 
 export function createMcpSocketServer(options: McpSocketServerOptions): McpSocketServer {
   let server: Server | null = null
+  let stopEnded: (() => void) | null = null
   const sockets = new Set<Socket>()
   const dispatcher = createMcpDispatcher({
     serverName: options.serverName,
@@ -126,12 +129,18 @@ export function createMcpSocketServer(options: McpSocketServerOptions): McpSocke
     }
     next.on('error', (error) => options.log?.(`automation socket server error: ${error.message}`))
     server = next
+    // A launch that ends takes the connections its token proved with it.
+    stopEnded = onGatewayLaunchTokenEnded((digest) => {
+      for (const [socket, context] of connectionContexts) if (gatewayLaunchDigest(context) === digest) socket.destroy()
+    })
   }
 
   async function stop(): Promise<void> {
     const current = server
     if (!current) return
     server = null
+    stopEnded?.()
+    stopEnded = null
     for (const socket of sockets) socket.destroy()
     sockets.clear()
     for (const untrack of untracks.values()) untrack()

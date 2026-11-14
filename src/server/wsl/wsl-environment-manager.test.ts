@@ -251,6 +251,7 @@ async function agentSession(socketPath: string) {
   const socket = createConnection(socketPath)
   await new Promise<void>((resolve, reject) => socket.once('connect', resolve).once('error', reject))
   socket.setEncoding('utf8')
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
   const waiting = new Map<number, (message: Record<string, any>) => void>()
   let buffer = ''
   socket.on('data', (chunk: string) => {
@@ -270,6 +271,8 @@ async function agentSession(socketPath: string) {
         socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: next, method, params })}\n`)
       }),
     close: () => socket.end(),
+    /** Settles when the gateway ends the connection. */
+    closed,
   }
 }
 
@@ -330,11 +333,15 @@ test("a WSL terminal agent reaches the distribution's own gateway, proven by the
   // Said again as the same agent, with another launch's token.
   const second = await replyWithin(proven.call('sprintengine.studio/connect', { ...agent, launchToken: other.token }))
   assert.match(String(second?.error?.message), /already belongs to another agent/u)
-  proven.close()
 
-  // Revoked with its terminal: the same token proves nothing there.
+  // Revoked with its terminal: the connection it proved is ended there, and
+  // the same token proves nothing.
   tokens.revoke('Ubuntu', issued.token)
-  await waitFor(() => false, 300).catch(() => undefined)
+  const ended = await Promise.race([
+    proven.closed.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ])
+  assert.equal(ended, true, 'the distribution ended the connection the revoked token proved')
   const unproven = await agentSession(socketPath)
   void unproven.call('sprintengine.studio/connect', { ...agent, launchToken: issued.token })
   const unbound = await replyWithin(

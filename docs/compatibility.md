@@ -650,8 +650,10 @@ read as having nothing to say. Served by a WSL distribution's or an SSH machine'
 (`{ tokens: [{ digest, identity | null }], replace? }` → `{ held }`, the shell's): the SHA-256
 of each launch token the desktop issued to a WSL terminal agent, with the workspace and agent
 it proves, or `null` once revoked. The gateway of that distribution's Studio then takes the
-agent's identity from the token its MCP bridge presents. `replace` drops every token not
-named again (a reconnect). The token itself never crosses. Served by a WSL distribution's
+agent's identity from the token its MCP bridge presents, and ends every connection a token
+proved once it is revoked. `replace` drops every token the desktop told before and did not
+name again (a reconnect); tokens that Studio issued to its own chats are not the desktop's to
+drop. The token itself never crosses. Served by a WSL distribution's
 Studio only; a desktop whose distribution lacks it launches terminal agents whose bridges
 prove nothing there.
 `environment-terminal-host` (2026-11-14) adds `environment.launchFiles` (`{ write?: [{ path,
