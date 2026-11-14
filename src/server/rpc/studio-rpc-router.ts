@@ -386,8 +386,9 @@ export function studioCommandFingerprint(method: string, params: unknown): strin
   // Nor is where its pictures and files were staged: a send whose server
   // restarted is sent again with them staged again, under other upload ids,
   // and is still the same send. How many it carries still says what it is.
-  const { uploadIds: staged, ...rest } = addressed
+  const { uploadIds: staged, fileUploadIds: sentUp, ...rest } = addressed
   if (Array.isArray(staged)) rest.uploadCount = staged.length
+  if (Array.isArray(sentUp)) rest.fileUploadCount = sentUp.length
   if (Array.isArray(rest.attachments))
     rest.attachments = rest.attachments.map((attachment: unknown) => {
       if (attachment === null || typeof attachment !== 'object') return attachment
