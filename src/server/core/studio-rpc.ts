@@ -310,9 +310,9 @@ export function createStudioRpc(
 
 /**
  * The workspaces this Studio serves its clients, without its copies of
- * another environment's chats (design-wsl-ssh-direct PR 1d, decision 7): a
- * device reaches those through that environment's own route, never twice and
- * never through this desktop.
+ * another environment's chats (design-wsl-ssh-direct PR 1d, decision 7): an
+ * SSH machine's or a WSL distribution's chats are reached only from the
+ * desktop that holds that machine, never by a device through it.
  */
 function withoutCopies(discovery: StudioDiscovery, isCopy: (workspaceId: string) => boolean): StudioDiscovery {
   return {
