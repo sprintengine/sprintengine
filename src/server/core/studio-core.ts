@@ -677,6 +677,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     },
     startSession: (input) => conversations.startSession(input),
     send: (input) => conversations.sendTurn(input),
+    commandReceipt: (sessionId, commandId) => conversations.commandReceipt(sessionId, commandId),
     recordProjectUse: (folderPath) => {
       agentLaunchSettings.update({ projectUse: { folderPath, at: Date.now() } }, 'system')
     },
@@ -1304,13 +1305,34 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       const host = createConversationHost(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {})
       const key = host.resolveKey(chat.workspaceId, chat.agentId)
       if (!key) return { ok: false, message: 'The chat is no longer there.' }
-      const sent = await host.command(key, FIRST_MESSAGE_CLIENT_ID, commandId, {
-        kind: 'send',
-        message: message.message,
-        ...(message.skills?.length ? { skills: message.skills } : {}),
-        ...(message.mode ? { mode: message.mode } : {}),
-      })
-      return sent.ok ? { ok: true } : { ok: false, message: sent.message ?? 'The chat did not take it.' }
+      // Its pictures go from where they were kept, as a held message's do.
+      const images = (message.images ?? []).map((image) => ({
+        path: firstMessages.imagePath(commandId, image),
+        name: image.name ?? image.file,
+        mediaType: image.mediaType,
+        bytes: image.byteLength,
+      }))
+      const sent = await host.command(
+        key,
+        FIRST_MESSAGE_CLIENT_ID,
+        commandId,
+        {
+          kind: 'send',
+          message: message.message,
+          ...(message.skills?.length ? { skills: message.skills } : {}),
+          ...(message.mode ? { mode: message.mode } : {}),
+        },
+        undefined,
+        images.length ? { images, files: [] } : undefined,
+      )
+      return sent.ok
+        ? { ok: true }
+        : { ok: false, message: sent.message ?? 'The chat did not take it.', ...(sent.code ? { code: sent.code } : {}) }
+    },
+    answered: async (chat, commandId) => {
+      const host = createConversationHost()
+      const key = host.resolveKey(chat.workspaceId, chat.agentId)
+      return key ? host.sentBefore(key, FIRST_MESSAGE_CLIENT_ID, commandId) : true
     },
     warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
   }).catch(() => undefined)

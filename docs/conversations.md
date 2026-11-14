@@ -598,9 +598,14 @@ that every reader passes over (`conversation-command-receipts.ts`).
   and spends nothing; the client starts the chat again and resends under the
   same id, which the receipt answers. A keyed send asks the conversation host
   whether it was held or carried out before its uploads are staged.
-- A launched chat's first message is written down
-  (`conversation-first-messages.json`) before the launch answers, under an id
-  derived from the launch's, and sent at the next start if a stop cut it off.
+- A launched chat's first message is written down whole, its pictures in the
+  folder beside it (`conversation-first-messages.json`,
+  `conversation-first-messages/`), and flushed to the disk before the chat is
+  made, under an id derived from the launch's. One that cannot be written
+  refuses the launch. It is kept until the chat has answered it for good
+  (taken, or refused in an answer its log keeps). A refusal the log did not
+  keep, such as a busy chat or an agent that would not start, keeps it, and
+  the next start sends it again.
 - **Nothing is published before it is written.** A batch of the log is one
   write, and a write that fails is cut back off, so a client only ever holds
   sequence numbers that are on disk. A write that does not finish is waited
