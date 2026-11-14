@@ -819,7 +819,10 @@ settled-chat deletion only this way: their window IPC is gone.
 `workspace-sync` (2026-11-13) is the desktop's own windows' workspace
 registry: `workspaceSync.snapshot`, `.eventsAfter` and the
 `workspaceSync.events` stream (every recorded change, sequenced; the window
-that made it hears it too and takes it once by its sequence), `.dispatch`
+that made it hears it too and takes it once by its sequence; a server that
+restarts numbers them from the start again, so a window reads the snapshot
+again each time its connection opens and takes its sequence as the baseline,
+whatever it held before), `.dispatch`
 (one change from a named window), `.lifecycle` (Settle, Un-settle, Snooze or
 Wake on the reading the window made it on), `.setSettledChatsSettings` and
 `.setModuleRunStates` (what only a desktop window knows; a browser's is

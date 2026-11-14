@@ -12,7 +12,7 @@ import type {
   ScheduledAgentWriteResult,
   ScheduledAgentsPause,
 } from '../../../shared/scheduled-agents'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
 
 // The window's way to this machine's scheduled agents: the Studio protocol's
@@ -124,6 +124,10 @@ export const schedulesApi: SchedulesApi = {
       params: {},
       capability: STUDIO_SCHEDULES_CAPABILITY,
       onPayload: (state) => cb(state.schedules),
+      onReopen: rereadOnReopen(
+        () => call('schedules.list', {}),
+        (state) => cb(state.schedules),
+      ),
     }),
   pauseScheduledAgent: (id) => act('schedules.pause', { id }, written),
   resumeScheduledAgent: (id) => act('schedules.resume', { id }, written),
@@ -137,5 +141,9 @@ export const schedulesApi: SchedulesApi = {
       params: {},
       capability: STUDIO_SCHEDULES_CAPABILITY,
       onPayload: (state) => cb(state.pausedAll),
+      onReopen: rereadOnReopen(
+        () => call('schedules.list', {}),
+        (state) => cb(state.pausedAll),
+      ),
     }),
 }

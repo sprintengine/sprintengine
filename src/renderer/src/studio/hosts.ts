@@ -59,5 +59,7 @@ export const hostsApi: HostsApi = {
       params: {},
       capability: STUDIO_EXECUTION_HOSTS_CAPABILITY,
       onPayload: () => cb(),
+      // A change itself carries nothing: the listener reads the hosts.
+      onReopen: () => cb(),
     }),
 }

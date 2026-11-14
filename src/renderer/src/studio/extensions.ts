@@ -33,7 +33,7 @@ import {
   type ThirdPartyModuleListResult,
   type ThirdPartyRendererEntriesResult,
 } from '../../../../packages/studio-protocol/src/public'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
 
 // The window's way to what its Studio is extended with: the marketplace and
@@ -171,6 +171,7 @@ export const extensionsApi: ExtensionsApi = {
       params: {},
       capability: STUDIO_EXTENSIONS_CAPABILITY,
       onPayload: cb,
+      onReopen: rereadOnReopen(() => extensions('cardFeed.get', {}), cb),
     }),
   hostedSourcesFeedGet: () => extensions('sourcesFeed.get', {}),
   listThirdPartyModules: () => modules('module.installed', {}),
@@ -185,6 +186,8 @@ export const extensionsApi: ExtensionsApi = {
       params: {},
       capability: STUDIO_MODULES_CAPABILITY,
       onPayload: () => cb(),
+      // A change itself carries nothing: the listener reads the list.
+      onReopen: () => cb(),
     }),
   // A browser tab loads no extension and starts from the default settings, so
   // what it would send would replace the desktop window's with blanks.

@@ -8,7 +8,7 @@ import {
   type StudioLocalAppsStatus,
   type StudioLocalAppToolReach,
 } from '../../../../packages/studio-protocol/src/public'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
 
 // The window's way to who may reach its Studio's agents from that machine:
@@ -70,5 +70,6 @@ export const accessApi: AccessApi = {
       params: {},
       capability: STUDIO_ACCESS_CAPABILITY,
       onPayload: cb,
+      onReopen: rereadOnReopen(async () => (await served()).request('localApps.status', {}), cb),
     }),
 }

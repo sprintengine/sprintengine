@@ -32,7 +32,7 @@ import type {
   TextGenerationResult,
   TextGenerationSettings,
 } from '../../../../packages/studio-protocol/src/public'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
 
 // The window's way to its Studio's agent CLIs and launch settings: the
@@ -165,6 +165,7 @@ export const agentSettingsApi: AgentSettingsApi = {
       params: {},
       capability: STUDIO_AGENT_RUNTIMES_CAPABILITY,
       onPayload: cb,
+      onReopen: rereadOnReopen(() => runtimes('cliVersions.advisories', {}), cb),
     }),
   cliModelsDiscover: (input = {}) => settings('cliModels.discover', input),
   onCliModelsChanged: (cb) =>
@@ -173,6 +174,8 @@ export const agentSettingsApi: AgentSettingsApi = {
       params: {},
       capability: STUDIO_AGENT_SETTINGS_CAPABILITY,
       onPayload: cb,
+      // What the Studio last found, within its freshness window: no probe is forced.
+      onReopen: rereadOnReopen(() => settings('cliModels.discover', {}), cb),
     }),
   launchSettingsGet: () => settings('launchSettings.get', {}),
   launchSettingsUpdate: (patch) => settings('launchSettings.update', { commandId: randomId(), patch }),
@@ -183,6 +186,12 @@ export const agentSettingsApi: AgentSettingsApi = {
       params: {},
       capability: STUDIO_AGENT_SETTINGS_CAPABILITY,
       onPayload: cb,
+      onReopen: rereadOnReopen(
+        () => settings('launchSettings.get', {}),
+        (snapshot) => {
+          if (snapshot.record) cb(snapshot.record)
+        },
+      ),
     }),
   generateChatTitle: async (request) => {
     try {

@@ -37,8 +37,13 @@ export type WorkspaceSyncApi = {
   workspaceSyncDispatch(command: WorkspaceSyncCommand): Promise<WorkspaceSyncCommandResult>
   workspaceSyncGetSnapshot(): Promise<WorkspaceSyncSnapshot>
   workspaceSyncGetEventsAfter(sequence: number): Promise<WorkspaceSyncEvent[]>
-  /** Each change main records, this window's own included (taken once, by its sequence). Returns the unsubscriber. */
-  onWorkspaceSyncEvent(cb: (event: WorkspaceSyncEvent) => void): () => void
+  /**
+   * Each change main records, this window's own included (taken once, by its
+   * sequence). `onReopen` is called each time the window's connection opens
+   * again: the registry is read afresh then, since a Studio that restarted
+   * numbers its changes from the start again. Returns the unsubscriber.
+   */
+  onWorkspaceSyncEvent(cb: (event: WorkspaceSyncEvent) => void, onReopen?: () => void): () => void
   workspaceLifecycle(request: WorkspaceLifecycleRequest): Promise<WorkspaceLifecycleResult>
   workspaceMarkUnread(workspaceId: string): Promise<WorkspaceMarkUnreadResult>
   setSettledChatsSettings(settings: SettledChatsSettings): Promise<void>
@@ -104,12 +109,13 @@ export const workspaceSyncApi: WorkspaceSyncApi = {
   workspaceSyncGetSnapshot: async () => (await call('workspaceSync.snapshot', {})) as unknown as WorkspaceSyncSnapshot,
   workspaceSyncGetEventsAfter: async (sequence) =>
     (await call('workspaceSync.eventsAfter', { sequence })).events as unknown as WorkspaceSyncEvent[],
-  onWorkspaceSyncEvent: (cb) =>
+  onWorkspaceSyncEvent: (cb, onReopen) =>
     followWindowStudioPush({
       topic: 'workspaceSync.events',
       params: {},
       capability: STUDIO_WORKSPACE_SYNC_CAPABILITY,
       onPayload: (event) => cb(event as unknown as WorkspaceSyncEvent),
+      ...(onReopen ? { onReopen } : {}),
     }),
   workspaceLifecycle: async (request) =>
     (await act('workspaceSync.lifecycle', {
