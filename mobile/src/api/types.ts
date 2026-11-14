@@ -30,7 +30,6 @@ export interface MobileSession {
    * declared anything — those read as "unknown", never as "old".
    */
   tailnetTransportVersion?: number;
-  tailnetCapabilities?: string[];
   /**
    * How the desktop draws itself as a machine — its kind and colour, the
    * person's override applied — from the `machine` its identity answers with.

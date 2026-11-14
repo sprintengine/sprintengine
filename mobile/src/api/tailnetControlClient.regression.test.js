@@ -88,11 +88,9 @@ test("tailnet pairing exchanges the one-time code and stores the gateway's own g
     assert.equal(session.baseUrl, "http://100.64.0.9:8471");
     assert.equal(session.deviceToken, "mctn_secret");
     assert.equal(session.deviceId, "tnd_phone1");
-    // A version-1 Studio declares nothing on the pair answer, and that must
-    // read as "not declared" — never as version 0 or as no capabilities.
-    assert.deepEqual(result.data.transport, { transportVersion: null, capabilities: null });
+    // A Studio that declares nothing on the pair answer reads as "not declared", never as version 0.
+    assert.deepEqual(result.data.transport, { transportVersion: null });
     assert.equal(session.tailnetTransportVersion, undefined);
-    assert.equal(session.tailnetCapabilities, undefined);
     // The grant is kept as the gateway said it; `tailnetGrantAllows` decides
     // what it unlocks.
     assert.deepEqual(session.tailnetScopes, ["workspace:read", "workspace:operate", "horizon:read"]);
@@ -101,14 +99,15 @@ test("tailnet pairing exchanges the one-time code and stores the gateway's own g
   }
 });
 
-test("a version-2 Studio's pair answer lands its transport declaration on the session", async () => {
+test("a Studio's pair answer lands its transport version on the session, and a capability list it sent is not kept", async () => {
   global.fetch = async () =>
     jsonResponse(200, {
       deviceId: "tnd_phone2",
       deviceName: "Test phone",
       deviceToken: "mctn_secret",
       scopes: ["workspace:read", "conversation:operate"],
-      transportVersion: 2,
+      transportVersion: 3,
+      // A desktop from before transport 3 listed capabilities here; what one serves is its Studio welcome's to say.
       capabilities: ["conversations", "conversation-models"],
     });
   try {
@@ -119,8 +118,8 @@ test("a version-2 Studio's pair answer lands its transport declaration on the se
       completion: result.data,
       pairedAt: "2026-09-06T12:00:00.000Z",
     });
-    assert.equal(session.tailnetTransportVersion, 2);
-    assert.deepEqual(session.tailnetCapabilities, ["conversations", "conversation-models"]);
+    assert.equal(session.tailnetTransportVersion, 3);
+    assert.equal("tailnetCapabilities" in session, false);
   } finally {
     global.fetch = originalFetch;
   }
@@ -135,8 +134,7 @@ test("readTailnetIdentity carries the bearer token, keeps the declaration, and r
       deviceName: "Test phone",
       scopes: ["conversation:read"],
       serverInfo: { name: "SprintEngine Studio MCP", version: "1.2.3" },
-      transportVersion: 2,
-      capabilities: ["conversations"],
+      transportVersion: 3,
       protocolVersions: ["2025-06-18"],
     });
   };
@@ -149,7 +147,7 @@ test("readTailnetIdentity carries the bearer token, keeps the declaration, and r
     // no machine, never as a guessed one.
     assert.deepEqual(result.data, {
       scopes: ["conversation:read"],
-      transport: { transportVersion: 2, capabilities: ["conversations"] },
+      transport: { transportVersion: 3 },
       machine: null,
       environmentId: null,
     });

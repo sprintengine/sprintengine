@@ -203,7 +203,6 @@ function fixture(options = {}) {
     deviceId: "device",
     baseUrl: "https://example.ts.net",
     deviceToken: "test-token",
-    ...(options.capabilities ? { tailnetCapabilities: options.capabilities } : {}),
     ...(options.scopes ? { tailnetScopes: options.scopes } : {}),
   };
   const render = (next = selected) => {

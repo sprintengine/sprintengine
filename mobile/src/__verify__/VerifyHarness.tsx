@@ -363,7 +363,6 @@ function VerifyShell() {
             {
               ...verifySession,
               desktopName: "mac-mini",
-              tailnetCapabilities: verifySession.tailnetCapabilities,
               tailnetScopes: ["conversation:operate"],
             },
           ]
