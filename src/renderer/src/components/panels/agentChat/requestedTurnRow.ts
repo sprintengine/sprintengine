@@ -3,7 +3,8 @@
 // has started: until then the person's message stood alone, as if nothing
 // had heard it. And a New chat's first message has been "Thinking…" since the
 // chat opened, through its setup, so the turn's line counts on from there
-// rather than starting again at nought.
+// rather than starting again at nought. A message waiting for its machine to
+// come back is not being thought about: its line says what it waits for.
 
 import type { ConversationTimelineRow } from './conversationTimeline'
 import { STARTING_WORKING_LABEL } from './pendingFirstMessage'
@@ -25,10 +26,26 @@ export function withRequestedTurn(
   requestedAt: number | null,
   sending: boolean,
   cache: { current: RequestedTurnRowCache },
+  /**
+   * The machine the chat runs on, while it is away and the message waits to
+   * go: nothing is thinking yet, so the line says what it waits for, with no
+   * time counting.
+   */
+  waitingOn: string | null = null,
 ): ConversationTimelineRow[] {
   const last = rows.at(-1)
   if (requestedAt === null || !last) return rows as ConversationTimelineRow[]
   const cached = cache.current
+  if (last.kind === 'user' && sending && waitingOn !== null) {
+    const row = {
+      kind: 'working',
+      id: 'working-indicator-row',
+      stage: 'thinking',
+      label: `Waiting for ${waitingOn}…`,
+    } satisfies WorkingRow
+    cache.current = null
+    return [...rows, row]
+  }
   if (last.kind === 'user' && sending) {
     const row =
       cached && cached.from === null && cached.at === requestedAt

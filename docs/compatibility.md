@@ -497,7 +497,12 @@ without it reads `session.send` with a validator that keeps only the members
 it knows, so it would drop the files without a word and send the words as if
 nothing were attached — which is why a client sends `files` only to a Studio
 that advertises it, and the desktop's own window refuses such a send in words
-otherwise. `session.send` also takes `composedAt` and `confirmedStale`, the
+otherwise. `session-file-uploads` adds `fileUploadIds` to `session.send`:
+files sent up from the client's disk first (`uploads.*`, `purpose:
+'attachment'`), kept by the Studio and attached by their path there. A client
+whose files are not on that Studio's disk (the desktop driving an SSH
+machine's chat) sends files only this way, and refuses the send in words to a
+Studio without it. `session.send` also takes `composedAt` and `confirmedStale`, the
 conversation contract's request as every transport carries it, with no
 capability of their own: a Studio from before reads the send without them and
 sends it as it always did, as a desktop does that never asks about a message

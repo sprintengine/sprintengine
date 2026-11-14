@@ -459,7 +459,12 @@ this machine's own windows do; nothing in it is specific to a phone.
   attached to the message by that path, as a file dropped into the composer
   is; the `user_message` records it in `files`. The file stays for the agent to
   read in a later turn, and goes a week on, or with the device when it is
-  removed. A staged upload no send spends expires.
+  removed. A staged upload no send spends expires. `session.send` takes such
+  files too, as `fileUploadIds` (`session-file-uploads`): the desktop's window
+  sends a file attached to an SSH machine's or a WSL distribution's chat this
+  way, read off this computer's disk as the send goes (a message held while
+  the machine is away included), so the agent there reads it by its path
+  there and never by a path of this computer's.
 - **Pictures a chat shows.** `conversation.picture` (`conversation:read`)
   answers one picture's bytes: a step's, by its `toolUseId` (the picture
   Codex's `GenerateImage` made, or a file read of a picture), or one a person

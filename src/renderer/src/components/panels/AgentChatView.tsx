@@ -253,6 +253,7 @@ import { SideQuestionDrawer, useSideQuestion, type SideQuestionApi } from './age
 import { ReadinessState, readinessLabel, type ChatReadiness } from './agentChat/chatStates'
 import { PendingFirstMessage } from './agentChat/pendingFirstMessage'
 import { withRequestedTurn, type RequestedTurnRowCache } from './agentChat/requestedTurnRow'
+import { useEnvironmentAway } from '../../hooks/useEnvironmentReach'
 import { ComposerActionButton, ComposerContextMenu, type ComposerMenuState } from './agentChat/composerControls'
 export { ComposerContextMenu, editingShortcut } from './agentChat/composerControls'
 export type { ComposerMenuState } from './agentChat/composerControls'
@@ -943,11 +944,22 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   }, [structureRevision, finishDraftSend])
   const previousRowsRef = useRef<ReturnType<typeof deriveConversationTimelineRows>>([])
   const requestedTurnRowRef = useRef<RequestedTurnRowCache>(null)
+  // The machine the chat runs on is away: a message sent now waits for it.
+  const environmentAway = useEnvironmentAway(environment.route, environment.label)
+  const waitingOn = environmentAway ? (environment.label ?? 'the machine') : null
   const timelineRows = useMemo(() => {
     const rows = deriveConversationTimelineRows(projection.entries, projection.activeTurn, previousRowsRef.current)
     previousRowsRef.current = rows
-    return withRequestedTurn(rows, turnRequestedAt, sending, requestedTurnRowRef)
-  }, [projection.entries, projection.activeTurn, turnRequestedAt, sending])
+    return withRequestedTurn(rows, turnRequestedAt, sending, requestedTurnRowRef, waitingOn)
+  }, [projection.entries, projection.activeTurn, turnRequestedAt, sending, waitingOn])
+  // Back, the waiting message goes now: its turn is counted from here, not
+  // from when it was written.
+  const wasAwayRef = useRef(environmentAway)
+  useEffect(() => {
+    const wasAway = wasAwayRef.current
+    wasAwayRef.current = environmentAway
+    if (wasAway && !environmentAway && turnRequestedAt !== null) setTurnRequestedAt(Date.now())
+  }, [environmentAway, turnRequestedAt])
   // The send has settled and no turn runs: the turn asked for has ended (or
   // never began), and its working line with it.
   useEffect(() => {

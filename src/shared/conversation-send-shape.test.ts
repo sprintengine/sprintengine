@@ -27,10 +27,11 @@ test("the runtime's input is the request with the session and what only Studio's
     Omit<ConversationSendTurnInput, 'sessionId' | 'commandId' | 'commandFingerprint' | 'origin' | 'subagentMessage'>,
     Omit<Request, 'queue'>
   >(true)
-  // `session.send` is the same request, its pictures by their uploads: the
-  // server swaps one for the other and nothing else.
+  // `session.send` is the same request, its pictures by their uploads and the
+  // files sent up from the client's disk by theirs: the server swaps each for
+  // what it carries (a picture, a file's path here) and nothing else.
   expectExact<
-    Omit<StudioMethodParams<'session.send'>, 'commandId' | 'attachments'>,
+    Omit<StudioMethodParams<'session.send'>, 'commandId' | 'attachments' | 'fileUploadIds'>,
     Omit<ConversationSendTurnInput, 'commandId' | 'commandFingerprint' | 'origin' | 'subagentMessage' | 'attachments'>
   >(true)
 })

@@ -800,6 +800,11 @@ test("a session command resent to the chat's new session under its id is the sam
     studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hi', uploadIds })
   assert.equal(queued(['upload-1']), queued(['upload-2']))
   assert.notEqual(queued(['upload-1']), queued(['upload-1', 'upload-2']))
+  // A file sent up from the client's disk is sent up again for a resend (the machine was away, and back).
+  const sentUp = (fileUploadIds: string[]) =>
+    studioCommandFingerprint('session.send', { sessionId: 's', commandId: 'same', message: 'read', fileUploadIds })
+  assert.equal(sentUp(['upload-1']), sentUp(['upload-2']))
+  assert.notEqual(sentUp(['upload-1']), sentUp(['upload-1', 'upload-2']))
   // A chat's own address outlives a restart, so it stays part of what a conversation command is.
   assert.notEqual(
     studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hello' }),

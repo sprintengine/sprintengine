@@ -225,6 +225,13 @@ export type StudioFollowedBackend = {
     uploads: StudioStagedUpload[],
   ): Promise<{ ok: true; ids: string[] } | { ok: false; code: 'not_found' | 'invalid_params'; message: string }>
   /**
+   * Keep a file a client sent up with a session's message (`session.send`'s
+   * `fileUploadIds`) where this Studio keeps a device's files, and answer its
+   * path here, which the message attaches; `discard` removes it again when
+   * the send did not go.
+   */
+  keepFile?(clientId: string, file: { name: string; bytes: Buffer }): Promise<{ path: string; discard: () => void }>
+  /**
    * Whether a client's send under a command id (already namespaced to it) was
    * carried out before, held or in the chat's log, whatever restarted since:
    * asked before its uploads are staged, which a repeat does not need.

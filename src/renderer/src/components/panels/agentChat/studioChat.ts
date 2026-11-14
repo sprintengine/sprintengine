@@ -10,6 +10,7 @@ import { CONVERSATION_FORK_CAPABILITY } from '../../../../../../packages/convers
 import {
   isChatAddress,
   STUDIO_SESSION_FILES_CAPABILITY,
+  STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   type StudioMethod,
   type StudioMethodParams,
@@ -26,6 +27,7 @@ import type {
   ConversationSessionFrame,
 } from '../../../../../shared/conversation-runtime'
 import type { ChatServices } from './chatServices'
+import type { AttachedFileBytes } from '../../../../../shared/attached-files'
 import type { ConversationTransport } from './conversationTransport'
 
 // The chat view over the Studio protocol: the same calls the window's IPC
@@ -476,15 +478,35 @@ export function createStudioConversationParts(
      * and is that machine's chat by its own ids.
      */
     chatRef?: (key: ConversationKey) => ConversationRef
+    /**
+     * Read a file attached from this computer's disk, to send its bytes up
+     * to a Studio on another machine (`filesFromThisDisk`).
+     */
+    readFile?: (path: string) => Promise<AttachedFileBytes>
+    /**
+     * The chat runs on another machine (an SSH machine, a WSL distribution),
+     * which cannot read a file of this computer's by its path: each file
+     * attached here is sent up first (`uploads.*`, `purpose: 'attachment'`)
+     * and the message names it by its upload (`fileUploadIds`); that Studio
+     * keeps it and attaches it by its path there.
+     */
+    filesFromThisDisk?: boolean
   } = {},
 ): StudioTransportParts {
   const refOf = options.chatRef ?? keyRef
+  const readFile = options.readFile ?? ((path: string) => window.api.readAttachedFile(path))
   const send = async (input: ConversationSendTurnInput) => {
-    const { attachments, commandId: given, ...rest } = input
+    const { attachments, files, commandId: given, ...rest } = input
+    const sendsUp = Boolean(options.filesFromThisDisk && files?.length)
     // A Studio that does not read `files` would drop them without a word and
     // send the message as if nothing were attached; better the send says so.
-    if (rest.files?.length && !(await client()).supports(STUDIO_SESSION_FILES_CAPABILITY))
+    if (files?.length && !sendsUp && !(await client()).supports(STUDIO_SESSION_FILES_CAPABILITY))
       throw new Error('This Studio cannot take attached files. Remove them, or update it, and send again.')
+    // Nor is a path on this disk any use to another machine.
+    if (sendsUp && !(await client()).supports(STUDIO_SESSION_FILE_UPLOADS_CAPABILITY))
+      throw new Error(
+        'The Studio on that machine cannot take files from this computer. Update it in Settings › Machines, or remove them, and send again.',
+      )
     // What this send staged, given back if the send cannot go: Studio would
     // otherwise hold it against this window's budget until it expires. One
     // that finishes staging after the send has failed is given back as it does.
@@ -506,8 +528,26 @@ export function createStudioConversationParts(
             }
           })
         : undefined
+      // Read off this disk and sent up as the send goes, a held one included:
+      // the machine keeps them, and the agent reads them there.
+      const fileUploadIds = sendsUp
+        ? await mapWithLimit(files ?? [], UPLOADS_AT_ONCE, async (file) => {
+            const read = await readFile(file.path)
+            if (!read.ok) throw new Error(read.message)
+            const uploadId = await upload(
+              client,
+              { mediaType: 'application/octet-stream', dataBase64: read.dataBase64, name: read.name },
+              'attachment',
+            )
+            if (abandoned) giveBack([uploadId])
+            else stagedIds.push(uploadId)
+            return uploadId
+          })
+        : undefined
       return await ask(client, 'session.send', {
         ...rest,
+        ...(files?.length && !sendsUp ? { files } : {}),
+        ...(fileUploadIds?.length ? { fileUploadIds } : {}),
         ...(staged ? { attachments: staged } : {}),
         commandId: given ?? commandId(),
       })

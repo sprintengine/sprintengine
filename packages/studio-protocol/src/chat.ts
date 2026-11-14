@@ -146,7 +146,19 @@ export type StudioSessionStartParams = {
  * not would drop them without a word. Never `queue`: Studio runs the chat,
  * and a message queued behind its turn waits in the view that wrote it.
  */
-export type StudioSessionSendParams = { commandId: string; sessionId: string } & Omit<ConversationSendRequest, 'queue'>
+export type StudioSessionSendParams = { commandId: string; sessionId: string } & Omit<
+  ConversationSendRequest,
+  'queue'
+> & {
+    /**
+     * Files from the client's own disk, which the Studio that runs the chat
+     * cannot read by path: each sent up first (`uploads.begin` with `purpose:
+     * 'attachment'`, named), kept there, and attached to the message by its
+     * path there, beside `files`. Only to a Studio that advertises
+     * `session-file-uploads`.
+     */
+    fileUploadIds?: string[]
+  }
 
 export type StudioSessionRespondParams = {
   commandId: string
@@ -660,6 +672,16 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       const sent = value.attachments === undefined ? undefined : attachments(value.attachments)
       if (sent === null)
         return refuse(`"attachments" is a list of at most ${STUDIO_MAX_UPLOADS_PER_SEND} { id, uploadId, name? }.`)
+      if (
+        value.fileUploadIds !== undefined &&
+        !(
+          Array.isArray(value.fileUploadIds) &&
+          value.fileUploadIds.every(id) &&
+          value.fileUploadIds.length + (Array.isArray(value.files) ? value.files.length : 0) <=
+            STUDIO_MAX_FILES_PER_SEND
+        )
+      )
+        return refuse(`"fileUploadIds" and "files" attach at most ${STUDIO_MAX_FILES_PER_SEND} files together.`)
       return studioParams({
         ...session.params,
         message: value.message,
@@ -682,6 +704,9 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
         ...(value.composedAt === undefined ? {} : { composedAt: value.composedAt as number }),
         ...(value.confirmedStale === true ? { confirmedStale: true } : {}),
         ...(sent?.length ? { attachments: sent } : {}),
+        ...(Array.isArray(value.fileUploadIds) && value.fileUploadIds.length
+          ? { fileUploadIds: [...(value.fileUploadIds as string[])] }
+          : {}),
       })
     },
   },

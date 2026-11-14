@@ -11,6 +11,7 @@ import {
   CONVERSATION_PROTOCOL_VERSION,
   STUDIO_CAPABILITIES,
   STUDIO_CHAT_CAPABILITIES,
+  STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_CLIENT_TOOLS_CAPABILITY,
@@ -344,7 +345,9 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined) &&
         // An export is read only where the chat surface was given a reader.
-        (capability !== STUDIO_CHAT_EXPORT_CAPABILITY || chat()?.exportSource !== undefined),
+        (capability !== STUDIO_CHAT_EXPORT_CAPABILITY || chat()?.exportSource !== undefined) &&
+        // A file sent up with a session's message is kept only where there is a place for it.
+        (capability !== STUDIO_SESSION_FILE_UPLOADS_CAPABILITY || options.backend.followed?.keepFile !== undefined),
     ),
     conversation: {
       protocolVersion: CONVERSATION_PROTOCOL_VERSION,

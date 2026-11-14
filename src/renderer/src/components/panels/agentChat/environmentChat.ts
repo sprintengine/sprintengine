@@ -49,7 +49,8 @@ export function environmentConversationTransport(target: EnvironmentTarget): Con
   const known = transports.get(target.route)
   if (known && known.source === source) return known.transport
   const client = async () => windowClientOfRoute(await source.client(), target.route)
-  const parts = createStudioConversationParts(client)
+  // The chat runs over there: a file attached here goes up to it, never as a path of this disk.
+  const parts = createStudioConversationParts(client, { filesFromThisDisk: true })
   const services = createStudioChatServices(client, (listener) => source.watchOpen(listener))
   const transport = studioConversationTransport(() => source.welcome(), {
     label: target.name,
