@@ -37,7 +37,8 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
   isolation: 'held to its one chat, reading: every other ask is refused',
   launch:
     "a terminal agent's MCP bridge reaches the machine's gateway, proven by the launch token the desktop told it; revoked, it proves nothing",
-  machine: 'git, the home and a git-directory watch by the environment methods, and the files the window reads there',
+  machine:
+    'git, the home, CLI detection and a git-directory watch by the environment methods, and the files the window reads there',
   unreachable:
     'the phone and a paired desktop cannot reach it: no method lists or tickets it, and no path through the desktop serves it',
 }

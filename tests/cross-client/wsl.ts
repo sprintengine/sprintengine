@@ -8,7 +8,7 @@ import type { Readable } from 'node:stream'
 
 import { connect, StudioError, webSocketTransport, type StudioClient } from '../../packages/client-runtime/src/public'
 import { parseEnvironmentRoute } from '../../packages/studio-protocol/src/environment'
-import { installTree, wslNodeDigests } from '../../src/main/hosts/wsl-helper-runtime'
+import { installTree, wslNodeDigests } from '../../src/main/hosts/wsl-tree-install'
 import { streamedAppPayload, WSL_DATA_REL } from '../../src/main/hosts/wsl-install'
 import { WSL_NODE_VERSION } from '../../src/main/hosts/wsl-node-runtime'
 import type { WslRunner } from '../../src/main/hosts/wsl-runner'
@@ -34,7 +34,7 @@ import type { Matrix } from './matrix'
 // a real envelope by the desktop's environment manager, and wired as the
 // desktop's core wires it on Windows: the window's route to the distribution's
 // own Studio (`windowTicket`, a 127.0.0.1 route spliced onto the front door),
-// the launch tokens of its terminal agents, and git, the home and watches by
+// the launch tokens of its terminal agents, and git, the home, CLI detection and watches by
 // the environment methods on the core's owner connection.
 //
 // The window's client of that Studio, over that route, drives a chat on the
@@ -59,7 +59,8 @@ const ok = okOf('wsl')
  * stdin, a script run to its end, or one argv with a body on its stdin.
  */
 function fakeWslRunner(home: string): WslRunner {
-  const env = { PATH: process.env.PATH, HOME: home, WSL_DISTRO_NAME: DISTRO }
+  // The distribution's own programs first: a CLI installed there is found on its PATH.
+  const env = { PATH: `${join(home, 'bin')}:${process.env.PATH}`, HOME: home, WSL_DISTRO_NAME: DISTRO }
   const run = (file: string, args: readonly string[], body: Buffer | Readable): Promise<RunOutcome> =>
     new Promise((resolve) => {
       const child = spawn(file, args, { cwd: home, env, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -91,12 +92,14 @@ function fakeWslRunner(home: string): WslRunner {
   }
 }
 
-/** The distribution's home: the pinned Node already there, and a repository with one commit. */
+/** The distribution's home: the pinned Node already there, an agent CLI on its PATH, and a repository with one commit. */
 function fakeHome(dir: string): { home: string; repo: string } {
   const runtime = join(dir, WSL_DATA_REL, 'runtime', `node-${WSL_NODE_VERSION}`)
   mkdirSync(join(runtime, 'bin'), { recursive: true })
   symlinkSync(process.execPath, join(runtime, 'bin', 'node'))
   writeFileSync(join(runtime, '.ready'), wslNodeDigests()[0]!)
+  mkdirSync(join(dir, 'bin'))
+  writeFileSync(join(dir, 'bin', 'gate-agent'), '#!/bin/sh\necho "gate-agent 1.2.3"\n', { mode: 0o755 })
   const repo = join(dir, 'repo')
   mkdirSync(repo)
   const git = (...args: string[]) =>
@@ -194,7 +197,7 @@ export async function runWslLeg(input: {
   const { matrix } = input
   matrix.client('wsl', WSL_TRANSPORT, [
     "wsl.exe: `sh` runs each command in a home of the distribution's own on this machine, and the pinned Node there is this machine's own",
-    "the desktop's core: the gate wires its WSL pieces itself (the environment manager, the window route, the launch tokens, git and the home), as the core wires them on Windows",
+    "the desktop's core: the gate wires its WSL pieces itself (the environment manager, the window route, the launch tokens, the machine access), as the core wires them on Windows",
     "the terminal agent: its MCP bridge alone, started from the distribution's server tree as a WSL launch starts it",
   ])
   const tree = input.serverTree()
@@ -225,7 +228,7 @@ export async function runWslLeg(input: {
     },
   })
   // As the core wires them (studio-core.ts): a new connection is told every
-  // live launch token; git and the home go over the owner connection; a
+  // live launch token; git, the home and CLI detection go over the owner connection; a
   // window's ticket comes from the access, which is what main asks.
   const tokens = createWslLaunchTokens({
     connect: (distro) => manager.connect(distro),
@@ -388,6 +391,10 @@ export async function runWslLeg(input: {
     await matrix.run('wsl', 'machine', async () => {
       const where = await machine.home(DISTRO)
       if (where.home !== home) throw new Error(`wsl: the home is ${where.home}, not the distribution's`)
+      // An agent CLI, found on the distribution's PATH and its version read there.
+      const [probe] = await machine.detectClis(DISTRO, [{ binary: 'gate-agent', versionArgs: ['--version'] }], true)
+      if (!probe || !('found' in probe) || !probe.found || !probe.output.includes('1.2.3'))
+        throw new Error(`wsl: the agent CLI in the distribution was not found: ${JSON.stringify(probe)}`)
       writeFileSync(join(repo, 'README.md'), 'A project in WSL, changed.\n')
       const git = async (...args: string[]) => {
         const outcome = await machine.git(DISTRO, { cwd: repo, args, timeoutMs: 15_000 })
