@@ -174,7 +174,26 @@ export type WorkspaceSyncClientDependencies = {
   logDiagnostic?: (diagnostic: WorkspaceSyncDiagnostic) => void
   /** How long a gesture on a chat's rest waits for main's answer; `LIFECYCLE_ANSWER_MS` when absent. */
   lifecycleAnswerMs?: number
+  /**
+   * This window's own record of a workspace, as it stands now: a new chat
+   * whose create is sent again goes as the window holds it, with what was
+   * done to it since. Absent, it goes as it was first proposed.
+   */
+  currentWorkspace?: (workspaceId: WorkspaceId) => Workspace | null
+  /**
+   * Where a new chat main never took is told: refused, or unanswered however
+   * often it was sent. The window shows it; a chat is never dropped unseen.
+   */
+  reportUnsavedWorkspace?: (workspace: Workspace, message: string) => void
+  /**
+   * Where the creates main has not answered are kept across a reload of the
+   * window, read once at `start`. Absent, they live in memory only.
+   */
+  unansweredCreates?: { read(): unknown; write(commands: WorkspaceSyncCommand[]): void }
 }
+
+/** What became of a new chat's create: main has it on disk, or it never will. */
+export type WorkspaceCreateOutcome = { ok: true } | { ok: false; message: string }
 
 export type WorkspaceSyncClient = {
   /** Subscribe to broadcasts and seed the sequence baseline. Returns cleanup. */
@@ -228,6 +247,12 @@ export type WorkspaceSyncClient = {
   /** Ask main to remove a workspace and tombstone its id. */
   dispatchRemoveWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /**
+   * Settles once main has this window's new workspace on disk (at once for
+   * one it already had), or refused it for good. Nothing of a new chat is
+   * started before: a crash then never leaves a conversation no chat lists.
+   */
+  whenCreated: (workspaceId: WorkspaceId) => Promise<WorkspaceCreateOutcome>
+  /**
    * Ask main to settle, un-settle, snooze or wake a chat on this window's
    * reading of it. Never throws: a window with no main to ask is answered
    * `unavailable`, and one whose main could not be reached `unreachable`.
@@ -239,6 +264,67 @@ export type WorkspaceSyncClient = {
 
 /** How long a gesture on a chat's rest waits for main's answer before it is asked again. */
 const LIFECYCLE_ANSWER_MS = 4_000
+
+// A change main may not have, sent again until it answers. Main answers a
+// change only once it is on disk (studio-workspace-sync.ts), so one with no
+// answer is one a stop may have taken. Only changes that cannot land twice go
+// again: a new workspace, which main refuses by its id once it has it, and
+// the stamped edits, which main refuses once a newer one (or the same) is
+// applied. Window arrangement (the active chat, placement, moves) is not:
+// replayed late it would undo what the person did since.
+const RESENT_CHANGES: ReadonlySet<WorkspaceSyncCommand['type']> = new Set([
+  'workspace.created',
+  'workspace.rename',
+  'workspace.update_layout',
+  'workspace.update_fields',
+  'workspace.update_agent',
+  'workspace.remove',
+])
+
+/** How many times a change with no answer goes before the window gives it up and says so. */
+const MAX_UNANSWERED_SENDS = 5
+
+type Unanswered = { command: WorkspaceSyncCommand; sends: number }
+
+function commandWorkspaceId(command: WorkspaceSyncCommand): WorkspaceId | null {
+  if (command.type === 'workspace.created') return command.payload.workspace.id
+  const payload = command.payload as { workspaceId?: unknown }
+  return typeof payload.workspaceId === 'string' ? payload.workspaceId : null
+}
+
+// What a call ends with when its answer, not Studio's no, was lost: the
+// connection went (`disconnected`, `closed`, `timeout`), or Studio restarted
+// under it (`unknown_outcome`). Any other coded error is Studio's answer.
+const LOST_ANSWER_CODES: ReadonlySet<string> = new Set([
+  'unknown_outcome',
+  'disconnected',
+  'closed',
+  'timeout',
+  'hello_timeout',
+  'offline',
+  'cancelled',
+])
+
+function answerWasLost(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code !== 'string' || LOST_ANSWER_CODES.has(code)
+}
+
+/** A refusal that says the change is there after all: a create main already has. */
+function landedBefore(command: WorkspaceSyncCommand, reason: string): boolean {
+  return command.type === 'workspace.created' && reason === 'workspace_already_exists'
+}
+
+function storedCreates(value: unknown): Array<Extract<WorkspaceSyncCommand, { type: 'workspace.created' }>> {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (entry): entry is Extract<WorkspaceSyncCommand, { type: 'workspace.created' }> =>
+      Boolean(entry) &&
+      typeof entry === 'object' &&
+      (entry as { type?: unknown }).type === 'workspace.created' &&
+      typeof (entry as { payload?: { workspace?: { id?: unknown } } }).payload?.workspace?.id === 'string',
+  )
+}
 
 function withinMs<T>(answer: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -276,6 +362,79 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
   let started = false
   let eventQueue: Promise<void> = Promise.resolve()
   const reportedDiagnostics = new Set<string>()
+  // The changes main has not answered, oldest first (RESENT_CHANGES), and who
+  // waits on each new workspace's.
+  let unanswered: Unanswered[] = []
+  const createWaiters = new Map<WorkspaceId, Array<(outcome: WorkspaceCreateOutcome) => void>>()
+
+  const saveUnansweredCreates = (): void => {
+    try {
+      deps.unansweredCreates?.write(
+        unanswered.filter((entry) => entry.command.type === 'workspace.created').map((entry) => entry.command),
+      )
+    } catch {
+      // Kept in memory: only a reload before main answers loses it.
+    }
+  }
+  const track = (command: WorkspaceSyncCommand): Unanswered | null => {
+    if (!RESENT_CHANGES.has(command.type)) return null
+    const entry: Unanswered = { command, sends: 1 }
+    unanswered.push(entry)
+    if (command.type === 'workspace.created') saveUnansweredCreates()
+    return entry
+  }
+  // Answered for good: taken (or found already there), or refused. A new
+  // workspace refused is told to the person, unless it went with them.
+  const settle = (entry: Unanswered, outcome: WorkspaceCreateOutcome, options: { quiet?: boolean } = {}): void => {
+    if (!unanswered.includes(entry)) return
+    unanswered = unanswered.filter((candidate) => candidate !== entry)
+    if (entry.command.type !== 'workspace.created') return
+    saveUnansweredCreates()
+    const workspace = entry.command.payload.workspace
+    const waiters = createWaiters.get(workspace.id) ?? []
+    createWaiters.delete(workspace.id)
+    for (const waiter of waiters) waiter(outcome)
+    if (!outcome.ok && !options.quiet) deps.reportUnsavedWorkspace?.(workspace, outcome.message)
+  }
+  // Sent and unanswered once more: given up past the limit, else sent again
+  // once the connection is back (a request made meanwhile waits for it).
+  const unansweredAgain = (entry: Unanswered, error: unknown): void => {
+    if (!unanswered.includes(entry)) return
+    if (!answerWasLost(error)) {
+      settle(entry, { ok: false, message: error instanceof Error ? error.message : String(error) })
+      return
+    }
+    entry.sends += 1
+    if (entry.sends > MAX_UNANSWERED_SENDS)
+      settle(entry, {
+        ok: false,
+        message: `Studio did not answer: ${error instanceof Error ? error.message : 'unknown error'}.`,
+      })
+  }
+  // A new workspace goes as this window holds it now, with what was done to
+  // it since it was first proposed.
+  const resendable = (command: WorkspaceSyncCommand): WorkspaceSyncCommand => {
+    if (command.type !== 'workspace.created') return command
+    const current = deps.currentWorkspace?.(command.payload.workspace.id)
+    return current ? { ...command, payload: { ...command.payload, workspace: current } } : command
+  }
+  // Every unanswered change, again, in the order it was made; stopped by one
+  // that goes unanswered again, which the next connection takes up. Its
+  // answer's event is not applied: the registry is read whole right after.
+  const resendUnanswered = async (api: WorkspaceSyncClientApi): Promise<void> => {
+    for (const entry of [...unanswered]) {
+      if (!unanswered.includes(entry)) continue
+      let result: WorkspaceSyncCommandResult
+      try {
+        result = await api.workspaceSyncDispatch(resendable(entry.command))
+      } catch (error) {
+        unansweredAgain(entry, error)
+        return
+      }
+      if (result.ok || landedBefore(entry.command, result.reason)) settle(entry, { ok: true })
+      else settle(entry, { ok: false, message: result.message })
+    }
+  }
 
   const log = (diagnostic: WorkspaceSyncDiagnostic): void => {
     // Dedup by phase+reason so an unseeded main service (which rejects every
@@ -472,11 +631,17 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
   // over. So main's registry is read again and adopted whatever its sequence,
   // and the baseline is its sequence; queued with the events, so one that
   // arrives meanwhile is weighed against the new baseline.
+  //
+  // What this window changed and heard no answer to goes again first, so the
+  // registry read after it has it: a new chat stays on screen through a
+  // restart of its Studio instead of leaving with the registry read and
+  // coming back.
   const resync = (): Promise<void> => {
     eventQueue = eventQueue
       .then(async () => {
         const api = deps.getApi()
         if (!api) return
+        await resendUnanswered(api)
         const snapshot = await api.workspaceSyncGetSnapshot()
         if (!Number.isFinite(snapshot?.sequence)) return
         deps.applyRegistrySnapshot(snapshot)
@@ -524,6 +689,23 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     } catch {
       log({ phase: 'listener', reason: 'subscribe_failed', message: 'Failed to subscribe to workspace sync events.' })
       unsubscribe = null
+    }
+
+    // New chats a reload cut off before main answered for them go again, and
+    // the registry is read after them.
+    let saved: unknown = []
+    try {
+      saved = deps.unansweredCreates?.read()
+    } catch {
+      // Unreadable: nothing to send again.
+    }
+    const stored = storedCreates(saved)
+    for (const command of stored)
+      if (!unanswered.some((entry) => commandWorkspaceId(entry.command) === commandWorkspaceId(command)))
+        unanswered.push({ command, sends: 1 })
+    if (stored.length > 0) {
+      void resync()
+      return () => stop()
     }
 
     // Seed the mirror from main's registry and take its sequence as the
@@ -574,6 +756,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       })
       return
     }
+    const entry = track(command)
     let result: WorkspaceSyncCommandResult
     try {
       result = await api.workspaceSyncDispatch(command)
@@ -583,9 +766,20 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
         reason: 'dispatch_threw',
         message: `Workspace sync dispatch threw: ${error instanceof Error ? error.message : 'unknown error'}.`,
       })
+      // Its outcome is unknown (the connection went with it, or Studio
+      // restarted): it goes again, before the registry is read once more.
+      if (entry && unanswered.includes(entry)) {
+        unansweredAgain(entry, error)
+        if (unanswered.includes(entry)) void resync()
+      }
       return
     }
     if (!result.ok) {
+      if (entry && landedBefore(command, result.reason)) {
+        settle(entry, { ok: true })
+        return
+      }
+      if (entry) settle(entry, { ok: false, message: result.message })
       log({
         phase: 'dispatch',
         reason: result.reason,
@@ -593,6 +787,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       })
       return
     }
+    if (entry) settle(entry, { ok: true })
     await enqueueEvent(result.event)
   }
 
@@ -694,8 +889,23 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       },
     })
 
-  const dispatchRemoveWorkspace = (workspaceId: WorkspaceId): Promise<void> =>
-    dispatchCommand({ type: 'workspace.remove', payload: { workspaceId } })
+  // A workspace removed takes its unanswered changes with it: a reload must
+  // not bring back a chat the person closed.
+  const dispatchRemoveWorkspace = (workspaceId: WorkspaceId): Promise<void> => {
+    for (const entry of unanswered.filter((candidate) => commandWorkspaceId(candidate.command) === workspaceId))
+      settle(entry, { ok: false, message: 'The chat was removed.' }, { quiet: true })
+    return dispatchCommand({ type: 'workspace.remove', payload: { workspaceId } })
+  }
+
+  const whenCreated = (workspaceId: WorkspaceId): Promise<WorkspaceCreateOutcome> => {
+    const waiting = unanswered.some(
+      (entry) => entry.command.type === 'workspace.created' && entry.command.payload.workspace.id === workspaceId,
+    )
+    if (!waiting) return Promise.resolve({ ok: true })
+    return new Promise((resolve) => {
+      createWaiters.set(workspaceId, [...(createWaiters.get(workspaceId) ?? []), resolve])
+    })
+  }
 
   // A row-menu gesture on a chat's rest. The store has applied it already, as
   // it does every hand edit; main decides it on the reading it was made on,
@@ -755,6 +965,8 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     lastAppliedSequence = 0
     eventQueue = Promise.resolve()
     reportedDiagnostics.clear()
+    unanswered = []
+    createWaiters.clear()
   }
 
   return {
@@ -771,6 +983,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     dispatchUpdateWorkspaceFields,
     dispatchUpdateWorkspaceAgent,
     dispatchRemoveWorkspace,
+    whenCreated,
     dispatchLifecycleIntent,
     reset,
   }
@@ -810,6 +1023,24 @@ export type WorkspaceSyncEventHandlers = {
   applyWorkspaceAgentUpdated: (apply: WorkspaceAgentUpdatedApply) => void
   applyWorkspaceRemoved: (apply: WorkspaceRemovedApply) => void
   applyRegistrySnapshot: (snapshot: WorkspaceSyncSnapshot) => void
+  currentWorkspace?: (workspaceId: WorkspaceId) => Workspace | null
+  reportUnsavedWorkspace?: (workspace: Workspace, message: string) => void
+}
+
+/** Where this window keeps the new chats main has not answered for, across a reload. */
+function unansweredCreatesStorage(): WorkspaceSyncClientDependencies['unansweredCreates'] {
+  if (typeof window === 'undefined') return undefined
+  const key = () => `sprintengine-unanswered-workspace-creates:${defaultGetWindowId()}`
+  return {
+    read: () => {
+      const raw = window.localStorage.getItem(key())
+      return raw ? (JSON.parse(raw) as unknown) : []
+    },
+    write: (commands) => {
+      if (commands.length === 0) window.localStorage.removeItem(key())
+      else window.localStorage.setItem(key(), JSON.stringify(commands))
+    },
+  }
 }
 
 let configuredHandlers: WorkspaceSyncEventHandlers | null = null
@@ -834,4 +1065,7 @@ export const workspaceSyncClient = createWorkspaceSyncClient({
   applyWorkspaceAgentUpdated: (apply) => configuredHandlers?.applyWorkspaceAgentUpdated(apply),
   applyWorkspaceRemoved: (apply) => configuredHandlers?.applyWorkspaceRemoved(apply),
   applyRegistrySnapshot: (snapshot) => configuredHandlers?.applyRegistrySnapshot(snapshot),
+  currentWorkspace: (workspaceId) => configuredHandlers?.currentWorkspace?.(workspaceId) ?? null,
+  reportUnsavedWorkspace: (workspace, message) => configuredHandlers?.reportUnsavedWorkspace?.(workspace, message),
+  unansweredCreates: unansweredCreatesStorage(),
 })

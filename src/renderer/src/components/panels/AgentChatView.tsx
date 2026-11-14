@@ -40,6 +40,7 @@ import { PromptCacheComposerNotice } from './agentChat/promptCacheNotice'
 import type { ConversationProviderListEntry, ConversationProviderModel } from '../../../../shared/plugin-manifest'
 import type { CliPermissionPreset } from '../../types/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { workspaceSyncClient } from '../../store/workspaceSyncClient'
 import { ChevronDownIcon, ScheduleGlyph } from '../AppIcons'
 import { copySelectionAsMarkdown } from '../../utils/selectionToMarkdown'
 import { getEffectiveKeybindings, platformKeybindingsFromApiPlatform } from '../../commands/effectiveKeybindings'
@@ -1357,6 +1358,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   > => {
     if (!conversation || !workspaceRoot || !transport.capabilities.startSession || !transport.startSession) return null
     try {
+      // A new chat starts nothing before Studio has it on disk: a stop in
+      // between would leave a conversation, and a first message the agent
+      // may run, that no chat lists. Through a restart this waits for the
+      // chat to be sent again; refused, the send fails with the reason.
+      const created = await workspaceSyncClient.whenCreated(workspaceId)
+      if (!created.ok) return { ok: false, message: created.message }
       if (!(await ensureChatWorktree(workspaceId))) return { ok: false, message: WORKTREE_NOT_BACK }
       const result = await transport.startSession({
         workspaceRoot,

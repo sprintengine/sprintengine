@@ -363,6 +363,7 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
     createWorkspace,
     dispatch,
     flush: () => registry.flush(),
+    whenWritten: () => registry.whenWritten(),
     getEventsAfter,
     getSnapshot,
     mirrorWorkspaceFields,

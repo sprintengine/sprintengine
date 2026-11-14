@@ -283,6 +283,13 @@ export type ConversationLaunchServiceDeps = {
     request: WorkspaceCreateRequest,
   ) => { ok: true; workspaceId: string } | { ok: false; message: string }
   removeWorkspace: (workspaceId: string) => void
+  /**
+   * Settles once the chat's record is on disk. Awaited before the session is
+   * started, so nothing of a chat (its conversation, its first message sent)
+   * exists that a crash could leave with no record listing it. Absent, the
+   * record's own write delay applies.
+   */
+  persisted?: () => Promise<void>
   startSession: (input: ConversationStartSessionInput) => Promise<ConversationStartSessionResult>
   /**
    * Where a first message is written down before the launch answers, and let
@@ -773,6 +780,11 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         }
       }
     }
+
+    // On disk before anything else of the chat is made: a stop from here on
+    // finds the chat listed, with its first message kept beside it. A write
+    // that fails is reported by the registry, which keeps the chat in memory.
+    await deps.persisted?.()
 
     // The chat's CLI on the machine the chat runs on: a WSL workspace's chat
     // runs that distribution's CLI, whichever it is, as a window's chat would.

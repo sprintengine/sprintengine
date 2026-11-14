@@ -78,6 +78,12 @@ export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
       // `workspaceSync.events`, the window that made it included, which
       // takes it once by its sequence.
       if (result.ok) for (const listener of listeners) listener(asEvent(result.event))
+      // Answered once it is on disk, so an answer never promises what a crash
+      // could still take back: the window resends a change it heard no answer
+      // to (workspaceSyncClient.ts), and only that. A new chat is written at
+      // once, since its chat waits on this answer before anything of it is
+      // started; any other change on the registry's own short write delay.
+      if (result.ok) await (command.type === 'workspace.created' ? sync.flush() : sync.whenWritten())
       return result as unknown as StudioWorkspaceSyncCommandResult
     },
     async lifecycle(request) {

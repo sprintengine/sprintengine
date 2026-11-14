@@ -612,6 +612,14 @@ that every reader passes over (`conversation-command-receipts.ts`).
   (taken, or refused in an answer its log keeps). A refusal the log did not
   keep, such as a busy chat or an agent that would not start, keeps it, and
   the next start sends it again.
+- **A chat is on disk before anything of it starts.** A launched chat's record
+  is flushed to the workspace registry before its session starts, and a
+  window's New chat starts its chat's session only once Studio has answered its
+  create, which it does once the record is on disk. A stop never leaves a
+  conversation, or a first message its agent ran, that no chat lists. A create
+  whose answer a restart took is sent again by the window before it reads the
+  registry, so the chat stays on screen; one Studio refuses is shown with its
+  first message.
 - **Nothing is published before it is written.** A batch of the log is one
   write, and a write that fails is cut back off, so a client only ever holds
   sequence numbers that are on disk. A write that does not finish is waited

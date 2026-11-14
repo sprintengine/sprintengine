@@ -20,6 +20,9 @@ node tests/docker/studio-docker.mjs down single-1     # remove it: containers, d
 node tests/docker/studio-docker.mjs down --all        # remove every stack
 ```
 
+`STUDIO_DOCKER_TAG=<tag>` in the environment of `build` and `up` tags the images `<tag>` instead of
+`latest`, so an agent testing its own checkout does not replace the images others are using.
+
 `up` builds the images first if they are missing. `build` again after changing the source: it
 packs the checkout's tracked files and new files that are not ignored (not `mobile/`), so it tests
 the working tree, committed or not. The first build takes about six minutes and makes a 5.4 GB

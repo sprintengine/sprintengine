@@ -28,10 +28,12 @@ const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
 
 const LABEL = 'studio-harness.stack'
-const APP_IMAGE = 'sprintengine-studio-app:latest'
-const DESKTOP_IMAGE = 'sprintengine-studio-desktop:latest'
+/** The images' tag: an agent building its own checkout beside others names its own (`STUDIO_DOCKER_TAG`). */
+const TAG = process.env.STUDIO_DOCKER_TAG?.trim() || 'latest'
+const APP_IMAGE = `sprintengine-studio-app:${TAG}`
+const DESKTOP_IMAGE = `sprintengine-studio-desktop:${TAG}`
 const SSHD_IMAGE = 'sprintengine-test-sshd:1'
-const SSH_MACHINE_IMAGE = 'sprintengine-studio-ssh-machine:latest'
+const SSH_MACHINE_IMAGE = `sprintengine-studio-ssh-machine:${TAG}`
 /** What one desktop may use; the VM is shared by every stack and by other work. */
 const DESKTOP_MEMORY = process.env.STUDIO_DOCKER_MEMORY ?? '1536m'
 const DESKTOP_CPUS = process.env.STUDIO_DOCKER_CPUS ?? '2'

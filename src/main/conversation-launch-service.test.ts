@@ -121,6 +121,35 @@ test('a chat launch writes a conversation agent, starts its session and sends th
   assert.deepEqual(record.sends, [{ sessionId: 'conv_1', commandId: 'cmd-1', message: 'fix the build' }])
 })
 
+test('the chat is on disk before its session starts, so a stop in between never leaves a conversation no chat lists', async () => {
+  const order: string[] = []
+  let written: () => void = () => undefined
+  const { service } = harness({
+    writeAgent: () => {
+      order.push('record')
+      return { ok: true }
+    },
+    persisted: () =>
+      new Promise<void>((resolve) => {
+        order.push('writing')
+        written = () => {
+          order.push('on disk')
+          resolve()
+        }
+      }),
+    startSession: async (input) => {
+      order.push('session')
+      return { ok: true, session: { sessionId: 'conv_1', ...input } as unknown as ConversationSessionSummary }
+    },
+  })
+  const launched = service.launch({ workspaceId: 'ws-1', cli: 'claude-code', prompt: 'hi' })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.deepEqual(order, ['record', 'writing'], 'nothing of the chat starts while its record is not on disk')
+  written()
+  assert.equal((await launched).ok, true)
+  assert.deepEqual(order, ['record', 'writing', 'on disk', 'session'])
+})
+
 test('an unnamed CLI, model and preset take what the launcher here would', async () => {
   const { service, record } = harness({
     settings: { lastSelectedCli: 'codex', cliPermissionPresets: { codex: 'none' } },
