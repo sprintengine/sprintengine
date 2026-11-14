@@ -1290,8 +1290,9 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
   }
 
   // The SDK would put these on the child's command line, one `--mcp-config`
-  // argument that every user of the machine can read (`ps`). A connector's server carries its secrets there:
-  // an API key in its `env`, a token in its `headers` or its `args`. So they
+  // argument that every user of the machine can read (`ps`). A connector's
+  // server carries its secrets there: an API key in its `env`, a token in its
+  // `headers` or its `args`. So they
   // go over the child's stdin, before its first message is sent; the CLI
   // answers once each has connected or given up, so their tools are there
   // from the first turn. One that fails is left out, as a failed connect was
