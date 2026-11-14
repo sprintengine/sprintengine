@@ -2101,7 +2101,10 @@ test('a link that drops does not list the machine; one that comes back live does
     expect(chat.host.textContent).toContain('Let me run it.')
     await chat.act(async () => chat.studio.setState(key.connectionId, 'open'))
     await chat.settleReads()
-    expect(reads()).toBe(before + 1)
+    // Read again once it is back: as it goes live, and again if the sessions
+    // list it follows is read again in a later tick (on a slow runner it is),
+    // so at least once rather than exactly once.
+    expect(reads()).toBeGreaterThan(before)
     expect(chat.host.textContent).not.toContain('mac-mini is not answering.')
   } finally {
     await chat.unmount()
