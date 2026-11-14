@@ -627,9 +627,13 @@ test('the files a removed device sent go with it, and another device’s stay', 
   await leaving.rpc['conversation.send']({ key: KEY, commandId: 'send-leaving', message: 'bye', uploadIds: [uploadId] })
   const kept = filesUnder(uploadsRoot).find((path) => path.endsWith(`${sep}leaving.txt`))
   assert.ok(kept)
+  // One it sent on the conversation lane, before the lane went: kept under its bare id.
+  const laneUpload = createTailnetFileUploads({ root: uploadsRoot }).place(pairing.id, 'lane.txt')
+  writeFileSync(laneUpload.path, 'older')
   assert.ok(rig.devices.revokeDevice(pairing.id))
   assert.equal(existsSync(kept), false)
   assert.equal(existsSync(dirname(dirname(kept))), false)
+  assert.equal(existsSync(laneUpload.path), false, 'what it sent on the lane goes too')
   assert.ok(
     filesUnder(uploadsRoot).some((path) => path.endsWith(`${sep}data.csv`)),
     'the laptop’s file stays',

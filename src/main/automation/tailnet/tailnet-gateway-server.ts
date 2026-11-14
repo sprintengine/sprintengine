@@ -346,11 +346,14 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // next request: a live WebSocket would otherwise keep serving a device the
     // user just removed.
     // The files a removed device sent go with it, as a removed browser's do:
-    // those it sent on the Studio socket are kept under its Studio client id.
+    // those it sent on the Studio socket are kept under its Studio client id,
+    // and those it sent on the conversation lane, before that went, under
+    // its bare id (a chat still naming one keeps it from the week's prune).
     const unsubscribeRevoked = options.devices.onDeviceRevoked((deviceId) => {
       closeStreamsFor(deviceId)
       try {
         options.fileUploads?.forgetDevice(tailnetStudioClientId(deviceId))
+        options.fileUploads?.forgetDevice(deviceId)
       } catch (error) {
         options.log?.(`tailnet uploads of a removed device were not removed: ${message(error)}`)
       }
