@@ -101,3 +101,17 @@ test('only the exact pair, adjacent and in order, counts as the old lines', () =
   assert.equal(withoutLegacySharedPair('.mcp.json\n# x\n.codex/config.toml\n'), null)
   assert.equal(withoutLegacySharedPair('a\n.mcp.json\n.codex/config.toml\nb\n'), 'a\nb\n')
 })
+
+test('a second caller adds its entries beside the first, in a linked worktree and in the main checkout', async () => {
+  const { repo, worktrees } = await repoWithWorktrees(1)
+  const skills = ['/.agents/skills/studio-ship/']
+  for (const path of [worktrees[0], repo]) {
+    await excludeFromWorktree(path, ENTRIES)
+    await excludeFromWorktree(path, skills)
+    await excludeFromWorktree(path, ENTRIES)
+    await writeFile(join(path, '.mcp.json'), '{}\n')
+    await mkdir(join(path, '.agents', 'skills', 'studio-ship'), { recursive: true })
+    await writeFile(join(path, '.agents', 'skills', 'studio-ship', 'SKILL.md'), '# Ship\n')
+    assert.equal(await untracked(path), '', path)
+  }
+})

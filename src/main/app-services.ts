@@ -102,6 +102,7 @@ import { isTelemetryEventName, type TelemetryProperties } from '../shared/teleme
 import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { excludeMcpConfigFromWorktree } from './git'
+import { excludeFromWorktree } from './integrations/worktree-exclude'
 import { createElectronThumbnailer } from './artifacts/artifact-thumbnail-electron'
 import { askToSetUpArtifacts } from './artifacts/artifacts-setup-consent-electron'
 import { createConversationPeekService } from './conversation-peek/service'
@@ -632,6 +633,7 @@ export function createAppServices(
     whenLaunchPluginsSettled: () => agentIntegrationReady,
     resolveEnabledSkillDirs: () => studioAreaSkillStore.enabledSkillDirs(),
     pruneRetiredSkillCopies: pruneRetiredBuiltinSkillCopies,
+    excludeFromGit: (workspaceRoot, entries) => excludeFromWorktree(workspaceRoot, entries),
     listAgentStateSpecs,
     logDiagnostic: (diagnostic) => {
       void writeDiagnosticLog({ ...diagnostic, source: 'workspace' })

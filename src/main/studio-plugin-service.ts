@@ -32,6 +32,7 @@ import { readFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 import type { PluginAgentStateSpec } from '../shared/plugin-manifest'
+import { SKILL_HARNESS_DIR } from '../shared/skill-harnesses'
 import type { SkillHarness } from '../shared/skills'
 import { AGENT_STATE_HOOK_SCRIPT_REL } from './agent-state'
 import {
@@ -92,6 +93,13 @@ export type StudioPluginServiceOptions = {
    * it removed. Absent ⇒ nothing is pruned.
    */
   pruneRetiredSkillCopies?: (workspaceRoot: string) => Promise<string[]>
+  /**
+   * Keep these workspace-relative paths out of the workspace's git
+   * (`excludeFromWorktree`): the skill copies are Studio's, not the agent's
+   * work, and must neither show as a turn's changes nor keep a worktree from
+   * being removed. Best-effort; absent ⇒ nothing is excluded.
+   */
+  excludeFromGit?: (workspaceRoot: string, entries: readonly string[]) => Promise<unknown>
   logDiagnostic?: (input: { level: 'warning' | 'info'; title: string; message: string; details?: string }) => void
 }
 
@@ -298,6 +306,12 @@ export function createStudioPluginService(options: StudioPluginServiceOptions): 
     // agent reads, and agent state is repaired by the CLI's own installer at
     // the next launch.
     const acknowledged = socketPath !== '' && (await answerHooksAcknowledgement()) !== ''
+
+    // Before the copies land, so no status, checkpoint or turn diff ever sees them.
+    const copies = harnesses.flatMap((harness) =>
+      skillDirs.map((dirName) => `/${SKILL_HARNESS_DIR[harness]}/skills/${dirName}/`),
+    )
+    if (copies.length > 0) await options.excludeFromGit?.(workspaceRoot, copies).catch(() => undefined)
 
     const result: StudioPluginInstallResult = await installStudioPlugin({
       workspaceRoot,
