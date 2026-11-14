@@ -282,24 +282,28 @@ async function startDesktop(stack, network, name, ip, nodes, options) {
 
 async function startSshMachine(stack, network, ip) {
   const container = `${stack}-build-box`
-  await runPublishing(container, [22], [
-    'run',
-    '-d',
-    '--init',
-    '--name',
+  await runPublishing(
     container,
-    '--hostname',
-    'build-box',
-    '--label',
-    `${LABEL}=${stack}`,
-    '--network',
-    network,
-    '--network-alias',
-    'build-box',
-    '--ip',
-    ip,
-    SSH_MACHINE_IMAGE,
-  ])
+    [22],
+    [
+      'run',
+      '-d',
+      '--init',
+      '--name',
+      container,
+      '--hostname',
+      'build-box',
+      '--label',
+      `${LABEL}=${stack}`,
+      '--network',
+      network,
+      '--network-alias',
+      'build-box',
+      '--ip',
+      ip,
+      SSH_MACHINE_IMAGE,
+    ],
+  )
   return container
 }
 
