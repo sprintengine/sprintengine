@@ -63,6 +63,33 @@ export function machinePathsIn<T>(spelling: MachineSpelling, value: T): T {
 }
 
 /**
+ * Why the machine cannot open a folder what is sent names (a member in
+ * `MACHINE_PATH_MEMBERS`), in words, or null when it can open every one: a
+ * WSL distribution is never handed another's share, a network share, or a
+ * drive it does not mount, which it would read as a relative name.
+ */
+export function machineFolderRefusal(spelling: MachineSpelling, value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const refused = machineFolderRefusal(spelling, entry)
+      if (refused) return refused
+    }
+    return null
+  }
+  if (!isPlainObject(value)) return null
+  for (const [member, entry] of Object.entries(value)) {
+    const refused =
+      typeof entry === 'string'
+        ? MACHINE_PATH_MEMBERS.has(member)
+          ? spelling.refusal(entry)
+          : null
+        : machineFolderRefusal(spelling, entry)
+    if (refused) return refused
+  }
+  return null
+}
+
+/**
  * What the machine answered, with each folder or file it names spelled for
  * this computer. `extra` names more members to respell for one answer (a
  * plan document's `path`).

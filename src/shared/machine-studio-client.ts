@@ -1,5 +1,5 @@
 import type { StudioClient } from '../../packages/client-runtime/src/public'
-import { machinePathsIn, machinePathsOut } from './machine-path-edge'
+import { machineFolderRefusal, machinePathsIn, machinePathsOut } from './machine-path-edge'
 import { machineSpellingOf, type MachineSpelling } from './machine-spelling'
 
 // A client of another machine's Studio (an SSH machine's, a WSL
@@ -16,6 +16,9 @@ const ANSWER_PATHS: Partial<Record<string, ReadonlySet<string>>> = {
   'conversation.planDocument': new Set(['path']),
 }
 
+/** The conversation calls that answer at once, not in a promise. */
+const SYNC_CONVERSATION_MEMBERS: ReadonlySet<string> = new Set(['events', 'follow'])
+
 const made = new WeakMap<StudioClient, Map<string, StudioClient>>()
 
 /** The machine's client, its paths spelled as this computer spells them. One per client and machine. */
@@ -24,15 +27,20 @@ export function machineStudioClient(client: StudioClient, spelling: MachineSpell
   if (!byRoute) made.set(client, (byRoute = new Map()))
   const known = byRoute.get(spelling.route)
   if (known) return known
-  const request = (async (method: string, params?: unknown) =>
-    machinePathsOut(
+  const request = (async (method: string, params?: unknown) => {
+    // A hand-over's records are kept as they are, folders and all; a folder
+    // named to be opened there is refused when the machine cannot open it.
+    const refused = method === 'environment.adopt' ? null : machineFolderRefusal(spelling, params)
+    if (refused) throw new Error(refused)
+    return machinePathsOut(
       spelling,
       await (client.request as (method: string, params?: unknown) => Promise<unknown>)(
         method,
         machinePathsIn(spelling, params ?? {}),
       ),
       ANSWER_PATHS[method],
-    )) as StudioClient['request']
+    )
+  }) as StudioClient['request']
   const rpc = new Proxy(
     {},
     {
@@ -52,8 +60,14 @@ export function machineStudioClient(client: StudioClient, spelling: MachineSpell
         get(target, member, receiver) {
           const value = Reflect.get(target, member, receiver) as unknown
           if (typeof value !== 'function') return value
-          return (...args: unknown[]) =>
-            (value as (...given: unknown[]) => unknown).apply(target, machinePathsIn(spelling, args))
+          return (...args: unknown[]) => {
+            // A folder the machine cannot open is refused in words by every
+            // call that answers in a promise; a stream is opened as asked,
+            // and finds no chat there.
+            const refused = SYNC_CONVERSATION_MEMBERS.has(String(member)) ? null : machineFolderRefusal(spelling, args)
+            if (refused) return Promise.reject(new Error(refused))
+            return (value as (...given: unknown[]) => unknown).apply(target, machinePathsIn(spelling, args))
+          }
         },
       })
   const wrapped = new Proxy(client, {

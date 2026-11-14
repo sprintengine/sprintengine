@@ -29,6 +29,12 @@ export type MachineSpelling = {
   fromMachine(path: string): string
   /** Whether a string `toMachine` takes may also be words, so a person's text is left as written. */
   guesses: boolean
+  /**
+   * Why the machine cannot open a folder this computer names, in words, or
+   * null: a member that names a folder (`MACHINE_PATH_MEMBERS`) is refused
+   * rather than handed over as a name the machine would read as relative.
+   */
+  refusal(folder: string): string | null
 }
 
 /** Where a WSL distribution mounts Windows drives: its own word (`/mnt/` unless its wsl.conf says), or null for none. */
@@ -44,6 +50,7 @@ function sshSpelling(id: string): MachineSpelling {
     },
     fromMachine: (path) => machinePath(id, path),
     guesses: false,
+    refusal: () => null,
   }
 }
 
@@ -68,6 +75,15 @@ function wslSpelling(distro: string, driveMountRoot: WslDriveMount): MachineSpel
     },
     fromMachine: (path) => wslToWindowsPath(path, { distro, ...mount() }),
     guesses: true,
+    refusal: (folder) => {
+      const share = distroOfUncPath(folder)
+      if (share !== null)
+        return share.toLowerCase() === distro.toLowerCase() ? null : `${folder} is in WSL: ${share}, not in ${distro}.`
+      if (folder.startsWith('\\\\')) return `${folder} is a network share, which WSL: ${distro} cannot open.`
+      if (/^[A-Za-z]:[\\/]/u.test(folder) && driveMountRoot() === null)
+        return `WSL: ${distro} mounts no Windows drives (automount is off in its /etc/wsl.conf), so a chat in ${folder} cannot run there.`
+      return null
+    },
   }
 }
 
