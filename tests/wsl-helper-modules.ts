@@ -64,29 +64,6 @@ export type SessionsModule = {
   clearSessionDir(dir: string): void
 }
 
-/** The slice of a `net.Socket` the relay uses, for a stand-in. */
-export type RelaySocketLike = {
-  on(event: string, listener: (...args: never[]) => void): unknown
-  off(event: string, listener: (...args: never[]) => void): unknown
-  pause(): unknown
-  resume(): unknown
-  write(chunk: Buffer): unknown
-  end(): unknown
-  destroy(): unknown
-  setTimeout(ms: number, callback: () => void): unknown
-  readableEnded: boolean
-}
-
-export type RelayModule = {
-  parseAuthLine(line: string): string | null
-  createMcpMux(send: (frame: Record<string, unknown>) => void): {
-    accept(socket: RelaySocketLike): void
-    handleFromMain(frame: Record<string, unknown>): void
-    size(): number
-    closeAll(): void
-  }
-}
-
 export type LoginEnvModule = {
   keepVariable(name: string): boolean
   parseEnvDump(bytes: Buffer | string, keep?: (name: string) => boolean): Record<string, string> | null

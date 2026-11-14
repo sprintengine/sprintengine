@@ -10,11 +10,11 @@
 // and talks to it over that one process's stdin and stdout: newline-delimited
 // JSON (`lib/frames.mjs`). It is the only channel between Windows and Linux, so
 // the app needs no networking mode, no interop inside the distribution, and no
-// port anywhere. Inside Linux, the helper listens on a private Unix socket
-// (`lib/sockets.mjs`) for the app's MCP bridge, and relays it to main
-// (`lib/relay.mjs`). The hooks, status line and OpenCode plugin report to the
-// distribution's own Studio server instead, which relays them to the desktop
-// (`src/server/wsl/agent-state-relay.ts`). It also answers main's
+// port anywhere. The app's hooks, status line and OpenCode plugin report to
+// the distribution's own Studio server, which relays them to the desktop
+// (`src/server/wsl/agent-state-relay.ts`), and an agent's MCP bridge reaches
+// that server's gateway (`src/server/wsl/wsl-launch-tokens.ts`). The helper
+// answers main's
 // questions about the distribution: which processes a session left running,
 // which CLIs are installed, the home folder, and running a program or git. It
 // writes each launch's startup script where only this user can read it
@@ -23,7 +23,7 @@
 //
 // Lifetime. It exits when its stdin closes (main quit, crashed, or killed the
 // `wsl.exe`), when main says `shutdown`, or on a signal, and on the way out it
-// removes its sockets and ends every process group it started. When the app
+// ends every process group it started. When the app
 // quits, main's `shutdown` also asks it to end every session the app launched
 // here, because ending the Windows `wsl.exe` of a terminal does not reach the
 // Linux processes under it. Main stops it about two minutes after the last WSL
@@ -31,7 +31,7 @@
 // dependencies: it runs on the pinned Linux Node main installed next to it,
 // never on the person's own.
 
-import { chmodSync, readFileSync, rmSync, watch as fsWatch, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, watch as fsWatch } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,17 +41,15 @@ import { ensureTree } from './lib/files.mjs'
 import { createLineDecoder, decodeFrame, encodeFrame, PROTOCOL_VERSION } from './lib/frames.mjs'
 import { captureLoginEnv } from './lib/login-env.mjs'
 import { endAllSessions, snapshot, survivorPids } from './lib/proc.mjs'
-import { createMcpMux } from './lib/relay.mjs'
 import { checkRunRequest, childEnv, decodeStdin, killAllChildren, runArgv } from './lib/run.mjs'
 import { clearSessionDir, ensureSessionDir, removeSessionEntries, writeSessionFiles } from './lib/sessions.mjs'
-import { closePrivate, ensurePrivateDir, ensureSocketDir, listenPrivate } from './lib/sockets.mjs'
+import { ensurePrivateDir, ensureSocketDir } from './lib/sockets.mjs'
 
 // Main's own frames can carry a plugin copy, so the cap is generous; it is
 // still a cap, because a broken writer should end the helper rather than fill
 // its memory.
 const MAX_MAIN_LINE_BYTES = 64 * 1024 * 1024
 const HELLO_TIMEOUT_MS = 30_000
-const INFO_FILENAME = 'sprintengine-studio-mcp-info.json'
 const CLI_SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/u
 // The Git pane watches a handful of directories per open checkout.
 const MAX_WATCHES = 512
@@ -64,10 +62,8 @@ const procRoot = process.env.SPRINTENGINE_HELPER_PROC_ROOT || '/proc'
 const socketBase = process.env.SPRINTENGINE_HELPER_SOCKET_BASE || undefined
 
 let exiting = false
-const servers = []
 const watches = new Map()
 let nextWatchId = 1
-let infoPath = null
 // Set by the hello: the session pid files live beside the sockets, in the
 // directory the helper made private, and the launch files in the profile's
 // own directory under the Linux home.
@@ -84,8 +80,6 @@ function send(frame) {
 }
 
 process.stdout.on('error', () => shutdown(0))
-
-const mux = createMcpMux(send)
 
 let loginEnvPromise = null
 const loginEnv = () => {
@@ -127,15 +121,7 @@ async function shutdown(code, options = {}) {
   }
   killAllChildren()
   detector.close()
-  mux.closeAll()
   for (const id of [...watches.keys()]) closeWatch(id)
-  await Promise.all(servers.map(({ server, path }) => closePrivate(server, path).catch(() => undefined)))
-  // The discovery file too, unless a newer helper has written its own there.
-  try {
-    if (infoPath && JSON.parse(readFileSync(infoPath, 'utf8')).pid === process.pid) rmSync(infoPath, { force: true })
-  } catch {
-    // Gone or unreadable: nothing of ours to remove.
-  }
   process.exit(code)
 }
 
@@ -151,34 +137,6 @@ async function start(hello) {
   // launched by a main that has since gone (it crashed, or was killed before
   // it could end them), and nothing will ever manage it again.
   if (hello.endOrphans === true) endSessions()
-  const mcpSocket = join(socketDir, 'mcp.sock')
-  // Half-open: a bridge whose client closed its stdin still gets the replies
-  // already on their way.
-  servers.push({
-    server: await listenPrivate(mcpSocket, (socket) => mux.accept(socket), { allowHalfOpen: true }),
-    path: mcpSocket,
-  })
-  // The MCP bridge finds its server through a discovery file in its user-data
-  // directory. This directory stands in for it inside Linux, so the bridge the
-  // app ships runs here unchanged. `channelAuth` tells it to open with its
-  // launch's token (lib/relay.mjs).
-  infoPath = join(socketDir, INFO_FILENAME)
-  writeFileSync(
-    infoPath,
-    `${JSON.stringify(
-      {
-        socketPath: mcpSocket,
-        transport: 'unix-socket',
-        pid: process.pid,
-        protocol: 'mcp-jsonrpc-ndjson',
-        channelAuth: 'launch-token',
-      },
-      null,
-      2,
-    )}\n`,
-    { mode: 0o600 },
-  )
-  chmodSync(infoPath, 0o600)
   // Read in the background now; the first CLI check or git command waits on it.
   void loginEnv()
   return {
@@ -188,8 +146,6 @@ async function start(hello) {
     arch: process.arch,
     nodePath: process.execPath,
     appDir,
-    mcpSocket,
-    userDataDir: socketDir,
     pidDir,
     sessionDir,
   }
@@ -330,7 +286,6 @@ async function handleFrame(frame) {
     return
   }
   if (frame.t === 'req' && Number.isInteger(frame.id)) void handleRequest(frame)
-  else if (frame.t === 'ch') mux.handleFromMain(frame)
   else if (frame.t === 'shutdown') void shutdown(0, { endSessions: frame.endSessions === true })
 }
 

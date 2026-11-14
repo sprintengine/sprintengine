@@ -29,6 +29,7 @@ import type { StudioDiscovery } from '../rpc/studio-rpc-types'
 import { conversationWorkingRoot } from '../../shared/agent-state'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { backgroundWorkOf } from './background-work'
+import { applyGatewayLaunchTokenChanges } from './gateway-launch-tokens'
 import { chatsAreWorking } from './chats-working'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
@@ -105,6 +106,9 @@ export function createStudioRpc(
     // A Studio a desktop holds over its front door keeps what that desktop
     // kept for its chats, once the desktop hands it over.
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh' ? { adoption: environmentAdoptionOf(core) } : {}),
+    // A WSL distribution's gateway knows the desktop's terminal agents that run
+    // inside it by their launch tokens, which the desktop says by digest.
+    ...(options.hostKind === 'wsl' ? { launchTokens: applyGatewayLaunchTokenChanges } : {}),
     // And says what stopping it would end, which that desktop asks before it
     // stops a WSL server for being idle and for its quit question.
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'

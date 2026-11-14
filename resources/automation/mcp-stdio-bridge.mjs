@@ -202,24 +202,10 @@ function connectFrameBody({ withLaunchToken = false } = {}) {
   })
 }
 
-// Inside a WSL distribution the socket is the app's helper, which opens a
-// channel to the app only for a bridge started by one of the app's own live
-// launches: that launch's token, inherited from the CLI, goes first. A bridge
-// started any other way has none and is told so, rather than being dropped
-// without a word.
+// The launch's token, which the gateway takes the agent's identity from. A WSL
+// terminal agent's is exported by its startup script, and its bridge presents
+// it to the gateway of the distribution's own Studio.
 const CHANNEL_TOKEN_ENV = 'SPRINTENGINE_MCP_CHANNEL_TOKEN'
-
-function channelAuthLine(info) {
-  if (info.channelAuth !== 'launch-token') return ''
-  const token = studioEnv(CHANNEL_TOKEN_ENV).trim()
-  if (!token) {
-    fail(
-      `This MCP bridge was not started by a SprintEngine Studio launch (${CHANNEL_TOKEN_ENV} is not set), ` +
-        'so the app will not accept it. Start the agent from SprintEngine Studio.',
-    )
-  }
-  return `${JSON.stringify({ t: 'auth', token })}\n`
-}
 
 // How often a bridge looks for Studio again after its gateway goes: soon at
 // first (the Studio server is supervised, and usually back within seconds),
@@ -252,9 +238,6 @@ const REPLAY_ID_PREFIX = '__studio_reinitialize_'
 function runLocal(infoPathArg) {
   const infoPath = resolveInfoPath(infoPathArg)
   const firstInfo = readServerInfo(infoPath)
-  // Read here, once: a bridge with no launch token for a helper fails at
-  // start, as before, rather than on the first reconnect.
-  channelAuthLine(firstInfo)
 
   let socket = null
   // Lines the client sent before the first socket connected: they follow the
@@ -348,8 +331,6 @@ function runLocal(infoPathArg) {
       connectedOnce = true
       reconnecting = false
       saidNotBack = false
-      const authLine = channelAuthLine(info)
-      if (authLine) next.write(authLine)
       // Attribution, proven by the launch token where the launch issued one;
       // the ids beside it are only a claim. Sent first on every connection, the
       // first and each after a restart, with the same token: the restarted

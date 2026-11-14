@@ -8,10 +8,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
-import { STUB_HELPER_INFO, stubWslHelper } from '../../../tests/wsl-helper-stub'
+import {
+  STUB_AGENT_STATE_SOCKET,
+  STUB_HELPER_INFO,
+  STUB_SERVER_DATA_DIR,
+  stubWslDistributionLink,
+  stubWslHelper,
+} from '../../../tests/wsl-helper-stub'
 import { createPluginRegistry } from '../plugin-registry'
 import { __resetPluginRegistryForTest, __setPluginRegistryForTest } from '../plugin-registry-instance'
-import { createWslHost, nativeGitOutput, wslGitArg, wslHostState, type WslDistributionLink } from './wsl-host'
+import { createWslHost, nativeGitOutput, wslGitArg, wslHostState } from './wsl-host'
 import type { WslPluginCopy } from './wsl-plugin-copy'
 import { WslSetupError } from './wsl-setup-error'
 
@@ -42,22 +48,9 @@ const PLUGIN_COPY: WslPluginCopy = {
   statusLineScriptPath: `${STUB_HELPER_INFO.appDir}/plugin-abc123def456/sprintengine-studio/hooks/status-line.mjs`,
 }
 
-/** The socket the distribution's Studio server opened for its terminal agents' reports. */
-const AGENT_STATE_SOCKET = '/home/dev/.local/share/sprintengine-studio/data/agent-state.sock'
-
-/** A stand-in for the core's WSL servers: what each connect answers, and the holds. */
-function distributionLink(socket: () => string | null = () => AGENT_STATE_SOCKET) {
-  const holds = new Set<string>()
-  let connects = 0
-  const link: WslDistributionLink = {
-    connect: async () => {
-      connects += 1
-      return { agentStateSocket: socket() }
-    },
-    hold: (distro, key) => holds.add(`${distro}/${key}`),
-    release: (distro, key) => holds.delete(`${distro}/${key}`),
-  }
-  return { link, holds, connects: () => connects }
+/** A stand-in for the core's WSL servers, answering `socket` for the agent-state socket. */
+function distributionLink(socket: () => string | null = () => STUB_AGENT_STATE_SOCKET) {
+  return stubWslDistributionLink(() => ({ agentStateSocket: socket(), dataDir: STUB_SERVER_DATA_DIR }))
 }
 
 function hostWith(
@@ -71,9 +64,9 @@ function hostWith(
     readSettings: () => undefined,
     listed: () => undefined,
     helper,
-    distribution: distribution.link,
-    buildPluginCopy: async (_info, socket) => {
-      sockets.push(socket)
+    distribution,
+    buildPluginCopy: async (_info, server) => {
+      sockets.push(server.agentStateSocket)
       return extra.plugin === undefined ? PLUGIN_COPY : extra.plugin
     },
     survivorDelayMs: 0,
@@ -333,7 +326,7 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
   assert.ok(integration)
   assert.equal(
     integration.agentStateSocketPath,
-    AGENT_STATE_SOCKET,
+    STUB_AGENT_STATE_SOCKET,
     "hooks report to the distribution's server, which relays them here",
   )
   assert.equal(integration.commandRuntime.executable, STUB_HELPER_INFO.nodePath)
@@ -354,7 +347,8 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
   assert.deepEqual(integration.studioMcpEntry, {
     command: '/bin/sh',
     args: ['/home/dev/.sprintengine/bin/studio-run', 'mcp'],
-    env: { SPRINTENGINE_USER_DATA_DIR: STUB_HELPER_INFO.userDataDir },
+    // The distribution's own gateway, found by its server's data directory.
+    env: { SPRINTENGINE_USER_DATA_DIR: STUB_SERVER_DATA_DIR },
     envVarNames: ['SPRINTENGINE_MCP_CHANNEL_TOKEN'],
   })
   assert.equal(JSON.stringify(integration.studioMcpEntry).includes(STUB_HELPER_INFO.appDir), false)
@@ -364,7 +358,7 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
     env: { CLAUDE_CONFIG_DIR: '\\\\wsl.localhost\\Debian\\home\\dev\\.claude-work' },
   })
   const target = host.launchTarget()
-  assert.equal(target.kind === 'wsl' && target.integration?.agentStateSocketPath, AGENT_STATE_SOCKET)
+  assert.equal(target.kind === 'wsl' && target.integration?.agentStateSocketPath, STUB_AGENT_STATE_SOCKET)
   assert.equal(target.kind === 'wsl' && target.sessionDir, STUB_HELPER_INFO.sessionDir)
   assert.equal(target.kind === 'wsl' && target.pidDir, STUB_HELPER_INFO.pidDir)
 
@@ -426,7 +420,7 @@ test('prepare does not finish on a preparation for a helper that restarted under
     readSettings: () => undefined,
     listed: () => undefined,
     helper,
-    distribution: distributionLink().link,
+    distribution: distributionLink(),
     buildPluginCopy: async () => PLUGIN_COPY,
     survivorDelayMs: 0,
   })
@@ -434,7 +428,7 @@ test('prepare does not finish on a preparation for a helper that restarted under
   assert.equal(homes, 2, 'prepared again for the helper that is running now')
   const target = host.launchTarget()
   assert.equal(target.kind === 'wsl' && target.pidDir, second.pidDir)
-  assert.equal(host.agentIntegration()?.agentStateSocketPath, AGENT_STATE_SOCKET)
+  assert.equal(host.agentIntegration()?.agentStateSocketPath, STUB_AGENT_STATE_SOCKET)
 
   // One that keeps restarting fails with a reason rather than looping.
   let flips = 0
@@ -452,27 +446,27 @@ test('prepare does not finish on a preparation for a helper that restarted under
     readSettings: () => undefined,
     listed: () => undefined,
     helper: flapping,
-    distribution: distributionLink().link,
+    distribution: distributionLink(),
     buildPluginCopy: async () => PLUGIN_COPY,
   })
   await assert.rejects(unstable.prepare(), /kept restarting/u)
 })
 
 test("a launch is prepared against the distribution's server, and its socket is what the plugin copy names", async () => {
-  let socket: string | null = AGENT_STATE_SOCKET
+  let socket: string | null = STUB_AGENT_STATE_SOCKET
   const { host, distribution, sockets } = hostWith(
     { home: () => ({ home: '/home/dev' }), 'files.ensureTree': () => ({ current: true }) },
     { socket: () => socket },
   )
   await host.prepare()
   assert.equal(distribution.connects(), 1, 'the server is started for the launch')
-  assert.deepEqual(sockets, [AGENT_STATE_SOCKET], 'the copy is built for the socket the server listens on')
+  assert.deepEqual(sockets, [STUB_AGENT_STATE_SOCKET], 'the copy is built for the socket the server listens on')
 
   // The server came back with its socket elsewhere: the next launch prepares
   // again, so its hooks never name a socket nothing listens on.
   socket = '/tmp/sprintengine-1000/agent-state-abc.sock'
   await host.prepare()
-  assert.deepEqual(sockets, [AGENT_STATE_SOCKET, socket])
+  assert.deepEqual(sockets, [STUB_AGENT_STATE_SOCKET, socket])
   assert.equal(host.agentIntegration()?.agentStateSocketPath, socket)
 
   // A server whose socket did not open: no launch that would report nowhere.
@@ -536,12 +530,14 @@ test('at quit the survivor kill gives no grace and starts nothing', async () => 
   assert.ok(Date.now() - started < 1_000)
 })
 
-test("a WSL host's MCP channel tokens and directory watches are its helper's", () => {
-  const { helper, host } = hostWith({})
-  const token = host.issueChannelToken?.() ?? ''
-  assert.ok(helper.tokens.has(token))
+test("a WSL host's launch tokens are its distribution server's, and its directory watches its helper's", async () => {
+  const { helper, host, distribution } = hostWith({ 'session.write': () => ({ paths: [] }) })
+  assert.equal(host.issueChannelToken?.(null), undefined, 'a launch with no agent has nothing to prove')
+  const identity = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'codex' }
+  const token = host.issueChannelToken?.(identity) ?? ''
+  assert.deepEqual(distribution.tokens.get(token), identity)
   host.revokeChannelToken?.(token)
-  assert.equal(helper.tokens.size, 0)
+  assert.equal(distribution.tokens.size, 0)
   const heard: Array<string | null> = []
   const watcher = host.watchDir?.('\\\\wsl.localhost\\Debian\\home\\dev\\repo\\.git', true, (name) => heard.push(name))
   assert.ok(watcher)

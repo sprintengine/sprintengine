@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { Duplex, PassThrough } from 'node:stream'
 
 import { afterEach, test } from 'vitest'
 
 import { conversationProviderForCli } from '../../shared/conversation-harness'
 import type { SignIns } from '../machine/machine-sign-in'
+import { applyGatewayLaunchTokenChanges, resolveGatewayLaunchToken } from '../core/gateway-launch-tokens'
 import {
   connectLineClient,
   createFakeAuthenticator,
@@ -273,6 +275,62 @@ test('what stopping the Studio would end is told to the shell that holds it, and
   cleanups.push(() => plain.dispose())
   const plainShell = await shellOf(plain.server)
   assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-work'), false)
+})
+
+test("a WSL terminal agent's launch tokens are told to the distribution's Studio by the shell alone, and prove that agent there", async () => {
+  const started = await startTestServer({ launchTokens: applyGatewayLaunchTokenChanges })
+  cleanups.push(() => started.dispose())
+  const shell = await shellOf(started.server)
+  assert.ok((shell.welcome.capabilities as string[]).includes('environment-launch-tokens'))
+  const token = `selaunch_${'a'.repeat(43)}`
+  const other = `selaunch_${'b'.repeat(43)}`
+  const digest = (value: string) => createHash('sha256').update(value).digest('hex')
+  const identity = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'claude-code' }
+  try {
+    // Only the digest crosses; the gateway here then takes the agent from the token.
+    assert.deepEqual(
+      (await shell.request('environment.launchTokens', { tokens: [{ digest: digest(token), identity }] })).result,
+      { held: 1 },
+    )
+    assert.deepEqual(resolveGatewayLaunchToken(token), identity)
+    assert.equal(resolveGatewayLaunchToken(other), null, 'a token the desktop never named proves nothing')
+
+    // A reconnect names every live token again; one revoked meanwhile goes.
+    await shell.request('environment.launchTokens', {
+      tokens: [{ digest: digest(other), identity: { workspaceId: 'ws-2', agentId: 'agent-2' } }],
+      replace: true,
+    })
+    assert.equal(resolveGatewayLaunchToken(token), null)
+    assert.equal(resolveGatewayLaunchToken(other)?.agentId, 'agent-2')
+    await shell.request('environment.launchTokens', { tokens: [{ digest: digest(other), identity: null }] })
+    assert.equal(resolveGatewayLaunchToken(other), null, 'revoked with its terminal')
+
+    // A token itself, or an identity no launch has, is refused.
+    assert.equal(
+      errorCode(await shell.request('environment.launchTokens', { tokens: [{ digest: token, identity }] })),
+      'invalid_params',
+    )
+    assert.equal(
+      errorCode(await shell.request('environment.launchTokens', { tokens: [{ digest: digest(token), identity: {} }] })),
+      'invalid_params',
+    )
+
+    // An owner's own client, not the shell: refused, as every shell method is.
+    const owner = await lineClient(started.path, OWNER_TOKEN)
+    assert.equal(
+      errorCode(await owner.request('environment.launchTokens', { tokens: [{ digest: digest(token), identity }] })),
+      'owner_required',
+    )
+    assert.equal(resolveGatewayLaunchToken(token), null)
+  } finally {
+    applyGatewayLaunchTokenChanges({ tokens: [], replace: true })
+  }
+
+  // A Studio that runs no desktop's terminal agents does not offer it.
+  const plain = await startTestServer()
+  cleanups.push(() => plain.dispose())
+  const plainShell = await shellOf(plain.server)
+  assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-launch-tokens'), false)
 })
 
 test('a hand-over is the shell’s alone, answered once per command id', async () => {

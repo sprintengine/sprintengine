@@ -1,11 +1,11 @@
 // Main's side of a WSL helper, against a scripted stand-in for the `wsl.exe`
 // process: the handshake, a launch that waits on start, installs, a protocol
 // mismatch, transient and fatal failures, the idle stop, crash backoff, and
-// the MCP channel.
+// watches.
 
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { Duplex, PassThrough } from 'node:stream'
+import { PassThrough } from 'node:stream'
 import { test } from 'vitest'
 
 import { STUB_HELPER_INFO } from '../../../tests/wsl-helper-stub'
@@ -132,7 +132,6 @@ function harness(
       state.unready.push(what)
     },
     onEvent: () => undefined,
-    connectAutomation: () => new PassThrough(),
     sleep: async (ms) => {
       state.sleeps.push(ms)
     },
@@ -342,95 +341,6 @@ test('a helper that dies while sessions still run there is started again without
   assert.equal(h.spawned.length, 2, 'restarted after the backoff, so live hooks find the sockets again')
   assert.equal(client.state(), 'ready')
   client.release('sid-1#1')
-  await client.shutdown()
-})
-
-test('an MCP channel reaches only the automation server, both ways, and closes with either end', async () => {
-  const toServer: string[] = []
-  const serverEnd = new PassThrough()
-  const automation = new Duplex({
-    read() {},
-    write(chunk: Buffer, _encoding, callback) {
-      toServer.push(chunk.toString('utf8'))
-      callback()
-    },
-  })
-  serverEnd.on('data', (chunk: Buffer) => automation.push(chunk))
-  let connects = 0
-  const h = harness([healthy()], {
-    connectAutomation: () => {
-      connects += 1
-      return automation
-    },
-  })
-  const client = createWslHelperClient(h.deps)
-  await client.start()
-  const fake = h.spawned[0]
-  const token = client.issueChannelToken()
-  fake.send({ t: 'ch', ch: 1, op: 'open', token })
-  fake.send({ t: 'ch', ch: 1, op: 'data', b64: Buffer.from('{"jsonrpc":"2.0","id":1}\n').toString('base64') })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(connects, 1)
-  assert.deepEqual(toServer, ['{"jsonrpc":"2.0","id":1}\n'])
-  serverEnd.write('{"id":1,"result":{}}\n')
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  const reply = fake.written.map((line) => JSON.parse(line) as Frame).find((frame) => frame.op === 'data')
-  assert.equal(Buffer.from(String(reply?.b64), 'base64').toString('utf8'), '{"id":1,"result":{}}\n')
-  automation.destroy()
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.ok(
-    fake.written.some((line) => {
-      const frame = JSON.parse(line) as Frame
-      return frame.t === 'ch' && frame.op === 'close' && frame.ch === 1
-    }),
-  )
-  await client.shutdown()
-})
-
-test('an MCP channel without a live launch token never reaches the automation server', async () => {
-  let connects = 0
-  const logs: string[] = []
-  const h = harness([healthy()], {
-    connectAutomation: () => {
-      connects += 1
-      return new PassThrough()
-    },
-    log: (message) => logs.push(message),
-  })
-  const client = createWslHelperClient(h.deps)
-  await client.start()
-  const fake = h.spawned[0]
-  const revoked = client.issueChannelToken()
-  client.revokeChannelToken(revoked)
-  const live = client.issueChannelToken()
-  assert.notEqual(live, revoked, 'every launch gets its own')
-  assert.match(live, /^[A-Za-z0-9_-]{40,}$/u, 'long, and plain enough for an env value and the auth line')
-  fake.send({ t: 'ch', ch: 1, op: 'open' })
-  fake.send({ t: 'ch', ch: 2, op: 'open', token: 'guessed-token-0000000000' })
-  fake.send({ t: 'ch', ch: 3, op: 'open', token: revoked })
-  fake.send({ t: 'ch', ch: 4, op: 'open', token: 42 })
-  fake.send({ t: 'ch', ch: 2, op: 'data', b64: Buffer.from('{"jsonrpc":"2.0","id":1}\n').toString('base64') })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(connects, 0, 'nothing was connected')
-  const closed = fake.written
-    .map((line) => JSON.parse(line) as Frame)
-    .filter((frame) => frame.t === 'ch' && frame.op === 'close')
-    .map((frame) => frame.ch)
-  assert.deepEqual(closed, [1, 2, 3, 4], 'each was answered with a close')
-  assert.ok(logs.some((line) => line.includes('no valid launch token')))
-  fake.send({ t: 'ch', ch: 5, op: 'open', token: live })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(connects, 1, 'a live token opens')
-  // The session ends: its token goes, and so does every channel it opened.
-  client.revokeChannelToken(live)
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.ok(
-    fake.written.some((line) => {
-      const frame = JSON.parse(line) as Frame
-      return frame.t === 'ch' && frame.op === 'close' && frame.ch === 5
-    }),
-    'the open channel is closed on revoke',
-  )
   await client.shutdown()
 })
 

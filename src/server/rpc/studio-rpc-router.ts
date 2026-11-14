@@ -31,7 +31,10 @@ import {
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
-import type { StudioEnvironmentWork } from '../../../packages/studio-protocol/src/environment-access'
+import type {
+  StudioEnvironmentWork,
+  StudioLaunchTokenChange,
+} from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
@@ -251,6 +254,8 @@ export type StudioRpcRouterOptions = {
   adoption?: EnvironmentAdoption
   /** What stopping this Studio would end (`environment.work`); without it, that method is answered `unavailable`. */
   work?: () => StudioEnvironmentWork
+  /** The desktop's WSL terminal agents' launch tokens (`environment.launchTokens`); without it, answered `unavailable`. */
+  launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
   signIns?: () => Promise<SignIns>
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
@@ -2105,6 +2110,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'environment.work': () => {
       if (!options.work) return unserved('environment.work')
       return { ok: true, result: options.work() }
+    },
+    'environment.launchTokens': (params) => {
+      if (!options.launchTokens) return unserved('environment.launchTokens')
+      return { ok: true, result: { held: options.launchTokens(params) } }
     },
     'environment.revokeWindow': async ({ windowKey }) => {
       if (!options.environmentAccess) return unserved('environment.revokeWindow')

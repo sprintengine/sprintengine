@@ -4,7 +4,8 @@
 
 import type { WslHelperClient, WslHelperInfo } from '../src/main/hosts/wsl-helper-client'
 import type { WslSetupError } from '../src/main/hosts/wsl-setup-error'
-import type { WslDistributionLink } from '../src/main/hosts/wsl-host'
+import type { WslDistributionFacts, WslDistributionLink } from '../src/main/hosts/wsl-host'
+import type { GatewayLaunchIdentity } from '../src/server/core/gateway-launch-tokens'
 
 export const STUB_HELPER_INFO: WslHelperInfo = {
   uid: 1000,
@@ -13,8 +14,6 @@ export const STUB_HELPER_INFO: WslHelperInfo = {
   arch: 'x64',
   nodePath: '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node',
   appDir: '/home/dev/.local/share/sprintengine-studio/0.4.0',
-  mcpSocket: '/run/user/1000/sprintengine/abc123def456/mcp.sock',
-  userDataDir: '/run/user/1000/sprintengine/abc123def456',
   pidDir: '/run/user/1000/sprintengine/abc123def456/sessions',
   sessionDir: '/home/dev/.local/share/sprintengine-studio/sessions/abc123def456',
 }
@@ -32,8 +31,6 @@ export type StubHelper = WslHelperClient & {
   retained: Set<string>
   starts: number
   failWith: WslSetupError | null
-  /** Tokens issued and not yet revoked. */
-  tokens: Set<string>
   watches: StubWatch[]
 }
 
@@ -43,14 +40,12 @@ export function stubWslHelper(
   info: WslHelperInfo = STUB_HELPER_INFO,
 ): StubHelper {
   let running = false
-  let nextToken = 1
   const stub: StubHelper = {
     distro,
     requests: [],
     retained: new Set(),
     starts: 0,
     failWith: null,
-    tokens: new Set(),
     watches: [],
     state: () => (running ? 'ready' : 'stopped'),
     info: () => (running ? info : null),
@@ -78,15 +73,6 @@ export function stubWslHelper(
     release(id) {
       stub.retained.delete(id)
     },
-    issueChannelToken() {
-      const token = `stub-token-${nextToken}-${'x'.repeat(16)}`
-      nextToken += 1
-      stub.tokens.add(token)
-      return token
-    },
-    revokeChannelToken(token) {
-      stub.tokens.delete(token)
-    },
     watch(path, recursive, listener, onError) {
       const entry: StubWatch = { path, recursive, listener, onError, closed: false }
       stub.watches.push(entry)
@@ -105,14 +91,42 @@ export function stubWslHelper(
 
 /** The socket a stand-in distribution's Studio server says its terminal agents report to. */
 export const STUB_AGENT_STATE_SOCKET = '/home/dev/.local/share/sprintengine-studio/data/agent-state.sock'
+/** That server's data directory, where its gateway's discovery file is. */
+export const STUB_SERVER_DATA_DIR = '/home/dev/.local/share/sprintengine-studio/data'
 
-/** A stand-in for the core's WSL servers, as a WSL host reaches them: always up, holds recorded. */
-export function stubWslDistributionLink(): WslDistributionLink & { holds: Set<string> } {
+export type StubDistributionLink = WslDistributionLink & {
+  holds: Set<string>
+  /** Launch tokens issued and not yet revoked, with the agent each proves. */
+  tokens: Map<string, GatewayLaunchIdentity>
+  connects: () => number
+}
+
+/** A stand-in for the core's WSL servers, as a WSL host reaches them: always up, holds and tokens recorded. */
+export function stubWslDistributionLink(
+  facts: () => WslDistributionFacts = () => ({
+    agentStateSocket: STUB_AGENT_STATE_SOCKET,
+    dataDir: STUB_SERVER_DATA_DIR,
+  }),
+): StubDistributionLink {
   const holds = new Set<string>()
+  const tokens = new Map<string, GatewayLaunchIdentity>()
+  let connects = 0
+  let next = 1
   return {
     holds,
-    connect: async () => ({ agentStateSocket: STUB_AGENT_STATE_SOCKET }),
+    tokens,
+    connects: () => connects,
+    connect: async () => {
+      connects += 1
+      return facts()
+    },
     hold: (distro, key) => void holds.add(`${distro}/${key}`),
     release: (distro, key) => void holds.delete(`${distro}/${key}`),
+    issueLaunchToken: (_distro, identity) => {
+      const token = `selaunch_stub-${next++}-${'x'.repeat(16)}`
+      tokens.set(token, identity)
+      return { token, sent: Promise.resolve() }
+    },
+    revokeLaunchToken: (_distro, token) => void tokens.delete(token),
   }
 }

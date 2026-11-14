@@ -39,6 +39,7 @@ import { MCP_CHANNEL_TOKEN_ENV } from '../../shared/studio-env'
 import { cliProbeRequest, detectResultFromHelper, type HelperProbeAnswer } from '../cli-runtime-install'
 import { splitSubcommand } from '../git-run'
 import type { RunOutcome } from '../process-run'
+import type { GatewayLaunchIdentity } from '../../server/core/gateway-launch-tokens'
 import type { SubtreeLiveReason } from '../terminal-subtree-probe'
 import type {
   ExecutionHost,
@@ -128,10 +129,25 @@ export function wslHostState(distro: WslDistro | undefined): { state: ExecutionH
  */
 export type WslDistributionLink = {
   /** The distribution's server, started if it is not running. Throws a `WslSetupError` in words. */
-  connect(distro: string): Promise<{ agentStateSocket: string | null }>
+  connect(distro: string): Promise<WslDistributionFacts>
   /** A WSL terminal runs there: its server is kept up while it does. */
   hold(distro: string, key: string): void
   release(distro: string, key: string): void
+  /**
+   * A launch token for an agent that runs there, which that server's gateway
+   * takes the agent's identity from (`wsl-launch-tokens.ts`). `sent` settles
+   * once the server was told.
+   */
+  issueLaunchToken(distro: string, identity: GatewayLaunchIdentity): { token: string; sent: Promise<void> }
+  revokeLaunchToken(distro: string, token: string): void
+}
+
+/** What a launch needs to know of the distribution's server. */
+export type WslDistributionFacts = {
+  /** The socket its terminal agents' hooks report to; null when it did not open. */
+  agentStateSocket: string | null
+  /** Its data directory, where its gateway's discovery file is: what the MCP bridge there reads. */
+  dataDir: string
 }
 
 export type WslHostDeps = {
@@ -142,8 +158,8 @@ export type WslHostDeps = {
   listed: () => WslDistro | undefined
   /** The helper client; tests pass a stand-in. Absent is the real one. */
   helper?: WslHelperClient
-  /** The plugin copy for a running helper and the socket its hooks report to; tests pass a stand-in. */
-  buildPluginCopy?: (info: WslHelperInfo, agentStateSocket: string) => Promise<WslPluginCopy | null>
+  /** The plugin copy for a running helper and the distribution's server; tests pass a stand-in. */
+  buildPluginCopy?: (info: WslHelperInfo, server: PreparedServer) => Promise<WslPluginCopy | null>
   /** How long the survivor kill waits for a killed pty's children to go on their own. */
   survivorDelayMs?: number
   /** Writes the distribution's Studio launcher and its pointer; tests pass a stand-in. */
@@ -175,15 +191,21 @@ function failedRun(error: unknown): RunOutcome {
   }
 }
 
-function defaultPluginCopy(info: WslHelperInfo, agentStateSocket: string): Promise<WslPluginCopy | null> {
+/** The distribution's server as a launch is prepared against it. */
+type PreparedServer = { agentStateSocket: string; dataDir: string }
+
+const sameServer = (a: PreparedServer, b: PreparedServer) =>
+  a.agentStateSocket === b.agentStateSocket && a.dataDir === b.dataDir
+
+function defaultPluginCopy(info: WslHelperInfo, server: PreparedServer): Promise<WslPluginCopy | null> {
   const env = wslHelperEnvironment()
   if (!env) return Promise.resolve(null)
   return buildWslPluginCopy(env.pluginSources(), {
     profile: info.profile,
     nodeCommand: info.nodePath,
     appDir: info.appDir,
-    userDataDir: info.userDataDir,
-    agentStateSocketPath: agentStateSocket,
+    userDataDir: server.dataDir,
+    agentStateSocketPath: server.agentStateSocket,
   })
 }
 
@@ -203,19 +225,16 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   let prepared: {
     info: WslHelperInfo
     skills: string
-    agentStateSocket: string
+    server: PreparedServer
     home: HostHome
     plugin: WslPluginCopy | null
     launcherReady: boolean
   } | null = null
   // The preparation in flight, and the helper, socket and skill choice it is for.
-  let preparing: { info: WslHelperInfo; skills: string; agentStateSocket: string; done: Promise<void> } | null = null
+  let preparing: { info: WslHelperInfo; skills: string; server: PreparedServer; done: Promise<void> } | null = null
   const skillChoice = (): string => (wslHelperEnvironment()?.pluginSources().enabledSkillDirs ?? []).join(',')
-  const isPrepared = (info: WslHelperInfo | null, agentStateSocket: string): boolean =>
-    info !== null &&
-    prepared?.info === info &&
-    prepared.skills === skillChoice() &&
-    prepared.agentStateSocket === agentStateSocket
+  const isPrepared = (info: WslHelperInfo | null, server: PreparedServer): boolean =>
+    info !== null && prepared?.info === info && prepared.skills === skillChoice() && sameServer(prepared.server, server)
 
   async function readHome(): Promise<HostHome> {
     // The first `home` after a start waits on the login-shell read, which has
@@ -275,8 +294,8 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     return true
   }
 
-  async function ensurePluginCopy(info: WslHelperInfo, agentStateSocket: string): Promise<WslPluginCopy | null> {
-    const copy = await buildPluginCopy(info, agentStateSocket).catch(() => null)
+  async function ensurePluginCopy(info: WslHelperInfo, server: PreparedServer): Promise<WslPluginCopy | null> {
+    const copy = await buildPluginCopy(info, server).catch(() => null)
     if (!copy) return null
     const status = await helper.request<{ current: boolean }>('files.ensureTree', {
       name: copy.tree,
@@ -288,9 +307,9 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     return copy
   }
 
-  function prepareFor(info: WslHelperInfo, agentStateSocket: string): Promise<void> {
+  function prepareFor(info: WslHelperInfo, server: PreparedServer): Promise<void> {
     const skills = skillChoice()
-    if (preparing?.info === info && preparing.skills === skills && preparing.agentStateSocket === agentStateSocket)
+    if (preparing?.info === info && preparing.skills === skills && sameServer(preparing.server, server))
       return preparing.done
     const done = (async () => {
       const home = await readHome()
@@ -300,10 +319,10 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       // The copy is what lets a WSL Claude take `--plugin-dir`; without it
       // that CLI falls back to the workspace install, so a failure here is
       // not the launch's failure.
-      const plugin = await ensurePluginCopy(info, agentStateSocket).catch(() => null)
-      if (helper.info() === info) prepared = { info, skills, agentStateSocket, home, plugin, launcherReady }
+      const plugin = await ensurePluginCopy(info, server).catch(() => null)
+      if (helper.info() === info) prepared = { info, skills, server, home, plugin, launcherReady }
     })()
-    const entry = { info, skills, agentStateSocket, done }
+    const entry = { info, skills, server, done }
     preparing = entry
     void done
       .finally(() => {
@@ -319,12 +338,12 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   // launch go ahead with no hooks, socket or gateway. Bounded, because a
   // helper that keeps restarting is its own failure.
   async function prepare(): Promise<void> {
-    const agentStateSocket = await distributionSocket()
+    const server = await distributionServer()
     for (let round = 0; round < MAX_PREPARE_ROUNDS; round += 1) {
       const info = await helper.start()
-      if (isPrepared(info, agentStateSocket)) return
-      await prepareFor(info, agentStateSocket)
-      if (isPrepared(helper.info(), agentStateSocket)) return
+      if (isPrepared(info, server)) return
+      await prepareFor(info, server)
+      if (isPrepared(helper.info(), server)) return
     }
     throw new WslSetupError(`The WSL helper for ${distro} kept restarting while it was being set up.`, {
       fatal: false,
@@ -333,8 +352,9 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   }
 
   // The distribution's server, started for the launch: its agent-state
-  // socket is what this launch's hooks report to.
-  async function distributionSocket(): Promise<string> {
+  // socket is what this launch's hooks report to, and its gateway (found in
+  // its data directory) is what the launch's agent reaches Studio's tools on.
+  async function distributionServer(): Promise<PreparedServer> {
     if (!deps.distribution) {
       throw new WslSetupError(
         `WSL terminals start where Studio's server runs; this process cannot start one in ${distro}.`,
@@ -344,14 +364,14 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
         },
       )
     }
-    const { agentStateSocket } = await deps.distribution.connect(distro)
+    const { agentStateSocket, dataDir } = await deps.distribution.connect(distro)
     if (!agentStateSocket) {
       throw new WslSetupError(
         `The Studio server in ${distro} could not open the socket its terminal agents report to, so a terminal agent there would not show what it is doing.`,
         { fatal: false, code: 'start' },
       )
     }
-    return agentStateSocket
+    return { agentStateSocket, dataDir }
   }
 
   function integration(): HostAgentIntegration | null {
@@ -363,7 +383,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     // Only once it is on disk; until then, the older form that names them.
     const launcher = prepared.launcherReady ? launcherRefForHome(prepared.home.host, 'posix') : null
     return {
-      agentStateSocketPath: prepared.agentStateSocket,
+      agentStateSocketPath: prepared.server.agentStateSocket,
       commandRuntime: {
         executable: info.nodePath,
         toCommandPath: (nativePath) => toWslPath(nativePath),
@@ -378,17 +398,25 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
           : { command: info.nodePath, args: [`${info.appDir}/automation/mcp-stdio-bridge.mjs`] }),
         // ELECTRON_RUN_AS_NODE is meaningless to Linux Node; the older form
         // carries it because that is how the workspace tidy recognises it.
+        // The bridge reaches the gateway of the distribution's own Studio,
+        // whose discovery file is in that server's data directory: an agent
+        // reaches the tools of the environment it runs in.
         env: {
           ...(launcher ? {} : { ELECTRON_RUN_AS_NODE: '1' }),
-          SPRINTENGINE_USER_DATA_DIR: info.userDataDir,
+          SPRINTENGINE_USER_DATA_DIR: prepared.server.dataDir,
         },
         // The launch token is never written into a config file; the bridge
-        // inherits it from the CLI, which inherits it from the startup script.
+        // inherits it from the CLI, which inherits it from the startup script,
+        // and presents it to that gateway, which takes the agent from it.
         envVarNames: [MCP_CHANNEL_TOKEN_ENV],
       },
       home: prepared.home,
     }
   }
+
+  // Launch tokens the distribution's Studio is still being told: a launch's
+  // files are written (and so its terminal started) only once it knows them.
+  const tokensInFlight = new Set<Promise<void>>()
 
   // A launch file's path as the helper takes it: relative to its session
   // directory, which every launch file must be inside.
@@ -450,6 +478,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       }
     },
     async writeLaunchFiles(files) {
+      await Promise.all([...tokensInFlight])
       if (files.length === 0) return
       const info = helper.info() ?? (await helper.start())
       const relative = files.map((file) => {
@@ -468,8 +497,15 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       ].filter(Boolean)
       if (names.length > 0) void helper.requestIfRunning('session.remove', { names }).catch(() => undefined)
     },
-    issueChannelToken: (identity) => helper.issueChannelToken(identity),
-    revokeChannelToken: (token) => helper.revokeChannelToken(token),
+    issueChannelToken(identity) {
+      // A launch with no agent identity has nothing for a token to prove.
+      if (!identity || !deps.distribution) return undefined
+      const { token, sent } = deps.distribution.issueLaunchToken(distro, identity)
+      tokensInFlight.add(sent)
+      void sent.finally(() => tokensInFlight.delete(sent))
+      return token
+    },
+    revokeChannelToken: (token) => deps.distribution?.revokeLaunchToken(distro, token),
     watchDir(nativePath, recursive, listener) {
       const watchers = new EventEmitter() as EventEmitter & { close(): void }
       const handle = helper.watch(toWslPath(nativePath), recursive, listener, () => {

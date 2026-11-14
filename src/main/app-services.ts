@@ -30,7 +30,6 @@ import type { WorkspaceEnvironmentRef } from '../renderer/src/types/workspace'
 import { sessionSshPreview } from './environments/ssh/ssh-preview'
 import { relayShellToolsets, sshRelayTarget } from '../server/wsl/wsl-tool-relay'
 import { cliTakesLaunchPlugins } from './agent-launch-render'
-import { resolveSocketPath as resolveAutomationSocketPath } from './automation/automation-service'
 import { invalidateCliAvailabilityOnHost } from './cli-availability'
 import { wslHostId } from '../shared/execution-host'
 import {
@@ -427,10 +426,10 @@ export function createAppServices(
   // Out of process the server takes the choices; this copy adopts each one.
   server?.rpc.on(SERVER_EVENTS.mirrorAreaSkills, (choices) => studioAreaSkillStore.adopt(choices))
 
-  // WSL machines: each distribution's helper relays its agents' MCP
-  // connections and PATH changes back here (hosts/wsl-helper-*.ts). Their
-  // hook frames come through the distribution's own Studio server, which the
-  // core holds (wsl/agent-state-relay.ts).
+  // WSL machines: each distribution's helper says when PATH changes there
+  // (hosts/wsl-helper-*.ts). Their terminal agents' hook frames and MCP
+  // bridges go to the distribution's own Studio server, which the core holds
+  // (wsl/agent-state-relay.ts, wsl/wsl-launch-tokens.ts).
   // Configured on every platform because it costs nothing; only Windows ever
   // starts a helper.
   configureWslHelpers({
@@ -449,7 +448,6 @@ export function createAppServices(
       enabledSkillDirs: studioAreaSkillStore.enabledSkillDirs(),
       launchSkillsSourceRoot: getBundledResourceDir(BUILTIN_SKILLS_RESOURCE_DIR),
     }),
-    automationSocketPath: () => resolveAutomationSocketPath(app.getPath('userData')),
     // What a launch knows of that machine's CLIs is the core's to forget.
     onPathsChanged: (distro) => {
       if (server) server.rpc.emit(SERVER_EVENTS.cliPathsChanged, { hostId: wslHostId(distro) })
