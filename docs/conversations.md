@@ -22,7 +22,13 @@ picker also lists the MCP servers the chat's CLI is configured with, with the
 connection each last reported. A file dropped, picked or pasted from the computer into a chat that runs
 on it is a card: the send carries it beside the words (`files` on the send and
 on its `user_message`), the agent is told where it is, and the bubble draws the
-card from that list, never from the text. Failed sends keep the draft. Pending approvals and questions appear above
+card from that list, never from the text. Failed sends keep the draft. A send
+is kept in the window's storage until Studio answers it, under its command id:
+a reload, or a Studio that stopped, before the answer finds it when the chat
+opens again, and lets it go if the chat's log shows the message, or puts it
+back in the composer with a notice if not. Sent again unchanged, it goes under
+the same command id, so a copy Studio took late is answered from its receipt,
+never run twice. Pending approvals and questions appear above
 the composer, with a counter and keyboard navigation when several are waiting.
 
 Remembered tool permissions are scoped to the conversation or workspace.

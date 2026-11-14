@@ -1244,6 +1244,85 @@ test('a sent draft leaves storage as the send goes, so a reload mid-turn cannot 
   }
 })
 
+// What a reload (or a Studio that stopped) leaves of a send it cut off before
+// Studio answered: the chat's pending send, under its command id.
+const cutOffSend = (commandId: string) => ({
+  text: 'Deploy the staging branch',
+  skillIds: [],
+  mentions: [],
+  files: [],
+  attachments: [],
+  picturesNotKept: 0,
+  commandId,
+  localTurnId: `user-0-${commandId}`,
+  fromDraft: true,
+  at: 1,
+})
+
+test('a send kept while it is out leaves storage once the chat has it', async () => {
+  const turn = runningTurnSend()
+  const chat = await mountChat({ sendTurn: turn.sendTurn })
+  const { composerDraftStore } = await import('./draftStore')
+  const kept = () => composerDraftStore().getState().readSend('workspace', 'agent')
+  try {
+    await chat.act(async () => chat.type('Run the whole suite'))
+    await chat.act(async () => chat.enter())
+    const { localTurnId } = turn.calls[0] as { localTurnId: string }
+    expect(kept(), 'kept, for a reload while it is out').toMatchObject({ text: 'Run the whole suite', localTurnId })
+    await chat.act(async () => {
+      chat.emit({
+        type: 'event',
+        event: event('user_message', { turnId: 't1', text: 'Run the whole suite', localTurnId }),
+      })
+    })
+    expect(kept(), 'let go of once the log shows it').toBeNull()
+  } finally {
+    turn.release()
+    await chat.unmount()
+  }
+})
+
+test('a send a reload cut off comes back to the composer with a notice, and goes again under its own command id', async () => {
+  const turn = runningTurnSend()
+  const { composerDraftStore } = await import('./draftStore')
+  const { useToastStore } = await import('../../../store/toastStore')
+  useToastStore.setState({ toasts: [] })
+  const chat = await mountChat({
+    sendTurn: turn.sendTurn,
+    beforeRender: () => composerDraftStore().getState().putSend('workspace', 'agent', cutOffSend('cmd-cut-off')),
+  })
+  try {
+    expect(chat.draft(), 'the words are not lost').toBe('Deploy the staging branch')
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toContain(
+      'Your last message may not have been sent',
+    )
+    await chat.act(async () => chat.enter())
+    expect(turn.calls).toMatchObject([{ message: 'Deploy the staging branch' }])
+    expect(
+      composerDraftStore().getState().readSend('workspace', 'agent')?.commandId,
+      'sent again under its own id: a late copy Studio still runs is answered from its receipt',
+    ).toBe('cmd-cut-off')
+  } finally {
+    turn.release()
+    await chat.unmount()
+  }
+})
+
+test('a send a reload cut off that the chat’s log shows is let go of: nothing comes back to send twice', async () => {
+  const { composerDraftStore } = await import('./draftStore')
+  const send = cutOffSend('cmd-landed')
+  const chat = await mountChat({
+    events: [event('user_message', { turnId: 't1', text: send.text, localTurnId: send.localTurnId })],
+    beforeRender: () => composerDraftStore().getState().putSend('workspace', 'agent', send),
+  })
+  try {
+    expect(chat.draft()).toBe('')
+    expect(composerDraftStore().getState().readSend('workspace', 'agent')).toBeNull()
+  } finally {
+    await chat.unmount()
+  }
+})
+
 test('a send that fails puts its draft back, on screen and in storage', async () => {
   let fail = (_message: string) => undefined as void
   const sendTurn = vi.fn<SendTurn>(
