@@ -221,6 +221,9 @@ export type ElectronApi = {
   onAuxWindowRetarget: (cb: (payload: AuxWindowRetargetPayload) => void) => () => void
   dockFileToWorkspace: (input: DockFileToWorkspaceInput) => Promise<void>
   onDockFileToWorkspace: (cb: (input: DockFileToWorkspaceInput) => void) => () => void
+  /** Studio itself deleted these paths (a file or a folder): every other window closes what it has open under them. */
+  announcePathsRemoved: (paths: string[]) => Promise<void>
+  onPathsRemoved: (cb: (paths: string[]) => void) => () => void
   dockDiffToWorkspace: (input: DockDiffToWorkspaceInput) => Promise<DockDiffToWorkspaceResult>
   onDockDiffToWorkspace: (cb: (input: DockDiffToWorkspacePayload) => void) => () => void
   /** The receiving window's half of the hand-off: "I opened the tab." */

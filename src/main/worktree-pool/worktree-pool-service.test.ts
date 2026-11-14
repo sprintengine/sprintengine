@@ -464,6 +464,8 @@ test('a lease given back by the window that took it is returned at once, with no
   assert.deepEqual(released, { ok: true, message: 'Returned to the pool.' })
   assert.equal((await slotAt(harness, 'app-01')).state, 'idle')
   assert.equal(await lockReason(leased.path), null, 'unlocked')
+  // Nobody worked in it, so the branch made for it goes with it.
+  assert.equal(await git(repo, 'branch', '--list', leased.branch), '', 'its unused branch is deleted')
   assert.deepEqual(await harness.service.action({ kind: 'release', leaseId: leased.leaseId }), {
     ok: false,
     message: 'No such lease.',

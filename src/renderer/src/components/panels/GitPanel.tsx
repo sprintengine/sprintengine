@@ -280,6 +280,9 @@ function resultMessage(result: GitCommandResult, fallback: string): GitPanelMess
     return { tone: 'success', text: fallback }
   }
 
+  // Stopping on conflicts is what a conflicting merge does; the conflict state
+  // below it carries Continue and Abort, so this is news, not an alarm.
+  if (result.stoppedOnConflicts && result.message) return { tone: 'neutral', text: result.message }
   return { tone: 'error', text: result.message || result.stderr.trim() || 'Git command failed.' }
 }
 

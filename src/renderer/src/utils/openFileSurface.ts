@@ -100,3 +100,13 @@ export function openFileSurface(input: OpenFileSurfaceInput): void {
     })
   }
 }
+
+/**
+ * Studio deleted `path` (a file or a folder) from this window. The window closes
+ * its own tabs itself; this tells the others, so the editor window does not keep
+ * a tab open on a file the person just moved to the trash.
+ */
+export function announcePathRemoved(path: string): void {
+  if (typeof window.api?.announcePathsRemoved !== 'function') return
+  void window.api.announcePathsRemoved([path]).catch(() => undefined)
+}
