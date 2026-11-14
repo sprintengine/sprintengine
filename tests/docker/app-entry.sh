@@ -94,10 +94,37 @@ if [ -e /tmp/studio-tailnet-address ]; then
   socat TCP-LISTEN:18471,fork,reuseaddr "TCP:$(cat /tmp/studio-tailnet-address):8471" &
 fi
 
-exec /app/node_modules/electron/dist/electron /app \
+ELECTRON=/app/node_modules/electron/dist/electron
+# Every process of the app: its main process, its helpers, and the relauncher a
+# restart leaves to start the next main process once this one has gone. (The
+# restarted one is started without the /app argument, so the executable is
+# what names them.)
+app_running() { pgrep -u "$(id -u)" -f "^$ELECTRON( |\$)" >/dev/null; }
+# The main process: the one that is no helper (`--type=`).
+main_pids() { ps -u "$(id -u)" -o pid=,args= | awk -v exe="$ELECTRON" '$2 == exe && !/--type=/ { print $1 }'; }
+# `docker stop` reaches this script: the app is asked to quit as it would be on
+# a desktop, and given a moment to.
+stop_app() {
+  pids=$(main_pids)
+  [ -n "$pids" ] && kill -TERM $pids 2>/dev/null
+  i=0
+  while app_running && [ $i -lt 100 ]; do i=$((i + 1)); sleep 0.1; done
+  exit 0
+}
+trap stop_app TERM INT
+
+"$ELECTRON" /app \
   --no-sandbox \
   --disable-dev-shm-usage \
   --disable-gpu \
   --password-store=basic \
   --remote-debugging-port=9223 \
-  "$@"
+  "$@" &
+wait $! || true
+
+# "Restart now" (and an update's restart) starts the app again as a new process
+# and then exits this one. Run as the container's main process, that exit
+# stopped the container; here the container lives while any instance of the app
+# does, and ends with the last.
+sleep 1
+while app_running; do sleep 1; done

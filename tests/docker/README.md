@@ -49,7 +49,10 @@ For each desktop `up` prints:
   cannot reach (a native dialog, a notification).
 - a shell: `docker exec -it -u tester <container> bash`.
 
-Every port is published on 127.0.0.1 only.
+Every port is published on 127.0.0.1 only, on a port `up` picks and fixes in the container, so the
+URLs stay the same after `docker restart <container>`. The app's own **Restart now** (and an update's
+restart) starts it again inside the container, as on a desktop; the container stops when the app quits
+for good.
 
 ### Driving a desktop
 
