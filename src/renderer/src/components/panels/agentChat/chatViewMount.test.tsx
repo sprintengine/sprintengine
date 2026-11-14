@@ -1931,6 +1931,66 @@ test('Esc in the composer leaves a turn that is waiting on a request alone', asy
   }
 })
 
+test('a view opened on a chat already waiting on a request answers it, and Stop reaches the turn, before any send', async () => {
+  // The window reloaded mid-turn: the chat's session is live on its Studio,
+  // and this view never started or adopted it.
+  const respond = vi.fn(async () => ({ ok: true }))
+  const interrupt = vi.fn(async () => ({ ok: true }))
+  const turnStarted = event('turn_started', { turnId: 't1' })
+  const asked = event('approval_requested', {
+    turnId: 't1',
+    requestId: 'approval-1',
+    action: 'Bash',
+    summary: 'npm test',
+    input: { command: 'npm test' },
+  })
+  const chat = await mountChat({
+    capabilities: { approvals: true },
+    events: [event('user_message', { turnId: 't1', text: 'Run the tests' }), turnStarted, asked],
+    api: {
+      conversationSessionsList: async () => ({
+        ok: true,
+        sessions: [
+          {
+            sessionId: 'session',
+            workspaceId: 'workspace',
+            agentId: 'agent',
+            providerId: 'mock',
+            modelId: 'mock-model',
+            status: 'awaiting_approval',
+            createdAt: 1,
+            updatedAt: 1,
+            capabilities: { approvals: true },
+          },
+        ],
+      }),
+      conversationSessionRespondToRequest: respond,
+      conversationSessionInterrupt: interrupt,
+    },
+  })
+  try {
+    await settleStudio(chat.act)
+    const allow = Array.from(chat.host.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === 'Allow once',
+    )
+    expect(allow, 'the request card is up').toBeDefined()
+    await chat.act(async () => allow!.click())
+    await settleStudio(chat.act)
+    expect(respond).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session', requestId: 'approval-1', approved: true }),
+    )
+    const stop = chat.host.querySelector<HTMLButtonElement>('[aria-label="Stop responding"]')
+    expect(stop, 'the turn can be stopped').not.toBeNull()
+    await chat.act(async () => stop!.click())
+    await settleStudio(chat.act)
+    expect(interrupt).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }))
+  } finally {
+    await chat.unmount()
+    const { resetConversationSessionsStore } = await import('../../../hooks/conversationSessionsStore')
+    resetConversationSessionsStore()
+  }
+})
+
 test('copying a selection of the conversation puts its markdown on the clipboard', async () => {
   const chat = await mountChat({
     events: [

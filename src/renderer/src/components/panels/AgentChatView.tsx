@@ -124,6 +124,7 @@ import { StopGlyph } from './agentChat/stopGlyph'
 import { recalledConversationScroll, rememberConversationScroll } from './agentChat/conversationViewState'
 import { chatResumesInTerminal, resumeChatInTerminal } from './agentChat/resumeInTerminal'
 import { isClippedEvent, useConversationSession } from './agentChat/useConversationSession'
+import { useListedSession } from './agentChat/useListedSession'
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
 import { useConversationTransport } from './agentChat/conversationTransport'
@@ -592,6 +593,24 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     heldRootRef.current = workspaceRoot
     if (moved && transport.capabilities.startSession && hostSession === undefined) setSession(null)
   }, [workspaceRoot, transport, hostSession])
+  // A view mounted on a chat whose session is already live (a reload, a tab
+  // reopened, a second window) adopts the one its Studio lists, so Stop and
+  // the request cards answer before anything is sent (`useListedSession`).
+  // One this view found gone is not adopted again from a list not yet re-read.
+  const lostSessionIds = useRef(new Set<string>())
+  const listedSession = useListedSession(
+    workspaceId,
+    agentId,
+    hostSession === undefined && Boolean(transport.capabilities.startSession),
+  )
+  const listedSessionRef = useRef(listedSession)
+  listedSessionRef.current = listedSession
+  const listedSessionId = listedSession?.sessionId ?? null
+  useEffect(() => {
+    const listed = listedSessionRef.current
+    if (!listed || lostSessionIds.current.has(listed.sessionId)) return
+    setSession((current) => current ?? listed)
+  }, [listedSessionId])
   const sessionId = session?.sessionId ?? null
   const providerEntry = providers.find((entry) => entry.id === conversation?.providerId)
   const capabilities = session?.capabilities ?? providerEntry?.capabilities
@@ -1351,10 +1370,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const forgetLostSession = useCallback(
     (result: { ok: boolean; code?: unknown; message?: unknown }): boolean => {
       if (!transport.capabilities.startSession || !sessionWasLost(result)) return false
+      if (sessionId) lostSessionIds.current.add(sessionId)
       setSession(null)
       return true
     },
-    [transport],
+    [transport, sessionId],
   )
 
   // Change the tool-permission preset. The agent record is the durable seed (it
