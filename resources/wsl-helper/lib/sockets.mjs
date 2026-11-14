@@ -1,25 +1,17 @@
-// The helper's Unix sockets, and the directory they live in.
+// The helper's private runtime directory, where each session shell records
+// its pid:
 //
-// The MCP bridge runs as the person's own Linux user inside the distribution,
-// and reaches the helper through a socket in one directory:
-//
-//   <runtime>/sprintengine/<profile>/mcp.sock     MCP bridge connections
 //   <runtime>/sprintengine/<profile>/sessions/    each session shell's pid file
 //
 // <runtime> is `$XDG_RUNTIME_DIR` when it is a directory this user owns and no
 // one else can enter, else `/tmp/sprintengine-<uid>`. Every directory the
-// helper creates is 0700 and each socket 0600: only this user can connect.
-// That is not the whole of the MCP socket's guard. Its other end can start a
-// shell on Windows, which a Linux process with `[interop] enabled=false` could
-// not otherwise do, so a channel also needs a live launch's token
-// (`relay.mjs`).
+// helper creates is 0700: only this user can enter it.
 //
 // A directory someone else created first (a shared `/tmp`) is refused rather
-// than used: the helper would otherwise listen where another user can replace
-// the socket under it.
+// than used: the helper would otherwise keep its pid files where another user
+// can replace them.
 
-import { chmodSync, lstatSync, mkdirSync, renameSync, statSync, unlinkSync } from 'node:fs'
-import { createServer } from 'node:net'
+import { lstatSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const PROFILE = /^[A-Za-z0-9_-]{1,64}$/u
@@ -46,7 +38,7 @@ export function ensurePrivateDir(path, uid) {
     if (error?.code !== 'EEXIST') throw error
   }
   if (!ownedPrivateDir(path, uid)) {
-    throw new Error(`${path} is not a private directory owned by this user; refusing to listen there.`)
+    throw new Error(`${path} is not a private directory owned by this user; refusing to use it.`)
   }
   return path
 }
@@ -64,54 +56,4 @@ export function ensureSocketDir({ env, uid, profile, base }) {
   const root = base ?? runtimeBase({ env, uid })
   ensurePrivateDir(root, uid)
   return ensurePrivateDir(join(root, profile), uid)
-}
-
-/**
- * Listens on a Unix socket at `path`, readable and writable by this user only.
- * The umask is narrowed around `listen` so the socket is never briefly open to
- * others.
- *
- * The socket is made under a name of its own and renamed into place, which
- * atomically replaces a stale one from a helper that died. It also keeps two
- * helpers' cleanups apart: a server's close unlinks the name it listened on
- * (libuv does), which is the temporary one, long gone; and the real path is
- * removed only while it is still this server's socket, so a helper shutting
- * down never takes away the socket a newer one already listens on.
- */
-export async function listenPrivate(path, onConnection, options = {}) {
-  const temporary = `${path}.${process.pid}.tmp`
-  try {
-    unlinkSync(temporary)
-  } catch {
-    // Not there, which is the usual case.
-  }
-  const server = createServer({ allowHalfOpen: options.allowHalfOpen === true }, onConnection)
-  const previous = process.umask(0o077)
-  try {
-    await new Promise((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(temporary, () => {
-        server.off('error', reject)
-        resolve()
-      })
-    })
-  } finally {
-    process.umask(previous)
-  }
-  chmodSync(temporary, 0o600)
-  // Read before the rename, so a helper renaming its own socket into place at
-  // the same moment can never be taken for this one.
-  server.socketInode = statSync(temporary).ino
-  renameSync(temporary, path)
-  return server
-}
-
-/** Closes a server and removes its socket file, while the file is still its own. */
-export async function closePrivate(server, path) {
-  try {
-    if (statSync(path).ino === server.socketInode) unlinkSync(path)
-  } catch {
-    // Already gone.
-  }
-  await new Promise((resolve) => server.close(() => resolve()))
 }

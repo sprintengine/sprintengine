@@ -39,6 +39,7 @@ import {
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
+  STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
@@ -54,6 +55,7 @@ import {
   type StudioEnvironment,
   type StudioEnvironmentReadiness,
   type StudioEnvironmentWork,
+  type StudioLaunchTokenChange,
   type StudioProtocolWindow,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
@@ -246,6 +248,8 @@ export type StudioRpcServerOptions = {
   /** Records the desktop that holds this Studio hands over. Advertised as `environment-adopt` only when given. */
   adoption?: EnvironmentAdoption
   work?: () => StudioEnvironmentWork
+  /** The desktop's WSL terminal agents' launch tokens, by digest. Advertised as `environment-launch-tokens` only when given. */
+  launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal. Advertised as `provider-sign-in-flow` only when given. */
   signIns?: () => Promise<SignIns>
   resyncRetryAfterMs?: (clientId: string) => number
@@ -330,6 +334,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_WINDOW_TICKETS_CAPABILITY || options.environmentAccess !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_ADOPT_CAPABILITY || options.adoption !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_WORK_CAPABILITY || options.work !== undefined) &&
+        (capability !== STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY || options.launchTokens !== undefined) &&
         (capability !== STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY || options.signIns !== undefined) &&
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
         (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
@@ -387,6 +392,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.environmentAccess ? { environmentAccess: options.environmentAccess } : {}),
     ...(options.adoption ? { adoption: options.adoption } : {}),
     ...(options.work ? { work: options.work } : {}),
+    ...(options.launchTokens ? { launchTokens: options.launchTokens } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),

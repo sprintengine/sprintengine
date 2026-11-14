@@ -1,7 +1,6 @@
 // The WSL helper's launch-side pieces, as plain Node on macOS and Linux: the
-// private directory each launch's startup script is written into, the MCP
-// channel's launch token, ending every session on quit, and stdin for a git
-// the helper runs.
+// private directory each launch's startup script is written into, ending
+// every session on quit, and stdin for a git the helper runs.
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -16,7 +15,6 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { connect, createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -24,15 +22,12 @@ import { afterAll, beforeAll, test } from 'vitest'
 import {
   loadHelperModule,
   type ProcModule,
-  type RelayModule,
-  type RelaySocketLike,
   type RunModule,
   type SessionsModule,
 } from '../../../../tests/wsl-helper-modules'
 
 let temp = ''
 let sessions: SessionsModule
-let relay: RelayModule
 let proc: ProcModule
 let run: RunModule
 
@@ -44,7 +39,6 @@ function shortTemp(prefix: string): string {
 beforeAll(async () => {
   temp = shortTemp('se-launch-')
   sessions = await loadHelperModule<SessionsModule>('lib/sessions.mjs')
-  relay = await loadHelperModule<RelayModule>('lib/relay.mjs')
   proc = await loadHelperModule<ProcModule>('lib/proc.mjs')
   run = await loadHelperModule<RunModule>('lib/run.mjs')
 })
@@ -113,79 +107,6 @@ test('launch files land whole and 0600, nested ones too, and nothing leaves the 
   sessions.clearSessionDir(dir)
   assert.equal(existsSync(paths[0]), false)
   assert.equal(existsSync(dir), true, 'the directory itself stays')
-})
-
-// ── The MCP channel's launch token ──────────────────────────────────────────
-
-async function mcpPair(): Promise<{
-  frames: Array<Record<string, unknown>>
-  mux: ReturnType<RelayModule['createMcpMux']>
-  path: string
-  server: Server
-}> {
-  const frames: Array<Record<string, unknown>> = []
-  const mux = relay.createMcpMux((frame) => frames.push(frame))
-  const path = join(temp, `mcp-${Math.random().toString(16).slice(2, 8)}.sock`)
-  const server = createServer({ allowHalfOpen: true }, (socket) => mux.accept(socket as unknown as RelaySocketLike))
-  await new Promise<void>((resolve) => server.listen(path, resolve))
-  return { frames, mux, path, server }
-}
-
-function send(path: string, bytes: string, options: { end?: boolean } = {}): Promise<Socket> {
-  return new Promise((resolve) => {
-    const socket = connect(path, () => {
-      socket.write(bytes)
-      if (options.end) socket.end()
-      resolve(socket)
-    })
-    socket.on('error', () => undefined)
-  })
-}
-
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
-const TOKEN = 'launch_token-0123456789abcdefABCDEF'
-
-test('an auth line opens a channel carrying its token, and what follows it is relayed', async () => {
-  const { frames, mux, path, server } = await mcpPair()
-  const request = '{"jsonrpc":"2.0","id":1}\n'
-  const socket = await send(path, `{"t":"auth","token":"${TOKEN}"}\n${request}`)
-  await settle()
-  assert.deepEqual(frames[0], { t: 'ch', ch: 1, op: 'open', token: TOKEN })
-  const data = frames
-    .filter((frame) => frame.op === 'data')
-    .map((frame) => Buffer.from(String(frame.b64), 'base64').toString('utf8'))
-    .join('')
-  assert.equal(data, request, 'the auth line itself never reaches main as data')
-  socket.destroy()
-  mux.closeAll()
-  server.close()
-})
-
-test('a connection without a well-formed auth line never reaches main', async () => {
-  const { frames, mux, path, server } = await mcpPair()
-  const attempts = [
-    '{"jsonrpc":"2.0","method":"sprintengine.studio/connect"}\n', // an old bridge, or anything else
-    '{"t":"auth"}\n',
-    '{"t":"auth","token":"short"}\n',
-    '{"t":"auth","token":"has spaces in it 0123456789"}\n',
-    `${'x'.repeat(2_000)}`, // no newline, past the cap
-  ]
-  const sockets = await Promise.all(attempts.map((bytes) => send(path, bytes)))
-  await settle()
-  assert.deepEqual(frames, [], 'no channel was opened, nothing was relayed')
-  assert.equal(mux.size(), 0)
-  for (const socket of sockets) {
-    assert.ok(socket.destroyed || socket.readableEnded, 'each is dropped')
-    socket.destroy()
-  }
-  server.close()
-})
-
-test('the auth line is read as the relay reads it', () => {
-  assert.equal(relay.parseAuthLine(`{"t":"auth","token":"${TOKEN}"}`), TOKEN)
-  assert.equal(relay.parseAuthLine('{"t":"auth","token":123}'), null)
-  assert.equal(relay.parseAuthLine('{"token":"launch_token-0123456789"}'), null)
-  assert.equal(relay.parseAuthLine('not json'), null)
 })
 
 // ── Ending every session ────────────────────────────────────────────────────

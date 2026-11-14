@@ -622,6 +622,14 @@ does on its own, which a desktop asks over its owner connection to a WSL distrib
 server before stopping it for being idle and for its quit question. It replaced the backend
 wire's `backend.machine`, which went with `BACKEND_WIRE_VERSION` 9. A server without it is
 read as having nothing to say. Served by a WSL distribution's or an SSH machine's Studio.
+`environment-launch-tokens` (2026-11-14) adds `environment.launchTokens`
+(`{ tokens: [{ digest, identity | null }], replace? }` → `{ held }`, the shell's): the SHA-256
+of each launch token the desktop issued to a WSL terminal agent, with the workspace and agent
+it proves, or `null` once revoked. The gateway of that distribution's Studio then takes the
+agent's identity from the token its MCP bridge presents. `replace` drops every token not
+named again (a reconnect). The token itself never crosses. Served by a WSL distribution's
+Studio only; a desktop whose distribution lacks it launches terminal agents whose bridges
+prove nothing there.
 The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a
 WSL distribution's Studio says where it mounts the Windows drives (`/mnt/` unless
 its wsl.conf says otherwise, null when it mounts none), so a client on Windows

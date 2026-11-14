@@ -15,8 +15,8 @@
 //   2. The helper prints a `boot` line before it reads anything; only then is
 //      the `hello` (protocol integer, app version, profile) written to its
 //      stdin, so the shell that started it cannot have read part of it.
-//   3. Its `hello` reply carries the paths main needs: its sockets, its Node,
-//      the Linux home.
+//   3. Its `hello` reply carries the paths main needs: its private
+//      directories, its Node, the Linux home.
 //   A transient failure (a VM still booting) is retried after a pre-warm, with
 //   a backoff, a few times; a fatal one (no WSL, no network for Node) fails
 //   the start at once with the reason, and is answered the same way for a
@@ -29,14 +29,9 @@
 // helper that dies on its own is started again by the next thing that needs
 // it, after a backoff that grows with each crash in a row.
 
-import { createHash, randomBytes } from 'node:crypto'
-import type { Duplex, Readable, Writable } from 'node:stream'
+import { randomBytes } from 'node:crypto'
+import type { Readable, Writable } from 'node:stream'
 
-import {
-  issueGatewayLaunchToken,
-  revokeGatewayLaunchToken,
-  type GatewayLaunchIdentity,
-} from '../../server/core/gateway-launch-tokens'
 import { decodeWslOutput } from './wsl-distro'
 import { WslSetupError } from './wsl-setup-error'
 import { NEEDS_INSTALL_EXIT, parseNeedReport, type NeedReport } from './wsl-install'
@@ -52,9 +47,6 @@ export type WslHelperInfo = {
   arch: string
   nodePath: string
   appDir: string
-  mcpSocket: string
-  /** The Linux directory the MCP bridge reads its discovery file from. */
-  userDataDir: string
   /** Where each session's startup script records its shell's pid; private to this user. */
   pidDir: string
   /** Where each launch's startup script and host-context file are written; private to this user. */
@@ -88,8 +80,6 @@ export type WslHelperClientDeps = {
   /** Drops the install markers, so the next start installs again. */
   unready(what: { node: boolean; app: boolean }): Promise<void>
   onEvent(event: WslHelperEvent): void
-  /** The automation server's own socket, which is the only thing an MCP channel may reach. */
-  connectAutomation(): Duplex
   log?(message: string): void
   idleMs?: number
   bootTimeoutMs?: number
@@ -113,7 +103,6 @@ const BACKOFF_MAX_MS = 30_000
 // A fatal answer is given again, without trying, for this long.
 const FATAL_HOLD_MS = 30_000
 const STOP_GRACE_MS = 3_000
-const MAX_CHANNELS = 64
 const MAX_HELPER_LINE_BYTES = 64 * 1024 * 1024
 
 type Pending = {
@@ -197,14 +186,6 @@ export type WslHelperClient = {
   retain(sessionId: string): void
   release(sessionId: string): void
   /**
-   * A new token for one launch's MCP bridge. Only a channel that opens with a
-   * token issued here, and not yet revoked, is connected to the automation
-   * server. Revoke it when the launch's session ends.
-   */
-  /** One launch's channel token; bound to its conversation as its gateway token when it has one. */
-  issueChannelToken(identity?: GatewayLaunchIdentity | null): string
-  revokeChannelToken(token: string): void
-  /**
    * Watches a Linux directory inside the distribution. Registered with the
    * running helper, and again with each helper started after it; a watch never
    * starts the helper itself. `onError` is called once when the directory
@@ -233,12 +214,7 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
   let nextId = 1
   const pending = new Map<number, Pending>()
   const sessions = new Set<string>()
-  const channels = new Map<number, Duplex>()
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  // Held as digests, so a lookup never compares a guess with a real token.
-  const channelTokens = new Set<string>()
-  // The channels each token opened, so revoking a token also ends them.
-  const channelsByToken = new Map<string, Set<number>>()
   // Whether this client has had a helper up before: the first one is told to
   // end what an earlier main left running in the distribution.
   let startedBefore = false
@@ -277,59 +253,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
     idleTimer.unref?.()
   }
 
-  function closeChannel(id: number, notifyHelper: boolean): void {
-    const socket = channels.get(id)
-    if (!socket) return
-    channels.delete(id)
-    if (notifyHelper) write({ t: 'ch', ch: id, op: 'close' })
-    socket.destroy()
-  }
-
-  function handleChannel(frame: { ch?: unknown; op?: unknown; b64?: unknown; token?: unknown }): void {
-    const id = frame.ch
-    if (typeof id !== 'number' || !Number.isInteger(id)) return
-    if (frame.op === 'open') {
-      // The automation server can start a shell on this PC; only a bridge
-      // started by one of this app's own live launches is connected to it.
-      const digest = typeof frame.token === 'string' ? tokenDigest(frame.token) : ''
-      const authorised = digest !== '' && channelTokens.has(digest)
-      if (!authorised || channels.has(id) || channels.size >= MAX_CHANNELS) {
-        if (!authorised) log(`Refused an MCP channel from the WSL helper for ${deps.distro}: no valid launch token.`)
-        write({ t: 'ch', ch: id, op: 'close' })
-        return
-      }
-      let socket: Duplex
-      try {
-        socket = deps.connectAutomation()
-      } catch {
-        write({ t: 'ch', ch: id, op: 'close' })
-        return
-      }
-      channels.set(id, socket)
-      const opened = channelsByToken.get(digest) ?? new Set<number>()
-      opened.add(id)
-      channelsByToken.set(digest, opened)
-      socket.on('close', () => opened.delete(id))
-      socket.on('data', (chunk: Buffer) => write({ t: 'ch', ch: id, op: 'data', b64: chunk.toString('base64') }))
-      // Half-closes cross in both directions, so replies already in flight
-      // still arrive after one side has finished writing.
-      socket.on('end', () => {
-        if (channels.get(id) === socket) write({ t: 'ch', ch: id, op: 'end' })
-      })
-      socket.on('close', () => closeChannel(id, true))
-      socket.on('error', () => closeChannel(id, true))
-      return
-    }
-    const socket = channels.get(id)
-    if (!socket) return
-    if (frame.op === 'data' && typeof frame.b64 === 'string') socket.write(Buffer.from(frame.b64, 'base64'))
-    else if (frame.op === 'end') socket.end()
-    else if (frame.op === 'close') {
-      channels.delete(id)
-      socket.end()
-    }
-  }
-
   function handleFrame(frame: Record<string, unknown>): void {
     if (frame.t === 'res' && typeof frame.id === 'number') {
       const entry = pending.get(frame.id)
@@ -350,8 +273,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
         const entry = watchesByRemote.get(frame.id)
         if (entry) failWatch(entry)
       }
-    } else if (frame.t === 'ch') {
-      handleChannel(frame)
     }
   }
 
@@ -367,7 +288,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       item.reject(new WslSetupError(`The WSL helper for ${deps.distro} stopped.`, { fatal: false, code: 'stopped' }))
       pending.delete(id)
     }
-    for (const id of [...channels.keys()]) closeChannel(id, false)
     // The helper's watches went with it; each is registered again with the
     // next helper that starts.
     watchesByRemote.clear()
@@ -802,23 +722,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       armIdle()
     },
     requestIfRunning,
-    issueChannelToken(identity) {
-      const token = randomBytes(32).toString('base64url')
-      channelTokens.add(tokenDigest(token))
-      // The same token is the launch's gateway token: the bridge it opens a
-      // channel for presents it to the gateway, which takes the agent from it.
-      if (identity) issueGatewayLaunchToken(identity, token)
-      return token
-    },
-    revokeChannelToken(token) {
-      revokeGatewayLaunchToken(token)
-      const digest = tokenDigest(token)
-      channelTokens.delete(digest)
-      // The session is over: what its bridge (or anything that took its
-      // token) still has open is ended too, not left to run on.
-      for (const id of channelsByToken.get(digest) ?? []) closeChannel(id, true)
-      channelsByToken.delete(digest)
-    },
     watch(path, recursive, listener, onError) {
       const entry: WatchEntry = { path, recursive, listener, onError, remote: null, closed: false }
       watches.add(entry)
@@ -839,16 +742,10 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
     },
     async shutdown() {
       sessions.clear()
-      channelTokens.clear()
-      channelsByToken.clear()
       await starting?.catch(() => undefined)
       await stop({ endSessions: true })
     },
   }
-}
-
-function tokenDigest(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
 }
 
 /** A short random id for a staging directory. */

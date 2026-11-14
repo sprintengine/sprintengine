@@ -3468,9 +3468,10 @@ async function spawnTerminalNow(
     }
     // Every agent launch is issued its own gateway token, bound to its
     // conversation: the agent's MCP bridge presents it, and the gateway takes
-    // the agent's identity from it. In WSL it is also the token the bridge
-    // opens its channel with, exported by the startup script; here it rides in
-    // the terminal's environment. The session revokes it when it ends.
+    // the agent's identity from it. In WSL the gateway is the distribution's
+    // own Studio's, which the host tells the token's digest, and the token is
+    // exported by the startup script; here it rides in the terminal's
+    // environment. The session revokes it when it ends.
     const launchIdentity: GatewayLaunchIdentity | null =
       !shellOnly && workspaceId && agentId
         ? { workspaceId, agentId, ...(agentName ? { agentName } : {}), cliId: agentCli }

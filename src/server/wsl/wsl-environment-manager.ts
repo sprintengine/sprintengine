@@ -97,6 +97,11 @@ export type WslServerConnection = {
    * not open there.
    */
   agentStateSocket: string | null
+  /**
+   * The server's data directory in the distribution, where its gateway writes
+   * the discovery file an agent's MCP bridge there reads.
+   */
+  dataDir: string
   /** A fresh, admitted connection for `purpose` (the shell role's Studio connection). */
   open(purpose: FrontDoorPurpose): Promise<Duplex>
 }
@@ -585,6 +590,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       driveMountRoot: server.ready.frontDoor?.driveMountRoot ?? null,
       environmentId: server.ready.environmentId,
       agentStateSocket: server.ready.frontDoor?.agentStateSocket ?? null,
+      dataDir: wslServerPaths(server.boot.home, deps.profile).dataDir,
       open: async (purpose) => (await openDoor(handle, purpose)).stream,
     }
     // Lost when the owner connection ends: closed, or a ping unanswered.

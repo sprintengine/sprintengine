@@ -31,6 +31,7 @@ import {
   STUDIO_SCOPES,
   type StudioEnvironmentReadiness,
   type StudioEnvironmentWork,
+  type StudioLaunchTokenChange,
   type StudioGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
@@ -221,6 +222,8 @@ export type StudioRpcServiceOptions = {
   signIns?: () => Promise<SignIns>
   /** Records the desktop that holds this Studio hands over (`environment-adopt`): a server a desktop reaches over its front door. */
   adoption?: EnvironmentAdoption
+  /** The launch tokens of the desktop's WSL terminal agents, by digest (`environment-launch-tokens`): a WSL distribution's Studio. */
+  launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** What stopping this Studio would end (`environment-work`): a server a desktop reaches over its front door. */
   work?: () => StudioEnvironmentWork
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
@@ -495,6 +498,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.signIns ? { signIns: options.signIns } : {}),
       ...(options.adoption ? { adoption: options.adoption } : {}),
       ...(options.work ? { work: options.work } : {}),
+      ...(options.launchTokens ? { launchTokens: options.launchTokens } : {}),
       // The desktop that holds a WSL or SSH machine's Studio connects its
       // windows to this one's listener through its front door (`ws`), asking
       // for each connection's ticket here, over its own shell connection.

@@ -1,15 +1,14 @@
 // The WSL helper end to end, on this machine: main's real client starts the
-// real helper through a real `sh -s` (standing in for `wsl.exe --exec sh -s`),
-// the app's real MCP bridge talks to it over its real Unix socket, and a stub
-// automation server stands where main's own sits. (The hook reporter reports
-// to the distribution's Studio server: `server/wsl/agent-state-relay.test.ts`.)
+// real helper through a real `sh -s` (standing in for `wsl.exe --exec sh -s`).
+// (A terminal agent's hook reporter and MCP bridge reach the distribution's
+// Studio server instead: `server/wsl/agent-state-relay.test.ts` and
+// `server/wsl/wsl-environment-manager.test.ts`.)
 // Everything the helper does is plain Node on Linux, so only `wsl.exe` itself
 // and /proc (macOS has none) are not exercised here.
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { connect, createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -22,12 +21,7 @@ import {
   type WslHelperEvent,
 } from '../wsl-helper-client'
 
-const BRIDGE = join(process.cwd(), 'resources', 'automation', 'mcp-stdio-bridge.mjs')
-
 let temp = ''
-let automation: Server
-let automationPath = ''
-const automationLines: string[] = []
 const events: WslHelperEvent[] = []
 let client: WslHelperClient
 
@@ -39,26 +33,6 @@ function shortTemp(prefix: string): string {
 beforeAll(async () => {
   temp = shortTemp('se-e2e-')
   mkdirSync(join(temp, 'home'))
-  automationPath = join(temp, 'automation.sock')
-  // Stands in for the app's automation server: it records what it is sent and
-  // answers each JSON-RPC request with a result of its own.
-  automation = createServer((socket: Socket) => {
-    let buffer = ''
-    socket.on('data', (chunk) => {
-      buffer += chunk.toString('utf8')
-      let newline = buffer.indexOf('\n')
-      while (newline >= 0) {
-        const line = buffer.slice(0, newline)
-        buffer = buffer.slice(newline + 1)
-        automationLines.push(line)
-        const message = JSON.parse(line) as { id?: number }
-        if (message.id !== undefined)
-          socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { ok: true } })}\n`)
-        newline = buffer.indexOf('\n')
-      }
-    })
-  })
-  await new Promise<void>((resolve) => automation.listen(automationPath, resolve))
 
   client = createWslHelperClient({
     distro: 'Ubuntu',
@@ -81,26 +55,13 @@ beforeAll(async () => {
     prewarm: async () => undefined,
     unready: async () => undefined,
     onEvent: (event) => events.push(event),
-    connectAutomation: () => connect({ path: automationPath, allowHalfOpen: true }),
   })
 })
 
 afterAll(async () => {
   await client?.shutdown()
-  await new Promise<void>((resolve) => automation.close(() => resolve()))
   rmSync(temp, { recursive: true, force: true })
 })
-
-function runNode(script: string, args: string[], input: string, env: Record<string, string>): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script, ...args], { env: { PATH: process.env.PATH, ...env } })
-    let out = ''
-    child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')))
-    child.on('error', reject)
-    child.on('close', () => resolve(out))
-    child.stdin.end(input)
-  })
-}
 
 async function waitFor<T>(read: () => T | undefined, ms = 5_000): Promise<T> {
   const until = Date.now() + ms
@@ -112,81 +73,13 @@ async function waitFor<T>(read: () => T | undefined, ms = 5_000): Promise<T> {
   }
 }
 
-test('the handshake gives main a private socket and the helper paths', async () => {
+test('the handshake gives main the helper paths, its runtime directory private', async () => {
   const info = await client.start()
   assert.equal(client.state(), 'ready')
-  assert.equal(info.mcpSocket, join(temp, 'rt', 'abc123def456', 'mcp.sock'))
-  assert.equal(statSync(info.mcpSocket).mode & 0o777, 0o600)
+  assert.equal(info.pidDir, join(temp, 'rt', 'abc123def456', 'sessions'))
   assert.equal(statSync(join(temp, 'rt', 'abc123def456')).mode & 0o777, 0o700)
   assert.equal(info.nodePath, process.execPath)
   assert.equal(await client.start(), info, 'a second start reuses the running helper')
-})
-
-test("the app's own MCP bridge reaches the automation server through a helper channel, both ways", async () => {
-  const info = await client.start()
-  const token = client.issueChannelToken()
-  const request = `${JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list' })}\n`
-  const out = await runNode(BRIDGE, [], request, {
-    SPRINTENGINE_USER_DATA_DIR: info.userDataDir,
-    SPRINTENGINE_AGENT_ID: 'agent-1',
-    SPRINTENGINE_AGENT_CLI: 'claude-code',
-    // Exported by the launch's startup script, inherited through the CLI.
-    SPRINTENGINE_MCP_CHANNEL_TOKEN: token,
-  })
-  assert.deepEqual(JSON.parse(out.trim()), { jsonrpc: '2.0', id: 7, result: { ok: true } })
-  const connectFrame = JSON.parse(automationLines[0]) as {
-    method: string
-    params: { agentId: string; cliId: string; launchToken?: string }
-  }
-  assert.equal(connectFrame.method, 'sprintengine.studio/connect')
-  assert.equal(connectFrame.params.agentId, 'agent-1')
-  assert.equal(connectFrame.params.cliId, 'claude-code')
-  // The channel token is also the launch's gateway token: the gateway takes
-  // the agent's identity from it. The helper's own auth line stays with the helper.
-  assert.equal(connectFrame.params.launchToken, token)
-  assert.deepEqual(JSON.parse(automationLines[1]), { jsonrpc: '2.0', id: 7, method: 'tools/list' })
-  assert.equal(
-    automationLines.filter((line) => line.includes(token)).length,
-    1,
-    'the token reaches the automation server only as the connect frame’s proof',
-  )
-  assert.ok(!automationLines.some((line) => line.includes('"t":"auth"')), 'the auth line is the helper’s alone')
-  client.revokeChannelToken(token)
-})
-
-test('anything in the distribution without a live launch token is kept from the automation server', async () => {
-  const info = await client.start()
-  const before = automationLines.length
-  const request = `${JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' })}\n`
-  // The app's own bridge, run by something no launch started: it says why.
-  const refused = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
-    const child = spawn(process.execPath, [BRIDGE], {
-      env: { PATH: process.env.PATH, SPRINTENGINE_USER_DATA_DIR: info.userDataDir },
-    })
-    let stderr = ''
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')))
-    child.on('close', (code) => resolve({ code, stderr }))
-    child.stdin.end(request)
-  })
-  assert.notEqual(refused.code, 0)
-  assert.match(refused.stderr, /not started by a SprintEngine Studio launch/u)
-  // A process speaking to the socket directly, with a revoked token and with
-  // none at all.
-  const revoked = client.issueChannelToken()
-  client.revokeChannelToken(revoked)
-  for (const preamble of [`{"t":"auth","token":"${revoked}"}\n`, '']) {
-    await new Promise<void>((resolve) => {
-      const socket = connect(info.mcpSocket, () => socket.write(`${preamble}${request}`))
-      socket.on('close', () => resolve())
-      socket.on('error', () => resolve())
-      setTimeout(() => {
-        socket.destroy()
-        resolve()
-      }, 1_000)
-    })
-  }
-  await new Promise((resolve) => setTimeout(resolve, 100))
-  assert.equal(automationLines.length, before, 'nothing reached the automation server')
 })
 
 test("a launch's files are written inside the Linux home, private, and removed by name", async () => {
@@ -301,9 +194,8 @@ test('main asks the helper to run argv and git, and to read processes', async ()
   if (!existsSync('/proc/self')) assert.deepEqual(snapshot.verdicts, {})
 })
 
-test('shutdown ends the helper and removes its sockets', async () => {
-  const info = await client.start()
+test('shutdown ends the helper', async () => {
+  await client.start()
   await client.shutdown()
   assert.equal(client.state(), 'stopped')
-  await waitFor(() => (existsSync(info.mcpSocket) ? undefined : true))
 })

@@ -5,7 +5,6 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import type { Server } from 'node:net'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
@@ -334,24 +333,6 @@ test('a binary is found on the PATH the way the shell would, Linux directories f
   assert.equal(detect.resolveBinary('not-executable', { PATH: bin }), null)
   assert.equal(detect.resolveBinary(join(bin, 'claude'), { PATH: '' })?.path, join(bin, 'claude'))
   assert.equal(detect.resolveBinary('relative/claude', { PATH: bin }), null)
-})
-
-test('a helper shutting down never removes the socket a newer helper listens on at the same path', async () => {
-  const listen = sockets as unknown as {
-    listenPrivate(path: string, onConnection: () => void): Promise<Server>
-    closePrivate(server: Server, path: string): Promise<void>
-  }
-  // Short, for the socket path limit.
-  const base = mkdtempSync('/tmp/se-race-')
-  const dir = sockets.ensureSocketDir({ env: {}, uid: process.getuid?.() ?? 0, profile: 'race', base })
-  const path = join(dir, 'agent.sock')
-  const old = await listen.listenPrivate(path, () => undefined)
-  const fresh = await listen.listenPrivate(path, () => undefined)
-  await listen.closePrivate(old, path)
-  assert.equal(statSync(path).isSocket(), true, "the newer helper's socket is still there")
-  await listen.closePrivate(fresh, path)
-  assert.throws(() => statSync(path), 'and its own shutdown removes it')
-  rmSync(base, { recursive: true, force: true })
 })
 
 test('the login shell capture ends at its deadline, whatever its profile left running', async () => {

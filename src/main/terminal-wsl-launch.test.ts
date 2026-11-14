@@ -174,13 +174,15 @@ test('an agent on a WSL machine runs its startup script from inside the distribu
   assert.ok(text.includes(`export SPRINTENGINE_AGENT_STATE_SOCKET='${STUB_AGENT_STATE_SOCKET}'`), text)
   assert.equal(h.distribution.holds.size, 1)
 
-  // The launch's MCP token: exported by the script, live while the session is.
-  assert.equal(h.helper.tokens.size, 1)
-  const [token] = [...h.helper.tokens]
+  // The launch's token: exported by the script, live while the session is,
+  // and proving this agent to the distribution's own gateway.
+  assert.equal(h.distribution.tokens.size, 1)
+  const [[token, identity]] = [...h.distribution.tokens]
+  assert.deepEqual(identity, { workspaceId: 'ws-wsl-a', agentId: 'wsl-a', cliId: 'claude-code' })
   assert.ok(text.includes(`export SPRINTENGINE_MCP_CHANNEL_TOKEN='${token}'`), text)
   h.runtime.sessions.killTerminal('wsl-a')
   await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(h.helper.tokens.size, 0, 'revoked with the session')
+  assert.equal(h.distribution.tokens.size, 0, 'revoked with the session')
   assert.equal(h.distribution.holds.size, 0, 'and its hold on the server let go')
   assert.ok(
     h.helper.requests.some(
@@ -222,7 +224,7 @@ test('a plain terminal on a WSL machine waits for the helper and carries no toke
   const result = await h.spawn({ sessionId: 'wsl-plain', kind: 'terminal', shellOnly: true })
   assert.equal(result.ok, true, JSON.stringify(result))
   assert.ok(h.helper.starts > 0, 'the helper was started for it')
-  assert.equal(h.helper.tokens.size, 0)
+  assert.equal(h.distribution.tokens.size, 0)
   const text = decoded(writes(h.helper)[0].files[0].b64)
   assert.ok(!text.includes('SPRINTENGINE_MCP_CHANNEL_TOKEN'))
   await h.runtime.shutdown()
@@ -240,7 +242,7 @@ test('a WSL launch whose helper cannot start fails with the reason, and nothing 
     assert.match(result.message ?? '', /no network to download Node\.js/u)
   }
   assert.equal(h.spawned.length, 0)
-  assert.equal(h.helper.tokens.size, 0)
+  assert.equal(h.distribution.tokens.size, 0)
   await h.runtime.shutdown()
 })
 
@@ -254,7 +256,7 @@ test('a startup script the helper could not write fails the launch clearly, and 
   assert.equal(result.ok, false)
   assert.match(result.message ?? '', /Couldn't write this terminal's startup script into WSL: Ubuntu: No space left/u)
   assert.equal(h.spawned.length, 0, 'no terminal runs a script that is not there')
-  assert.equal(h.helper.tokens.size, 0, 'the token issued for it is revoked')
+  assert.equal(h.distribution.tokens.size, 0, 'the token issued for it is revoked')
   await h.runtime.shutdown()
 })
 

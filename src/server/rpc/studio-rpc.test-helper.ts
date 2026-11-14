@@ -14,6 +14,7 @@ import {
   type StudioCreatedConversation,
   type StudioEnvironmentReadiness,
   type StudioEnvironmentWork,
+  type StudioLaunchTokenChange,
   type StudioGrant,
   type StudioParsedServerFrame,
   type StudioProtocolWindow,
@@ -413,6 +414,7 @@ export async function startTestServer(
     environmentAccess?: StudioEnvironmentAccess
     adoption?: EnvironmentAdoption
     work?: () => StudioEnvironmentWork
+    launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
@@ -473,6 +475,7 @@ export async function startTestServer(
     ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
     ...(input.adoption ? { adoption: input.adoption } : {}),
     ...(input.work ? { work: input.work } : {}),
+    ...(input.launchTokens ? { launchTokens: input.launchTokens } : {}),
     ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),

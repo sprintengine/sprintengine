@@ -40,6 +40,7 @@ import { readTreeBuild } from './desktop-wsl-servers'
 import { lineTransport, readTicket } from './studio-door'
 import { relayShellToolsets } from './wsl-tool-relay'
 import { followRelayedAgentState } from './agent-state-relay'
+import { createWslLaunchTokens } from './wsl-launch-tokens'
 import { createWslEnvironmentAccess } from './wsl-environment-access'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
@@ -269,6 +270,97 @@ async function agentSession(socketPath: string) {
     close: () => socket.end(),
   }
 }
+
+const BRIDGE = join(ROOT, 'resources', 'automation', 'mcp-stdio-bridge.mjs')
+
+/** The answer to a request, or null when none comes within `ms` (a notification-like connect answers none). */
+function replyWithin(answer: Promise<Record<string, any>>, ms = 1_000): Promise<Record<string, any> | null> {
+  return Promise.race([answer, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))])
+}
+
+test("a WSL terminal agent reaches the distribution's own gateway, proven by the launch token this desktop told it", async () => {
+  const home = fakeHome('launch-tokens')
+  let tokens: ReturnType<typeof createWslLaunchTokens> | null = null
+  const { manager: wsl } = manager({
+    homes: { Ubuntu: home },
+    connected: (connection) => tokens?.connected(connection.distro, connection),
+  })
+  tokens = createWslLaunchTokens({ connect: (distro) => wsl.connect(distro), current: (distro) => wsl.current(distro) })
+  const agent = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'claude-code' }
+  const issued = tokens.issue('Ubuntu', agent)
+  await issued.sent
+  const connection = wsl.current('Ubuntu')!
+
+  // The app's own bridge, as the launch's MCP entry starts it: the server's
+  // data directory names its gateway, and the token rides in the environment.
+  const out = await new Promise<string>((resolve, reject) => {
+    const child = spawn(process.execPath, [BRIDGE], {
+      env: {
+        PATH: process.env.PATH,
+        SPRINTENGINE_USER_DATA_DIR: connection.dataDir,
+        SPRINTENGINE_WORKSPACE_ID: agent.workspaceId,
+        SPRINTENGINE_AGENT_ID: agent.agentId,
+        SPRINTENGINE_AGENT_CLI: agent.cliId,
+        SPRINTENGINE_MCP_CHANNEL_TOKEN: issued.token,
+      },
+    })
+    let text = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      text += chunk.toString('utf8')
+      if (text.includes('\n')) child.stdin.end()
+    })
+    child.on('error', reject)
+    child.on('close', () => resolve(text))
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+  })
+  const listed = JSON.parse(out.split('\n')[0]) as { result?: { tools?: unknown[] } }
+  assert.ok((listed.result?.tools?.length ?? 0) > 0, "the distribution's gateway answered the bridge")
+
+  // What the token proves: a connection it identified belongs to that agent,
+  // and cannot take a second launch's token.
+  const { socketPath } = JSON.parse(
+    readFileSync(join(connection.dataDir, 'sprintengine-studio-mcp-info.json'), 'utf8'),
+  ) as { socketPath: string }
+  const other = tokens.issue('Ubuntu', { workspaceId: 'ws-2', agentId: 'agent-2' })
+  await other.sent
+  const proven = await agentSession(socketPath)
+  void proven.call('sprintengine.studio/connect', { ...agent, launchToken: issued.token })
+  // Said again as the same agent, with another launch's token.
+  const second = await replyWithin(proven.call('sprintengine.studio/connect', { ...agent, launchToken: other.token }))
+  assert.match(String(second?.error?.message), /already belongs to another agent/u)
+  proven.close()
+
+  // Revoked with its terminal: the same token proves nothing there.
+  tokens.revoke('Ubuntu', issued.token)
+  await waitFor(() => false, 300).catch(() => undefined)
+  const unproven = await agentSession(socketPath)
+  void unproven.call('sprintengine.studio/connect', { ...agent, launchToken: issued.token })
+  const unbound = await replyWithin(
+    unproven.call('sprintengine.studio/connect', { ...agent, launchToken: other.token }),
+  )
+  assert.equal(unbound?.error, undefined, 'nothing bound the connection, so another token is not refused')
+  unproven.close()
+
+  // A server started again is told the live tokens anew, and not the revoked one.
+  process.kill(readServerPid(home), 'SIGKILL')
+  await waitFor(() => wsl.status('Ubuntu').state === 'unavailable')
+  await new Promise((resolve) => setTimeout(resolve, 2_100))
+  const again = await wsl.connect('Ubuntu')
+  await waitFor(() => false, 300).catch(() => undefined)
+  const { socketPath: next } = JSON.parse(
+    readFileSync(join(again.dataDir, 'sprintengine-studio-mcp-info.json'), 'utf8'),
+  ) as { socketPath: string }
+  const after = await agentSession(next)
+  const agent2 = { workspaceId: 'ws-2', agentId: 'agent-2' }
+  void after.call('sprintengine.studio/connect', { ...agent2, launchToken: other.token })
+  const refused = await replyWithin(after.call('sprintengine.studio/connect', { ...agent2, launchToken: issued.token }))
+  assert.equal(refused?.error, undefined, 'the revoked token is not live there, so it is not a second launch')
+  const third = tokens.issue('Ubuntu', { workspaceId: 'ws-3', agentId: 'agent-3' })
+  await third.sent
+  const taken = await replyWithin(after.call('sprintengine.studio/connect', { ...agent2, launchToken: third.token }))
+  assert.match(String(taken?.error?.message), /already belongs to another agent/u, 'the live one was told again')
+  after.close()
+}, 60_000)
 
 test("a WSL agent lists the editor, tours, terminals and agent launches, which in process are the Windows gateway's own", async () => {
   const home = fakeHome('own-tools')

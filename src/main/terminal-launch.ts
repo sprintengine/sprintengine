@@ -1506,12 +1506,12 @@ function wslHostEnvExports(host: WslLaunchTarget): string {
 
 /**
  * The agent's identity as `export` lines: which workspace and agent this is,
- * the CLI, and the helper's socket in this distribution, which the hooks, the
- * status line and OpenCode's plugin report to. The socket is always the
- * helper's (the identity handed in names this machine's own, which Linux
- * cannot open), and is left out when the helper is not up. Last, the launch's
- * MCP channel token, which the app's MCP bridge under this CLI opens its
- * channel with; nothing else in the distribution has it.
+ * the CLI, and the socket in this distribution the hooks, the status line and
+ * OpenCode's plugin report to. The socket is always the distribution's Studio
+ * server's (the identity handed in names this machine's own, which Linux
+ * cannot open), and is left out before that server is up. Last, the launch's
+ * token, which the app's MCP bridge under this CLI presents to that server's
+ * gateway; nothing else in the distribution is given it.
  */
 function wslIdentityExports(host: WslLaunchTarget): string {
   const identity: Record<string, string> = { ...host.identity }
@@ -1722,7 +1722,7 @@ export function getShellLaunchConfig(
     return {
       command: 'wsl.exe',
       args: wslStartupArgs(cwd, startup.path, launchHost.distro),
-      // The agent's identity and the helper's socket travel in the startup
+      // The agent's identity and its agent-state socket travel in the startup
       // script as `export` lines (see `wslIdentityExports`), not through this
       // env: a Windows variable reaches Linux only when `WSLENV` names it.
       env: getTerminalEnv(),

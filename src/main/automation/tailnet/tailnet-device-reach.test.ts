@@ -250,6 +250,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['environment.work'],
       ],
       [
+        'the launch tokens of the desktop’s WSL terminal agents, the shell’s alone: they prove an agent to the gateway there',
+        ['environment.launchTokens'],
+      ],
+      [
         'a CLI’s login on the machine, an owner’s: it runs the login there and keeps its credential',
         ['providers.signInStart', 'providers.signInPaste', 'providers.signInWait', 'providers.signInCancel'],
       ],

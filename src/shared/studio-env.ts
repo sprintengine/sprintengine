@@ -49,11 +49,11 @@ export const AGENT_IDENTITY_ENV_KEYS = [
   'SPRINTENGINE_AGENT_CLI',
 ] as const
 
-// A WSL agent launch's proof, to the helper's MCP socket, that its bridge was
-// started by that launch (see `resources/wsl-helper/lib/relay.mjs`). The
-// startup script exports it; the CLI's MCP bridge inherits it and opens its
-// channel with it. Codex hands an MCP server only the variables its entry
-// names, so the gateway entry names this one (`env_vars`).
+// A WSL agent launch's token, which proves the agent to the gateway of the
+// distribution's own Studio (`server/wsl/wsl-launch-tokens.ts`). The startup
+// script exports it; the CLI's MCP bridge inherits it and presents it on
+// connect. Codex hands an MCP server only the variables its entry names, so
+// the gateway entry names this one (`env_vars`).
 export const MCP_CHANNEL_TOKEN_ENV = 'SPRINTENGINE_MCP_CHANNEL_TOKEN'
 
 // The prefix of the variables a chat's CLI child is started with to carry its

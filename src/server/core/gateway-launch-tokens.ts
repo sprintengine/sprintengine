@@ -12,8 +12,8 @@ import { createHash, randomBytes } from 'node:crypto'
 // tools reach the conversations it started, so a claim would let any local
 // agent reach tools an app offered to someone else's chat. The token is what
 // a launch holds and nothing else does: it is handed to the CLI in its own
-// environment (or on its stdin, inside a WSL distribution, where it is also the
-// channel token the helper opens a bridge's channel with) and is never written
+// environment (inside a WSL distribution, its startup script's, with the
+// distribution's own Studio told only its digest) and is never written
 // into a file or onto a command line.
 //
 // Tokens are kept as their SHA-256, in this process only: a restart voids
@@ -78,6 +78,21 @@ export function applyGatewayLaunchTokenChange(change: LaunchTokenChange): void {
     while (tokens.size > MAX_LIVE_TOKENS) tokens.delete(tokens.keys().next().value!)
   } else tokens.delete(change.digest)
 }
+/**
+ * Tokens the desktop that holds this Studio issued to its terminal agents that
+ * run here (a WSL terminal), by digest. `replace` first drops every token not
+ * named again, so a desktop that reconnects leaves none it revoked meanwhile.
+ * Answers how many tokens are live.
+ */
+export function applyGatewayLaunchTokenChanges(change: { tokens: LaunchTokenChange[]; replace?: boolean }): number {
+  if (change.replace) {
+    const named = new Set(change.tokens.filter((entry) => entry.identity).map((entry) => entry.digest))
+    for (const key of [...tokens.keys()]) if (!named.has(key)) tokens.delete(key)
+  }
+  for (const entry of change.tokens) applyGatewayLaunchTokenChange(entry)
+  return tokens.size
+}
+
 // A launch that never ends is a leak, not a security property; this bounds it.
 const MAX_LIVE_TOKENS = 4096
 
@@ -85,10 +100,7 @@ function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
-/**
- * Issue a token for one launch. `token` registers one the caller already
- * minted (a WSL launch's channel token, which the helper checks too).
- */
+/** Issue a token for one launch. `token` registers one the caller already minted. */
 export function issueGatewayLaunchToken(identity: GatewayLaunchIdentity, token?: string): string {
   const issued = token ?? `selaunch_${randomBytes(32).toString('base64url')}`
   tokens.set(digest(issued), {

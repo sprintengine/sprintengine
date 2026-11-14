@@ -192,11 +192,12 @@ export interface ExecutionHost {
    */
   discardLaunchFiles?(paths: ReadonlyArray<string | undefined>): void
   /**
-   * A token for one launch's MCP bridge (WSL): only a channel that opens with
-   * a live launch's token reaches the automation server. Revoked when that
-   * launch's session ends.
+   * A launch token for an agent that runs on this host (WSL): the gateway of
+   * the distribution's own Studio takes the agent's identity from it, as this
+   * PC's gateway does from a local launch's. None for a launch with no agent
+   * identity. Revoked when that launch's session ends.
    */
-  issueChannelToken?(identity?: GatewayLaunchIdentity | null): string
+  issueChannelToken?(identity?: GatewayLaunchIdentity | null): string | undefined
   revokeChannelToken?(token: string): void
   /**
    * Watches a directory on the host, for hosts where a watch placed from this

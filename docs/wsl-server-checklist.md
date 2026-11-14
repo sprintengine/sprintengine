@@ -311,6 +311,22 @@ distribution's own Studio server. Run every step that is listed.
    sent, and the agent's next state change shows in the sidebar.
 4. Close the terminal. Wait ten minutes with no chat.
    **Expect:** the server has stopped.
+5. Start an agent in a WSL terminal and ask it to list Studio's tools, then
+   to list the chats in this workspace.
+   **Expect:** it lists them: its tools are the distribution's own Studio's
+   (its chats, files and git), plus the browser, canvas, editor and tour this
+   desktop offers that Studio. **distro:** read the agent's MCP config: its
+   `SPRINTENGINE_USER_DATA_DIR` is the server's data directory
+   (`~/.local/share/sprintengine-studio/data*`), and no token is in it.
+6. Ask that agent to open a page in the browser pane.
+   **Expect:** the page opens in this desktop's browser pane.
+7. Close that terminal, then in another terminal of the same distribution
+   (not started as an agent) run the app's MCP bridge by hand with
+   `SPRINTENGINE_USER_DATA_DIR` set to that data directory, and send it
+   `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`.
+   **Expect:** it answers, as any process of this user reaches the
+   distribution's gateway, but it is no agent: a plain shell carries no
+   launch token, and the closed terminal's token was revoked.
 
 ## Throughput
 

@@ -99,6 +99,7 @@ import { studioMigrationStores } from '../environment/environment-migration-stor
 import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/wsl-environment-clients'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
 import { followRelayedAgentState } from '../wsl/agent-state-relay'
+import { createWslLaunchTokens } from '../wsl/wsl-launch-tokens'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
@@ -263,6 +264,20 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // the same per-machine settings.
   // Built before the WSL servers (below), so their status is read when listed.
   let wslServersForHosts: WslServers | null = null
+  const noWslServers = (distro: string) =>
+    new WslSetupError(`Studio cannot start a server in ${distro} on this computer.`, { fatal: true, code: 'start' })
+  // The launch tokens of this desktop's WSL terminal agents, which the gateway
+  // of each distribution's own Studio proves them by (wsl-launch-tokens.ts).
+  const wslLaunchTokens = createWslLaunchTokens(
+    {
+      connect: (distro) => {
+        const servers = wslServersForHosts
+        return servers ? servers.manager.connect(distro) : Promise.reject(noWslServers(distro))
+      },
+      current: (distro) => wslServersForHosts?.manager.current(distro) ?? null,
+    },
+    (message) => void writeDiagnosticLog({ level: 'info', source: 'terminal', title: 'WSL terminal agents', message }),
+  )
   const hosts = createHostRegistry({
     readHostSettings: () => agentLaunchSettings.get().hosts,
     server: (distro) => {
@@ -275,21 +290,20 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         ...((status.reason ?? status.transportReason) ? { reason: status.reason ?? status.transportReason } : {}),
       }
     },
-    // A WSL terminal's agent reports through its distribution's server, which
-    // this core supervises: started for the launch, held while it runs.
+    // A WSL terminal's agent reports through, and reaches the tools of, its
+    // distribution's server, which this core supervises: started for the
+    // launch, held while it runs, told the launch's token.
     distribution: {
       connect: async (distro) => {
         const servers = wslServersForHosts
-        if (!servers)
-          throw new WslSetupError(`Studio cannot start a server in ${distro} on this computer.`, {
-            fatal: true,
-            code: 'start',
-          })
+        if (!servers) throw noWslServers(distro)
         const connection = await servers.manager.connect(distro)
-        return { agentStateSocket: connection.agentStateSocket }
+        return { agentStateSocket: connection.agentStateSocket, dataDir: connection.dataDir }
       },
       hold: (distro, key) => wslServersForHosts?.manager.hold(distro, key),
       release: (distro, key) => wslServersForHosts?.manager.release(distro, key),
+      issueLaunchToken: (distro, identity) => wslLaunchTokens.issue(distro, identity),
+      revokeLaunchToken: (distro, token) => wslLaunchTokens.revoke(distro, token),
     },
   })
   installHostRegistry(hosts)
@@ -351,6 +365,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     wslServersForHosts = wslServers
     // Settings › Machines reads the server's state with the machine list.
     wslServers.onStatus(() => hosts.notifyChanged())
+    // A new connection may have missed a revoke: it is told every live token.
+    wslServers.onConnected((connection) => wslLaunchTokens.connected(connection.distro, connection))
   }
   const environmentClients = combineEnvironmentClients(
     wslServers

@@ -1,6 +1,7 @@
 import { studioParams, studioParamsRefused, type StudioMethodTable } from './contract.js'
 import {
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
+  STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
@@ -123,6 +124,15 @@ export type StudioEnvironmentWork = {
   resumes: number
 }
 
+/** Who a launch token proves an agent to be: the terminal agent the desktop launched. */
+export type StudioLaunchIdentity = { workspaceId: string; agentId: string; agentName?: string; cliId?: string }
+
+/** A launch token issued (with its identity) or revoked (`identity` null), by its SHA-256 alone. */
+export type StudioLaunchTokenChange = { digest: string; identity: StudioLaunchIdentity | null }
+
+/** The most token changes one call carries: a desktop's live WSL terminal agents, with room. */
+export const MAX_LAUNCH_TOKEN_CHANGES = 256
+
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
   { ok: true; id: string; url: string; code: string | null; paste: boolean } | { ok: false; message: string }
@@ -162,6 +172,18 @@ export type StudioEnvironmentAccessMethodMap = {
     params: { commandId: string; migrationId: string; records: StudioAdoptedRecord[]; files?: StudioAdoptedFile[] }
     result: StudioAdoptResult
   }
+  /**
+   * The launch tokens of the desktop's terminal agents that run inside this
+   * machine (a WSL terminal is the desktop's pty, its agent runs here), by
+   * digest: an agent whose MCP bridge presents one to this Studio's gateway
+   * is that agent, as on the desktop. The token itself never crosses.
+   * `replace` drops every token the desktop did not name again (a
+   * reconnect, which may have missed a revoke). The desktop's shell alone asks.
+   */
+  'environment.launchTokens': {
+    params: { tokens: StudioLaunchTokenChange[]; replace?: boolean }
+    result: { held: number }
+  }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
   'providers.signInStart': { params: { commandId: string; providerId: string }; result: StudioSignInStarted }
   /** Send the code the browser showed back to a sign-in that asked for one. */
@@ -188,6 +210,25 @@ const ADOPTS =
 const HOLDS =
   'It names this Studio’s schedules and watched pull requests, for the desktop that holds it to decide whether to stop it.'
 const SIGNS_IN = 'It runs a CLI’s login on this machine and keeps its credential here.'
+const PROVES =
+  'It says which agent a launch token proves, for the terminal agents the desktop that holds this Studio launched, so only that desktop asks.'
+const TOKEN_ID = /^[A-Za-z0-9_.:-]{1,200}$/u
+
+function launchIdentity(value: unknown): StudioLaunchIdentity | null | undefined {
+  if (value === null) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entry = value as Record<string, unknown>
+  if (typeof entry.workspaceId !== 'string' || !TOKEN_ID.test(entry.workspaceId)) return undefined
+  if (typeof entry.agentId !== 'string' || !TOKEN_ID.test(entry.agentId)) return undefined
+  for (const key of ['agentName', 'cliId'] as const)
+    if (entry[key] !== undefined && !text(entry[key], 200)) return undefined
+  return {
+    workspaceId: entry.workspaceId,
+    agentId: entry.agentId,
+    ...(typeof entry.agentName === 'string' ? { agentName: entry.agentName } : {}),
+    ...(typeof entry.cliId === 'string' ? { cliId: entry.cliId } : {}),
+  }
+}
 
 const signIn = {
   scope: 'settings:write',
@@ -293,6 +334,36 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
         records,
         ...(files?.length ? { files } : {}),
       })
+    },
+  },
+  'environment.launchTokens': {
+    scope: null,
+    mutation: false,
+    capability: STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
+    owner: PROVES,
+    shell: PROVES,
+    params: (value) => {
+      const given = value.tokens
+      if (!Array.isArray(given) || given.length > MAX_LAUNCH_TOKEN_CHANGES)
+        return studioParamsRefused(`"tokens" lists at most ${MAX_LAUNCH_TOKEN_CHANGES} { digest, identity }.`)
+      const tokens: StudioLaunchTokenChange[] = []
+      for (const entry of given) {
+        const change = entry as Record<string, unknown> | null
+        const identity = change && typeof change === 'object' ? launchIdentity(change.identity) : undefined
+        if (
+          !change ||
+          typeof change.digest !== 'string' ||
+          !/^[0-9a-f]{64}$/u.test(change.digest) ||
+          identity === undefined
+        )
+          return studioParamsRefused(
+            'Each token is { digest, identity }: the sha-256 of the token, and { workspaceId, agentId } it proves, or null when it is revoked.',
+          )
+        tokens.push({ digest: change.digest, identity })
+      }
+      if (value.replace !== undefined && typeof value.replace !== 'boolean')
+        return studioParamsRefused('"replace" is true or false, when given.')
+      return studioParams({ tokens, ...(value.replace === true ? { replace: true } : {}) })
     },
   },
   'providers.signInStart': {
