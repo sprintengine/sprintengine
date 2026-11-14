@@ -4,7 +4,6 @@ import { EDITOR_MUTATION_TOOL_NAMES } from './editor-tools'
 import type { McpToolContribution } from '../module-host/main-host'
 import { CONVERSATION_MUTATION_TOOL_NAMES } from './conversation-tools'
 import { CONVERSATION_PULL_REQUEST_MUTATION_TOOL_NAMES } from './conversation-pull-request-tools'
-import { CONVERSATION_COMMAND_TOOL_NAMES } from './tailnet/tailnet-conversation-stream'
 import { TAILNET_MUTATION_TOOL_NAMES } from './tailnet/tailnet-tools'
 import { TOUR_MUTATION_TOOL_NAMES } from './tour-tools'
 import { ARTIFACTS_MUTATION_TOOL_NAMES } from '../artifacts/artifacts-tools'
@@ -45,11 +44,9 @@ const APP_MUTATION_TOOLS = new Set([
   'backlog.repair',
   'backlog.update',
   'backlog.work',
-  // A paired device's commands on a conversation socket: send, stop, answer,
-  // approve, change the permission preset or the model. They are not MCP tools, but they
-  // act on this machine for a remote device exactly as one does, so each
-  // attempt lands in the same audit with the device that made it.
-  ...CONVERSATION_COMMAND_TOOL_NAMES,
+  // An agent's message to another chat, and stopping its turn.
+  'conversation.send',
+  'conversation.interrupt',
   // Starting a chat on this machine, on the same `conversation:operate` grant
   // as the commands above, and audited with the device that asked.
   ...CONVERSATION_MUTATION_TOOL_NAMES,

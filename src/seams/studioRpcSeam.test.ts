@@ -59,7 +59,7 @@ import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared
 import type { Workspace } from '../renderer/src/types/workspace'
 import { createStaticAppIdentity } from '../server/platform/app-identity'
 import { createGatewayAuditStore } from '../main/automation/gateway-audit'
-import { createConversationGatewayHost } from '../main/automation/tailnet/tailnet-conversation-host'
+import { createConversationGatewayHost } from '../server/core/conversation-host'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
 import { ConversationRuntime } from '../main/conversation-runtime'
 import { createStudioConversationBackend } from '../main/studio-rpc/studio-conversation-backend'

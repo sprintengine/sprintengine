@@ -44,7 +44,7 @@ export const MAX_WEBSOCKET_MESSAGE_BYTES = 1024 * 1024
  * How long a WebSocket's TCP connection may sit silent before the kernel
  * starts probing it. Both roles turn it on for every upgraded socket.
  */
-export const WEBSOCKET_TCP_KEEPALIVE_MS = 30_000
+const WEBSOCKET_TCP_KEEPALIVE_MS = 30_000
 
 /**
  * Turn on TCP keepalive for an upgraded socket, whichever role holds it.
@@ -348,21 +348,6 @@ export function encodeCloseFrame(code: number, reason = ''): Buffer {
 /** A text frame from the CLIENT half, masked as the spec requires. */
 export function encodeMaskedTextFrame(text: string): Buffer {
   return encodeMaskedFrame(0x1, Buffer.from(text, 'utf8'))
-}
-
-export function encodeMaskedCloseFrame(code: number, reason = ''): Buffer {
-  const payload = Buffer.concat([Buffer.alloc(2), Buffer.from(reason, 'utf8').subarray(0, 123)])
-  payload.writeUInt16BE(code, 0)
-  return encodeMaskedFrame(0x8, payload)
-}
-
-export function encodeMaskedPongFrame(payload: Buffer): Buffer {
-  return encodeMaskedFrame(0xa, payload)
-}
-
-/** A ping from the CLIENT half: the peer's pong says the socket still carries frames both ways. */
-export function encodeMaskedPingFrame(payload: Buffer = Buffer.alloc(0)): Buffer {
-  return encodeMaskedFrame(0x9, payload.subarray(0, 125))
 }
 
 /**

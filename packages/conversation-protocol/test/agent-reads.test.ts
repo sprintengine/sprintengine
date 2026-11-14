@@ -4,11 +4,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import {
-  CONVERSATION_MAX_SIDE_QUESTION_HISTORY,
-  parseConversationContextBreakdownAnswer,
-  parseConversationSideQuestionAnswer,
-} from '../src/agentReads'
+import { CONVERSATION_MAX_SIDE_QUESTION_HISTORY } from '../src/agentReads'
 import { explainRejectedConversationMessage, parseConversationClientMessage } from '../src/clientFrames'
 import {
   CONVERSATION_CAPABILITIES,
@@ -25,23 +21,6 @@ const ask = (fields: Record<string, unknown>) => ({
   question: 'Which file did it change first?',
   ...fields,
 })
-
-const breakdown = {
-  model: 'claude-opus',
-  usedTokens: 41_000,
-  windowTokens: 200_000,
-  categories: [
-    { name: 'System prompt', tokens: 3_000, kind: 'used' },
-    { name: 'Free space', tokens: 159_000, kind: 'free' },
-  ],
-  mcpServers: [{ name: 'studio', tokens: 1_200, tools: [{ name: 'browser_open', tokens: 300, loaded: true }] }],
-  skills: [{ name: 'dataviz', tokens: 90, detail: 'project' }],
-  memoryFiles: [{ name: 'CLAUDE.md', tokens: 800 }],
-  agents: [],
-  autoCompactAt: 160_000,
-  estimated: false,
-  measuredAt: 1_700_000_000_000,
-}
 
 test('both capabilities are listed', () => {
   assert.equal(CONVERSATION_SIDE_QUESTIONS_CAPABILITY, 'conversation-side-questions')
@@ -109,29 +88,6 @@ test('a desktop from before them reads neither frame, and refuses each under its
     { type: 'getContextBreakdown', requestId: 'r-1' },
   ])
     assert.equal(parseConversationClientFrame(frame), null)
-})
-
-test('an answer is read off its result', () => {
-  assert.deepEqual(parseConversationSideQuestionAnswer({ answer: 'src/app.ts', ok: true }), { answer: 'src/app.ts' })
-  assert.equal(parseConversationSideQuestionAnswer({ answer: 7 }), null)
-  assert.equal(parseConversationSideQuestionAnswer(null), null)
-})
-
-test('a breakdown is read off its result whole, or not at all', () => {
-  assert.deepEqual(parseConversationContextBreakdownAnswer({ breakdown, stale: true, ok: true }), {
-    breakdown,
-    stale: true,
-  })
-  assert.deepEqual(parseConversationContextBreakdownAnswer({ breakdown }), { breakdown })
-  // A row of the wrong shape spoils the reading: its totals would not add up.
-  assert.equal(
-    parseConversationContextBreakdownAnswer({
-      breakdown: { ...breakdown, categories: [{ name: 'System prompt', tokens: '3k', kind: 'used' }] },
-    }),
-    null,
-  )
-  assert.equal(parseConversationContextBreakdownAnswer({ breakdown: { ...breakdown, autoCompactAt: 'never' } }), null)
-  assert.equal(parseConversationContextBreakdownAnswer({}), null)
 })
 
 test('a listed chat keeps whether it answers a side question and says what fills its window', () => {

@@ -108,8 +108,7 @@ with a `result` whose `data` is its `protocolVersion`, `minProtocolVersion` and
 conversation `capabilities` (`parseConversationHelloAnswer`). One without it
 answers `invalid_frame` under the same `requestId`: read that as protocol 1 with
 the capabilities the transport's own handshake listed. Ask capabilities, not
-the version, whether a feature is there; `checkConversationProtocolVersion`
-refuses a peer outside the window and names both numbers.
+the version, whether a feature is there.
 
 A `hello` may also carry `clientCapabilities`, the capability names of what
 this client reads that a desktop must otherwise keep from it. It holds for the
@@ -192,7 +191,7 @@ and adds, each behind its capability:
 - `conversation-side-questions`: `{ type: 'askSideQuestion', requestId,
 questionId, question, history? }` asks the chat's agent about the chat and
   adds the exchange to nothing; the `result`'s `data` is
-  `{ answer }` (`parseConversationSideQuestionAnswer`). It needs
+  `{ answer }`. It needs
   `conversation:operate`. `{ type: 'cancelSideQuestion', requestId,
 questionId }` calls one off. A listed thread says which chats can
   (`capabilities.sideQuestion`).
@@ -203,8 +202,7 @@ questionId }` calls one off. A listed thread says which chats can
   it asks will be kept.
 - `conversation-context-breakdown`: `{ type: 'getContextBreakdown',
 requestId }` reads what fills the chat's context window from its live agent;
-  the `result`'s `data` is `{ breakdown, stale? }`
-  (`parseConversationContextBreakdownAnswer`). A listed thread says which
+  the `result`'s `data` is `{ breakdown, stale? }`. A listed thread says which
   chats can (`capabilities.contextBreakdown`).
 
 A desktop without either read capability answers its frames `invalid_frame`
@@ -331,7 +329,7 @@ either: each is a GET beside the socket, under `conversation:read`, naming the
 chat by `workspaceId` and `agentId`. `GET /tailnet/v1/conversation-files`
 takes a `query` and answers the files and folders in the chat's folder whose
 names match, each by its path relative to that folder
-(`ConversationFileSearchAnswer`, read with `parseConversationFileSearchAnswer`);
+(`ConversationFileSearchAnswer`);
 what a client picks goes back in a send's `mentions`. `GET
 /tailnet/v1/conversation-commands` answers the slash commands the chat's CLI
 runs there (`ConversationCommandsAnswer`, read with

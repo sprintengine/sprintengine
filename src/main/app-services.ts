@@ -1493,9 +1493,6 @@ export function createAppServices(
   const automationService = server
     ? null
     : createStudioGateway(core, {
-        // A picture a paired device uploads is sized for the model on receipt,
-        // with this process's own image codec.
-        downscaleUpload: (bytes, mediaType) => shellBridge.images.downscale(bytes, mediaType),
         // Listener, pairing and connection changes raise the shell's
         // notifications here; every window follows the same changes on the
         // Studio protocol (`tailnet.changed`, `mesh.changed`).

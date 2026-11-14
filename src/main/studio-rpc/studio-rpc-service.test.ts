@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import { connectLineClient, createFakeBackend, hello } from '../../server/rpc/studio-rpc.test-helper'
-import { createStudioRpcService } from './studio-rpc-service'
+import { createResyncBackoff, createStudioRpcService } from './studio-rpc-service'
 import { createClientToolRegistry } from '../../server/tools/client-tool-registry'
 import { createClientToolsetStore } from '../../server/tools/client-toolset-store'
 
@@ -145,4 +145,16 @@ test('revoking an app that gave agents tools releases its names and forgets the 
   await service.revoke(id)
   assert.deepEqual(forgotten, [['game']])
   assert.equal(registry.isKnownToolset('game'), false)
+})
+
+test('resync delays double for a client that keeps falling behind and reset after a quiet spell', () => {
+  let clock = 0
+  const backoff = createResyncBackoff(() => clock)
+  assert.deepEqual(
+    Array.from({ length: 8 }, () => backoff('phone')),
+    [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000],
+  )
+  assert.equal(backoff('tablet'), 1_000, 'per client')
+  clock += 10 * 60_000
+  assert.equal(backoff('phone'), 1_000)
 })

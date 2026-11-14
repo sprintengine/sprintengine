@@ -4,10 +4,7 @@ import { afterEach, test } from 'vitest'
 import type { StudioParsedServerFrame } from '../../../packages/studio-protocol/src/public'
 import type { ConversationThread as IndexedThread } from '../../shared/conversation-index'
 import type { ConversationBackend } from '../core/conversation-backend'
-import {
-  createConversationGatewayHost,
-  type ConversationListWorkspace,
-} from '../../main/automation/tailnet/tailnet-conversation-host'
+import { createConversationGatewayHost, type ConversationListWorkspace } from '../core/conversation-host'
 import { studioRpcConversationCapabilities } from './studio-rpc-server'
 import { connectLineClient, createFakeBackend, hello, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 

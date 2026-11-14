@@ -120,7 +120,6 @@ export const CONVERSATION_MAX_CHANGED_FILE_BYTES = 5 * 1024 * 1024
 // A commit as git names it, never an option: the desktop hands it to git.
 const COMMIT_HASH = /^[0-9a-f]{7,40}$/i
 const SCOPES = new Set(['worktree', 'branch', 'folder'])
-const STATUSES = new Set(['new', 'modified', 'deleted', 'renamed'])
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -221,43 +220,4 @@ export function parseConversationChangesFrame(frame: Record<string, unknown>): C
     changes,
     revision: frame.revision,
   }
-}
-
-/** A step's files from a `result`'s `data`, or null. A file this client cannot read is left out alone. */
-export function parseConversationChangesDiff(value: unknown): ConversationChangesDiff | null {
-  if (!record(value) || !Array.isArray(value.files) || !count(value.additions) || !count(value.deletions)) return null
-  const files: ConversationChangedFile[] = []
-  for (const entry of value.files.slice(0, CONVERSATION_MAX_CHANGED_FILES)) {
-    if (
-      !record(entry) ||
-      !isConversationChangedPath(entry.path) ||
-      !STATUSES.has(entry.status as string) ||
-      !count(entry.additions) ||
-      !count(entry.deletions)
-    )
-      continue
-    files.push({
-      path: entry.path,
-      status: entry.status as ConversationChangedFile['status'],
-      additions: entry.additions,
-      deletions: entry.deletions,
-      ...(isConversationChangedPath(entry.oldPath) ? { oldPath: entry.oldPath } : {}),
-    })
-  }
-  return { files, additions: value.additions, deletions: value.deletions }
-}
-
-function side(value: unknown): ConversationChangedFileSide | null {
-  if (!record(value)) return null
-  if (value.kind === 'absent' || value.kind === 'too-large') return { kind: value.kind }
-  if (value.kind === 'content' && typeof value.content === 'string') return { kind: 'content', content: value.content }
-  return null
-}
-
-/** A changed file's two sides from a `result`'s `data`, or null. */
-export function parseConversationChangedFileSides(value: unknown): ConversationChangedFileSides | null {
-  if (!record(value)) return null
-  const original = side(value.original)
-  const modified = side(value.modified)
-  return original && modified ? { original, modified } : null
 }

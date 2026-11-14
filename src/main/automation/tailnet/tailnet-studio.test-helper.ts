@@ -10,8 +10,18 @@ import {
 } from '../../../../packages/client-runtime/src/public'
 import { createFakeBackend, startTestServer } from '../../../server/rpc/studio-rpc.test-helper'
 import type { TailnetScope } from '../../../shared/tailnet'
+import type { ConversationGatewayHost } from '../../../server/core/conversation-host'
+import type { ConversationRuntime } from '../../conversation-runtime'
+import {
+  createStudioConversationBackend,
+  type StudioConversationBackendDeps,
+} from '../../studio-rpc/studio-conversation-backend'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
-import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet-gateway-server'
+import {
+  createTailnetGatewayServer,
+  type TailnetGatewayServer,
+  type TailnetGatewayServerOptions,
+} from './tailnet-gateway-server'
 import { TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
 
 // A paired device on the Studio protocol, for a family's grant tests: the real
@@ -33,7 +43,10 @@ export type DeviceRig = {
   dispose(): Promise<void>
 }
 
-export async function deviceRig(server: ServerInput, options: { port?: number } = {}): Promise<DeviceRig> {
+export async function deviceRig(
+  server: ServerInput,
+  options: { port?: number; gateway?: Pick<TailnetGatewayServerOptions, 'fileUploads' | 'machine'> } = {},
+): Promise<DeviceRig> {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-studio-family-'))
   const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
   const studio = await startTestServer({ backend: createFakeBackend(['agent-1']), ...server })
@@ -47,6 +60,7 @@ export async function deviceRig(server: ServerInput, options: { port?: number } 
     isMutation: () => false,
     devices,
     peers: { identify: async () => null, resolve: async () => null },
+    ...options.gateway,
     // As the core links it (src/server/core/studio-rpc.ts → connectDevice).
     studio: () => ({
       attach: (stream, authenticator) =>
@@ -115,4 +129,24 @@ export async function until(check: () => boolean, what: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error(`timed out waiting for ${what}`)
+}
+
+/**
+ * The Studio's conversation backend over a real conversation host, as the
+ * core builds it (src/server/core/studio-rpc.ts), for a rig whose chats are
+ * a real runtime's: what a device reads and runs is the host's own doing.
+ */
+export function hostBackend(
+  host: ConversationGatewayHost,
+  runtime: ConversationRuntime,
+  deps: Partial<StudioConversationBackendDeps> = {},
+): NonNullable<NonNullable<ServerInput>['backend']> {
+  return createStudioConversationBackend({
+    host,
+    launch: async () => ({ ok: false, code: 'unavailable', message: 'No chat is started in this test.' }),
+    listSessions: (input) => runtime.listSessions(input),
+    stopSession: (input) => runtime.stopSession(input),
+    getWorkspaceAgents: () => [],
+    ...deps,
+  }) as never
 }

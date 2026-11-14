@@ -73,7 +73,6 @@ import type {
   StudioDiscovery,
 } from '../../server/rpc/studio-rpc-types'
 import type { GatewayAuditStore } from '../automation/gateway-audit'
-import { createResyncBackoff } from '../automation/tailnet/tailnet-conversation-stream'
 import { createStudioLocalAppStore, type StudioLocalAppStore } from './studio-local-app-store'
 
 // The Studio RPC inside the running app: the owner socket in <userData>/run,
@@ -695,4 +694,20 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     },
   }
   return api
+}
+
+/**
+ * The delay a client is told to wait after a resync close. It doubles with
+ * each resync inside a few minutes, so a client that keeps falling behind
+ * backs off instead of reconnecting straight into the same backlog.
+ */
+export function createResyncBackoff(now: () => number = Date.now): (clientId: string) => number {
+  const history = new Map<string, { count: number; at: number }>()
+  return (clientId) => {
+    const at = now()
+    const prior = history.get(clientId)
+    const count = prior && at - prior.at < 5 * 60_000 ? prior.count + 1 : 1
+    history.set(clientId, { count, at })
+    return Math.min(60_000, 1_000 * 2 ** (count - 1))
+  }
 }

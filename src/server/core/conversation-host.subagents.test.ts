@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import type { ConversationSubagent } from '../../../../packages/conversation-protocol/src/public'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type ConversationListWorkspace } from './tailnet-conversation-host'
+import type { ConversationSubagent } from '../../../packages/conversation-protocol/src/public'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import { createConversationGatewayHost, type ConversationListWorkspace } from './conversation-host'
 
 // A device following a chat here reads that chat's sub-agents as this machine's
 // own panel does (`conversation-subagents`), and the list a device's

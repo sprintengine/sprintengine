@@ -353,9 +353,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         rpc.emit(SERVER_EVENTS.mirrorMeshReachability, meshReachabilityView())
     },
     hasWindow: () => anyWindowVisible,
-    // A paired device's picture is shrunk by the shell, which has the image
-    // codec this process lacks.
-    downscaleUpload: (bytes, mediaType) => bridge.images.downscale(bytes, mediaType),
     resolveModuleTools: () => modules.mcpTools(),
     isModuleEnabled: (moduleId) => modules.isEnabled(moduleId),
     // The shell offers what acts on a screen or a terminal (6.3): an agent's

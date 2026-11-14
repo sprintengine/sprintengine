@@ -4,21 +4,21 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
 
-import { parseConversationServerFrame } from '../../../../packages/conversation-protocol/src/public'
-import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
-import type { ConversationThread as IndexedThread } from '../../../shared/conversation-index'
-import { conversationPhaseWorking, conversationSummaryPhase } from '../../../shared/conversation/phase'
-import { WORKING_STRETCH_GAP_MS } from '../../../shared/conversation/workingStretch'
-import type { MeshConnection, MeshConversation } from '../../../shared/tailnet-mesh'
-import type { ConversationBackend } from '../../../server/core/conversation-backend'
-import { buildRemoteBand } from '../../../renderer/src/components/workspace/remoteBand/remoteSessionsModel'
-import { createConversationSessionsStore } from '../../../renderer/src/hooks/conversationSessionsStore'
-import { ConversationRuntime } from '../../conversation-runtime'
+import { parseConversationServerFrame } from '../../../packages/conversation-protocol/src/public'
+import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
+import type { ConversationThread as IndexedThread } from '../../shared/conversation-index'
+import { conversationPhaseWorking, conversationSummaryPhase } from '../../shared/conversation/phase'
+import { WORKING_STRETCH_GAP_MS } from '../../shared/conversation/workingStretch'
+import type { MeshConnection, MeshConversation } from '../../shared/tailnet-mesh'
+import type { ConversationBackend } from './conversation-backend'
+import { buildRemoteBand } from '../../renderer/src/components/workspace/remoteBand/remoteSessionsModel'
+import { createConversationSessionsStore } from '../../renderer/src/hooks/conversationSessionsStore'
+import { ConversationRuntime } from '../../main/conversation-runtime'
 import type {
   ConversationProviderAdapter,
   MockAdapterSessionInput,
-} from '../../providers/conversation-provider-adapter'
-import { createConversationGatewayHost, type ConversationListWorkspace } from './tailnet-conversation-host'
+} from '../../main/providers/conversation-provider-adapter'
+import { createConversationGatewayHost, type ConversationListWorkspace } from './conversation-host'
 
 // How long a chat has been working, as a paired machine reads it from this
 // desktop's list: from the person's message that began the work, through the

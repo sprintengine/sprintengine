@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import {
-  CONVERSATION_MAX_CHANGES_STEPS,
-  isConversationChangedPath,
-  parseConversationChangedFileSides,
-  parseConversationChangesDiff,
-} from '../src/checkoutChanges'
+import { CONVERSATION_MAX_CHANGES_STEPS, isConversationChangedPath } from '../src/checkoutChanges'
 import { explainRejectedConversationMessage, parseConversationClientMessage } from '../src/clientFrames'
 import { CONVERSATION_CAPABILITIES, CONVERSATION_CHANGES_CAPABILITY } from '../src/handshake'
 import { isKnownConversationServerFrameType, parseConversationServerFrame } from '../src/serverFrames'
@@ -105,36 +100,4 @@ test('a changes frame says how the checkout stands, whole, and null where there 
   assert.equal(parseConversationServerFrame({ type: 'changes', key, changes }), null)
   assert.equal(parseConversationServerFrame({ type: 'changes', changes, revision: 'r' }), null)
   assert.ok(isKnownConversationServerFrameType({ type: 'changes' }))
-})
-
-test('the answers read as the Diff tab reads its own', () => {
-  assert.deepEqual(
-    parseConversationChangesDiff({
-      files: [
-        { path: 'src/a.ts', status: 'modified', additions: 3, deletions: 1 },
-        { path: 'src/b.ts', status: 'renamed', additions: 0, deletions: 0, oldPath: 'src/old-b.ts' },
-        { path: '../escape.ts', status: 'modified', additions: 1, deletions: 0 },
-        { path: 'src/c.ts', status: 'exploded', additions: 1, deletions: 0 },
-      ],
-      additions: 4,
-      deletions: 1,
-    }),
-    {
-      files: [
-        { path: 'src/a.ts', status: 'modified', additions: 3, deletions: 1 },
-        { path: 'src/b.ts', status: 'renamed', additions: 0, deletions: 0, oldPath: 'src/old-b.ts' },
-      ],
-      additions: 4,
-      deletions: 1,
-    },
-  )
-  assert.deepEqual(
-    parseConversationChangedFileSides({ original: { kind: 'absent' }, modified: { kind: 'content', content: 'x\n' } }),
-    { original: { kind: 'absent' }, modified: { kind: 'content', content: 'x\n' } },
-  )
-  assert.deepEqual(
-    parseConversationChangedFileSides({ original: { kind: 'too-large' }, modified: { kind: 'too-large' } }),
-    { original: { kind: 'too-large' }, modified: { kind: 'too-large' } },
-  )
-  assert.equal(parseConversationChangedFileSides({ original: { kind: 'content' }, modified: { kind: 'absent' } }), null)
 })

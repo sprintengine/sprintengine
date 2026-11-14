@@ -1,12 +1,12 @@
 // What the tailnet transport says it speaks, and what this build makes of it
 //. No react-native import, so `node --test` can pin it.
 //
-// The desktop's gateway carries `transportVersion` and `capabilities` on
-// `/tailnet/v1/health` (unauthenticated), `/tailnet/v1/identity` and the
-// `/tailnet/v1/pair` answer (tailnet-routes.ts, TAILNET_TRANSPORT_VERSION and
-// TAILNET_CAPABILITIES). The version bumps when the wire changes in a way a
-// client must know about; a capability is an additive feature that ships
-// without a bump. Neither side refuses the other over a mismatch — the list
+// The desktop's gateway carries `transportVersion` on `/tailnet/v1/health`
+// (unauthenticated), `/tailnet/v1/identity` and the `/tailnet/v1/pair` answer
+// (tailnet-routes.ts, TAILNET_TRANSPORT_VERSION). The version bumps when the
+// wire changes in a way a client must know about. A desktop before the lane
+// went also listed `capabilities` there; what a desktop serves now comes from
+// its Studio welcome (`chatOffers.ts`), and a stored list is only shown. Neither side refuses the other over a mismatch — the list
 // still draws — but the desktop's row says which side is behind, because a
 // person standing at the desktop can update it and a person holding the phone
 // can update the app.

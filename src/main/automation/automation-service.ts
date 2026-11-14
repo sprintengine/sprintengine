@@ -24,9 +24,7 @@ import type { McpHttpCreateResult, McpHttpStatus } from '../../shared/mcp-http'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet/tailnet-service'
-import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
 import type { TailnetEnvironmentRelay, TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
-import type { ConversationImageDownscaler } from '../conversation-image-downscale'
 import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
 
 // Owns the always-on Studio MCP gateway lifecycle, local socket endpoint, and
@@ -59,13 +57,8 @@ type AutomationServiceOptions = {
   resolveGatewayTools: (context?: McpConnectionContext) => McpToolRegistration[]
   /** Client tools: each agent connection's own catalog of the tools clients offer, and its notices. */
   clientTools?: McpSocketServerOptions['clientTools']
-  resolveConversationHost?: () => ConversationGatewayHost
-  /**
-   * Shrinks a picture a paired device uploads, for the model: the shell's
-   * image codec, which only a desktop has. Absent, uploads are kept as they
-   * came and `conversation-image-downscale` is not advertised.
-   */
-  downscaleUpload?: ConversationImageDownscaler
+  /** This machine's own kind and colour, said on the tailnet's `identity`. */
+  selfMachine?: () => { kind: string; color: string } | null
   /**
    * Bind the tailnet listener here instead of this machine's Tailscale
    * interface. Only a library caller sets it, to drive the real listener on
@@ -220,8 +213,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
       resolveTools: options.resolveGatewayTools,
       ...(options.clientTools ? { clientTools: options.clientTools } : {}),
       isMutation: (tool) => isStudioGatewayMutation(tool, options.resolveGatewayTools),
-      conversations: options.resolveConversationHost?.(),
-      ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
+      ...(options.selfMachine ? { machine: options.selfMachine } : {}),
       // Read when a device's Studio socket opens: the Studio server is built
       // after this gateway, and links itself with `linkStudio`.
       studio: () => studioHost,
@@ -433,16 +425,6 @@ export function createAutomationService(options: AutomationServiceOptions) {
     tailnet?.notifyToolsListChanged()
   }
 
-  // The change feed to paired devices. Only the tailnet listener has one; the
-  // local socket's clients are agents on this machine, which read on demand.
-  function notifyWorkspacesChanged(): void {
-    tailnet?.notifyWorkspacesChanged()
-  }
-
-  function notifyConversationsChanged(): void {
-    tailnet?.notifyConversationsChanged()
-  }
-
   /**
    * Settles once the socket gateway's first start has been attempted — never
    * rejects, since a gateway that failed to start reports that in its status
@@ -482,8 +464,6 @@ export function createAutomationService(options: AutomationServiceOptions) {
     createMcpHttpClient,
     revokeMcpHttpClient,
     notifyToolsListChanged,
-    notifyWorkspacesChanged,
-    notifyConversationsChanged,
     getTailnetStatus: (): TailnetRemoteStatus => tailnetService().getStatus(),
     getTailnetLiveState: (): TailnetLiveState => tailnetService().getLiveState(),
     setTailnetEnabled: (next: boolean): Promise<TailnetRemoteStatus> => tailnetService().setEnabled(next),

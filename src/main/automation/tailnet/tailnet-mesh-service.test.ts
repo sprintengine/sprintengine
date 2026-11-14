@@ -19,6 +19,18 @@ vi.mock('./tailnet-remote-client', async (original) => ({
   readRemoteIdentity: wire.readRemoteIdentity,
 }))
 
+// A machine that answers its identity is asked which machines it relays, on
+// its Studio socket: here it serves no list, at once, with no socket opened.
+vi.mock('./tailnet-peer-studio', async (original) => ({
+  ...(await original<typeof import('./tailnet-peer-studio')>()),
+  createPeerStudios: () => ({
+    ask: async (_target: unknown, work: (client: { supports(capability: string): boolean }) => unknown) =>
+      work({ supports: () => false }),
+    forget: () => undefined,
+    closeAll: () => undefined,
+  }),
+}))
+
 const connection: StoredMeshConnection = {
   id: 'tnc_mini',
   machineName: 'mac-mini',
@@ -59,7 +71,6 @@ const identity = {
     deviceName: 'dev-macbook-air',
     scopes: ['conversation:read'],
     transportVersion: 2,
-    capabilities: ['events', 'conversations'],
   },
 }
 

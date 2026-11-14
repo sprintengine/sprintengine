@@ -14,7 +14,7 @@ import {
   createAgentPermissionResolver,
   type AgentPermissionResolver,
 } from '../../main/automation/launch-permission-cap'
-import { createConversationGatewayHost } from '../../main/automation/tailnet/tailnet-conversation-host'
+import { createConversationGatewayHost } from './conversation-host'
 import {
   CONVERSATION_COMMANDS_CACHE_FILE,
   createConversationCommandsDiskCache,
@@ -1440,6 +1440,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     conversationImport,
     resolveAgentPermissionPreset,
     createConversationHost,
+    /** This machine's own kind and colour, as a paired device draws it. */
+    selfMachine: () => tailnetSelfMachine(machineContext()),
     conversationLifecycle,
     conversationMove,
     /** The Settled chats settings, as the windows push them; the rest sweep reads them. */

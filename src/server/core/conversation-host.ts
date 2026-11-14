@@ -1,9 +1,9 @@
-import { isSubagentRecord, type AgentState } from '../../../shared/agent-state'
+import { isSubagentRecord, type AgentState } from '../../shared/agent-state'
 import type {
   ConversationChangesAnswer,
   ConversationChangesSaid,
   ConversationCheckoutChangesHost,
-} from '../../conversation-checkout-changes'
+} from '../../main/conversation-checkout-changes'
 import {
   CONVERSATION_DEFAULT_MODEL_ID,
   CONVERSATION_MAX_FILE_SEARCH_RESULTS,
@@ -34,16 +34,16 @@ import {
   type ConversationLaneSend,
   type ConversationWireMention,
   isStaleConversationSend,
-} from '../../../../packages/conversation-protocol/src/public'
-import { isPlaceholderAgentName } from '../../../shared/agent-names'
-import { backgroundTasksWakeAgent } from '../../../shared/conversation/backgroundTasks'
-import { subagentLiveStatusOf } from '../../../shared/conversation/subagentStatus'
+} from '../../../packages/conversation-protocol/src/public'
+import { isPlaceholderAgentName } from '../../shared/agent-names'
+import { backgroundTasksWakeAgent } from '../../shared/conversation/backgroundTasks'
+import { subagentLiveStatusOf } from '../../shared/conversation/subagentStatus'
 import {
   conversationPhaseWorking,
   conversationSummaryPhase,
   conversationTurnInProgress,
-} from '../../../shared/conversation/phase'
-import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../../shared/workspace-lifecycle'
+} from '../../shared/conversation/phase'
+import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
 import type {
   ConversationContextBreakdownResult,
   ConversationKey,
@@ -56,35 +56,35 @@ import type {
   ConversationSideQuestionExchange,
   ConversationSideQuestionResult,
   ConversationSubscribeInput,
-} from '../../../shared/conversation-runtime'
-import type { ConversationBackend } from '../../../server/core/conversation-backend'
-import type { ConversationModelCatalog } from '../../conversation-model-catalog'
-import { ConversationSessionApi } from '../../conversation-session-api'
-import { latestTurnEnd } from '../conversation-lifecycle'
+} from '../../shared/conversation-runtime'
+import type { ConversationBackend } from './conversation-backend'
+import type { ConversationModelCatalog } from '../../main/conversation-model-catalog'
+import { ConversationSessionApi } from '../../main/conversation-session-api'
+import { latestTurnEnd } from '../../main/automation/conversation-lifecycle'
 import { randomUUID } from 'node:crypto'
-import { DEFAULT_AGENT_SPAWN_PERMISSION_PRESET } from '../../../shared/launch-settings'
-import { parseCliPermissionModeId } from '../../../shared/cli-permission-mode'
+import { DEFAULT_AGENT_SPAWN_PERMISSION_PRESET } from '../../shared/launch-settings'
+import { parseCliPermissionModeId } from '../../shared/cli-permission-mode'
 import { basename, dirname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { stat } from 'node:fs/promises'
-import type { ConversationAttachedFile } from '../../../shared/conversation/attachedFiles'
-import type { ConversationCommandCatalog } from '../../../shared/conversation/commands'
-import { cliForConversationProvider } from '../../../shared/conversation-harness'
-import type { FileSearchResult } from '../../../shared/ipc/filesystem'
-import { openConfinedExistingFile } from '../../conversation-file-access'
-import { confineToRoots } from '../../studio-rpc/studio-file-confinement'
-import { distroOfUncPath } from '../../../shared/host-paths'
+import type { ConversationAttachedFile } from '../../shared/conversation/attachedFiles'
+import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
+import { cliForConversationProvider } from '../../shared/conversation-harness'
+import type { FileSearchResult } from '../../shared/ipc/filesystem'
+import { openConfinedExistingFile } from '../../main/conversation-file-access'
+import { confineToRoots } from '../../main/studio-rpc/studio-file-confinement'
+import { distroOfUncPath } from '../../shared/host-paths'
 import {
   conversationImageFileOf,
   conversationImagePathOf,
   sniffConversationImage,
   type ConversationImageMediaType,
-} from './tailnet-conversation-images'
-import { ConversationAttachmentStore } from '../../conversation-attachment-store'
+} from '../../main/automation/tailnet/tailnet-conversation-images'
+import { ConversationAttachmentStore } from '../../main/conversation-attachment-store'
 import {
   ATTACHABLE_IMAGE_TYPES,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_TURN,
-} from '../../../shared/conversation-attachments'
+} from '../../shared/conversation-attachments'
 
 const UPLOAD_TTL_MS = 60 * 60_000
 const MAX_UPLOAD_REFS = 256

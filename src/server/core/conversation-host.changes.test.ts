@@ -4,13 +4,13 @@ import { test } from 'vitest'
 import {
   parseConversationServerFrame,
   parseConversationWireChanges,
-} from '../../../../packages/conversation-protocol/src/public'
-import type { ConversationSessionSummary } from '../../../shared/conversation-runtime'
-import type { ConversationThread as IndexedThread } from '../../../shared/conversation-index'
-import type { WorkspaceChangeSummary } from '../../../shared/ipc/git'
-import type { ConversationBackend } from '../../../server/core/conversation-backend'
-import { createConversationGatewayHost, type ConversationListMarks } from './tailnet-conversation-host'
-import { conversationCheckoutsOf } from './tailnet-conversation-machine'
+} from '../../../packages/conversation-protocol/src/public'
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
+import type { ConversationThread as IndexedThread } from '../../shared/conversation-index'
+import type { WorkspaceChangeSummary } from '../../shared/ipc/git'
+import type { ConversationBackend } from './conversation-backend'
+import { createConversationGatewayHost, type ConversationListMarks } from './conversation-host'
+import { conversationCheckoutsOf } from '../../main/automation/tailnet/tailnet-conversation-machine'
 
 // What a paired device reads about a chat's checkout: the files it changed,
 // as this desktop's sidebar line and composer strip count them, and whether

@@ -25,16 +25,13 @@ import { createTailnetPeerResolver, peerIdentityFromWhois, type TailnetPeerIdent
 import { createTailnetRemoteService } from './tailnet-service'
 import { writeTailnetSettings } from './tailnet-settings'
 import {
-  TAILNET_CONVERSATION_IMAGE_PATH,
-  TAILNET_CONVERSATION_PATH,
-  TAILNET_EVENTS_PATH,
   TAILNET_IDENTITY_PATH,
   TAILNET_MCP_PATH,
   TAILNET_PAIR_COLLECT_PATH,
   TAILNET_PAIR_PATH,
   TAILNET_PAIR_REQUEST_PATH,
   TAILNET_STREAM_PATH,
-  TAILNET_UPLOAD_PATH,
+  TAILNET_STUDIO_PATH,
   TAILNET_WS_TICKET_PATH,
 } from './tailnet-routes'
 
@@ -279,8 +276,6 @@ test('a bound token is refused from another node, on every authenticated route',
       ['GET', TAILNET_IDENTITY_PATH],
       ['POST', TAILNET_MCP_PATH, listTools],
       ['POST', TAILNET_WS_TICKET_PATH],
-      ['POST', `${TAILNET_UPLOAD_PATH}?conversationId=c1&name=a.png`],
-      ['GET', `${TAILNET_CONVERSATION_IMAGE_PATH}?workspaceId=w&agentId=a&path=x.png`],
     ]
     for (const [method, path, body] of routes) {
       const answer = await call(gateway.port, method, path, { token: device.deviceToken, body })
@@ -437,7 +432,7 @@ test('a request whois could not name is bound at collect, to the collecting node
 test('a WebSocket upgrade is held to the node too, on every socket route', async () => {
   await withGateway(async (gateway) => {
     const device = await pair(gateway)
-    for (const path of [TAILNET_STREAM_PATH, TAILNET_EVENTS_PATH, TAILNET_CONVERSATION_PATH]) {
+    for (const path of [TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH]) {
       // The ticket is taken from the right node, then carried to another one.
       gateway.callFrom(MAC_MINI)
       const ticket = await ticketFor(gateway, device.deviceToken)
@@ -453,7 +448,7 @@ test('a WebSocket upgrade is held to the node too, on every socket route', async
     // And a failed whois at the upgrade refuses it.
     const another = await ticketFor(gateway, device.deviceToken)
     gateway.callFrom(null)
-    assert.match(await upgrade(gateway.port, TAILNET_EVENTS_PATH, another), /X-Tailnet-Error: peer_unverified/u)
+    assert.match(await upgrade(gateway.port, TAILNET_STUDIO_PATH, another), /X-Tailnet-Error: peer_unverified/u)
   })
 })
 

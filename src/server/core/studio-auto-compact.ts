@@ -5,7 +5,7 @@ import type {
   ConversationSessionSummary,
 } from '../../shared/conversation-runtime'
 import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
-import type { ConversationGatewayHost } from '../../main/automation/tailnet/tailnet-conversation-host'
+import type { ConversationGatewayHost } from './conversation-host'
 import {
   AUTO_COMPACT_CLIENT_ID,
   createAutoCompactScheduler,

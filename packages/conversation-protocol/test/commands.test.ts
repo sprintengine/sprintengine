@@ -16,10 +16,7 @@ import {
 } from '../src/commands'
 import {
   CONVERSATION_CAPABILITIES,
-  CONVERSATION_CLI_PERMISSION_MODES_CAPABILITY,
   CONVERSATION_PROTOCOL_VERSION,
-  checkConversationProtocolVersion,
-  conversationPeerSupports,
   parseConversationHelloAnswer,
 } from '../src/handshake'
 import { explainRejectedConversationMessage, parseConversationClientMessage } from '../src/clientFrames'
@@ -200,7 +197,7 @@ test('a create request keeps only what the contract defines', () => {
   )
 })
 
-test('the handshake names versions and capabilities, and a refusal names both numbers', () => {
+test('the handshake names versions and capabilities', () => {
   assert.equal(CONVERSATION_PROTOCOL_VERSION, 1)
   for (const shipped of [
     CONVERSATION_CAPABILITY,
@@ -219,16 +216,6 @@ test('the handshake names versions and capabilities, and a refusal names both nu
   )
   assert.equal(parseConversationHelloAnswer({ protocolVersion: 0, minProtocolVersion: 1, capabilities: [] }), null)
   assert.equal(parseConversationHelloAnswer({ protocolVersion: 1, capabilities: [] }), null)
-  assert.deepEqual(checkConversationProtocolVersion(1), { ok: true })
-  const tooNew = checkConversationProtocolVersion(3, 3)
-  assert.equal(tooNew.ok, false)
-  if (!tooNew.ok) assert.match(tooNew.message, /needs conversation protocol 3 or newer.*speaks 1\. Update this end/)
-  // Unknown versus denied: no list is not a list without the name.
-  assert.equal(conversationPeerSupports(null, CONVERSATION_CLI_PERMISSION_MODES_CAPABILITY), false)
-  assert.equal(
-    conversationPeerSupports(['conversation-cli-permission-modes'], 'conversation-cli-permission-modes'),
-    true,
-  )
 })
 
 test('a listed chat names its CLI mode only beside its preset', () => {

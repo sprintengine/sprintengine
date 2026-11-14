@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
 
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type AgentChoicePatch } from './tailnet-conversation-host'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import { createConversationGatewayHost, type AgentChoicePatch } from './conversation-host'
 
 // A paired device's effort control (`conversation-reasoning-effort`): the
 // list names the levels a chat's provider runs and the one its record keeps,

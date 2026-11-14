@@ -1,7 +1,7 @@
 import type { ConversationMessageOrigin, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { usageLimitProviderOfConversation, type UsageLimitProvider } from '../../shared/usage-limits'
 import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
-import type { ConversationGatewayHost } from '../../main/automation/tailnet/tailnet-conversation-host'
+import type { ConversationGatewayHost } from './conversation-host'
 import { usageRateLimit, type UsageRateLimitAnswer } from '../../main/usage-limits/store'
 import type { PullRequestDomainOptions } from '../pull-requests/pull-request-domain'
 import type { PullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'

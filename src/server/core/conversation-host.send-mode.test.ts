@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
 
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type ConversationHeldMessages } from './tailnet-conversation-host'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import { createConversationGatewayHost, type ConversationHeldMessages } from './conversation-host'
 
 // A paired device's send that says the mode its turn runs in
 // (`conversation-send-mode`): the turn runs in it, as one this machine's own

@@ -1,13 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import {
-  createConversationChunkAssembler,
-  createConversationSnapshotAssembler,
-  decodeConversationServerFrame,
-  readableConversationPhase,
-  type ConversationDecodedFrame,
-} from '../src/public'
+import { decodeConversationServerFrame, readableConversationPhase } from '../src/public'
 
 // How a client reads a desktop newer than itself: what it does not know is
 // passed over or dropped, never a reason to refuse what it does.
@@ -139,34 +133,4 @@ test('a held message keeps what it carries, and a usage window its length and sc
   assert.ok(limits && limits.type === 'usageLimits')
   assert.equal(limits.limits[0].windows[0].durationMs, 604_800_000)
   assert.equal(limits.limits[0].windows[0].scope, 'model')
-})
-
-test('a frame split into chunks is decoded once every chunk has come, and a snapshot only whole', () => {
-  const whole = JSON.stringify({ type: 'synchronized', seq: 12 })
-  const chunks = createConversationChunkAssembler()
-  const half = Math.ceil(whole.length / 2)
-  const chunk = (index: number, json: string) =>
-    decode({ type: 'chunk', frameId: 'f', index, total: 2, json }) as ConversationDecodedFrame
-  assert.equal(chunks.push(chunk(1, whole.slice(half))), null)
-  assert.deepEqual(chunks.push(chunk(0, whole.slice(0, half))), { type: 'synchronized', seq: 12 })
-
-  const snapshots = createConversationSnapshotAssembler()
-  const part = (index: number, seq: number) => {
-    const frame = decode({
-      type: 'snapshot',
-      part: { index, total: 2 },
-      page: { events: [event(seq)], hasMore: false, beforeCursor: null },
-    })
-    assert.ok(frame && frame.type === 'snapshot')
-    return frame
-  }
-  assert.deepEqual(snapshots.push(part(0, 1)), { waiting: true })
-  const done = snapshots.push(part(1, 2))
-  assert.ok('snapshot' in done)
-  assert.deepEqual(
-    done.snapshot.page.events.map((item) => item.seq),
-    [1, 2],
-  )
-  assert.equal('part' in done.snapshot, false)
-  assert.deepEqual(snapshots.push(part(1, 3)), { broken: true }, 'a part out of order is never applied')
 })

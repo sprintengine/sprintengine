@@ -30,7 +30,6 @@ import { isInsideWsl, resolveTailnetInterface, TAILNET_IN_WSL_ENV } from './tail
 import { createTailnetPeerResolver, type TailnetPeerIdentity, type TailnetPeerResolver } from './tailnet-peer-identity'
 import { createTailnetPeerScanner, type TailnetPeerScanner } from './tailnet-peers'
 import { readTailnetSettings, writeTailnetSettings, type TailnetSettings } from './tailnet-settings'
-import type { ConversationGatewayHost } from './tailnet-conversation-host'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from './tailnet-file-uploads'
 import type { McpToolCallEvent } from '../mcp-dispatch'
 import { createTailnetOAuthStore, type TailnetOAuthStore } from './tailnet-oauth'
@@ -150,9 +149,6 @@ export type TailnetRemoteService = {
    */
   getLiveState(): TailnetLiveState
   notifyToolsListChanged(): void
-  /** The change feed: this machine's workspace list, or conversation list, changed. No-ops with no listener. */
-  notifyWorkspacesChanged(): void
-  notifyConversationsChanged(): void
   shutdown(): Promise<void>
 }
 
@@ -164,9 +160,8 @@ export type TailnetRemoteServiceOptions = {
   clientTools?: TailnetGatewayServerOptions['clientTools']
   isMutation: (toolName: string) => boolean
   onToolCall?: (event: McpToolCallEvent) => void
-  conversations?: ConversationGatewayHost
-  /** Shrinks an uploaded picture for the model; see the gateway's own option. */
-  downscaleUpload?: TailnetGatewayServerOptions['downscaleUpload']
+  /** This machine's own kind and colour; see the gateway's own option. */
+  machine?: TailnetGatewayServerOptions['machine']
   /** This machine's Studio server, for a device's Studio socket; see the gateway's own option. */
   studio?: TailnetGatewayServerOptions['studio']
   /** The machines this desktop relays to its paired devices; see the gateway's own option. */
@@ -640,11 +635,10 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
       isMutation: options.isMutation,
       devices,
       peers,
-      conversations: options.conversations,
+      ...(options.machine ? { machine: options.machine } : {}),
       // The files a device sends with a message, kept in Studio's own data
-      // folder beside a browser's uploads, never in a project's folder.
+      // folder beside a browser's uploads: they go with the device.
       fileUploads: createTailnetFileUploads({ root: join(options.resolveUserDataDir(), TAILNET_UPLOADS_DIRNAME) }),
-      ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
       ...(options.studio ? { studio: options.studio } : {}),
       ...(options.environments ? { environments: options.environments } : {}),
       onToolCall: options.onToolCall,
@@ -985,14 +979,6 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
 
     notifyToolsListChanged(): void {
       server?.notifyToolsListChanged()
-    },
-
-    notifyWorkspacesChanged(): void {
-      server?.notifyWorkspacesChanged()
-    },
-
-    notifyConversationsChanged(): void {
-      server?.notifyConversationsChanged()
     },
 
     async shutdown(): Promise<void> {

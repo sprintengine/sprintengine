@@ -9,12 +9,12 @@ import {
   createStudioScheduledMessages,
   HELD_MESSAGE_PICTURES_DIRNAME,
   studioHeldMessages,
-} from '../../../server/core/studio-scheduled-messages'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import type { ScheduledMessages } from '../../scheduled-messages/scheduled-messages'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
-import { TAILNET_UPLOADS_DIRNAME } from './tailnet-file-uploads'
+} from './studio-scheduled-messages'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
+import { createConversationGatewayHost } from './conversation-host'
+import { TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 
 // A message a paired machine queued mid-turn carrying pictures, files, skills
 // and mentions (`conversation-queued-attachments`): held here whole, its
