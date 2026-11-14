@@ -28,6 +28,8 @@ import {
   TAILNET_PAIR_PATH,
   TAILNET_PAIR_COLLECT_PATH,
   TAILNET_PAIR_REQUEST_PATH,
+  TAILNET_CLIENT_UPDATE_MESSAGE,
+  TAILNET_RETIRED_PATHS,
   TAILNET_STREAM_PATH,
   TAILNET_STUDIO_PATH,
   tailnetEnvironmentStudioPath,
@@ -520,6 +522,13 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     const path = pathOf(request.url)
     const method = request.method ?? 'GET'
     const peerAddress = peerAddressOf(request, via)
+
+    // A route transport 3 took away is asked for only by a build from before
+    // it: it is told to update, whoever it is, before any credential is read.
+    if (TAILNET_RETIRED_PATHS.has(path)) {
+      writeJson(response, 426, { error: { code: 'client_update_required', message: TAILNET_CLIENT_UPDATE_MESSAGE } })
+      return
+    }
 
     if (method === 'GET' && path === TAILNET_HEALTH_PATH) {
       // Unauthenticated on purpose: peer discovery probes it to learn
@@ -1140,6 +1149,10 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       return rejectUpgrade(socket, 403, 'origin_not_allowed')
     // No stream opens behind Serve: see the loopback listener's rule above.
     if (via === 'serve') return rejectUpgrade(socket, 404, 'not_served_over_https')
+    // A socket transport 3 took away (a chat's lane, the change feed, a
+    // board's lane): the build asking is told to update, as on HTTP.
+    if (TAILNET_RETIRED_PATHS.has(path))
+      return rejectUpgrade(socket, 426, 'client_update_required', TAILNET_CLIENT_UPDATE_MESSAGE)
     if (!route) return rejectUpgrade(socket, 404, 'not_found')
     if ((headerOf(request, 'upgrade') ?? '').toLowerCase() !== 'websocket')
       return rejectUpgrade(socket, 400, 'not_a_websocket_upgrade')
@@ -1842,7 +1855,7 @@ function writeJson(response: ServerResponse, status: number, payload: Record<str
   response.end(body)
 }
 
-function rejectUpgrade(socket: Duplex, status: number, code: string): void {
+function rejectUpgrade(socket: Duplex, status: number, code: string, message?: string): void {
   const reason =
     status === 401
       ? 'Unauthorized'
@@ -1850,11 +1863,18 @@ function rejectUpgrade(socket: Duplex, status: number, code: string): void {
         ? 'Forbidden'
         : status === 404
           ? 'Not Found'
-          : status === 503
-            ? 'Service Unavailable'
-            : 'Bad Request'
+          : status === 426
+            ? 'Upgrade Required'
+            : status === 503
+              ? 'Service Unavailable'
+              : 'Bad Request'
   if (!socket.destroyed) {
-    socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nX-Tailnet-Error: ${code}\r\n\r\n`)
+    // A sentence for a person goes as the body, as on the HTTP routes.
+    const body = message ? JSON.stringify({ error: { code, message } }) : ''
+    const typed = body
+      ? `Content-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\n`
+      : ''
+    socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nX-Tailnet-Error: ${code}\r\n${typed}\r\n${body}`)
   }
   socket.destroy()
 }

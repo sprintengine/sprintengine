@@ -41,6 +41,12 @@ test('tailnet-transport-version', async () => {
     })
   }
 
+  /** The versions this build speaks, as its refusals say them. */
+  const SPOKEN =
+    TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION === TAILNET_TRANSPORT_VERSION
+      ? `${TAILNET_TRANSPORT_VERSION}`
+      : `${TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION}–${TAILNET_TRANSPORT_VERSION}`
+
   // ── The window itself ────────────────────────────────────────────────────────
 
   check('the window is a window, and it ends at the version this build speaks', () => {
@@ -67,10 +73,15 @@ test('tailnet-transport-version', async () => {
     // Both numbers, because either alone is undiagnosable: one says a version is
     // wrong without saying which install to update.
     assert.match(refusal?.message ?? '', /\b99\b/u)
-    assert.match(
-      refusal?.message ?? '',
-      new RegExp(`${TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION}.${TAILNET_TRANSPORT_VERSION}`, 'u'),
-    )
+    assert.match(refusal?.message ?? '', new RegExp(`this build speaks ${SPOKEN}\\.`, 'u'))
+  })
+
+  check('a desktop from before the lane went is refused, and told which install to update', () => {
+    // Transport 3 took away every route a build on 2 drove its chats with.
+    assert.equal(TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION, 3)
+    const refusal = checkTailnetTransportVersion(2)
+    assert.equal(refusal?.code, 'unsupported_transport_version')
+    assert.match(refusal?.message ?? '', /speaks transport version 2; this build speaks 3\. Update whichever/u)
   })
 
   check('a peer that says nothing readable is refused rather than read as a version', () => {
@@ -135,10 +146,7 @@ test('tailnet-transport-version', async () => {
       assert.equal(identity.ok === false && identity.code, 'unsupported_transport_version')
       // The refusal a person reads in the Remote panel, naming both versions.
       assert.match(identity.ok === false ? identity.message : '', new RegExp(`${TAILNET_TRANSPORT_VERSION + 3}`, 'u'))
-      assert.match(
-        identity.ok === false ? identity.message : '',
-        new RegExp(`${TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION}.${TAILNET_TRANSPORT_VERSION}`, 'u'),
-      )
+      assert.match(identity.ok === false ? identity.message : '', new RegExp(`this build speaks ${SPOKEN}\\.`, 'u'))
     })
   })
 
