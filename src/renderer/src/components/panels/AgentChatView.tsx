@@ -1571,7 +1571,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       try {
         const result = await sendRecoveringSession({
           sessionId: activeSession,
-          send: (onSession) =>
+          send: (onSession, commandId) =>
             transport.send({
               sessionId: onSession,
               message: text,
@@ -1582,6 +1582,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               mode: conversationMode,
               reasoningEffort,
               ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+              commandId,
             }),
           restart: async () => {
             // A view that cannot start one (a paired machine's chat) keeps the one it has.

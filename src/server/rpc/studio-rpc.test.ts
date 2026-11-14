@@ -9,6 +9,7 @@ import {
 } from '../conversation-stream-shaping'
 import type { ConversationSessionFrame } from '../../shared/conversation-runtime'
 import type { StudioUpdates } from '../update/studio-updates'
+import { studioCommandFingerprint } from './studio-rpc-router'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -773,6 +774,19 @@ test('a command id reused for a different command is refused; the same command a
   assert.equal(backend.commands.length, 1)
   // A fingerprint rides with the command to the runtime's receipts.
   assert.match(backend.fingerprints[0] ?? '', /^[A-Za-z0-9_-]{32}$/)
+})
+
+test("a session command resent to the chat's new session under its id is the same command; anything else it says is not", () => {
+  const send = (sessionId: string, message: string) =>
+    studioCommandFingerprint('session.send', { sessionId, commandId: 'same', message })
+  // The server restarted and the chat's session was made again: the session is where it went.
+  assert.equal(send('conv_old', 'hello'), send('conv_new', 'hello'))
+  assert.notEqual(send('conv_old', 'hello'), send('conv_old', 'something else'))
+  // A chat's own address outlives a restart, so it stays part of what a conversation command is.
+  assert.notEqual(
+    studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hello' }),
+    studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'b' }, message: 'hello' }),
+  )
 })
 
 test('a line over the client cap is refused under its id, and the connection stays open', async () => {
