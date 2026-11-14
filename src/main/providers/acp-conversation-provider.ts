@@ -1124,15 +1124,17 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
   // reloaded in another mode, or switched from inside it, is put back.
   const applySessionMode = async (state: State, turnMode: MockAdapterTurnInput['mode']) => {
     const presetMode = acpPresetSessionMode(profile, state.input.permissionPreset, state.input.permissionMode)
-    if (!turnMode && !state.defaultMode && !presetMode) return
     const desired = !turnMode || turnMode === 'default' ? (presetMode ?? state.defaultMode) : turnMode
+    // No mode to ask for (an agent that offers no modes has no current one
+    // either): the turn runs in whatever mode the agent is in.
+    if (!desired) return
     // Worded as a refusal of the preset, so the runtime can start the chat
     // again with no preset rather than leave it unable to answer.
-    if (desired && desired === presetMode && !state.modes.includes(desired))
+    if (desired === presetMode && !state.modes.includes(desired))
       throw new Error(
         `The ${desired} session mode this permission preset runs in is not supported by this ${profile.displayName} build.`,
       )
-    if (!desired || !state.modes.includes(desired)) throw new Error('This mode is unavailable from the ACP agent.')
+    if (!state.modes.includes(desired)) throw new Error('This mode is unavailable from the ACP agent.')
     if (state.modeConfigId)
       await state.connection!.setSessionConfigOption({
         sessionId: state.nativeId!,
