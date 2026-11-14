@@ -23,6 +23,7 @@ import { useStudioChatHeld } from './chatServerHeld'
 import { usePullRequestsOfConversation } from '../../workspace/useConversationPullRequests'
 import { useLocalServersOfConversation } from '../../workspace/useLocalServers'
 import { useConversationTransport } from './conversationTransport'
+import { useEnvironmentReach } from '../../../hooks/useEnvironmentReach'
 
 // What a chat view is bound to besides its transport: the agent fields it reads
 // (name, model, preset, mode, skills, the one-shot startup prompt) and where it writes
@@ -190,8 +191,13 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
   // come with its lane's frames.
   const transport = useConversationTransport()
   const followPush = transport.services.followPush ?? null
+  // A machine forgotten in Settings › Machines holds nothing this window can
+  // follow or change: what it last said it held is not shown as held.
+  const reach = useEnvironmentReach(transport.environment.route, transport.environment.label)
   const workingRoot =
-    agent?.conversation && !pendingGate && followPush ? conversationWorkingRoot(agent, workspace?.folderPath) : null
+    agent?.conversation && !pendingGate && followPush && reach?.kind !== 'forgotten'
+      ? conversationWorkingRoot(agent, workspace?.folderPath)
+      : null
   const heldKey = useMemo(
     () => (workingRoot ? { workspaceId, agentId, workspaceRoot: workingRoot } : null),
     [workspaceId, agentId, workingRoot],

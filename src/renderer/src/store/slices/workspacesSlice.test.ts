@@ -369,6 +369,37 @@ test('workspacesSlice', async () => {
     '/Users/example/solo-dev',
   ])
 
+  // A chat an SSH machine holds keeps the folder the machine gives it: a
+  // folder picked on this computer (Files' Open folder) never re-roots it.
+  useWorkspaceStore.setState((current) => ({
+    workspaces: current.workspaces.map((workspace) =>
+      workspace.id === secondId
+        ? {
+            ...workspace,
+            folderPath: 'ssh://machine-1/home/dev/proj',
+            environment: { kind: 'ssh', id: 'machine-1', label: 'dev@build-box' },
+          }
+        : workspace,
+    ),
+  }))
+  useWorkspaceStore.getState().setFolderPath(secondId, '/Users/example/demo')
+  state = useWorkspaceStore.getState()
+  assert.equal(
+    state.workspaces.find((workspace) => workspace.id === secondId)?.folderPath,
+    'ssh://machine-1/home/dev/proj',
+    "a machine's chat is never re-rooted to a folder on this computer",
+  )
+  assert.equal(
+    state.appSettings.recentWorkspaceFolders.includes('/Users/example/demo'),
+    false,
+    'and the refused folder is not remembered as a recent one',
+  )
+  useWorkspaceStore.setState((current) => ({
+    workspaces: current.workspaces.map((workspace) =>
+      workspace.id === secondId ? { ...workspace, folderPath: '/Users/example/other', environment: null } : workspace,
+    ),
+  }))
+
   useWorkspaceStore.getState().updateAgent(firstId, 'agent-1', { name: 'Agent One' })
   assert.equal(useWorkspaceStore.getState().moveAgentToWorkspace(firstId, secondId, 'agent-1'), true)
   state = useWorkspaceStore.getState()

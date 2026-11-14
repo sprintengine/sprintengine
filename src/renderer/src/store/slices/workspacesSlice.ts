@@ -1633,6 +1633,12 @@ export function createWorkspacesSlice(
     setFolderPath: (id, folderPath) =>
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
+        // A chat another environment holds (an SSH machine's, a WSL
+        // distribution's) keeps the folder that environment gives it: this
+        // record is its copy (environment-replicas.ts). A folder picked here
+        // would re-root it to this computer, and its chat would be read under
+        // a key the machine never wrote.
+        if (ws?.environment) return
         if (ws) {
           const folderChanged = ws.folderPath !== folderPath
           ws.folderPath = folderPath
