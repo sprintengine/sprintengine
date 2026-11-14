@@ -3764,7 +3764,7 @@ test('NewAgentPanel', async () => {
       door.view.unmount()
     })
 
-    await check('a scheduled agent\'s draft keeps its kind and its schedule when it is reopened', async () => {
+    await check("a scheduled agent's draft keeps its kind and its schedule when it is reopened", async () => {
       seedStore()
       const { readNewChatDraft, resetNewChatDraftsForTests } = await import('./newChatDraft')
       resetNewChatDraftsForTests()
