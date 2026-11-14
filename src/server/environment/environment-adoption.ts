@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { respellPromptPath } from '../../main/scheduled-agents/prompt-images'
+import { writeFileAtomicSync } from '../platform/atomic-file'
 import { keepAdoptedChatFiles, readAdoptedChat } from './environment-chat-files'
 
 import {
@@ -174,7 +175,10 @@ export function carriedName(value: unknown, fallback: string): string {
   return base && base !== '.' && base !== '..' ? base : fallback
 }
 
-type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown; promptPath?: unknown }
+type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown; promptPath?: unknown; parts?: unknown }
+
+/** A carried file's bytes, whole and as its digest names them, or null: staged with its record, or in parts ahead of it. */
+type CarriedBytes = (entry: CarriedEntry) => Promise<{ bytes: Buffer; mediaType: string } | null>
 
 /**
  * A schedule's prompt with each picture it carries kept on this disk and
@@ -183,7 +187,7 @@ type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown; pro
  */
 async function promptWithPictures(
   body: Record<string, unknown>,
-  files: AdoptedFiles,
+  bytesOf: CarriedBytes,
   keepImage: (bytes: Buffer, name: string) => Promise<string>,
 ): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; reason: string }> {
   const { carried, ...rest } = body
@@ -192,10 +196,8 @@ async function promptWithPictures(
   if (typeof rest.prompt !== 'string') return { ok: false, reason: 'The scheduled agent names no prompt.' }
   const arrived: Array<{ from: string; name: string; bytes: Buffer }> = []
   for (const entry of images as CarriedEntry[]) {
-    const sha256 = typeof entry.sha256 === 'string' ? entry.sha256 : ''
-    const staged = files.get(sha256)
-    if (!staged || createHash('sha256').update(staged.bytes).digest('hex') !== sha256)
-      return { ok: false, reason: 'A picture its prompt names did not arrive whole.' }
+    const staged = await bytesOf(entry)
+    if (!staged) return { ok: false, reason: 'A picture its prompt names did not arrive whole.' }
     if (!text(entry.promptPath, 4096) || !rest.prompt.includes(entry.promptPath))
       return { ok: false, reason: 'A picture it carries is not one its prompt names.' }
     arrived.push({ from: entry.promptPath, name: carriedName(entry.name, 'picture'), bytes: staged.bytes })
@@ -211,22 +213,17 @@ async function promptWithPictures(
  * the sha-256 of its bytes, its skills and mentions as words), read against the
  * files staged beside it: null when it carries nothing beside its words.
  */
-function carriedOf(
+async function carriedOf(
   value: unknown,
-  files: AdoptedFiles,
-): { ok: true; carried: AdoptedCarried | null } | { ok: false; reason: string } {
+  bytesOf: CarriedBytes,
+): Promise<{ ok: true; carried: AdoptedCarried | null } | { ok: false; reason: string }> {
   if (!value || typeof value !== 'object') return { ok: true, carried: null }
   const given = value as { images?: unknown; files?: unknown; skills?: unknown; mentions?: unknown }
   const list = (entries: unknown): CarriedEntry[] => (Array.isArray(entries) ? (entries as CarriedEntry[]) : [])
-  const bytesOf = (entry: CarriedEntry) => {
-    const sha256 = typeof entry.sha256 === 'string' ? entry.sha256 : ''
-    const staged = files.get(sha256)
-    return staged && createHash('sha256').update(staged.bytes).digest('hex') === sha256 ? staged : null
-  }
   const images: AdoptedCarried['images'] = []
   const attached: AdoptedCarried['files'] = []
   for (const entry of list(given.images)) {
-    const staged = bytesOf(entry)
+    const staged = await bytesOf(entry)
     if (!staged) return { ok: false, reason: 'A picture it carries did not arrive whole.' }
     images.push({
       name: carriedName(entry.name, 'picture'),
@@ -235,7 +232,7 @@ function carriedOf(
     })
   }
   for (const entry of list(given.files)) {
-    const staged = bytesOf(entry)
+    const staged = await bytesOf(entry)
     if (!staged) return { ok: false, reason: 'A file it carries did not arrive whole.' }
     attached.push({ name: carriedName(entry.name, 'file'), bytes: staged.bytes })
   }
@@ -270,14 +267,7 @@ export function createEnvironmentAdoption(deps: {
 
   function writeLedger(ledger: Ledger): void {
     mkdirSync(dirname(path), { recursive: true })
-    const temporary = `${path}.${process.pid}.tmp`
-    writeFileSync(temporary, `${JSON.stringify(ledger)}\n`, { mode: 0o600 })
-    renameSync(temporary, path)
-    try {
-      chmodSync(path, 0o600)
-    } catch {
-      // A file system that keeps no modes.
-    }
+    writeFileAtomicSync(path, `${JSON.stringify(ledger)}\n`, { mode: 0o600, exactMode: true, durable: true })
   }
 
   const partsOf = (migrationId: string) => join(deps.dataDir, PARTS_DIR, migrationId)
@@ -289,6 +279,37 @@ export function createEnvironmentAdoption(deps: {
     const staged = files.get(sha256)
     if (staged) return staged.bytes
     return readFile(join(partsOf(migrationId), sha256)).catch(() => null)
+  }
+
+  /**
+   * A carried picture or file: staged with its record, or, one larger than an
+   * upload carries, put back together from the parts staged ahead of it under
+   * the migration (named in order by `parts`), and checked against its digest.
+   */
+  function carriedBytes(migrationId: string, files: AdoptedFiles): CarriedBytes {
+    return async (entry) => {
+      const sha256 = typeof entry.sha256 === 'string' ? entry.sha256 : ''
+      const staged = files.get(sha256)
+      if (staged) return createHash('sha256').update(staged.bytes).digest('hex') === sha256 ? staged : null
+      const parts = Array.isArray(entry.parts) ? (entry.parts as unknown[]) : []
+      // Each part is named by its digest, which is also its file's name under the migration: nothing else is read.
+      if (
+        !sha256 ||
+        parts.length === 0 ||
+        !parts.every((part): part is string => typeof part === 'string' && /^[0-9a-f]{64}$/.test(part))
+      )
+        return null
+      const read: Buffer[] = []
+      for (const part of parts) {
+        const bytes = await partOf(migrationId, files, part)
+        if (!bytes) return null
+        read.push(bytes)
+      }
+      const bytes = Buffer.concat(read)
+      if (createHash('sha256').update(bytes).digest('hex') !== sha256) return null
+      for (const part of parts) usedParts.add(part)
+      return { bytes, mediaType: text(entry.mediaType, 200) ? entry.mediaType : 'application/octet-stream' }
+    }
   }
 
   /**
@@ -342,7 +363,7 @@ export function createEnvironmentAdoption(deps: {
         if (!kept.ok) return kept
         for (const file of read.chat.files) for (const part of file.parts) usedParts.add(part)
         return kept.kept.length
-          ? { ok: false, reason: `This Studio keeps its own ${kept.kept.join(', ')}, and kept them.` }
+          ? { ok: false, reason: `This Studio keeps its own ${kept.kept.join(', ')}, and kept them.`, exists: true }
           : { ok: true }
       }
       case 'approval-rule': {
@@ -355,7 +376,7 @@ export function createEnvironmentAdoption(deps: {
         if (stores.schedules.has(record.id))
           return { ok: false, reason: 'A scheduled agent with that id is already here.', exists: true }
         // Its prompt's pictures, kept here first and named by their copies.
-        const pictured = await promptWithPictures(body, files, stores.schedules.keepImage)
+        const pictured = await promptWithPictures(body, carriedBytes(migrationId, files), stores.schedules.keepImage)
         if (!pictured.ok) return pictured
         const kept = await stores.schedules.adopt(pictured.body)
         return kept.ok
@@ -368,7 +389,7 @@ export function createEnvironmentAdoption(deps: {
           return { ok: false, reason: 'A scheduled message names its chat and its words.' }
         // What a held message carries beside its words came staged beside
         // the records, each named by the digest of its bytes.
-        const carried = body.queued === true ? carriedOf(body.carried, files) : null
+        const carried = body.queued === true ? await carriedOf(body.carried, carriedBytes(migrationId, files)) : null
         if (carried && !carried.ok) return { ok: false, reason: carried.reason }
         if (carried?.ok && carried.carried) {
           const held = await stores.messages.holdCarrying(chat, body.text, source, carried.carried)
@@ -402,7 +423,12 @@ export function createEnvironmentAdoption(deps: {
           ...(text(body.title, 1_000) ? { title: body.title } : {}),
         })
         // Another chat here claimed it first: the record's rule, its first claimant keeps it.
-        if (!opened.ok) return { ok: false, reason: opened.message }
+        if (!opened.ok)
+          return {
+            ok: false,
+            reason: opened.message,
+            ...(opened.code === 'opened_by_another_conversation' ? { exists: true as const } : {}),
+          }
         if (body.watched === true) {
           const watched = await stores.pullRequests.watch(chat, { url: body.url })
           if (!watched.ok) return { ok: false, reason: watched.message }
@@ -431,6 +457,8 @@ export function createEnvironmentAdoption(deps: {
     const ledger = readLedger()
     const held: StudioAdoptResult['held'] = []
     const conflicts: StudioAdoptResult['conflicts'] = []
+    // Not taken, and not this Studio's own copy either: the desktop keeps it and sends it again.
+    const refused: NonNullable<StudioAdoptResult['refused']> = []
     // A workspace first, so the chats the rest name are found.
     const order = (kind: StudioAdoptedRecordKind) => STUDIO_ADOPTED_RECORD_KINDS.indexOf(kind)
     const records = [...input.records].sort((a, b) => order(a.kind) - order(b.kind))
@@ -459,7 +487,7 @@ export function createEnvironmentAdoption(deps: {
     for (const record of records) {
       const key = keyOf(record)
       if (adoptedRecordDigest(record.body) !== record.digest) {
-        conflicts.push({ kind: record.kind, id: record.id, reason: 'Its digest does not match its body.' })
+        refused.push({ kind: record.kind, id: record.id, reason: 'Its digest does not match its body.' })
         continue
       }
       const known = ledger.records[key]
@@ -497,7 +525,9 @@ export function createEnvironmentAdoption(deps: {
       if (!kept.ok) {
         // Not kept, so not in the ledger: it can go in once fixed.
         delete ledger.records[key]
-        conflicts.push({ kind: record.kind, id: record.id, reason: kept.reason })
+        // Already here by its id (another way in, or this Studio's own) is
+        // this Studio's copy, which wins; anything else was not taken.
+        ;(kept.exists ? conflicts : refused).push({ kind: record.kind, id: record.id, reason: kept.reason })
         continue
       }
       ledger.records[key] = { digest: record.digest, migrationId: input.migrationId, at: now() }
@@ -512,9 +542,11 @@ export function createEnvironmentAdoption(deps: {
     // A held chat's parts are in place now: nothing waits for the sweep.
     for (const part of usedParts) await rm(join(partsOf(input.migrationId), part), { force: true })
     usedParts.clear()
-    if (conflicts.length)
-      deps.log?.(`A hand-over kept ${held.length} records and left ${conflicts.length} as this Studio has them.`)
-    return { held, conflicts }
+    if (conflicts.length || refused.length)
+      deps.log?.(
+        `A hand-over kept ${held.length} records, left ${conflicts.length} as this Studio has them and did not take ${refused.length}.`,
+      )
+    return { held, conflicts, refused }
   }
 
   return {

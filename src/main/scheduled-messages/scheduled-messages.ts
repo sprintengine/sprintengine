@@ -196,8 +196,16 @@ export type ScheduledMessagesDeps = {
 export type ScheduledMessageHoldResult = { ok: true; id: string; repeat?: true } | { ok: false; reason: string }
 
 export type ScheduledMessages = {
-  /** Read the file, follow the chats, and arm for what is due. */
-  start(): Promise<void>
+  /**
+   * Read the file, follow the chats, and arm for what is due. `after`, where given, holds every send
+   * the clock or a turn's end would start until it settles: what this
+   * machine hands to another environment is taken out first (the hand-over's
+   * plan), so none of it goes from here as well. The person's Send now waits
+   * for it too.
+   */
+  start(options?: { after?: Promise<unknown> }): Promise<void>
+  /** Settles once the start has read the file: `state()` holds what it kept. */
+  loaded(): Promise<void>
   /**
    * Hold a message for the end of the chat's turn (at once, when none is
    * running): one a paired machine queued. It joins the chat's held message
@@ -265,6 +273,10 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
   const unsubscribers: Array<() => void> = []
   let timer: unknown = null
   let running = false
+  // What the start waits on before anything goes out (`start`'s `after`).
+  let holding: Promise<unknown> | null = null
+  let markLoaded: () => void = () => undefined
+  const loadedOnce = new Promise<void>((resolve) => (markLoaded = resolve))
   // Nothing goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
@@ -360,7 +372,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
 
   function tick(): void {
     timer = null
-    if (!running) return
+    if (!running || holding) return
     const at = now()
     const dropped = dropStale()
     if (at >= quietUntil) {
@@ -521,7 +533,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     entry.untilLimitReset = undefined
     const at = now()
     entry.sendAt = Math.min(entry.sendAt, at)
-    if (running) fire(entry, at)
+    if (running && !holding) fire(entry, at)
     else changed()
     return state()
   }
@@ -633,9 +645,21 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
 
   // ── Life ─────────────────────────────────────────────────────────────────
 
-  async function start(): Promise<void> {
+  async function start(options: { after?: Promise<unknown> } = {}): Promise<void> {
     if (running) return
     running = true
+    if (options.after) {
+      const after = options.after.then(
+        () => undefined,
+        () => undefined,
+      )
+      holding = after
+      void after.then(() => {
+        if (holding !== after) return
+        holding = null
+        arm()
+      })
+    }
     quietUntil = now() + STARTUP_GRACE_MS
     unsubscribers.push(deps.onConversationEvent(onConversationEvent))
     const saved = readSaved(await deps.storage.read().catch(() => null))
@@ -664,11 +688,13 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     if (dropStale() || repeated) persist()
     const next = state()
     for (const listener of [...listeners]) listener(next)
+    markLoaded()
     arm()
   }
 
   return {
     start,
+    loaded: () => loadedOnce,
     hold,
     heldFrom,
     carriedOf: (id) => messages.find((entry) => entry.id === id)?.carried ?? null,

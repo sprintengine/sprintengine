@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
-import { chmod, copyFile, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
+  MAX_ADOPTED_FILES,
   MAX_ADOPTED_PART_BYTES,
   MAX_ADOPTED_RECORDS,
   STUDIO_MAX_UPLOAD_BYTES,
@@ -16,6 +17,7 @@ import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import type { EnvironmentClients } from '../../shared/environment-clients'
 import { machinePathsIn } from '../../shared/machine-path-edge'
 import { machineSpellingOf, type MachineSpelling } from '../../shared/machine-spelling'
+import { writeFileAtomic } from '../platform/atomic-file'
 import { adoptedRecordDigest } from './environment-adoption'
 import type { ChatSourceFile } from './environment-chat-sources'
 
@@ -87,7 +89,10 @@ export type EnvironmentMigration = {
   plan(): Promise<void>
   /**
    * Hand the route's planned records to its machine, if it is reachable.
-   * True once nothing of the route's waits here (handed over, or nothing to).
+   * True once the machine has taken what it will: nothing of the route's
+   * waits here, or only what it did not take, which stays planned (in
+   * `waiting()`) and goes again on the next delivery. False when the machine
+   * was not reached or the hand-over stopped.
    */
   deliver(route: string): Promise<boolean>
   /** Whether the route's workspace records are the machine's now, this desktop's only copies of them. */
@@ -104,8 +109,14 @@ type JournalEntry = {
   records: JournalRecord[]
   /** The workspace records of this route were handed over: every one here is the machine's copy. */
   workspacesHandedOver?: true
-  /** What the machine kept its own copy of instead, or refused, and why: said in the diagnostics. */
+  /** What the machine kept its own copy of instead, and why: said in the diagnostics. */
   conflicts?: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>
+  /**
+   * What the last delivery could not hand over, and why: the machine did not
+   * take it, or a chat's files changed here. Each stays planned (in
+   * `records`) and goes again on the next connect.
+   */
+  refused?: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>
 }
 
 type Journal = { v: 1; environments: Record<string, JournalEntry> }
@@ -123,6 +134,34 @@ type PendingCopy = {
 
 const JOURNAL_FILE = 'environment-migration.json'
 const DIR = 'environment-migration'
+/** Beside a migration's copies: the route they wait for, so an unreadable journal can be rebuilt from them. */
+const ROUTE_FILE = 'route.json'
+
+/**
+ * A record's body with each carried picture or file that goes in parts
+ * naming them (`parts`, in order), for the machine to put it back together;
+ * the body itself when none does.
+ */
+function carryingParts(body: Record<string, unknown>, partsOf: ReadonlyMap<string, string[]>): Record<string, unknown> {
+  const carried = body.carried as { images?: unknown; files?: unknown } | undefined
+  if (partsOf.size === 0 || !carried || typeof carried !== 'object') return body
+  let changed = false
+  const named = (list: unknown) =>
+    Array.isArray(list)
+      ? list.map((entry: Record<string, unknown>) => {
+          const parts = typeof entry?.sha256 === 'string' ? partsOf.get(entry.sha256) : undefined
+          if (!parts) return entry
+          changed = true
+          return { ...entry, parts }
+        })
+      : list
+  const next = {
+    ...carried,
+    ...(carried.images !== undefined ? { images: named(carried.images) } : {}),
+    ...(carried.files !== undefined ? { files: named(carried.files) } : {}),
+  }
+  return changed ? { ...body, carried: next } : body
+}
 
 const safeName = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 32)
 
@@ -138,9 +177,17 @@ export function createEnvironmentMigration(deps: {
    */
   spellingOf?: (route: string) => MachineSpelling | null
   log?: (message: string) => void
+  /**
+   * Told when a delivery leaves records here: ones the machine did not take,
+   * which stay planned and go again on its next connect, and chats whose
+   * files changed since the plan, which stay where they lie. The person is
+   * told, not only the log.
+   */
+  onRefused?: (route: string, refused: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>) => void
   now?: () => number
 }): EnvironmentMigration {
   const spellingOf = deps.spellingOf ?? ((route: string) => machineSpellingOf(route))
+  const now = deps.now ?? Date.now
   const journalPath = join(deps.dataDir, JOURNAL_FILE)
   const pendingDir = (migrationId: string) => join(deps.dataDir, DIR, 'pending', migrationId)
   const deliveredDir = (migrationId: string) => join(deps.dataDir, DIR, 'delivered', migrationId)
@@ -155,23 +202,81 @@ export function createEnvironmentMigration(deps: {
 
   async function read(): Promise<Journal> {
     if (journal) return journal
+    let raw: string
     try {
-      const parsed = JSON.parse(await readFile(journalPath, 'utf8')) as Partial<Journal>
+      raw = await readFile(journalPath, 'utf8')
+    } catch {
+      // None yet: a copy written aside before a first journal never was
+      // listed, and its records are still in their live stores.
+      return (journal = { v: 1, environments: {} })
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<Journal>
       if (parsed?.v === 1 && parsed.environments && typeof parsed.environments === 'object')
         return (journal = { v: 1, environments: parsed.environments })
     } catch {
-      // None yet.
+      // Unreadable: rebuilt below.
     }
-    return (journal = { v: 1, environments: {} })
+    return (journal = await rebuilt())
+  }
+
+  /**
+   * A journal that cannot be read is kept aside, and what it listed as
+   * planned is read back from the copies written aside, each folder naming
+   * its route: their records were taken out of the live stores, and would
+   * otherwise wait for nothing. What was handed over before is not known
+   * again; its workspace records are planned once more, and the machine
+   * answers them as its own.
+   */
+  async function rebuilt(): Promise<Journal> {
+    const aside = `${journalPath}.unreadable-${now()}`
+    await rename(journalPath, aside).catch(() => undefined)
+    const next: Journal = { v: 1, environments: {} }
+    const found = new Map<string, { entry: JournalEntry; at: number }>()
+    for (const migrationId of await readdir(join(deps.dataDir, DIR, 'pending')).catch(() => [] as string[])) {
+      const folder = pendingDir(migrationId)
+      const route = await readFile(join(folder, ROUTE_FILE), 'utf8')
+        .then((text) => (JSON.parse(text) as { route?: unknown }).route)
+        .catch(() => null)
+      if (typeof route !== 'string') continue
+      const records: JournalRecord[] = []
+      for (const file of await readdir(folder).catch(() => [] as string[])) {
+        if (!file.endsWith('.json') || file === ROUTE_FILE) continue
+        const copy = await readFile(join(folder, file), 'utf8')
+          .then((text) => JSON.parse(text) as PendingCopy)
+          .catch(() => null)
+        if (copy) records.push({ kind: copy.kind, id: copy.id, digest: copy.digest, file })
+      }
+      const at = (await stat(folder).catch(() => null))?.mtimeMs ?? 0
+      const known = found.get(route)
+      if (records.length && (!known || known.at < at))
+        found.set(route, { entry: { state: 'planned', migrationId, records }, at })
+    }
+    for (const [route, { entry }] of found) next.environments[route] = entry
+    deps.log?.(
+      `The hand-over journal could not be read; it was kept aside as ${aside}, and ${found.size} machine(s) were read back from what waits for them.`,
+    )
+    await write(next)
+    return next
   }
 
   async function write(next: Journal): Promise<void> {
     await mkdir(deps.dataDir, { recursive: true })
-    const temporary = `${journalPath}.${process.pid}.tmp`
-    await writeFile(temporary, `${JSON.stringify(next)}\n`, { mode: 0o600 })
-    await rename(temporary, journalPath)
-    await chmod(journalPath, 0o600).catch(() => undefined)
+    // Flushed to the disk before it counts: a journal lost to a power cut
+    // after the live stores let go of its records would lose them.
+    await writeFileAtomic(journalPath, `${JSON.stringify(next)}\n`, { mode: 0o600, exactMode: true, durable: true })
     journal = next
+  }
+
+  /**
+   * Copies written aside that no journal lists: a plan stopped after writing
+   * them and before its journal, so their records are still in their live
+   * stores and are planned again under another migration. They go.
+   */
+  async function sweepUnlisted(current: Journal): Promise<void> {
+    const listed = new Set(Object.values(current.environments).map((entry) => entry.migrationId))
+    for (const migrationId of await readdir(join(deps.dataDir, DIR, 'pending')).catch(() => [] as string[]))
+      if (!listed.has(migrationId)) await rm(pendingDir(migrationId), { recursive: true, force: true })
   }
 
   /** A file's sha-256, size, and the sha-256 of each part it goes in, read once without copying it. */
@@ -225,6 +330,8 @@ export function createEnvironmentMigration(deps: {
   async function writePending(migrationId: string, record: MigratingRecord): Promise<JournalRecord> {
     const folder = pendingDir(migrationId)
     await mkdir(join(folder, 'files'), { recursive: true, mode: 0o700 })
+    if (!existsSync(join(folder, ROUTE_FILE)))
+      await writeFile(join(folder, ROUTE_FILE), JSON.stringify({ route: record.route }), { mode: 0o600 })
     const files: PendingCopy['files'] = []
     const carried = (
       list: Array<{ path: string; name: string; mediaType?: string; promptPath?: string }> | undefined,
@@ -287,6 +394,7 @@ export function createEnvironmentMigration(deps: {
   const plan = () =>
     serial(async () => {
       const current = await read()
+      await sweepUnlisted(current)
       // A route whose spelling is not known yet is planned once it is (on its connect).
       const found = (await deps.stores.collect((route) => !current.environments[route]?.workspacesHandedOver)).filter(
         (record) => spellingOf(record.route) !== null,
@@ -426,6 +534,53 @@ export function createEnvironmentMigration(deps: {
     return begun.uploadId
   }
 
+  /**
+   * Stage carried files in parts ahead of the records that carry them, a few
+   * to a call, as a chat's are: one too large to stage whole, or past what one
+   * call stages. Answers each file's parts, in order, by its digest.
+   */
+  async function stageFileParts(
+    client: StudioClient,
+    migrationId: string,
+    folder: string,
+    files: PendingCopy['files'],
+  ): Promise<Map<string, string[]>> {
+    const partsOf = new Map<string, string[]>()
+    let staged: Array<{ uploadId: string; digest: string }> = []
+    let stagedBytes = 0
+    let calls = 0
+    const flush = async () => {
+      if (staged.length === 0) return
+      await client.request('environment.adopt', {
+        commandId: `${migrationId}-files-${now()}-${calls++}`,
+        migrationId,
+        records: [],
+        files: staged,
+      })
+      staged = []
+      stagedBytes = 0
+    }
+    const sent = new Set<string>()
+    for (const file of files) {
+      const bytes = await readFile(join(folder, 'files', file.sha256))
+      const parts: string[] = []
+      for (let offset = 0; offset < bytes.length || offset === 0; offset += MAX_ADOPTED_PART_BYTES) {
+        const piece = bytes.subarray(offset, offset + MAX_ADOPTED_PART_BYTES)
+        const digest = createHash('sha256').update(piece).digest('hex')
+        parts.push(digest)
+        if (sent.has(digest)) continue
+        if (staged.length >= 5 || stagedBytes + piece.length > 4 * STUDIO_MAX_UPLOAD_BYTES) await flush()
+        staged.push({ uploadId: await uploadBytes(client, piece, 'part', null), digest })
+        stagedBytes += piece.length
+        sent.add(digest)
+        if (bytes.length === 0) break
+      }
+      partsOf.set(file.sha256, parts)
+    }
+    await flush()
+    return partsOf
+  }
+
   const deliver = (route: string) =>
     serial(async (): Promise<boolean> => {
       const current = await read()
@@ -446,60 +601,86 @@ export function createEnvironmentMigration(deps: {
           copies.push(JSON.parse(await readFile(join(folder, record.file), 'utf8')) as PendingCopy)
         const held: StudioAdoptResult['held'] = []
         const conflicts: NonNullable<JournalEntry['conflicts']> = []
+        const refused: NonNullable<JournalEntry['refused']> = []
+        // Chats left here because their files changed since the plan: told, not sent again.
+        const stayed: NonNullable<JournalEntry['refused']> = []
+        let calls = 0
         try {
           // A part at a time, each with the files its records carry; every
           // part under the one migration, so a repeat is held, not doubled.
           let part: PendingCopy[] = []
           let partBytes = 0
+          // The distinct files staged whole beside the part's records: no
+          // more than one call may stage.
+          let partFiles = new Set<string>()
           const send = async () => {
             if (part.length === 0) return
             // A chat's parts go ahead of it, in calls that name no record. A
             // chat whose files changed or went since it was planned is not
-            // sent: it is left here, said as a conflict, rather than holding
-            // up every other record of this machine's on each connect.
+            // sent: its files stay where they lie here, it is said as not
+            // handed over, and the rest of the hand-over goes on rather than
+            // waiting on it every connect (its digests would never match again).
             const unsent = await stageChatParts(reached.client, working.migrationId, part)
             for (const [copy, reason] of unsent) {
               conflicts.push({ kind: copy.kind, id: copy.id, reason })
+              stayed.push({ kind: copy.kind, id: copy.id, reason })
               part = part.filter((each) => each !== copy)
             }
-            if (part.length === 0) {
-              partBytes = 0
-              return
-            }
+            // A carried file too large to stage whole, or past what one call
+            // stages, goes ahead in parts, and its record names them.
+            const whole = new Set<string>()
+            const inParts: PendingCopy['files'] = []
+            for (const copy of part)
+              for (const file of copy.files) {
+                if (whole.has(file.sha256) || inParts.some((each) => each.sha256 === file.sha256)) continue
+                if (file.bytes > STUDIO_MAX_UPLOAD_BYTES || whole.size >= MAX_ADOPTED_FILES) inParts.push(file)
+                else whole.add(file.sha256)
+              }
+            const partsOf = await stageFileParts(reached.client, working.migrationId, folder, inParts)
             const files: Array<{ uploadId: string; digest: string }> = []
             for (const copy of part)
               for (const file of copy.files) {
-                if (files.some((each) => each.digest === file.sha256)) continue
-                if (file.bytes > STUDIO_MAX_UPLOAD_BYTES) continue
+                if (!whole.has(file.sha256) || files.some((each) => each.digest === file.sha256)) continue
                 files.push({ uploadId: await upload(reached.client, folder, file), digest: file.sha256 })
               }
-            const records: StudioAdoptedRecord[] = part.map(({ kind, id, digest, body }) => ({
-              kind,
-              id,
-              digest,
-              body,
-            }))
-            const answer = await reached.client.request('environment.adopt', {
-              commandId: `${working.migrationId}-${held.length + conflicts.length}`,
-              migrationId: working.migrationId,
-              records,
-              ...(files.length ? { files } : {}),
+            const records: StudioAdoptedRecord[] = part.map(({ kind, id, digest, body }) => {
+              const named = carryingParts(body, partsOf)
+              return { kind, id, digest: named === body ? digest : adoptedRecordDigest(named), body: named }
             })
-            held.push(...answer.held)
-            conflicts.push(...answer.conflicts)
+            if (records.length) {
+              const answer = await reached.client.request('environment.adopt', {
+                // Its own each time: a delivery sent again after some were
+                // not taken is another call, never the first one's answer.
+                commandId: `${working.migrationId}-${now()}-${calls++}`,
+                migrationId: working.migrationId,
+                records,
+                ...(files.length ? { files } : {}),
+              })
+              held.push(...answer.held)
+              conflicts.push(...answer.conflicts)
+              // A Studio from before `refused` says every record it did not
+              // take as a conflict, as it always did.
+              refused.push(...(answer.refused ?? []))
+            }
             part = []
             partBytes = 0
+            partFiles = new Set()
           }
           for (const copy of copies) {
-            const bytes = copy.files.reduce((total, file) => total + file.bytes, 0)
-            // Staged files are held per client up to a bound: a part's stay well under it.
+            const whole = copy.files.filter((file) => file.bytes <= STUDIO_MAX_UPLOAD_BYTES)
+            const bytes = whole.reduce((total, file) => total + file.bytes, 0)
+            const adds = whole.filter((file) => !partFiles.has(file.sha256)).length
+            // Staged files are held per client up to a bound, and one call
+            // stages at most so many: a part's stay well under both.
             if (
               part.length >= MAX_ADOPTED_RECORDS ||
-              (part.length > 0 && partBytes + bytes > 4 * STUDIO_MAX_UPLOAD_BYTES)
+              (part.length > 0 &&
+                (partBytes + bytes > 4 * STUDIO_MAX_UPLOAD_BYTES || partFiles.size + adds > MAX_ADOPTED_FILES))
             )
               await send()
             part.push(copy)
             partBytes += bytes
+            for (const file of whole) partFiles.add(file.sha256)
           }
           await send()
         } catch (error) {
@@ -508,8 +689,6 @@ export function createEnvironmentMigration(deps: {
           )
           return false
         }
-        working.state = 'delivered'
-        working.workspacesHandedOver = true
         if (conflicts.length) {
           working.conflicts = conflicts
           for (const conflict of conflicts)
@@ -517,7 +696,27 @@ export function createEnvironmentMigration(deps: {
               `${route} kept its own ${conflict.kind} ${conflict.id} rather than this desktop's: ${conflict.reason}`,
             )
         }
+        const waits = (record: { kind: string; id: string }) =>
+          refused.some((each) => each.kind === record.kind && each.id === record.id)
+        if (refused.length) {
+          // Not handed over: kept planned, and sent again on the next
+          // connect. Everything else of this hand-over is the machine's now.
+          working.records = working.records.filter(waits)
+          working.refused = refused
+          if (!working.records.some((record) => record.kind === 'workspace')) working.workspacesHandedOver = true
+          for (const each of refused)
+            deps.log?.(
+              `${route} did not take ${each.kind} ${each.id}; it is sent again on the next connect: ${each.reason}`,
+            )
+          await write(next)
+          deps.onRefused?.(route, [...refused, ...stayed])
+          return true
+        }
+        delete working.refused
+        working.state = 'delivered'
+        working.workspacesHandedOver = true
         await write(next)
+        if (stayed.length) deps.onRefused?.(route, stayed)
       }
       await retire(working)
       await write(next)
@@ -529,10 +728,14 @@ export function createEnvironmentMigration(deps: {
     deliver,
     // Not before the journal is read; a route with nothing ever planned has
     // nothing of this desktop's to hand over.
+    // A route whose workspace records were taken: those still planned are
+    // only the ones the machine did not take (or new ones not yet sent).
     handedOver: (route) => {
       if (!journal) return false
       const entry = journal.environments[route]
-      return !entry || (entry.state !== 'planned' && entry.workspacesHandedOver === true)
+      if (!entry) return true
+      if (entry.workspacesHandedOver !== true) return false
+      return entry.state !== 'planned' || !entry.records.some((record) => record.kind === 'workspace')
     },
     waiting: () =>
       Object.entries(journal?.environments ?? {})

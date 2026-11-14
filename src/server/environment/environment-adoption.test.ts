@@ -259,16 +259,20 @@ test('what does not read, does not match its digest, or is already here by anoth
     ],
   })
   assert.deepEqual(answer.held, [])
+  // What this Studio already keeps by its id is its own copy, which wins: done with.
   assert.deepEqual(
     answer.conflicts.map((entry) => `${entry.id}: ${entry.reason}`),
+    ['ws-here: A workspace with that id is already here.', 'pr-9: Another chat here opened it.'],
+  )
+  // The rest it did not take: the desktop keeps them and sends them again.
+  assert.deepEqual(
+    answer.refused?.map((entry) => `${entry.id}: ${entry.reason}`),
     [
       'ws-2: Its digest does not match its body.',
-      'ws-here: A workspace with that id is already here.',
       'ws-3: The workspace record names another id.',
       'sa-2: A scheduled agent has a prompt.',
       'sm-3: A picture it carries did not arrive whole.',
       'sm-4: A scheduled message says when it goes.',
-      'pr-9: Another chat here opened it.',
     ],
   )
   // A refused record is not in the ledger: once what kept it from going in is fixed, it goes in.
@@ -332,6 +336,37 @@ test('a held message goes with its pictures and files, staged beside it by diges
   ])
 })
 
+test('a held message carrying a file too large to stage whole is put back together from the parts staged ahead of it', async () => {
+  const { adoption, calls } = rig()
+  const parts = ['first half, ', 'second half']
+  // The parts go ahead in a call that names no record, under the migration.
+  const ahead = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [],
+    files: new Map(
+      parts.map((part) => [sha(part), { bytes: Buffer.from(part), mediaType: 'application/octet-stream' }]),
+    ),
+  })
+  assert.deepEqual(ahead.held, [])
+  const message = (id: string, partsNamed: string[]) =>
+    record('scheduled-message', id, {
+      workspaceId: 'ws-1',
+      agentId: 'a1',
+      text: `big ${id}`,
+      queued: true,
+      carried: { files: [{ sha256: sha(parts.join('')), name: 'big.log', parts: partsNamed }] },
+    })
+  const answer = await adoption.adopt({ migrationId: 'm-1', records: [message('sm-1', parts.map(sha))] })
+  assert.deepEqual(answer.held, [{ kind: 'scheduled-message', id: 'sm-1' }])
+  assert.equal(calls[0], 'hold a1 big sm-1 with  big.log:first half, second half ')
+  // Named out of order, its bytes are not its digest: not taken, and sent again by the desktop.
+  const wrong = await adoption.adopt({ migrationId: 'm-2', records: [message('sm-2', [sha(parts[1]!)])] })
+  assert.deepEqual(
+    wrong.refused?.map((entry) => entry.reason),
+    ['A file it carries did not arrive whole.'],
+  )
+})
+
 test('a staged file whose bytes are not the digest its message names is refused, and the message is not held', async () => {
   const { adoption, calls } = rig()
   const answer = await adoption.adopt({
@@ -348,7 +383,7 @@ test('a staged file whose bytes are not the digest its message names is refused,
     files: new Map([[sha('notes'), { bytes: Buffer.from('something else'), mediaType: 'text/plain' }]]),
   })
   assert.deepEqual(
-    answer.conflicts.map((entry) => entry.reason),
+    answer.refused?.map((entry) => entry.reason),
     ['A file it carries did not arrive whole.'],
   )
   assert.deepEqual(calls, ['flush'])
@@ -362,7 +397,7 @@ test('a resume whose chat is not here is reported, not kept', async () => {
   })
   assert.deepEqual(answer.held, [])
   assert.deepEqual(
-    answer.conflicts.map((entry) => entry.reason),
+    answer.refused?.map((entry) => entry.reason),
     ['Its chat is not on this machine.'],
   )
 })
@@ -412,7 +447,7 @@ test('a schedule whose picture did not arrive whole, or that its prompt does not
     ]),
   })
   assert.deepEqual(
-    answer.conflicts.map((entry) => entry.reason),
+    answer.refused?.map((entry) => entry.reason),
     ['A picture its prompt names did not arrive whole.', 'A picture it carries is not one its prompt names.'],
   )
   assert.deepEqual(calls, ['flush'])
@@ -506,7 +541,7 @@ test('a chat the desktop ran comes in parts, and is put back together where its 
     const chat = record('chat', 'ws-1:a1', body)
     const files = new Map([...detail.staged, ...handoff.staged, ...picture.staged])
     const answer = await adoption.adopt({ migrationId: 'm-1', records: [chat], files })
-    assert.deepEqual(answer, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [] })
+    assert.deepEqual(answer, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [], refused: [] })
 
     const store = workspaceStorePath('/home/dev/repo', 'conversations', 'ws-1')
     assert.deepEqual(readFileSync(join(store, 'a1.jsonl')), transcript)
@@ -524,7 +559,7 @@ test('a chat the desktop ran comes in parts, and is put back together where its 
 
     // The same hand-over again is held, nothing written twice.
     const again = await adoption.adopt({ migrationId: 'm-1', records: [chat] })
-    assert.deepEqual(again, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [] })
+    assert.deepEqual(again, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [], refused: [] })
   })
 })
 
@@ -545,7 +580,7 @@ test("a chat's file already here with other bytes is this Studio's, and a part t
     // Its detail's part never arrived: refused in words, the transcript left where it was written.
     const missing = await adoption.adopt({ migrationId: 'm-2', records: [chat], files: new Map(lines.staged) })
     assert.deepEqual(missing.held, [])
-    assert.match(missing.conflicts[0]!.reason, /a1\.tools\/toolu_1\.json did not arrive whole/)
+    assert.match(missing.refused![0]!.reason, /a1\.tools\/toolu_1\.json did not arrive whole/)
     const store = workspaceStorePath('/home/dev/repo', 'conversations', 'ws-1')
     assert.equal(existsSync(join(store, 'a1.tools', 'toolu_1.json')), false)
 
@@ -593,7 +628,7 @@ test('a chat names only its own files in its own places, and only in a workspace
         files: [chatFile(place, path, bytes).file],
       })
     const notHere = await adoption.adopt({ migrationId: 'm-1', records: [at('store', 'a1.jsonl')] })
-    assert.match(notHere.conflicts[0]!.reason, /workspace the chat is in is not here/)
+    assert.match(notHere.refused![0]!.reason, /workspace the chat is in is not here/)
     workspaces.add('ws-1')
     for (const [place, path] of [
       ['store', '../a1.jsonl'],
@@ -607,7 +642,7 @@ test('a chat names only its own files in its own places, and only in a workspace
     ]) {
       const answer = await adoption.adopt({ migrationId: 'm-1', records: [at(place!, path!)] })
       assert.equal(answer.held.length, 0, `${place} ${path}`)
-      assert.match(answer.conflicts[0]!.reason, /one of its own names/, `${place} ${path}`)
+      assert.match(answer.refused![0]!.reason, /one of its own names/, `${place} ${path}`)
     }
     const elsewhere = await adoption.adopt({
       migrationId: 'm-1',
@@ -615,7 +650,7 @@ test('a chat names only its own files in its own places, and only in a workspace
         record('chat', 'ws-1:a1', { workspaceId: 'ws-1', agentId: 'a1', workspaceRoot: '/home/dev/other', files: [] }),
       ],
     })
-    assert.match(elsewhere.conflicts[0]!.reason, /folder its record here does not/)
+    assert.match(elsewhere.refused![0]!.reason, /folder its record here does not/)
     const windowsRoot = record('chat', 'ws-1:a1', {
       workspaceId: 'ws-1',
       agentId: 'a1',
@@ -623,7 +658,7 @@ test('a chat names only its own files in its own places, and only in a workspace
       files: [],
     })
     const answer = await adoption.adopt({ migrationId: 'm-1', records: [windowsRoot] })
-    assert.match(answer.conflicts[0]!.reason, /folder as this machine spells it/)
+    assert.match(answer.refused![0]!.reason, /folder as this machine spells it/)
   })
 })
 

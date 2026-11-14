@@ -176,7 +176,12 @@ function handOverRig() {
     stores: studioMigrationStores({
       workspaceRegistry: { getRecords: () => [record] as never },
       scheduledAgents: { loaded: async () => undefined, list: () => [], remove: async () => undefined } as never,
-      scheduledMessages: { state: () => ({ messages: [] }), carriedOf: () => null, update: () => undefined } as never,
+      scheduledMessages: {
+        state: () => ({ messages: [] }),
+        carriedOf: () => null,
+        update: () => undefined,
+        loaded: async () => undefined,
+      } as never,
       usageLimitResumes: { state: () => ({ notices: [] }), update: () => undefined } as never,
       pullRequests: { whenLoaded: async () => undefined, handingOver: () => [], letGo: () => undefined } as never,
       chatSources: async () => [
@@ -266,7 +271,7 @@ test("a schedule goes with its folder's machine; one picked to run on This PC in
       ],
       remove: async () => undefined,
     } as never,
-    scheduledMessages: { state: () => ({ messages: [] }) } as never,
+    scheduledMessages: { state: () => ({ messages: [] }), loaded: async () => undefined } as never,
     usageLimitResumes: { state: () => ({ notices: [] }) } as never,
     pullRequests: { whenLoaded: async () => undefined, handingOver: () => [] } as never,
   })

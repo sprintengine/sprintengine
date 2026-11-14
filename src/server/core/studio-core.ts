@@ -1281,7 +1281,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Scheduled messages', message })
     },
   })
-  void scheduledMessages.start()
+  // The hand-over's first plan (below) takes out what is another
+  // environment's before either scheduler sends anything: a schedule or a
+  // message handed over must not also go from here.
+  let firstPlanDone: () => void = () => undefined
+  const firstPlan = new Promise<void>((resolve) => (firstPlanDone = resolve))
+  void scheduledMessages.start({ after: firstPlan })
 
   // The first messages of chats a launch made that the last stop cut off,
   // sent now through each chat's ordinary send under the id they were meant
@@ -1374,7 +1379,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // CLI then says for itself whether it is signed in.
     waitingFor: (agent, context) => readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
   })
-  if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
+  if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start({ after: firstPlan })
 
   // What this desktop kept for another environment's chats (an SSH machine's,
   // a WSL distribution's) goes to that environment's Studio
@@ -1399,6 +1404,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         log: (message) => {
           void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Another machine', message })
         },
+        // What the machine did not take stays here, planned, and goes again
+        // on its next connect; the person hears of it, not only the log.
+        onRefused: (route, refused) => {
+          // The machine as its route names it (`ssh:build-box` is build-box).
+          const name = route.replace(/^[a-z]+:/u, '')
+          platform.notifier.notify({
+            key: `hand-over:${route}`,
+            title: `${refused.length === 1 ? 'One record' : `${refused.length} records`} did not move to ${name}`,
+            body: `${refused[0]!.reason} Diagnostics lists each one; what ${name} did not take is sent again each time it connects.`,
+          })
+        },
       })
     : null
   const handOver = async (route: string) => {
@@ -1417,8 +1433,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     environmentClients.onConnected((route) => void handOver(route).catch(() => undefined))
     // At start: every machine this desktop holds chats or waiting records
     // for, reached if it is connected already; the rest wait for their connect.
-    void environmentMigration
-      .plan()
+    // The schedulers wait for this first plan (`firstPlan`), so nothing it
+    // takes out also runs here, a crash between its journal and its release
+    // included.
+    const planned = environmentMigration.plan().catch(() => undefined)
+    void planned.then(firstPlanDone)
+    void planned
       .then(() => {
         const routes = new Set(environmentMigration.waiting())
         for (const record of workspaceRegistry.getRecords()) {
@@ -1428,7 +1448,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         for (const route of routes) void handOver(route).catch(() => undefined)
       })
       .catch(() => undefined)
-  }
+  } else firstPlanDone()
 
   // A chat is titled here, from its own events, rather than by a window: the
   // chats that most need a title are the ones a phone or a paired machine

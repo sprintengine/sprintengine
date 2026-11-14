@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
 
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
+import {
+  MAX_ADOPTED_FILES,
+  MAX_ADOPTED_PART_BYTES,
+  STUDIO_MAX_UPLOAD_BYTES,
+  type StudioAdoptedRecordKind,
+  type StudioAdoptResult,
+} from '../../../packages/studio-protocol/src/public'
 import type { EnvironmentClients } from '../../shared/environment-clients'
 import { adoptedRecordDigest } from './environment-adoption'
 import {
@@ -27,7 +34,18 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function rig(records: MigratingRecord[], options: { dataDir?: string; reachable?: boolean } = {}) {
+type Sent = { kind: StudioAdoptedRecordKind; id: string; digest: string; body: Record<string, unknown> }
+
+function rig(
+  records: MigratingRecord[],
+  options: {
+    dataDir?: string
+    reachable?: boolean
+    /** How the machine answers a call's records; held, all of them, unless said. */
+    answer?: (sent: Sent[]) => Partial<StudioAdoptResult>
+    chunkBytes?: number
+  } = {},
+) {
   const dataDir = options.dataDir ?? mkdtempSync(join(tmpdir(), 'environment-migration-'))
   if (!options.dataDir) dirs.push(dataDir)
   const live = new Map(records.map((record) => [`${record.kind}:${record.id}`, record]))
@@ -51,12 +69,12 @@ function rig(records: MigratingRecord[], options: { dataDir?: string; reachable?
   const client = {
     async request(method: string, params: Record<string, unknown>) {
       asked.push({ method, params })
-      if (method === 'uploads.begin') return { uploadId: `up-${++uploads}`, chunkBytes: 4 }
+      if (method === 'uploads.begin') return { uploadId: `up-${++uploads}`, chunkBytes: options.chunkBytes ?? 4 }
       if (method === 'uploads.append') return { received: 0 }
       if (method === 'environment.adopt') {
-        const sent = params.records as Array<{ kind: string; id: string; digest: string; body: unknown }>
+        const sent = params.records as Sent[]
         for (const each of sent) assert.equal(each.digest, adoptedRecordDigest(each.body), 'each digest is of its body')
-        return { held: sent.map(({ kind, id }) => ({ kind, id })), conflicts: [] }
+        return { held: sent.map(({ kind, id }) => ({ kind, id })), conflicts: [], ...options.answer?.(sent) }
       }
       throw new Error(`not served: ${method}`)
     },
@@ -69,13 +87,20 @@ function rig(records: MigratingRecord[], options: { dataDir?: string; reachable?
     },
     onConnected: () => () => undefined,
   }
-  const migration = createEnvironmentMigration({ dataDir, stores, clients })
+  const refusals: Array<{ route: string; ids: string[] }> = []
+  const migration = createEnvironmentMigration({
+    dataDir,
+    stores,
+    clients,
+    onRefused: (route, refused) => refusals.push({ route, ids: refused.map((each) => each.id) }),
+  })
   return {
     dataDir,
     migration,
     live,
     released,
     asked,
+    refusals,
     failRelease: (fail: boolean) => (failRelease = fail),
     setReachable: (value: boolean) => (reachable = value),
   }
@@ -205,5 +230,147 @@ test('a crash after the journal but before the stores were emptied takes them ou
     'pending',
     journalOf(run.dataDir).environments[ROUTE]!.migrationId,
   )
-  assert.equal(readdirSync(pending).filter((name) => name.endsWith('.json')).length, 1)
+  assert.equal(readdirSync(pending).filter((name) => name.endsWith('.json') && name !== 'route.json').length, 1)
+})
+
+/** A held message carrying one picture of its own, written to `folder`. */
+function heldWithPicture(folder: string, index: number, bytes: string | Buffer): MigratingRecord {
+  const path = join(folder, `picture-${index}`)
+  writeFileSync(path, bytes)
+  return {
+    route: ROUTE,
+    kind: 'scheduled-message',
+    id: `sm-${index}`,
+    body: {
+      id: `sm-${index}`,
+      workspaceId: 'ws-1',
+      agentId: 'a1',
+      text: `look ${index}`,
+      queued: true,
+      sendAt: 1,
+      createdAt: 1,
+    },
+    carried: { images: [{ path, name: `${index}.png`, mediaType: 'image/png' }] },
+  }
+}
+
+const adoptCalls = (asked: Array<{ method: string; params: Record<string, unknown> }>) =>
+  asked
+    .filter((entry) => entry.method === 'environment.adopt')
+    .map((entry) => entry.params as { records: Sent[]; files?: Array<{ uploadId: string; digest: string }> })
+
+test('a hand-over carrying more files than one call stages goes in calls of at most that many, and all of it lands', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'many-pictures-'))
+  dirs.push(folder)
+  const messages = Array.from({ length: 20 }, (_unused, index) => heldWithPicture(folder, index, `picture ${index}`))
+  const { dataDir, migration, asked } = rig(messages, { chunkBytes: 1024 })
+  await migration.plan()
+  assert.equal(await migration.deliver(ROUTE), true)
+  const calls = adoptCalls(asked).filter((call) => call.records.length > 0)
+  assert.ok(calls.length >= 2, 'more than one call')
+  for (const call of calls)
+    assert.ok((call.files?.length ?? 0) <= MAX_ADOPTED_FILES, 'no call stages more than one may')
+  assert.equal(
+    calls.reduce((total, call) => total + call.records.length, 0),
+    20,
+  )
+  assert.equal(journalOf(dataDir).environments[ROUTE]?.state, 'retired')
+})
+
+test('a carried file larger than an upload goes ahead in parts, and its record names them', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'large-file-'))
+  dirs.push(folder)
+  const large = Buffer.alloc(STUDIO_MAX_UPLOAD_BYTES + 10, 7)
+  const { migration, asked } = rig([heldWithPicture(folder, 1, large)], { chunkBytes: STUDIO_MAX_UPLOAD_BYTES })
+  await migration.plan()
+  assert.equal(await migration.deliver(ROUTE), true)
+  const calls = adoptCalls(asked)
+  const withRecord = calls.find((call) => call.records.length > 0)!
+  assert.equal(withRecord.files, undefined, 'not staged whole')
+  const image = (withRecord.records[0]!.body.carried as { images: Array<{ sha256: string; parts?: string[] }> })
+    .images[0]!
+  assert.equal(image.sha256, createHash('sha256').update(large).digest('hex'))
+  assert.deepEqual(image.parts, [
+    createHash('sha256').update(large.subarray(0, MAX_ADOPTED_PART_BYTES)).digest('hex'),
+    createHash('sha256').update(large.subarray(MAX_ADOPTED_PART_BYTES)).digest('hex'),
+  ])
+  const staged = calls.filter((call) => call.records.length === 0).flatMap((call) => call.files ?? [])
+  assert.deepEqual(
+    staged.map((file) => file.digest),
+    image.parts,
+    'its parts staged ahead of it',
+  )
+})
+
+test('what the machine did not take stays planned and goes again; what it keeps its own copy of is done with', async () => {
+  let refuse = true
+  const message: MigratingRecord = {
+    route: ROUTE,
+    kind: 'scheduled-message',
+    id: 'sm-1',
+    body: { id: 'sm-1', workspaceId: 'ws-1', agentId: 'a1', text: 'later', sendAt: 5, createdAt: 1 },
+  }
+  const { dataDir, migration, asked, refusals } = rig([WORKSPACE, SCHEDULE, message], {
+    answer: (sent) => ({
+      held: sent
+        .filter((each) => each.id === 'ws-1' || (!refuse && each.id === 'sa-1'))
+        .map(({ kind, id }) => ({ kind, id })),
+      conflicts: sent
+        .filter((each) => each.id === 'sm-1')
+        .map(({ kind, id }) => ({ kind, id, reason: 'This Studio keeps its own.' })),
+      refused:
+        refuse && sent.some((each) => each.id === 'sa-1')
+          ? [{ kind: 'schedule', id: 'sa-1', reason: 'A picture its prompt names did not arrive whole.' }]
+          : [],
+    }),
+  })
+  await migration.plan()
+  assert.equal(await migration.deliver(ROUTE), true, 'the machine took what it would')
+  const entry = journalOf(dataDir).environments[ROUTE] as { state: string; records: Array<{ id: string }> }
+  assert.equal(entry.state, 'planned', 'not retired while something waits')
+  assert.deepEqual(
+    entry.records.map((record) => record.id),
+    ['sa-1'],
+    'only what was not taken waits',
+  )
+  assert.deepEqual(migration.waiting(), [ROUTE])
+  assert.equal(migration.handedOver(ROUTE), true, 'its workspace was taken, so the replicas follow')
+  assert.deepEqual(refusals, [{ route: ROUTE, ids: ['sa-1'] }], 'the person is told')
+
+  // The next connect sends only that one, under a call of its own.
+  refuse = false
+  const before = adoptCalls(asked).length
+  assert.equal(await migration.deliver(ROUTE), true)
+  const again = adoptCalls(asked).slice(before)
+  assert.deepEqual(
+    again.flatMap((call) => call.records.map((record) => record.id)),
+    ['sa-1'],
+  )
+  assert.equal(journalOf(dataDir).environments[ROUTE]?.state, 'retired')
+  assert.deepEqual(migration.waiting(), [])
+})
+
+test('a journal that cannot be read is rebuilt from the copies waiting aside, and copies no journal lists go', async () => {
+  const first = rig([SCHEDULE], { reachable: false })
+  await first.migration.plan()
+  const migrationId = journalOf(first.dataDir).environments[ROUTE]!.migrationId
+  // A plan that stopped before its journal: copies aside, listed nowhere.
+  const orphan = join(first.dataDir, 'environment-migration', 'pending', 'orphan-1')
+  mkdirSync(orphan, { recursive: true })
+  writeFileSync(join(orphan, 'schedule-x.json'), '{}')
+  writeFileSync(join(first.dataDir, 'environment-migration.json'), '{"v":1,"environments":')
+  const again = rig([], { dataDir: first.dataDir })
+  await again.migration.plan()
+  assert.deepEqual(again.migration.waiting(), [ROUTE], 'what waited still waits')
+  assert.equal(journalOf(first.dataDir).environments[ROUTE]?.migrationId, migrationId)
+  assert.ok(!existsSync(orphan), 'a copy no journal lists is swept')
+  assert.ok(
+    readdirSync(first.dataDir).some((name) => name.startsWith('environment-migration.json.unreadable-')),
+    'the unreadable journal is kept aside',
+  )
+  assert.equal(await again.migration.deliver(ROUTE), true)
+  assert.deepEqual(
+    adoptCalls(again.asked).flatMap((call) => call.records.map((record) => record.id)),
+    ['sa-1'],
+  )
 })

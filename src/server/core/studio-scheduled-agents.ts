@@ -75,8 +75,12 @@ export type StudioScheduledAgents = {
   ): ScheduledAgentsModuleRegistry
   /** What an extension's schedule is held to at each run; nothing (the strictest) until a kernel says. */
   setModulePermissions(read: (moduleId: string) => readonly string[] | undefined): void
-  /** Read the store, settle runs the last stop cut off, and start the scheduler. Again after `stop`, only the scheduler. */
-  start(): Promise<void>
+  /**
+   * Read the store, settle runs the last stop cut off, and start the
+   * scheduler, once `after` (where given) has settled. Again after `stop`,
+   * only the scheduler.
+   */
+  start(options?: { after?: Promise<unknown> }): Promise<void>
   /** Stop the scheduler; a run already starting finishes starting. */
   stop(): Promise<void>
   running(): boolean
@@ -247,9 +251,12 @@ export function createStudioScheduledAgents(deps: StudioScheduledAgentsDeps): St
     setModulePermissions(read) {
       getModulePermissions = read
     },
-    async start() {
+    async start(options = {}) {
       on = true
       await prepare()
+      // Nothing runs before what is handed to another environment is taken
+      // out (the hand-over's plan): a schedule handed over runs there only.
+      await options.after?.catch(() => undefined)
       // Stopped while the store was read: it stays stopped.
       if (!on || scheduler.isRunning()) return
       scheduler.start()
