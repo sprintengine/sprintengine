@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'vitest'
@@ -70,6 +70,20 @@ test('reads need backlog.read and writes need backlog.write', async () => {
   assert.equal(created.ok ? null : created.code, 'permission_missing')
   // Nothing was written.
   assert.match(await readFile(join(root, ITEM), 'utf-8'), /status: ready/)
+})
+
+test('list reads no file a link in the backlog points out of it', async () => {
+  const outside = await realpath(await mkdtemp(join(tmpdir(), 'se-module-backlog-outside-')))
+  try {
+    await writeFile(join(outside, 'secret.md'), '# PRIVATE_CANARY\n')
+    await symlink(join(outside, 'secret.md'), join(root, 'backlog', 'unfiled', 'escape.md'))
+    const listed = await registry().list('reader', 'ws-1')
+    assert.ok(!JSON.stringify(listed).includes('PRIVATE_CANARY'))
+    // The item in the project still reads.
+    assert.match(JSON.stringify(listed), /Checkout/)
+  } finally {
+    await rm(outside, { recursive: true, force: true })
+  }
 })
 
 test('a workspace that is unknown or has no folder is said, not guessed', async () => {

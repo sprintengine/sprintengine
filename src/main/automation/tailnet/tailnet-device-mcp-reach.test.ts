@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,7 @@ import type { McpToolRegistration } from '../../../shared/modules/mcp-tools'
 import { TAILNET_SCOPES, tailnetDevicePrincipal, type TailnetScope } from '../../../shared/tailnet'
 import type { WorkspaceSyncSnapshot } from '../../../shared/workspace-sync'
 import { createArtifactsTools } from '../../artifacts/artifacts-tools'
+import { readBacklogItem } from '../../backlog-service'
 import type { ConversationLaunchRequest } from '../../conversation-launch-service'
 import { createWorktreePoolTools } from '../../worktree-pool/worktree-pool-tools'
 import { createAutomationTools, type AutomationBackends } from '../automation-tools'
@@ -100,10 +101,7 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
   'conversation.pull_request_push': CHAT_OPERATE,
   'conversation.pull_request_create': CHAT_OPERATE,
 
-  // The person's screen here: the in-app browser pane, the editor and tours.
-  // Reached on the workspace scopes since before the one-protocol work; the
-  // read-only browser rows reading the pane's signed-in pages are a known
-  // exposure, recorded for the next batch rather than widened or narrowed here.
+  // The person's screen here: the editor and tours.
   'editor.state': READ,
   'editor.open': OPERATE,
   'editor.open_diff': OPERATE,
@@ -112,26 +110,6 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
   'tour.update': OPERATE,
   'tour.goto': OPERATE,
   'tour.close': OPERATE,
-  'browser.status': READ,
-  'browser.snapshot': READ,
-  'browser.screenshot': READ,
-  'browser.wait_for': READ,
-  'browser.console': READ,
-  'browser.actions': READ,
-  'browser.network': READ,
-  'browser.open': OPERATE,
-  'browser.navigate': OPERATE,
-  'browser.click': OPERATE,
-  'browser.hover': OPERATE,
-  'browser.type': OPERATE,
-  'browser.press': OPERATE,
-  'browser.scroll': OPERATE,
-  'browser.evaluate': OPERATE,
-  'browser.resize': OPERATE,
-  'browser.set_appearance': OPERATE,
-  'browser.dialog': OPERATE,
-  'browser.record_start': OPERATE,
-  'browser.record_stop': OPERATE,
 
   // Never to a device, whatever it holds (tailnet-scopes.ts says why for each).
   'agent.launch': LOCAL,
@@ -155,6 +133,28 @@ const DEVICE_TOOLS: Readonly<Record<string, typeof LOCAL | readonly TailnetScope
   'canvas.import': LOCAL,
   'canvas.screenshot': LOCAL,
   'visual.preview': LOCAL,
+  // The in-app browser pane carries the person's own pages and sign-ins: even
+  // a snapshot hands a device whatever page is open, so no grant reaches it.
+  'browser.status': LOCAL,
+  'browser.snapshot': LOCAL,
+  'browser.screenshot': LOCAL,
+  'browser.wait_for': LOCAL,
+  'browser.console': LOCAL,
+  'browser.actions': LOCAL,
+  'browser.network': LOCAL,
+  'browser.open': LOCAL,
+  'browser.navigate': LOCAL,
+  'browser.click': LOCAL,
+  'browser.hover': LOCAL,
+  'browser.type': LOCAL,
+  'browser.press': LOCAL,
+  'browser.scroll': LOCAL,
+  'browser.evaluate': LOCAL,
+  'browser.resize': LOCAL,
+  'browser.set_appearance': LOCAL,
+  'browser.dialog': LOCAL,
+  'browser.record_start': LOCAL,
+  'browser.record_stop': LOCAL,
   'conversation.settle': LOCAL,
   'conversation.visit': LOCAL,
   'conversation.mark_unread': LOCAL,
@@ -323,11 +323,26 @@ async function startListener() {
         backlogRoots.push(workspaceRoot)
         return { ok: true, items: [] }
       },
+      readBacklogItem,
     },
     { get: (target, key) => (key in target ? target[key as keyof typeof target] : undefined) },
   ) as unknown as AutomationBackends
+  // The in-app browser pane: anything a tool asks of it is recorded.
+  const paneReached: string[] = []
+  const pane = new Proxy(
+    {},
+    {
+      get:
+        (_target, key) =>
+        (..._args: unknown[]) => {
+          paneReached.push(String(key))
+          return undefined
+        },
+    },
+  )
   const tools: McpToolRegistration[] = [
     ...createAutomationTools(backends),
+    ...createBrowserTools({ manager: pane, control: pane, recorder: pane, hasWorkspace: () => true } as never),
     ...createConversationTools({
       launch: launchWhereItLives(clients, recordOf, async (request) => {
         launchedHere.push(request)
@@ -386,14 +401,22 @@ async function startListener() {
     })
   }
 
-  const offer = devices.offerPairing({ scopes: [...TAILNET_SCOPES] })
-  const paired = await post(TAILNET_PAIR_PATH, null, { pairingToken: offer.token, deviceName: 'android-phone' })
-  assert.equal(paired.status, 200)
-  const token = (paired.body as { deviceToken: string }).deviceToken
+  async function pair(scopes: TailnetScope[], deviceName: string): Promise<string> {
+    const offer = devices.offerPairing({ scopes })
+    const paired = await post(TAILNET_PAIR_PATH, null, { pairingToken: offer.token, deviceName })
+    assert.equal(paired.status, 200)
+    return (paired.body as { deviceToken: string }).deviceToken
+  }
   let nextId = 0
 
+  /** Calls as the device holding `token`, over each route. */
+  const callsAs = (token: string) => ({
+    overMcp: (name: string, args: Record<string, unknown>) => overMcp(token, name, args),
+    overStream: (name: string, args: Record<string, unknown>) => overStream(token, name, args),
+  })
+
   /** One tool call over `/tailnet/v1/mcp`, as a device. */
-  async function overMcp(name: string, args: Record<string, unknown>): Promise<Answer> {
+  async function overMcp(token: string, name: string, args: Record<string, unknown>): Promise<Answer> {
     const answer = await post(TAILNET_MCP_PATH, token, {
       jsonrpc: '2.0',
       id: ++nextId,
@@ -405,7 +428,7 @@ async function startListener() {
   }
 
   /** One tool call over `/tailnet/v1/stream`, as a device, on a socket of its own. */
-  async function overStream(name: string, args: Record<string, unknown>): Promise<Answer> {
+  async function overStream(token: string, name: string, args: Record<string, unknown>): Promise<Answer> {
     const ticketed = await post(TAILNET_WS_TICKET_PATH, token, {})
     assert.equal(ticketed.status, 200)
     const ticket = (ticketed.body as { ticket: string }).ticket
@@ -435,8 +458,10 @@ async function startListener() {
     created,
     backlogRoots,
     moved,
-    overMcp,
-    overStream,
+    paneReached,
+    // A device paired with every scope, and one paired Read only.
+    ...callsAs(await pair([...TAILNET_SCOPES], 'android-phone')),
+    readOnly: callsAs(await pair(['workspace:read', 'backlog:read', 'conversation:read'], 'desk-b')),
     close: () => server.stop(),
   }
 }
@@ -522,6 +547,54 @@ test('a device names only folders inside the projects this machine has open', as
     assert.deepEqual(listener.created, [inside])
     assert.deepEqual(listener.moved, [inside])
     assert.deepEqual(listener.backlogRoots, [listener.project])
+  } finally {
+    await listener.close()
+  }
+})
+
+test("no device reaches this machine's browser pane, over /mcp or /stream, whatever it holds", async () => {
+  const listener = await startListener()
+  try {
+    const calls: Array<[string, Record<string, unknown>]> = [
+      ['browser.status', { workspaceId: 'w-here' }],
+      ['browser.snapshot', { workspaceId: 'w-here' }],
+      ['browser.screenshot', { workspaceId: 'w-here' }],
+      ['browser.open', { workspaceId: 'w-here', url: 'http://127.0.0.1:8090' }],
+      ['browser.evaluate', { workspaceId: 'w-here', expression: 'window.ownerCanary' }],
+    ]
+    for (const device of [listener, listener.readOnly]) {
+      for (const call of [device.overMcp, device.overStream]) {
+        for (const [name, args] of calls) {
+          const refused = await call(name, args)
+          assert.equal(refused.ok, false, name)
+          assert.equal(refused.code, 'tailnet_local_only', name)
+        }
+      }
+    }
+    assert.deepEqual(listener.paneReached, [])
+  } finally {
+    await listener.close()
+  }
+})
+
+test('a device reads no file outside the project through a link in its backlog, over /mcp or /stream', async () => {
+  const listener = await startListener()
+  try {
+    writeFileSync(join(listener.outside, 'canary.txt'), 'PRIVATE_CANARY\n')
+    mkdirSync(join(listener.project, 'backlog', 'unfiled'), { recursive: true })
+    symlinkSync(join(listener.outside, 'canary.txt'), join(listener.project, 'backlog', 'escape.md'))
+    writeFileSync(join(listener.project, 'backlog', 'unfiled', 'kept.md'), '# Kept\n\nIn the project.\n')
+    for (const device of [listener, listener.readOnly]) {
+      for (const call of [device.overMcp, device.overStream]) {
+        const refused = await call('backlog.read', { projectRoot: listener.project, path: 'backlog/escape.md' })
+        assert.equal(refused.ok, false)
+        assert.equal(refused.code, 'backlog_read_failed')
+        assert.ok(!JSON.stringify(refused.value).includes('PRIVATE_CANARY'))
+        const read = await call('backlog.read', { projectRoot: listener.project, path: 'backlog/unfiled/kept.md' })
+        assert.ok(read.ok)
+        assert.match(String(read.value.body), /In the project\./)
+      }
+    }
   } finally {
     await listener.close()
   }
