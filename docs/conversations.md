@@ -346,8 +346,9 @@ Studio (`shared/machine-spelling.ts`).
 
 Another machine follows and drives a conversation over Tailscale, and only over
 Tailscale: there is no hosted relay in the path, for transcripts, commands,
-images or phase changes. The phone companion and another Studio desktop use the
-same socket and the same frames; nothing in the wire is specific to a phone.
+images or phase changes. The phone companion and another Studio desktop speak
+the same Studio protocol, at `/tailnet/v1/studio` on the tailnet listener, as
+this machine's own windows do; nothing in it is specific to a phone.
 
 ### Trust boundaries
 
@@ -355,8 +356,9 @@ same socket and the same frames; nothing in the wire is specific to a phone.
   (loopback in tests). Tailscale authenticates the peer machine; the gateway
   records the peer node it resolved, but does not treat it as authorization.
 - **Device.** Authorization is the paired device's bearer token and its scopes.
-  A WebSocket is opened with a short-lived single-use ticket, never the token in
-  a URL. Browser-originated requests are refused.
+  The Studio socket is opened with a short-lived single-use ticket, never the
+  token in a URL. Browser-originated requests are refused; a paired desktop's
+  own window is the one exception, on a ticket that names its origin.
 - **Scopes.** `conversation:read` lists, follows and pages conversations and
   fetches tool details and diffs. `conversation:operate` sends, stops, answers
   approvals and questions, attaches images, changes the permission preset and
@@ -364,8 +366,8 @@ same socket and the same frames; nothing in the wire is specific to a phone.
   list them as their own rows. There is no terminal scope: terminals do not
   cross the tailnet (see "Terminals stay on the machine" below).
   Grants are read live: narrowing a device in Settings refuses its next
-  command, removing read closes its socket (4403), and revoking it closes every
-  stream it holds (4401).
+  command, removing read ends the chats it follows, and revoking it closes
+  every socket it holds.
 - **What a remote command can do.** A device with `conversation:operate` drives
   a chat exactly as the host can, preset included: it can send to a chat in
   Bypass, and switch a chat between any of the modes the host runs (all four on
@@ -434,70 +436,35 @@ same socket and the same frames; nothing in the wire is specific to a phone.
 - **Audit.** Every remote command — refused ones included — is written to the
   gateway audit with the device, the conversation, the command kind, the command
   id and the outcome. Message text and answers are never written there.
-- **What leaves the machine.** Frames carry transcripts, tool output previews,
-  tool details and diffs, with secret-looking keys redacted. Paths in the
-  followed conversation's workspace are sent workspace-relative; other paths in
-  the home directory start `[home]`.
-- **Images.** Uploads are staged in a private temporary directory, never in the
-  workspace, and referenced by an opaque id bound to the device and session.
-  At most 16 images of 5 MB each per turn, as JPEG, PNG, GIF or WebP, on a live
-  image-capable session. An accepted send removes its staged files; unused ones
-  expire after an hour.
-- **Pictures sized for the model.** A desktop that advertises
-  `conversation-image-downscale` shrinks each uploaded picture on receipt by
-  the rules its own composer uses (`src/shared/conversation-attachments.ts`):
-  to a 1568px long edge, kept a JPEG if it was one and a PNG otherwise, a JPEG
-  only when the PNG is still over 5 MB, and byte for byte when it already
-  fits. So the route takes an upload of up to 20 MB as it arrives, and what is
-  kept is still at most 5 MB (`413 too_large` either way, saying which). A
-  picture its codec cannot read (Electron's `nativeImage` reads PNG and JPEG)
-  is kept as it came, under the same 5 MB. Without the shrinking a phone's
-  photo reached Claude full size, and Claude refuses an image over 2000px a
-  side once a thread holds more than 20. Only a desktop has the codec: a
-  standalone Studio server does not advertise the capability, and keeps the
-  5 MB upload ceiling. A client that does not see it keeps its own 5 MB check.
-- **Pictures a step shows.** A desktop that advertises the `conversation-images`
-  capability serves the picture a step made (Codex's `GenerateImage`) or looked
-  at (a file read of a picture) at `GET /tailnet/v1/conversation-image`, named
-  by `workspaceId`, `agentId` and the step's `toolUseId`, to a device with
-  `conversation:read`. The file is the one the conversation's own record of
-  that step names — the request carries no path — followed through links to a
-  regular file, and served only when its first bytes are a PNG, JPEG, WebP or
-  GIF (`415 not_an_image` otherwise, whatever its name) and it is at most 8 MB,
-  the ceiling this machine's own previews use (`413 image_too_large`). A chat
-  this machine does not have is `404 unknown_conversation`; a step that is not
-  there, shows no picture, or whose file is gone is `404 unknown_image`. The
-  bytes are cached privately for a day, since a step's picture never changes.
-  A paired desktop shows these under a remote chat's steps the same way; for a
-  machine without the capability it still says the picture is on the other
-  machine.
-- **Pictures a message carried.** A desktop that also advertises
-  `conversation-message-images` serves the pictures a person sent with a
-  message on the same route, named by `attachment`, the `ref` its
-  `user_message` recorded for each (`attachments`), in place of `toolUseId`.
-  The bytes come from this machine's attachment store, never from a path, and
-  only from the folder the store keeps for that chat (or for its live
-  session's folder), so a ref another chat recorded is `404 unknown_image`, as
-  one that is gone is. What is served is at most the 5 MB a sent picture may
-  be, under the type its first bytes say (PNG, JPEG, WebP or GIF), and cached
-  privately for a day. The phone draws them as thumbnails on the person's
-  message; it shows its own just-sent photos from the phone itself, and names
-  a picture it cannot fetch.
-- **Files a message carries.** A desktop that advertises
-  `conversation-message-files` takes a file of any type on the upload route
-  with `kind=file`, from a device with `conversation:operate`, for a chat it
-  lists: at most 25 MB (`413 too_large`, naming the limit), under its own name
-  made one safe path segment. It is written into Studio's data folder,
-  `tailnet-uploads/<device>/<upload>/<name>`, never into the project, and
-  answered `{ uploadId, bytes, name }`. A `send` naming that id in
-  `uploadIds` attaches the file to the message by that path, as a file
-  dropped into the desktop's composer is: the agent is told where it is, and
-  the `user_message` records it in `files`, which every view draws as a card.
-  Pictures and files go in the same `uploadIds`, each spent as what it was
-  uploaded as. The id is the uploading device's alone and goes with the send;
-  the file stays, for the agent to read in a later turn, and is removed a
-  week on, or with the device when it is removed. One never sent goes when its
-  id expires, after an hour.
+- **What leaves the machine.** A followed chat carries its transcript, tool
+  output previews, tool details and diffs, with secret-looking keys redacted.
+  Paths are sent as they are on this machine; a quote in a message is sent as
+  the token the chat keeps, and every current client draws it.
+- **Pictures and files on a send.** A client stages each on its own socket
+  (`uploads.begin`, then `uploads.append` a piece at a time), under an id only
+  that client can spend, and the keyed `conversation.send` names them in
+  `uploadIds`, spent once per command id: a send retried under its id names the
+  same pictures again without staging them twice. A picture is PNG, JPEG, WebP
+  or GIF, at most 5 MB as it came (the Studio keeps it as sent; a phone sizes
+  its own photos), and goes with the turn as a picture a person attached here
+  does. A file (`purpose: 'attachment'`) is any type, named, at most 25 MB: it
+  is written into Studio's data folder, `tailnet-uploads/<client>/<upload>/<name>`
+  under its name made one safe path segment, never into the project, and
+  attached to the message by that path, as a file dropped into the composer
+  is; the `user_message` records it in `files`. The file stays for the agent to
+  read in a later turn, and goes a week on, or with the device when it is
+  removed. A staged upload no send spends expires.
+- **Pictures a chat shows.** `conversation.picture` (`conversation:read`)
+  answers one picture's bytes: a step's, by its `toolUseId` (the picture
+  Codex's `GenerateImage` made, or a file read of a picture), or one a person
+  sent with a message, by the `ref` its `user_message` recorded. The chat's own
+  record names the file, never the request: a step's file is followed through
+  links to a regular file inside the chat's folders or Studio's picture folders,
+  and a sent picture comes only from the folder the attachment store keeps for
+  that chat. Either is served only when its first bytes are a PNG, JPEG, WebP or
+  GIF, under the type they say, at most 8 MB (`too_large`); anything else, a
+  chat this machine does not have, or a step that shows no picture is
+  `not_found`.
 
 ### Sync
 
@@ -513,7 +480,7 @@ through `loadEarlier`. Command ids stay stable across retries, so a send
 acknowledged before a disconnect is not accepted twice.
 
 What crosses is a projection of the log, the same on every wire (the window's
-IPC, the Studio protocol, the tailnet lane), made in one place
+IPC, the Studio protocol), made in one place
 (`src/server/conversation-stream-shaping.ts`); the stored events stay whole. A
 tool's result crosses once, as its preview of at most 4,000 characters; a
 tool's input crosses with its file-change bodies cut to their heads, marked
@@ -532,7 +499,7 @@ No event takes more than one frame (`CONVERSATION_WIRE_EVENT_BYTES`): one
 larger as stored (a long answer, a pasted log, a large approval) crosses with
 its longest text cut to fit and `wireClipped: true`, and a reader reads it
 whole by the `seq` and `id` it came under (`conversation.event` on the Studio
-protocol, `getEvent` on the lane, `conversation:event:read` over IPC). The chat
+protocol, `conversation:event:read` over IPC). The chat
 view and the phone say when part of a chat came cut short and offer it in
 full.
 
@@ -631,7 +598,7 @@ that every reader passes over (`conversation-command-receipts.ts`).
 
 `@sprintengine/conversation-protocol` (`packages/conversation-protocol`) is the
 one contract every follower of a conversation speaks (owner ruling
-2026-10-01): this socket, the module SDK's conversation service, and the
+2026-10-01): the Studio protocol, the module SDK's conversation service, and the
 desktop's own chat view, which imports its event types from it through
 `src/shared/conversation-runtime.ts`. Its README is the frame reference. It
 declares:
@@ -639,7 +606,7 @@ declares:
 - **Events, in two layers.** Each provider adapter reads its CLI's own stream
   and writes `ConversationEvent`s in a vocabulary no provider owns
   (`CONVERSATION_EVENT_TYPES`); the provider's shapes stay in the adapter.
-  Everything above, this socket included, carries only that second layer.
+  Everything above, the Studio protocol included, carries only that second layer.
 - **Commands and answers.** Every mutation carries the client's `commandId`,
   and the runtime keeps a receipt for it in the chat's log, so a retry is
   answered from the first attempt and never runs twice (see "Commands and the
@@ -649,15 +616,14 @@ declares:
   A tool permission may also be answered `always` where the host advertises
   `conversation-permanent-approvals`: the rule is saved here, for the chat's
   workspace, as this machine's own "Always allow" saves one.
-- **Capabilities and a version.** `hello` answers the conversation protocol
-  version (1), its minimum, and the conversation capabilities this machine
-  advertises (`conversation-hello`). Features are asked about by capability,
+- **Capabilities and a version.** The Studio welcome carries the conversation
+  protocol version (1), its minimum, and the conversation capabilities this
+  machine serves. Features are asked about by capability,
   never by version; the version exists to refuse a peer a change could not be
   made additive for, naming both numbers.
 - **Create requests.** `ConversationCreateRequest`, with `allowedTools` beside
-  the preset. This socket does not create conversations through it; the
-  module SDK does, and so does the Studio RPC on the owner socket
-  (`@sprintengine/studio-protocol`, `conversation.create`).
+  the preset, which the module SDK and the Studio protocol's
+  `conversation.create` take.
 
 The package entry is `public.ts`. The phone imports it from this repository's
 source, as the desktop does, so both build against the same files; a phone
@@ -665,8 +631,8 @@ already installed keeps the contract it was built with, which is what the
 capabilities above are for. Building this branch does not publish the
 package.
 
-Phase changes reach a client while its socket is open, and every paired
-device's change feed says when the conversation list moved — a conversation
+Phase changes reach a client while its socket is open, and every client hears
+a `conversations.changed` push when the conversation list moved — a conversation
 started, finished, or began waiting on a person — so a list re-reads on the
 change rather than on a timer. Background push notifications are not provided. A conversation deep link is
 `sprintengine://conversation/<deviceId>/<workspaceId>/<agentId>` (each component
@@ -712,14 +678,14 @@ machine?: { kind: string; color: string }
   and an empty list when it holds none. It is read from the record only:
   listing never runs `gh`, so a phone refreshing its list costs no request to
   GitHub. The record is kept current when a chat's turn ends and on its slow
-  poll, and the change feed says when the list moved.
+  poll, and `conversations.changed` says when the list moved.
 - **`localServers`** (2026-10-25) is what the desktop's local server record
   holds for the chat (`localServers.list`): each server its agents linked
   (`id`, `url`, `title`, `port`, and `state`: `running`, `stopped` or
   `starting`, as the desktop's own checks last found it), at most
   `CONVERSATION_MAX_LOCAL_SERVERS` (20), and absent for a chat with none. The
   command and folder that start one stay on the desktop. A server starting or
-  stopping is pushed on the change feed. A second desktop following the chat
+  stopping is a `conversations.changed` push. A second desktop following the chat
   draws them on its strip as that machine's, read-only: one whose address
   reaches it (a tailnet name, the machine's own address) opens there, and one
   on that machine's loopback says it is on that machine, its link still to
@@ -827,7 +793,7 @@ settle the chat again.
   the chat in front it takes effect as the person leaves the chat, since
   looking at it is what reads it.
 
-The change feed says the conversation list moved when a chat is settled or
+A `conversations.changed` push says the conversation list moved when a chat is settled or
 brought back, renamed, or written to, marked unread, and for a visit when it
 is the first since the chat's agent finished (the visits stamped while a chat
 stays on screen are not a push each). A change to the record's clocks alone
@@ -1026,7 +992,7 @@ in the app's own process.
   names, a wake does not cut that short, `busy` is retried after its delay under
   the same id, a revoked device or a lost read grant ends the follow without
   retrying, and a socket silent past two of the host's pings is re-dialled.
-- **What the view offers is what the grant and the lane allow.** A pairing
+- **What the view offers is what the grant and the machine's welcome allow.** A pairing
   without `conversation:operate` sees the conversation with the composer,
   approvals and stop closed. A remote view offers a permanent approval rule
   only where the machine saves one (`conversation-permanent-approvals`), the
