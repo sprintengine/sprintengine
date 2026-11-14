@@ -84,6 +84,9 @@ import { openTerminal, writeTerminal } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
 
+/** How long a success line stays under the panel before it clears. */
+const SUCCESS_MESSAGE_MS = 6000
+
 type GitPanelMessage = {
   tone: 'neutral' | 'error' | 'success'
   text: string
@@ -377,6 +380,18 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const [graph, setGraph] = useState<GitGraphState>({ status: 'loading' })
   const [loadingMoreGraph, setLoadingMoreGraph] = useState(false)
   const [message, setMessage] = useState<GitPanelMessage | null>(null)
+  // A success is news for a moment, not the panel's state: left up, "Created
+  // and switched to feature-x" still read as current long after the branch
+  // had moved on. Errors, and anything said while an action runs, stay until
+  // the next action replaces them.
+  useEffect(() => {
+    if (message?.tone !== 'success') return
+    const timer = window.setTimeout(
+      () => setMessage((current) => (current === message ? null : current)),
+      SUCCESS_MESSAGE_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [message])
   // Held outside the panel's state: only the composer reads it while it is
   // typed, so a keystroke re-renders the composer and not the change list.
   const [commitMessage] = useState(() =>

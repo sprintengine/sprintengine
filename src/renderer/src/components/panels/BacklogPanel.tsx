@@ -1021,6 +1021,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           initialValue: current,
           confirmLabel: 'Rename',
           required: true,
+          selectFileStem: true,
         })
         const next = typed ? backlogRenameFileName(current, typed) : ''
         if (!next || next === current) return

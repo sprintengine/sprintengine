@@ -101,3 +101,33 @@ export function combineConflictSides(block: GitConflictBlock, lineEnding: '\n' |
 export function lineEndingOf(content: string): '\n' | '\r\n' {
   return content.includes('\r\n') ? '\r\n' : '\n'
 }
+
+/** What the resolver calls the two sides, and its buttons for them. */
+export type ConflictSideLabels = {
+  ours: string
+  theirs: string
+  useOurs: string
+  useTheirs: string
+}
+
+/**
+ * The two sides named for the operation that stopped on them. Git's "ours" and
+ * "theirs" swap meaning between a merge and a rebase, and a conflict with no
+ * operation in progress is a stash being reapplied (a pull that set changes
+ * aside, or a pop), which is what the resolver used to call every conflict.
+ */
+export function conflictSideLabels(operation: GitRepoOperation | null): ConflictSideLabels {
+  switch (operation) {
+    case 'merge':
+      return { ours: 'Current branch', theirs: 'Incoming branch', useOurs: 'Use current', useTheirs: 'Use incoming' }
+    case 'rebase':
+      // A rebase replays your commits onto the other branch: HEAD is that branch.
+      return { ours: 'Rebasing onto', theirs: 'Your commit', useOurs: 'Use theirs', useTheirs: 'Use your commit' }
+    case 'cherry-pick':
+      return { ours: 'Current branch', theirs: 'Picked commit', useOurs: 'Use current', useTheirs: 'Use picked' }
+    case 'revert':
+      return { ours: 'Current branch', theirs: 'The revert', useOurs: 'Use current', useTheirs: 'Use the revert' }
+    default:
+      return { ours: 'Pulled version', theirs: 'Your stashed changes', useOurs: 'Use pulled', useTheirs: 'Use stashed' }
+  }
+}
