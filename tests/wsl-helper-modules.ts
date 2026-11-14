@@ -78,9 +78,7 @@ export type RelaySocketLike = {
 }
 
 export type RelayModule = {
-  MAX_AGENT_STATE_BYTES_PER_CONNECTION: number
   parseAuthLine(line: string): string | null
-  relayAgentStateConnection(socket: RelaySocketLike, send: (line: string) => void): void
   createMcpMux(send: (frame: Record<string, unknown>) => void): {
     accept(socket: RelaySocketLike): void
     handleFromMain(frame: Record<string, unknown>): void

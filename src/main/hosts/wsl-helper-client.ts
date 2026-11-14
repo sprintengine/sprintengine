@@ -42,7 +42,7 @@ import { WslSetupError } from './wsl-setup-error'
 import { NEEDS_INSTALL_EXIT, parseNeedReport, type NeedReport } from './wsl-install'
 
 /** Must equal `PROTOCOL_VERSION` in `resources/wsl-helper/lib/frames.mjs`. */
-export const WSL_HELPER_PROTOCOL = 2
+export const WSL_HELPER_PROTOCOL = 3
 
 export type WslHelperInfo = {
   uid: number
@@ -52,7 +52,6 @@ export type WslHelperInfo = {
   arch: string
   nodePath: string
   appDir: string
-  agentSocket: string
   mcpSocket: string
   /** The Linux directory the MCP bridge reads its discovery file from. */
   userDataDir: string
@@ -73,7 +72,7 @@ export type HelperProcess = {
   once(event: 'error', listener: (error: Error) => void): unknown
 }
 
-export type WslHelperEvent = { event: 'agentState'; line: string } | { event: 'pathsChanged' }
+export type WslHelperEvent = { event: 'pathsChanged' }
 
 export type WslHelperClientDeps = {
   distro: string
@@ -342,9 +341,7 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       else entry.resolve(frame.result)
       armIdle()
     } else if (frame.t === 'ev') {
-      if (frame.event === 'agentState' && typeof frame.line === 'string') {
-        deps.onEvent({ event: 'agentState', line: frame.line })
-      } else if (frame.event === 'pathsChanged') {
+      if (frame.event === 'pathsChanged') {
         deps.onEvent({ event: 'pathsChanged' })
       } else if (frame.event === 'watch' && typeof frame.id === 'number') {
         const entry = watchesByRemote.get(frame.id)

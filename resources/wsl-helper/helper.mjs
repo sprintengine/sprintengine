@@ -10,9 +10,11 @@
 // and talks to it over that one process's stdin and stdout: newline-delimited
 // JSON (`lib/frames.mjs`). It is the only channel between Windows and Linux, so
 // the app needs no networking mode, no interop inside the distribution, and no
-// port anywhere. Inside Linux, the helper listens on two private Unix sockets
-// (`lib/sockets.mjs`) for the app's hooks, status line, OpenCode plugin and MCP
-// bridge, and relays them to main (`lib/relay.mjs`). It also answers main's
+// port anywhere. Inside Linux, the helper listens on a private Unix socket
+// (`lib/sockets.mjs`) for the app's MCP bridge, and relays it to main
+// (`lib/relay.mjs`). The hooks, status line and OpenCode plugin report to the
+// distribution's own Studio server instead, which relays them to the desktop
+// (`src/server/wsl/agent-state-relay.ts`). It also answers main's
 // questions about the distribution: which processes a session left running,
 // which CLIs are installed, the home folder, and running a program or git. It
 // writes each launch's startup script where only this user can read it
@@ -39,7 +41,7 @@ import { ensureTree } from './lib/files.mjs'
 import { createLineDecoder, decodeFrame, encodeFrame, PROTOCOL_VERSION } from './lib/frames.mjs'
 import { captureLoginEnv } from './lib/login-env.mjs'
 import { endAllSessions, snapshot, survivorPids } from './lib/proc.mjs'
-import { createMcpMux, relayAgentStateConnection } from './lib/relay.mjs'
+import { createMcpMux } from './lib/relay.mjs'
 import { checkRunRequest, childEnv, decodeStdin, killAllChildren, runArgv } from './lib/run.mjs'
 import { clearSessionDir, ensureSessionDir, removeSessionEntries, writeSessionFiles } from './lib/sessions.mjs'
 import { closePrivate, ensurePrivateDir, ensureSocketDir, listenPrivate } from './lib/sockets.mjs'
@@ -63,7 +65,6 @@ const socketBase = process.env.SPRINTENGINE_HELPER_SOCKET_BASE || undefined
 
 let exiting = false
 const servers = []
-const agentConnections = new Set()
 const watches = new Map()
 let nextWatchId = 1
 let infoPath = null
@@ -128,7 +129,6 @@ async function shutdown(code, options = {}) {
   detector.close()
   mux.closeAll()
   for (const id of [...watches.keys()]) closeWatch(id)
-  for (const socket of agentConnections) socket.destroy()
   await Promise.all(servers.map(({ server, path }) => closePrivate(server, path).catch(() => undefined)))
   // The discovery file too, unless a newer helper has written its own there.
   try {
@@ -151,16 +151,7 @@ async function start(hello) {
   // launched by a main that has since gone (it crashed, or was killed before
   // it could end them), and nothing will ever manage it again.
   if (hello.endOrphans === true) endSessions()
-  const agentSocket = join(socketDir, 'agent.sock')
   const mcpSocket = join(socketDir, 'mcp.sock')
-  servers.push({
-    server: await listenPrivate(agentSocket, (socket) => {
-      agentConnections.add(socket)
-      socket.on('close', () => agentConnections.delete(socket))
-      relayAgentStateConnection(socket, (line) => send({ t: 'ev', event: 'agentState', line }))
-    }),
-    path: agentSocket,
-  })
   // Half-open: a bridge whose client closed its stdin still gets the replies
   // already on their way.
   servers.push({
@@ -197,7 +188,6 @@ async function start(hello) {
     arch: process.arch,
     nodePath: process.execPath,
     appDir,
-    agentSocket,
     mcpSocket,
     userDataDir: socketDir,
     pidDir,

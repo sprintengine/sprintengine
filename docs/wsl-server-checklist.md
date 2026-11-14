@@ -294,6 +294,25 @@ watch a pull request in another if you can.
    download, then the server tree.
    **Expect:** both finish. Write the times down.
 
+## J. WSL terminal agents, without the helper
+
+The WSL helper is being retired: each step below moves a job of it onto the
+distribution's own Studio server. Run every step that is listed.
+
+1. Start an agent in a terminal of a WSL workspace and give it a task.
+   **Expect:** the sidebar shows it working, then waiting, as on this PC.
+   **distro:** `ls -l ~/.local/share/sprintengine-studio/data*/agent-state.sock`
+   (or the `agent-state-*.sock` under `$XDG_RUNTIME_DIR`): the socket is the
+   server's, mode `srw-------`.
+2. Leave that terminal open, with no chat, for more than ten minutes.
+   **Expect:** **distro:** `pgrep -af server.cjs` still lists the server: a
+   WSL terminal holds it up.
+3. **distro:** `kill -9 <pid of server.cjs>` while the agent works.
+   **Expect:** within half a minute the server runs again with no message
+   sent, and the agent's next state change shows in the sidebar.
+4. Close the terminal. Wait ten minutes with no chat.
+   **Expect:** the server has stopped.
+
 ## Throughput
 
 1. Over loopback, and again over the bridge, send a 10 MiB image and open a

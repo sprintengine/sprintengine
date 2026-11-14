@@ -43,8 +43,14 @@ export type FrontDoorPurpose =
    * says the stream came through the front door, never who the window is.
    */
   | 'ws'
+  /**
+   * A WSL distribution's terminal agents' phase reports, relayed to the
+   * desktop that holds it as lines (`agent-state-relay.ts`). Only a WSL
+   * distribution's Studio serves it.
+   */
+  | 'agent-state'
 
-const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['studio', 'ws'])
+const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['studio', 'ws', 'agent-state'])
 const NONCE_BYTES = 32
 // A preamble line is a few hundred bytes; anything longer is not one.
 const MAX_PREAMBLE_LINE = 4_096

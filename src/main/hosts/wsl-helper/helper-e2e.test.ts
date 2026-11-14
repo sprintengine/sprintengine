@@ -1,7 +1,8 @@
 // The WSL helper end to end, on this machine: main's real client starts the
 // real helper through a real `sh -s` (standing in for `wsl.exe --exec sh -s`),
-// the app's real hook reporter and real MCP bridge talk to it over its real
-// Unix sockets, and a stub automation server stands where main's own sits.
+// the app's real MCP bridge talks to it over its real Unix socket, and a stub
+// automation server stands where main's own sits. (The hook reporter reports
+// to the distribution's Studio server: `server/wsl/agent-state-relay.test.ts`.)
 // Everything the helper does is plain Node on Linux, so only `wsl.exe` itself
 // and /proc (macOS has none) are not exercised here.
 
@@ -14,7 +15,6 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { HELPER_ENTRY } from '../../../../tests/wsl-helper-modules'
-import { parseAgentStateFrame } from '../../agent-state'
 import {
   createWslHelperClient,
   type HelperProcess,
@@ -22,7 +22,6 @@ import {
   type WslHelperEvent,
 } from '../wsl-helper-client'
 
-const REPORTER = join(process.cwd(), 'resources', 'hooks', 'sprintengine-agent-state.mjs')
 const BRIDGE = join(process.cwd(), 'resources', 'automation', 'mcp-stdio-bridge.mjs')
 
 let temp = ''
@@ -113,52 +112,14 @@ async function waitFor<T>(read: () => T | undefined, ms = 5_000): Promise<T> {
   }
 }
 
-test('the handshake gives main private sockets and the helper paths', async () => {
+test('the handshake gives main a private socket and the helper paths', async () => {
   const info = await client.start()
   assert.equal(client.state(), 'ready')
-  assert.equal(info.agentSocket, join(temp, 'rt', 'abc123def456', 'agent.sock'))
   assert.equal(info.mcpSocket, join(temp, 'rt', 'abc123def456', 'mcp.sock'))
-  assert.equal(statSync(info.agentSocket).mode & 0o777, 0o600)
   assert.equal(statSync(info.mcpSocket).mode & 0o777, 0o600)
   assert.equal(statSync(join(temp, 'rt', 'abc123def456')).mode & 0o777, 0o700)
   assert.equal(info.nodePath, process.execPath)
   assert.equal(await client.start(), info, 'a second start reuses the running helper')
-})
-
-test("the app's own hook reporter reaches main through the helper, and main's parser accepts the frame", async () => {
-  const info = await client.start()
-  await runNode(
-    REPORTER,
-    ['--socket', '/nonexistent/baked.sock'],
-    JSON.stringify({ hook_event_name: 'Stop', session_id: 'cli-1' }),
-    {
-      SPRINTENGINE_AGENT_ID: 'agent-1',
-      SPRINTENGINE_WORKSPACE_ID: 'ws-1',
-      // The env wins over the baked argument, as the WSL startup script exports it.
-      SPRINTENGINE_AGENT_STATE_SOCKET: info.agentSocket,
-    },
-  )
-  const event = await waitFor(() => events.find((candidate) => candidate.event === 'agentState'))
-  assert.equal(event.event, 'agentState')
-  const frame = parseAgentStateFrame(JSON.parse(event.event === 'agentState' ? event.line : '{}'), Date.now())
-  assert.ok(frame, 'the relayed frame passes the same validation as one from this machine')
-  assert.equal(frame.agentId, 'agent-1')
-  assert.equal(frame.event, 'Stop')
-})
-
-test('garbage and over-long lines on the agent socket never reach main', async () => {
-  const info = await client.start()
-  const before = events.length
-  await new Promise<void>((resolve) => {
-    const socket = connect(info.agentSocket, () => {
-      socket.write('not json\n[1,2]\n')
-      socket.end(`${'x'.repeat(70 * 1024)}\n`)
-    })
-    socket.on('close', () => resolve())
-    socket.on('error', () => resolve())
-  })
-  await new Promise((resolve) => setTimeout(resolve, 200))
-  assert.equal(events.length, before)
 })
 
 test("the app's own MCP bridge reaches the automation server through a helper channel, both ways", async () => {
@@ -344,5 +305,5 @@ test('shutdown ends the helper and removes its sockets', async () => {
   const info = await client.start()
   await client.shutdown()
   assert.equal(client.state(), 'stopped')
-  await waitFor(() => (existsSync(info.agentSocket) || existsSync(info.mcpSocket) ? undefined : true))
+  await waitFor(() => (existsSync(info.mcpSocket) ? undefined : true))
 })

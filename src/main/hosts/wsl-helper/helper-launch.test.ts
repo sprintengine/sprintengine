@@ -1,7 +1,7 @@
 // The WSL helper's launch-side pieces, as plain Node on macOS and Linux: the
 // private directory each launch's startup script is written into, the MCP
-// channel's launch token, the agent-state byte cap, ending every session on
-// quit, and stdin for a git the helper runs.
+// channel's launch token, ending every session on quit, and stdin for a git
+// the helper runs.
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -186,37 +186,6 @@ test('the auth line is read as the relay reads it', () => {
   assert.equal(relay.parseAuthLine('{"t":"auth","token":123}'), null)
   assert.equal(relay.parseAuthLine('{"token":"launch_token-0123456789"}'), null)
   assert.equal(relay.parseAuthLine('not json'), null)
-})
-
-// ── Agent state ─────────────────────────────────────────────────────────────
-
-test('one agent-state connection may send many frames, but not without limit', async () => {
-  const lines: string[] = []
-  const path = join(temp, 'agent.sock')
-  const server = createServer((socket) =>
-    relay.relayAgentStateConnection(socket as unknown as RelaySocketLike, (line) => lines.push(line)),
-  )
-  await new Promise<void>((resolve) => server.listen(path, resolve))
-  // OpenCode's plugin sends a frame per file a patch touched, on one connection.
-  const frames = Array.from({ length: 500 }, (_, index) => `{"event":"file","n":${index}}\n`).join('')
-  const socket = await send(path, frames, { end: true })
-  await settle()
-  assert.equal(lines.length, 500, 'every frame of a large patch arrives')
-  socket.destroy()
-
-  // A runaway writer: large frames (each under the line cap) until well past
-  // the connection's byte cap. The helper hangs up on it part-way.
-  const flood = await send(path, '')
-  const closed = new Promise<void>((resolve) => flood.once('close', () => resolve()))
-  const frame = `{"x":"${'a'.repeat(60 * 1024)}"}\n`
-  const total = Math.ceil((relay.MAX_AGENT_STATE_BYTES_PER_CONNECTION * 1.5) / frame.length)
-  for (let index = 0; index < total && !flood.destroyed; index += 1) {
-    if (!flood.write(frame)) await new Promise((resolve) => flood.once('drain', resolve).once('close', resolve))
-  }
-  await closed
-  assert.ok(lines.length - 500 < total, 'past the cap the connection is dropped, not relayed to the end')
-  assert.ok(lines.length - 500 <= Math.ceil(relay.MAX_AGENT_STATE_BYTES_PER_CONNECTION / frame.length))
-  server.close()
 })
 
 // ── Ending every session ────────────────────────────────────────────────────

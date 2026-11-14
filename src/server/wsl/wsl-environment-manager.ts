@@ -91,6 +91,12 @@ export type WslServerConnection = {
   /** Where the distribution mounts Windows drives; null when automount is off. */
   driveMountRoot: string | null
   environmentId: string
+  /**
+   * The Unix socket a WSL terminal agent's hooks report to in the
+   * distribution, relayed back on the `agent-state` purpose; null when it did
+   * not open there.
+   */
+  agentStateSocket: string | null
   /** A fresh, admitted connection for `purpose` (the shell role's Studio connection). */
   open(purpose: FrontDoorPurpose): Promise<Duplex>
 }
@@ -140,6 +146,15 @@ export type WslEnvironmentManager = {
   statuses(): WslServerStatus[]
   /** Something used this distribution's chats: the idle clock starts again. */
   touch(distro: string): void
+  /**
+   * A WSL terminal of this desktop's runs in the distribution: its agent
+   * reports, and reaches Studio's tools, through the server, so the server is
+   * started, never stopped for being idle while any hold stands, and started
+   * again after a crash. Keyed, so a second hold under one key is harmless.
+   */
+  hold(distro: string, key: string): void
+  /** That terminal ended: the idle clock runs again once the last hold goes. */
+  release(distro: string, key: string): void
   /**
    * What each running server does on its own (schedules, watches, messages
    * kept to send), which stops with it: what the quit question names. A
@@ -211,6 +226,10 @@ type Handle = {
    * other than it after the server exits is a distribution WSL stopped.
    */
   runningState: string | null
+  /** The WSL terminals holding this server up (`hold`), by key. */
+  holds: Set<string>
+  /** A restart after a crash while held, waiting out the backoff. */
+  restartTimer: ReturnType<typeof setTimeout> | null
 }
 
 /** How long a WSL server is given to say what it does on its own. */
@@ -279,6 +298,8 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
         lastPid: null,
         stopping: false,
         runningState: null,
+        holds: new Set(),
+        restartTimer: null,
       }
       handles.set(distro, handle)
     }
@@ -306,6 +327,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
   // Otherwise a chat working holds the lease, and so does work it does on its
   // own; a server that cannot say has none, and one too slow to say is busy.
   const busy = async (handle: Handle): Promise<boolean> => {
+    if (handle.holds.size > 0) return true
     const connection = handle.connection
     if (!connection || handle.starting !== null) return true
     const answer = await askWork(connection.owner, BACKGROUND_WORK_ASK_MS)
@@ -562,6 +584,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       owner,
       driveMountRoot: server.ready.frontDoor?.driveMountRoot ?? null,
       environmentId: server.ready.environmentId,
+      agentStateSocket: server.ready.frontDoor?.agentStateSocket ?? null,
       open: async (purpose) => (await openDoor(handle, purpose)).stream,
     }
     // Lost when the owner connection ends: closed, or a ping unanswered.
@@ -675,6 +698,23 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       reason: `The Studio server in ${handle.distro} stopped unexpectedly (${how}). It starts again with the next message.`,
     })
     log(`The Studio server in ${handle.distro} stopped unexpectedly (${how}).`)
+    restartIfHeld(handle, wait)
+  }
+
+  // A held server (a WSL terminal runs there) does not wait for the next
+  // message to start again: its agent's reports and tools go through it.
+  function restartIfHeld(handle: Handle, wait: number): void {
+    if (handle.holds.size === 0 || handle.restartTimer) return
+    handle.restartTimer = setTimeout(() => {
+      handle.restartTimer = null
+      if (handle.holds.size === 0 || handle.server || handle.starting) return
+      void connect(handle.distro).catch((error: unknown) =>
+        log(
+          `The Studio server in ${handle.distro} did not start again for its WSL terminals: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+    }, wait)
+    handle.restartTimer.unref?.()
   }
 
   async function start(handle: Handle): Promise<WslServerConnection> {
@@ -867,11 +907,30 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       const handle = handles.get(distro)
       if (handle?.server) armIdle(handle)
     },
+    hold(distro, key) {
+      const handle = handleOf(distro)
+      handle.holds.add(key)
+      // Started now, so the terminal's agent finds the socket it reports to.
+      if (!handle.server && !handle.starting && handle.retryAt <= now()) void connect(distro).catch(() => undefined)
+      else if (!handle.server) restartIfHeld(handle, Math.max(0, handle.retryAt - now()))
+    },
+    release(distro, key) {
+      const handle = handles.get(distro)
+      if (!handle?.holds.delete(key) || handle.holds.size > 0) return
+      if (handle.restartTimer) clearTimeout(handle.restartTimer)
+      handle.restartTimer = null
+      if (handle.server) armIdle(handle)
+    },
     stop: (distro, options) => {
       const handle = handles.get(distro)
       return handle ? stopHandle(handle, options) : Promise.resolve()
     },
     async shutdown(options = {}) {
+      for (const handle of handles.values()) {
+        if (handle.restartTimer) clearTimeout(handle.restartTimer)
+        handle.restartTimer = null
+        handle.holds.clear()
+      }
       await Promise.all([...handles.values()].map((handle) => stopHandle(handle, options).catch(() => undefined)))
     },
   }

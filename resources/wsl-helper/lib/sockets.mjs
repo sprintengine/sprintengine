@@ -1,10 +1,8 @@
 // The helper's Unix sockets, and the directory they live in.
 //
-// Hooks, the status line, OpenCode's in-process plugin and the MCP bridge all
-// run as the person's own Linux user inside the distribution, and reach the
-// helper through two sockets in one directory:
+// The MCP bridge runs as the person's own Linux user inside the distribution,
+// and reaches the helper through a socket in one directory:
 //
-//   <runtime>/sprintengine/<profile>/agent.sock   agent-state frames
 //   <runtime>/sprintengine/<profile>/mcp.sock     MCP bridge connections
 //   <runtime>/sprintengine/<profile>/sessions/    each session shell's pid file
 //

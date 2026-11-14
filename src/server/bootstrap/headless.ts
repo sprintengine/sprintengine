@@ -10,6 +10,9 @@ import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
 import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
+import { createAgentStateRelay, type AgentStateRelay } from '../wsl/agent-state-relay'
+import { createAgentStateListener, type AgentStateListener } from '../terminals/agent-state-listener'
+import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
 import { SERVER_EXIT, type FrontDoorReady, type ServerBootstrapEnvelope } from './envelope'
 import { runShutdownLegs, type ServerStart } from './serve'
@@ -27,7 +30,8 @@ import type { Duplex } from 'node:stream'
 // the mutual proof. An admitted connection asks for the conversation backend
 // the Windows side routes this distribution's chats to, or for a Studio
 // protocol connection with the shell role, over which the Windows side offers
-// the toolsets its own shell offers it.
+// the toolsets its own shell offers it. It also relays what the desktop's WSL
+// terminal agents report from inside the distribution (`agent-state`).
 
 export function headlessServerOptions(
   envelope: ServerBootstrapEnvelope,
@@ -83,16 +87,27 @@ const signInsLoaded = (): Promise<SignIns> =>
     ({ createSignIns, resolveOnPath }) => (signInTable ??= createSignIns({ resolve: resolveOnPath })),
   )
 
+/** What a WSL distribution's Studio relays to the desktop that holds it, beside its Studio. */
+export type DistributionRelays = { agentState: AgentStateRelay }
+
 /** Hand an admitted front-door connection to what it asked for. */
 export function serveFrontDoorPurpose(
   server: Pick<StudioServer, 'core' | 'rpc'>,
   purpose: FrontDoorPurpose,
   stream: Duplex,
+  relays: DistributionRelays | null = null,
 ): void {
   // A window's socket: the window listener admits it, or not, by the ticket
   // it minted for it.
   if (purpose === 'ws') {
     server.rpc.acceptWindowStream(stream)
+    return
+  }
+  // The desktop's WSL terminal agents' reports. Only a distribution's Studio
+  // relays them; anywhere else the stream is ended at once.
+  if (purpose === 'agent-state') {
+    if (relays) relays.agentState.attach(stream)
+    else stream.destroy()
     return
   }
   // The ticket goes first, on its own line, before the Studio protocol starts:
@@ -171,6 +186,21 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
 
   let doors: FrontDoorListeners | null = null
   let frontDoor: FrontDoorReady | undefined
+  // Inside WSL: the socket the desktop's WSL terminal agents report to, each
+  // valid line relayed to the desktop. This Studio runs no terminals of its
+  // own (its tree carries no pty), so the socket is free for them.
+  const agentStateRelay = envelope.wsl ? createAgentStateRelay() : null
+  let agentStateListener: AgentStateListener | null = null
+  if (agentStateRelay && !server.core.agentTerminals) {
+    const listener = createAgentStateListener({
+      socketPath: resolveAgentStateSocketPath(envelope.dataDir),
+      onFrame: (_frame, line) => agentStateRelay.send(line),
+      logDiagnostic: (diagnostic) => log(`${diagnostic.title}: ${diagnostic.details ?? diagnostic.message}`),
+    })
+    await listener.start()
+    if (listener.isRunning()) agentStateListener = listener
+  }
+  const relays: DistributionRelays | null = agentStateRelay ? { agentState: agentStateRelay } : null
   const detached = envelope.detached
   const idle =
     detached && detached.idleMs !== null
@@ -187,12 +217,14 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
         tokenHash: envelope.owner.tokenHash,
         runDir: envelope.runDir,
         loopback: door.loopback,
-        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream),
+        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream, relays),
         ...(idle ? { onOpenCount: (count: number) => idle.connections(count) } : {}),
         log,
       })
     } catch (error) {
       idle?.dispose()
+      agentStateRelay?.close()
+      await agentStateListener?.stop()
       await server.stop()
       throw error
     }
@@ -200,9 +232,12 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       port: doors.port,
       socketPath: doors.socketPath,
       driveMountRoot: envelope.wsl ? readDriveMountRoot() : null,
+      agentStateSocket: agentStateListener?.socketPath ?? null,
     }
     if (doors.port === null && doors.socketPath === null) {
       await doors.close()
+      agentStateRelay?.close()
+      await agentStateListener?.stop()
       await server.stop()
       throw Object.assign(
         new Error('Neither of the front door’s ways in could open, so Windows cannot reach this server.'),
@@ -247,6 +282,8 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       if (detached) rmSync(join(envelope.runDir, 'server.json'), { force: true })
       // The front door first, so nothing new arrives while the core closes.
       if (doors) await runShutdownLegs([['front door', () => doors?.close()]], onLeg)
+      agentStateRelay?.close()
+      await agentStateListener?.stop()
       await server.stop(onLeg)
     },
   }

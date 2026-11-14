@@ -39,6 +39,7 @@ import {
 import { readTreeBuild } from './desktop-wsl-servers'
 import { lineTransport, readTicket } from './studio-door'
 import { relayShellToolsets } from './wsl-tool-relay'
+import { followRelayedAgentState } from './agent-state-relay'
 import { createWslEnvironmentAccess } from './wsl-environment-access'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
@@ -608,6 +609,48 @@ test('a server with nothing to do is stopped once it has been idle', async () =>
     await new Promise((resolve) => setTimeout(resolve, 100))
   assert.equal(wsl.status('Ubuntu').state, 'stopped')
 }, 30_000)
+
+test("a WSL terminal holds its server: its agent's reports reach this PC through it, it is not stopped for being idle, and a crash starts it again", async () => {
+  const home = fakeHome('held')
+  const lines: string[] = []
+  const { manager: wsl } = manager({
+    homes: { Ubuntu: home },
+    idleMs: 500,
+    connected: (connection) =>
+      void followRelayedAgentState(
+        connection,
+        (line) => lines.push(line),
+        () => undefined,
+        50,
+      ),
+  })
+  wsl.hold('Ubuntu', 'sid-1')
+  await waitFor(() => wsl.current('Ubuntu') !== null)
+  const connection = wsl.current('Ubuntu')!
+  assert.ok(connection.agentStateSocket, 'the server says where its terminal agents report')
+  // A hook inside the distribution writes a frame; this PC hears the line.
+  const frame = JSON.stringify({ type: 'agent_state', agentId: 'agent-1', workspaceId: 'ws-1', event: 'Stop' })
+  await waitFor(
+    () => lines.includes(frame),
+    10_000,
+    () =>
+      new Promise<void>((resolve) => {
+        const socket = createConnection(connection.agentStateSocket!, () => socket.end(`${frame}\n`))
+        socket.on('close', () => resolve())
+        socket.on('error', () => resolve())
+      }),
+  )
+  // Well past the idle bound: still running while held.
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  assert.equal(wsl.status('Ubuntu').state, 'ready')
+  // A crash while held: started again after the backoff, with no message sent.
+  process.kill(readServerPid(home), 'SIGKILL')
+  await waitFor(() => wsl.status('Ubuntu').state === 'unavailable')
+  await waitFor(() => wsl.status('Ubuntu').state === 'ready', 20_000)
+  // Let go: idle again, and stopped.
+  wsl.release('Ubuntu', 'sid-1')
+  await waitFor(() => wsl.status('Ubuntu').state === 'stopped', 10_000)
+}, 60_000)
 
 test('a server with a schedule of its own to run is not stopped for being idle', async () => {
   const home = fakeHome('idle-schedule')

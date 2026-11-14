@@ -541,10 +541,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   const sendTerminalSessions = () =>
     rpc.emit(SERVER_EVENTS.terminalSessions, terminals?.runtime.sessions.listTerminals() ?? [])
   terminals?.runtime.subscribeSessionsChanged(sendTerminalSessions)
-  // A WSL distribution's reporter frames come through the shell's helper.
-  rpc.on(SERVER_EVENTS.agentStateLine, (payload) => {
-    if (typeof payload === 'string') terminals?.agentState.ingestLine(payload)
-  })
   serveShellTerminalRequests(rpc, terminals, launchAgent)
   serveShellAgentRequests(rpc, core.agents)
   // The terminal agents' pull request marks, read from this process's record

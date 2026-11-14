@@ -12,7 +12,6 @@ export const STUB_HELPER_INFO: WslHelperInfo = {
   arch: 'x64',
   nodePath: '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node',
   appDir: '/home/dev/.local/share/sprintengine-studio/0.4.0',
-  agentSocket: '/run/user/1000/sprintengine/abc123def456/agent.sock',
   mcpSocket: '/run/user/1000/sprintengine/abc123def456/mcp.sock',
   userDataDir: '/run/user/1000/sprintengine/abc123def456',
   pidDir: '/run/user/1000/sprintengine/abc123def456/sessions',

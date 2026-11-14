@@ -24,7 +24,7 @@ import {
 import type { ExecutionHost } from './execution-host'
 import { createPosixLocalHost } from './posix-local-host'
 import { createWindowsHost } from './windows-host'
-import { createWslHost } from './wsl-host'
+import { createWslHost, type WslDistributionLink } from './wsl-host'
 import { knownWslListing, listWslDistros, type WslListing } from './wsl-distro'
 import type { WslHelperClient } from './wsl-helper-client'
 
@@ -38,6 +38,12 @@ export type HostRegistryDeps = {
   createWslHelper?: (distro: string) => WslHelperClient
   /** How a distribution's Studio server, which holds its chats, stands (phase 7); absent where there are none. */
   server?: (distro: string) => WslServerSummary | undefined
+  /**
+   * The distributions' own Studio servers, which a WSL terminal's agent
+   * reports through: the core's, where the terminals run. Absent, no WSL
+   * launch is prepared in this process.
+   */
+  distribution?: WslDistributionLink
 }
 
 export type HostListing = HostsListResult
@@ -85,6 +91,7 @@ export function createHostRegistry(deps: HostRegistryDeps): HostRegistry {
     const host = createWslHost(distro, {
       readSettings,
       listed: () => knownListing()?.distros?.find((entry) => entry.name === distro),
+      ...(deps.distribution ? { distribution: deps.distribution } : {}),
       ...(deps.createWslHelper ? { helper: deps.createWslHelper(distro) } : {}),
     })
     wslHosts.set(distro, host)
