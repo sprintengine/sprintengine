@@ -20,6 +20,7 @@ import {
   STUB_SESSION_DIR,
   stubWslDistributionLink,
   stubWslHelper,
+  stubWslMachine,
   type StubDistributionLink,
   type StubHelper,
   type StubTerminalHostHandlers,
@@ -85,9 +86,7 @@ const mockPty = {
 
 async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness> {
   const spawned: Harness['spawned'] = []
-  const helper = stubWslHelper('Ubuntu', {
-    home: () => ({ home: '/home/dev' }),
-  })
+  const helper = stubWslHelper('Ubuntu')
   const distribution = stubWslDistributionLink(undefined, terminal)
   current = { spawned, helper, distribution }
   const sender: TerminalViewer = { isGone: () => false, deliver: () => undefined }
@@ -108,6 +107,7 @@ async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness
       readHostSettings: () => ({}),
       createWslHelper: () => helper,
       distribution,
+      machine: stubWslMachine(),
     }),
   )
   const runtimeModule = await import('./terminal-runtime')
@@ -223,12 +223,14 @@ test("a plain terminal on a WSL machine waits for its distribution's server and 
   await h.runtime.shutdown()
 })
 
-test('a WSL launch whose helper cannot start fails with the reason, and nothing is started', async () => {
+test("a WSL launch whose distribution's server cannot start fails with the reason, and nothing is started", async () => {
   const h = await harness()
-  h.helper.failWith = new WslSetupError("Couldn't set up WSL: no network to download Node.js", {
-    fatal: true,
-    code: 'node-download',
-  })
+  h.distribution.connect = async () => {
+    throw new WslSetupError("Couldn't set up WSL: no network to download Node.js", {
+      fatal: true,
+      code: 'node-download',
+    })
+  }
   for (const payload of [{ sessionId: 'wsl-down-plain', kind: 'terminal', shellOnly: true }, agent('wsl-down-agent')]) {
     const result = await h.spawn(payload)
     assert.equal(result.ok, false)

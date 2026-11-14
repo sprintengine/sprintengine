@@ -12,10 +12,11 @@
 //   - `PosixLocalHost`: macOS and Linux, the only host there. It is a move of
 //     what those platforms always did; nothing about a launch changes.
 //   - `WindowsHost`: this PC, natively (PowerShell, CIM process reads).
-//   - `WslHost`: one per WSL distribution. Everything it answers comes from a
-//     long-lived helper inside the distribution (`resources/wsl-helper/`),
-//     reached over the stdio of one `wsl.exe` (`wsl-helper-client.ts`). The
-//     methods the helper answers are marked below.
+//   - `WslHost`: one per WSL distribution. What it answers comes from inside
+//     the distribution: its own Studio server for launches, git, the home and
+//     watches (`wsl-host.ts`), and, until it is retired, a helper reached over
+//     the stdio of one `wsl.exe` (`wsl-helper-client.ts`) for CLI detection and
+//     running a program.
 //
 // A host also says how an agent there reports back (`agentIntegration`): the
 // socket its hooks write to, the Node that runs them, the MCP gateway entry,

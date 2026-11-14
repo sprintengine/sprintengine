@@ -31,7 +31,7 @@ function deliver(changes: GitCheckoutChange[]): void {
 /**
  * A git directory's watch, placed where its events are heard. On Windows a
  * directory inside a WSL distribution (`\\wsl.localhost\<distro>\…`) is
- * watched by that distribution's helper, because Windows accepts a watch on
+ * watched by that distribution's own Studio (`files.watchPath`), because Windows accepts a watch on
  * that share and then reports nothing; everything else is an ordinary
  * `fs.watch`.
  */

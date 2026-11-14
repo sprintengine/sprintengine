@@ -1,7 +1,8 @@
-import { studioParams, studioParamsRefused, type StudioMethodTable } from './contract.js'
+import { studioNoParams, studioParams, studioParamsRefused, type StudioMethodTable } from './contract.js'
 import {
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
+  STUDIO_ENVIRONMENT_MACHINE_CAPABILITY,
   STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY,
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
@@ -164,6 +165,38 @@ export type StudioTerminalPluginCopy = {
   statusLineScriptPath: string | null
 }
 
+/** A git command for `environment.git`: its folder and arguments as the distribution spells them. */
+export type StudioEnvironmentGitAsk = {
+  /** An absolute path in the distribution. */
+  cwd: string
+  args: string[]
+  /** Null for no deadline: a git write runs the repository's hooks, and ending one part-way leaves a lock. */
+  timeoutMs: number | null
+  /** Variables laid over the server's own environment. */
+  env?: Record<string, string>
+  /** Bytes for git's stdin, in base64, so a patch's CRLFs and a pathspec list's NULs cross unchanged. */
+  stdinB64?: string
+}
+
+/** How a command run in the distribution ended. Each stream is capped; `truncated` when one was cut. */
+export type StudioEnvironmentRunOutcome = {
+  code: number
+  stdout: string
+  stderr: string
+  timedOut: boolean
+  spawnFailed?: boolean
+  truncated?: boolean
+}
+
+/** The distribution's home, and the config-home variables its login shell sets, as Linux paths. */
+export type StudioEnvironmentHome = {
+  home: string
+  env: { CLAUDE_CONFIG_DIR?: string; CODEX_HOME?: string; XDG_CONFIG_HOME?: string }
+}
+
+/** The most bytes of git stdin `environment.git` carries: it rides in one client frame. */
+export const MAX_ENVIRONMENT_GIT_STDIN_BYTES = 768 * 1024
+
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
   { ok: true; id: string; url: string; code: string | null; paste: boolean } | { ok: false; message: string }
@@ -236,6 +269,14 @@ export type StudioEnvironmentAccessMethodMap = {
    * (`enabledSkills`, by id), and say where it is. The desktop's shell alone asks.
    */
   'environment.pluginCopy': { params: { enabledSkills: string[] }; result: StudioTerminalPluginCopy }
+  /**
+   * Run git in a folder of this distribution for the desktop that holds it
+   * (`git -C <cwd> <args>`), with this Studio's login environment. The
+   * desktop's shell alone asks.
+   */
+  'environment.git': { params: StudioEnvironmentGitAsk; result: StudioEnvironmentRunOutcome }
+  /** This distribution's home and config-home variables. The desktop's shell alone asks. */
+  'environment.home': { params: Record<string, never>; result: StudioEnvironmentHome }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
   'providers.signInStart': { params: { commandId: string; providerId: string }; result: StudioSignInStarted }
   /** Send the code the browser showed back to a sign-in that asked for one. */
@@ -270,6 +311,24 @@ const LAUNCHES =
 const LAUNCH_ENTRY = /^[A-Za-z0-9._-]{1,200}$/u
 const PID_KEY = /^[A-Za-z0-9._-]{1,200}$/u
 const SKILL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/u
+const MACHINE =
+  'It runs git and reads the home on this machine for the desktop that holds this Studio, so only that desktop asks.'
+const machine = {
+  scope: null,
+  mutation: false,
+  capability: STUDIO_ENVIRONMENT_MACHINE_CAPABILITY,
+  owner: MACHINE,
+  shell: MACHINE,
+} as const
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/u
+/** A day: past it, a deadline is a mistake rather than a wait. */
+const MAX_GIT_TIMEOUT_MS = 24 * 60 * 60 * 1000
+
+/** An absolute path in the distribution, as git takes it. */
+function linuxPath(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('/') && value.length <= 4096 && !value.includes('\0')
+}
 const terminalHost = {
   scope: null,
   mutation: false,
@@ -519,6 +578,60 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
       return studioParams({ enabledSkills: [...new Set(skills as string[])] })
     },
   },
+  'environment.git': {
+    ...machine,
+    params: (value) => {
+      if (!linuxPath(value.cwd)) return studioParamsRefused('"cwd" is an absolute path in the distribution.')
+      const args = value.args
+      if (
+        !Array.isArray(args) ||
+        args.length > 4096 ||
+        !args.every((arg) => typeof arg === 'string' && arg.length <= 65_536 && !arg.includes('\0'))
+      )
+        return studioParamsRefused('"args" lists git\'s arguments, as strings without NUL.')
+      const timeoutMs = value.timeoutMs
+      if (
+        timeoutMs !== null &&
+        !(
+          typeof timeoutMs === 'number' &&
+          Number.isInteger(timeoutMs) &&
+          timeoutMs > 0 &&
+          timeoutMs <= MAX_GIT_TIMEOUT_MS
+        )
+      )
+        return studioParamsRefused('"timeoutMs" is a positive number of milliseconds, or null for no deadline.')
+      let env: Record<string, string> | undefined
+      if (value.env !== undefined) {
+        const entries =
+          value.env && typeof value.env === 'object' && !Array.isArray(value.env) ? Object.entries(value.env) : null
+        if (
+          !entries ||
+          entries.length > 64 ||
+          !entries.every(([name, text]) => ENV_NAME.test(name) && typeof text === 'string')
+        )
+          return studioParamsRefused('"env" holds at most 64 plain variables.')
+        env = Object.fromEntries(entries) as Record<string, string>
+      }
+      const stdinB64 = value.stdinB64
+      if (
+        stdinB64 !== undefined &&
+        !(
+          typeof stdinB64 === 'string' &&
+          BASE64.test(stdinB64) &&
+          stdinB64.length <= (MAX_ENVIRONMENT_GIT_STDIN_BYTES * 4) / 3 + 4
+        )
+      )
+        return studioParamsRefused(`"stdinB64" is base64, of at most ${MAX_ENVIRONMENT_GIT_STDIN_BYTES} bytes.`)
+      return studioParams({
+        cwd: value.cwd,
+        args: args as string[],
+        timeoutMs: timeoutMs as number | null,
+        ...(env ? { env } : {}),
+        ...(stdinB64 !== undefined ? { stdinB64: stdinB64 as string } : {}),
+      })
+    },
+  },
+  'environment.home': { ...machine, params: studioNoParams },
   'providers.signInStart': {
     ...signIn,
     params: (value) => {

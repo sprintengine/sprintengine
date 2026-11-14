@@ -36,7 +36,7 @@ import { WslSetupError } from './wsl-setup-error'
 import { NEEDS_INSTALL_EXIT, parseNeedReport, type NeedReport } from './wsl-install'
 
 /** Must equal `PROTOCOL_VERSION` in `resources/wsl-helper/lib/frames.mjs`. */
-export const WSL_HELPER_PROTOCOL = 4
+export const WSL_HELPER_PROTOCOL = 5
 
 export type WslHelperInfo = {
   uid: number
@@ -161,9 +161,6 @@ export function classifyWslFailure(text: string, code: number | null): WslSetupE
   })
 }
 
-/** A directory the helper watches for main; `close` stops it. */
-export type WslDirWatch = { close(): void }
-
 export type WslHelperClient = {
   readonly distro: string
   state(): WslHelperState
@@ -178,13 +175,6 @@ export type WslHelperClient = {
    * for it, and the answer is null. For tidying that can wait.
    */
   requestIfRunning<T>(method: string, params?: unknown): Promise<T | null>
-  /**
-   * Watches a Linux directory inside the distribution. Registered with the
-   * running helper, and again with each helper started after it; a watch never
-   * starts the helper itself. `onError` is called once when the directory
-   * cannot be watched, after which the watch is dead.
-   */
-  watch(path: string, recursive: boolean, listener: (filename: string | null) => void, onError: () => void): WslDirWatch
   /** Stops the helper for good: the app is quitting, so every session it launched there is ended too. */
   shutdown(): Promise<void>
 }
@@ -207,16 +197,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
   let nextId = 1
   const pending = new Map<number, Pending>()
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  type WatchEntry = {
-    path: string
-    recursive: boolean
-    listener: (filename: string | null) => void
-    onError: () => void
-    remote: number | null
-    closed: boolean
-  }
-  const watches = new Set<WatchEntry>()
-  const watchesByRemote = new Map<number, WatchEntry>()
 
   function write(frame: unknown): void {
     const target = running?.process.stdin
@@ -253,15 +233,7 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       else entry.resolve(frame.result)
       armIdle()
     } else if (frame.t === 'ev') {
-      if (frame.event === 'pathsChanged') {
-        deps.onEvent({ event: 'pathsChanged' })
-      } else if (frame.event === 'watch' && typeof frame.id === 'number') {
-        const entry = watchesByRemote.get(frame.id)
-        if (entry && !entry.closed) entry.listener(typeof frame.filename === 'string' ? frame.filename : null)
-      } else if (frame.event === 'watchError' && typeof frame.id === 'number') {
-        const entry = watchesByRemote.get(frame.id)
-        if (entry) failWatch(entry)
-      }
+      if (frame.event === 'pathsChanged') deps.onEvent({ event: 'pathsChanged' })
     }
   }
 
@@ -277,10 +249,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       item.reject(new WslSetupError(`The WSL helper for ${deps.distro} stopped.`, { fatal: false, code: 'stopped' }))
       pending.delete(id)
     }
-    // The helper's watches went with it; each is registered again with the
-    // next helper that starts.
-    watchesByRemote.clear()
-    for (const entry of watches) entry.remote = null
     if (!wasIntentional) {
       crashes = now() - entry.startedAt > HEALTHY_RUN_MS ? 1 : crashes + 1
       lastCrashAt = now()
@@ -546,7 +514,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
         // Deliberately not reset: `crashes` counts exits in a row, and a helper
         // that starts and then dies again at once should back off further.
         armIdle()
-        for (const watch of watches) registerWatch(watch)
         return entry.info
       } catch (error) {
         const setupError =
@@ -627,39 +594,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
     return request<T>(method, params)
   }
 
-  function failWatch(entry: WatchEntry): void {
-    if (entry.closed) return
-    entry.closed = true
-    watches.delete(entry)
-    if (entry.remote !== null) watchesByRemote.delete(entry.remote)
-    entry.remote = null
-    entry.onError()
-  }
-
-  // Registers a watch with the helper that runs now, if one does. A helper
-  // that stops takes its watches with it, and the next one to start is given
-  // them again (`startFresh`).
-  function registerWatch(entry: WatchEntry): void {
-    const at = running
-    if (state !== 'ready' || !at || entry.closed || entry.remote !== null) return
-    void request<{ id: number }>('watch.add', { path: entry.path, recursive: entry.recursive }).then(
-      (answer) => {
-        if (running !== at) return
-        if (entry.closed) {
-          void requestIfRunning('watch.remove', { id: answer.id }).catch(() => undefined)
-          return
-        }
-        entry.remote = answer.id
-        watchesByRemote.set(answer.id, entry)
-      },
-      () => {
-        // Only a refusal from the helper that registered it is the watch's
-        // failure; a helper that stopped meanwhile is registered with again.
-        if (running === at) failWatch(entry)
-      },
-    )
-  }
-
   async function stop(): Promise<void> {
     const entry = running
     if (!entry) return
@@ -693,24 +627,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
     start,
     request,
     requestIfRunning,
-    watch(path, recursive, listener, onError) {
-      const entry: WatchEntry = { path, recursive, listener, onError, remote: null, closed: false }
-      watches.add(entry)
-      registerWatch(entry)
-      return {
-        close() {
-          if (entry.closed) return
-          entry.closed = true
-          watches.delete(entry)
-          const remote = entry.remote
-          entry.remote = null
-          if (remote !== null) {
-            watchesByRemote.delete(remote)
-            void requestIfRunning('watch.remove', { id: remote }).catch(() => undefined)
-          }
-        },
-      }
-    },
     async shutdown() {
       await starting?.catch(() => undefined)
       await stop()

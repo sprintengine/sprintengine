@@ -4,9 +4,12 @@
 
 import type { WslHelperClient, WslHelperInfo } from '../src/main/hosts/wsl-helper-client'
 import type { WslSetupError } from '../src/main/hosts/wsl-setup-error'
-import type { WslDistributionFacts, WslDistributionLink } from '../src/main/hosts/wsl-host'
+import type { WslDistributionFacts, WslDistributionLink, WslMachineAccess } from '../src/main/hosts/wsl-host'
 import type { SubtreeLiveReason } from '../src/main/terminal-subtree-probe'
 import type {
+  StudioEnvironmentGitAsk,
+  StudioEnvironmentHome,
+  StudioEnvironmentRunOutcome,
   StudioLaunchFile,
   StudioTerminalPluginCopy,
   StudioTerminalProcessesAsk,
@@ -22,19 +25,10 @@ export const STUB_HELPER_INFO: WslHelperInfo = {
   appDir: '/home/dev/.local/share/sprintengine-studio/0.4.0',
 }
 
-export type StubWatch = {
-  path: string
-  recursive: boolean
-  listener: (filename: string | null) => void
-  onError: () => void
-  closed: boolean
-}
-
 export type StubHelper = WslHelperClient & {
   requests: Array<{ method: string; params: unknown; timeoutMs: number | null | undefined }>
   starts: number
   failWith: WslSetupError | null
-  watches: StubWatch[]
 }
 
 export function stubWslHelper(
@@ -48,7 +42,6 @@ export function stubWslHelper(
     requests: [],
     starts: 0,
     failWith: null,
-    watches: [],
     state: () => (running ? 'ready' : 'stopped'),
     info: () => (running ? info : null),
     lastError: () => stub.failWith,
@@ -68,15 +61,6 @@ export function stubWslHelper(
     async requestIfRunning<T>(method: string, params?: unknown): Promise<T | null> {
       if (!running) return null
       return stub.request<T>(method, params)
-    },
-    watch(path, recursive, listener, onError) {
-      const entry: StubWatch = { path, recursive, listener, onError, closed: false }
-      stub.watches.push(entry)
-      return {
-        close() {
-          entry.closed = true
-        },
-      }
     },
     async shutdown() {
       running = false
@@ -184,4 +168,50 @@ export function stubWslDistributionLink(
     },
   }
   return link
+}
+
+export type StubWatch = {
+  path: string
+  recursive: boolean
+  listener: (filename: string | null) => void
+  onError: () => void
+  closed: boolean
+}
+
+export type StubMachine = WslMachineAccess & {
+  /** What the distribution's Studio was asked, in order. */
+  asked: Array<{ method: 'git' | 'home'; distro: string; ask?: StudioEnvironmentGitAsk }>
+  watches: StubWatch[]
+}
+
+/** A stand-in for a distribution's Studio as git, the home and watches reach it. */
+export function stubWslMachine(
+  handlers: {
+    git?: (ask: StudioEnvironmentGitAsk) => StudioEnvironmentRunOutcome | Promise<StudioEnvironmentRunOutcome>
+    home?: () => StudioEnvironmentHome | Promise<StudioEnvironmentHome>
+  } = {},
+): StubMachine {
+  const machine: StubMachine = {
+    asked: [],
+    watches: [],
+    async git(distro, ask) {
+      machine.asked.push({ method: 'git', distro, ask })
+      if (!handlers.git) throw new Error('The stub machine runs no git.')
+      return handlers.git(ask)
+    },
+    async home(distro) {
+      machine.asked.push({ method: 'home', distro })
+      return handlers.home ? handlers.home() : { home: '/home/dev', env: {} }
+    },
+    watchPath(_distro, path, recursive, listener, onError) {
+      const entry: StubWatch = { path, recursive, listener, onError, closed: false }
+      machine.watches.push(entry)
+      return {
+        close() {
+          entry.closed = true
+        },
+      }
+    },
+  }
+  return machine
 }

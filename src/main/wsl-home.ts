@@ -1,8 +1,8 @@
 // Where a WSL distribution keeps a CLI's files, as this (Windows) process can
 // reach them. The Skills tab reads it to list what a CLI in WSL has installed.
 //
-// The answer comes from the distribution's own host (its helper), which read
-// the person's login shell once: the home, and the config-home variables that
+// The answer comes from the distribution's own Studio server, which read the
+// person's login shell when it started: the home, and the config-home variables that
 // move a CLI's files (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_CONFIG_HOME`),
 // each already turned into the UNC path Windows opens it by.
 
@@ -39,5 +39,5 @@ export function createWslHomeProbe(
   }
 }
 
-/** The app's one probe. The helper keeps the answer for as long as it runs. */
+/** The app's one probe. A WSL host keeps the answer of its last launch preparation. */
 export const probeWslHome: WslHomeProbe = createWslHomeProbe()

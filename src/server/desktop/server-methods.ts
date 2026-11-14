@@ -82,6 +82,13 @@ export const SERVER_METHODS = {
   /** `{ windowKey }` → nothing: that window's document has gone; each distribution it reached ends its connections. */
   wslRevokeWindow: 'wsl.revoke-window',
   /**
+   * `{ distro, method: 'git', ask }` → the run's outcome, `{ distro, method:
+   * 'home' }` → the home: the shell's git and home lookups on a WSL
+   * distribution, asked of its own Studio over the owner connection this
+   * process holds (`WslMachineAccess`). Nothing else is forwarded.
+   */
+  wslMachine: 'wsl.machine',
+  /**
    * `{ which: 'local' | 'wsl' }` → how many machines were asked: the boot's
    * detection of the agent CLIs, which the shell times and the server runs
    * (the CLIs and their version check are the core's).
