@@ -22,13 +22,14 @@ import type { TailnetScope } from '../../../shared/tailnet'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
 import {
   createTailnetGatewayServer,
+  MAX_DEVICE_ANSWER_BYTES,
   MAX_DEVICE_OUTSTANDING_REQUESTS,
   MAX_SOCKETS_PER_DEVICE,
   MAX_STREAM_QUEUED_MESSAGES,
   MAX_TICKETS_PER_DEVICE,
   type TailnetGatewayServer,
 } from './tailnet-gateway-server'
-import { TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
+import { TAILNET_MCP_PATH, TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
 import { isDesktopWindowOrigin, tailnetDeviceGrant } from './tailnet-studio-endpoint'
 
 // A paired device on the Studio protocol: the real tailnet listener on
@@ -683,6 +684,71 @@ test("a device's requests share one budget across its sockets: closing and reope
   // And a Studio socket of the same device draws on the same budget.
   const window = await deviceClient(r, phone.token)
   assert.equal(await refusal(window.rpc['workspaces.list']({})), 'busy')
+})
+
+test("the MCP endpoint's calls draw on the device's budget too: parallel POSTs are no way around it", async () => {
+  let started = 0
+  const stuck = {
+    name: 'workspace.stuck',
+    description: 'Never answers.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      started += 1
+      return new Promise<never>(() => undefined)
+    },
+  }
+  const r = await rig(null, [stuck])
+  const phone = r.pair(['workspace:read'])
+  const abort = new AbortController()
+  cleanups.push(() => abort.abort())
+  const post = (id: number) =>
+    fetch(`http://127.0.0.1:${r.port()}${TAILNET_MCP_PATH}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${phone.token}`, 'content-type': 'application/json' },
+      body: toolCall(id, 'workspace.stuck'),
+      signal: abort.signal,
+    })
+  for (let id = 1; id <= MAX_DEVICE_OUTSTANDING_REQUESTS; id++) void post(id).catch(() => undefined)
+  await until(() => started === MAX_DEVICE_OUTSTANDING_REQUESTS, 'the budget to be spent')
+  const refused = await post(999)
+  assert.equal(refused.status, 429)
+  const body = (await refused.json()) as { id: number; error: { code: number } }
+  assert.equal(body.id, 999)
+  assert.equal(body.error.code, -32000)
+  assert.equal(started, MAX_DEVICE_OUTSTANDING_REQUESTS, 'the refused call never ran')
+})
+
+test('an answer past the size a device is sent is refused under its id, on the MCP endpoint and a tool stream', async () => {
+  const huge = {
+    name: 'workspace.huge',
+    description: 'Answers more than a device is sent.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => ({ content: [{ type: 'text' as const, text: 'a'.repeat(MAX_DEVICE_ANSWER_BYTES) }] }),
+  }
+  const r = await rig(null, [huge])
+  const phone = r.pair(['workspace:read'])
+  const response = await fetch(`http://127.0.0.1:${r.port()}${TAILNET_MCP_PATH}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${phone.token}`, 'content-type': 'application/json' },
+    body: toolCall(5, 'workspace.huge'),
+  })
+  const text = await response.text()
+  assert.ok(text.length < 1024, `the answer was sent: ${text.length} bytes`)
+  const posted = JSON.parse(text) as { id: number; error?: { message: string } }
+  assert.equal(posted.id, 5)
+  assert.match(posted.error?.message ?? '', /over the 8 MB a device is sent/)
+
+  const { socket } = await toolStream(r.port(), phone.token)
+  const streamed = new Promise<string>((resolve) =>
+    socket.addEventListener('message', (event) => {
+      if (String(event.data).includes('"id":6')) resolve(String(event.data))
+    }),
+  )
+  socket.send(toolCall(6, 'workspace.huge'))
+  const frame = await streamed
+  assert.ok(frame.length < 1024, `the answer was sent: ${frame.length} bytes`)
+  assert.equal((JSON.parse(frame) as { id: number }).id, 6)
+  socket.close()
 })
 
 test('a dropped device socket comes back and resumes its chat by cursor: no gap, no repeat', async () => {
