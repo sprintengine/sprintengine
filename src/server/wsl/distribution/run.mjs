@@ -160,10 +160,3 @@ export function runArgv({ argv, cwd, env, timeoutMs, stdin }) {
     })
   })
 }
-
-/** An environment for a child: the person's kept variables, then the request's own. */
-export function childEnv(loginEnv, extra) {
-  const env = { ...loginEnv }
-  for (const [name, value] of Object.entries(extra ?? {})) if (ENV_NAME.test(name)) env[name] = value
-  return env
-}
