@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { listWslDistros } from '../../main/hosts/wsl-distro'
-import { installNodeInto, installTree, wslNodeDigests, wslProfileId } from '../../main/hosts/wsl-helper-runtime'
+import { installNodeInto, installTree, wslNodeDigests, wslProfileId } from '../../main/hosts/wsl-tree-install'
 import { streamedAppPayload, type StreamedPayload } from '../../main/hosts/wsl-install'
 import { wslExeRunner } from '../../main/hosts/wsl-runner'
 import { wslHostId, type ExecutionHostId, type ExecutionHostSettings } from '../../shared/execution-host'

@@ -221,9 +221,10 @@ document, the command catalog, @-mention search, history — are still direct
   `local` and `wsl:<distro>`. The WSL install pipeline (`wsl-node-runtime.ts`:
   pinned `v24.21.0`, SHA-256 per arch, downloaded on the Windows side;
   `wsl-install.ts`: streamed over `wsl.exe` stdin into a staging directory,
-  `flock`, digest marker, `mv -T`, pruning) and the helper protocol
-  (`resources/wsl-helper/`, newline JSON over stdio, a `boot` line then
-  `hello`) are the template for both the WSL server and the SSH bootstrap.
+  `flock`, digest marker, `mv -T`, pruning) and the WSL helper's protocol
+  (newline JSON over stdio, a `boot` line then `hello`; the helper itself was
+  retired in 2026-11) were the template for both the WSL server and the SSH
+  bootstrap.
 - **`ConversationService`** (`conversation-service.ts`): a service object
   with no IPC in it, which the Studio protocol's chat surface calls (the
   conversation IPC that once bound it to `ipcMain` is gone). Every domain that moves to the server

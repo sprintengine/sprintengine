@@ -258,8 +258,12 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['environment.launchFiles', 'environment.terminalProcesses', 'environment.pluginCopy'],
       ],
       [
-        'git and the home on a WSL distribution for the desktop that holds it, the shell’s alone',
-        ['environment.git', 'environment.home'],
+        'git, the home, CLI detection and runs on a WSL distribution for the desktop that holds it, the shell’s alone',
+        ['environment.git', 'environment.home', 'environment.detectClis', 'environment.run'],
+      ],
+      [
+        'a WSL distribution saying its PATH changed, for the desktop that holds it: an owner’s',
+        ['environment.cliPathsChanged'],
       ],
       [
         'a CLI’s login on the machine, an owner’s: it runs the login there and keeps its credential',

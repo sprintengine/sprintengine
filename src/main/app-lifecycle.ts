@@ -729,9 +729,8 @@ export function registerAppLifecycle({
   //     once more for anything the legs above changed.
   //  5. The integrations the app writes into repositories, now that no agent
   //     it launched is left to run them (a cut-short removal resumes next quit).
-  //  6. What costs nothing if lost: the WSL helpers (they exit when this
-  //     process's end closes their stdin), telemetry's network send, and the
-  //     module kernel's own shutdown.
+  //  6. What costs nothing if lost: the machines' own hold on anything they
+  //     keep, telemetry's network send, and the module kernel's own shutdown.
   let shutdownRun: Promise<void> | null = null
   let leavingForUpdate = false
   // The pool's wait for slot steps in flight (in process; out of process the
@@ -806,9 +805,8 @@ export function registerAppLifecycle({
       // writes them back, and the installer's time limit is better spent on
       // the legs after this one.
       ['integrations', () => (leavingForUpdate ? undefined : removeSessionIntegrations?.())],
-      // Each WSL helper is told to shut down (it would also go on its own when
-      // this process's end closes its stdin).
-      ['WSL helpers', () => hostRegistry().dispose()],
+      // Each machine lets go of what it keeps for itself.
+      ['machines', () => hostRegistry().dispose()],
       // Last of the app-owned legs: every service above has had its chance to
       // record, and a network round trip must not sit in front of anything
       // that still has state to persist.
@@ -861,7 +859,7 @@ export function registerAppLifecycle({
       ['pull requests (dispose)', () => pullRequestRecord?.dispose()],
       ['studio server', () => serverStopped],
       ['integrations', () => (leavingForUpdate ? undefined : removeSessionIntegrations?.())],
-      ['WSL helpers', () => hostRegistry().dispose()],
+      ['machines', () => hostRegistry().dispose()],
       ['telemetry', () => analytics?.shutdown()],
       ['modules', () => moduleKernel?.runShutdown()],
     ]

@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
+import { captureLoginEnv } from '../wsl/distribution/login-env.mjs'
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { readDriveMountRoot } from '../wsl/drive-mount-root'
 import { chatsAreWorking } from '../core/chats-working'
@@ -148,7 +148,7 @@ export function serveFrontDoorPurpose(
 /**
  * Inside WSL the server was started by `wsl.exe --exec` with almost no
  * environment: no profile has run, so PATH lacks where the person's CLIs live.
- * The helper's capture is read once here, the same fixed list of variables,
+ * The login shell's capture (`wsl/distribution/login-env.mjs`) is read once here, a fixed list of variables,
  * and laid over this process's environment before any chat can spawn.
  */
 async function adoptLoginEnvironment(log: (message: string) => void): Promise<void> {

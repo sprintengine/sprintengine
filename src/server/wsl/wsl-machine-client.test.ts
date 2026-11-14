@@ -69,10 +69,13 @@ test("git and the home are the distribution's Studio's, over the owner connectio
   )
   await access.git('Ubuntu', { cwd: '/home/dev/repo', args: ['status'], timeoutMs: 1_000 })
   assert.deepEqual(await access.home('Ubuntu'), { home: '/home/dev', env: {} })
+  await access.run('Ubuntu', { argv: ['gh', '--version'], timeoutMs: 1_000 })
+  await access.detectClis('Ubuntu', [{ binary: 'claude' }], false).catch(() => undefined)
   assert.deepEqual(
     fake.requests.map((request) => request.method),
-    ['environment.git', 'environment.home'],
+    ['environment.git', 'environment.home', 'environment.run', 'environment.detectClis'],
   )
+  assert.deepEqual(fake.requests[3].params, { requests: [{ binary: 'claude' }] }, 'force only when asked')
   const none = createWslMachineAccess(
     () => null,
     (distro) => new Error(`no server for ${distro}`),

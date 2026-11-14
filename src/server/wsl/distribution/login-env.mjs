@@ -1,16 +1,16 @@
 // The person's own environment, read once from their login shell.
 //
-// `wsl.exe --exec` starts the helper with almost nothing: no profile has run,
+// `wsl.exe --exec` starts the Studio server with almost nothing: no profile has run,
 // so PATH lacks `~/.local/bin`, nvm's node and every other place CLIs live,
 // and nothing git's credential setup exports (an ssh agent's socket, a GitHub
 // token) is there. A CLI check or a git command run from that environment
 // would say "not installed" or fail to authenticate for a person whose own
 // terminal works fine.
 //
-// So once per helper start, one login shell prints its environment and the
-// helper keeps a fixed list of variables from it: PATH and the locale, and the
+// So once per start, one login shell prints its environment and the
+// server keeps a fixed list of variables from it: PATH and the locale, and the
 // ones git, ssh and the forges read. Nothing outside that list is kept, and
-// none of it is ever logged or sent to main.
+// none of it is ever logged or sent to the desktop.
 
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -160,7 +160,7 @@ function dump(shell, flags, timeoutMs, keep, env) {
 
 /**
  * The kept variables from an interactive login shell (where nvm and most
- * version managers set PATH up), else a plain login shell, else the helper's
+ * version managers set PATH up), else a plain login shell, else this process's
  * own environment. Always has a PATH. `keep` replaces the fixed list, and
  * `env` is what the shell starts with (this process's environment when absent).
  */

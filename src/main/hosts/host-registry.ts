@@ -26,7 +26,6 @@ import { createPosixLocalHost } from './posix-local-host'
 import { createWindowsHost } from './windows-host'
 import { createWslHost, type WslDistributionLink, type WslMachineAccess } from './wsl-host'
 import { knownWslListing, listWslDistros, type WslListing } from './wsl-distro'
-import type { WslHelperClient } from './wsl-helper-client'
 
 export type HostRegistryDeps = {
   platform?: NodeJS.Platform
@@ -34,8 +33,6 @@ export type HostRegistryDeps = {
   readHostSettings: () => Partial<Record<ExecutionHostId, ExecutionHostSettings>>
   listDistros?: (options: { force: boolean }) => Promise<WslListing>
   knownListing?: () => WslListing | null
-  /** Stands in for a distribution's helper client in tests. */
-  createWslHelper?: (distro: string) => WslHelperClient
   /** How a distribution's Studio server, which holds its chats, stands (phase 7); absent where there are none. */
   server?: (distro: string) => WslServerSummary | undefined
   /**
@@ -98,7 +95,6 @@ export function createHostRegistry(deps: HostRegistryDeps): HostRegistry {
       ...(deps.distribution ? { distribution: deps.distribution } : {}),
       ...(deps.enabledSkills ? { enabledSkills: deps.enabledSkills } : {}),
       ...(deps.machine ? { machine: deps.machine } : {}),
-      ...(deps.createWslHelper ? { helper: deps.createWslHelper(distro) } : {}),
     })
     wslHosts.set(distro, host)
     return host

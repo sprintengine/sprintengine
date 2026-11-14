@@ -648,6 +648,11 @@ stdinB64? }` → `{ code, stdout, stderr, timedOut, spawnFailed?, truncated? }`)
 distribution, and its home and config-home variables, asked of its own Studio by the desktop
 that holds it. Served by a WSL distribution's Studio only. The desktop also follows a git
 directory there with the owner's `files.watchPath` (`includeIgnored`).
+The same capability also offers `environment.detectClis` (`{ requests: [{ binary, versionArgs? }],
+force? }` → `{ results }`, each found with what its version printed, not found, or an error) and
+`environment.run` (`{ argv, cwd?, timeoutMs, env? }` → the run's outcome), both the shell's, and
+the owner topic `environment.cliPathsChanged` (payload `{}`: a CLI may have come or gone on the
+distribution's PATH), which the desktop follows on its owner connection (2026-11-14).
 The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a
 WSL distribution's Studio says where it mounts the Windows drives (`/mnt/` unless
 its wsl.conf says otherwise, null when it mounts none), so a client on Windows

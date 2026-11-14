@@ -1,12 +1,12 @@
 // Finding agent CLIs on the person's PATH, without a shell per check.
 //
-// The login-shell PATH is read once per helper start (`login-env.mjs`). A CLI
+// The login-shell PATH is read once per server start (`login-env.mjs`). A CLI
 // is found by walking that PATH the way `command -v` does, and its version is
 // asked only when the file it resolves to is new or has changed (path, size
 // and mtime), so a window refocus costs a few `stat` calls rather than a
 // process per CLI. The PATH directories on the Linux file system are watched
 // (inotify through `fs.watch`); an install or removal there drops the cache
-// and tells main, which re-reads availability for this machine.
+// and tells the desktop, which re-reads availability for this machine.
 //
 // Directories under `/mnt/` (the Windows PATH WSL appends by default) are still
 // searched, last, but never watched: the Windows drives are slow to watch and

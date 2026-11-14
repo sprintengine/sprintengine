@@ -1,4 +1,10 @@
-import { studioNoParams, studioParams, studioParamsRefused, type StudioMethodTable } from './contract.js'
+import {
+  studioNoParams,
+  studioParams,
+  studioParamsRefused,
+  type StudioMethodTable,
+  type StudioTopicTable,
+} from './contract.js'
 import {
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
@@ -194,6 +200,22 @@ export type StudioEnvironmentHome = {
   env: { CLAUDE_CONFIG_DIR?: string; CODEX_HOME?: string; XDG_CONFIG_HOME?: string }
 }
 
+/** A CLI to find on the distribution's login PATH (`binary`: a name, or a path), and how to ask its version. */
+export type StudioCliProbeAsk = { binary: string; versionArgs?: string[] }
+
+/** What finding a CLI there said: not found, found with what its version printed, or why it could not be checked. */
+export type StudioCliProbeAnswer =
+  { found: false } | { found: true; path: string; output: string; timedOut: boolean } | { error: string }
+
+/** A program for `environment.run`: an argv, never a shell string, always with a deadline. */
+export type StudioEnvironmentRunAsk = {
+  argv: string[]
+  /** An absolute path in the distribution; its home when absent. */
+  cwd?: string
+  timeoutMs: number
+  env?: Record<string, string>
+}
+
 /** The most bytes of git stdin `environment.git` carries: it rides in one client frame. */
 export const MAX_ENVIRONMENT_GIT_STDIN_BYTES = 768 * 1024
 
@@ -277,6 +299,16 @@ export type StudioEnvironmentAccessMethodMap = {
   'environment.git': { params: StudioEnvironmentGitAsk; result: StudioEnvironmentRunOutcome }
   /** This distribution's home and config-home variables. The desktop's shell alone asks. */
   'environment.home': { params: Record<string, never>; result: StudioEnvironmentHome }
+  /**
+   * Find CLIs on this distribution's login PATH and ask each its version, a
+   * changed file asked again (`force`: every one). The desktop's shell alone asks.
+   */
+  'environment.detectClis': {
+    params: { requests: StudioCliProbeAsk[]; force?: boolean }
+    result: { results: StudioCliProbeAnswer[] }
+  }
+  /** Run a program here for the desktop (its `gh` checks, a CLI's install, MCP sync). The desktop's shell alone asks. */
+  'environment.run': { params: StudioEnvironmentRunAsk; result: StudioEnvironmentRunOutcome }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
   'providers.signInStart': { params: { commandId: string; providerId: string }; result: StudioSignInStarted }
   /** Send the code the browser showed back to a sign-in that asked for one. */
@@ -324,6 +356,26 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/u
 /** A day: past it, a deadline is a mistake rather than a wait. */
 const MAX_GIT_TIMEOUT_MS = 24 * 60 * 60 * 1000
+
+function plainEnv(value: unknown): Record<string, string> | null | undefined {
+  if (value === undefined) return undefined
+  const entries = value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value) : null
+  if (
+    !entries ||
+    entries.length > 64 ||
+    !entries.every(([name, text]) => ENV_NAME.test(name) && typeof text === 'string')
+  )
+    return null
+  return Object.fromEntries(entries) as Record<string, string>
+}
+
+function argList(value: unknown, max: number): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= max &&
+    value.every((arg) => typeof arg === 'string' && arg.length <= 65_536 && !arg.includes('\0'))
+  )
+}
 
 /** An absolute path in the distribution, as git takes it. */
 function linuxPath(value: unknown): value is string {
@@ -600,18 +652,8 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
         )
       )
         return studioParamsRefused('"timeoutMs" is a positive number of milliseconds, or null for no deadline.')
-      let env: Record<string, string> | undefined
-      if (value.env !== undefined) {
-        const entries =
-          value.env && typeof value.env === 'object' && !Array.isArray(value.env) ? Object.entries(value.env) : null
-        if (
-          !entries ||
-          entries.length > 64 ||
-          !entries.every(([name, text]) => ENV_NAME.test(name) && typeof text === 'string')
-        )
-          return studioParamsRefused('"env" holds at most 64 plain variables.')
-        env = Object.fromEntries(entries) as Record<string, string>
-      }
+      const env = plainEnv(value.env)
+      if (env === null) return studioParamsRefused('"env" holds at most 64 plain variables.')
       const stdinB64 = value.stdinB64
       if (
         stdinB64 !== undefined &&
@@ -632,6 +674,63 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
     },
   },
   'environment.home': { ...machine, params: studioNoParams },
+  'environment.detectClis': {
+    ...machine,
+    params: (value) => {
+      const requests = value.requests
+      if (
+        !Array.isArray(requests) ||
+        requests.length > 32 ||
+        !requests.every((request) => {
+          const ask = request as Record<string, unknown> | null
+          return (
+            !!ask &&
+            typeof ask === 'object' &&
+            typeof ask.binary === 'string' &&
+            ask.binary.length > 0 &&
+            ask.binary.length <= 4096 &&
+            !ask.binary.includes('\0') &&
+            (ask.versionArgs === undefined || argList(ask.versionArgs, 16))
+          )
+        })
+      )
+        return studioParamsRefused('"requests" lists at most 32 { binary, versionArgs? }.')
+      if (value.force !== undefined && typeof value.force !== 'boolean')
+        return studioParamsRefused('"force" is true or false.')
+      return studioParams({
+        requests: (requests as Array<Record<string, unknown>>).map((ask) => ({
+          binary: ask.binary as string,
+          ...(ask.versionArgs !== undefined ? { versionArgs: ask.versionArgs as string[] } : {}),
+        })),
+        ...(value.force === true ? { force: true } : {}),
+      })
+    },
+  },
+  'environment.run': {
+    ...machine,
+    params: (value) => {
+      if (!argList(value.argv, 4096) || value.argv.length === 0)
+        return studioParamsRefused('"argv" lists the program and its arguments, as strings without NUL.')
+      if (value.cwd !== undefined && !linuxPath(value.cwd))
+        return studioParamsRefused('"cwd" is an absolute path in the distribution.')
+      const timeoutMs = value.timeoutMs
+      if (!(
+        typeof timeoutMs === 'number' &&
+        Number.isInteger(timeoutMs) &&
+        timeoutMs > 0 &&
+        timeoutMs <= MAX_GIT_TIMEOUT_MS
+      ))
+        return studioParamsRefused('"timeoutMs" is a positive number of milliseconds: a run always has a deadline.')
+      const env = plainEnv(value.env)
+      if (env === null) return studioParamsRefused('"env" holds at most 64 plain variables.')
+      return studioParams({
+        argv: value.argv,
+        timeoutMs,
+        ...(value.cwd !== undefined ? { cwd: value.cwd as string } : {}),
+        ...(env ? { env } : {}),
+      })
+    },
+  },
   'providers.signInStart': {
     ...signIn,
     params: (value) => {
@@ -664,5 +763,21 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
       if (!signInId(value)) return studioParamsRefused(SIGN_IN_ID)
       return studioParams({ commandId: value.commandId as string, id: value.id as string })
     },
+  },
+}
+
+export type StudioEnvironmentAccessTopicMap = {
+  /** A CLI may have been installed or removed on this distribution's PATH: detect again. */
+  'environment.cliPathsChanged': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
+}
+
+export const STUDIO_ENVIRONMENT_ACCESS_TOPICS: StudioTopicTable<StudioEnvironmentAccessTopicMap> = {
+  // Topics have no shell-only gate; it says nothing but "look again", so an owner's.
+  'environment.cliPathsChanged': {
+    scope: null,
+    capability: STUDIO_ENVIRONMENT_MACHINE_CAPABILITY,
+    owner: MACHINE,
+    push: true,
+    params: studioNoParams,
   },
 }

@@ -1,6 +1,7 @@
-// The WSL helper's pure pieces, run as plain Node on macOS and Linux: the
-// frame codec, the /proc readers against a fixture tree, the environment kept
-// from a login shell, and the argv runner.
+// What a WSL distribution's Studio runs for the desktop, as plain Node on
+// macOS and Linux: the /proc readers against a fixture tree, the environment
+// kept from a login shell, the argv runner, the socket directory and the CLI
+// lookup on PATH.
 
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -10,18 +11,14 @@ import { afterAll, beforeAll, test } from 'vitest'
 
 import {
   loadDistributionModule,
-  loadHelperModule,
   type CliDetectModule,
-  type FramesModule,
   type LoginEnvModule,
   type ProcModule,
   type RunModule,
   type SocketsModule,
-} from '../../../../tests/wsl-helper-modules'
-import { WSL_HELPER_PROTOCOL } from '../wsl-helper-client'
+} from '../../../../tests/wsl-distribution-modules'
 
 let temp = ''
-let frames: FramesModule
 let proc: ProcModule
 let loginEnv: LoginEnvModule
 let run: RunModule
@@ -29,53 +26,15 @@ let sockets: SocketsModule
 let detect: CliDetectModule
 
 beforeAll(async () => {
-  temp = mkdtempSync(join(tmpdir(), 'se-wsl-helper-core-'))
-  frames = await loadHelperModule<FramesModule>('lib/frames.mjs')
+  temp = mkdtempSync(join(tmpdir(), 'se-wsl-modules-'))
   proc = await loadDistributionModule<ProcModule>('proc.mjs')
-  loginEnv = await loadHelperModule<LoginEnvModule>('lib/login-env.mjs')
-  run = await loadHelperModule<RunModule>('lib/run.mjs')
+  loginEnv = await loadDistributionModule<LoginEnvModule>('login-env.mjs')
+  run = await loadDistributionModule<RunModule>('run.mjs')
   sockets = await loadDistributionModule<SocketsModule>('sockets.mjs')
-  detect = await loadHelperModule<CliDetectModule>('lib/cli-detect.mjs')
+  detect = await loadDistributionModule<CliDetectModule>('cli-detect.mjs')
 })
 
 afterAll(() => rmSync(temp, { recursive: true, force: true }))
-
-test('both ends speak the same protocol integer', () => {
-  assert.equal(frames.PROTOCOL_VERSION, WSL_HELPER_PROTOCOL)
-})
-
-test('the line decoder splits frames across chunk boundaries and drops blank lines', () => {
-  const lines: string[] = []
-  const decoder = frames.createLineDecoder({ maxLineBytes: 1024, onLine: (line) => lines.push(line) })
-  decoder.push('{"a":1}\n{"b"')
-  decoder.push(':2}\r\n\n  \n{"c":')
-  assert.deepEqual(lines, ['{"a":1}', '{"b":2}'])
-  assert.equal(decoder.pendingBytes(), 5)
-  decoder.push(Buffer.from('3}\n'))
-  assert.deepEqual(lines, ['{"a":1}', '{"b":2}', '{"c":3}'])
-  assert.equal(frames.encodeFrame({ t: 'boot' }), '{"t":"boot"}\n')
-  assert.deepEqual(frames.decodeFrame('{"t":"x"}'), { t: 'x' })
-  assert.equal(frames.decodeFrame('[1]'), null, 'only objects are frames')
-  assert.equal(frames.decodeFrame('nope'), null)
-})
-
-test('a line past the cap ends the decoder, with or without its newline', () => {
-  for (const input of ['x'.repeat(40), `${'y'.repeat(40)}\n{"ok":1}\n`]) {
-    let overflowed = 0
-    const lines: string[] = []
-    const decoder = frames.createLineDecoder({
-      maxLineBytes: 32,
-      onLine: (line) => lines.push(line),
-      onOverflow: () => (overflowed += 1),
-    })
-    decoder.push(input)
-    decoder.push('{"later":1}\n')
-    assert.equal(overflowed, 1)
-    assert.deepEqual(lines, [], 'nothing after an overflow is read')
-  }
-})
-
-// ── /proc ────────────────────────────────────────────────────────────────────
 
 test('stat fields are read after the last parenthesis, whatever the command name holds', () => {
   const line = '4242 (node (worker) x) S 4200 4242 4242 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 11 0 777 0 0'
@@ -212,7 +171,7 @@ test('survivors are the session id carriers and, while it runs its script, the s
   assert.deepEqual(
     proc.survivorPids({ procRoot, pidDir, cliSessionId: '', key: 'sid-a-1', uid, selfPid: 100 }).sort((a, b) => a - b),
     [101, 102],
-    'the helper never lists itself',
+    'the server never lists itself',
   )
 })
 
@@ -319,5 +278,5 @@ test('the login shell capture ends at its deadline, whatever its profile left ru
   const started = Date.now()
   const env = await capture.captureLoginEnv({ uid: 0, shell, timeoutMs: 500, baseEnv: { PATH: '/usr/bin' } })
   assert.ok(Date.now() - started < 5_000, `settled in ${Date.now() - started} ms`)
-  assert.equal(env.PATH, '/usr/bin', 'no answer, so the helper keeps its own PATH')
+  assert.equal(env.PATH, '/usr/bin', 'no answer, so the server keeps its own PATH')
 })

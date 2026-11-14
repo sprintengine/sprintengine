@@ -1,8 +1,8 @@
 // A launch on a WSL machine, end to end through the runtime with a stand-in
-// helper: the startup script is written inside the distribution before the
-// terminal starts and run from there; an agent's MCP bridge gets a token that
-// lives exactly as long as its session; a plain terminal waits for the helper
-// too and says why when it cannot; and quitting ends what the sessions left
+// for the distribution's Studio: the startup script is written inside the
+// distribution before the terminal starts and run from there; an agent's MCP
+// bridge gets a token that lives exactly as long as its session; a plain
+// terminal waits for that server too and says why when it cannot; and quitting ends what the sessions left
 // running inside the distribution.
 
 import assert from 'node:assert/strict'
@@ -19,12 +19,10 @@ import {
   STUB_PID_DIR,
   STUB_SESSION_DIR,
   stubWslDistributionLink,
-  stubWslHelper,
   stubWslMachine,
   type StubDistributionLink,
-  type StubHelper,
   type StubTerminalHostHandlers,
-} from '../../tests/wsl-helper-stub'
+} from '../../tests/wsl-distribution-stub'
 import { WslSetupError } from './hosts/wsl-setup-error'
 
 type MockPty = {
@@ -38,7 +36,6 @@ type MockPty = {
 }
 
 type Harness = {
-  helper: StubHelper
   spawned: Array<{ command: string; args: string[]; process: MockPty; requestsBefore: number }>
   runtime: ReturnType<(typeof import('./terminal-runtime'))['createTerminalRuntime']>
   spawn(payload: Record<string, unknown>): Promise<{ ok: boolean; message?: string }>
@@ -59,7 +56,7 @@ afterEach(() => {
 // The runtime keeps the pty module it first imported, so the stand-in is one
 // object that records into whichever case is running.
 let nextPid = 80_000
-let current: { spawned: Harness['spawned']; helper: StubHelper; distribution: StubDistributionLink } | null = null
+let current: { spawned: Harness['spawned']; distribution: StubDistributionLink } | null = null
 const mockPty = {
   spawn(command: string, args: string[]): MockPty {
     const exits: Array<(event: { exitCode: number }) => void> = []
@@ -86,9 +83,8 @@ const mockPty = {
 
 async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness> {
   const spawned: Harness['spawned'] = []
-  const helper = stubWslHelper('Ubuntu')
   const distribution = stubWslDistributionLink(undefined, terminal)
-  current = { spawned, helper, distribution }
+  current = { spawned, distribution }
   const sender: TerminalViewer = { isGone: () => false, deliver: () => undefined }
   restore = standIn({
     electron: {
@@ -105,7 +101,6 @@ async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness
     registryModule.createHostRegistry({
       platform: 'win32',
       readHostSettings: () => ({}),
-      createWslHelper: () => helper,
       distribution,
       machine: stubWslMachine(),
     }),
@@ -130,7 +125,7 @@ async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness
       if (platform) Object.defineProperty(process, 'platform', platform)
     }
   }
-  return { helper, spawned, runtime, spawn, workspaceRoot, distribution }
+  return { spawned, runtime, spawn, workspaceRoot, distribution }
 }
 
 const agent = (sessionId: string) => ({

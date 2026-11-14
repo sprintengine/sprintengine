@@ -1,6 +1,6 @@
-// The Linux Node the WSL helper runs on, downloaded on this PC on first use.
+// The Linux Node a WSL distribution's Studio server runs on, downloaded on this PC on first use.
 //
-// The helper, the hook reporters and the MCP bridge are plain Node scripts, and
+// The server, the hook reporters and the MCP bridge run on Node, and
 // a distribution may have no Node at all (the native Claude Code installer
 // needs none) or one that is too old, broken by an update, or only on PATH in
 // an interactive shell. So the app never uses the person's own Node there: it
@@ -12,8 +12,8 @@
 // distribution with automount turned off does not have.
 //
 // Bumping the version: take the four sums for the new version from
-// https://nodejs.org/dist/<version>/SHASUMS256.txt. The helper needs nothing
-// newer than Node 18; an LTS line is pinned for its glibc floor (2.28) and its
+// https://nodejs.org/dist/<version>/SHASUMS256.txt. The server needs Node 22.12
+// or newer; an LTS line is pinned for its glibc floor (2.28) and its
 // support window.
 
 import { createHash, randomBytes } from 'node:crypto'

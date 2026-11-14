@@ -670,7 +670,7 @@ function skillManager(): BuiltinSkillManager {
  * The machine a launch runs on, and what it said about itself when the launch
  * prepared it. Whether a launch carries the plugin directory is a property of
  * that machine: on Windows this PC's launches never do, while a WSL
- * distribution's do once its helper has written the copy. Absent is this
+ * distribution's do once its Studio server has written the copy. Absent is this
  * machine; an absent `integration` is read from the machine as it stands.
  */
 export type SkillLaunchHost = { hostId?: string | null; integration?: HostAgentIntegration | null }

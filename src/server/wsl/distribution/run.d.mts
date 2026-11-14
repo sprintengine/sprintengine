@@ -1,5 +1,5 @@
-// Types for run.mjs, which the Studio server inside a WSL distribution bundles
-// too: the same argv runner, shared rather than copied.
+// Types for run.mjs: the argv runner a WSL distribution's Studio runs git and
+// programs with for the desktop.
 
 export function decodeStdin(stdinB64: unknown): Buffer | null | undefined
 export function checkRunRequest(request: {

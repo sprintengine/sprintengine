@@ -11,6 +11,7 @@ import type { TerminalRootInfo } from '../workspace-memory'
 import type { GitHubTokenStatus, GitHubTokenStore } from '../github-token-store'
 import type { ServerStateMirror } from './server-mirror'
 import type {
+  StudioCliProbeAnswer,
   StudioEnvironmentHome,
   StudioEnvironmentRunOutcome,
 } from '../../../packages/studio-protocol/src/environment-access'
@@ -18,7 +19,7 @@ import type {
 // The shell's view of the core when the Studio server runs in a process of its
 // own (phase 6 spec, sections 5 and 7.3). The shell builds no server-owned
 // store: what it reads synchronously comes from the mirror, what it writes or
-// asks goes over the control channel, and the machines its WSL helpers and git
+// asks goes over the control channel, and the machines its terminals and git
 // run on come from a host registry of its own over the mirrored settings.
 //
 // It has the core's shape for the members the shell's composition uses, so
@@ -72,8 +73,9 @@ export function createRemoteCore(link: ShellServerLink): StudioCore {
   // registry in each process, over the same settings.
   const hosts = createHostRegistry({
     readHostSettings: () => mirror.launchSettings.get().hosts,
-    // Git and the home in a WSL distribution are its own Studio's, which the
-    // server holds; watches are the server's alone (its checkouts).
+    // Git, the home, CLI detection and running a program in a WSL
+    // distribution are its own Studio's, which the server holds; watches are
+    // the server's alone (its checkouts).
     // The first ask may start (or install) that Studio: minutes, not the
     // control channel's usual seconds; a git with no deadline has none here.
     machine: {
@@ -88,6 +90,18 @@ export function createRemoteCore(link: ShellServerLink): StudioCore {
           SERVER_METHODS.wslMachine,
           { distro, method: 'home' },
           { timeoutMs: SERVER_START_MS },
+        ),
+      detectClis: (distro, requests, force) =>
+        rpc.call<StudioCliProbeAnswer[]>(
+          SERVER_METHODS.wslMachine,
+          { distro, method: 'detectClis', ask: { requests, force } },
+          { timeoutMs: SERVER_START_MS },
+        ),
+      run: (distro, ask) =>
+        rpc.call<StudioEnvironmentRunOutcome>(
+          SERVER_METHODS.wslMachine,
+          { distro, method: 'run', ask },
+          { timeoutMs: ask.timeoutMs + SERVER_START_MS },
         ),
     },
   })

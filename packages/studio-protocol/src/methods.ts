@@ -100,7 +100,12 @@ import {
   type StudioAgentSetupTopicMap,
 } from './agent-setup.js'
 import { STUDIO_READINESS_METHODS, type StudioReadinessMethodMap } from './readiness.js'
-import { STUDIO_ENVIRONMENT_ACCESS_METHODS, type StudioEnvironmentAccessMethodMap } from './environment-access.js'
+import {
+  STUDIO_ENVIRONMENT_ACCESS_METHODS,
+  STUDIO_ENVIRONMENT_ACCESS_TOPICS,
+  type StudioEnvironmentAccessMethodMap,
+  type StudioEnvironmentAccessTopicMap,
+} from './environment-access.js'
 import {
   STUDIO_CHAT_STORES_METHODS,
   STUDIO_CHAT_STORES_TOPICS,
@@ -861,7 +866,8 @@ export type StudioTopicMap = {
   StudioAccessTopicMap &
   StudioWebDevicesTopicMap &
   StudioTailnetTopicMap &
-  StudioHostsTopicMap
+  StudioHostsTopicMap &
+  StudioEnvironmentAccessTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -914,6 +920,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_WEB_DEVICES_TOPICS,
   ...STUDIO_TAILNET_TOPICS,
   ...STUDIO_HOSTS_TOPICS,
+  ...STUDIO_ENVIRONMENT_ACCESS_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */

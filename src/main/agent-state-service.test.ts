@@ -131,9 +131,9 @@ test('agent-state-service', async () => {
     await wslSvc.installForWorkspace(wslRoot, 'codex', { pathStyle: 'wsl', hostId: 'wsl:Ubuntu', integration: null })
     assert.ok(
       (await readFile(join(wslRoot, '.codex', 'config.toml'), 'utf8')).includes(nativeLauncher),
-      'without the helper nothing is written for WSL',
+      "without the distribution's server nothing is written for WSL",
     )
-    assert.ok(wslWarnings.some((line) => line.includes('WSL helper was not running')))
+    assert.ok(wslWarnings.some((line) => line.includes('Studio server in WSL was not running')))
     const node = '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node'
     await wslSvc.installForWorkspace(wslRoot, 'codex', {
       pathStyle: 'wsl',

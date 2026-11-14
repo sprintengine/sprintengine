@@ -11,7 +11,14 @@ handed over to it (`environment.adopt`). WSL 1 chats are refused with the
 conversion command (R70). The per-process path (one `wsl.exe` per chat,
 section 7's release plan) was deleted in the PR after. Where this file
 describes the router, the switch, the backend wire or the per-process path,
-it is history.
+it is history. The WSL helper (`resources/wsl-helper/`, its client and its
+install payload) was retired in design-wsl-ssh-direct PR 4 (2026-11-14): what
+it did for this desktop is the distribution's own Studio's, asked over the
+owner connection (`environment.launchFiles`, `.terminalProcesses`,
+`.pluginCopy`, `.git`, `.home`, `.detectClis`, `.run`, the `agent-state`
+front-door purpose and `files.watchPath`), and its shared modules live in
+`src/server/wsl/distribution/`. Where this file describes the helper, it is
+history.
 Owner rulings of 2026-10-02 (decisions R70–R74, R78, R87) and of 2026-10-03
 (R88: any folder runs on the machine picked) are applied throughout. This file hardens
 phase 7 of `docs/design/studio-server.md` (sections 10.2 and 13) and assumes

@@ -6,6 +6,7 @@ import type {
   CliInstallResult,
   CliRuntimeSettings,
 } from '../shared/electron-api'
+import type { StudioCliProbeAnswer } from '../../packages/studio-protocol/src/environment-access'
 import type { PluginInstallMethod, PluginInstallPlatform, PluginManifest } from '../shared/plugin-manifest'
 import { getPluginManifest } from './plugin-registry-instance'
 import {
@@ -695,7 +696,7 @@ export async function detectCliBatch(
   return results
 }
 
-// ── What a WSL machine's helper is asked, and what its answer means ─────────
+// ── What a WSL machine's Studio is asked, and what its answer means ─────────
 
 export type CliProbeRequest =
   { cli: AgentCli; binary: string; versionArgs: string[] } | { cli: AgentCli; binary: string; error: string }
@@ -707,14 +708,13 @@ export function cliProbeRequest(cli: AgentCli, runtime?: Partial<CliRuntimeSetti
   return { cli, binary: resolveBinary(manifest, runtime), versionArgs: manifest.detect?.versionArgs ?? ['--version'] }
 }
 
-/** One answer from the helper's `cli.detect`. */
-export type HelperProbeAnswer =
-  { found: false } | { found: true; path: string; output: string; timedOut?: boolean } | { error: string }
+/** One answer from a WSL distribution's `environment.detectClis`. */
+type CliProbeAnswer = StudioCliProbeAnswer
 
-/** A helper's answer as a detection result, read by the same parser as every other probe. */
-export function detectResultFromHelper(
+/** A distribution's answer as a detection result, read by the same parser as every other probe. */
+export function detectResultFromProbe(
   probe: CliProbeRequest,
-  answer: HelperProbeAnswer,
+  answer: CliProbeAnswer,
   hostId: ExecutionHostId,
 ): CliDetectResult {
   if ('error' in answer) return detectResult(probe.cli, probe.binary, hostId, { error: answer.error })

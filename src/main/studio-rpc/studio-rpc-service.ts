@@ -227,7 +227,7 @@ export type StudioRpcServiceOptions = {
   /** What a WSL distribution does for the desktop's terminals (`environment-terminal-host`). */
   terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
   /** What a WSL distribution does on its machine for the desktop (`environment-machine`). */
-  machine?: Pick<DistributionMachine, 'git' | 'home'>
+  machine?: Pick<DistributionMachine, 'git' | 'home' | 'detectClis' | 'run' | 'onPathsChanged'>
   /** The launch tokens of the desktop's WSL terminal agents, by digest (`environment-launch-tokens`): a WSL distribution's Studio. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** What stopping this Studio would end (`environment-work`): a server a desktop reaches over its front door. */

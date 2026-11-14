@@ -159,6 +159,7 @@ export function posixInstallFunctions(): string[] {
 /** What each kind of install may prune: its own older trees, and nothing else. */
 export const PRUNE_GLOBS = {
   node: '"$base"/runtime/node-*',
+  /** The retired WSL helper's `<appVersion>/` trees, which a server's install prunes. */
   app: '"$base"/[0-9]*',
   server: '"$base"/server-*',
 } as const

@@ -1483,6 +1483,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       const hosts = options.router.hosts
       subscribeFeed(id, 'hosts.changed', hosts ? (deliver) => hosts.subscribe(() => deliver({})) : null)
     },
+    'environment.cliPathsChanged': (id) => {
+      const listen = options.router.onCliPathsChanged
+      subscribeFeed(id, 'environment.cliPathsChanged', listen ? (deliver) => listen(() => deliver({})) : null)
+    },
     'module.events': subscribeModuleEvents,
     'module.notifications': subscribeModuleNotifications,
     'module.changed': (id) => {

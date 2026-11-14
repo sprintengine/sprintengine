@@ -23,14 +23,12 @@ import { setDiagnosticsLogName, writeDiagnosticLog } from '../../main/diagnostic
 import { GitHubTokenStore } from '../../main/github-token-store'
 import { buildLauncherMcpServer, usableLocalLauncherRef } from '../../main/integrations/launcher'
 import { discoverAndBroadcastCliModels } from '../../main/model-discovery/discovery-pass'
-import { invalidateCliAvailabilityOnHost } from '../../main/cli-availability'
 import { detectCliMachines, readCliVersionAdvisories } from '../../main/cli-version-advisory-service'
 import { powerActivity } from '../../main/power-activity'
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { createTailnetNotifier } from '../../main/tailnet-notifications'
 import { agentBrowserToolGate, agentBrowserToolsEnabledOnDisk } from '../../main/agent-browser-tools-store'
 import { conversationTurnInProgress } from '../../shared/conversation/phase'
-import { isWslHostId } from '../../shared/execution-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { meshListChanged, type MeshConnection, type MeshMachineReachability } from '../../shared/tailnet-mesh'
 import { SERVER_EXIT } from '../bootstrap/envelope'
@@ -74,7 +72,11 @@ import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, sshRelayTarget } from '../wsl/wsl-tool-relay'
 import { createWslMachineAccess } from '../wsl/wsl-machine-client'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
-import type { StudioEnvironmentGitAsk } from '../../../packages/studio-protocol/src/environment-access'
+import type {
+  StudioCliProbeAsk,
+  StudioEnvironmentGitAsk,
+  StudioEnvironmentRunAsk,
+} from '../../../packages/studio-protocol/src/environment-access'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
 
@@ -149,7 +151,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     powerActivity.noteFocus(appFocused)
   })
 
-  // The launch tokens the shell issued (its WSL helper's channels).
+  // The launch tokens the shell issued (its WSL terminal agents').
   rpc.on(SERVER_EVENTS.launchTokens, (payload) => {
     const update = payload as { reset?: boolean; changes?: LaunchTokenChange[] } | null
     for (const change of update?.changes ?? []) applyGatewayLaunchTokenChange(change)
@@ -259,9 +261,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       },
       // A WSL distribution's chats run on a Studio server inside it (phase
       // 7) when the person turned that on for it, as in process. With the
-      // switch off they take the per-process path, which out of process
-      // fails in words (the WSL helper is the shell's): the server is not
-      // started for anyone who did not ask for it while its migration, model
+      // switch off they take the per-process path, which fails in words:
+      // the server is not started for anyone who did not ask for it while its migration, model
       // discovery and command catalog are unbuilt (spec section 14).
       wslServers: ({ readHostSettings }) =>
         createDesktopWslServers({
@@ -566,7 +567,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   })
   rpc.on(SERVER_EVENTS.conversationIdleThreshold, (payload) => core.conversationOwner.setIdleThresholdMs(payload))
 
-  // The launch tokens the shell issued (its WSL helper's channels), before the
+  // The launch tokens the shell issued (its WSL terminal agents'), before the
   // socket their bridges reconnect to is back: a bridge that connects first
   // is proven, not left unattributed until the shell's push after ready.
   const liveTokens = await rpc.call<LaunchTokenChange[]>(SHELL_METHODS.liveLaunchTokens).catch(() => [])
@@ -764,9 +765,8 @@ function serveShellTerminalRequests(
 
 /**
  * The agent CLIs are the core's: the shell times the boot's detection and the
- * hourly version comparison, which run here; it relays a WSL distribution's
- * PATH change its helper saw; and it hears the area skills its plugin copies
- * carry.
+ * hourly version comparison, which run here; and it hears the area skills its
+ * plugin copies carry.
  */
 function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents: StudioAgents): void {
   rpc.handle(SERVER_METHODS.cliDetect, (params) => {
@@ -775,10 +775,6 @@ function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents:
   })
   rpc.handle(SERVER_METHODS.cliVersionsRefresh, () => readCliVersionAdvisories())
   rpc.handle(SERVER_METHODS.skillSourcesCheck, () => agents.skills.skills.checkSourceUpdates())
-  rpc.on(SERVER_EVENTS.cliPathsChanged, (payload) => {
-    const hostId = (payload as { hostId?: unknown } | null)?.hostId
-    if (typeof hostId === 'string' && isWslHostId(hostId)) invalidateCliAvailabilityOnHost(hostId)
-  })
   agents.services.areaSkills.onChange((choices) => rpc.emit(SERVER_EVENTS.mirrorAreaSkills, choices))
   // Sent once as it serves too, so a shell whose server restarted takes any
   // change it missed while the server was down (adopting the same is a no-op).
@@ -914,9 +910,16 @@ function serveShellRequests(deps: {
     const { distro, method, ask } = (params ?? {}) as { distro?: unknown; method?: unknown; ask?: unknown }
     if (typeof distro !== 'string' || !distro) throw new Error('A WSL machine ask names its distribution.')
     if (method === 'home') return wslMachine.home(distro)
-    if (method === 'git' && ask && typeof ask === 'object')
-      return wslMachine.git(distro, ask as StudioEnvironmentGitAsk)
-    throw new Error('A WSL machine ask is git or home.')
+    if (ask && typeof ask === 'object') {
+      if (method === 'git') return wslMachine.git(distro, ask as StudioEnvironmentGitAsk)
+      if (method === 'run') return wslMachine.run(distro, ask as StudioEnvironmentRunAsk)
+      if (method === 'detectClis') {
+        const { requests, force } = ask as { requests?: unknown; force?: unknown }
+        if (Array.isArray(requests))
+          return wslMachine.detectClis(distro, requests as StudioCliProbeAsk[], force === true)
+      }
+    }
+    throw new Error('A WSL machine ask is git, home, detectClis or run.')
   })
   rpc.handle(SERVER_METHODS.wslRevokeWindow, (params) => {
     const { windowKey } = (params ?? {}) as { windowKey?: unknown }
