@@ -18,6 +18,37 @@ import type { ChatSourceFile } from './environment-chat-sources'
 // a WSL workspace's `hostId`) or by its folder (`ssh://<id>/…`, a WSL share),
 // and taken out through the store's own way.
 
+/**
+ * The environment a schedule kept here runs in, as its folder's machine says
+ * it: an SSH machine's path, or a WSL workspace's machine (its `hostId`, else
+ * its folder). Null for one that runs on this computer, a schedule picked to
+ * run on This PC in a distribution's folder included (decision R88), as a
+ * workspace's record does.
+ */
+export function scheduleRouteOf(agent: { folderPath: string; hostId?: string | null }): string | null {
+  return isMachinePath(agent.folderPath)
+    ? (machineRouteOfPath(agent.folderPath) ?? null)
+    : environmentRouteOfRecord(agent)
+}
+
+/**
+ * Hand a schedule over as soon as it is saved here for another machine's
+ * folder (New scheduled agent in a project on an SSH machine): each list the
+ * scheduler publishes asks for every route its schedules name, so none waits
+ * in this desktop's store, nor runs from it, until the machine's next
+ * connect. The hand-over's own planning takes the schedule out of the store,
+ * which publishes the list again without it. Returns the unsubscriber.
+ */
+export function handOverSchedulesWhenSaved(
+  scheduledAgents: Pick<ScheduledAgentsService, 'onChanged'>,
+  handOver: (route: string) => Promise<void>,
+): () => void {
+  return scheduledAgents.onChanged((agents) => {
+    const routes = new Set(agents.flatMap((agent) => scheduleRouteOf(agent) ?? []))
+    for (const route of routes) void handOver(route).catch(() => undefined)
+  })
+}
+
 export function studioMigrationStores(stores: {
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecords'>
   scheduledAgents: Pick<ScheduledAgentsService, 'loaded' | 'list' | 'remove'>
@@ -87,13 +118,7 @@ export function studioMigrationStores(stores: {
       }
       await stores.scheduledAgents.loaded()
       for (const agent of stores.scheduledAgents.list()) {
-        // Its folder's machine, as a chat's record says it: an SSH machine's
-        // path, or a WSL workspace's machine (its `hostId`, else its folder).
-        // One picked to run on This PC in a distribution's folder stays
-        // (decision R88), as a workspace's record does.
-        const route = isMachinePath(agent.folderPath)
-          ? (machineRouteOfPath(agent.folderPath) ?? null)
-          : environmentRouteOfRecord(agent)
+        const route = scheduleRouteOf(agent)
         if (!route) continue
         // The pictures its prompt names go with it, each by the path the prompt names it by.
         const images = (await stores.scheduledImages?.(agent.prompt)) ?? []

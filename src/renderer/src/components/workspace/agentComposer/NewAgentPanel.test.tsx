@@ -3596,6 +3596,39 @@ test('NewAgentPanel', async () => {
       door.view.unmount()
     })
 
+    await check(
+      'a schedule in a project on an SSH machine names that machine on the strip, not This device',
+      async () => {
+        seedStore()
+        const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+        const before = { enabled: api.sshMachinesEnabled, list: api.sshEnvironmentsList }
+        api.sshMachinesEnabled = true
+        api.sshEnvironmentsList = async () => [
+          { id: 'm1', label: 'dev@build-box', destination: 'dev@build-box', resolved: null, state: 'connected' },
+        ]
+        try {
+          const door = await scheduleDoor({ folderPath: 'ssh://m1/home/dev/proj' })
+          await settle()
+          const toggle = await scheduleRow(door.view)
+          await act(async () => {
+            toggle!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+          })
+          await settle()
+          assert.ok(door.view.container.querySelector('[data-schedule-tag="true"]'), 'scheduled')
+          assert.equal(
+            door.view.container.querySelector('[data-machine-line]')?.textContent,
+            'dev@build-box',
+            'the strip names the machine the project is on',
+          )
+          assert.equal(machineTrigger(door.view), undefined, 'and offers no machine to pick in its place')
+          door.view.unmount()
+        } finally {
+          api.sshMachinesEnabled = before.enabled
+          api.sshEnvironmentsList = before.list
+        }
+      },
+    )
+
     await check('Schedule is greyed for a terminal agent, and a terminal hides the model', async () => {
       seedStore()
       const door = await scheduleDoor({ initialSelection: { kind: 'general' } })

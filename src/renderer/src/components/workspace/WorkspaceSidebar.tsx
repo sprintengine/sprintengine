@@ -75,7 +75,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { selectChatListView } from '../../store/slices/settingsSlice'
 import { ChatListGroupingMenu } from './sidebar/ChatListGroupingMenu'
 import { type HighlightColor, type LayoutTemplate, type Workspace, type WorkspaceId } from '../../types/workspace'
-import type { MeshConversationChange } from '../../../../shared/tailnet-mesh'
+import type { MeshConnection, MeshConversationChange } from '../../../../shared/tailnet-mesh'
 import { usePendingEditorReveal } from '../../utils/agentEditorReveal'
 import { hasHighlightOverride, isStarred } from '../../utils/highlight'
 import { projectColorKey, projectHue, resolveProjectColor, type ProjectColor } from '../../utils/projectColor'
@@ -418,6 +418,7 @@ const STATUS_WORKING_SHELF_KEY = '__status_working__'
 const STATUS_WORKING_SHELF_ID = 'ws-status-working-chats'
 const NO_WORKING_IDS: ReadonlySet<string> = new Set()
 const NO_WORKING_REMOTE: readonly RemoteConversation[] = []
+const NO_MESH_CONNECTIONS: readonly MeshConnection[] = []
 
 const DRAG_MIME_WORKSPACE = 'application/x-sprintengine-workspace'
 const DRAG_MIME_FOLDER = 'application/x-sprintengine-folder'
@@ -1468,18 +1469,27 @@ function WorkspaceSidebar({
   )
   // What a link to one of their chats opens (`remoteChatLinks.ts`).
   useEffect(() => publishRemoteChatLinkTargets(remoteGroups, environments), [remoteGroups, environments])
-  // Each paired machine's scheduled agents, beside this computer's in the
-  // Scheduled section: they run there, by its scheduler, and are driven from
-  // here. Off with this computer's module, as the section is.
+  // Each other machine's scheduled agents, beside this computer's in the
+  // Scheduled section: a paired desktop's, and an SSH machine's this window
+  // follows chats on. They run there, by its scheduler, and are driven from
+  // here. Off with this computer's module, as the section is; a paired
+  // desktop's also off the tailnet.
   const remoteScheduled = useRemoteScheduledAgents({
-    enabled: scheduledAgentsEnabled && remoteLink !== 'down',
-    connections: remotePresence.mesh,
+    enabled: scheduledAgentsEnabled,
+    connections: remoteLink === 'down' ? NO_MESH_CONNECTIONS : remotePresence.mesh,
     browses: remoteBrowses,
+    environments,
   })
   const refreshRemoteScheduled = remoteScheduled.refresh
   const actOnRemoteScheduled = useCallback(
     (machine: RemoteScheduledMachine, agent: ScheduledAgentView, action: 'run' | 'pause' | 'resume' | 'delete') => {
-      void pairedScheduledAgentAction({ id: machine.connectionId, machineName: machine.machineName }, agent.id, action)
+      void pairedScheduledAgentAction(
+        machine.connectionId
+          ? { id: machine.connectionId, machineName: machine.machineName }
+          : { route: machine.route, name: machine.machineName },
+        agent.id,
+        action,
+      )
         .then((result) => {
           const titles = { run: 'Started', pause: 'Paused', resume: 'Resumed', delete: 'Scheduled agent closed' }
           const failed = { run: 'Did not run', pause: 'Not paused', resume: 'Not resumed', delete: 'Not closed' }
@@ -1492,7 +1502,7 @@ function WorkspaceSidebar({
                 }
               : { tone: 'error', title: failed[action], description: result.message },
           )
-          refreshRemoteScheduled(machine.connectionId)
+          refreshRemoteScheduled(machine.route)
         })
         .catch(() => {})
     },
@@ -3630,7 +3640,7 @@ function WorkspaceSidebar({
             ? remoteScheduled.machines.flatMap((machine) =>
                 machine.agents.map((agent) => (
                   <ScheduledAgentRow
-                    key={`scheduled-${machine.connectionId}-${agent.id}`}
+                    key={`scheduled-${machine.route}-${agent.id}`}
                     agent={agent}
                     now={now}
                     project={{
@@ -3639,17 +3649,23 @@ function WorkspaceSidebar({
                       color: null,
                       unfiled: false,
                     }}
-                    machine={{ ref: { kind: 'paired', name: machine.machineName }, name: machine.machineName }}
+                    machine={{ ref: machine.machine, name: machine.machineName }}
                     runInProgress={null}
                     selected={
+                      machine.connectionId !== null &&
                       openRemoteScheduledAgent?.connectionId === machine.connectionId &&
                       openRemoteScheduledAgent.id === agent.id
                     }
                     pausedAll={machine.pausedAll !== null}
                     {...(machine.operable
                       ? {
-                          ...(onOpenRemoteScheduledAgent
-                            ? { onOpen: () => onOpenRemoteScheduledAgent(machine.connectionId, agent.id) }
+                          // A paired desktop's opens in New chat's editor, whose
+                          // project list is that machine's; another machine's is
+                          // run, paused and closed from its row.
+                          ...(onOpenRemoteScheduledAgent && machine.connectionId !== null
+                            ? {
+                                onOpen: () => onOpenRemoteScheduledAgent(machine.connectionId as string, agent.id),
+                              }
                             : {}),
                           onClose: () => actOnRemoteScheduled(machine, agent, 'delete'),
                           onTogglePause: () =>
