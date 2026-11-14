@@ -2,7 +2,10 @@ import type { ConversationCommandCatalog } from '../../shared/conversation/comma
 import type { ConversationCommandsRequest } from '../../shared/ipc/conversation-commands'
 import type { StudioChatBackend } from '../../server/rpc/studio-rpc-types'
 import type { StudioListChange } from '../../../packages/studio-protocol/src/public'
-import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
+import type {
+  ConversationCliRuntimeOverrides,
+  ConversationCommandReceiptState,
+} from '../../shared/conversation-runtime'
 import { onConversationCommandsChanged } from '../conversation-commands/registry'
 import { readConversationCommandsRequest } from '../conversation-commands/request'
 import {
@@ -41,8 +44,8 @@ export type StudioChatBackendDeps = {
    * workspaces' folders, and the app's stores of sent pictures and plans.
    */
   readableRoots(): string[] | Promise<string[]>
-  /** Whether the runtime holds a receipt for a session's command id. */
-  hasReceipt(sessionId: string, commandId: string): Promise<boolean>
+  /** What the runtime holds of a session's command id: a receipt, none, or no such session. */
+  commandReceipt(sessionId: string, commandId: string): Promise<ConversationCommandReceiptState>
   /** The (CLI, folder) list main holds, probing when it is missing or old. */
   commands(input: ConversationCommandsRequest): Promise<ConversationCommandCatalog>
   onCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
@@ -147,11 +150,11 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return failed(error)
       }
     },
-    async hasReceipt(input) {
+    async commandReceipt(input) {
       try {
-        return await deps.hasReceipt(input.sessionId, input.commandId)
+        return await deps.commandReceipt(input.sessionId, input.commandId)
       } catch {
-        return false
+        return 'none'
       }
     },
     // Each of these answers its own `ok`, so a throw below is that answer

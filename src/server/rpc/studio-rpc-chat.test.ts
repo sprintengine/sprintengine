@@ -10,6 +10,7 @@ import {
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
 import type { ConversationEvent, ConversationSendTurnInput } from '../../shared/conversation-runtime'
+import { CONVERSATION_SESSION_NOT_FOUND } from '../../shared/conversation-runtime'
 import {
   createTicketAuthenticator,
   framePortStream,
@@ -48,6 +49,8 @@ type ChatCalls = {
   controls: string[]
   releasedHistory: number[]
   lifecycleListeners: Set<(event: ConversationEvent) => void>
+  /** Sessions the runtime no longer holds: its server restarted since they were started. */
+  lostSessions: Set<string>
 }
 
 function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
@@ -58,6 +61,7 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     controls: [],
     releasedHistory: [],
     lifecycleListeners: new Set(),
+    lostSessions: new Set(),
   }
   const session = {
     sessionId: 's1',
@@ -73,11 +77,20 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     calls,
     startSession: async () => ({ ok: true, session }),
     sendTurn: async (input) => {
+      if (calls.lostSessions.has(input.sessionId))
+        return { ok: false, code: CONVERSATION_SESSION_NOT_FOUND, message: 'Conversation session is invalid.' }
       calls.sends.push(input)
       return { ok: true, session }
     },
-    // A send the runtime has carried out holds a receipt under its id.
-    hasReceipt: async ({ commandId }) => calls.sends.some((send) => send.commandId === commandId),
+    // A send the runtime has carried out holds a receipt under its id, in
+    // the chat's log, whichever of its sessions asks; a session it no longer
+    // holds (its server restarted) is none to ask of.
+    commandReceipt: async ({ sessionId, commandId }) =>
+      calls.lostSessions.has(sessionId)
+        ? 'no_session'
+        : calls.sends.some((send) => send.commandId === commandId)
+          ? 'kept'
+          : 'none',
     interrupt: async () => ({ ok: true, session }),
     respond: async () => ({ ok: true, session }),
     setPermission: async () => ({ ok: true, session }),
@@ -679,6 +692,56 @@ test('a send resent long after its pictures went is answered from its receipt, n
   assert.equal(chat.calls.sends[1].commandId, 'owner:c1', 'the runtime answers it from the same receipt')
   assert.equal(chat.calls.sends[1].attachments, undefined)
   router.close()
+})
+
+test('a send with pictures resent to a session gone with its server is answered "session not found", and then from its receipt', async () => {
+  const chat = fakeChat()
+  const grant = studioWindowGrant()
+  const context = { connectionId: 'w1', slot: 1, ownWindow: true }
+  const serve = () => {
+    const uploads = createStudioUploads()
+    disposers.push(async () => uploads.close())
+    const router = createStudioRpcRouter({
+      backend: createFakeBackend(),
+      chat: () => chat,
+      info: () => ({}) as never,
+      uploads,
+    })
+    disposers.push(async () => router.close())
+    const call = (method: string, params: unknown) => router.handle(grant, method as never, params, context)
+    const picture = async () => {
+      const begun = await call('uploads.begin', { mediaType: 'image/png', byteLength: 3 })
+      assert.ok(begun.ok)
+      const { uploadId } = begun.result as { uploadId: string }
+      assert.ok((await call('uploads.append', { uploadId, offset: 0, dataBase64: 'AAAA' })).ok)
+      return uploadId
+    }
+    return { call, picture, uploads }
+  }
+  const before = serve()
+  const uploadId = await before.picture()
+  const send = { commandId: 'c1', sessionId: 's1', message: 'look', attachments: [{ id: 'img', uploadId }] }
+  assert.ok((await before.call('session.send', send)).ok)
+  // The server restarts: its uploads and the chat's session go with it.
+  chat.calls.lostSessions.add('s1')
+  const after = serve()
+  // The window's client sends again what it never heard answered, as it was.
+  const resent = await after.call('session.send', send)
+  assert.ok(resent.ok, 'not refused for its pictures, which went with the server')
+  assert.equal((resent.result as { code?: string }).code, CONVERSATION_SESSION_NOT_FOUND)
+  // The window starts the chat again and sends once more under the same id,
+  // its pictures staged again: the receipt answers it, and runs no turn.
+  const restaged = await after.picture()
+  const again = await after.call('session.send', {
+    ...send,
+    sessionId: 's2',
+    attachments: [{ id: 'img', uploadId: restaged }],
+  })
+  assert.ok(again.ok && (again.result as { ok: boolean }).ok)
+  assert.equal(chat.calls.sends.length, 2)
+  assert.equal(chat.calls.sends[1].commandId, 'owner:c1')
+  assert.equal(chat.calls.sends[1].attachments, undefined, 'nothing staged again for a send already made')
+  assert.equal(after.uploads.size(), 0, 'the pictures staged for it are let go of')
 })
 
 test('a revert or rewind is carried out once per command id, and its answer given to every retry', async () => {

@@ -34,7 +34,7 @@ function registerConversationIpc(
   const backend = createStudioChatBackend({
     conversation: service,
     readableRoots: () => ['/'],
-    hasReceipt: async () => false,
+    commandReceipt: async () => 'none',
     commands: async () => ({}) as never,
   })
   const serve = (channel: string, call: (input: never) => unknown) =>

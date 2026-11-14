@@ -56,6 +56,7 @@ import type {
   ConversationToolDetailResult,
   ConversationEventReadResult,
   ConversationTurnDiffResult,
+  ConversationCommandReceiptState,
 } from '../../shared/conversation-runtime'
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
 import type {
@@ -223,6 +224,12 @@ export type StudioFollowedBackend = {
     clientId: string,
     uploads: StudioStagedUpload[],
   ): Promise<{ ok: true; ids: string[] } | { ok: false; code: 'not_found' | 'invalid_params'; message: string }>
+  /**
+   * Whether a client's send under a command id (already namespaced to it) was
+   * carried out before, held or in the chat's log, whatever restarted since:
+   * asked before its uploads are staged, which a repeat does not need.
+   */
+  sentBefore?(key: ConversationKey, clientId: string, commandId: string): Promise<boolean>
   /** The chat's rest, written to its workspace's record as its row menu writes it; `byOwner` says whose write it is. */
   settle?(workspaceId: string, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
   visit?(
@@ -262,8 +269,13 @@ export type StudioChatBackend = {
       attachments?: ConversationImageAttachment[]
     },
   ): Promise<ConversationSessionActionResult>
-  /** Whether a session command's id has a receipt (or is being carried out): a repeat is answered from it. */
-  hasReceipt(input: { sessionId: string; commandId: string }): Promise<boolean>
+  /**
+   * What the runtime holds of a session command's id: a receipt (or the
+   * command being carried out), from which a repeat is answered; none; or no
+   * such session, which a send is answered as, so its client starts the chat
+   * again and asks on that session.
+   */
+  commandReceipt(input: { sessionId: string; commandId: string }): Promise<ConversationCommandReceiptState>
   interrupt(input: SessionCommand<ChatInput<'session.interrupt'>>): Promise<ConversationSessionActionResult>
   respond(input: SessionCommand<ChatInput<'session.respond'>>): Promise<ConversationSessionActionResult>
   setPermission(input: SessionCommand<ChatInput<'session.setPermission'>>): Promise<ConversationSessionActionResult>

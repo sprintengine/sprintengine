@@ -309,9 +309,9 @@ test('a command id named for a different command is refused, while the first run
       code: 'command_id_conflict',
       message: 'That command id was already used for a different command. Send this one under a new id.',
     }
-    assert.equal(await f.runtime.hasCommandReceipt(f.sessionId, commandId), false, 'nothing is held before it runs')
+    assert.equal(await f.runtime.commandReceipt(f.sessionId, commandId), 'none', 'nothing is held before it runs')
     const running = send('/tools', 'fp-tools')
-    assert.equal(await f.runtime.hasCommandReceipt(f.sessionId, commandId), true, 'held while it runs')
+    assert.equal(await f.runtime.commandReceipt(f.sessionId, commandId), 'kept', 'held while it runs')
     const [first, racing] = await Promise.all([running, send('/help', 'fp-help')])
     assert.equal(first.ok, true)
     assert.deepEqual(racing, conflict, 'while the first is still running')
@@ -341,8 +341,8 @@ test('a command id named for a different command is refused, while the first run
           ...(commandFingerprint ? { commandFingerprint } : {}),
         })
       assert.equal(
-        await restarted.hasCommandReceipt(session.session.sessionId, commandId),
-        true,
+        await restarted.commandReceipt(session.session.sessionId, commandId),
+        'kept',
         'a receipt on disk is held',
       )
       assert.deepEqual(await again('/help', 'fp-help'), conflict, 'the receipt on disk keeps what the command was')
@@ -386,9 +386,13 @@ test('a crash after a send is committed, before it is answered, never sends it t
     void f.runtime.sendTurn({ sessionId: f.sessionId, commandId, message: 'one effect' })
     await committed
     // A second process over the same files, the first never shut down: a crash.
+    // The session the send named went with it, and is said to be gone, not
+    // to hold no receipt; the chat's log holds it, session or none.
+    assert.equal(await restarted.commandReceipt(f.sessionId, commandId), 'no_session')
+    assert.equal(await restarted.hasChatCommandReceipt(f.key, commandId), true)
     const opened = await restarted.startSession({ ...f.key, providerId: 'mock-provider', modelId: 'mock-model' })
     assert.ok(opened.ok)
-    assert.equal(await restarted.hasCommandReceipt(opened.session.sessionId, commandId), true)
+    assert.equal(await restarted.commandReceipt(opened.session.sessionId, commandId), 'kept')
     const retry = await restarted.sendTurn({ sessionId: opened.session.sessionId, commandId, message: 'one effect' })
     assert.equal(retry.ok, true, 'the message is in the chat: the retry is answered as sent')
     const transcript = await restarted.readTranscript(f.key, { all: true })

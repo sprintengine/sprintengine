@@ -67,7 +67,7 @@ function sendingChat(sends: ConversationSendTurnInput[]): StudioChatBackend {
       sends.push(input)
       return { ok: true }
     },
-    hasReceipt: async () => false,
+    commandReceipt: async () => 'none',
     onCommandsChanged: () => () => undefined,
   } as unknown as StudioChatBackend
 }

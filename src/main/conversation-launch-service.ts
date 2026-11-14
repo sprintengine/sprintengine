@@ -63,6 +63,7 @@ import type { McpServerConfig } from '../shared/ipc/mcp'
 import { SOLO_CHAT_TEMPLATE_AGENT_ID, SOLO_CHAT_TEMPLATE_ID } from '../shared/layouts/templates'
 import { deriveWorkspaceTitle, nextNewChatName } from '../shared/workspace-title'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from '../shared/worktree-paths'
+import { firstMessageCommandId, type PendingFirstMessages } from './conversation-first-messages'
 import type { WorkspaceWorktree } from '../renderer/src/types/workspace'
 import type { WorkspaceCreateRequest } from './workspace-registry-service'
 import { isMachinePath } from '../shared/machine-paths'
@@ -83,7 +84,7 @@ export type ConversationLaunchWorkspace = {
 }
 
 /** Who a sub-agent's first message is from: Studio, giving it the task, not the person. */
-const SUBAGENT_TASK_ORIGIN = { kind: 'studio', reason: 'subagent-task' } as const
+export const SUBAGENT_TASK_ORIGIN = { kind: 'studio', reason: 'subagent-task' } as const
 
 export type ConversationLaunchRequest = {
   /** The workspace the chat joins (or, with `newChat`, whose folder a new one starts in). */
@@ -283,6 +284,12 @@ export type ConversationLaunchServiceDeps = {
   ) => { ok: true; workspaceId: string } | { ok: false; message: string }
   removeWorkspace: (workspaceId: string) => void
   startSession: (input: ConversationStartSessionInput) => Promise<ConversationStartSessionResult>
+  /**
+   * Where a first message is written down before the launch answers, and let
+   * go of once it is: the next start sends one a stop cut off
+   * (`conversation-first-messages.ts`). Absent, a stop loses it.
+   */
+  firstMessages?: PendingFirstMessages
   send: (
     input: Pick<
       ConversationSendTurnInput,
@@ -774,12 +781,42 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         reasoningEffort && started.session.capabilities?.reasoningEfforts?.includes(reasoningEffort)
           ? reasoningEffort
           : undefined
+      // Under its launch's own id where it has one, so the next start can send
+      // it again and the chat's receipt answers that if it already went.
+      const firstCommandId =
+        request.firstCommandId ??
+        (request.launchCommandId ? firstMessageCommandId(request.launchCommandId) : newCommandId())
+      // Written down before the launch answers, so a stop before it goes does
+      // not lose it while a resent create is answered "made". A scheduled run
+      // keeps its own record; a message with pictures is not written down.
+      const kept =
+        deps.firstMessages && request.launchCommandId && !request.scheduledAgentId && !request.attachments?.length
+          ? deps.firstMessages
+          : null
+      if (kept)
+        await kept
+          .keep(firstCommandId, {
+            launchCommandId: request.launchCommandId!,
+            message: prompt,
+            ...(skills.length > 0 ? { skills } : {}),
+            ...(turnMode ? { mode: turnMode } : {}),
+            ...(subagentOf ? { subagentTask: true as const } : {}),
+            at: Date.now(),
+          })
+          .catch((error: unknown) =>
+            deps.warn?.(
+              `The first message of chat "${agentId}" could not be written down: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          )
+      const letGo = () => {
+        if (kept) void kept.done(firstCommandId).catch(() => undefined)
+      }
       void ready
         .then(async (go) => {
           if (!go) return
           const sent = await deps.send({
             sessionId,
-            commandId: request.firstCommandId ?? newCommandId(),
+            commandId: firstCommandId,
             message: prompt,
             ...(turnEffort ? { reasoningEffort: turnEffort } : {}),
             ...(turnMode ? { mode: turnMode } : {}),
@@ -787,10 +824,12 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             ...(skills.length > 0 ? { skills: skills.map((id) => ({ id })) } : {}),
             ...(request.attachments?.length ? { attachments: request.attachments } : {}),
           })
+          letGo()
           if (!sent.ok) failed(`The first message of chat "${agentId}" was refused: ${sent.message}`)
           else request.onFirstSent?.()
         })
         .catch((error: unknown) => {
+          letGo()
           failed(
             `The first message of chat "${agentId}" failed: ${error instanceof Error ? error.message : String(error)}`,
           )

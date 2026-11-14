@@ -382,7 +382,18 @@ export function studioCommandFingerprint(method: string, params: unknown): strin
   // the new one under its id is the same command, answered from the receipt
   // it left in the chat's log.
   const { sessionId: _session, ...unaddressed } = named
-  const rest = method.startsWith('session.') ? unaddressed : named
+  const addressed = method.startsWith('session.') ? unaddressed : named
+  // Nor is where its pictures and files were staged: a send whose server
+  // restarted is sent again with them staged again, under other upload ids,
+  // and is still the same send. How many it carries still says what it is.
+  const { uploadIds: staged, ...rest } = addressed
+  if (Array.isArray(staged)) rest.uploadCount = staged.length
+  if (Array.isArray(rest.attachments))
+    rest.attachments = rest.attachments.map((attachment: unknown) => {
+      if (attachment === null || typeof attachment !== 'object') return attachment
+      const { uploadId: _upload, ...named } = attachment as Record<string, unknown>
+      return named
+    })
   return createHash('sha256')
     .update(`${method}\n${canonicalJson(rest)}`)
     .digest('base64url')
@@ -1181,6 +1192,19 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'conversation.send': async (p, asking) => {
       const { uploadIds, ...words } = members(p)
       if (!uploadIds?.length) return plainCommand(asking, p, { kind: 'send', ...words })
+      // A repeat of a send carried out before (held, or in the chat's log) is
+      // answered from that, and needs none of the uploads its first attempt
+      // spent, which a restart since has let go of: asked first, or the
+      // repeat is refused for them and the client sends the message again
+      // under a new id, running its turn twice.
+      const key = resolve(p.key, asking.grant)
+      if (
+        key &&
+        (await followed.sentBefore?.(key, asking.grant.clientId, studioRuntimeCommandId(asking.grant, p.commandId)))
+      ) {
+        uploads.discard(asking.grant.clientId, uploadIds)
+        return plainCommand(asking, p, { kind: 'send', ...words })
+      }
       const staged = await stagedFor(p, uploadIds, asking)
       if (!staged.ok) return staged
       return plainCommand(asking, p, { kind: 'send', ...words, uploadIds: staged.ids })
@@ -1431,9 +1455,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // A repeat of a send the runtime holds a receipt for is answered from
       // it, so it needs none of the pictures the first attempt carried,
       // which may be long gone: it must not be refused for them, or the
-      // client sends the message again under a new id.
-      const answered = attachments?.length && (await chat.hasReceipt({ sessionId: input.sessionId, commandId: id }))
-      if (attachments?.length && !answered) {
+      // client sends the message again under a new id and the turn runs
+      // twice. Nor is a send to a session the runtime no longer holds (its
+      // server restarted since the first attempt, and the pictures went with
+      // it): the runtime answers it "session not found", and the client
+      // starts the chat again and sends once more under the same id, on a
+      // session whose chat log has the receipt.
+      const receipt = attachments?.length
+        ? await chat.commandReceipt({ sessionId: input.sessionId, commandId: id })
+        : 'none'
+      // The ones this attempt staged, given back: nothing is made of them.
+      if (receipt !== 'none' && attachments?.length)
+        uploads.discard(
+          grant.clientId,
+          attachments.map((attachment) => attachment.uploadId),
+        )
+      if (attachments?.length && receipt === 'none') {
         const spent = uploads.spend(
           grant.clientId,
           attachments.map((attachment) => attachment.uploadId),
@@ -1464,7 +1501,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           // Recorded, its receipt answers every repeat and the bytes can go;
           // not recorded, nothing ran, and a retry may carry them again.
           if (!pictures) return
-          const recorded = await chat.hasReceipt({ sessionId: input.sessionId, commandId: id }).catch(() => false)
+          const recorded =
+            (await chat.commandReceipt({ sessionId: input.sessionId, commandId: id }).catch(() => 'none')) === 'kept'
           uploads.settle(grant.clientId, id, recorded)
         })
       return { ok: true, result: voice.redact(sent) }

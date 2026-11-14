@@ -120,6 +120,12 @@ function fakeFollowed(calls: Calls): Required<StudioFollowedBackend> & { tell(ki
       await stagingHeld
       return { ok: true, ids: uploads.map((_upload, index) => `host-${clientId}-${staged++}-${index}`) }
     },
+    // The host carried out a send under this id before (a server since
+    // restarted, its uploads gone with it): held, or in the chat's log.
+    async sentBefore(key, clientId, commandId) {
+      calls.push(['sentBefore', key.agentId, clientId, commandId])
+      return commandId.endsWith('sent-before-restart')
+    },
   }
 }
 let staged = 0
@@ -666,4 +672,33 @@ test('a chat’s picture is read by its step or the ref its message recorded, ne
     started.calls.filter(([kind]) => kind === 'picture').map((call) => call[2]),
     [{ toolUseId: 'tool-1' }, { attachment: 'ref-1' }, { toolUseId: 'no-picture' }],
   )
+})
+
+test('a keyed send resent after a restart, its uploads gone, is answered from what the host kept, not refused for them', async () => {
+  const started = await serve()
+  const phone = await client(
+    started.path,
+    pairFakeClient(started.auth, 'phone', ['conversation:read', 'conversation:operate']),
+  )
+  // The uploads it named went with the server that took the first attempt.
+  const resent = await ask(phone, 'conversation.send', {
+    key: KEY,
+    commandId: 'sent-before-restart',
+    message: 'Look at these',
+    uploadIds: ['gone-picture', 'gone-file'],
+  })
+  assert.equal(resent.ok, true, JSON.stringify(resent))
+  assert.equal(started.calls.filter(([kind]) => kind === 'stageUploads').length, 0, 'nothing staged for it')
+  const carried = started.backend.commands.at(-1)!
+  assert.equal(carried.command.kind, 'send')
+  assert.equal((carried.command as { uploadIds?: string[] }).uploadIds, undefined)
+  // A send never carried out still needs its uploads, and is refused without them.
+  const fresh = await ask(phone, 'conversation.send', {
+    key: KEY,
+    commandId: 'never-sent',
+    message: 'Look at these',
+    uploadIds: ['gone-picture'],
+  })
+  assert.equal(!fresh.ok && fresh.error.code, 'not_found')
+  phone.close()
 })

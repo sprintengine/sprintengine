@@ -284,7 +284,7 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
   rpc.provideChat(
     createStudioChatBackend({
       conversation: createConversationService(core.conversations),
-      hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),
+      commandReceipt: (sessionId, commandId) => core.conversations.commandReceipt(sessionId, commandId),
       readableRoots: () => knownFolders(core.workspaceRegistry, options.dataDir),
       commands: (input) => conversationCommands.list(input),
       onListChanged: (listener) => started.onListChanged(listener),

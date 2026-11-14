@@ -42,7 +42,7 @@ function deps(overrides: Partial<StudioChatBackendDeps['conversation']> = {}) {
   } as StudioChatBackendDeps['conversation']
   const value: StudioChatBackendDeps = {
     conversation,
-    hasReceipt: async () => false,
+    commandReceipt: async () => 'none',
     readableRoots: () => [tmpdir()],
     commands: async (input) => ({ cli: input.cli, cwd: input.cwd, commands: [], fetchedAt: 0 }),
     onCommandsChanged: () => () => undefined,

@@ -782,6 +782,20 @@ test("a session command resent to the chat's new session under its id is the sam
   // The server restarted and the chat's session was made again: the session is where it went.
   assert.equal(send('conv_old', 'hello'), send('conv_new', 'hello'))
   assert.notEqual(send('conv_old', 'hello'), send('conv_old', 'something else'))
+  // Its pictures are staged again for the resend, under other upload ids: where they were staged is not what it is.
+  const picture = (sessionId: string, uploadId: string) =>
+    studioCommandFingerprint('session.send', {
+      sessionId,
+      commandId: 'same',
+      message: 'look',
+      attachments: [{ id: 'img', uploadId, name: 'shot.png' }],
+    })
+  assert.equal(picture('conv_old', 'upload-1'), picture('conv_new', 'upload-2'))
+  assert.notEqual(picture('conv_old', 'upload-1'), send('conv_old', 'look'), 'a picture is still part of the send')
+  const queued = (uploadIds: string[]) =>
+    studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hi', uploadIds })
+  assert.equal(queued(['upload-1']), queued(['upload-2']))
+  assert.notEqual(queued(['upload-1']), queued(['upload-1', 'upload-2']))
   // A chat's own address outlives a restart, so it stays part of what a conversation command is.
   assert.notEqual(
     studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hello' }),

@@ -70,6 +70,8 @@ import type {
   ConversationForkResult,
   ConversationImportTranscriptInput,
   ConversationImportTranscriptResult,
+  ConversationCommandReceiptState,
+  ConversationKey,
 } from '../shared/conversation-runtime'
 import {
   CONVERSATION_SESSION_NOT_FOUND,
@@ -1130,7 +1132,7 @@ export class ConversationRuntime {
     const held = isSessionBusy(session)
       ? null
       : await this.holdChatFolder(session.sessionId, session.workspaceRoot, 'a turn is starting in it')
-    if (held && 'busy' in held) return { ok: false, message: held.busy }
+    if (held && 'busy' in held) return folderBusy(held)
     const folder = { hold: held }
     try {
       return await this.sendTurnInFolder(session, input, command, { message, attachments, files }, folder)
@@ -1151,7 +1153,7 @@ export class ConversationRuntime {
     waitKey: string,
     workspaceRoot: string,
     reason: string,
-  ): Promise<WorktreeHold | WorktreeBusy> {
+  ): Promise<WorktreeHold | (WorktreeBusy & { abandoned?: true })> {
     const stop = new AbortController()
     let waits = this.folderWaits.get(waitKey)
     if (!waits) this.folderWaits.set(waitKey, (waits = new Set()))
@@ -1160,7 +1162,7 @@ export class ConversationRuntime {
       const held = await this.worktreeLeases.acquireShared(workspaceRoot, { reason, signal: stop.signal })
       if ('busy' in held || !stop.signal.aborted) return held
       held.release()
-      return { busy: 'Stopped before the worktree was free.' }
+      return { busy: 'Stopped before the worktree was free.', abandoned: true }
     } finally {
       waits.delete(stop)
       if (waits.size === 0 && this.folderWaits.get(waitKey) === waits) this.folderWaits.delete(waitKey)
@@ -1280,14 +1282,13 @@ export class ConversationRuntime {
     if (gone()) return { ok: false, message: 'Conversation is no longer available.' }
     // A steer is sent only over a turn that is still open; a send made as a
     // steer over a turn that has since ended is an ordinary send.
-    if (isSessionBusy(session) && !input.steer)
-      return { ok: false, message: 'Conversation turn is already in progress.' }
+    if (isSessionBusy(session) && !input.steer) return busyRefusal(session)
     // An ordinary send now, though it came in over a busy session: it starts
     // its turn as any send to a resting session does, under the folder's hold
     // and after the folder check (`sendTurn`).
     if (!isSessionBusy(session) && !folder.hold) {
       const held = await this.holdChatFolder(session.sessionId, session.workspaceRoot, 'a turn is starting in it')
-      if ('busy' in held) return { ok: false, message: held.busy }
+      if ('busy' in held) return folderBusy(held)
       folder.hold = held
       const prepared = await this.prepareChatFolder({
         workspaceId: session.workspaceId,
@@ -3112,15 +3113,29 @@ export class ConversationRuntime {
    * Whether a session's command id has a receipt, or is being carried out
    * now: a repeat of it is answered from that receipt rather than run. A
    * caller that would otherwise need what the first attempt carried (a
-   * picture it staged and has since let go of) asks this first.
+   * picture it staged and has since let go of) asks this first. A session
+   * this runtime does not hold (its server restarted since, or the chat
+   * started another) is said as such, not as a command never seen: the
+   * caller is answered "session not found", starts the chat again, and asks
+   * again on that session, where the chat's log has the receipt.
    */
-  async hasCommandReceipt(sessionId: string, commandId: string): Promise<boolean> {
+  async commandReceipt(sessionId: string, commandId: string): Promise<ConversationCommandReceiptState> {
     const session = this.sessions.get(sessionId)
-    if (!session) return false
-    const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
+    if (!session) return 'no_session'
+    return (await this.hasChatCommandReceipt(session, commandId)) ? 'kept' : 'none'
+  }
+
+  /**
+   * Whether a chat's log holds a receipt for a command id, or that command is
+   * being carried out now, live session or none: a server restarted since the
+   * command went still finds it.
+   */
+  async hasChatCommandReceipt(key: ConversationKey, commandId: string): Promise<boolean> {
+    if (!key?.workspaceRoot?.trim() || !key.workspaceId?.trim() || !key.agentId?.trim()) return false
+    const path = this.transcriptPath(key.workspaceRoot, key.workspaceId, key.agentId)
     if (this.pendingCommands.has(commandKey(path, commandId))) return true
     try {
-      return (await this.loadReceipts(session.workspaceRoot, path)).has(commandId)
+      return (await this.loadReceipts(key.workspaceRoot, path)).has(commandId)
     } catch {
       return false
     }
@@ -5128,6 +5143,16 @@ function composedAtOf(input: ConversationSendTurnInput): { composedAt?: number }
 // meet the same refusal for ever.
 function steerBusy(message: string): ConversationSessionActionResult {
   return { ok: false, code: 'busy', retryAfterMs: TURN_BUSY_RETRY_MS, message }
+}
+
+// A send that found the chat's folder held (a worktree being put back, a
+// revert, another start) ran nothing either: busy, so a retry under the same
+// command id runs once the folder is free, rather than being answered from a
+// receipt of this refusal and the message lost. One the person stopped while
+// it waited is answered as stopped, and kept so: a retry does not send it.
+function folderBusy(held: WorktreeBusy & { abandoned?: true }): ConversationSessionActionResult {
+  if (held.abandoned) return { ok: false, message: held.busy }
+  return { ok: false, code: 'busy', retryAfterMs: TURN_BUSY_RETRY_MS, message: held.busy }
 }
 
 function isSessionBusy(session: RuntimeSession): boolean {

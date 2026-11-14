@@ -321,6 +321,7 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
     followed: {
       ...withDefined('picture', pictureReader(host)),
       ...withDefined('stageUploads', uploadStager(host, deps.fileUploads)),
+      sentBefore: (key, clientId, commandId) => host.sentBefore(key, clientId, commandId),
       ...(host.watchQueued ? { watchQueued: (chat, listener) => host.watchQueued!(chat, listener) } : {}),
       ...(host.watchScheduled ? { watchScheduled: (chat, listener) => host.watchScheduled!(chat, listener) } : {}),
       ...(host.watchUsageLimits
