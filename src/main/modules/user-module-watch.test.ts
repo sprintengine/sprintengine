@@ -20,13 +20,16 @@ test('a module dropped in, and its manifest written after its folder, each tell 
   // A watch on macOS is live a moment after it is made, and later still on a
   // loaded machine: a change made before then is never heard. So each folder
   // is touched (a dotfile, which is not a module) until its watch answers, and
-  // only then is the change under test made, counted from there.
+  // only then is the change under test made, counted from there. Each touch
+  // waits longer than the watcher's quiet (50 ms), or touches alone would keep
+  // pushing its one change back.
   const armed = async (dir: string): Promise<number> => {
     const before = changes
     for (let probe = 0; changes === before; probe += 1) {
-      if (probe > 150) throw new Error(`the watch on ${dir} never answered`)
+      if (probe > 40) throw new Error(`the watch on ${dir} never answered`)
       writeFileSync(join(dir, '.probe'), String(probe))
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      const answered = Date.now() + 250
+      while (changes === before && Date.now() < answered) await new Promise((resolve) => setTimeout(resolve, 20))
     }
     // Let the probes' own quiet pass, so none lands in the count below.
     await new Promise((resolve) => setTimeout(resolve, 150))
