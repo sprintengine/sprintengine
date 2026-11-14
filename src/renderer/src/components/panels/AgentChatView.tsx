@@ -242,7 +242,7 @@ import { BackgroundTasksTrayRow } from './agentChat/backgroundTasksRow'
 import { GoalTrayRow } from './agentChat/goalTrayRow'
 import { WorktreeInstallTrayRow } from './agentChat/worktreeInstallRow'
 import { StudioConnectionNotice } from './agentChat/studioConnectionNotice'
-import { firstTellingOfTurnFailure } from './agentChat/turnFailureNotices'
+import { tellOfTurnFailure } from './agentChat/turnFailureNotices'
 import { ConversationTodoStrip } from './agentChat/todoProgressStrip'
 import { TimelineRow, type TimelineChrome } from './agentChat/timelineRows'
 import { UnreadDivider } from './agentChat/turnMeta'
@@ -1269,11 +1269,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // panel, once each: a failure is its event (`lastErrorId`), so the same
   // failure read again whole (a reconnect, a server restarted under the chat,
   // the view mounted again) is not told twice, and a later turn failing with
-  // the same words still is.
+  // the same words still is. One already in the history this window first
+  // reads of the chat is not told: the chat shows it.
   useEffect(() => {
+    if (!hydrated) return
     const message = projection.lastError
+    if (!tellOfTurnFailure(workspaceId, agentId, message ? (projection.lastErrorId ?? message) : null)) return
     if (!message) return
-    if (!firstTellingOfTurnFailure(workspaceId, agentId, projection.lastErrorId ?? message)) return
     publishDiagnosticSync({
       level: 'error',
       source: 'workspace',
@@ -1287,6 +1289,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       agentId,
     })
   }, [
+    hydrated,
     projection.lastError,
     projection.lastErrorDetail,
     projection.lastErrorId,
