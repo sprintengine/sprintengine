@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from 'fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'path'
+import { dirname, isAbsolute, join } from 'path'
 import { agentWorktreeLockOwner, lockAgentWorktree, relockWorktree, unlockWorktree } from './agent-worktree-lock'
 import { excludeFromWorktree } from './integrations/worktree-exclude'
 import { cloneTree } from './clone-tree'
@@ -14,6 +14,7 @@ import {
   toAbsolutePath,
   toFilesystemPath,
   toPosixPath,
+  toRepoAbsolutePath,
 } from './git-utils'
 import { GIT_NETWORK_TIMEOUT_MS } from './git-run'
 import { listGitWorktrees } from './git-worktree-list'
@@ -1076,7 +1077,7 @@ export async function unlockAgentGitWorktree(
 }
 
 export async function getGitFileBase(repoRoot: string, filePath: string): Promise<GitFileBaseResult> {
-  const absolutePath = isAbsolute(filePath) ? filePath : resolve(filePath)
+  const absolutePath = toRepoAbsolutePath(repoRoot, filePath)
   if (!isInsideRepo(repoRoot, absolutePath) && dirname(absolutePath) !== repoRoot) {
     return { ok: false, message: 'File is outside the Git repository.' }
   }
@@ -1105,7 +1106,7 @@ export async function getGitFileAtStage(
   filePath: string,
   stage: GitFileStage,
 ): Promise<GitFileStageResult> {
-  const absolutePath = isAbsolute(filePath) ? filePath : resolve(filePath)
+  const absolutePath = toRepoAbsolutePath(repoRoot, filePath)
   if (!isInsideRepo(repoRoot, absolutePath) && dirname(absolutePath) !== repoRoot) {
     return { ok: false, message: 'File is outside the Git repository.' }
   }
