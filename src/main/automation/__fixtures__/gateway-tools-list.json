@@ -877,34 +877,6 @@
   ],
   "remote-tailnet": [
     {
-      "name": "browser.status",
-      "sha256": "2d404d4e2653cd0c8d44ac3d08e9d6ee8181230ba864c38a5bc23a2a58c2c6b4"
-    },
-    {
-      "name": "browser.snapshot",
-      "sha256": "a631bb5ad0002f5549bb69ab1b85573576cc3af01c14416422766d3b83fd845d"
-    },
-    {
-      "name": "browser.screenshot",
-      "sha256": "2a87ca47ad5f6d53c2293030b89aa642a07c3a7ad1765f2276824cee02728961"
-    },
-    {
-      "name": "browser.wait_for",
-      "sha256": "83d9b09e6695ef092042738327ec9a4a25a11894b0c748020443937dd9e6b0a8"
-    },
-    {
-      "name": "browser.console",
-      "sha256": "14bdcf484b4b7e56a6cb8eebf6c2d98295405c173dc89fa4f2e361d6fd423612"
-    },
-    {
-      "name": "browser.actions",
-      "sha256": "cadd9f76dcb101ed83844e9e70424a99450bae82735229d8efaad068ecfb6002"
-    },
-    {
-      "name": "browser.network",
-      "sha256": "3ff7c18802e38936a43e2eaee1f2fd087559858b1fcd0a40b5cb631dc7a5504b"
-    },
-    {
       "name": "editor.state",
       "sha256": "d45577bee391a7224b0bbd0619855cc1dc67ec54e111185e6459bc925572761b"
     },

@@ -6,7 +6,11 @@ import {
   ensureBacklogObjectRecords,
   readBacklogConfigText,
   readBacklogFrontmatterFields,
+  readBacklogLocation,
   readBacklogObjectStore,
+  realBacklogFilePath,
+  realBacklogFolder,
+  realPathInBacklogFolder,
 } from '../../backlog-service'
 import {
   backlogTitleFromPath,
@@ -23,12 +27,7 @@ import type {
   StudioBacklogWorkspace,
 } from '../../../../packages/studio-protocol/src/public'
 import { MobileControlCommandError } from './command-error'
-import {
-  backlogAbsolutePath,
-  backlogLocationFor,
-  defaultBacklogLocation,
-  type BacklogLocation,
-} from '../../../shared/backlog/scan'
+import { backlogAbsolutePath, type BacklogLocation } from '../../../shared/backlog/scan'
 
 const BACKLOG_FOLDER = 'backlog'
 const ARCHIVED_PREFIX = 'backlog/archived/'
@@ -67,19 +66,6 @@ const EPICS_RELATIVE_PATH = 'backlog/epics'
 // Read the workspace's backlog display key (its store's `backlog/config.json`),
 // read-only — unlike the desktop resolver, this never persists a derived default,
 // because a snapshot read must not write to the workspace.
-// Where this workspace keeps its items. Read-only, like the key resolver above:
-// a snapshot read must not write to the workspace, and a workspace with no
-// configured root reads as the default `<root>/backlog`.
-async function readBacklogLocation(root: string): Promise<BacklogLocation> {
-  try {
-    const raw = await readBacklogConfigText(root)
-    const parsed = JSON.parse(raw) as { root?: unknown }
-    if (typeof parsed.root === 'string' && parsed.root.trim()) return backlogLocationFor(root, parsed.root)
-  } catch {
-    // Missing/unreadable config: the default, same as the desktop resolver.
-  }
-  return defaultBacklogLocation(root)
-}
 
 async function readBacklogWorkspaceKey(root: string): Promise<string> {
   try {
@@ -102,9 +88,10 @@ async function buildBacklogEpics(
   items: StudioBacklogItem[],
 ): Promise<StudioBacklogEpic[]> {
   const epicsDir = backlogAbsolutePath(backlogLocation, EPICS_RELATIVE_PATH)
+  const folder = await realBacklogFolder(backlogLocation)
   let epicFiles: string[]
   try {
-    if (epicsDir === null) return []
+    if (epicsDir === null || folder === null) return []
     epicFiles = (await readdir(epicsDir)).filter((name) => /\.mdx?$/i.test(name))
   } catch {
     return []
@@ -126,7 +113,9 @@ async function buildBacklogEpics(
     const slug = file.replace(/\.mdx?$/i, '')
     let raw: string | null = null
     try {
-      raw = await readFile(join(epicsDir, file), 'utf-8')
+      // An epic file that links out of the backlog reads as absent, as the desktop's reads do.
+      const real = await realPathInBacklogFolder(folder, join(epicsDir, file))
+      raw = real === null ? null : await readFile(real, 'utf-8')
     } catch {
       raw = null
     }
@@ -238,7 +227,7 @@ async function toBacklogItemSnapshot(
 ): Promise<StudioBacklogItem> {
   let raw: string | null = null
   try {
-    const source = backlogAbsolutePath(backlogLocation, record.source.relativePath)
+    const source = await realBacklogFilePath(backlogLocation, record.source.relativePath)
     raw = source === null ? null : await readFile(source, 'utf-8')
   } catch {
     raw = null

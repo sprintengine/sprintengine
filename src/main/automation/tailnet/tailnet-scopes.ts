@@ -112,6 +112,13 @@ const CHAT_TO_CHAT_TOOLS: ReadonlySet<string> = new Set([
  * The `visual.*` family draws an agent's markup, scripts and all, in a hidden
  * window on this machine; it is for an agent writing a reply here.
  *
+ * The `browser.*` family drives and reads the in-app browser pane on this
+ * machine's screen. The pane carries the person's own sign-ins, so even a read
+ * (a snapshot, a screenshot, the console or the network log) hands a device
+ * whatever page the person has open; and opening a page there reaches this
+ * machine's loopback servers. It is for an agent working here, whatever scope
+ * a device holds.
+ *
  * The `extension.*` family makes an extension project in a folder on this
  * machine that the caller names, and teaches an agent about to work in it; a
  * paired device has neither the folder nor the agent.
@@ -164,6 +171,9 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
   }
   if (CHAT_TO_CHAT_TOOLS.has(toolName)) {
     return `"${toolName}" lets an agent on this machine drive another chat here. A paired device follows and drives this machine's chats through this machine's Studio (\`conversation.*\`) instead.`
+  }
+  if (toolName.startsWith('browser.')) {
+    return `"${toolName}" drives the in-app browser pane on this machine, which holds the person's own pages and sign-ins, and is served only on its local socket. Run it from an agent on that machine.`
   }
   if (toolName.startsWith('visual.')) {
     return `"${toolName}" draws an agent's visual in a hidden window on this machine, for a reply it is writing here. Run it from an agent on that machine.`

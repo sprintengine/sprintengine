@@ -77,7 +77,9 @@ function legacyLocalOnly(toolName: string): boolean {
     LEGACY_CHAT_LIFECYCLE_TOOLS.has(toolName) ||
     // Since `canvas.*` on the protocol: a device's way to the boards.
     toolName.startsWith('canvas.') ||
-    toolName.startsWith('terminal.')
+    toolName.startsWith('terminal.') ||
+    // Since a device was found reading the person's in-app browser pane: the agents' tools here alone.
+    toolName.startsWith('browser.')
   )
 }
 function legacyRequiredScopeForTool(toolName: string, isMutation: boolean): TailnetScope {

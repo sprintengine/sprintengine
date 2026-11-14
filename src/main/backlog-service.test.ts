@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
@@ -8,6 +8,7 @@ import {
   addOrUpdateBacklogLink,
   createBacklogEpic,
   createBacklogItem,
+  ensureBacklogItemIds,
   listBacklogItems,
   moveBacklogObjectSource,
   readBacklogItem,
@@ -1604,4 +1605,79 @@ test('backlog-service', async () => {
     })
 
   await suiteRun
+})
+
+// A repository is anyone's to write, so a link in its backlog must not make
+// Studio read, send or write a file elsewhere on the disk: every read and
+// write holds the file's real path to the backlog's real folder.
+test('backlog files are read and written only where they really are inside the backlog', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-links-')))
+  const project = join(root, 'project')
+  const outside = join(root, 'private')
+  const secret = join(outside, 'secret.md')
+  const secretText = '---\nstatus: idea\n---\n# PRIVATE_CANARY\n'
+  try {
+    await mkdir(join(project, 'backlog', 'unfiled'), { recursive: true })
+    await mkdir(outside)
+    await writeFile(secret, secretText, 'utf-8')
+    await writeFile(join(project, 'backlog', 'unfiled', 'kept.md'), '# Kept\n', 'utf-8')
+    await symlink(secret, join(project, 'backlog', 'unfiled', 'escape.md'))
+    await symlink(join(project, 'backlog', 'unfiled', 'kept.md'), join(project, 'backlog', 'unfiled', 'alias.md'))
+    // An epic folder that is a link out of the project.
+    await symlink(outside, join(project, 'backlog', 'leak'))
+
+    const escaped = await readBacklogItem(project, 'backlog/unfiled/escape.md')
+    assert.equal(escaped.ok, false)
+    assert.ok(!JSON.stringify(escaped).includes('PRIVATE_CANARY'))
+    assert.equal((await readBacklogItem(project, 'backlog/leak/secret.md')).ok, false, 'nor through a linked folder')
+    assert.equal((await readBacklogItem(project, 'backlog/unfiled/kept.md')).ok, true)
+    assert.equal((await readBacklogItem(project, 'backlog/unfiled/alias.md')).ok, true, 'a link inside still reads')
+
+    const listed = await listBacklogItems(project)
+    assert.ok(listed.ok)
+    assert.ok(!JSON.stringify(listed).includes('PRIVATE_CANARY'))
+
+    // Writes through a link are refused and leave the file it points at alone.
+    const status = await updateBacklogStatus({
+      workspaceRoot: project,
+      relativePath: 'backlog/unfiled/escape.md',
+      status: 'ready',
+    })
+    assert.equal(status.ok, false)
+    const created = await createBacklogItem({ workspaceRoot: project, title: 'Planted', epic: 'leak' })
+    assert.equal(created.ok, false)
+    assert.equal(await readFile(secret, 'utf-8'), secretText)
+    assert.deepEqual(await readdir(outside), ['secret.md'])
+
+    // A `backlog` folder that is itself a link out of the project is no backlog of it.
+    const linked = join(root, 'linked')
+    await mkdir(linked)
+    await symlink(outside, join(linked, 'backlog'))
+    assert.equal((await readBacklogItem(linked, 'backlog/secret.md')).ok, false)
+    const linkedList = await listBacklogItems(linked)
+    assert.ok(!JSON.stringify(linkedList).includes('PRIVATE_CANARY'))
+
+    // A root a repository committed is not honoured: only the person sets one, in Settings.
+    const committing = join(root, 'committing')
+    await mkdir(join(committing, '.sprintengine', 'backlog'), { recursive: true })
+    await writeFile(
+      join(committing, '.sprintengine', 'backlog', 'config.json'),
+      `${JSON.stringify({ schemaVersion: 2, root: outside })}\n`,
+      'utf-8',
+    )
+    const location = await resolveBacklogLocation(committing)
+    assert.equal(location.ok && location.location.isDefault, true)
+    assert.equal((await readBacklogItem(committing, 'backlog/secret.md')).ok, false)
+    // Nor does the store's config, first written here to keep a derived key, take it up.
+    const ensured = await ensureBacklogItemIds({ workspaceRoot: committing, items: [] })
+    assert.equal(ensured.ok, true, ensured.ok ? '' : ensured.message)
+    const stored = JSON.parse(
+      await readFile(workspaceStorePath(committing, 'backlog', 'config.json'), 'utf-8'),
+    ) as Record<string, unknown>
+    assert.equal(typeof stored['key'], 'string')
+    assert.equal(stored['root'], undefined)
+    assert.deepEqual(await readdir(outside), ['secret.md'])
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
 })
