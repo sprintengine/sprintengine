@@ -8,9 +8,9 @@ unchanged and re-exports all of it, so a client depends on this one package.
 [`@sprintengine/agent-sdk`](../agent-sdk/README.md) is the client library
 built on it.
 
-The conversation package stays what it is: the conversation lane on its own,
-which Studio also serves to paired devices over the tailnet. This package adds
-the connection around it. No Electron, Node or React dependencies; it runs in
+The conversation package is the contract alone, with no transport of its own.
+This package adds the connection around it, and is how every client, a paired
+phone or desktop on the tailnet included, reaches Studio's chats. No Electron, Node or React dependencies; it runs in
 Node and in a browser.
 
 ## Where it is served
@@ -210,41 +210,41 @@ contract, so a missing handler, a wrong result or an undeclared refusal does
 not compile either. A client calls through `StudioRequest`, or the call per
 method `createStudioRpcClient` builds from the same table.
 
-| Method                             | Scope    | Takes                                           | Answers                                          |
-| ---------------------------------- | -------- | ----------------------------------------------- | ------------------------------------------------ |
-| `server.info`                      | any      | —                                               | the welcome, without its pairing                 |
-| `server.ping`                      | any      | —                                               | `{ at }`, at once: the line is alive             |
-| `conversation.list`                | read     | —                                               | `{ conversations: ConversationThread[] }`        |
-| `conversation.create`              | create   | `ConversationCreateRequest` + `commandId`       | `{ conversation }`                               |
-| `conversation.send`                | operate  | `key`, `commandId`, the lane's `send` members   | `{ notice? }`, when the turn ends                |
-| `conversation.interrupt`           | operate  | `key`, `commandId`                              | `{}`                                             |
-| `conversation.resolveApproval`     | operate  | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
-| `conversation.answerQuestion`      | operate  | `key`, `commandId`, `requestId`, `answers`      | `{}`                                             |
-| `conversation.resolvePlan`         | operate  | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
-| `conversation.setPermissionPreset` | operate  | `key`, `commandId`, `preset`, `permissionMode?` | `{ permissionPreset, permissionMode?, notice? }` |
-| `conversation.setModel`            | operate  | `key`, `commandId`, `modelId`                   | `{ modelId, notice? }`                           |
-| `conversation.cancelQueued`        | operate  | `key`, `commandId`, `queuedId`                  | `{}`                                             |
-| `conversation.stopSubagent`        | operate  | `key`, `commandId`, `toolUseId`                 | `{}`                                             |
-| `conversation.messageSubagent`     | operate  | `key`, `commandId`, `toolUseId`, `message`      | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
-| `conversation.setReasoningEffort`  | operate  | `key`, `commandId`, `effort?`                   | `{ notice? }`                                    |
-| `conversation.mcpServerAction`     | operate  | `key`, `commandId`, `serverId`, `action`        | `{}`                                             |
-| `conversation.restartSession`      | operate  | `key`, `commandId`                              | `{ notice? }`                                    |
-| `conversation.scheduleSend`        | operate  | `key`, `commandId`, `message`, `sendAt`         | `{}`, once it is kept                            |
-| `conversation.sendScheduledNow`    | operate  | `key`, `commandId`, `scheduledId`               | `{}`                                             |
-| `conversation.cancelScheduled`     | operate  | `key`, `commandId`, `scheduledId`               | `{}`                                             |
-| `conversation.usageLimitResume`    | operate  | `key`, `commandId`, `action`, `always?`         | `{}`                                             |
-| `conversation.stop`                | operate  | `key`, `commandId`                              | `{}`                                             |
-| `conversation.fork`                | create   | `key`, `commandId`, `newAgentId`, the point     | `{ ok: true, address, name }`                    |
-| `conversation.loadEarlier`         | read     | `key`, `beforeCursor`, `turnLimit?`             | `{ page }`                                       |
-| `conversation.toolDetail`          | read     | `key`, `toolUseId`                              | `{ detail }`                                     |
-| `conversation.event`               | read     | `key`, `seq`, `id`                              | `{ event }`                                      |
-| `conversation.turnDiff`            | read     | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
-| `update.status`                    | any      | —                                               | `StudioUpdateStatus`: how it is updated          |
-| `update.start`                     | maintain | `commandId`, `targetVersion?`                   | `{ accepted, method: 'self', targetVersion }`    |
+| Method                             | Scope    | Takes                                             | Answers                                          |
+| ---------------------------------- | -------- | ------------------------------------------------- | ------------------------------------------------ |
+| `server.info`                      | any      | —                                                 | the welcome, without its pairing                 |
+| `server.ping`                      | any      | —                                                 | `{ at }`, at once: the line is alive             |
+| `conversation.list`                | read     | —                                                 | `{ conversations: ConversationThread[] }`        |
+| `conversation.create`              | create   | `ConversationCreateRequest` + `commandId`         | `{ conversation }`                               |
+| `conversation.send`                | operate  | `key`, `commandId`, the contract's `send` members | `{ notice? }`, when the turn ends                |
+| `conversation.interrupt`           | operate  | `key`, `commandId`                                | `{}`                                             |
+| `conversation.resolveApproval`     | operate  | `key`, `commandId`, `requestId`, `decision`       | `{}`                                             |
+| `conversation.answerQuestion`      | operate  | `key`, `commandId`, `requestId`, `answers`        | `{}`                                             |
+| `conversation.resolvePlan`         | operate  | `key`, `commandId`, `requestId`, `decision`       | `{}`                                             |
+| `conversation.setPermissionPreset` | operate  | `key`, `commandId`, `preset`, `permissionMode?`   | `{ permissionPreset, permissionMode?, notice? }` |
+| `conversation.setModel`            | operate  | `key`, `commandId`, `modelId`                     | `{ modelId, notice? }`                           |
+| `conversation.cancelQueued`        | operate  | `key`, `commandId`, `queuedId`                    | `{}`                                             |
+| `conversation.stopSubagent`        | operate  | `key`, `commandId`, `toolUseId`                   | `{}`                                             |
+| `conversation.messageSubagent`     | operate  | `key`, `commandId`, `toolUseId`, `message`        | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
+| `conversation.setReasoningEffort`  | operate  | `key`, `commandId`, `effort?`                     | `{ notice? }`                                    |
+| `conversation.mcpServerAction`     | operate  | `key`, `commandId`, `serverId`, `action`          | `{}`                                             |
+| `conversation.restartSession`      | operate  | `key`, `commandId`                                | `{ notice? }`                                    |
+| `conversation.scheduleSend`        | operate  | `key`, `commandId`, `message`, `sendAt`           | `{}`, once it is kept                            |
+| `conversation.sendScheduledNow`    | operate  | `key`, `commandId`, `scheduledId`                 | `{}`                                             |
+| `conversation.cancelScheduled`     | operate  | `key`, `commandId`, `scheduledId`                 | `{}`                                             |
+| `conversation.usageLimitResume`    | operate  | `key`, `commandId`, `action`, `always?`           | `{}`                                             |
+| `conversation.stop`                | operate  | `key`, `commandId`                                | `{}`                                             |
+| `conversation.fork`                | create   | `key`, `commandId`, `newAgentId`, the point       | `{ ok: true, address, name }`                    |
+| `conversation.loadEarlier`         | read     | `key`, `beforeCursor`, `turnLimit?`               | `{ page }`                                       |
+| `conversation.toolDetail`          | read     | `key`, `toolUseId`                                | `{ detail }`                                     |
+| `conversation.event`               | read     | `key`, `seq`, `id`                                | `{ event }`                                      |
+| `conversation.turnDiff`            | read     | `key`, `turnSeq`, `path?`                         | `{ diff, patch?, … }`                            |
+| `update.status`                    | any      | —                                                 | `StudioUpdateStatus`: how it is updated          |
+| `update.start`                     | maintain | `commandId`, `targetVersion?`                     | `{ accepted, method: 'self', targetVersion }`    |
 
 `conversation.fork` (`conversation-fork`) forks a chat at a reply
 (`side: 'assistant'`, `turnId`) or before one of the person's messages
-(`side: 'user'`, `turnSeq`), as the tailnet lane's `fork` does: the fork joins
+(`side: 'user'`, `turnSeq`), as the conversation contract's `fork` does: the fork joins
 the chat's workspace as its twin, named by the Studio beside the workspace's
 other chats, and is answered with where it is (`address`, a
 `ConversationAddress`: this Studio's environment id, the chat, `newAgentId`)
@@ -256,9 +256,9 @@ A key is `{ workspaceId, agentId }`. An owner may add `workspaceRoot`, the
 folder the conversation is kept in when that is not its workspace's (a chat
 started in a run worktree), where the Studio serves `conversation-folders`.
 
-A command's params are the conversation lane's command plus its `key` and
-`commandId`, read by the lane's own validator (`parseStudioCommand`), so a
-command means the same thing on this socket as on the tailnet. Every mutation
+A command's params are the conversation contract's command plus its `key` and
+`commandId`, read by that contract's validator (`parseStudioCommand`), so a
+command means the same thing on every connection. Every mutation
 carries a `commandId`, recorded as a durable receipt before the work starts: a
 retry with the same id, on the same connection or after a reconnect or a
 restart of the app, is answered with the first attempt's result and never
@@ -271,7 +271,7 @@ command's result.
 
 ## The chat surface
 
-What a chat view needs beside the conversation lane, so any client can show
+What a chat view needs beside the conversation contract, so any client can show
 and drive a chat as Studio's own windows do (`chat.ts`). Each reaches a client
 by its scope; `session.terminalHandoff` and `providers.signIn` are an owner's.
 
@@ -309,7 +309,7 @@ CLI reports from then on, one `push` frame each, nothing replayed.
 ## Following a conversation
 
 `{ t: 'sub', id, topic: 'conversation.session', params: { key, turnLimit? }, cursor? }`
-follows one conversation exactly as the conversation lane does: a `snapshot`
+follows one conversation as the conversation contract describes: a `snapshot`
 (or, for a `cursor` the log can vouch for, only the events after it), one
 `synchronized` fence, then live `event`s, each wrapped as `{ t: 'frame', sub,
 frame }`. Keep the fence's `seq` and `generation` and the `seq` of every event
