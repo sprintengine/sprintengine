@@ -6,7 +6,12 @@ import { afterEach, test } from 'vitest'
 
 import { conversationProviderForCli } from '../../shared/conversation-harness'
 import type { SignIns } from '../machine/machine-sign-in'
-import { applyGatewayLaunchTokenChanges, resolveGatewayLaunchToken } from '../core/gateway-launch-tokens'
+import {
+  applyGatewayLaunchTokenChanges,
+  issueGatewayLaunchToken,
+  resolveGatewayLaunchToken,
+  revokeGatewayLaunchToken,
+} from '../core/gateway-launch-tokens'
 import {
   connectLineClient,
   createFakeAuthenticator,
@@ -280,7 +285,9 @@ test('what stopping the Studio would end is told to the shell that holds it, and
 })
 
 test("a WSL terminal agent's launch tokens are told to the distribution's Studio by the shell alone, and prove that agent there", async () => {
-  const started = await startTestServer({ launchTokens: applyGatewayLaunchTokenChanges })
+  const started = await startTestServer({
+    launchTokens: (change) => applyGatewayLaunchTokenChanges('environment-owner', change),
+  })
   cleanups.push(() => started.dispose())
   const shell = await shellOf(started.server)
   assert.ok((shell.welcome.capabilities as string[]).includes('environment-launch-tokens'))
@@ -288,6 +295,8 @@ test("a WSL terminal agent's launch tokens are told to the distribution's Studio
   const other = `selaunch_${'b'.repeat(43)}`
   const digest = (value: string) => createHash('sha256').update(value).digest('hex')
   const identity = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'claude-code' }
+  // A chat of this Studio's own, whose agent this Studio launched: not the desktop's to drop.
+  const native = issueGatewayLaunchToken({ workspaceId: 'ws-native', agentId: 'native-chat' })
   try {
     // Only the digest crosses; the gateway here then takes the agent from the token.
     assert.deepEqual(
@@ -304,6 +313,11 @@ test("a WSL terminal agent's launch tokens are told to the distribution's Studio
     })
     assert.equal(resolveGatewayLaunchToken(token), null)
     assert.equal(resolveGatewayLaunchToken(other)?.agentId, 'agent-2')
+    assert.equal(
+      resolveGatewayLaunchToken(native)?.agentId,
+      'native-chat',
+      "the desktop's reconnect replaces only the tokens it told, not this Studio's own chats'",
+    )
     await shell.request('environment.launchTokens', { tokens: [{ digest: digest(other), identity: null }] })
     assert.equal(resolveGatewayLaunchToken(other), null, 'revoked with its terminal')
 
@@ -325,7 +339,8 @@ test("a WSL terminal agent's launch tokens are told to the distribution's Studio
     )
     assert.equal(resolveGatewayLaunchToken(token), null)
   } finally {
-    applyGatewayLaunchTokenChanges({ tokens: [], replace: true })
+    revokeGatewayLaunchToken(native)
+    applyGatewayLaunchTokenChanges('environment-owner', { tokens: [], replace: true })
   }
 
   // A Studio that runs no desktop's terminal agents does not offer it.

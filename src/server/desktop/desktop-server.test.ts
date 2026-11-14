@@ -168,7 +168,7 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(typeof ready.gateway.socketPath, 'string')
   // Its bridge is proven the moment the socket is back, before any push after ready.
   assert.deepEqual(resolveGatewayLaunchToken('terminal-agent-token'), terminalAgent)
-  applyGatewayLaunchTokenChange({ digest: tokenDigest, identity: null })
+  applyGatewayLaunchTokenChange('shell', { digest: tokenDigest, identity: null })
   // Desktop role: the lock names the desktop, so the app's own server is never refused by its parent.
   assert.equal(JSON.parse(readFileSync(join(dataDir, 'run', 'studio.lock'), 'utf8')).role, 'desktop')
 
@@ -255,10 +255,12 @@ test('the desktop server composes, serves a window over the tunnel and the shell
     },
   })
   assert.equal(created.ok, true, JSON.stringify(created))
-  applyGatewayLaunchTokenChange({
-    digest: createHash('sha256').update('lease-agent-token').digest('hex'),
-    identity: { workspaceId: 'lease-ws', agentId: 'agent-lease' },
+  // The shell issued it for a terminal agent and tells this server its digest.
+  const leaseDigest = createHash('sha256').update('lease-agent-token').digest('hex')
+  shellRpc.emit(SERVER_EVENTS.launchTokens, {
+    changes: [{ digest: leaseDigest, identity: { workspaceId: 'lease-ws', agentId: 'agent-lease' } }],
   })
+  await waitFor(() => resolveGatewayLaunchToken('lease-agent-token') ?? undefined)
   const mcp = await mcpSession(ready.gateway.socketPath)
   await mcp.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} })
   const connected = await mcp.call('sprintengine.studio/connect', {
@@ -288,11 +290,15 @@ test('the desktop server composes, serves a window over the tunnel and the shell
     true,
     JSON.stringify(releasedOverMcp),
   )
-  mcp.close()
-  applyGatewayLaunchTokenChange({
-    digest: createHash('sha256').update('lease-agent-token').digest('hex'),
-    identity: null,
-  })
+  // The terminal ends and the shell revokes its token: the connection it
+  // proved is ended, not left serving the chat's tools.
+  shellRpc.emit(SERVER_EVENTS.launchTokens, { changes: [{ digest: leaseDigest, identity: null }] })
+  const ended = await Promise.race([
+    mcp.closed.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ])
+  assert.equal(ended, true, 'the gateway ended the connection the revoked token proved')
+  assert.equal(resolveGatewayLaunchToken('lease-agent-token'), null)
 
   // The drain runs every leg and lets the directory go.
   hub.dispatch({ t: 'shutdown', drain: true, budgetMs: 8_000 }, [])
@@ -341,6 +347,7 @@ async function mcpSession(socketPath: string) {
   const socket = connect(socketPath)
   await new Promise<void>((resolve, reject) => socket.once('connect', resolve).once('error', reject))
   const replies = createInterface({ input: socket })[Symbol.asyncIterator]()
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
   let id = 0
   return {
     async call(method: string, params: Record<string, unknown> = {}): Promise<Record<string, any>> {
@@ -353,6 +360,8 @@ async function mcpSession(socketPath: string) {
       }
     },
     close: () => socket.end(),
+    /** Settles when the gateway ends the connection. */
+    closed,
   }
 }
 

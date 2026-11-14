@@ -7,6 +7,7 @@ import {
   STUDIO_TOOL_NAME_PATTERN,
 } from '../../../packages/studio-protocol/src/public'
 import type { McpConnectionContext, McpToolRegistration, McpToolResult } from '../../shared/modules/mcp-tools'
+import { isGatewayLaunchTokenLive } from '../core/gateway-launch-tokens'
 import type {
   ClientToolCaller,
   ClientToolDefinition,
@@ -37,6 +38,8 @@ type ConnectionIdentity = {
   id: string
   /** The conversation its launch token is bound to (R87). */
   conversation?: ConversationRef
+  /** The digest of the launch token that proved it: the conversation is the connection's only while that token lives. */
+  launchDigest?: string
 }
 
 // Per connection object, for as long as the transport holds it: a connection
@@ -56,17 +59,44 @@ function identityOf(context: McpConnectionContext): ConnectionIdentity {
 /**
  * Bind a gateway connection to the conversation its launch token names. Only
  * the gateway's own token check calls this: a conversation is what Studio
- * proved, never what the connection said.
+ * proved, never what the connection said. `launchDigest` is that token's
+ * digest; once the token is revoked the connection proves nothing.
  */
-export function bindGatewayConversation(context: McpConnectionContext, conversation: ConversationRef | null): void {
+export function bindGatewayConversation(
+  context: McpConnectionContext,
+  conversation: ConversationRef | null,
+  launchDigest?: string,
+): void {
   const identity = identityOf(context)
-  if (conversation) identity.conversation = { workspaceId: conversation.workspaceId, agentId: conversation.agentId }
-  else delete identity.conversation
+  if (conversation) {
+    identity.conversation = { workspaceId: conversation.workspaceId, agentId: conversation.agentId }
+    // Tied to the token that proved it last (the same agent's, as the check allows).
+    if (launchDigest) identity.launchDigest = launchDigest
+  } else {
+    delete identity.conversation
+    delete identity.launchDigest
+  }
 }
 
-/** The conversation a gateway connection's launch token proved, if any. */
+/** The digest of the launch token that proved a gateway connection, if one did. */
+export function gatewayLaunchDigest(context: McpConnectionContext | undefined): string | undefined {
+  return context ? identities.get(context)?.launchDigest : undefined
+}
+
+/**
+ * Whether a connection a launch token proved has outlived it: the launch
+ * ended, so nothing the connection asks is served (the transport closes it
+ * too, and this covers a call already queued).
+ */
+export function gatewayLaunchEnded(context: McpConnectionContext | undefined): boolean {
+  const launchDigest = gatewayLaunchDigest(context)
+  return launchDigest !== undefined && !isGatewayLaunchTokenLive(launchDigest)
+}
+
+/** The conversation a gateway connection's launch token proved, if any, while that token lives. */
 export function gatewayConversation(context: McpConnectionContext | undefined): ConversationRef | undefined {
-  return context ? identities.get(context)?.conversation : undefined
+  if (!context || gatewayLaunchEnded(context)) return undefined
+  return identities.get(context)?.conversation
 }
 
 /** One gateway's view of a connection: its catalog and when it was last told the list grew. */
@@ -132,10 +162,11 @@ export function createClientToolGateway(options: {
 
   function callerOf(context: McpConnectionContext): ClientToolCaller {
     const identity = identityOf(context)
+    const conversation = gatewayConversation(context)
     return {
       gatewayConnectionId: identity.id,
       metadata: context.metadata,
-      ...(identity.conversation ? { conversation: identity.conversation } : {}),
+      ...(conversation ? { conversation } : {}),
     }
   }
 

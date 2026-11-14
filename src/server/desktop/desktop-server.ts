@@ -5,7 +5,7 @@ import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
 import { shellArtifactsOverControl } from '../artifacts/artifacts-shell-bridge'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
 import { isRecord } from '../../shared/records'
-import { applyGatewayLaunchTokenChange, type LaunchTokenChange } from '../core/gateway-launch-tokens'
+import { applyGatewayLaunchTokenChanges, type LaunchTokenChange } from '../core/gateway-launch-tokens'
 import { compactDeps, type StudioAgentTerminals } from '../core/studio-agent-terminals'
 import type { StudioAgents } from '../core/studio-agent-services'
 import { compactTerminalAgent } from '../../main/ipc/agent-compact-ipc'
@@ -154,7 +154,11 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // The launch tokens the shell issued (its WSL terminal agents').
   rpc.on(SERVER_EVENTS.launchTokens, (payload) => {
     const update = payload as { reset?: boolean; changes?: LaunchTokenChange[] } | null
-    for (const change of update?.changes ?? []) applyGatewayLaunchTokenChange(change)
+    // A reset names every live one: the rest the shell told before are revoked.
+    applyGatewayLaunchTokenChanges('shell', {
+      tokens: Array.isArray(update?.changes) ? update.changes : [],
+      replace: update?.reset === true,
+    })
   })
 
   let gateway: StudioGateway | null = null
@@ -571,7 +575,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // socket their bridges reconnect to is back: a bridge that connects first
   // is proven, not left unattributed until the shell's push after ready.
   const liveTokens = await rpc.call<LaunchTokenChange[]>(SHELL_METHODS.liveLaunchTokens).catch(() => [])
-  for (const change of Array.isArray(liveTokens) ? liveTokens : []) applyGatewayLaunchTokenChange(change)
+  applyGatewayLaunchTokenChanges('shell', { tokens: Array.isArray(liveTokens) ? liveTokens : [] })
 
   // Listening: the gateway, the owner socket, the module startup hooks.
   const status = await gateway.initialize()

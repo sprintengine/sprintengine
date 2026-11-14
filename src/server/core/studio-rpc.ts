@@ -114,7 +114,9 @@ export function createStudioRpc(
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh' ? { adoption: environmentAdoptionOf(core) } : {}),
     // A WSL distribution's gateway knows the desktop's terminal agents that run
     // inside it by their launch tokens, which the desktop says by digest.
-    ...(options.hostKind === 'wsl' ? { launchTokens: applyGatewayLaunchTokenChanges } : {}),
+    ...(options.hostKind === 'wsl'
+      ? { launchTokens: (change) => applyGatewayLaunchTokenChanges('environment-owner', change) }
+      : {}),
     ...(options.hostKind === 'wsl' && options.terminalHost ? { terminalHost: options.terminalHost } : {}),
     ...(options.hostKind === 'wsl' && options.machine ? { machine: options.machine } : {}),
     // And says what stopping it would end, which that desktop asks before it
