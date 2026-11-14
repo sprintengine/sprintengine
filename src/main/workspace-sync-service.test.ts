@@ -487,7 +487,7 @@ test('a field main clears reaches every window as cleared, though events travel 
     worktreeState: { containerPath: null, entries: {}, updatedAt: null },
     memory: { relativeRoot: null },
     editorState: { openFiles: [], activeFilePath: null },
-  } as Workspace
+  } as unknown as Workspace
   const registry = createWorkspaceRegistryService({
     store: createInMemoryWorkspaceRegistryStore({
       ...emptyWorkspaceRegistryFile(1),
