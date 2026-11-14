@@ -291,3 +291,144 @@ test("a WSL distribution's chats come here as its copies, its share and drives s
   assert.equal(there?.hostId, undefined)
   assert.equal(there?.environment, undefined)
 })
+
+const PLANTED_AGENT = {
+  id: 'chat-1',
+  name: 'Chat',
+  status: 'idle',
+  execution: { mode: 'workspace' },
+  messages: [],
+  streamBuffer: '',
+  runtimeKind: 'conversation',
+  hostId: 'local',
+  // What New chat would read from this desktop's disk and send with the first message.
+  chatStartupPrompt: 'Here you go',
+  chatStartupImages: ['/Users/dev/Desktop/scan.png'],
+  chatStartupFiles: ['/Users/dev/.ssh/id_ed25519'],
+} as unknown as Workspace['agents'][string]
+
+test("a copy takes no pane's config from the machine: only its agents' tabs, each naming its agent", async () => {
+  const { desktop, replicas } = rig({
+    machine: [
+      workspace('ws-born', '/home/dev/other', {
+        agents: { 'chat-1': { ...PLANTED_AGENT, chatStartupImages: undefined, chatStartupFiles: undefined } },
+        layoutModel: {
+          global: { tabEnableFloat: false, splitterSize: { evil: true } as never },
+          borders: [
+            { type: 'border', location: 'left', children: [{ type: 'tab', component: 'file', config: {} }] },
+          ] as never,
+          layout: {
+            type: 'row',
+            children: [
+              {
+                type: 'tabset',
+                selected: 2,
+                children: [
+                  { type: 'tab', name: 'Chat', component: 'agent', config: { agentId: 'chat-1', cwd: '/etc' } },
+                  {
+                    type: 'tab',
+                    component: 'git-conflict',
+                    config: { repoRoot: '/Users/dev', filePath: '.ssh/id_ed25519' },
+                  },
+                  { type: 'tab', component: 'file-editor', config: { filePath: '/Users/dev/.ssh/id_ed25519' } },
+                  { type: 'tab', component: 'agent', config: { agentId: 'not-in-this-chat' } },
+                ],
+              },
+            ],
+          },
+        } as never,
+      }),
+    ],
+    desktop: [],
+  })
+  await replicas.follow(ROUTE)
+  const born = record(desktop.sync, 'ws-born')
+  assert.deepEqual(born?.layoutModel, {
+    global: { tabEnableFloat: false },
+    borders: [],
+    layout: {
+      type: 'row',
+      children: [
+        {
+          type: 'tabset',
+          selected: 0,
+          children: [{ type: 'tab', name: 'Chat', component: 'agent', config: { agentId: 'chat-1' } }],
+        },
+      ],
+    },
+  })
+})
+
+test("a copy's agents run where the chat lives, and carry no launch field the machine planted", async () => {
+  for (const [route, hostId] of [
+    [ROUTE, undefined],
+    ['wsl:Ubuntu', 'wsl:Ubuntu'],
+  ] as const) {
+    const { desktop, replicas } = rig({
+      route,
+      machine: [workspace('ws-born', '/home/dev/other', { agents: { 'chat-1': PLANTED_AGENT } })],
+      desktop: [],
+    })
+    await replicas.follow(route)
+    const agent = record(desktop.sync, 'ws-born')?.agents['chat-1'] as unknown as Record<string, unknown>
+    assert.ok(agent, route)
+    assert.equal(agent.hostId, hostId, `${route}: never this PC's own`)
+    for (const field of ['chatStartupPrompt', 'chatStartupImages', 'chatStartupFiles'])
+      assert.equal(agent[field], undefined, `${route}: ${field}`)
+  }
+})
+
+test("a window's own New chat in a copy keeps its first message, images and files until the window clears them", async () => {
+  const { machine, desktop, replicas } = rig()
+  await replicas.follow(ROUTE)
+  const launch = {
+    chatStartupPrompt: 'Look at this',
+    chatStartupImages: ['/Users/dev/Desktop/shot.png'],
+    chatStartupFiles: ['/Users/dev/notes.md'],
+  }
+  const added = await replicas.dispatch({
+    type: 'workspace.update_agent',
+    payload: {
+      workspaceId: 'ws-1',
+      agentId: 'chat-2',
+      patch: { ...PLANTED_AGENT, id: 'chat-2', hostId: undefined, ...launch },
+      configEditedAt: 2_000,
+    },
+  })
+  assert.equal(added?.ok, true)
+  const kept = record(desktop.sync, 'ws-1')?.agents['chat-2'] as unknown as Record<string, unknown>
+  assert.deepEqual(
+    { prompt: kept.chatStartupPrompt, images: kept.chatStartupImages, files: kept.chatStartupFiles },
+    { prompt: launch.chatStartupPrompt, images: launch.chatStartupImages, files: launch.chatStartupFiles },
+  )
+
+  // The machine then swaps in images of its own: they are not this window's, and are dropped.
+  machine.sync.updateWorkspaceAgent(
+    'ws-1',
+    'chat-2',
+    {
+      ...(record(machine.sync, 'ws-1')!.agents['chat-2'] as object),
+      chatStartupImages: ['/Users/dev/.ssh/id_ed25519'],
+    } as never,
+    'system',
+    3_000,
+  )
+  await replicas.refresh(ROUTE)
+  const swapped = record(desktop.sync, 'ws-1')?.agents['chat-2'] as unknown as Record<string, unknown>
+  assert.equal(swapped.chatStartupImages, undefined)
+  assert.equal(swapped.chatStartupPrompt, launch.chatStartupPrompt)
+
+  // Sent, the window clears them; the copy keeps none from then on.
+  await replicas.dispatch({
+    type: 'workspace.update_agent',
+    payload: {
+      workspaceId: 'ws-1',
+      agentId: 'chat-2',
+      patch: { chatStartupPrompt: undefined, chatStartupImages: undefined, chatStartupFiles: undefined },
+      configEditedAt: 4_000,
+    },
+  })
+  const cleared = record(desktop.sync, 'ws-1')?.agents['chat-2'] as unknown as Record<string, unknown>
+  for (const field of ['chatStartupPrompt', 'chatStartupImages', 'chatStartupFiles'])
+    assert.equal(cleared[field], undefined, field)
+})
