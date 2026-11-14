@@ -12,8 +12,14 @@ import {
   type AgentLaunchSettingsRecord,
   type AgentLaunchSettingsSnapshot,
 } from '../../shared/launch-settings'
-import type { WorkspaceSyncEvent, WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
+import {
+  agentPatchForWire,
+  type WorkspaceSyncEvent,
+  type WorkspaceSyncSnapshot,
+  type WorkspaceSyncState,
+} from '../../shared/workspace-sync'
 import type { WorkspaceRegistryRecord } from '../../shared/workspace-registry'
+import type { AgentState } from '../../shared/agent-state'
 import type { MeshConnection, MeshMachineReachability } from '../../shared/tailnet-mesh'
 
 // The shell's read-only copy of what the Studio server owns and the shell
@@ -216,7 +222,9 @@ export function createServerStateMirror(deps: {
         }
       },
       updateWorkspaceAgent(workspaceId, agentId, patch, actor, stamp) {
-        const params = { workspaceId, agentId, patch, actor, ...(typeof stamp === 'number' ? { stamp } : {}) }
+        // A cleared field goes as null: on stdio the channel is JSON, which drops undefined.
+        const wire = patch && typeof patch === 'object' ? agentPatchForWire(patch as Partial<AgentState>) : patch
+        const params = { workspaceId, agentId, patch: wire, actor, ...(typeof stamp === 'number' ? { stamp } : {}) }
         // Behind any already held, so a later patch never lands before an earlier one.
         if (heldWrites.length > 0) {
           hold(params)

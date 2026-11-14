@@ -171,10 +171,24 @@ export function pendingNewChatWorktreeFailure(
   return pending.failure ?? 'Studio closed before this chat’s worktree was made.'
 }
 
+/**
+ * The worktree a chat is waiting on. A chat with a folder waits on nothing,
+ * whatever its record says: a record kept from before clears reached the
+ * registry, or written by an older Studio, can still carry the field.
+ */
+export function pendingNewChatWorktreeOf(
+  workspace: { folderPath?: string | null } | undefined,
+  agent: Pick<AgentState, 'chatPendingWorktree'> | undefined,
+): PendingNewChatWorktree | null {
+  if (workspace?.folderPath?.trim()) return null
+  return agent?.chatPendingWorktree ?? null
+}
+
 function pendingChatOf(workspaceId: WorkspaceId): { agentId: AgentId; pending: PendingNewChatWorktree } | null {
   const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
   for (const [agentId, agent] of Object.entries(workspace?.agents ?? {})) {
-    if (agent.chatPendingWorktree) return { agentId, pending: agent.chatPendingWorktree }
+    const pending = pendingNewChatWorktreeOf(workspace, agent)
+    if (pending) return { agentId, pending }
   }
   return null
 }

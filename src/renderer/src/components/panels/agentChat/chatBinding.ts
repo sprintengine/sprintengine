@@ -13,6 +13,7 @@ import type { Workspace } from '../../../types/workspace'
 import {
   newChatWorktreeAttemptRunning,
   pendingNewChatWorktreeFailure,
+  pendingNewChatWorktreeOf,
   prepareNewChatWorktree,
   startPendingNewChatInProject,
   subscribeNewChatWorktreeAttempts,
@@ -172,7 +173,7 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
   const attemptRunning = useSyncExternalStore(subscribeNewChatWorktreeAttempts, () =>
     newChatWorktreeAttemptRunning(workspaceId),
   )
-  const pendingWorktree = agent?.chatPendingWorktree
+  const pendingWorktree = pendingNewChatWorktreeOf(workspace ?? undefined, agent)
   const pendingGate = useMemo((): Pick<ChatBinding, 'readiness' | 'worktreeActions'> | null => {
     if (!pendingWorktree) return null
     const failure = attemptRunning ? null : pendingNewChatWorktreeFailure(workspaceId, pendingWorktree)
