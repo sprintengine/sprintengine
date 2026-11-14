@@ -374,3 +374,63 @@ test('a journal that cannot be read is rebuilt from the copies waiting aside, an
     ['sa-1'],
   )
 })
+
+test('a journal there but unreadable stops the plan: nothing is swept or released, and the schedulers stay held', async () => {
+  const first = rig([SCHEDULE], { reachable: false })
+  await first.migration.plan()
+  const journalPath = join(first.dataDir, 'environment-migration.json')
+  const kept = readFileSync(journalPath, 'utf8')
+  const pending = join(
+    first.dataDir,
+    'environment-migration',
+    'pending',
+    journalOf(first.dataDir).environments[ROUTE]!.migrationId,
+  )
+  // Restarted with the journal there but not readable as a file (an I/O
+  // failure, not "no journal yet"), and another record in a live store.
+  rmSync(journalPath)
+  mkdirSync(journalPath)
+  const again = rig([{ ...SCHEDULE, id: 'sa-2', body: { ...SCHEDULE.body, id: 'sa-2' } }], { dataDir: first.dataDir })
+  let released = false
+  void again.migration.planned.then(() => (released = true))
+  await assert.rejects(again.migration.plan(), { name: 'EnvironmentMigrationUnreadable' })
+  assert.ok(existsSync(pending), 'the copies waiting aside are not swept')
+  assert.equal(again.released.length, 0, 'nothing taken out of the live stores')
+  assert.equal(await again.migration.deliver(ROUTE).catch(() => false), false, 'nothing handed over')
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(released, false, 'the schedulers are not let go')
+  // Readable again: the next plan finishes, and lets them go.
+  rmSync(journalPath, { recursive: true })
+  writeFileSync(journalPath, kept)
+  await again.migration.plan()
+  await again.migration.planned
+  assert.deepEqual(
+    journalOf(first.dataDir).environments[ROUTE]!.records.map((entry) => entry.id),
+    ['sa-1', 'sa-2'],
+  )
+})
+
+test('a rebuild that cannot read the copies waiting aside stops, and one whose route is lost keeps its copies', async () => {
+  const first = rig([SCHEDULE], { reachable: false })
+  await first.migration.plan()
+  const journalPath = join(first.dataDir, 'environment-migration.json')
+  writeFileSync(journalPath, '{"v":1,"environments":')
+  // A folder of copies that cannot be listed (here, a file where a folder should be).
+  const blocked = join(first.dataDir, 'environment-migration', 'pending', 'blocked-1')
+  writeFileSync(blocked, '')
+  const stopped = rig([], { dataDir: first.dataDir })
+  await assert.rejects(stopped.migration.plan(), { name: 'EnvironmentMigrationUnreadable' })
+  assert.ok(existsSync(journalPath), 'the journal stays where it was')
+  rmSync(blocked)
+  // A folder of real copies whose route file is gone: no machine to send them to, kept for the owner.
+  const lost = join(first.dataDir, 'environment-migration', 'pending', 'lost-1')
+  mkdirSync(lost, { recursive: true })
+  writeFileSync(
+    join(lost, 'schedule-y.json'),
+    JSON.stringify({ kind: 'schedule', id: 'sa-9', digest: 'd', body: {}, files: [] }),
+  )
+  const again = rig([], { dataDir: first.dataDir })
+  await again.migration.plan()
+  assert.deepEqual(again.migration.waiting(), [ROUTE])
+  assert.ok(existsSync(join(lost, 'schedule-y.json')), 'copies with no route are kept aside, not swept')
+})

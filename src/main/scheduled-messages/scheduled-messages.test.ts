@@ -714,3 +714,21 @@ test('a record from before held messages carried anything still loads, and one w
     ],
   )
 })
+
+test('a start whose wait fails sends nothing: what the failed plan would have taken out may still be listed', async () => {
+  const file = join(scratch, 'scheduled-messages-failed-plan.json')
+  const first = harness({ storage: scheduledMessagesFileStorage(file) })
+  await started(first)
+  first.scheduled.update({ kind: 'schedule', ...CHAT, text: 'Maybe the machine’s.', sendAt: first.now() + HOUR })
+  await first.scheduled.dispose()
+
+  const second = harness({ storage: scheduledMessagesFileStorage(file), now: T0 + 10 * HOUR, idPrefix: 'b' })
+  const failed = Promise.reject(new Error('The hand-over journal could not be read.'))
+  await second.scheduled.start({ after: failed })
+  await second.scheduled.loaded()
+  await second.advance(10 * MINUTE)
+  const held = second.scheduled.state().messages[0]!
+  second.scheduled.update({ kind: 'send-now', id: held.id })
+  await second.advance(MINUTE)
+  assert.equal(second.sent.length, 0)
+})
