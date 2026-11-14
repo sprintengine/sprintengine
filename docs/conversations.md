@@ -582,9 +582,20 @@ that every reader passes over (`conversation-command-receipts.ts`).
   machine's) does not stop for being idle while it has such work, nor does
   the desktop stop a WSL server for it; the desktop's quit question names the
   schedules and watches its quit stops, its WSL servers' included.
-- A send refused `busy`, or one the log could not take, records nothing, so
-  the same id may be sent again. The same id for a different command (by its
-  fingerprint) is refused `command_id_conflict`.
+- A send refused `busy` (a turn running, or the chat's folder held), or one
+  the log could not take, records nothing, so the same id may be sent again.
+  The same id for a different command (by its fingerprint, which counts what
+  a send carries but not the upload ids it was staged under) is refused
+  `command_id_conflict`.
+- **A resend never runs a turn twice.** A send's receipt is looked up in the
+  chat's log before its pictures and files are needed. A send to a session
+  its server no longer holds (it restarted) is answered "session not found"
+  and spends nothing; the client starts the chat again and resends under the
+  same id, which the receipt answers. A keyed send asks the conversation host
+  whether it was held or carried out before its uploads are staged.
+- A launched chat's first message is written down
+  (`conversation-first-messages.json`) before the launch answers, under an id
+  derived from the launch's, and sent at the next start if a stop cut it off.
 - **Nothing is published before it is written.** A batch of the log is one
   write, and a write that fails is cut back off, so a client only ever holds
   sequence numbers that are on disk. A write that does not finish is waited
