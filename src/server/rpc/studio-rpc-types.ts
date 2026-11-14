@@ -398,6 +398,13 @@ export type StudioDiscovery = {
   extensions(workspaceId: string, cli?: string): Promise<StudioDiscoveryAnswer<StudioWorkspaceExtensions>>
 }
 
+/**
+ * A budget a connection's requests share with others of the same client, held
+ * from when a request is taken until it has really ended, whether or not its
+ * connection is still open: one more, and its release, or null when it is spent.
+ */
+export type StudioWorkBudget = { acquire(): (() => void) | null }
+
 /** Who may connect, and what each may do now. */
 export type StudioAuthenticator = {
   /** Check a hello's credential; a pairing code is redeemed here, once. */

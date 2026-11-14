@@ -63,8 +63,14 @@ export async function deviceRig(
     ...options.gateway,
     // As the core links it (src/server/core/studio-rpc.ts → connectDevice).
     studio: () => ({
-      attach: (stream, authenticator) =>
-        void studio.server.attach(stream, { authenticator, ownWindow: false, audited: true, knownFoldersOnly: true }),
+      attach: (stream, authenticator, workBudget) =>
+        void studio.server.attach(stream, {
+          authenticator,
+          ownWindow: false,
+          audited: true,
+          knownFoldersOnly: true,
+          workBudget,
+        }),
     }),
   })
   await gateway.start()

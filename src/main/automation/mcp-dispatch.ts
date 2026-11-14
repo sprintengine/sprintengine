@@ -80,6 +80,8 @@ export type McpDispatchGate = {
 export type McpDispatchIo = {
   requestId?: JsonRpcId
   notify?: (message: Record<string, unknown>) => void
+  /** The caller's connection, while it lasts: when it ends, the call is cancelled as a cancel would. */
+  signal?: AbortSignal
 }
 
 export type McpDispatcher = {
@@ -238,6 +240,10 @@ export function createMcpDispatcher(options: {
           if (key) running.set(key, controller)
           // Cancelled while it waited its turn: it starts cancelled.
           if (key && earlyCancels.get(context)?.delete(key)) controller.abort()
+          // Its connection's lifetime bounds it: a caller that has gone is waited on by no one.
+          const connectionEnded = () => controller.abort()
+          if (io?.signal?.aborted) controller.abort()
+          else io?.signal?.addEventListener('abort', connectionEnded, { once: true })
           const meta = isRecord(params._meta) ? params._meta : undefined
           const progressToken =
             typeof meta?.progressToken === 'string' || typeof meta?.progressToken === 'number'
@@ -280,6 +286,7 @@ export function createMcpDispatcher(options: {
             options.onToolCall?.({ context, tool: name, args, durationMs: Date.now() - startedAt, error })
             throw error
           } finally {
+            io?.signal?.removeEventListener('abort', connectionEnded)
             if (key && running.get(key) === controller) running.delete(key)
           }
         }
