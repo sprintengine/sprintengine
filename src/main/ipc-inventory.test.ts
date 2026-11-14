@@ -173,12 +173,7 @@ import { attachStartupTimeline } from './startup-timeline'
  * deletes their rows; lower the count in the same change.
  */
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
-  conversations: 0,
   terminals: 3,
-  modules: 0,
-  extensions: 0,
-  'paired-machines': 0,
-  access: 0,
   'web-tab': 6,
 }
 

@@ -38,7 +38,7 @@ import { ComposerStrip, STRIP_ITEM_HEIGHT, type ComposerStripEntry } from "./Com
 import { STRIP_DROP_ORDER } from "./composerStripLogic";
 import { useChats } from "./ChatsContext";
 import {
-  chatImageMaxBytes,
+  CHAT_IMAGE_MAX_BYTES,
   composerOptions,
   PHONE_START_AS,
   type AttachSource,
@@ -509,7 +509,7 @@ export function NewChatScreen({
           ? await pickChatFile().then((file) => (file ? { images: [{ ...file, file: true as const }], problem: null } : null))
           : await pickChatImages(
               source === "camera",
-              chatImageMaxBytes(offers.downscale),
+              CHAT_IMAGE_MAX_BYTES,
               CONVERSATION_MAX_IMAGES - images.length,
             );
       if (!picked) return;

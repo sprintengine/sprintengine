@@ -1,15 +1,7 @@
-import type { ConversationFileSearchEntry } from '../../packages/conversation-protocol/src/composerReads'
-import type { ConversationCommand } from './conversation/commands'
 import type {
-  ConversationCommand as ConversationContractCommand,
   ConversationHighlightColor,
-  ConversationLaneNotCarried,
-  ConversationSendRequest,
   ConversationQueuedMessage,
   ConversationScheduledMessage,
-  ConversationChangedFileSides,
-  ConversationChangesDiff,
-  ConversationCheckoutChanges,
   ConversationSubagent,
   ConversationListedThread,
   ConversationUsageLimitNotice,
@@ -17,7 +9,6 @@ import type {
   ConversationUsageLimitSnapshot,
 } from '../../packages/conversation-protocol/src/public'
 import { readableConversationPhase } from '../../packages/conversation-protocol/src/public'
-import type { ConversationImageAttachment, ConversationSessionFrame } from './conversation-runtime'
 import { conversationPhaseWorking, phaseWithBackgroundWork } from './conversation/phase'
 import type { RepositoryIdentity } from './repository-identity'
 import type { CliPermissionPreset } from './cli-permission-preset'
@@ -134,30 +125,6 @@ export type MeshCanvasScreenshotResult =
   | { ok: false; code: string; message: string }
 
 /**
- * A paired machine's answers to its chat's Create PR (`chat-create-pull-request`),
- * one per step, as a Studio answers them over the protocol for a chat it
- * holds (`pullRequests.createState`, `.draft`, `.push`, `.create`). The
- * state carries no path on that machine: its
- * `gitRoot` is null. `text_generation_off` is a machine whose own text
- * generation is off, where the person writes the text themselves.
- */
-export type MeshPullRequestStateResult =
-  | { ok: true; state: import('./git/pull-request-create').CreatePullRequestState | null }
-  | { ok: false; code: string; message: string }
-export type MeshPullRequestDraftResult =
-  { ok: true; title: string; body: string } | { ok: false; code: string; message: string }
-export type MeshPullRequestPushResult = { ok: true; pushed: boolean } | { ok: false; code: string; message: string }
-/**
- * A creation's end, as `createPullRequest` answers it, except that a pull
- * request created there was recorded there as the chat's: `recorded` says
- * whether that landed, and why not.
- */
-export type MeshPullRequestCreateResult =
-  | Exclude<import('./git/pull-request-create').CreatePullRequestOutcome, { ok: false } | { kind: 'created' }>
-  | { ok: true; kind: 'created'; url: string; recorded: { ok: true } | { ok: false; message: string } }
-  | { ok: false; code: string; message: string }
-
-/**
  * A part of a browse this machine is not allowed to read, named with the reason.
  *
  * A device paired for conversations alone genuinely cannot list workspaces.
@@ -192,19 +159,6 @@ export type MeshBrowse = {
    */
   chatRecord?: { lifecycle: boolean; unwatchPullRequest: boolean }
 }
-
-/** The state of one followed remote conversation's link, as the pane badges it. */
-export type MeshLinkState =
-  /** Opening the socket for the first time. */
-  | 'connecting'
-  /** Following; frames are flowing. */
-  | 'live'
-  /** The socket dropped and we are dialling again. The transcript stays on screen. */
-  | 'reconnecting'
-  /** The peer is not answering. Quiet, not alarming — a sleeping laptop looks like this. */
-  | 'offline'
-  /** Finished for good: the conversation ended, access was revoked, or the pane stopped following. */
-  | 'closed'
 
 /**
  * Where a New chat on a paired machine runs when it is not the project's own
@@ -449,11 +403,8 @@ export function meshListChanged(event: MeshEvent): boolean {
 
 // ── Conversations on a paired machine ───────────────────────────────────────
 //
-// Main follows a conversation over that machine's conversation socket, keeps
-// its transcript tail and cursor on disk, and hands a window the same frames
-// the local session API does — `snapshot`, `event`, `synchronized`, `error` —
-// plus `link`, the client-side connection state the far end cannot narrate
-// while unreachable.
+// A window follows and drives a paired machine's chats on that machine's
+// Studio itself; these are the shapes it reads them in.
 
 /** What a pairing may do with a machine's conversations: follow them, or also drive them. */
 export type MeshConversationAccess = 'read' | 'operate'
@@ -464,32 +415,8 @@ export type MeshConversationKey = { connectionId: string; workspaceId: string; a
 /** A conversation as that machine lists it, with the members its protocol version keeps. */
 export type MeshConversation = ConversationListedThread
 
-export type MeshConversationLink = {
-  type: 'link'
-  state: MeshLinkState
-  detail: string
-  /** What the far end lets this pairing do right now; null before it has said. */
-  access: MeshConversationAccess | null
-  /** Why a closed link will not come back on its own, when it will not. */
-  code?: string
-}
-
-/**
- * The messages the machine holds for this conversation until its turn ends,
- * whole each time (`conversation-queued-sends`). The last list heard stands
- * while the link is down: that machine still holds them.
- */
-export type MeshConversationQueued = { type: 'queued'; messages: MeshQueuedMessage[] }
-
 /** A message a paired machine holds for its chat's turn to end, by that machine's id for it. */
 export type MeshQueuedMessage = ConversationQueuedMessage
-
-/**
- * The messages the machine has scheduled into this conversation for a time,
- * soonest first, whole each time (`conversation-scheduled-sends`). The last
- * list heard stands while the link is down: that machine still sends them.
- */
-export type MeshConversationScheduled = { type: 'scheduled'; messages: MeshScheduledMessage[] }
 
 /** A message a paired machine has scheduled into its chat, by that machine's id for it. */
 export type MeshScheduledMessage = ConversationScheduledMessage
@@ -517,44 +444,8 @@ export type MeshUsageLimitSnapshot = ConversationUsageLimitSnapshot
 /** What a paired machine's resume row asks of it. */
 export type MeshUsageLimitResumeAction = ConversationUsageLimitResumeAction
 
-/**
- * The sub-agents of this conversation, oldest first, whole each time
- * (`conversation-subagents`). The last list heard stands while the link is
- * down, as the machine's agents work on there.
- */
-export type MeshConversationSubagents = { type: 'subagents'; subagents: MeshSubagent[] }
-
 /** A chat of a paired machine that belongs to another: followed by its ids, as any chat is. */
 export type MeshSubagent = ConversationSubagent
-
-/**
- * How a chat's checkout stands on its machine, whole each time
- * (`conversation-changes`), while a Diff tab here reads its changes: the
- * branch's commits as steps, and a `revision` that moves whenever what the tab
- * shows may have. `changes` is null where the machine has no repository to read.
- */
-export type MeshConversationChanges = {
-  type: 'changes'
-  changes: ConversationCheckoutChanges | null
-  revision: string
-}
-
-/** One step of a paired machine's chat's changes: its files, or why they could not be read. */
-export type MeshChangesDiffResult =
-  ({ ok: true } & ConversationChangesDiff) | { ok: false; code: string; message: string }
-
-/** Both sides of one file of such a step, or why they could not be read. */
-export type MeshChangedFileResult =
-  ({ ok: true } & ConversationChangedFileSides) | { ok: false; code: string; message: string }
-
-export type MeshConversationFrame =
-  | ConversationSessionFrame
-  | MeshConversationLink
-  | MeshConversationQueued
-  | MeshConversationScheduled
-  | MeshConversationUsageLimits
-  | MeshConversationSubagents
-  | MeshConversationChanges
 
 /**
  * `capabilities`: what the machine publishes of itself, as it said it. A chat
@@ -574,73 +465,6 @@ export type MeshConversationListResult =
       access: MeshConversationAccess
     }
   | { ok: false; code: string; message: string }
-
-/**
- * A step's picture from a paired machine, as a data URL a window can draw.
- * `images_unsupported` is a machine that does not serve pictures (it does not
- * advertise `conversation-images`); the picture stays over there.
- */
-export type MeshConversationImageResult = { ok: true; dataUrl: string } | { ok: false; code: string; message: string }
-
-/**
- * The commands a remote device may send. A permanent rule ("always") needs
- * `conversation-permanent-approvals` there, and is refused in words for a
- * machine without it. Restarting a chat's agent needs `conversation-restart-session` there.
- * A queued send and taking one back need `conversation-queued-sends` there;
- * scheduling one, and sending or deleting one scheduled, need
- * `conversation-scheduled-sends`; a usage limit's resume
- * `conversation-usage-limits`; a preset switch naming the CLI's own mode,
- * `conversation-cli-permission-modes`; a rewind `conversation-rewind`, and a
- * revert `conversation-checkpoint-revert`.
- */
-export type MeshConversationCommand = ConversationContractCommand
-
-/**
- * A send to a chat on a paired machine, as a window hands it to main: the
- * contract's request, its pictures as their bytes, addressed to the chat.
- * Main puts each picture and file in that machine's upload store first and
- * sends the request on the lane, as the lane carries it
- * (`ConversationLaneSend`); a part the lane says another way (the bubble's
- * id, the reasoning effort) is not one a window sends here.
- *
- * `queue` needs `conversation-queued-sends` there, and with pictures, files,
- * skills or mentions `conversation-queued-attachments` too; `steer` needs
- * `conversation-steer-sends`, `mode` `conversation-send-mode`, `skills`
- * `conversation-send-skills`, `mentions` `conversation-send-mentions` and
- * `files` `conversation-message-files`. Main refuses each in words for a
- * machine without it rather than let it be dropped there.
- */
-export type MeshConversationSendInput = { key: MeshConversationKey } & Omit<
-  ConversationSendRequest<ConversationImageAttachment>,
-  ConversationLaneNotCarried
->
-
-/**
- * The files and folders in a paired machine's chat folder that match a
- * mention's query, by their paths relative to that folder
- * (`conversation-file-search`).
- */
-export type MeshConversationFileSearchResult =
-  | { ok: true; entries: ConversationFileSearchEntry[]; truncated: boolean }
-  | { ok: false; code: string; message: string }
-
-/**
- * The slash commands a paired machine's chat CLI runs in the chat's folder
- * there (`conversation-commands`), as that machine's own `/` menu lists them.
- */
-export type MeshConversationCommandsResult =
-  | { ok: true; cli: string; commands: ConversationCommand[]; fetchedAt: number; error?: string }
-  | { ok: false; code: string; message: string }
-
-/**
- * `notice` qualifies an accepted command, e.g. that a model switch applies
- * from the next turn. `data` is what a command that answers more than yes or
- * no said, accepted or refused, as the machine sent it: a `revert`'s
- * `ConversationRevertAnswer`, read with `parseConversationRevertAnswer`.
- */
-export type MeshConversationCommandResult =
-  | { ok: true; notice?: string; data?: Record<string, unknown> }
-  | { ok: false; code: string; message: string; data?: Record<string, unknown> }
 
 /**
  * Whether a machine's listed chat is at work, waiting on a person, or neither.

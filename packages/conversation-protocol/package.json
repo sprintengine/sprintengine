@@ -1,6 +1,6 @@
 {
   "name": "@sprintengine/conversation-protocol",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The conversation contract SprintEngine Studio speaks to everything that follows or drives its chats: events, commands, frames, capabilities and their validators.",
   "license": "MIT",
   "type": "module",

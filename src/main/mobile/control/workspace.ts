@@ -2,7 +2,7 @@ import { constants } from 'fs'
 import { access, stat } from 'fs/promises'
 import { isAbsolute, resolve } from 'path'
 import { MobileControlCommandError } from './command-error'
-import { isPathInsideOrEqual } from './path-utils'
+import { isPathInsideOrEqual } from '../../path-containment'
 import { isWorkspaceIdToken, resolveWorkspaceIdToRoot } from './workspace-id'
 
 export async function validateMobileWorkspacePath(input: {

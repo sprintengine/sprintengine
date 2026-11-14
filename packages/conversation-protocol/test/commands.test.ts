@@ -25,16 +25,10 @@ import { parseConversationServerFrame } from '../src/serverFrames'
 const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
 const command = (body: Record<string, unknown>, commandId = 'cmd-1') => ({ type: 'command', commandId, command: body })
 
-// Every frame a client built against the first version sends. The full
+// Every command a client built against the first version sends. The full
 // contract reads each exactly as the first version's parser does, so no
-// existing client is read differently by a desktop that adopts it.
+// existing client is read differently by a Studio that adopts it.
 const FIRST_VERSION_FRAMES: unknown[] = [
-  { type: 'subscribe', key, afterSeq: 8, generation: 'log-1', turnLimit: 20 },
-  { type: 'subscribe', key },
-  { type: 'list', requestId: 'list-1' },
-  { type: 'loadEarlier', requestId: 'r', beforeCursor: 40, turnLimit: 5 },
-  { type: 'getToolDetail', requestId: 'r', toolUseId: 'tool-1' },
-  { type: 'getTurnDiff', requestId: 'r', turnSeq: 3, path: 'src/a.ts' },
   command({ kind: 'send', message: 'hello', uploadIds: ['u-1'] }),
   command({ kind: 'interrupt' }),
   command({ kind: 'resolveApproval', requestId: 'req-1', decision: 'conversation' }),
@@ -52,47 +46,6 @@ const FIRST_VERSION_FRAMES: unknown[] = [
 test('the full contract reads every first-version frame as the first version does', () => {
   for (const frame of FIRST_VERSION_FRAMES)
     assert.deepEqual(parseConversationClientMessage(frame), parseConversationClientFrame(frame), JSON.stringify(frame))
-})
-
-test('hello asks the desktop for its version and capabilities', () => {
-  assert.deepEqual(parseConversationClientMessage({ type: 'hello', requestId: 'h-1', protocolVersion: 1, extra: 1 }), {
-    type: 'hello',
-    requestId: 'h-1',
-    protocolVersion: 1,
-  })
-  assert.deepEqual(parseConversationClientMessage({ type: 'hello', requestId: 'h-1' }), {
-    type: 'hello',
-    requestId: 'h-1',
-  })
-  for (const protocolVersion of [0, 1.5, '1', -2])
-    assert.equal(parseConversationClientMessage({ type: 'hello', requestId: 'h-1', protocolVersion }), null)
-  assert.equal(parseConversationClientMessage({ type: 'hello' }), null)
-  // What the client reads rides beside it; a member that does not read is no
-  // names, never a refused hello.
-  assert.deepEqual(
-    parseConversationClientMessage({
-      type: 'hello',
-      requestId: 'h-1',
-      clientCapabilities: ['conversation-quote-tokens', 7, 'Not A Name', ''],
-    }),
-    { type: 'hello', requestId: 'h-1', clientCapabilities: ['conversation-quote-tokens'] },
-  )
-  for (const clientCapabilities of ['conversation-quote-tokens', null, {}, [], [1]])
-    assert.deepEqual(parseConversationClientMessage({ type: 'hello', requestId: 'h-1', clientCapabilities }), {
-      type: 'hello',
-      requestId: 'h-1',
-    })
-  const many = Array.from({ length: 100 }, (_, index) => `name-${index}`)
-  const hello = parseConversationClientMessage({ type: 'hello', requestId: 'h-1', clientCapabilities: many })
-  assert.equal(hello?.type === 'hello' ? hello.clientCapabilities?.length : 0, 64)
-  // A desktop from before hello answers it under its request id, which is
-  // how a client tells an old desktop from a broken one.
-  assert.equal(parseConversationClientFrame({ type: 'hello', requestId: 'h-1' }), null)
-  assert.deepEqual(explainRejectedConversationFrame({ type: 'hello', requestId: 'h-1' }), {
-    code: 'invalid_frame',
-    message: 'Unsupported conversation frame.',
-    requestId: 'h-1',
-  })
 })
 
 test('a plan is answered as a plan, with its own two decisions', () => {

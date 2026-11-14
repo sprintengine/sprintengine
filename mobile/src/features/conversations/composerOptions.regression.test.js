@@ -12,10 +12,8 @@ const test = require("node:test");
 const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   ATTACH_LABELS,
-  CHAT_IMAGE_DOWNSCALED_MAX_BYTES,
   CHAT_IMAGE_MAX_BYTES,
   PHONE_START_AS,
-  chatImageMaxBytes,
   bytesFromBase64,
   composerHasOptions,
   composerOptions,
@@ -177,22 +175,14 @@ test("a picked picture is sent as what its file is, not what the picker said", (
   });
 });
 
-test("a picture over 5 MB is refused before upload, unless the desktop sizes pictures itself", () => {
-  assert.equal(chatImageMaxBytes(false), 5 * 1024 * 1024);
-  assert.equal(chatImageMaxBytes(true), 20 * 1024 * 1024);
+test("a picture over 5 MB is refused before upload", () => {
+  assert.equal(CHAT_IMAGE_MAX_BYTES, 5 * 1024 * 1024);
   const photo = { uri: "file:///camera.jpg", mimeType: "image/jpeg", fileName: "camera.jpg" };
   const twelveMegabytes = { size: 12 * 1024 * 1024 };
-  assert.deepEqual(readPickedImage(photo, twelveMegabytes, chatImageMaxBytes(false)), {
+  assert.deepEqual(readPickedImage(photo, twelveMegabytes), {
     ok: false,
     message: "Choose an image smaller than 5 MB.",
   });
-  assert.equal(readPickedImage(photo, twelveMegabytes, chatImageMaxBytes(true)).ok, true);
-  assert.deepEqual(readPickedImage(photo, { size: CHAT_IMAGE_DOWNSCALED_MAX_BYTES + 1 }, chatImageMaxBytes(true)), {
-    ok: false,
-    message: "Choose an image smaller than 20 MB.",
-  });
-  // Without a limit given, the older desktop's is the one applied.
-  assert.equal(readPickedImage(photo, twelveMegabytes).ok, false);
 });
 
 test("New's + ends with the Schedule switch, which takes words alone", () => {

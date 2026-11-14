@@ -23,8 +23,7 @@
 export type IpcDirection = 'invoke' | 'send' | 'push'
 
 /** Where a server channel goes: the area of the Studio protocol that replaces it. */
-export type IpcServerArea =
-  'conversations' | 'terminals' | 'modules' | 'extensions' | 'paired-machines' | 'access' | 'web-tab'
+export type IpcServerArea = 'terminals' | 'web-tab'
 
 export type IpcInventoryRow =
   | { readonly dir: IpcDirection; readonly shell: string }
@@ -58,7 +57,6 @@ const ACCOUNT = shell(
 const DIAGNOSTICS = shell("This app's own logs and processes.")
 const CHAT_LINK = shell("A chat link from the operating system, opened in one of this app's windows.")
 
-/** Moves to the protocol: chats and what hangs off them: sessions, providers, secrets, import, held and scheduled messages, usage limits, export, pull request creation. */
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */

@@ -537,14 +537,14 @@ export type DetectCliBatchDeps = {
   env?: NodeJS.ProcessEnv
   platform?: NodeJS.Platform
   run?: (desc: SpawnDescriptor, env: NodeJS.ProcessEnv, timeoutMs: number) => Promise<RunOutcome>
-  /** A WSL machine's own detection (its helper); absent is the host registry's. */
+  /** A WSL machine's own detection (its Studio server's); absent is the host registry's. */
   detectOnHost?: (
     hostId: ExecutionHostId,
     requests: ReadonlyArray<{ cli: AgentCli; runtime?: Partial<CliRuntimeSettings> }>,
     options: { force: boolean },
   ) => Promise<CliDetectResult[]>
   /**
-   * Look again rather than trust what the machine remembers: a WSL helper keeps
+   * Look again rather than trust what the machine remembers: a WSL server keeps
    * each binary's `--version` while its size and mtime stand still, and an npm
    * update can leave both of a launcher script unchanged. Re-check and the
    * detection after an install or update pass it.

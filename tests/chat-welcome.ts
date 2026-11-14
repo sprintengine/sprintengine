@@ -6,7 +6,6 @@ import {
   type StudioWelcomeFrame,
 } from '../packages/studio-protocol/src/public'
 import { studioWindowGrant } from '../src/server/rpc/studio-frame-port'
-import { STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES } from '../src/server/rpc/studio-rpc-server'
 
 // A Studio's welcome as a chat's tests read it: what a full Studio serves (the
 // socket's own withheld conversation capabilities left out, as it leaves them
@@ -46,9 +45,7 @@ export function chatWelcome(
     conversation: {
       protocolVersion: 1,
       minProtocolVersion: 1,
-      capabilities: CONVERSATION_CAPABILITIES.filter(
-        (name) => !STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES.has(name) && !without.has(name),
-      ),
+      capabilities: CONVERSATION_CAPABILITIES.filter((name) => !without.has(name)),
     },
     grant,
   }

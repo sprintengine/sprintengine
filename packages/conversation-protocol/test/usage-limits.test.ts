@@ -63,14 +63,6 @@ test("a resume names what to do with the chat's notice, and only a schedule may 
   )
 })
 
-test('watchUsageLimits is a request of its own', () => {
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchUsageLimits', requestId: 'r-1' }), {
-    type: 'watchUsageLimits',
-    requestId: 'r-1',
-  })
-  assert.equal(parseConversationClientMessage({ type: 'watchUsageLimits' }), null)
-})
-
 test('a usageLimits frame keeps the notice and the plans, and leaves out what it cannot read', () => {
   assert.equal(isKnownConversationServerFrameType({ type: 'usageLimits' }), true)
   const frame = parseConversationServerFrame({

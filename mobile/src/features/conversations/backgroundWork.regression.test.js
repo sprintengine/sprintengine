@@ -1,6 +1,8 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { decodeConversationServerFrame: parseConversationFrame } = require("../../../.mobile-test-build/packages/conversation-protocol/src/public.js");
+const { parseConversationServerFrame } = require("../../../.mobile-test-build/packages/conversation-protocol/src/public.js");
+// A frame's text, read by the contract's own parser.
+const parseConversationFrame = (text) => parseConversationServerFrame(JSON.parse(text));
 const {
   CHAT_EARLIER_AFTER_MS,
   chatActivity,

@@ -22,7 +22,9 @@ const {
   withPendingSnoozes,
 } = require(path.join(buildRoot, "src/features/conversations/snoozeLogic.js"));
 const { buildChatRows } = require(path.join(buildRoot, "src/features/conversations/conversationListLogic.js"));
-const { decodeConversationServerFrame: parseConversationFrame } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
+const { parseConversationServerFrame } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
+// A frame's text, read by the contract's own parser.
+const parseConversationFrame = (text) => parseConversationServerFrame(JSON.parse(text));
 // A listed chat as the phone reads it: through a `sessions` frame, by the
 // desktop's contract.
 const ROW = { workspaceId: "w", agentId: "a", title: "t", phase: "idle", updatedAt: 1, createdAt: 1, providerId: "p", modelId: "m", turnCount: 0, lastSeq: 0 };

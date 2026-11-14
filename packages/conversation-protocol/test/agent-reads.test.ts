@@ -29,29 +29,6 @@ test('both capabilities are listed', () => {
     assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(capability))
 })
 
-test('a side question keeps its words and the aside before it, and nothing else', () => {
-  assert.deepEqual(
-    parseConversationClientMessage(
-      ask({ history: [{ question: 'And before that?', answer: 'The README.', note: 1 }], extra: true }),
-    ),
-    {
-      type: 'askSideQuestion',
-      requestId: 'r-1',
-      questionId: 'q-1',
-      question: 'Which file did it change first?',
-      history: [{ question: 'And before that?', answer: 'The README.' }],
-    },
-  )
-  assert.deepEqual(
-    parseConversationClientMessage({ type: 'cancelSideQuestion', requestId: 'r-2', questionId: 'q-1' }),
-    {
-      type: 'cancelSideQuestion',
-      requestId: 'r-2',
-      questionId: 'q-1',
-    },
-  )
-})
-
 test('a side question with nothing to ask, no id of its own, or an aside past the limits is refused under its request', () => {
   const tooMany = Array.from({ length: CONVERSATION_MAX_SIDE_QUESTION_HISTORY + 1 }, () => ({
     question: 'q',
@@ -71,14 +48,6 @@ test('a side question with nothing to ask, no id of its own, or an aside past th
     assert.equal(rejection.code, 'invalid_frame')
     assert.equal(rejection.requestId, frame.requestId, 'answered under its request id')
   }
-})
-
-test('the breakdown read is a request and nothing more', () => {
-  assert.deepEqual(parseConversationClientMessage({ type: 'getContextBreakdown', requestId: 'r-3', key: 'x' }), {
-    type: 'getContextBreakdown',
-    requestId: 'r-3',
-  })
-  assert.equal(parseConversationClientMessage({ type: 'getContextBreakdown' }), null)
 })
 
 test('a desktop from before them reads neither frame, and refuses each under its request id', () => {

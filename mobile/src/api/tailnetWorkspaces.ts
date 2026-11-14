@@ -1,4 +1,3 @@
-import { unauthorizedResult } from "./tailnetControlClient";
 import type { ApiResult } from "./types";
 import { desktopStudio, studioFailure, type DesktopStudioOptions } from "./desktopStudio";
 import type { StudioClient } from "../../../packages/client-runtime/src/public";
@@ -12,12 +11,7 @@ import { comparablePath, lastPathSegment, workspaceProject } from "../features/p
 // project's checkout (`workspaces.checkout`). Asked over the desktop's Studio
 // protocol (desktopStudio.ts), which answers them from the same services its
 // gateway tools do.
-//
-// The gateway tool caller below stays for the families that have not moved onto
-// the protocol yet (a chat's lifecycle, schedules, boards): JSON-RPC tools over
-// a stateless POST, with no Origin header.
 
-const TAILNET_MCP_PATH = "/tailnet/v1/mcp";
 const READ_TIMEOUT_MS = 10_000;
 
 /** One project the desktop has open, as `workspace.list` reports it. */
@@ -128,86 +122,6 @@ export function readWorkspaceCheckout(data: unknown, folderPath: string | null):
         ? branch
         : null;
   return { branch, worktree, mainBranch };
-}
-
-/**
- * One gateway tool's whole answer: its structured content, and the content
- * blocks beside it, which is where a picture rides (`canvas.screenshot`). A
- * refusal keeps the tool's own `code` where it gave one, and `unknown_tool`
- * for a desktop that has no such tool (an older Studio, or a server with no
- * desktop open), so a caller can say what to do rather than pass on the
- * gateway's sentence.
- */
-export type GatewayToolAnswer =
-  | { ok: true; structured: Record<string, unknown>; content: Record<string, unknown>[] }
-  | { ok: false; errorCode: NonNullable<ApiResult<never>["errorCode"]>; message: string; code: string | null };
-
-export function createGatewayToolResultCaller(options: { baseUrl: string; deviceToken: string }) {
-  let requestCounter = 0;
-  return async function callToolResult(
-    name: string,
-    args: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<GatewayToolAnswer> {
-    let response: Response;
-    try {
-      response = await fetchWithTimeout(
-        `${options.baseUrl}${TAILNET_MCP_PATH}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${options.deviceToken}` },
-          body: JSON.stringify({ jsonrpc: "2.0", id: `ws-${++requestCounter}`, method: "tools/call", params: { name, arguments: args } }),
-        },
-        timeoutMs,
-      );
-    } catch {
-      return { ok: false, errorCode: "desktop_unavailable", message: "The desktop did not answer. Is Tailscale up on both devices?", code: null };
-    }
-    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (response.status === 401) {
-      const refused = unauthorizedResult(body);
-      return { ok: false, errorCode: refused.errorCode ?? "unauthenticated", message: refused.message ?? "", code: null };
-    }
-    if (!response.ok || !body) {
-      return { ok: false, errorCode: "desktop_unavailable", message: `The desktop answered ${response.status}.`, code: null };
-    }
-    if (isRecord(body.error)) {
-      const message = typeof body.error.message === "string" ? body.error.message : "The desktop refused the call.";
-      return { ok: false, errorCode: "invalid_payload", message, code: /Unknown tool/u.test(message) ? "unknown_tool" : null };
-    }
-    const result = isRecord(body.result) ? body.result : null;
-    const structured = result && isRecord(result.structuredContent) ? result.structuredContent : null;
-    if (result?.isError === true || structured?.ok === false) {
-      const error = structured && isRecord(structured.error) ? structured.error : null;
-      const code = typeof error?.code === "string" ? error.code : "tool_error";
-      const message = typeof error?.message === "string" ? error.message : "The desktop refused the call.";
-      return { ok: false, errorCode: code === "tailnet_scope_required" ? "unauthorized" : "invalid_payload", message, code };
-    }
-    if (!structured) {
-      return { ok: false, errorCode: "invalid_payload", message: "The desktop returned no structured result.", code: null };
-    }
-    const content = Array.isArray(result?.content) ? result.content.filter(isRecord) : [];
-    return { ok: true, structured, content };
-  };
-}
-
-/**
- * Calls one gateway tool and answers its structured content, or the failure in
- * the app's words. Both reads need `workspace:read`; a pairing without it is
- * refused as `unauthorized`.
- */
-export function createGatewayToolCaller(options: { baseUrl: string; deviceToken: string }) {
-  const callToolResult = createGatewayToolResultCaller(options);
-  return async function callTool(
-    name: string,
-    args: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<ApiResult<Record<string, unknown>>> {
-    const answer = await callToolResult(name, args, timeoutMs);
-    return answer.ok
-      ? { ok: true, data: answer.structured }
-      : { ok: false, errorCode: answer.errorCode, message: answer.message };
-  };
 }
 
 /**
@@ -350,12 +264,6 @@ export function oneHuePerProject<W extends Pick<DesktopWorkspace, "projectKey" |
  */
 export function readSettledAt(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

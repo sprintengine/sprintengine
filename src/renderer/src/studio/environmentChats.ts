@@ -309,11 +309,6 @@ export function followedEnvironmentChats(): EnvironmentChatSource[] {
   return [...followed.values()].map((entry) => entry.source)
 }
 
-/** The source of one followed route, or null when the window does not follow it. */
-export function followedEnvironmentChatsOf(route: string): EnvironmentChatSource | null {
-  return followed.get(route)?.source ?? null
-}
-
 /** Hear the followed set change, or any followed source's list. Returns the unsubscriber. */
 export function onFollowedEnvironmentChats(listener: () => void): () => void {
   followedListeners.add(listener)

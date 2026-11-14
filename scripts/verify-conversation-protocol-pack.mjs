@@ -33,7 +33,11 @@ try {
   const cjs = fixtureRequire('@sprintengine/conversation-protocol')
   for (const loaded of [esm, cjs]) {
     assert.equal(loaded.CONVERSATION_CAPABILITY, 'conversations')
-    assert.equal(loaded.parseConversationClientFrame({ type: 'list', requestId: 'list-1' }).requestId, 'list-1')
+    assert.equal(
+      loaded.parseConversationClientFrame({ type: 'command', commandId: 'c-0', command: { kind: 'interrupt' } })
+        .commandId,
+      'c-0',
+    )
     assert.equal(loaded.inferConversationToolKind('Read'), 'file_read')
     assert.equal(
       loaded.presentToolItem({ name: 'Read', input: { path: '/workspace/notes.md' } }).title,
@@ -66,9 +70,8 @@ try {
       loaded.parseConversationServerFrame({ type: 'synchronized', seq: 4, generation: 'log-1' }).generation,
       'log-1',
     )
-    // The full contract's commands and handshake.
+    // The full contract's commands.
     assert.equal(loaded.CONVERSATION_PROTOCOL_VERSION, 1)
-    assert.equal(loaded.parseConversationClientMessage({ type: 'hello', requestId: 'h-1' }).type, 'hello')
     assert.equal(
       loaded.parseConversationClientMessage({
         type: 'command',
@@ -84,11 +87,11 @@ try {
   }
   const consumer = `import { presentToolItem, parseConversationClientFrame, parseConversationWireModels, isConversationEventType, parseConversationClientMessage, type ConversationClientFrame, type ConversationClientMessage, type ConversationCreateRequest, type ConversationEvent, type ConversationStreamFrame, type ConversationToolKind, type ConversationWireModels } from '@sprintengine/conversation-protocol'
 const kind: ConversationToolKind = 'file_read'
-const frame: ConversationClientFrame | null = parseConversationClientFrame({ type: 'list', requestId: 'list-1' })
+const frame: ConversationClientFrame | null = parseConversationClientFrame({ type: 'command', commandId: 'c-0', command: { kind: 'interrupt' } })
 const models: ConversationWireModels | null = parseConversationWireModels(null)
 const event: ConversationEvent = { id: 'e', seq: 1, sessionId: 's', workspaceId: 'w', agentId: 'a', providerId: 'p', modelId: 'm', type: 'turn_started', createdAt: 0 }
 const streamed: ConversationStreamFrame = { type: 'event', event }
-const message: ConversationClientMessage | null = parseConversationClientMessage({ type: 'hello', requestId: 'h-1' })
+const message: ConversationClientMessage | null = parseConversationClientMessage({ type: 'command', commandId: 'c-1', command: { kind: 'interrupt' } })
 const create: ConversationCreateRequest = { workspaceId: 'w', allowedTools: ['Write'] }
 console.log(presentToolItem({ name: 'Read', kind }), frame, models, streamed, isConversationEventType(event.type), message, create)
 `
