@@ -25,8 +25,9 @@ test('an entry is appended to the day’s log in the platform’s logs folder', 
   dirs.push(logsDir)
   await platformLoggingTo(logsDir)
   const entry = await writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Test', message: 'hello' })
-  assert.ok(entry.logPath.startsWith(logsDir))
-  assert.match(await readFile(entry.logPath, 'utf8'), /"message":"hello"/)
+  const logPath = entry.logPath ?? ''
+  assert.ok(logPath.startsWith(logsDir))
+  assert.match(await readFile(logPath, 'utf8'), /"message":"hello"/)
 })
 
 test('a logs folder that cannot be written never rejects, and is said once', async () => {
