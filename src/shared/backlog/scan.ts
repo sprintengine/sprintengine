@@ -624,6 +624,17 @@ export function backlogItemSlugFromPath(relativePath: string): string {
   return name.replace(SOURCE_EXTENSION_RE, '')
 }
 
+// The file name a Rename lands on. The scan lists only `.md` / `.html` files,
+// so a name typed without one would take the item off the list while its file
+// (and its id) stayed: the item's own extension is kept unless the person typed
+// a source extension themselves.
+export function backlogRenameFileName(currentName: string, typedName: string): string {
+  const typed = typedName.trim()
+  if (!typed || SOURCE_EXTENSION_RE.test(typed)) return typed
+  const extension = SOURCE_EXTENSION_RE.exec(currentName)?.[0] ?? '.md'
+  return `${typed}${extension}`
+}
+
 export function nextArchiveRelativePath(sourceRelativePath: string, existingRelativePaths: Iterable<string>): string {
   const normalizedExisting = new Set(
     Array.from(existingRelativePaths, (pathValue) => normalizeRelativePath(pathValue).toLowerCase()),

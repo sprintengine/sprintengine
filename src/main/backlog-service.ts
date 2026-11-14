@@ -1,5 +1,6 @@
-import { lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { constants } from 'node:fs'
 
 import { readConfinedFile, writeConfinedFile } from './confined-file'
 
@@ -339,7 +340,13 @@ export async function ensureBacklogItemIds(input: BacklogEnsureIdsInput): Promis
         })
       }
 
-      const assignments = planBacklogIdAllocation(allocationItems)
+      // A file the scan did not list (renamed out of `.md`, say) still owns its
+      // number: mint above it, as creation does. Read only when something needs
+      // an id, so a scan of a fully numbered backlog walks nothing.
+      const floor = allocationItems.some((item) => typeof item.numericId !== 'number')
+        ? await highestBacklogNumericId(workspace)
+        : 0
+      const assignments = planBacklogIdAllocation(allocationItems, floor)
       for (const [relativePath, numericId] of Object.entries(assignments)) {
         const target = await realBacklogFilePath(workspace.location, relativePath)
         if (!target) continue
@@ -791,7 +798,11 @@ export async function readBacklogItem(workspaceRoot: string, relativePath: strin
   }
 }
 
-async function listAllBacklogSourcePaths(workspace: ValidWorkspace): Promise<string[]> {
+async function listAllBacklogSourcePaths(
+  workspace: ValidWorkspace,
+  /** Every file, whatever its extension: what id allocation must see (below). */
+  options: { everyFile?: boolean } = {},
+): Promise<string[]> {
   const paths: string[] = []
   await walk(workspace.location.root)
   return paths.sort((left, right) => left.localeCompare(right))
@@ -810,21 +821,46 @@ async function listAllBacklogSourcePaths(workspace: ValidWorkspace): Promise<str
         }
         continue
       }
-      if (!entry.isFile() || !/\.(md|html?)$/i.test(entry.name)) continue
+      if (!entry.isFile() || (!options.everyFile && !/\.(md|html?)$/i.test(entry.name))) continue
       const logical = backlogLogicalPath(workspace.location, join(directory, entry.name))
       if (logical) paths.push(logical)
     }
   }
 }
 
-async function nextBacklogNumericId(workspace: ValidWorkspace): Promise<number> {
+// Enough of a file to hold its frontmatter: the id is in the first lines, and a
+// mockup image or a large export beside the items is not worth reading whole.
+const FRONTMATTER_HEAD_BYTES = 16 * 1024
+
+async function readFileHead(path: string): Promise<string> {
+  // `path` is the real path the caller checked (`realBacklogFilePath`): opened
+  // without following a link put there since, and never blocking on a FIFO,
+  // as `readConfinedFile` reads; only a regular file is read.
+  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+  try {
+    if (!(await handle.stat()).isFile()) return ''
+    const buffer = Buffer.alloc(FRONTMATTER_HEAD_BYTES)
+    const { bytesRead } = await handle.read(buffer, 0, FRONTMATTER_HEAD_BYTES, 0)
+    return buffer.subarray(0, bytesRead).toString('utf-8')
+  } finally {
+    await handle.close()
+  }
+}
+
+/**
+ * The highest id any file under the backlog folder claims. EVERY file, not only
+ * the ones the scan lists as items: an item renamed to a name without `.md` drops
+ * out of the list but keeps its id, and minting past only the listed ones handed
+ * that same number to the next new item.
+ */
+async function highestBacklogNumericId(workspace: ValidWorkspace): Promise<number> {
   let max = 0
-  for (const relativePath of await listAllBacklogSourcePaths(workspace)) {
+  for (const relativePath of await listAllBacklogSourcePaths(workspace, { everyFile: true })) {
     let content: string
     try {
       const sourcePath = await realBacklogFilePath(workspace.location, relativePath)
       if (!sourcePath) continue
-      content = await readConfinedFile(sourcePath, 'utf-8')
+      content = await readFileHead(sourcePath)
     } catch {
       continue
     }
@@ -832,7 +868,11 @@ async function nextBacklogNumericId(workspace: ValidWorkspace): Promise<number> 
     const numericId = parseBacklogNumericId(fields.id)
     if (numericId !== undefined && numericId > max) max = numericId
   }
-  return max + 1
+  return max
+}
+
+async function nextBacklogNumericId(workspace: ValidWorkspace): Promise<number> {
+  return (await highestBacklogNumericId(workspace)) + 1
 }
 
 // The workspace key without the persist-on-first-read behavior of
