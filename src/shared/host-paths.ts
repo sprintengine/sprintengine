@@ -225,22 +225,3 @@ export function isWslDriveMountPath(path: string): boolean {
   return WSL_DRIVE_MOUNT.test(forwardSlashes(path))
 }
 
-/**
- * One absolute Linux path from an agent running in WSL, spelled the way the
- * workspace root is spelled on Windows, with `/` separators (Node and git on
- * Windows read them).
- *
- *   /mnt/c/Users/dev/repo/a.ts  (root C:\Users\dev\repo)                   → C:/Users/dev/repo/a.ts
- *   /home/dev/repo/a.ts         (root \\wsl$\Ubuntu\home\dev\repo)         → //wsl$/Ubuntu/home/dev/repo/a.ts
- *   /home/dev/repo/a.ts         (root \\wsl.localhost\Ubuntu\home\dev\repo) → //wsl.localhost/Ubuntu/home/dev/repo/a.ts
- *
- * A share root keeps its own share name, so a comparison with it is like for
- * like. Anything that is not an absolute Linux path comes back unchanged.
- */
-export function wslPathInRootSpelling(path: string, root: string, distro: string): string {
-  if (!path.startsWith('/') || path.startsWith('//')) return path
-  if (WSL_DRIVE_MOUNT.test(path)) return wslToWindowsPath(path, { separator: '/' })
-  const share = WSL_SHARE_PATH.test(forwardSlashes(root)) ? /^\/\/([^/]+)\/([^/]+)/u.exec(forwardSlashes(root)) : null
-  if (share) return `//${share[1]}/${share[2]}${path}`
-  return wslToWindowsPath(path, { distro, separator: '/' })
-}

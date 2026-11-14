@@ -74,7 +74,6 @@ import { openConfinedExistingFile } from '../../main/conversation-file-access'
 import { confineToRoots } from '../../main/studio-rpc/studio-file-confinement'
 import { distroOfUncPath } from '../../shared/host-paths'
 import {
-  conversationImageFileOf,
   conversationImagePathOf,
   sniffConversationImage,
   type ConversationImageMediaType,
@@ -1691,7 +1690,9 @@ export function createConversationGatewayHost(
         settled = tool?.status === 'ok' || tool?.ended === true
         const recorded = tool ? conversationImagePathOf(tool) : null
         if (!recorded) return { ok: false, code: 'unknown_image' }
-        const path = conversationImageFileOf(recorded, key.workspaceRoot)
+        // A chat's recorded path is this machine's own: a WSL chat is its
+        // distribution's Studio's, which serves its pictures there.
+        const path = recorded
         // A relative path names a file in the chat's folder, as a link to it in
         // the same transcript does: the folder its session works in (a New
         // chat's pool worktree), else the workspace's.
