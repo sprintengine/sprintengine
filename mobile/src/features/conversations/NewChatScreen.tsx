@@ -148,7 +148,7 @@ export function NewChatScreen({
 }) {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { chatSessions: sessions } = useSessionData();
+  const { sessions } = useSessionData();
   const { apiFor, desktops, markChatOpened } = useChats();
 
   // Where it runs. Starts as the project the person chose; "Run on" may move

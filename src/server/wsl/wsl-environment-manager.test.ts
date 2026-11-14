@@ -442,15 +442,10 @@ function socketFrom(origin: string | null): StudioWebSocketConstructor {
 }
 
 for (const transport of ['auto', 'stdio'] as const)
-  test(`a window reaches the distribution's own Studio through this PC's route, ${transport === 'auto' ? 'over loopback' : 'through the stdio bridge'}; a device too, never as owner`, async () => {
+  test(`a window reaches the distribution's own Studio through this PC's route, ${transport === 'auto' ? 'over loopback' : 'through the stdio bridge'}`, async () => {
     const home = fakeHome(`route-${transport}`)
-    const connected: Array<(connection: WslServerConnection) => void> = []
-    const { manager: wsl } = manager({
-      homes: { Ubuntu: home },
-      transport,
-      connected: (connection) => connected.forEach((listener) => listener(connection)),
-    })
-    const access = createWslEnvironmentAccess({ manager: wsl, onConnected: (listener) => connected.push(listener) })
+    const { manager: wsl } = manager({ homes: { Ubuntu: home }, transport })
+    const access = createWslEnvironmentAccess({ manager: wsl })
     cleanups.push(() => access.close())
     const window = { windowKey: 'window-1-1', origin: 'file://' }
     // The ticket starts the server: opening a chat there is using it.
@@ -506,46 +501,8 @@ for (const transport of ['auto', 'stdio'] as const)
       'revoked',
     )
 
-    // A device this desktop relays: listed by its environment id, its grant
-    // cut to what it was minted with, never an owner, never a terminal.
-    assert.deepEqual(access.relayedEnvironments(), [
-      { environmentId, name: 'WSL: Ubuntu', kind: 'wsl', connected: true },
-    ])
-    const device = await access.deviceTicket(environmentId, {
-      deviceId: 'phone-1',
-      name: 'Phone',
-      scopes: ['conversation:read'],
-    })
-    assert.ok(device.ok, device.ok ? '' : device.message)
-    const phone = await connect({
-      transport: webSocketTransport({
-        ticket: async () => ({ url: `ws://127.0.0.1:${new URL(first.url).port}${device.path}`, token: device.token }),
-        WebSocket: socketFrom(null),
-      }),
-      client: { name: 'Phone' },
-      reconnect: false,
-    })
-    assert.equal(phone.grant.owner, false)
-    assert.deepEqual(phone.grant.scopes, ['conversation:read'])
-    await assert.rejects(phone.request('terminal.list', {}), { code: 'owner_required' })
-    phone.close()
-    assert.equal((await access.deviceTicket('not-this-one', aPhone())).ok, false)
-    // The stream a relayed device's socket is spliced onto is the distribution's `ws` door.
-    const stream = await access.openEnvironment(environmentId)
-    stream.destroy()
-    await assert.rejects(access.openEnvironment('not-this-one'))
-
-    // With no server up, the route carries nothing; the window asks again.
     await wsl.stop('Ubuntu')
-    assert.deepEqual(access.relayedEnvironments(), [
-      { environmentId, name: 'WSL: Ubuntu', kind: 'wsl', connected: false },
-    ])
   }, 60_000)
-
-/** A paired phone asking to read chats. */
-function aPhone() {
-  return { deviceId: 'phone-1', name: 'Phone', scopes: ['conversation:read' as const] }
-}
 
 test('a lost wire to a server too busy to answer at once is reconnected when it does, not taken for hung', async () => {
   const home = fakeHome('busy')

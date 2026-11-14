@@ -41,10 +41,6 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'server.ping': ANY,
   'update.status': ANY,
 
-  // The machines this desktop relays a device to (`relay:` routes): each still
-  // takes its own ticket there, held to the device's grant, never an owner's.
-  'environment.relayed': CHAT_READ,
-
   // Chat list, following a chat, its changes, side reads, search, approval rules.
   'conversation.list': CHAT_READ,
   'conversation.loadEarlier': CHAT_READ,
@@ -244,10 +240,6 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
       [
         'a window’s ticket, the shell’s alone: it admits a window of Studio’s own, shown what an owner is shown',
         ['environment.windowTicket', 'environment.revokeWindow'],
-      ],
-      [
-        'a relayed device’s ticket, the shell’s alone: the desktop that relays a device asks for it, never the device',
-        ['environment.deviceTicket'],
       ],
       [
         'a hand-over into this Studio’s stores, the shell’s alone: the desktop that held the records asks, never a device',
@@ -458,7 +450,7 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ],
       ],
       [
-        'the machines this computer offers (itself, its WSL distributions) and how each one’s Studio server stands: an owner’s (a refresh starts WSL here); a device reaches a distribution’s chats through this desktop’s `relay:` route instead, listed by `environment.relayed`',
+        'the machines this computer offers (itself, its WSL distributions) and how each one’s Studio server stands: an owner’s (a refresh starts WSL here); no device reaches a distribution or its chats, which are reached from this desktop only',
         ['hosts.list', 'hosts.changed'],
       ],
       [

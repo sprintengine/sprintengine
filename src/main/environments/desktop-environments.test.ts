@@ -230,60 +230,7 @@ test('the owners’ states read as connections', () => {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-test('a machine a paired desktop relays this one to is listed as a relay route through that pairing', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'desktop-environments-'))
-  directories.push(dir)
-  const BOX = '7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f'
-  const mesh = owned<{ id: string; machineName: string; environmentId?: string }>([
-    { id: 'tnc_1', machineName: 'mac-mini', environmentId: MINI },
-  ])
-  const answering: MeshMachineReachability = {
-    connectionId: 'tnc_1',
-    machineName: 'mac-mini',
-    checking: false,
-    reachable: true,
-    unauthorized: false,
-    checkedAt: 20,
-    lastReachedAt: 20,
-    detail: null,
-    relayed: [{ environmentId: BOX, name: 'build-box', connected: true }],
-  }
-  const reach = owned<MeshMachineReachability>([answering])
-  const checked: string[] = []
-  const environments = createDesktopEnvironments({
-    userDataDir: dir,
-    platform: 'darwin',
-    hosts: { get: () => ({}), onChanged: () => () => undefined },
-    ssh: null,
-    mesh,
-    meshReachability: { ...reach, check: async (id) => void checked.push(id) },
-  })
-  await settle()
-  const box = () => environments.get(BOX)
-  assert.deepEqual(box()?.routes.map(formatEnvironmentRoute), [`relay:tnc_1.${BOX}`])
-  assert.equal(box()?.displayName, 'build-box')
-  assert.equal(box()?.connection.state, 'up')
-
-  // That desktop holds no connection to it now: offline, in words naming it.
-  reach.set([{ ...answering, relayed: [{ ...answering.relayed![0]!, connected: false }] }])
-  await settle()
-  assert.deepEqual([box()?.connection.state, box()?.connection.detail], ['offline', 'Not connected on mac-mini'])
-  // That desktop not answering: offline as it is.
-  reach.set([{ ...answering, reachable: false, detail: 'Timed out.' }])
-  await settle()
-  assert.deepEqual([box()?.connection.state, box()?.connection.detail], ['offline', 'Not answering'])
-
-  // Retry asks the pairing the route goes through.
-  await environments.retry(`relay:tnc_1.${BOX}`)
-  assert.deepEqual(checked, ['tnc_1'])
-
-  // It no longer relays it: no route.
-  reach.set([{ ...answering, relayed: [] }])
-  await settle()
-  assert.equal(environments.environmentOfRoute({ kind: 'relay', via: 'tnc_1', environment: BOX }), null)
-})
-
-test('a machine this desktop holds over SSH is reached as its owner, before a paired desktop relays it', async () => {
+test('a machine this desktop holds over SSH is reached by its own route alone, never through a paired desktop', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'desktop-environments-'))
   directories.push(dir)
   const BOX = '7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f'
@@ -303,7 +250,6 @@ test('a machine this desktop holds over SSH is reached as its owner, before a pa
       checkedAt: 20,
       lastReachedAt: 20,
       detail: null,
-      relayed: [{ environmentId: BOX, name: 'their build-box', connected: true }],
     },
   ])
   const environments = createDesktopEnvironments({
@@ -316,7 +262,7 @@ test('a machine this desktop holds over SSH is reached as its owner, before a pa
   })
   await settle()
   const box = environments.get(BOX)
-  // The relay admits this desktop as a device; its own SSH route is the owner's.
-  assert.deepEqual(box?.routes.map(formatEnvironmentRoute), ['ssh:m_box', `relay:tnc_1.${BOX}`])
+  assert.deepEqual(box?.routes.map(formatEnvironmentRoute), ['ssh:m_box'])
   assert.equal(box?.displayName, 'build-box')
+  assert.deepEqual(environments.get(MINI)?.routes.map(formatEnvironmentRoute), ['tailnet:tnc_1'])
 })

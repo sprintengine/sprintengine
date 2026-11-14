@@ -20,7 +20,7 @@
 // This machine has no identity at all: it is the unmarked default, and no
 // surface draws a glyph for it.
 
-import { isWslHostId, LOCAL_HOST_ID, wslHostId, type ExecutionHostId } from './execution-host'
+import { isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from './execution-host'
 import {
   MACHINE_COLOURS,
   MACHINE_KINDS,
@@ -285,22 +285,3 @@ export function resolveLocalMachineIdentity(
   }
 }
 
-/**
- * The mark a machine this desktop relays wears, as this desktop marks its
- * chats, the person's choice applied: an SSH machine by its address, a WSL
- * distribution by its machine on this PC (`wsl:<distro>`, from the name it is
- * relayed under, `WSL: <distro>`). Null when it cannot be named.
- */
-export function relayedEnvironmentMark(
-  entry: { kind: 'ssh' | 'wsl'; name: string; machine?: { host: string; port?: number | null } },
-  marks: MachineMarkSettings | null | undefined,
-): { kind: string; color: string } | null {
-  const distro = entry.kind === 'wsl' ? /^WSL: (.+)$/u.exec(entry.name)?.[1] : null
-  const ref: MachineRef | null = distro
-    ? { kind: 'wsl', hostId: wslHostId(distro) }
-    : entry.kind === 'ssh' && entry.machine
-      ? { kind: 'ssh', host: entry.machine.host, port: entry.machine.port ?? null }
-      : null
-  const identity = ref ? resolveMachineIdentity(ref, marks) : null
-  return identity ? { kind: identity.kind, color: identity.colour } : null
-}

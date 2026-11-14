@@ -209,26 +209,6 @@ test.skipIf(!DOCKER_TESTS)(
         )
         await connection.owner.request('environment.revokeWindow', { windowKey: 'window-1-1' })
         assert.equal(await ended, 'revoked')
-
-        // A device this desktop relays: its own path, no origin, its grant cut to the ceiling, never an owner.
-        const device = await connection.owner.request('environment.deviceTicket', {
-          deviceId: 'phone-1',
-          name: 'Phone',
-          scopes: ['conversation:read'],
-        })
-        const phone = await connect({
-          transport: webSocketTransport({
-            ticket: async () => ({ url: `ws://127.0.0.1:${routePort}${device.path}`, token: device.token }),
-            WebSocket: (globalThis as unknown as { WebSocket: StudioWebSocketConstructor }).WebSocket,
-          }),
-          client: { name: 'Phone' },
-          reconnect: false,
-        })
-        assert.equal(phone.grant.owner, false)
-        assert.deepEqual(phone.grant.scopes, ['conversation:read'])
-        await phone.request('conversation.list', {})
-        await assert.rejects(phone.request('terminal.list', {}), { code: 'owner_required' })
-        phone.close()
       } finally {
         await route.close()
       }

@@ -243,7 +243,7 @@ export function ConversationScreen({
   /** The boards on this chat's desktop, from this chat's project. */
   onOpenCanvases?: (projectName: string | null) => void;
 }) {
-  const { chatSessions: sessions, markDeviceRevoked } = useSessionData();
+  const { sessions, markDeviceRevoked } = useSessionData();
   const {
     apiFor,
     chats,

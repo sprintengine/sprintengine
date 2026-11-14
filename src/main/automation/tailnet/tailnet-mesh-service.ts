@@ -27,8 +27,6 @@ import { createTailnetMeshStore, type StoredMeshConnection, type TailnetMeshStor
 import type { TailnetPeerIdentity } from './tailnet-peer-identity'
 import { createPeerStudios, peerRefusal, peerStudioTicket, type PeerStudioTarget } from './tailnet-peer-studio'
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
-import { STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY } from '../../../../packages/studio-protocol/src/handshake'
-import { relayedEnvironmentsOf } from '../../../../packages/studio-protocol/src/environment-access'
 import {
   formatTailnetEndpoint,
   collectPairingFromMachine,
@@ -164,7 +162,7 @@ export type TailnetMeshService = {
    * seconds, from the window's `origin` alone. The window spends it and keeps
    * nothing; the token never leaves this process.
    */
-  windowTicket(connectionId: unknown, origin: string, environmentId?: string): Promise<EnvironmentTicketResult>
+  windowTicket(connectionId: unknown, origin: string): Promise<EnvironmentTicketResult>
   /**
    * The requests still waiting and each machine's last reachability answer,
    * stamped with the same revision the events carry — the initial read behind
@@ -720,13 +718,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         store.markConnected(connection.id)
         rememberIdentity(connection.id, identity.value)
         recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
-        // The answer is in: a check asked from here on is a new one, not a
-        // wait on this probe's relayed read. Otherwise a machine that went
-        // away during that read would still be called reachable.
-        settle()
-        // Which machines it relays this pairing to: its Studio's welcome says
-        // whether it serves the list at all (`readRelayed`).
-        await readRelayed(stored)
         return
       }
       recordReachability(connection, {
@@ -737,35 +728,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     })().finally(settle)
     probes.set(connection.id, probe)
     return probe
-  }
-
-  /**
-   * The machines a paired desktop relays this pairing to (`environment.relayed`),
-   * kept with its reachability so this desktop's environment list names each
-   * as a `relay:` route. A Studio that does not serve the list relays none; a
-   * read that fails keeps what was last heard.
-   */
-  async function readRelayed(connection: StoredMeshConnection): Promise<void> {
-    let relayed: NonNullable<MeshMachineReachability['relayed']>
-    try {
-      // Read through the protocol's own reader: what a paired desktop says
-      // becomes a route here, so an entry that cannot be one is dropped.
-      relayed = await peerStudios.ask(peerTarget(connection), async (client) =>
-        client.supports(STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY)
-          ? relayedEnvironmentsOf(await client.request('environment.relayed', {})).map(
-              ({ environmentId, name, connected }) => ({ environmentId, name, connected }),
-            )
-          : [],
-      )
-    } catch {
-      return
-    }
-    const known = reachability.get(connection.id)
-    if (!known || !store.find(connection.id)) return
-    if (JSON.stringify(known.relayed ?? []) === JSON.stringify(relayed)) return
-    const next = { ...known, relayed }
-    reachability.set(connection.id, next)
-    broadcast({ kind: 'machine-reachability', ...next })
   }
 
   async function checkAllReachability(): Promise<void> {
@@ -865,19 +827,12 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
   //
   // The window asks that machine's Studio itself (design-lane-on-protocol D1);
   // what it needs from here is a ticket for each connection, bought with the
-  // device token kept here, good once and from its origin alone. A machine
-  // that desktop relays this pairing to (`relay:` route) is asked the same
-  // way, naming its environment: that machine admits the window as this
-  // pairing's device, held to the pairing's grant, never an owner.
-  async function windowTicket(
-    connectionId: unknown,
-    origin: string,
-    environmentId?: string,
-  ): Promise<EnvironmentTicketResult> {
+  // device token kept here, good once and from its origin alone.
+  async function windowTicket(connectionId: unknown, origin: string): Promise<EnvironmentTicketResult> {
     const connection = connectionFor(connectionId)
     if (!connection) return { ok: false, code: 'unknown_route', message: 'That machine is not paired here.' }
     try {
-      return { ok: true, ...(await peerStudioTicket(peerTarget(connection), origin, environmentId)) }
+      return { ok: true, ...(await peerStudioTicket(peerTarget(connection), origin)) }
     } catch (error) {
       const refused = peerRefusal(connection, error)
       // A pairing that machine no longer knows is one this machine shows as

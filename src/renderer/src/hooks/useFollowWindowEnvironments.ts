@@ -21,10 +21,10 @@ export function windowEnvironmentTargets(workspaces: readonly Pick<Workspace, 'e
 
 /**
  * The route kinds whose chats this window follows without a record of them
- * here: a paired desktop's (`tailnet:`), and an SSH machine a paired desktop
- * relays (`relay:`). Their chats are listed by the machine itself.
+ * here: a paired desktop's (`tailnet:`). Its chats are listed by the machine
+ * itself.
  */
-const FOLLOWED_WITHOUT_RECORDS: ReadonlySet<string> = new Set(['tailnet', 'relay'])
+const FOLLOWED_WITHOUT_RECORDS: ReadonlySet<string> = new Set(['tailnet'])
 
 /** Every route of a kind the window follows without records, as the environment list names them. */
 export function listedEnvironmentTargets(entries: readonly EnvironmentEntry[]): EnvironmentTarget[] {
@@ -43,8 +43,7 @@ const keyOf = (targets: readonly EnvironmentTarget[]) =>
 
 /**
  * Follow the chats of every environment this window has chats on, for as long
- * as it has them, and of every paired desktop and machine one relays, for as
- * long as the environment list holds them (`environmentChats.ts`): their
+ * as it has them, and of every paired desktop, for as long as the environment list holds them (`environmentChats.ts`): their
  * sessions join the window's one list. A web tab, which reaches no other
  * environment, follows none.
  */

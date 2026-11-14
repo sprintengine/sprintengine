@@ -24,8 +24,6 @@ export type FakeDesktopStudio = {
   requests: Array<{ method: string; params: Record<string, unknown> }>;
   /** Every ticket request's headers. */
   ticketHeaders: Array<Record<string, string>>;
-  /** Every ticket request's body, as sent. */
-  ticketBodies: Array<Record<string, unknown>>;
   /** Every socket's URL. */
   socketUrls: string[];
   /** Drop every open socket, as a backgrounded phone's are. */
@@ -61,7 +59,6 @@ export function fakeDesktopStudio(input: {
 }): FakeDesktopStudio {
   const requests: FakeDesktopStudio["requests"] = [];
   const ticketHeaders: FakeDesktopStudio["ticketHeaders"] = [];
-  const ticketBodies: FakeDesktopStudio["ticketBodies"] = [];
   const socketUrls: string[] = [];
   type Open = {
     drop(): void;
@@ -75,19 +72,12 @@ export function fakeDesktopStudio(input: {
   const subscriptions = new Map<string, string>();
   let minted = 0;
 
-  const fetchImpl = (async (_url: string, init: { headers: Record<string, string>; body?: string }) => {
+  const fetchImpl = (async (_url: string, init: { headers: Record<string, string> }) => {
     ticketHeaders.push(init.headers);
-    const asked = JSON.parse(init.body ?? "{}") as Record<string, unknown>;
-    ticketBodies.push(asked);
-    // A machine the desktop relays: its own Studio path on the same listener.
-    const studioPath =
-      typeof asked.environmentId === "string"
-        ? `/tailnet/v1/environments/${asked.environmentId}/studio`
-        : "/tailnet/v1/studio";
     const status = input.ticketStatus?.() ?? 200;
     const body =
       status === 200
-        ? { ticket: `mctk_${++minted}`, path: "/tailnet/v1/stream", ...(input.outdated ? {} : { studioPath }) }
+        ? { ticket: `mctk_${++minted}`, path: "/tailnet/v1/stream", ...(input.outdated ? {} : { studioPath: "/tailnet/v1/studio" }) }
         : { error: { code: "unauthorized", message: "No." } };
     return { ok: status === 200, status, json: async () => body };
   }) as unknown as typeof fetch;
@@ -212,7 +202,6 @@ export function fakeDesktopStudio(input: {
     WebSocket: FakeSocket as unknown as StudioWebSocketConstructor,
     requests,
     ticketHeaders,
-    ticketBodies,
     socketUrls,
     cut: () => {
       for (const socket of [...open]) socket.drop();

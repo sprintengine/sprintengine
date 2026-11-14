@@ -8,7 +8,6 @@ import { acceptWebSocket, refuseUpgrade, webSocketKeyOf, webSocketStream } from 
 import { createTicketAuthenticator, mintStudioTicket } from './studio-frame-port'
 import type { StudioRpcConnection } from './studio-rpc-connection'
 import type { StudioAuthenticator } from './studio-rpc-types'
-import type { StudioGrant, StudioScope } from '../../../packages/studio-protocol/src/public'
 
 // Studio's own windows reach their server here: a WebSocket on 127.0.0.1, the
 // Studio protocol on `/ws` and nothing else. A loopback port is open to every
@@ -45,13 +44,6 @@ export type StudioWindowListenerOptions = {
    * minted for; its hello must present the given authenticator's ticket.
    */
   attach(stream: Duplex, authenticator: StudioAuthenticator, windowKey: string): StudioRpcConnection
-  /**
-   * Serve a connection the listener admitted on `/device`: a paired device
-   * the desktop that holds this Studio relays, never an owner, its hello
-   * presenting the given authenticator's ticket. Without it, `/device` is
-   * not served.
-   */
-  attachDevice?(stream: Duplex, authenticator: StudioAuthenticator): StudioRpcConnection
   now?: () => number
   log?: (line: string) => void
 }
@@ -63,26 +55,11 @@ export type StudioWindowTicketRequest = {
   origin: string
 }
 
-export type StudioDeviceTicketRequest = {
-  /** The device as the desktop that relays it names it. */
-  deviceId: string
-  name: string
-  /** Exactly what it may do here: the protocol's validator has held these to the relayed ceiling. */
-  scopes: readonly StudioScope[]
-}
-
 export type StudioWindowListener = {
   /** Mint a ticket for one connection of a window, listening first if this is the first. */
   ticket(request: StudioWindowTicketRequest): Promise<StudioWindowTicket>
   /** The window has gone: its outstanding tickets are void and its connections end. */
   revokeWindow(windowKey: string): void
-  /**
-   * Mint a ticket for one connection of a relayed device on `/device`: good
-   * once, for thirty seconds, with no `Origin` (the desktop writes the
-   * upgrade, a browser never can), served with the device's grant and never
-   * an owner's.
-   */
-  deviceTicket(request: StudioDeviceTicketRequest): Promise<StudioWindowTicket>
   /**
    * Serve a byte stream as if it had connected to the listener: a window's
    * socket the desktop that holds this Studio carried here (the front door's
@@ -96,10 +73,6 @@ export type StudioWindowListener = {
 }
 
 type Outstanding = { windowKey: string; origin: string; mintedAt: number }
-type OutstandingDevice = { deviceId: string; name: string; scopes: readonly StudioScope[]; mintedAt: number }
-
-/** The path a relayed device's socket is served on. */
-const DEVICE_SOCKET_PATH = '/device'
 
 function hashTicket(ticket: string): string {
   return createHash('sha256').update(ticket).digest('base64url')
@@ -127,7 +100,6 @@ function originMatches(presented: string | undefined, expected: string): boolean
 export function createStudioWindowListener(options: StudioWindowListenerOptions): StudioWindowListener {
   const now = options.now ?? Date.now
   const outstanding = new Map<string, Outstanding>()
-  const devices = new Map<string, OutstandingDevice>()
   const connections = new Map<string, StudioRpcConnection[]>()
   let server: Server | null = null
   let port: number | null = null
@@ -137,12 +109,6 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
   function prune(): void {
     const cutoff = now() - WINDOW_TICKET_TTL_MS
     for (const [hash, entry] of outstanding) if (entry.mintedAt < cutoff) outstanding.delete(hash)
-    for (const [hash, entry] of devices) if (entry.mintedAt < cutoff) devices.delete(hash)
-    while (devices.size > MAX_OUTSTANDING_TICKETS) {
-      const oldest = devices.keys().next().value
-      if (oldest === undefined) break
-      devices.delete(oldest)
-    }
     while (outstanding.size > MAX_OUTSTANDING_TICKETS) {
       const oldest = outstanding.keys().next().value
       if (oldest === undefined) break
@@ -167,7 +133,6 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
 
   function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     const url = new URL(request.url ?? '/', 'ws://127.0.0.1')
-    if (url.pathname === DEVICE_SOCKET_PATH && options.attachDevice) return handleDevice(url, request, socket, head)
     if (url.pathname !== WINDOW_SOCKET_PATH) return refuse(socket, 404, 'not_found')
     // Named by its address, never by a name: a page whose own host name a DNS
     // server rebinds to 127.0.0.1 still says that name here.
@@ -193,32 +158,6 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
       entry.windowKey,
     )
     if (!connection.isClosed()) admit(entry.windowKey, connection)
-  }
-
-  /** A relayed device's socket: the ticket the shell asked for it, no origin at all, never an owner. */
-  function handleDevice(url: URL, request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    if (hostName(request.headers.host) !== '127.0.0.1') return refuse(socket, 403, 'wrong_host')
-    const key = webSocketKeyOf(request)
-    if (!key.ok) return refuse(socket, 400, key.code)
-    const ticket = url.searchParams.get('ticket')
-    if (!ticket) return refuse(socket, 401, 'ticket_required')
-    prune()
-    const hash = hashTicket(ticket)
-    const entry = devices.get(hash)
-    devices.delete(hash)
-    if (!entry) return refuse(socket, 401, 'ticket_spent_or_expired')
-    // A browser always says where its page came from; the desktop that relays a device says nothing.
-    if (request.headers.origin !== undefined) return refuse(socket, 403, 'origin_refused')
-    const grant: StudioGrant = {
-      clientId: `relay:${entry.deviceId}`,
-      name: entry.name,
-      owner: false,
-      scopes: [...entry.scopes],
-      // As a device paired with the desktop: the person who paired it let it drive that desktop's chats.
-      ceiling: 'bypass',
-    }
-    const peer = acceptWebSocket(socket, key.key, head)
-    options.attachDevice!(webSocketStream(peer), createTicketAuthenticator(ticket, { now, grant: () => grant }))
   }
 
   function listen(): Promise<number> {
@@ -278,24 +217,6 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
         () => stream.destroy(),
       )
     },
-    async deviceTicket(request) {
-      if (!options.attachDevice) throw new Error('This Studio does not serve relayed devices.')
-      if (stopped) throw new Error('Studio is closing, so this device cannot connect to it now.')
-      const listeningOn = await listen()
-      if (stopped) throw new Error('Studio is closing, so this device cannot connect to it now.')
-      prune()
-      const ticket = mintStudioTicket()
-      devices.set(hashTicket(ticket), {
-        deviceId: request.deviceId,
-        name: request.name,
-        scopes: [...request.scopes],
-        mintedAt: now(),
-      })
-      return {
-        url: `ws://127.0.0.1:${listeningOn}${DEVICE_SOCKET_PATH}?ticket=${encodeURIComponent(ticket)}`,
-        token: ticket,
-      }
-    },
     revokeWindow(windowKey) {
       // Main names each document afresh, so a key once revoked is never asked for again.
       for (const [hash, entry] of outstanding) if (entry.windowKey === windowKey) outstanding.delete(hash)
@@ -311,7 +232,6 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
       port = null
       listening = null
       outstanding.clear()
-      devices.clear()
       connections.clear()
       if (!closing) return
       closing.closeAllConnections()

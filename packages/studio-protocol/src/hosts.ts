@@ -18,9 +18,8 @@ import type { TerminalPathStyle } from './terminals.js'
 //
 // Grants. An owner's (`STUDIO_EXECUTION_HOSTS_OWNER`): a refresh starts
 // `wsl.exe` on this computer, and the list names its distributions and why
-// one is down. No paired device reaches it; a device reaches a distribution's
-// chats through this desktop's `relay:` route (`environment.relayed`), which
-// lists only what it may open.
+// one is down. No paired device reaches it, nor a distribution's chats: those
+// are reached only from this desktop.
 
 export type ExecutionHostKind = 'posix' | 'windows' | 'wsl'
 

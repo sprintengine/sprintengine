@@ -72,14 +72,8 @@ import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
 import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, sshRelayTarget } from '../wsl/wsl-tool-relay'
-import { portDuplex } from '../ipc/port-duplex'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
-import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
-import {
-  combineEnvironmentRelays,
-  type TailnetEnvironmentRelay,
-} from '../../main/automation/tailnet/tailnet-studio-endpoint'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
@@ -412,45 +406,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...createTailnetTools({ resolveTailnet: () => tailnetFrontDoor }),
     ],
   })
-  // A paired device reaches the SSH machines main holds and the WSL
-  // distributions this process runs through this process's tailnet listener:
-  // main mints each device's ticket on an SSH machine and opens each socket's
-  // stream, handed here as a port; a distribution's are minted and opened here.
-  const environmentRelays: TailnetEnvironmentRelay[] = []
-  if (shellEnvironments)
-    environmentRelays.push({
-      list: () => rpc.call<StudioRelayedEnvironment[]>(SHELL_METHODS.environmentList, {}),
-      ticket: (environmentId, device) =>
-        rpc.call<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>(
-          SHELL_METHODS.environmentDeviceTicket,
-          { environmentId, device },
-          { timeoutMs: SSH_OPEN_TIMEOUT_MS },
-        ),
-      open: async (environmentId) => {
-        const { clientId } = await rpc.call<{ clientId: string }>(
-          SHELL_METHODS.environmentOpen,
-          { environmentId },
-          { timeoutMs: SSH_OPEN_TIMEOUT_MS },
-        )
-        const deadline = Date.now() + RELAY_PORT_WAIT_MS
-        let port = sshPorts.get(clientId) ?? null
-        while (!port && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 20))
-          port = sshPorts.get(clientId) ?? null
-        }
-        sshPorts.delete(clientId)
-        if (!port) throw new Error('The connection to that machine did not arrive from the app.')
-        return portDuplex(port)
-      },
-    })
-  const wslAccess = core.wslServers?.access
-  if (wslAccess)
-    environmentRelays.push({
-      ticket: (environmentId, device) => wslAccess.deviceTicket(environmentId, device),
-      open: (environmentId) => wslAccess.openEnvironment(environmentId),
-      list: async () => wslAccess.relayedEnvironments(),
-    })
-  if (environmentRelays.length > 0) gateway.linkEnvironments(combineEnvironmentRelays(environmentRelays))
   tailnetFrontDoor = gateway
   // A chat agent in WSL reaches its own server's gateway: the shell's six
   // toolsets are offered there too, and run through this registry, and so
@@ -829,8 +784,6 @@ function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents:
 
 /** How long main may take to open an SSH machine's stream: a first connect may install and start its server. */
 const SSH_OPEN_TIMEOUT_MS = 20 * 60_000
-/** How long a relayed device's stream may take to arrive from main once it is opened. */
-const RELAY_PORT_WAIT_MS = 5_000
 /** An SSH stream's port that no `shell.ssh.open` answer claims within this is closed. */
 const SSH_PORT_UNCLAIMED_MS = 10_000
 
@@ -933,15 +886,9 @@ function serveShellRequests(deps: {
     await deps.gateway.mesh().checkReachability(typeof connectionId === 'string' ? connectionId : undefined)
   })
   rpc.handle(SERVER_METHODS.meshWindowTicket, (params) => {
-    const { connectionId, origin, environmentId } = (params ?? {}) as {
-      connectionId?: unknown
-      origin?: unknown
-      environmentId?: unknown
-    }
+    const { connectionId, origin } = (params ?? {}) as { connectionId?: unknown; origin?: unknown }
     if (typeof origin !== 'string') throw new Error('A window ticket names its window’s origin.')
-    return deps.gateway
-      .mesh()
-      .windowTicket(connectionId, origin, typeof environmentId === 'string' ? environmentId : undefined)
+    return deps.gateway.mesh().windowTicket(connectionId, origin)
   })
   // A window's ticket to a WSL distribution's own Studio: the servers are
   // this process's, so main asks here (`wsl:` routes).

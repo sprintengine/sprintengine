@@ -234,24 +234,6 @@ export function sshEnvironmentSource(
   }
 }
 
-/**
- * A machine a paired desktop relays this one to, as the environment list
- * names it: a `relay:` route through that pairing, under the name that
- * desktop gave it. Its address is not told to a device, so it is marked by
- * that name, as a paired desktop is.
- */
-export function relayEnvironmentSource(
-  via: string,
-  machine: { environmentId: string; name: string },
-): EnvironmentSource {
-  return {
-    route: { kind: 'relay', via, environment: machine.environmentId },
-    displayName: machine.name,
-    machine: { kind: 'paired', name: machine.name },
-    environmentId: isEnvironmentId(machine.environmentId) ? machine.environmentId : null,
-  }
-}
-
 /** A desktop paired over the tailnet, under its machine name, with the id its identity answer gave. */
 export function meshEnvironmentSource(
   connection: Pick<MeshConnection, 'id' | 'machineName' | 'environmentId'>,

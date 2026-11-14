@@ -32,8 +32,6 @@ import {
   TAILNET_RETIRED_PATHS,
   TAILNET_STREAM_PATH,
   TAILNET_STUDIO_PATH,
-  tailnetEnvironmentStudioPath,
-  tailnetRelayedEnvironmentOf,
   TAILNET_TRANSPORT_VERSION,
   TAILNET_WS_TICKET_PATH,
 } from './tailnet-routes'
@@ -53,12 +51,9 @@ import { acceptWebSocket, webSocketStream, type WebSocketPeer } from '../../../s
 import {
   createTailnetDeviceAuthenticator,
   isDesktopWindowOrigin,
-  relayedDeviceScopes,
   tailnetStudioClientId,
-  type TailnetEnvironmentRelay,
   type TailnetStudioHost,
 } from './tailnet-studio-endpoint'
-import { isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
 import { TAILNET_PEER_REFUSED_AUDIT_TOOL } from '../gateway-audit'
 import { normalizeAddress } from './tailnet-peer-identity'
 import { parseTailnetEndpoint } from './tailnet-remote-client'
@@ -145,8 +140,6 @@ const MAX_MCP_BODY_BYTES = 1024 * 1024
 const MAX_CONTROL_BODY_BYTES = 64 * 1024
 /** Long enough to open a socket, short enough that a leaked URL is worthless. */
 const WS_TICKET_TTL_MS = 30_000
-/** A WebSocket key as RFC 6455 has it: sixteen random bytes in base64. */
-const WEBSOCKET_KEY = /^[A-Za-z0-9+/]{22}==$/u
 
 export type TailnetGatewayServerOptions = {
   bindAddress: string
@@ -224,12 +217,6 @@ export type TailnetGatewayServerOptions = {
    * gateway, and a Studio without one answers the socket unavailable.
    */
   studio?: () => TailnetStudioHost | null
-  /**
-   * The machines this desktop holds behind their front doors, for a paired
-   * device's socket on `/tailnet/v1/environments/<id>/studio`; absent, those
-   * paths are not found.
-   */
-  environments?: () => TailnetEnvironmentRelay | null
 }
 
 type TailnetGatewayPeer = { peerNode: string | null; peerAddress: string }
@@ -289,17 +276,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
   const streams = new Set<StreamSession>()
   // `origin`: the one a desktop window's Studio socket will say, named when
   // the ticket was asked for; null for every other socket, which says none.
-  // `environmentId` and `relayPath`: a ticket a relayed machine minted, which
-  // opens that machine's path and no other.
-  const tickets = new Map<
-    string,
-    { deviceId: string; expiresAtMs: number; origin: string | null; environmentId: string | null; relayPath?: string }
-  >()
+  const tickets = new Map<string, { deviceId: string; expiresAtMs: number; origin: string | null }>()
   const studioSockets = new Set<StudioSocket>()
-  // A device's sockets this desktop carries to a machine it relays: closed
-  // when the device is revoked or its grant changes, since the machine holds
-  // the grant it was given when its ticket was minted.
-  const relaySockets = new Set<{ socket: Duplex; stream: Duplex | null; deviceId: string }>()
   // Streamable HTTP sessions of the revisions that keep one (2025-03-26 to
   // 2025-11-25), minted on `initialize`. A session holds one connection
   // context, so a client's `notifications/cancelled` finds the call it names;
@@ -362,16 +340,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     })
     // A narrowed grant needs no push to the RPC stream or the Studio socket:
     // each re-reads the device on every message it answers.
-    const unsubscribeScopes = options.devices.onDeviceScopesChanged((device) => {
-      // The machine a socket is relayed to holds the grant its ticket named:
-      // a narrowed one takes a new ticket, so the socket is closed and the
-      // device's client connects again with one.
-      closeRelaysFor(device.id)
-    })
-    unsubscribeRevocations = () => {
-      unsubscribeRevoked()
-      unsubscribeScopes()
-    }
+    unsubscribeRevocations = unsubscribeRevoked
     server = next
   }
 
@@ -449,11 +418,6 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // The listener is going, not the Studio: a device's client comes back
     // when the listener does, and resumes by its cursors.
     for (const studio of [...studioSockets]) studio.peer.close(WEBSOCKET_CLOSE_GOING_AWAY, 'Server stopping.')
-    for (const relayed of [...relaySockets]) {
-      relayed.socket.destroy()
-      relayed.stream?.destroy()
-    }
-    relaySockets.clear()
     studioSockets.clear()
     await Promise.all(
       [current, behindServe].map((listener) =>
@@ -688,16 +652,10 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
         })
         return
       }
-      const environmentId =
-        body && typeof body === 'object' ? (body as Record<string, unknown>).environmentId : undefined
-      if (environmentId !== undefined) {
-        await relayTicket(response, device, environmentId, origin ?? null)
-        return
-      }
       const ticket = `mctk_${randomBytes(24).toString('base64url')}`
       const expiresAtMs = now() + WS_TICKET_TTL_MS
       pruneTickets()
-      tickets.set(ticket, { deviceId: device.id, expiresAtMs, origin: origin ?? null, environmentId: null })
+      tickets.set(ticket, { deviceId: device.id, expiresAtMs, origin: origin ?? null })
       // `studioPath` says this machine serves the Studio protocol: a device
       // that finds it missing is talking to a build from before it.
       writeJson(response, 200, {
@@ -1145,7 +1103,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // An empty one is none, as on the HTTP side: React Native says `Origin: `
     // when the phone tells it to say no origin of its own.
     const origin = request.headers.origin ? request.headers.origin : null
-    if (origin !== null && ((route !== 'studio' && route !== 'relay') || !isDesktopWindowOrigin(origin)))
+    if (origin !== null && (route !== 'studio' || !isDesktopWindowOrigin(origin)))
       return rejectUpgrade(socket, 403, 'origin_not_allowed')
     // No stream opens behind Serve: see the loopback listener's rule above.
     if (via === 'serve') return rejectUpgrade(socket, 404, 'not_served_over_https')
@@ -1160,9 +1118,6 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       return rejectUpgrade(socket, 400, 'unsupported_websocket_version')
     const key = headerOf(request, 'sec-websocket-key')
     if (!key) return rejectUpgrade(socket, 400, 'missing_websocket_key')
-    // Sixteen bytes in base64 (RFC 6455), nothing else: a relayed upgrade
-    // writes it again on the request it sends the machine.
-    if (!WEBSOCKET_KEY.test(key)) return rejectUpgrade(socket, 400, 'invalid_websocket_key')
 
     const query = queryOf(request.url)
     const presentedTicket = query.get('ticket')
@@ -1171,12 +1126,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     const { device } = redeemed
     // A ticket asked for a window's origin opens that window's Studio socket
     // and nothing else, and a socket says exactly the origin its ticket names.
-    if (redeemed.origin !== origin || (redeemed.origin !== null && route !== 'studio' && route !== 'relay'))
+    if (redeemed.origin !== origin || (redeemed.origin !== null && route !== 'studio'))
       return rejectUpgrade(socket, 403, 'origin_not_allowed')
-    // A ticket a relayed machine minted opens that machine's path, and a
-    // ticket of this desktop's opens none of a machine's.
-    const relayed = route === 'relay' ? tailnetRelayedEnvironmentOf(path) : null
-    if (redeemed.environmentId !== relayed) return rejectUpgrade(socket, 401, 'unauthorized')
     // The ticket was minted behind `admitPeer`, but it rides in a URL; the
     // socket presenting it is held to the device's node all the same.
     const admitted = await admitPeer(device, normalizeAddress(remoteAddressOf(socket)), path)
@@ -1185,19 +1136,6 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // What the socket needs, judged as every HTTP route is.
     if (!authorizeStudioAccess(tailnetDevicePrincipal(device.scopes), TAILNET_ROUTE_ACCESS[route]).ok)
       return rejectUpgrade(socket, 403, 'tailnet_scope_required')
-
-    if (route === 'relay') {
-      const currentDevice = options.devices.listDevices().find((entry) => entry.id === device.id)
-      if (!currentDevice || !relayed || !redeemed.relayPath) return rejectUpgrade(socket, 401, 'unauthorized')
-      const relay = options.environments?.() ?? null
-      if (!relay) return rejectUpgrade(socket, 404, 'not_found')
-      options.devices.recordSeen(currentDevice.id, peerNode)
-      await carryToEnvironment(socket, head, key, currentDevice, relayed, redeemed.relayPath, relay, {
-        peerNode,
-        peerAddress,
-      })
-      return
-    }
 
     if (route === 'studio') {
       const host = options.studio?.() ?? null
@@ -1310,9 +1248,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     }
   }
 
-  function redeemTicket(
-    ticket: string | null,
-  ): { device: TailnetDevice; origin: string | null; environmentId: string | null; relayPath?: string } | null {
+  function redeemTicket(ticket: string | null): { device: TailnetDevice; origin: string | null } | null {
     pruneTickets()
     if (!ticket) return null
     const entry = tickets.get(ticket)
@@ -1321,14 +1257,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     tickets.delete(ticket)
     if (entry.expiresAtMs <= now()) return null
     const device = options.devices.listDevices().find((candidate) => candidate.id === entry.deviceId)
-    return device
-      ? {
-          device,
-          origin: entry.origin,
-          environmentId: entry.environmentId,
-          ...(entry.relayPath ? { relayPath: entry.relayPath } : {}),
-        }
-      : null
+    return device ? { device, origin: entry.origin } : null
   }
 
   /**
@@ -1368,143 +1297,6 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     )
   }
 
-  /**
-   * `ws-ticket` naming a machine this desktop relays: the machine mints the
-   * ticket, with the device's grant cut to the relayed ceiling, and this
-   * desktop keeps it, so the socket that presents it is the device's and
-   * opens that machine's path alone.
-   */
-  async function relayTicket(
-    response: ServerResponse,
-    device: TailnetDevice,
-    environmentId: unknown,
-    origin: string | null,
-  ): Promise<void> {
-    if (!isEnvironmentId(environmentId)) {
-      writeJson(response, 400, { error: { code: 'invalid_environment', message: 'That is not an environment id.' } })
-      return
-    }
-    const relay = options.environments?.() ?? null
-    if (!relay) {
-      writeJson(response, 404, {
-        error: { code: 'environment_unknown', message: 'This desktop relays no other machine.' },
-      })
-      return
-    }
-    const scopes = relayedDeviceScopes(device)
-    if (!scopes.includes('conversation:read')) {
-      writeJson(response, 403, {
-        error: {
-          code: 'tailnet_scope_required',
-          message: 'This device may not follow chats, here or on another machine.',
-        },
-      })
-      return
-    }
-    const minted = await relay
-      .ticket(environmentId, { deviceId: device.id, name: device.name, scopes })
-      .catch((error: unknown) => ({ ok: false as const, code: 'unavailable', message: message(error) }))
-    if (!minted.ok) {
-      writeJson(response, minted.code === 'unknown_route' ? 404 : 503, {
-        error: { code: minted.code, message: minted.message },
-      })
-      return
-    }
-    // What goes on the machine's request line: its device path and the ticket, nothing a header could hide in.
-    if (!/^\/device\?ticket=[A-Za-z0-9_%-]+$/u.test(minted.path)) {
-      writeJson(response, 502, {
-        error: { code: 'unavailable', message: 'That machine answered a ticket this desktop cannot use.' },
-      })
-      return
-    }
-    const expiresAtMs = now() + WS_TICKET_TTL_MS
-    pruneTickets()
-    tickets.set(minted.token, { deviceId: device.id, expiresAtMs, origin, environmentId, relayPath: minted.path })
-    writeJson(response, 200, {
-      ticket: minted.token,
-      expiresAt: new Date(expiresAtMs).toISOString(),
-      studioPath: tailnetEnvironmentStudioPath(environmentId),
-    })
-  }
-
-  /**
-   * Carry an admitted device's socket to the machine: a fresh front-door
-   * stream, the upgrade written again for the machine's own listener (its
-   * device path and ticket, its own host, the device's WebSocket key, no
-   * origin), then the bytes both ways. The machine answers the handshake.
-   */
-  async function carryToEnvironment(
-    socket: Duplex,
-    head: Buffer,
-    key: string,
-    device: TailnetDevice,
-    environmentId: string,
-    relayPath: string,
-    relay: TailnetEnvironmentRelay,
-    peer: TailnetGatewayPeer,
-  ): Promise<void> {
-    const held = [...relaySockets].filter((entry) => entry.deviceId === device.id)
-    for (const stale of held.slice(0, Math.max(0, held.length - MAX_STUDIO_SOCKETS_PER_DEVICE + 1))) {
-      stale.socket.destroy()
-      stale.stream?.destroy()
-    }
-    const entry: { socket: Duplex; stream: Duplex | null; deviceId: string } = {
-      socket,
-      stream: null,
-      deviceId: device.id,
-    }
-    relaySockets.add(entry)
-    socket.on('error', () => undefined)
-    socket.once('close', () => {
-      relaySockets.delete(entry)
-      entry.stream?.destroy()
-    })
-    let stream: Duplex
-    try {
-      stream = await relay.open(environmentId)
-    } catch (error) {
-      relaySockets.delete(entry)
-      options.log?.(`tailnet relay to ${environmentId} did not open: ${message(error)}`)
-      return rejectUpgrade(socket, 503, 'environment_unavailable')
-    }
-    // Revoked, or gone, while it opened.
-    if (!relaySockets.has(entry) || socket.destroyed) {
-      stream.destroy()
-      return
-    }
-    entry.stream = stream
-    stream.on('error', () => undefined)
-    stream.once('close', () => socket.destroy())
-    stream.write(
-      [
-        `GET ${relayPath} HTTP/1.1`,
-        'Host: 127.0.0.1',
-        'Upgrade: websocket',
-        'Connection: Upgrade',
-        `Sec-WebSocket-Key: ${key}`,
-        'Sec-WebSocket-Version: 13',
-        '',
-        '',
-      ].join('\r\n'),
-    )
-    if (head.length) stream.write(head)
-    socket.pipe(stream)
-    stream.pipe(socket)
-    options.onActivity?.({ kind: 'stream', device, open: true, ...peer })
-    socket.once('close', () => options.onActivity?.({ kind: 'stream', device, open: false }))
-  }
-
-  function closeRelaysFor(deviceId: string): void {
-    for (const relayed of [...relaySockets]) {
-      if (relayed.deviceId !== deviceId) continue
-      relaySockets.delete(relayed)
-      relayed.socket.destroy()
-      relayed.stream?.destroy()
-    }
-    for (const [ticket, entry] of tickets)
-      if (entry.deviceId === deviceId && entry.environmentId) tickets.delete(ticket)
-  }
-
   function pruneTickets(): void {
     const current = now()
     for (const [ticket, entry] of tickets) if (entry.expiresAtMs <= current) tickets.delete(ticket)
@@ -1522,7 +1314,6 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       timer.unref?.()
     }
     for (const [ticket, entry] of tickets) if (entry.deviceId === deviceId) tickets.delete(ticket)
-    closeRelaysFor(deviceId)
     for (const [id, session] of mcpSessions) if (session.deviceId === deviceId) mcpSessions.delete(id)
   }
 
@@ -1922,7 +1713,6 @@ export function tailnetDeviceRouteOf(method: string, path: string): TailnetHttpR
 export function tailnetUpgradeRouteOf(path: string): TailnetUpgradeRoute | null {
   if (path === TAILNET_STREAM_PATH) return 'stream'
   if (path === TAILNET_STUDIO_PATH) return 'studio'
-  if (tailnetRelayedEnvironmentOf(path)) return 'relay'
   return null
 }
 

@@ -21,14 +21,9 @@ import { wslProfileId } from '../../hosts/wsl-helper-runtime'
 import { cliForConversationProvider } from '../../../shared/conversation-harness'
 import { SIGN_IN_FLOWS } from '../../../server/machine/machine-sign-in'
 import {
-  STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
 } from '../../../../packages/studio-protocol/src/handshake'
-import type {
-  StudioRelayedDeviceScope,
-  StudioRelayedEnvironment,
-} from '../../../../packages/studio-protocol/src/environment-access'
 import type { StudioCapability } from '../../../../packages/studio-protocol/src/handshake'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import { createLoopbackRoute, type LoopbackRoute } from '../environment-route'
@@ -602,75 +597,6 @@ export class SshEnvironments {
           ),
         )
     }
-  }
-
-  /**
-   * The machines a paired device may be relayed to (`environment.relayed`):
-   * each saved one whose server has said its environment id, and whether
-   * this desktop holds a connection to that server now.
-   */
-  relayedEnvironments(): StudioRelayedEnvironment[] {
-    return this.saved.flatMap((saved) => {
-      if (!saved.environmentId) return []
-      const connection = this.connection(saved.id)
-      return [
-        {
-          environmentId: saved.environmentId,
-          name: saved.label,
-          kind: 'ssh' as const,
-          connected: connection?.environmentId === saved.environmentId,
-          machine: saved.resolved
-            ? { host: saved.resolved.hostname, port: saved.resolved.port }
-            : { host: saved.destination },
-        },
-      ]
-    })
-  }
-
-  /** The saved machine whose server is this environment, if it is one of these. */
-  private machineOfEnvironment(environmentId: string): SavedSshEnvironment | null {
-    return this.saved.find((entry) => entry.environmentId === environmentId) ?? null
-  }
-
-  /**
-   * A ticket for one connection of a paired device this desktop relays to
-   * the machine whose environment this is: never an owner's, with exactly the
-   * scopes named, which the machine holds to the relayed ceiling.
-   */
-  async deviceTicket(
-    environmentId: string,
-    device: { deviceId: string; name: string; scopes: StudioRelayedDeviceScope[] },
-  ): Promise<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }> {
-    const saved = this.machineOfEnvironment(environmentId)
-    if (!saved) return { ok: false, code: 'unknown_route', message: 'This desktop holds no machine by that id.' }
-    const owner = await this.ownerOf(saved.id, STUDIO_DEVICE_TICKETS_CAPABILITY)
-    if (!owner.ok) return owner
-    // The machine answering now must be the one the device asked for.
-    if (owner.connection.environmentId !== environmentId)
-      return {
-        ok: false,
-        code: 'unavailable',
-        message: `${saved.label} now runs another Studio than the one asked for.`,
-      }
-    try {
-      const minted = await owner.connection.owner.request('environment.deviceTicket', device)
-      return { ok: true, token: minted.token, path: minted.path }
-    } catch (error) {
-      return {
-        ok: false,
-        code: 'unavailable',
-        message: `${saved.label} did not give this device a ticket: ${error instanceof Error ? error.message : String(error)}`,
-      }
-    }
-  }
-
-  /** A fresh stream to the window listener of the machine whose environment this is (the front door's `ws`). */
-  async openEnvironment(environmentId: string): Promise<Duplex> {
-    const saved = this.machineOfEnvironment(environmentId)
-    const connection = saved ? this.connection(saved.id) : null
-    if (!saved || !connection || connection.environmentId !== environmentId)
-      throw new Error('That machine is not connected to this desktop.')
-    return connection.open('ws')
   }
 
   /** The machine's loopback route: each socket onto a fresh `ws` stream of the session up now. */

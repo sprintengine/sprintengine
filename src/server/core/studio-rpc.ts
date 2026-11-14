@@ -19,7 +19,6 @@ import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
 import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
 import { keepScheduledImage } from '../../main/scheduled-agents/prompt-images'
-import { relayedEnvironmentMark } from '../../shared/machine-identity'
 import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioGit } from '../git/studio-git'
 import { createStudioWorktrees } from '../worktrees/studio-worktrees'
@@ -233,17 +232,6 @@ export function createStudioRpc(
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
-    // A desktop's paired devices reach the machines it holds through it
-    // (`relay:` routes); a machine's own Studio relays nothing.
-    ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'
-      ? {}
-      : {
-          relayedEnvironments: async () =>
-            (await gateway.relayedEnvironments()).map((entry) => {
-              const mark = relayedEnvironmentMark(entry, core.agentLaunchSettings.get().machineMarks)
-              return mark ? { ...entry, mark } : entry
-            }),
-        }),
     // What the core keeps beside its chats, for every chat at once: the usage
     // limits and the resumes after them, the usage dashboard's report and the import of a CLI's saved sessions.
     chatStores: createStudioChatStores({

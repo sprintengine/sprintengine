@@ -87,9 +87,7 @@ export function useChatOffers(
 ): PhoneChatOffers {
   const baseUrl = target?.baseUrl;
   const deviceToken = target?.deviceToken;
-  const relayedEnvironmentId = target?.relayedEnvironmentId;
-  const studio = (base: string, token: string): DesktopTarget =>
-    studioTargetOf({ baseUrl: base, deviceToken: token, ...(relayedEnvironmentId ? { relayedEnvironmentId } : {}) });
+  const studio = (base: string, token: string): DesktopTarget => studioTargetOf({ baseUrl: base, deviceToken: token });
   const welcome = useSyncExternalStore(
     (changed) =>
       baseUrl !== undefined && deviceToken !== undefined
@@ -102,7 +100,7 @@ export function useChatOffers(
     // Only to hear its welcome: a desktop that cannot be reached leaves the flags off.
     desktopStudio(studio(baseUrl, deviceToken)).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl, deviceToken, relayedEnvironmentId, welcome]);
+  }, [baseUrl, deviceToken, welcome]);
   return override ?? (welcome ? offersOf(welcome) : NOTHING);
 }
 
@@ -116,9 +114,7 @@ export function useChatOffersOf(
   override?: PhoneChatOffers | null,
 ): (target: DesktopTarget) => PhoneChatOffers {
   const [heard, setHeard] = useState(0);
-  const keys = targets
-    .map((target) => `${target.baseUrl}\n${target.deviceToken}\n${target.relayedEnvironmentId ?? ""}`)
-    .join("\n\n");
+  const keys = targets.map((target) => `${target.baseUrl}\n${target.deviceToken}`).join("\n\n");
   useEffect(() => {
     const stops = targets.map((target) =>
       onDesktopWelcome(studioTargetOf(target), () => setHeard((count) => count + 1)),

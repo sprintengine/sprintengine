@@ -101,10 +101,9 @@ watch a pull request in another if you can.
     **Expect:** within ten seconds, **distro:** `ps -ef | grep server.cjs`
     shows nothing. Start the app and send in the same chat.
     **Expect:** the chat resumes.
-11. On the paired phone (or a paired desktop), open the distribution's
-    chats under this desktop.
-    **Expect:** they are listed with the WSL mark, and a message sent from
-    the phone gets a reply. The phone has no terminal for them.
+11. On the paired phone (or a paired desktop), open this desktop's chats.
+    **Expect:** the distribution's chats are not listed: a WSL
+    distribution is reached only from the desktop that runs it.
 
 ## B. Transports and the front door (spec V1, V3)
 

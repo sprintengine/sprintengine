@@ -9,7 +9,6 @@ import { readEach } from "./src/navigation/readEach";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 import { SessionDataProvider } from "./src/navigation/SessionDataProvider";
 import { ChatsProvider } from "./src/features/conversations/ChatsContext";
-import { useRelayedSessions } from "./src/features/conversations/useRelayedSessions";
 import { NoticesProvider } from "./src/features/notices/NoticesContext";
 import { readTailnetIdentity, withTailnetScopes } from "./src/api/tailnetControlClient";
 import { withEnvironmentId, withMachineMark, withTransportDeclaration } from "./src/api/tailnetTransport";
@@ -67,10 +66,6 @@ function AppShell() {
   // and whether the needs-you push is on.
   const notesStore = useMemo(() => createSecureDeviceNotesStore(), []);
   const [sessions, setSessions] = useState<MobileSession[]>([]);
-  // The machines the paired desktops relay this phone to: sessions of their
-  // own for the chat list and the screens that ask a chat's Studio, never stored.
-  const relayed = useRelayedSessions(sessions);
-  const chatSessions = useMemo(() => [...sessions, ...relayed], [sessions, relayed]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const [starredProjectKeys, setStarredProjectKeys] = useState<string[]>([]);
@@ -248,11 +243,10 @@ function AppShell() {
         onSessionRevoked={async (revokedSession) => applySessionList(await sessionListStore.updateSession(revokedSession))}
         session={session}
         sessions={sessions}
-        relayed={relayed}
       >
         {/* Every paired tailnet desktop, not just the active one: the chat
             list is one flat list across machines. */}
-        <ChatsProvider activeDeviceId={activeDeviceId} notesStore={notesStore} sessions={chatSessions}>
+        <ChatsProvider activeDeviceId={activeDeviceId} notesStore={notesStore} sessions={sessions}>
           <NoticesProvider store={notesStore}>
             {/* The app's own background, which the splash screen matches. */}
             {pairingsRead ? <RootNavigator /> : <View style={{ flex: 1, backgroundColor: theme.colors.bgApp }} />}

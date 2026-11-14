@@ -43,14 +43,6 @@ export interface MobileSession {
    * Re-read on foreground. Absent until a Studio that says one has answered.
    */
   environmentId?: string;
-  /**
-   * Set on a machine a paired desktop relays this phone to (an SSH machine it
-   * holds; design-wsl-ssh-direct), never stored: the machine's environment id,
-   * reached through that desktop's tailnet listener with this pairing's token
-   * (`relayedSessions`). `relayedVia` is that desktop's `deviceId`.
-   */
-  relayedEnvironmentId?: string;
-  relayedVia?: string;
   status?: DesktopSessionStatus;
   lastSeenAt?: string;
   revokedAt?: string;
