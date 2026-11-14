@@ -1,6 +1,5 @@
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { transportStanding } from "../../api/tailnetTransport";
 import type { MobileSession } from "../../api/types";
 import { Card, CardRow, StatusDot } from "../../components/Card";
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -49,9 +48,6 @@ export function DesktopsScreen({
           <Card variant="list">
             {ordered.map((item, index) => {
               const status = sessionDisplayStatus(item);
-              const standing = transportStanding(item);
-              // Which side is behind, in two words; the detail screen says the sentence.
-              const standingWord = standing === "studio-older" ? " · Studio older" : standing === "app-older" ? " · app older" : "";
               return (
                 <CardRow
                   accessibilityLabel={`${item.desktopName}, ${sessionStatusLabel[status]}`}
@@ -59,7 +55,7 @@ export function DesktopsScreen({
                   first={index === 0}
                   key={item.deviceId}
                   leading={<StatusDot tone={status === "online" ? "good" : status === "revoked" ? "danger" : "neutral"} />}
-                  meta={`${sessionStatusLabel[status]}${standingWord}`}
+                  meta={sessionStatusLabel[status]}
                   onPress={() => onOpenDesktop(item.deviceId)}
                   selected={item.deviceId === activeDeviceId}
                   title={item.desktopName}

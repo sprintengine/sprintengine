@@ -70,7 +70,7 @@ const identity = {
     deviceId: 'dev_air',
     deviceName: 'dev-macbook-air',
     scopes: ['conversation:read'],
-    transportVersion: 2,
+    transportVersion: 3,
   },
 }
 

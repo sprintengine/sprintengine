@@ -198,7 +198,7 @@ test('tailnet-pairing-roundtrip', async () => {
       assert.ok(device.scopes.includes('backlog:read'), 'the default grant is the structured set')
       // A scanned client has made exactly one call at this point. It should not
       // have to make a second one to learn which wire it just joined.
-      assert.equal(device.transportVersion, 2)
+      assert.equal(device.transportVersion, 3)
       assert.equal('capabilities' in device, false, 'what it may do is the Studio welcome’s to say')
 
       // The pairing is real only if the token it produced actually drives tools.
@@ -337,7 +337,7 @@ test('tailnet-pairing-roundtrip', async () => {
       const body = health.body as Record<string, unknown>
       assert.deepEqual(Object.keys(body).sort(), ['product', 'protocolVersions', 'transportVersion'])
       assert.deepEqual(body.protocolVersions, [...SUPPORTED_MCP_PROTOCOL_VERSIONS])
-      assert.equal(body.transportVersion, 2)
+      assert.equal(body.transportVersion, 3)
 
       const scanned = parsePairingUrl(harness.service.offerPairing().pairingUrl ?? '')
       assert.equal(scanned.port, harness.port, 'the probed port and the pairing port are one port')

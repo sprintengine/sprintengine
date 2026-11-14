@@ -148,7 +148,6 @@ test("the relay sweep moves tailnet pairings into v3, drops relay pairings, and 
       pairedAt: "2026-09-02T00:00:00.000Z",
       tailnetScopes: ["workspace:read", "workspace:operate", "conversation:operate"],
       tailnetTransportVersion: 2,
-      tailnetCapabilities: ["conversations"],
       status: "online",
     },
   ]);

@@ -21,44 +21,9 @@ export const verifySession: MobileSession = {
   deviceToken: "mctn_verify",
   pairedAt: minutesAgo(60 * 24 * 3),
   tailnetScopes: ["workspace:read", "workspace:operate", "conversation:read", "conversation:operate"],
-  tailnetTransportVersion: 2,
+  tailnetTransportVersion: 3,
   status: "online",
   lastSeenAt: minutesAgo(0),
-  // What a current Studio declares on identity. `conversations` is what lists
-  // the desktop's chats at all, `conversation-models` is what draws a
-  // chat's model control, `conversation-images` what shows its pictures, and
-  // `conversation-lifecycle` what lists each chat's clocks and offers Settle,
-  // Mark unread, Snooze and Wake now (on the desktop's Studio).
-  // New's Worktree switch, its effort ramp and the picker's own rows need
-  // `new-chat-worktree`, `new-chat-effort` and `cli-runtime-catalog`, and a
-  // message queued behind a turn is held by the desktop with
-  // `conversation-queued-sends`, and one steered into it with
-  // `conversation-steer-sends`. The "+" offers a file beside photos with
-  // `conversation-message-files`, and a running agent its own Stop with
-  // `conversation-stop-subagent`. Continue in a new chat on a board starts a
-  // removed project's board under no project with `new-chat-no-project`.
-  tailnetCapabilities: [
-    "conversations",
-    "conversation-models",
-    "conversation-images",
-    "conversation-permission-modes",
-    "conversation-plans",
-    "conversation-lifecycle",
-    "new-chat-worktree",
-    "new-chat-effort",
-    "cli-runtime-catalog",
-    "conversation-queued-sends",
-    "conversation-steer-sends",
-    "conversation-message-files",
-    "conversation-stop-subagent",
-    "conversation-agent-message",
-    "new-chat-no-project",
-    // Subagents named, quotes as chips (said in a hello), and the plan's usage.
-    "conversation-hello",
-    "conversation-subagents",
-    "conversation-quote-tokens",
-    "conversation-usage-limits",
-  ],
   // How the desktop draws itself, from its identity: New's strip and "Run on" wear it.
   machineMark: { kind: "laptop", color: "blue" },
 };
@@ -72,10 +37,7 @@ export const verifySessions: MobileSession[] = [
     status: "offline",
     lastSeenAt: minutesAgo(60 * 24 * 3),
     baseUrl: "http://mac-mini.tail1234.ts.net:8471",
-    // An older Studio: its projects read, but it streams no chats, so the
-    // list holds one desktop's chats and New names one machine. It sends no
-    // machine mark either, so it wears the generic remote mark.
-    tailnetCapabilities: [],
+    // It sends no machine mark, so it wears the generic remote mark.
     machineMark: undefined,
   },
 ];

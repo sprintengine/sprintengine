@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { describeTransport, transportStanding, transportStandingSentence } from "../../api/tailnetTransport";
+import { describeTransport } from "../../api/tailnetTransport";
 import type { MobileSession } from "../../api/types";
 import { Card, StatusDot } from "../../components/Card";
 import { formatTimestamp } from "../../components/formatTimestamp";
@@ -65,7 +65,6 @@ export function DesktopDetailScreen({
 
   const status = sessionDisplayStatus(session);
   const isRevoked = status === "revoked";
-  const standingSentence = transportStandingSentence(transportStanding(session));
   const scopes = session.tailnetScopes;
 
   // The desktop takes no revoke from a phone: forgetting removes the pairing
@@ -119,14 +118,6 @@ export function DesktopDetailScreen({
           <Field label="Transport" value={describeTransport(session)} />
           <Field label="Storage" value="Encrypted on this device" />
         </Card>
-
-        {standingSentence ? (
-          // Out of step is a sentence, not an error: the list still draws, and
-          // the person reading this is the one who can update whichever side.
-          <Card>
-            <Text style={styles.notice}>{standingSentence}</Text>
-          </Card>
-        ) : null}
 
         <View style={styles.actions}>
           {!isActive && !isRevoked ? (

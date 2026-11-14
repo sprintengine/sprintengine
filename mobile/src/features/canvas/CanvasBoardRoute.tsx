@@ -28,7 +28,7 @@ export function CanvasBoardRoute({
   // The same desktop from one session read to the next: a status or a
   // last-seen stamp moving is no reason to draw the board again over there.
   const reach = found
-    ? [found.baseUrl, found.deviceToken, found.desktopName, ...found.tailnetScopes, ...(found.tailnetCapabilities ?? [])].join("\u0000")
+    ? [found.baseUrl, found.deviceToken, found.desktopName, ...found.tailnetScopes].join("\u0000")
     : "";
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const session = useMemo(() => found, [reach]);

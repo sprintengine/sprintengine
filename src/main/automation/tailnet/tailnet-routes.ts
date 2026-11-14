@@ -74,26 +74,43 @@ export const TAILNET_OAUTH_REVOKE_PATH = `${TAILNET_OAUTH_PREFIX}/revoke`
 // may do on this machine comes from the Studio protocol's welcome, not from
 // here.
 
-/** Bumped when the wire changes in a way a client must know about. 2 (2026-09-06): the change feed, sliced replay frames, git only for running sessions. */
-export const TAILNET_TRANSPORT_VERSION = 2
+/**
+ * Bumped when the wire changes in a way a client must know about.
+ * 2 (2026-09-06): the change feed, sliced replay frames, git only for running sessions.
+ * 3 (2026-11-14): the conversation lane, the change feed and the canvas lane are gone; a paired
+ * device speaks the Studio protocol at `TAILNET_STUDIO_PATH`.
+ */
+export const TAILNET_TRANSPORT_VERSION = 3
 
 /**
- * The oldest wire this build will still drive.
- *
- * A window rather than an equality because the two ends of a tailnet are two
- * separate installs that update on their own schedule, and refusing the machine
- * that updated last week is worse than talking to it. One version of slack is
- * what an ordinary "I'll update it this weekend" costs.
- *
- * It can be 1 and not 2 because nothing version 2 changed makes a version 1 peer
- * unreadable: its two new routes are named capabilities a version 1 peer does
- * not advertise, and its one behaviour change (git facts only for running
- * sessions) leaves a version 1 peer answering a superset of what a version 2
- * client expects. Neither is a shape this build would misread. When a bump DOES
- * change the shape of something already shipped, this constant moves up with
- * it. See `docs/compatibility.md`.
+ * The oldest wire this build will still drive: none older. Version 3 took
+ * away every route an older client used for its chats, so a build on 2 or
+ * below has nothing it can do here, and is told to update (its own reading
+ * of `health` says so; a retired route answers `426`). Skew between current
+ * builds is met inside the Studio protocol's handshake, not by a window here.
  */
-export const TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION = 1
+export const TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION = 3
+
+/**
+ * The routes version 3 took away. A client that still asks for one is a build
+ * from before it, and is answered `426 client_update_required` with
+ * `TAILNET_CLIENT_UPDATE_MESSAGE`, never a bare not-found.
+ */
+export const TAILNET_RETIRED_PATHS: ReadonlySet<string> = new Set(
+  [
+    'conversation',
+    'events',
+    'canvas',
+    'upload',
+    'conversation-image',
+    'conversation-files',
+    'conversation-commands',
+  ].map((name) => `${TAILNET_ROUTE_PREFIX}/${name}`),
+)
+
+/** What a build from before version 3 is told when it asks for a route that went. */
+export const TAILNET_CLIENT_UPDATE_MESSAGE =
+  'This Studio serves paired apps on the Studio protocol now. Update the app on this device to reach it.'
 
 /** A handshake refused for speaking a wire this build does not. */
 export type TailnetTransportRefusal = {
@@ -101,7 +118,7 @@ export type TailnetTransportRefusal = {
   message: string
 }
 
-/** `1–2`, collapsing to `2` on its own once the window narrows to one version. */
+/** The versions this build speaks, as a range (`2–3`) or one (`3`). */
 function supportedTransportVersions(): string {
   return [...new Set<number>([TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION, TAILNET_TRANSPORT_VERSION])].join('–')
 }

@@ -767,8 +767,8 @@ test('tailnet', async () => {
       assert.deepEqual(body.protocolVersions, [...SUPPORTED_MCP_PROTOCOL_VERSIONS])
       // What the wire speaks IS a prospective client's business: it is the whole
       // reason the route is unauthenticated.
-      assert.equal(body.transportVersion, 2)
-      assert.equal(TAILNET_TRANSPORT_VERSION, 2)
+      assert.equal(body.transportVersion, 3)
+      assert.equal(TAILNET_TRANSPORT_VERSION, 3)
       // Nothing about this machine, its user, its workspaces, or its devices.
       assert.equal(JSON.stringify(body).includes('a-device-nobody-should-learn-about'), false)
     } finally {
