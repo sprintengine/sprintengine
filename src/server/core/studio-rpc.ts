@@ -207,6 +207,10 @@ export function createStudioRpc(
     // The servers the conversations' agents started, checked here and drawn
     // by every client.
     localServers: core.localServers,
+    // The machines this computer offers (itself, its WSL distributions), for
+    // the owner's New chat and Settings ▸ Machines. A machine's own Studio
+    // is one of those machines, and lists none.
+    ...(options.hostKind === 'wsl' || options.hostKind === 'ssh' ? {} : { hosts: core.hosts }),
     // The terminals on this machine, where the core holds the runtime.
     ...(core.agentTerminals ? { terminals: core.agentTerminals.studioTerminals } : {}),
     // The agent CLIs on this machine and what they are set up with: the

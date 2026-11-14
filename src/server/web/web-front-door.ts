@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
-import { registerServerDomainIpc, type ServerDomainIpcHandles } from '../desktop/server-ipc'
+import { provideServerChat, type ServerDomainIpcHandles } from '../desktop/server-ipc'
 import { createIpcTunnel } from '../ipc/ipc-tunnel'
 import { writeFileAtomicSync } from '../platform/atomic-file'
 import type { LocalClientBus } from '../platform/client-bus'
@@ -130,7 +130,7 @@ export async function startWebFrontDoor(input: {
   const tunnel = createIpcTunnel({ log: input.log })
   const stopForwarding = input.clients.subscribe((topic, payload, target) => tunnel.publish(topic, payload, target))
   let domains: ServerDomainIpcHandles | null = null
-  domains = registerServerDomainIpc(tunnel.registry as unknown as Parameters<typeof registerServerDomainIpc>[0], {
+  domains = provideServerChat({
     core,
     gateway,
     studioRpc: rpc,

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added (the machines a desktop's computer offers)
+
+- **`hosts.list` and the `hosts.changed` stream** (`hosts.ts`, capability
+  `execution-hosts`): this computer and, on Windows, its WSL distributions,
+  with how each one's Studio server stands, for New chat's machine list and
+  Settings ▸ Machines. An owner's; no device reaches either. The shapes
+  (`ExecutionHostSummary`, `WslServerSummary`, `HostsListResult`) move into
+  the package. They replace the window's private `hosts:list`, `hosts:home`
+  and `hosts:changed` channels; a distribution's home is asked of its own
+  Studio (`files.defaultWorkspaceParent`).
+
 ### Added (who reaches a Studio over the tailnet, and the machines it drives)
 
 - **`tailnet.status`, `.liveState`, `.setEnabled`, `.setHttps`,

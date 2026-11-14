@@ -870,6 +870,19 @@ unchanged. Same build on both ends: the window's 17 `tailnet:*` IPC channels,
 the 6 `mesh:*` pairing channels and the `mesh:event` push are gone;
 `remote:open-requested` stays, the shell's push that opens the Remote
 popover.
+
+`execution-hosts` (2026-11-14) is the machines a desktop's computer offers:
+itself and, on Windows, its WSL distributions, each with how its Studio
+server stands (`hosts.list`, with `refresh` and `all`, and the
+`hosts.changed` stream, which carries nothing: the client lists again).
+Offered by a desktop's Studio only; a WSL distribution's or an SSH machine's
+Studio is one of those machines and offers none. Both are an owner's, and no
+paired device reaches them (a device reaches a distribution's chats through
+the desktop's `relay:` route). New chat's folder picker asks a
+distribution's own Studio where it keeps projects
+(`files.defaultWorkspaceParent`) instead. Same build on both ends: the
+window's `hosts:list`, `hosts:home` and `hosts:changed` channels are gone,
+and with them the last channel the window routed to its server.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

@@ -58,6 +58,7 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * client reads that way.
  * The browsers paired with the web listener (`web-devices.ts`): who may reach
  * this Studio from a browser.
+ * The machines this computer offers (`hosts.ts`): a refresh starts WSL here.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -72,6 +73,8 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'environment.revokeWindow',
   'environment.windowTicket',
   'environment.work',
+  'hosts.changed',
+  'hosts.list',
   'localServers.changed',
   'localServers.list',
   'localServers.remove',

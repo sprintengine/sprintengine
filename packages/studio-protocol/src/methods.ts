@@ -187,6 +187,12 @@ import {
   type StudioTailnetMethodMap,
   type StudioTailnetTopicMap,
 } from './tailnet.js'
+import {
+  STUDIO_HOSTS_METHODS,
+  STUDIO_HOSTS_TOPICS,
+  type StudioHostsMethodMap,
+  type StudioHostsTopicMap,
+} from './hosts.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -321,7 +327,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioArtifactsMethodMap &
   StudioAccessMethodMap &
   StudioWebDevicesMethodMap &
-  StudioTailnetMethodMap
+  StudioTailnetMethodMap &
+  StudioHostsMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -771,6 +778,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_ACCESS_METHODS,
   ...STUDIO_WEB_DEVICES_METHODS,
   ...STUDIO_TAILNET_METHODS,
+  ...STUDIO_HOSTS_METHODS,
 }
 
 /** Whether a string names a method this version of the protocol defines. */
@@ -825,7 +833,8 @@ export type StudioTopicMap = {
   StudioArtifactsTopicMap &
   StudioAccessTopicMap &
   StudioWebDevicesTopicMap &
-  StudioTailnetTopicMap
+  StudioTailnetTopicMap &
+  StudioHostsTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -877,6 +886,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_ACCESS_TOPICS,
   ...STUDIO_WEB_DEVICES_TOPICS,
   ...STUDIO_TAILNET_TOPICS,
+  ...STUDIO_HOSTS_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */

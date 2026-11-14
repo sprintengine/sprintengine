@@ -24,7 +24,7 @@ export type IpcDirection = 'invoke' | 'send' | 'push'
 
 /** Where a server channel goes: the area of the Studio protocol that replaces it. */
 export type IpcServerArea =
-  'conversations' | 'terminals' | 'modules' | 'extensions' | 'paired-machines' | 'access' | 'workspaces' | 'web-tab'
+  'conversations' | 'terminals' | 'modules' | 'extensions' | 'paired-machines' | 'access' | 'web-tab'
 
 export type IpcInventoryRow =
   | { readonly dir: IpcDirection; readonly shell: string }
@@ -61,8 +61,6 @@ const CHAT_LINK = shell("A chat link from the operating system, opened in one of
 /** Moves to the protocol: chats and what hangs off them: sessions, providers, secrets, import, held and scheduled messages, usage limits, export, pull request creation. */
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
-/** Moves to the protocol: projects and their chats, the backlog, scheduled agents and the machines a project runs on. */
-const workspaces = server('workspaces')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
 const webTab = server('web-tab')
 
@@ -266,9 +264,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'hosts:changed': workspaces('push'),
-  'hosts:home': workspaces('invoke'),
-  'hosts:list': workspaces('invoke'),
   'browser:local-servers': webTab('invoke'),
   'web:browse-folders': webTab('invoke'),
   'web:previews:changed': webTab('push'),

@@ -45,13 +45,6 @@ test('every member the preload builds is present, with the four computed values'
   expect(api.diagnosticsGetIpcStats().channels).toEqual([])
 })
 
-test('a member whose channel the server owns goes over the tab’s socket', async () => {
-  const api = createWebApi()
-  void api.hostsList()
-  await Promise.resolve()
-  expect(posted.at(-1)).toMatchObject({ t: 'ipc.invoke', channel: 'hosts:list' })
-})
-
 test('a member a browser cannot do is a rejected promise, never a throw or undefined, and is reported once', async () => {
   const api = createWebApi()
   let thrown: unknown = null

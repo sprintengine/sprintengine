@@ -141,7 +141,7 @@ import { apiModules } from '../preload/api-surface'
 import { SERVER_IPC_CHANNELS } from '../shared/ipc-channel-owners'
 import { IPC_INVENTORY, ipcInventoryRow, type IpcServerArea } from '../shared/ipc-inventory'
 import { WEB_TUNNEL_CHANNELS } from '../shared/web-client'
-import { registerServerDomainIpc, type ServerDomainIpcDeps } from '../server/desktop/server-ipc'
+import { provideServerChat, type ServerDomainIpcDeps } from '../server/desktop/server-ipc'
 import { onRendererBootComplete } from './boot-reveal'
 import { createHostRecordingEncoder } from './browser/recording-encoder'
 import { attachBuildSkewWatch } from './build-skew'
@@ -179,7 +179,6 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   extensions: 0,
   'paired-machines': 0,
   access: 0,
-  workspaces: 3,
   'web-tab': 6,
 }
 
@@ -336,10 +335,12 @@ test('what main and the server register, and what the preload uses, is the inven
   createHostRecordingEncoder({ ipcMain: shell, tabs: anything() })
   createCanvasWorkerTransport({ ipcMain: shell })
 
-  // ── The server's domains and the module kernel, with an installed extension ──
+  // ── The server's chat surface and the module kernel, with an installed extension ──
+  // The server registers no window channel any more (its last, `hosts:*`,
+  // are `hosts.*` on the Studio protocol): nothing is ever seen here, and
+  // SERVER_IPC_CHANNELS is held empty below.
   const serverSeen: Seen[] = []
-  const server = recordingIpcMain(serverSeen)
-  const domains = registerServerDomainIpc(server, serverDomainStubs(scratch))
+  const domains = provideServerChat(serverDomainStubs(scratch))
   const installed = installExtension('weather-deck')
   const modules = loadMainModules({
     modules: [

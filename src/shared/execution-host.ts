@@ -20,7 +20,15 @@ import type { TerminalPathStyle } from './ipc/terminal'
 
 export const LOCAL_HOST_ID = 'local'
 
-import type { ExecutionHostId, ExecutionHostSettings } from '../../packages/studio-protocol/src/public'
+import type {
+  ExecutionHostId,
+  ExecutionHostKind,
+  ExecutionHostSettings,
+  ExecutionHostState,
+  ExecutionHostSummary,
+  HostsListResult,
+  WslServerSummary,
+} from '../../packages/studio-protocol/src/public'
 
 /**
  * The per-machine settings, as the Studio protocol carries them. The local
@@ -32,38 +40,7 @@ export type { ExecutionHostSettings }
 
 export type { ExecutionHostId }
 
-export type ExecutionHostKind = 'posix' | 'windows' | 'wsl'
-
-export type ExecutionHostState = 'ready' | 'stopped' | 'starting' | 'unavailable'
-
-/** One machine, as the picker and Settings show it. */
-export type ExecutionHostSummary = {
-  id: ExecutionHostId
-  kind: ExecutionHostKind
-  /** "This Mac", "This PC (Windows)", "WSL: Ubuntu". */
-  label: string
-  pathStyle: TerminalPathStyle
-  state: ExecutionHostState
-  /** Why the host is `unavailable` or `stopped`, in words a person can act on. */
-  reason?: string
-  /** WSL only: the distribution `wsl.exe` runs when none is named. */
-  isDefaultDistro?: boolean
-  /** WSL only: whether the person turned this distribution on as a machine. */
-  enabled?: boolean
-  /** WSL only: 1 or 2, when WSL reported it. */
-  wslVersion?: number | null
-  /** WSL only, on a desktop that runs Studio servers in its distributions: how its server stands (phase 7). */
-  server?: WslServerSummary
-}
-
-/** How a distribution's Studio server, which holds its chats, stands, in words for Settings. */
-export type WslServerSummary = {
-  state: 'stopped' | 'starting' | 'ready' | 'unavailable' | 'shut-down'
-  /** How Windows reaches it while it is ready: over loopback, or through the stdio bridge. */
-  transport?: 'loopback' | 'stdio'
-  /** Why it is unavailable or shut down, or why the bridge, in words. */
-  reason?: string
-}
+export type { ExecutionHostKind, ExecutionHostState, ExecutionHostSummary, HostsListResult, WslServerSummary }
 
 /** A machine on this computer's state, in words: Settings and the environment list read it. */
 export function executionHostStateWords(host: Pick<ExecutionHostSummary, 'state' | 'reason' | 'wslVersion'>): string {
@@ -78,27 +55,6 @@ export function executionHostStateWords(host: Pick<ExecutionHostSummary, 'state'
   const version = host.wslVersion ? ` · WSL ${host.wslVersion}` : ''
   return `${lead}${version}`
 }
-
-export const HOSTS_CHANNELS = {
-  /** renderer → main: the machines this computer offers, `{ refresh?: boolean }`. */
-  list: 'hosts:list',
-  /** main → renderer: the list changed (a distribution appeared, a setting moved). */
-  changed: 'hosts:changed',
-  /** renderer → main: the Linux home of a WSL host, as the UNC path Windows opens. */
-  home: 'hosts:home',
-} as const
-
-/**
- * What `hosts:list` answers: this machine first, then WSL distributions (all
- * of them for Settings, the enabled ones for the picker). `wsl` says whether
- * WSL answered at all, and is null off Windows.
- */
-export type HostsListResult = {
-  hosts: ExecutionHostSummary[]
-  wsl: { available: boolean; reason?: string } | null
-}
-
-export type HostHomeResult = { ok: true; home: string; native: string } | { ok: false; message: string }
 
 const WSL_PREFIX = 'wsl:'
 // The names WSL itself accepts for a distribution (see `isValidWslDistroName`

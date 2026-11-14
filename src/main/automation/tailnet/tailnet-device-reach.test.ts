@@ -458,6 +458,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ],
       ],
       [
+        'the machines this computer offers (itself, its WSL distributions) and how each one’s Studio server stands: an owner’s (a refresh starts WSL here); a device reaches a distribution’s chats through this desktop’s `relay:` route instead, listed by `environment.relayed`',
+        ['hosts.list', 'hosts.changed'],
+      ],
+      [
         'the browsers paired with the web listener: listing, removing and letting one in, an owner’s (an owner’s web tab administers them); a device that could let a browser in would manufacture the next grant',
         ['webDevices.status', 'webDevices.revoke', 'webDevices.approve', 'webDevices.decline', 'webDevices.changed'],
       ],

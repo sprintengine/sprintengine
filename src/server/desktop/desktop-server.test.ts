@@ -172,19 +172,20 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   // Desktop role: the lock names the desktop, so the app's own server is never refused by its parent.
   assert.equal(JSON.parse(readFileSync(join(dataDir, 'run', 'studio.lock'), 'utf8')).role, 'desktop')
 
-  // A window attaches; its tunnelled calls reach the server's domains.
+  // A window attaches. Nothing it asks is tunnelled to the server's domains
+  // any more: its registry and this computer's machines are the Studio
+  // protocol's, on a ticket the shell buys for the window, then the window's
+  // own connection to the listener.
   const window = windowPort()
   hub.dispatch(
     { t: 'attach-client', clientId: 'window-1-1', windowId: 'primary', kind: 'desktop-window', workspaceWindow: true },
     [window.port],
   )
-  const hosts = await window.invoke('hosts:list')
-  assert.equal(hosts.ok, true, JSON.stringify(hosts))
-  // The window's registry is the Studio protocol's: a ticket the shell buys
-  // for the window, then the window's own connection to the listener.
   const studio = await windowStudio(shellRpc)
   const snapshot = await studio.request('workspaceSync.snapshot', {})
   assert.ok(Array.isArray(snapshot.state.workspaces))
+  const hosts = await studio.request('hosts.list', {})
+  assert.equal(hosts.hosts[0]?.id, 'local', JSON.stringify(hosts))
 
   // The terminals are this server's: their list reaches the shell once it is
   // serving, and a launch the shell asks for goes through the server's own

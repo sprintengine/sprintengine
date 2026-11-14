@@ -102,7 +102,6 @@ export type {
   CapabilityDiagnostic,
 } from './skills'
 import type { StudioWindowTicket } from './studio-connection'
-import type { ExecutionHostId, HostHomeResult, HostsListResult } from './execution-host'
 // Re-exported because the probe shape is part of this IPC contract: the
 // version-control settings sections read it straight off the api surface.
 export type {
@@ -503,16 +502,6 @@ export type ElectronApi = {
   /** The last update's result has been shown; stop reporting it. */
   updateDismissInstallOutcome: () => Promise<AppUpdateState>
   onUpdateStateChanged: (cb: (state: AppUpdateState) => void) => () => void
-  /**
-   * The machines this computer offers: this one, then (on Windows) its WSL
-   * distributions — every one with `all`, the enabled ones otherwise.
-   * `refresh` asks WSL again rather than answering from what it last said.
-   */
-  hostsList: (options?: { refresh?: boolean; all?: boolean }) => Promise<HostsListResult>
-  /** A WSL machine's home, as the UNC path the folder picker opens at. */
-  hostsHome: (hostId: ExecutionHostId) => Promise<HostHomeResult>
-  /** The machine list may read differently now; ask again. Returns the unsubscribe. */
-  onHostsChanged: (cb: () => void) => () => void
   /**
    * Every machine this desktop knows, this one first, with how each stands
    * (design-environments): the one list every surface draws machines from.

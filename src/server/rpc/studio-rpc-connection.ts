@@ -1478,6 +1478,11 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'workspaceSync.events', options.router.workspaceSync?.onEvent ?? null),
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
+    // Carries nothing: the client lists again.
+    'hosts.changed': (id) => {
+      const hosts = options.router.hosts
+      subscribeFeed(id, 'hosts.changed', hosts ? (deliver) => hosts.subscribe(() => deliver({})) : null)
+    },
     'module.events': subscribeModuleEvents,
     'module.notifications': subscribeModuleNotifications,
     'module.changed': (id) => {

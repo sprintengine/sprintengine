@@ -560,6 +560,8 @@ test('every method the server serves has its call in the SDK, under the same sco
       keyof StudioWebDevicesMethodMap,
       string
     >),
+    // And the machines its computer offers, which New chat and Settings ▸ Machines use, by name.
+    'hosts.list': 'request',
     // And who reaches it over the tailnet and the machines it drives, which its Settings uses, by name.
     ...(Object.fromEntries(Object.keys(STUDIO_TAILNET_METHODS).map((method) => [method, 'request'])) as Record<
       keyof StudioTailnetMethodMap,
