@@ -635,3 +635,29 @@ test('the files a removed device sent go with it, and another device’s stay', 
     'the laptop’s file stays',
   )
 })
+
+test('a file over 25 MB is refused with the limit named, and a picture upload takes pictures only', async () => {
+  try {
+    await operator.rpc['uploads.begin']({
+      mediaType: 'application/zip',
+      byteLength: 25 * 1024 * 1024 + 1,
+      purpose: 'attachment',
+      name: 'huge.zip',
+    })
+    assert.fail('a file over the limit was taken')
+  } catch (error) {
+    assert.equal((error as { code?: string }).code, 'too_large')
+    assert.match((error as Error).message, /25 MB/u)
+  }
+  assert.equal(
+    await refusalOf(
+      operator.rpc['uploads.begin']({
+        mediaType: 'application/pdf',
+        byteLength: 10,
+        purpose: 'picture',
+        name: 'a.pdf',
+      }),
+    ),
+    'invalid_params',
+  )
+})
