@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- A mutation still unanswered when its connection dropped is sent again only
+  where that cannot carry it out twice: to the same run of the server
+  (`welcome.bootId`), or anywhere for a method whose receipts are durable. One
+  sent to a server that has since restarted is refused `unknown_outcome`, with
+  a sentence a UI can show. Reads, streams, and requests that never went out
+  are unchanged.
+
 ### Added
 
 - `negotiateChatCapabilities(offer)`: what a chat may offer, read from what its

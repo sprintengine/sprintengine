@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { arch, platform } from 'node:os'
 import type { Duplex } from 'node:stream'
 import type { ConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
@@ -295,10 +296,16 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
   const perClient = options.maxConnectionsPerClient ?? 8
   const chat = () => options.chat?.() ?? null
   const conversationCapabilities = studioRpcConversationCapabilities(options.backend)
+  // This server's run: its router, and the receipts that router and the
+  // services behind it keep in memory, live exactly as long. A client sends
+  // a mutation whose receipt is kept only so again after a reconnect only to
+  // the boot it sent it to.
+  const bootId = randomUUID()
   const welcome = (): Omit<StudioWelcomeFrame, 't' | 'grant' | 'pairing'> => ({
     protocolVersion: options.protocol?.protocolVersion ?? STUDIO_PROTOCOL_VERSION,
     minProtocolVersion: options.protocol?.minProtocolVersion ?? STUDIO_PROTOCOL_MIN_SUPPORTED,
     server: { name: 'SprintEngine Studio', version: options.version },
+    bootId,
     environment: {
       id: options.environmentId,
       hostKind: options.hostKind ?? 'local',

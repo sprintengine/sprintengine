@@ -158,6 +158,14 @@ export type StudioWelcomeFrame = {
   protocolVersion: number
   minProtocolVersion: number
   server: StudioServerIdentity
+  /**
+   * This run of the server, minted each time it starts: the receipts a
+   * mutation keeps in memory are this boot's alone. A client sends such a
+   * mutation again after a reconnect only to the same boot
+   * (`studioResendableAfterRestart`). Absent from a server before it, which a
+   * client takes as a boot it cannot recognise.
+   */
+  bootId?: string
   environment: StudioEnvironment
   /** The Studio capabilities this server serves (`STUDIO_CAPABILITIES`). */
   capabilities: string[]
@@ -532,11 +540,15 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
       if (!conversation || !granted || !where || !Array.isArray(frame.capabilities)) return null
       const pairing = frame.pairing
       if (pairing !== undefined && !(record(pairing) && secret(pairing.token))) return null
+      // One in the wrong shape is dropped, not refused: a boot not recognised
+      // only means nothing is sent again that could run twice.
+      const bootId = id(frame.bootId) ? frame.bootId : undefined
       return {
         t: 'welcome',
         protocolVersion: frame.protocolVersion,
         minProtocolVersion: frame.minProtocolVersion,
         server: { name: server.name, version: server.version },
+        ...(bootId === undefined ? {} : { bootId }),
         environment: where,
         capabilities: capabilities(frame.capabilities),
         conversation,

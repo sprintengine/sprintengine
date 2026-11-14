@@ -407,6 +407,11 @@ stream, the server frames `call` and `cancel`, and the client frames `reply`
 and `progress`. A Studio sends `call` only to a connection that offered a
 toolset, and the SDK sends `reply` only to a Studio that advertised the
 capability, so neither end is handed a frame type it does not know.
+`welcome.bootId`, the run of the server, is an optional member with no
+capability: a client meeting a server before it reads every reconnect as a
+new boot, so it sends again only a mutation whose receipts are durable
+(`receipts` in `STUDIO_METHODS`), refusing the others `unknown_outcome`; a
+client before it ignores it and resends as it always did.
 `workspaces` is what a client reads before it starts a chat:
 `workspaces.list`, `cliRuntimes.list`, `workspaces.checkout` and
 `workspaces.extensions`, answered by the gateway tools of the same purpose

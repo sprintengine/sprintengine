@@ -16,6 +16,7 @@ import {
   STUDIO_PROTOCOL_VERSION,
   checkStudioProtocolVersion,
   createStudioRpcClient,
+  studioResendableAfterRestart,
   createStudioChunkAssembler,
   isKnownStudioServerFrameType,
   parseStudioServerFrame,
@@ -63,10 +64,16 @@ import {
 // - Resumes every open stream from its cursor on the new connection, so a
 //   consumer sees no gap and no repeat; a cursor Studio cannot vouch for comes
 //   back as a reset snapshot.
-// - Sends again every request still unanswered when a connection dropped.
-//   Every mutation carries a command id (minted here when the caller gave
-//   none), so a resend is answered from Studio's receipt, never carried out
-//   twice. A `busy` answer is retried after the delay it names.
+// - Sends again every request still unanswered when a connection dropped,
+//   where that cannot carry it out twice. Every mutation carries a command id
+//   (minted here when the caller gave none), so a resend is answered from
+//   Studio's receipt, and a mutation is sent again only where that receipt
+//   still is: to the same run of the server (`welcome.bootId`), or anywhere
+//   for a method whose receipts outlive it (`receipts: 'durable'`). One sent
+//   to a server that has since restarted is refused `unknown_outcome`
+//   instead: whether it was carried out is for the person to check. A read is
+//   always sent again, and a request that never went out goes out. A `busy`
+//   answer is retried after the delay it names.
 // - Holds a pairing code's token: the first welcome carries it once, and it is
 //   handed to `onToken` to keep and used for every reconnect.
 // - Stops reading when a stream's consumer falls far behind, so Studio sees
@@ -228,6 +235,13 @@ const DEFAULT_READ_TIMEOUT_MS = 60_000
 // Refusals of the credential: trying again would be refused again, so the
 // client waits to be woken instead of backing off for ever.
 const PARKING_CODES: ReadonlySet<string> = new Set(['unauthorized', 'revoked'])
+/**
+ * What a mutation is refused with when the server it was sent to restarted
+ * before answering, and its receipt went with that server: carried out or
+ * not, nobody can now say, and sent again it could be carried out twice.
+ */
+const UNKNOWN_OUTCOME_MESSAGE =
+  'Studio restarted before it answered, so whether this was done is unknown. Check, and try again if it was not.'
 const BUSY_RETRIES = 5
 // A stream whose consumer has this many frames waiting stops the connection
 // reading until it is down to the lower mark.
@@ -238,6 +252,11 @@ type Pending = {
   id: string
   method: StudioMethod
   params: unknown
+  /**
+   * The run of the server it was last sent to (`welcome.bootId`, null where
+   * the server named none); absent while it has not gone out.
+   */
+  sentTo?: { bootId: string | null }
   busyRetries: number
   /** The resend a `busy` answer scheduled; cleared when the request is sent again by a reconnect, or ends. */
   busyRetry: ReturnType<typeof setTimeout> | null
@@ -517,8 +536,25 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
         )
       requests.set(id, pending)
       // Unsent while reconnecting: every pending request goes out on the next connection.
-      if (state === 'open') send({ t: 'req', id, method, params })
+      if (state === 'open') sendRequest(pending)
     })
+  }
+
+  /** A request onto the open connection, noting which run of the server it went to. */
+  function sendRequest(pending: Pending): void {
+    pending.sentTo = { bootId: welcome?.bootId ?? null }
+    send({ t: 'req', id: pending.id, method: pending.method, params: pending.params })
+  }
+
+  /**
+   * Whether a request still unanswered when its connection dropped may go out
+   * on this one, welcomed by `bootId`: one that never went out may, and one
+   * that did may where it cannot be carried out twice.
+   */
+  function mayResend(pending: Pending, bootId: string | undefined): boolean {
+    if (!pending.sentTo) return true
+    if (studioResendableAfterRestart(pending.method)) return true
+    return pending.sentTo.bootId !== null && pending.sentTo.bootId === bootId
   }
 
   function settle(pending: Pending): void {
@@ -530,13 +566,15 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     const pending = requests.get(frame.id)
     if (!pending) return
     if (!frame.ok && frame.error.code === 'busy' && pending.busyRetries < BUSY_RETRIES) {
+      // Refused for now, so not carried out: until it goes out again, it is
+      // one that never went out.
+      delete pending.sentTo
       pending.busyRetries++
       if (pending.busyRetry) clearTimeout(pending.busyRetry)
       pending.busyRetry = quietly(
         setTimeout(() => {
           pending.busyRetry = null
-          if (requests.get(pending.id) === pending && state === 'open')
-            send({ t: 'req', id: pending.id, method: pending.method, params: pending.params })
+          if (requests.get(pending.id) === pending && state === 'open') sendRequest(pending)
         }, frame.error.retryAfterMs ?? 250),
       )
       return
@@ -947,7 +985,13 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
         // would send the same id twice on this connection.
         if (pending.busyRetry) clearTimeout(pending.busyRetry)
         pending.busyRetry = null
-        send({ t: 'req', id: pending.id, method: pending.method, params: pending.params })
+        if (mayResend(pending, frame.bootId)) sendRequest(pending)
+        else {
+          // Its receipt went with the server that restarted: sent again, it
+          // could be carried out a second time.
+          settle(pending)
+          pending.reject(new StudioError('unknown_outcome', UNKNOWN_OUTCOME_MESSAGE))
+        }
       }
     // A consumer still behind from before the drop holds the new connection too.
     adjustReading()

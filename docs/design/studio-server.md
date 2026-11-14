@@ -1721,8 +1721,11 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     `Cache-Control: no-store` on anything that carries a credential.
   - _Durable answers (phase 6)._ The router keeps a start's, revert's,
     rewind's and fork's first answer, and every command's fingerprint, in
-    memory. Once a server can restart under a window that resends, those need
-    receipts that outlive it, as a session's commands already have.
+    memory. A client sends such a mutation again only to the same server boot
+    (`welcome.bootId`); after a restart it is refused `unknown_outcome`
+    instead. A method whose receipts are moved somewhere that outlives the
+    server is marked `receipts: 'durable'` in its table, and is then sent
+    again across a restart too, as a session's commands are.
   - _Flow control on a port (phase 6)._ A message port does not push back, so
     a window's connection never queues and never resyncs; the renderer holds
     what it is sent, as it does over IPC. A server in its own process should
