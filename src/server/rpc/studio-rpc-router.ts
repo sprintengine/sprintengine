@@ -1487,7 +1487,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         } catch (error) {
           unkeep()
           uploads.settle(grant.clientId, id, false)
-          return refuse('unavailable', `A file sent with this message could not be kept: ${error instanceof Error ? error.message : String(error)}`)
+          return refuse(
+            'unavailable',
+            `A file sent with this message could not be kept: ${error instanceof Error ? error.message : String(error)}`,
+          )
         }
       }
       if (attachments?.length && receipt === 'none') {

@@ -150,15 +150,15 @@ export type StudioSessionSendParams = { commandId: string; sessionId: string } &
   ConversationSendRequest,
   'queue'
 > & {
-  /**
-   * Files from the client's own disk, which the Studio that runs the chat
-   * cannot read by path: each sent up first (`uploads.begin` with `purpose:
-   * 'attachment'`, named), kept there, and attached to the message by its
-   * path there, beside `files`. Only to a Studio that advertises
-   * `session-file-uploads`.
-   */
-  fileUploadIds?: string[]
-}
+    /**
+     * Files from the client's own disk, which the Studio that runs the chat
+     * cannot read by path: each sent up first (`uploads.begin` with `purpose:
+     * 'attachment'`, named), kept there, and attached to the message by its
+     * path there, beside `files`. Only to a Studio that advertises
+     * `session-file-uploads`.
+     */
+    fileUploadIds?: string[]
+  }
 
 export type StudioSessionRespondParams = {
   commandId: string

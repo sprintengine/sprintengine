@@ -713,7 +713,10 @@ test('a file sent up with a session’s message is kept on this machine and atta
     keepFile: async (clientId, file) => {
       const entry = { clientId, name: file.name, bytes: file.bytes.toString('utf8'), discarded: false }
       kept.push(entry)
-      return { path: `/home/dev/.sprintengine/uploads/${kept.length}/${file.name}`, discard: () => (entry.discarded = true) }
+      return {
+        path: `/home/dev/.sprintengine/uploads/${kept.length}/${file.name}`,
+        discard: () => (entry.discarded = true),
+      }
     },
   }
   const router = createStudioRpcRouter({ backend, chat: () => chat, info: () => ({}) as never })
@@ -750,11 +753,21 @@ test('a Studio with nowhere to keep a file sent with a message refuses it in wor
   const grant = studioWindowGrant()
   const context = { connectionId: 'w1', slot: 1, ownWindow: true }
   const call = (method: string, params: unknown) => router.handle(grant, method as never, params, context)
-  const begun = await call('uploads.begin', { mediaType: 'text/plain', byteLength: 3, name: 'f.txt', purpose: 'attachment' })
+  const begun = await call('uploads.begin', {
+    mediaType: 'text/plain',
+    byteLength: 3,
+    name: 'f.txt',
+    purpose: 'attachment',
+  })
   assert.ok(begun.ok)
   const { uploadId } = begun.result as { uploadId: string }
   await call('uploads.append', { uploadId, offset: 0, dataBase64: 'AAAA' })
-  const refused = await call('session.send', { commandId: 'c1', sessionId: 's1', message: 'x', fileUploadIds: [uploadId] })
+  const refused = await call('session.send', {
+    commandId: 'c1',
+    sessionId: 's1',
+    message: 'x',
+    fileUploadIds: [uploadId],
+  })
   assert.equal(!refused.ok && refused.error.code, 'unavailable')
   assert.equal(chat.calls.sends.length, 0)
 })

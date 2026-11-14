@@ -230,10 +230,7 @@ export type StudioFollowedBackend = {
    * path here, which the message attaches; `discard` removes it again when
    * the send did not go.
    */
-  keepFile?(
-    clientId: string,
-    file: { name: string; bytes: Buffer },
-  ): Promise<{ path: string; discard: () => void }>
+  keepFile?(clientId: string, file: { name: string; bytes: Buffer }): Promise<{ path: string; discard: () => void }>
   /**
    * Whether a client's send under a command id (already namespaced to it) was
    * carried out before, held or in the chat's log, whatever restarted since:
