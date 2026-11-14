@@ -51,11 +51,14 @@ test('debounces persistence, flushes on unmount, restores failed sends and clear
       token = hook.beginDraftSend(hook.draft)
     })
     expect(hook.draft).toBe('')
-    expect(composerDraftStore().getState().read('workspace', 'agent').text).toBe('new unsaved text')
+    // Out of storage before the send leaves: a reload mid-send cannot bring it back.
+    expect(composerDraftStore().getState().read('workspace', 'agent').text).toBe('')
+    expect(window.localStorage.getItem('sprintengine-conversation-drafts') ?? '').not.toContain('new unsaved text')
     await act(async () => {
       hook.finishDraftSend(token, false)
     })
     expect(hook.draft).toBe('new unsaved text')
+    expect(window.localStorage.getItem('sprintengine-conversation-drafts') ?? '').toContain('new unsaved text')
     await act(async () => {
       token = hook.beginDraftSend(hook.draft)
     })

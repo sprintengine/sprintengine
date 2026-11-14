@@ -8,7 +8,11 @@ const empty = (): DraftValue => ({ text: '', skillIds: [], mentions: [], files: 
 const isEmpty = (value: DraftValue) =>
   !value.text && !value.skillIds.length && !value.mentions.length && !value.files.length
 
-/** UI clears optimistically; persisted text remains recoverable until send is acknowledged. */
+/**
+ * A send clears the draft, on screen and in storage, before it leaves; a send
+ * that fails puts it back. Nothing of a sent draft is left in storage for a
+ * reload to bring back beside the message the chat already has.
+ */
 export function useComposerDraft(workspaceId: string, agentId: string, prefill = '') {
   const store = useMemo(() => composerDraftStore(), [])
   const key = JSON.stringify([workspaceId, agentId])
@@ -25,6 +29,7 @@ export function useComposerDraft(workspaceId: string, agentId: string, prefill =
   const current = state.key === key ? state.value : initial
   const values = useRef(new Map<string, DraftValue>())
   values.current.set(key, current)
+  // The draft each send took, held in memory only, to put back if it fails.
   const pending = useRef(new Map<string, { token: symbol; snapshot: DraftValue }>())
   const activeKeys = useRef(new Set<string>())
   // Storage writes land shortly after an edit, so a refused write is reported
@@ -35,9 +40,7 @@ export function useComposerDraft(workspaceId: string, agentId: string, prefill =
     : null
   const write = useCallback(
     (target: string, workspace: string, agent: string) => {
-      const value = values.current.get(target) ?? empty()
-      const protectedSend = pending.current.get(target)
-      store.getState().put(workspace, agent, protectedSend && isEmpty(value) ? protectedSend.snapshot : value)
+      store.getState().put(workspace, agent, values.current.get(target) ?? empty())
     },
     [store],
   )
@@ -94,31 +97,37 @@ export function useComposerDraft(workspaceId: string, agentId: string, prefill =
       const token = Symbol('draft-send')
       pending.current.set(key, { token, snapshot })
       update(empty())
+      // Cleared in storage now, not after the store's write delay: a reload
+      // once the send has left must not find the draft there.
       flushDraft()
+      store.flushDrafts()
       return token
     },
-    [key, initial, update, flushDraft],
+    [key, initial, update, flushDraft, store],
   )
   const finishDraftSend = useCallback(
     (token: symbol | null, succeeded: boolean) => {
       const attempt = pending.current.get(key)
       if (!token || attempt?.token !== token) return
       pending.current.delete(key)
-      if (!activeKeys.current.has(key)) {
-        const saved = store.getState().read(workspaceId, agentId)
-        if (
-          succeeded &&
-          saved.text === attempt.snapshot.text &&
-          JSON.stringify(saved.skillIds) === JSON.stringify(attempt.snapshot.skillIds) &&
-          JSON.stringify(saved.mentions) === JSON.stringify(attempt.snapshot.mentions) &&
-          JSON.stringify(saved.files) === JSON.stringify(attempt.snapshot.files)
-        ) {
-          store.getState().remove(workspaceId, agentId)
+      const active = activeKeys.current.has(key)
+      if (succeeded) {
+        if (active) flushDraft()
+        return
+      }
+      // Failed: the draft comes back, unless a newer one was begun meanwhile
+      // (the failed text stays on the error's Retry).
+      if (!active) {
+        if (isEmpty(store.getState().read(workspaceId, agentId))) {
+          store.getState().put(workspaceId, agentId, attempt.snapshot)
+          store.flushDrafts()
         }
         return
       }
-      if (!succeeded && isEmpty(values.current.get(key) ?? empty())) update(attempt.snapshot)
+      if (!isEmpty(values.current.get(key) ?? empty())) return
+      update(attempt.snapshot)
       flushDraft()
+      store.flushDrafts()
     },
     [key, update, flushDraft, store, workspaceId, agentId],
   )

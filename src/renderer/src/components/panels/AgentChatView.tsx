@@ -699,10 +699,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     (readiness.kind === 'ready' || readiness.kind === 'loading' || readiness.kind === 'preparing-worktree')
   const sendInFlightRef = useRef(false)
   // Drafts sent and not yet answered, by the turn id the send carries. The
-  // send answers when its turn ends, which may be minutes away; the message is
-  // the chat's once its `user_message` is in the log, so the draft kept for
-  // it is let go then. Kept longer, a reload or a remount mid-turn put the
-  // sent message back in the composer.
+  // draft left storage when the send began, so a reload never brings it back;
+  // the copy held in memory to put back if the send fails is let go once its
+  // `user_message` is in the log, since the send answers only when its turn
+  // ends, and a turn that fails after that must not put the message it already
+  // shows back in the composer.
   const unlandedDraftSendsRef = useRef(new Map<string, symbol>())
   // The ref's value as state, so what waits on a send (the queue's flush) runs
   // again once it settles; the ref stays the synchronous re-entry guard.
@@ -919,7 +920,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureRevision, userTurns, transport])
   // A sent draft whose message has landed in the log is the chat's, not the
-  // composer's: the copy kept in case the send failed is let go.
+  // composer's: the copy held in case the send failed is let go.
   useEffect(() => {
     const unlanded = unlandedDraftSendsRef.current
     if (!unlanded.size) return
