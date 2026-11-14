@@ -289,6 +289,9 @@ export const MAX_STREAM_QUEUED_MESSAGES = 64
 /** What a tool stream may have waiting to be written to a client that is not reading, before it is closed. */
 export const MAX_STREAM_UNSENT_BYTES = 8 * 1024 * 1024
 
+/** How long a closed tool stream waits for its client to close too before it is destroyed. */
+const STREAM_CLOSE_GRACE_MS = 1_000
+
 /** RFC 6455 §7.4.1: the endpoint is closing because the peer broke its policy. */
 const WEBSOCKET_CLOSE_POLICY = 1008
 
@@ -1202,6 +1205,11 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     let pending = Promise.resolve()
 
     const consume = (chunk: Buffer): void => {
+      // A stream closed here (evicted past its device's budget, over its
+      // queue, revoked) reads nothing more, whether or not its client has
+      // answered the close: one that ignores it would otherwise go on being
+      // served outside every bound.
+      if (!streams.has(session)) return
       const decoded = decoder.push(chunk)
       if (decoded.kind === 'error') {
         closeStream(session, decoded.code, decoded.reason)
@@ -1417,6 +1425,9 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       // The peer is already gone; destroying below is the whole cleanup.
     }
     session.socket.end()
+    // A client that never answers the close is not kept half-open.
+    const socket = session.socket
+    setTimeout(() => socket.destroy(), STREAM_CLOSE_GRACE_MS).unref?.()
   }
 
   function sendStream(session: StreamSession, payload: Record<string, unknown>): void {

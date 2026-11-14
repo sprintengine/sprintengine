@@ -419,6 +419,112 @@ test("a device's tool streams and Studio sockets share one budget: past it the o
   assert.equal(its.socket.readyState, WebSocket.OPEN)
 })
 
+/**
+ * A tool stream on a raw socket that never answers a close: what a hostile
+ * client does to stay open past its budget. Answers what the server sent.
+ */
+async function stubbornStream(
+  port: number,
+  token: string,
+): Promise<{ send(text: string): void; heard(): string; ended: Promise<void> }> {
+  const minted = await ticketFor(port, token)
+  if (!minted.body.ticket) throw new Error(`ticket refused: ${minted.status}`)
+  const path = `${TAILNET_STREAM_PATH}?ticket=${encodeURIComponent(minted.body.ticket)}`
+  // Half-open allowed: the server's FIN is not answered with one, as a client ignoring the close would not.
+  const socket = connectTcp({ port, host: '127.0.0.1', allowHalfOpen: true })
+  cleanups.push(() => void socket.destroy())
+  let heard = ''
+  const ended = new Promise<void>((resolve) => socket.on('close', () => resolve()))
+  socket.on('error', () => undefined)
+  socket.on('data', (chunk: Buffer) => (heard += chunk.toString('latin1')))
+  await new Promise<void>((resolve) => socket.on('connect', () => resolve()))
+  socket.write(
+    [
+      `GET ${path} HTTP/1.1`,
+      `Host: 127.0.0.1:${port}`,
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+      'Sec-WebSocket-Version: 13',
+      'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+      '',
+      '',
+    ].join('\r\n'),
+  )
+  await until(() => heard.includes('\r\n\r\n'), 'the upgrade')
+  if (!heard.startsWith('HTTP/1.1 101')) throw new Error(`not upgraded: ${heard.split('\r\n')[0]}`)
+  const mask = Buffer.from([1, 2, 3, 4])
+  return {
+    send(text) {
+      const body = Buffer.from(text, 'utf8')
+      if (body.length >= 126) throw new Error('kept short in this test')
+      const masked = Buffer.from(body)
+      for (let index = 0; index < masked.length; index += 1) masked[index]! ^= mask[index % 4]!
+      socket.write(Buffer.concat([Buffer.from([0x81, 0x80 | body.length]), mask, masked]))
+    },
+    heard: () => heard,
+    ended,
+  }
+}
+
+test('a stream evicted past its budget is served nothing more, and let go of, though its client ignores the close', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tailnet-stream-evicted-'))
+  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  let calls = 0
+  const gateway = createTailnetGatewayServer({
+    bindAddress: '127.0.0.1',
+    port: 0,
+    serverName: 'sprintengine-studio',
+    serverVersion: '9.9.9',
+    resolveTools: () => [
+      {
+        name: 'workspace.count',
+        description: 'Counts its calls.',
+        inputSchema: { type: 'object', properties: {} },
+        handler: async () => {
+          calls += 1
+          return { content: [{ type: 'text', text: String(calls) }] }
+        },
+      },
+    ],
+    isMutation: () => false,
+    devices,
+    peers: { identify: async () => null, resolve: async () => null },
+  })
+  await gateway.start()
+  cleanups.push(async () => {
+    await gateway.stop()
+    rmSync(dir, { recursive: true, force: true })
+  })
+  const { deviceToken } = devices.mintDevice({
+    name: 'mac-mini',
+    scopes: ['workspace:read'],
+    origin: { kind: 'code', by: null },
+  })
+  const port = gateway.address()!.port
+  const call = (id: number) =>
+    JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'workspace.count', arguments: {} } })
+  const stubborn = await stubbornStream(port, deviceToken)
+  stubborn.send(call(1))
+  await until(() => calls === 1, 'the first call')
+  for (let index = 0; index < MAX_SOCKETS_PER_DEVICE; index++) await toolStream(port, deviceToken)
+  await until(() => stubborn.heard().includes('newer connection'), 'the eviction close')
+  // Evicted, it runs nothing more it is sent.
+  stubborn.send(call(2))
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  assert.equal(calls, 1, 'a call on the evicted stream ran')
+  // And past the close's grace the server has let the socket go: writing to
+  // it again is reset, which the client hears as its socket closing.
+  await new Promise((resolve) => setTimeout(resolve, 1_200))
+  let closed = false
+  void stubborn.ended.then(() => (closed = true))
+  for (let id = 3; id < 50 && !closed; id++) {
+    stubborn.send(call(id))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.ok(closed, 'the evicted socket was kept open')
+  assert.equal(calls, 1)
+})
+
 test('a device holds only its newest tickets', async () => {
   const r = await rig()
   const phone = r.pair(['workspace:read'])
