@@ -35,7 +35,7 @@ import { test, vi } from 'vitest'
 
 // A step run once, right after the next `realpath` of a given path answers:
 // how a test puts a link in place between a path's check and its use.
-const afterRealpath = vi.hoisted(() => ({ at: null as null | { path: string; then: () => Promise<void> } }))
+const afterRealpath = vi.hoisted(() => ({ at: null as null | { path: string; run: () => Promise<void> } }))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   const realpath = (async (path: string, options?: unknown) => {
@@ -43,7 +43,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     const step = afterRealpath.at
     if (step && path === step.path) {
       afterRealpath.at = null
-      await step.then()
+      await step.run()
     }
     return answer
   }) as typeof actual.realpath
@@ -1716,7 +1716,7 @@ test.runIf(process.platform !== 'win32')(
       await writeFile(item, '---\nstatus: idea\n---\n# Item\n', 'utf-8')
       afterRealpath.at = {
         path: item,
-        then: async () => {
+        run: async () => {
           await rm(item)
           await symlink(secret, item)
         },
