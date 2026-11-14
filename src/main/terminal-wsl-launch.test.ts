@@ -14,7 +14,13 @@ import { afterEach, beforeEach, test } from 'vitest'
 import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
-import { STUB_HELPER_INFO, stubWslHelper, type StubHelper } from '../../tests/wsl-helper-stub'
+import {
+  STUB_HELPER_INFO,
+  stubWslHelper,
+  type StubHelper,
+  stubWslDistributionLink,
+  STUB_AGENT_STATE_SOCKET,
+} from '../../tests/wsl-helper-stub'
 import { WslSetupError } from './hosts/wsl-setup-error'
 
 type MockPty = {
@@ -33,6 +39,7 @@ type Harness = {
   runtime: ReturnType<(typeof import('./terminal-runtime'))['createTerminalRuntime']>
   spawn(payload: Record<string, unknown>): Promise<{ ok: boolean; message?: string }>
   workspaceRoot: string
+  distribution: ReturnType<typeof stubWslDistributionLink>
 }
 
 let restore: (() => void) | null = null
@@ -95,12 +102,14 @@ async function harness(handlers: Record<string, (params: never) => unknown> = {}
     },
     'node-pty': mockPty,
   })
+  const distribution = stubWslDistributionLink()
   const registryModule = await import('./hosts/host-registry')
   registryModule.installHostRegistry(
     registryModule.createHostRegistry({
       platform: 'win32',
       readHostSettings: () => ({}),
       createWslHelper: () => helper,
+      distribution,
     }),
   )
   const runtimeModule = await import('./terminal-runtime')
@@ -123,7 +132,7 @@ async function harness(handlers: Record<string, (params: never) => unknown> = {}
       if (platform) Object.defineProperty(process, 'platform', platform)
     }
   }
-  return { helper, spawned, runtime, spawn, workspaceRoot }
+  return { helper, spawned, runtime, spawn, workspaceRoot, distribution }
 }
 
 const agent = (sessionId: string) => ({
@@ -161,6 +170,9 @@ test('an agent on a WSL machine runs its startup script from inside the distribu
   assert.ok(writeAt < call.requestsBefore, 'the script was written before the terminal started')
   const text = decoded(written[0].files[0].b64)
   assert.ok(text.includes(`'${STUB_HELPER_INFO.pidDir}'`), "the shell records its pid in the helper's own directory")
+  // Its hooks report to the distribution's Studio server, which it holds up while it runs.
+  assert.ok(text.includes(`export SPRINTENGINE_AGENT_STATE_SOCKET='${STUB_AGENT_STATE_SOCKET}'`), text)
+  assert.equal(h.distribution.holds.size, 1)
 
   // The launch's MCP token: exported by the script, live while the session is.
   assert.equal(h.helper.tokens.size, 1)
@@ -169,6 +181,7 @@ test('an agent on a WSL machine runs its startup script from inside the distribu
   h.runtime.sessions.killTerminal('wsl-a')
   await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(h.helper.tokens.size, 0, 'revoked with the session')
+  assert.equal(h.distribution.holds.size, 0, 'and its hold on the server let go')
   assert.ok(
     h.helper.requests.some(
       (request) =>

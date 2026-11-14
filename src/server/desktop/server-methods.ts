@@ -180,12 +180,6 @@ export const SERVER_EVENTS = {
    */
   terminalSessions: 'terminals.sessions',
   /**
-   * Shell → server: one agent-state frame line a WSL distribution's helper
-   * relayed (the helper is the shell's); the server's reporter listener
-   * holds it to the socket's validation.
-   */
-  agentStateLine: 'terminals.agent-state-line',
-  /**
    * Shell → server: `{ hostId }`, a WSL distribution's PATH changed, as its
    * helper (the shell's) saw it; what the server knows of its CLIs is stale.
    */

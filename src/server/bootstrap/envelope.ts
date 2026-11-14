@@ -157,6 +157,11 @@ export type FrontDoorReady = {
   socketPath: string | null
   /** Where the distribution mounts Windows drives (`/mnt/`), or null when automount is off. */
   driveMountRoot: string | null
+  /**
+   * The Unix socket a WSL terminal agent's hooks report to, relayed to the
+   * desktop on the `agent-state` purpose; null where it did not open.
+   */
+  agentStateSocket: string | null
 }
 
 /** The server's answer once its gateway is listening. */

@@ -3,9 +3,9 @@
 //
 // app-services configures this once at startup (`configureWslHelpers`) with the
 // app's version, its userData directory, where the helper's files ship, and
-// the three things only the app can do with what the helper relays: validate
-// an agent-state frame, connect an MCP channel to the automation server, and
-// re-read CLI availability when a PATH directory changes. Tests and macOS never
+// the two things only the app can do with what the helper relays: connect an
+// MCP channel to the automation server, and re-read CLI availability when a
+// PATH directory changes. Tests and macOS never
 // configure it; a WSL host there has no helper to start.
 
 import { createHash } from 'node:crypto'
@@ -45,7 +45,6 @@ export type WslHelperEnvironment = {
   pluginSources: () => WslPluginSources
   /** The automation server's own socket; the only place an MCP channel goes. */
   automationSocketPath: () => string
-  ingestAgentStateLine: (line: string) => void
   onPathsChanged: (distro: string) => void
   fetch?: (url: string, init?: { signal?: AbortSignal }) => Promise<Response>
   log?: (message: string) => void
@@ -275,8 +274,7 @@ export function createDefaultWslHelperClient(distro: string): WslHelperClient {
     onEvent: (event) => {
       const current = environment
       if (!current) return
-      if (event.event === 'agentState') current.ingestAgentStateLine(event.line)
-      else current.onPathsChanged(distro)
+      if (event.event === 'pathsChanged') current.onPathsChanged(distro)
     },
     connectAutomation: (): Duplex => connect({ path: env().automationSocketPath(), allowHalfOpen: true }),
     log: (message) => environment?.log?.(message),

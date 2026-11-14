@@ -98,6 +98,8 @@ import { chatSourceFiles } from '../environment/environment-chat-sources'
 import { studioMigrationStores } from '../environment/environment-migration-stores'
 import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/wsl-environment-clients'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
+import { followRelayedAgentState } from '../wsl/agent-state-relay'
+import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
@@ -272,6 +274,22 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         ...(status.transport ? { transport: status.transport } : {}),
         ...((status.reason ?? status.transportReason) ? { reason: status.reason ?? status.transportReason } : {}),
       }
+    },
+    // A WSL terminal's agent reports through its distribution's server, which
+    // this core supervises: started for the launch, held while it runs.
+    distribution: {
+      connect: async (distro) => {
+        const servers = wslServersForHosts
+        if (!servers)
+          throw new WslSetupError(`Studio cannot start a server in ${distro} on this computer.`, {
+            fatal: true,
+            code: 'start',
+          })
+        const connection = await servers.manager.connect(distro)
+        return { agentStateSocket: connection.agentStateSocket }
+      },
+      hold: (distro, key) => wslServersForHosts?.manager.hold(distro, key),
+      release: (distro, key) => wslServersForHosts?.manager.release(distro, key),
     },
   })
   installHostRegistry(hosts)
@@ -549,6 +567,20 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     setChatIdleThresholdMs: (value) => conversationRuntime.setIdleThresholdMs(value),
     ...(options.terminalHost ? { host: options.terminalHost } : {}),
   })
+  // What this desktop's WSL terminals' agents report from inside their
+  // distribution, relayed by its server on each connection to it.
+  if (wslServers && agentTerminals) {
+    const listener = agentTerminals.agentState
+    wslServers.onConnected((connection) =>
+      followRelayedAgentState(
+        connection,
+        (line) => listener.ingestLine(line),
+        (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'terminal', title: 'WSL terminal agents', message })
+        },
+      ),
+    )
+  }
 
   const conversationModelCatalog = createConversationModelCatalog({
     listClis: () => listPluginRegistryEntries(),

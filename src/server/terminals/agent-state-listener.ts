@@ -11,9 +11,10 @@ import { withOwnerOnlyUmask } from '../../main/private-socket-dir'
 // moves its phase. It runs where the terminal runtime runs, in the Studio
 // server (studio-agent-terminals.ts), in every mode.
 //
-// A WSL distribution's frames arrive through its helper instead, which the
-// desktop's shell runs; the shell hands each line to `ingestLine`, which holds
-// it to exactly the same validation.
+// A WSL distribution's terminal agents report to a listener of this kind in
+// the distribution's own Studio, which relays each valid line back to the
+// desktop that holds it (`wsl/agent-state-relay.ts`); the desktop hands each
+// relayed line to `ingestLine`, which holds it to exactly the same validation.
 //
 // The path is derived from the data directory (`resolveAgentStateSocketPath`),
 // so the launch's environment and the hooks the shell writes into a plugin
@@ -24,7 +25,8 @@ const MAX_LINE_BYTES = 64 * 1024
 
 export type AgentStateListenerOptions = {
   socketPath: string
-  onFrame: (frame: AgentStateFrame) => void
+  /** A valid frame, with the line it was read from (what a distribution relays on). */
+  onFrame: (frame: AgentStateFrame, line: string) => void
   logDiagnostic?: (diagnostic: { level: 'warning' | 'info'; title: string; message: string; details?: string }) => void
   now?: () => number
 }
@@ -33,7 +35,7 @@ export type AgentStateListener = {
   /** Listen on the socket. Resolves once listening, or once the failure is logged: frames then go unheard. */
   start(): Promise<void>
   stop(): Promise<void>
-  /** One frame line from elsewhere (a WSL helper's relay). */
+  /** One frame line from elsewhere (a WSL distribution's relay). */
   ingestLine(line: string): void
   readonly socketPath: string
   isRunning(): boolean
@@ -133,7 +135,7 @@ export function createAgentStateListener(options: AgentStateListenerOptions): Ag
     const frame = parseAgentStateFrame(raw, now())
     if (!frame) return
     try {
-      options.onFrame(frame)
+      options.onFrame(frame, line)
     } catch (error) {
       warn('Agent-state frame handler threw', message(error))
     }

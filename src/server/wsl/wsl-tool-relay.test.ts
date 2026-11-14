@@ -65,6 +65,7 @@ test("a WSL agent's call runs through the Windows side's registry as that agent'
     distro: 'Ubuntu',
     owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
     driveMountRoot: '/mnt/',
+    agentStateSocket: null,
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -143,6 +144,7 @@ async function relayed(shell: ReturnType<typeof definition>[], own: McpToolRegis
     distro: 'Ubuntu',
     owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
     driveMountRoot: '/mnt/',
+    agentStateSocket: null,
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -336,6 +338,7 @@ test('a toolset is offered with each tool name once, and offered again when its 
     distro: 'Ubuntu',
     owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
     driveMountRoot: '/mnt/',
+    agentStateSocket: null,
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -376,6 +379,7 @@ test('a tools stream that closes while the server stays up is opened again, and 
     distro: 'Ubuntu',
     owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
     driveMountRoot: '/mnt/',
+    agentStateSocket: null,
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -428,6 +432,7 @@ test('a tools stream that fails to open is tried again while the server is up, a
       },
     } as unknown as WslServerConnection['owner'],
     driveMountRoot: '/mnt/',
+    agentStateSocket: null,
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })

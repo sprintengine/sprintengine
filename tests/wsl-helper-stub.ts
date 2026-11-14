@@ -4,6 +4,7 @@
 
 import type { WslHelperClient, WslHelperInfo } from '../src/main/hosts/wsl-helper-client'
 import type { WslSetupError } from '../src/main/hosts/wsl-setup-error'
+import type { WslDistributionLink } from '../src/main/hosts/wsl-host'
 
 export const STUB_HELPER_INFO: WslHelperInfo = {
   uid: 1000,
@@ -12,7 +13,6 @@ export const STUB_HELPER_INFO: WslHelperInfo = {
   arch: 'x64',
   nodePath: '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node',
   appDir: '/home/dev/.local/share/sprintengine-studio/0.4.0',
-  agentSocket: '/run/user/1000/sprintengine/abc123def456/agent.sock',
   mcpSocket: '/run/user/1000/sprintengine/abc123def456/mcp.sock',
   userDataDir: '/run/user/1000/sprintengine/abc123def456',
   pidDir: '/run/user/1000/sprintengine/abc123def456/sessions',
@@ -101,4 +101,18 @@ export function stubWslHelper(
     },
   }
   return stub
+}
+
+/** The socket a stand-in distribution's Studio server says its terminal agents report to. */
+export const STUB_AGENT_STATE_SOCKET = '/home/dev/.local/share/sprintengine-studio/data/agent-state.sock'
+
+/** A stand-in for the core's WSL servers, as a WSL host reaches them: always up, holds recorded. */
+export function stubWslDistributionLink(): WslDistributionLink & { holds: Set<string> } {
+  const holds = new Set<string>()
+  return {
+    holds,
+    connect: async () => ({ agentStateSocket: STUB_AGENT_STATE_SOCKET }),
+    hold: (distro, key) => void holds.add(`${distro}/${key}`),
+    release: (distro, key) => void holds.delete(`${distro}/${key}`),
+  }
 }

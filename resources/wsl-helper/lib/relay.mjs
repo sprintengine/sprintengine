@@ -1,10 +1,4 @@
-// The two things the helper relays between Linux and main.
-//
-// Agent state: a hook reporter, the status-line forwarder or OpenCode's plugin
-// connects to `agent.sock`, writes newline-delimited JSON frames and hangs up.
-// Each line is capped, parsed, and sent to main as it arrived; main validates
-// it with the same parser that reads its own socket (`parseAgentStateFrame`),
-// so a frame from WSL is held to exactly the rules one from this machine is.
+// What the helper relays between Linux and main.
 //
 // MCP: each connection to `mcp.sock` is one MCP bridge (one agent's session
 // with the app's automation server). It becomes a numbered channel on the
@@ -30,14 +24,6 @@
 // session lives. The startup script deletes itself once read, so the token is
 // not also left on disk.
 
-import { createLineDecoder } from './frames.mjs'
-
-// A reporter frame is small; a client streaming an endless line is dropped.
-export const MAX_AGENT_STATE_LINE_BYTES = 64 * 1024
-// What one connection may send in all. OpenCode's plugin keeps one
-// connection open and sends a frame per file a patch touched, so a count of
-// lines would cut a large patch short; bytes still bound a runaway writer.
-export const MAX_AGENT_STATE_BYTES_PER_CONNECTION = 16 * 1024 * 1024
 // Agents in one distribution rarely hold more than a handful of sessions each.
 export const MAX_MCP_CHANNELS = 64
 // Bytes per data frame, before base64.
@@ -46,35 +32,6 @@ const MCP_CHUNK_BYTES = 64 * 1024
 const MAX_AUTH_LINE_BYTES = 1024
 const AUTH_TIMEOUT_MS = 10_000
 const TOKEN = /^[A-Za-z0-9_-]{16,128}$/u
-
-/** Handles one `agent.sock` connection, calling `send(line)` per frame. */
-export function relayAgentStateConnection(socket, send) {
-  let bytes = 0
-  const decoder = createLineDecoder({
-    maxLineBytes: MAX_AGENT_STATE_LINE_BYTES,
-    onLine(line) {
-      let parsed
-      try {
-        parsed = JSON.parse(line)
-      } catch {
-        return
-      }
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) send(line)
-    },
-    onOverflow: () => socket.destroy(),
-  })
-  socket.on('data', (chunk) => {
-    bytes += chunk.length
-    if (bytes > MAX_AGENT_STATE_BYTES_PER_CONNECTION) {
-      socket.destroy()
-      return
-    }
-    decoder.push(chunk)
-  })
-  socket.on('error', () => socket.destroy())
-  // A reporter that connects and never writes must not hold a descriptor.
-  socket.setTimeout(10_000, () => socket.destroy())
-}
 
 /**
  * The token a bridge's first line carries, or null when the line is not an
