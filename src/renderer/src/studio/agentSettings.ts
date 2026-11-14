@@ -165,7 +165,7 @@ export const agentSettingsApi: AgentSettingsApi = {
       params: {},
       capability: STUDIO_AGENT_RUNTIMES_CAPABILITY,
       onPayload: cb,
-      onReopen: rereadOnReopen(() => runtimes('cliVersions.advisories', {}), cb),
+      reread: rereadOnReopen(() => runtimes('cliVersions.advisories', {}), cb),
     }),
   cliModelsDiscover: (input = {}) => settings('cliModels.discover', input),
   onCliModelsChanged: (cb) =>
@@ -175,7 +175,7 @@ export const agentSettingsApi: AgentSettingsApi = {
       capability: STUDIO_AGENT_SETTINGS_CAPABILITY,
       onPayload: cb,
       // What the Studio last found, within its freshness window: no probe is forced.
-      onReopen: rereadOnReopen(() => settings('cliModels.discover', {}), cb),
+      reread: rereadOnReopen(() => settings('cliModels.discover', {}), cb),
     }),
   launchSettingsGet: () => settings('launchSettings.get', {}),
   launchSettingsUpdate: (patch) => settings('launchSettings.update', { commandId: randomId(), patch }),
@@ -186,7 +186,7 @@ export const agentSettingsApi: AgentSettingsApi = {
       params: {},
       capability: STUDIO_AGENT_SETTINGS_CAPABILITY,
       onPayload: cb,
-      onReopen: rereadOnReopen(
+      reread: rereadOnReopen(
         () => settings('launchSettings.get', {}),
         (snapshot) => {
           if (snapshot.record) cb(snapshot.record)
