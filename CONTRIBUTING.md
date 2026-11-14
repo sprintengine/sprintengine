@@ -115,14 +115,18 @@ The cross-client gate (`scripts/cross-client-gate.mjs`, the scenarios in
 `tests/cross-client/`) boots the built server and drives it with several of
 its clients at once, each running the code that surface really runs: the
 desktop window over the Studio protocol, a paired desktop and the phone's own
-protocol client (the modules under `mobile/src/api`) over the tailnet lane, a
-read-only embed, and, with `STUDIO_TEST_DOCKER=1` and Docker running, an SSH
-machine in a container. They share one chat on the built-in fake provider:
-start it, stream a turn, send a picture, answer an approval another client's
-turn raised, message a sub-agent, schedule a send, drop mid-turn and come back
-by cursor, and survive the server being killed and started again. It takes
-under a minute on a laptop, and runs on Linux and macOS (its sockets are Unix
-sockets).
+protocol client (the modules under `mobile/src/api`) over the tailnet lane, and
+a read-only embed. They share one chat on the built-in fake provider: start
+it, stream a turn, send a picture, answer an approval another client's turn
+raised, message a sub-agent, schedule a send, drop mid-turn and come back by
+cursor, and survive the server being killed and started again. Then two
+machine legs, each a chat on another machine's own Studio as the desktop
+window reaches it: a WSL-shaped distribution, with `sh` standing in for
+`wsl.exe` (a terminal agent's launch token, git, the home and file reads by
+the environment methods, a server killed and started again, and the phone and
+the paired desktop held off it), and, with `STUDIO_TEST_DOCKER=1` and Docker
+running, an SSH machine in a container. It takes under a minute on a laptop,
+and runs on Linux and macOS (its sockets are Unix sockets).
 
 Its output is a table of client by scenario, and it says what it simulates
 (the Electron shell's port broker, the phone's file module, the tailnet bound
@@ -132,11 +136,11 @@ gap that starts passing fails the gate, so the change that closes one deletes
 its line. A change that moves a client to another transport changes that
 client's adapter in `tests/cross-client/clients/`, not the scenarios.
 
-WSL cannot run on the hosted runners. Check a change to WSL chats by hand, on
-a Windows PC with a WSL 2 distribution: build the app (`npm run dist:win`),
-turn on WSL chats, start a chat in the distribution, send a turn, answer its
-approval from the phone and from a paired desktop, then quit and reopen the
-app and send again. The gate prints the same steps.
+WSL itself cannot run on the hosted runners. Check a change to WSL chats by
+hand, on a Windows PC with a WSL 2 distribution: build the app
+(`npm run dist:win`), start a chat in the distribution, send a turn, answer its
+approval, open a terminal agent there, then quit and reopen the app and send
+again. The gate prints the same steps.
 
 ### The checks a pull request needs
 
@@ -148,7 +152,7 @@ required to merge, as `.github/main-ruleset.json` lists them:
 | Conventional PR title | The title, as the merge commit's subject |
 | Build (ubuntu-latest), Build (windows-latest), Build (macos-latest) | Typecheck and build on each OS; the whole suite on macOS |
 | JS tests (ubuntu-latest) | `npm run verify:app` and the marketplace signatures |
-| Cross-client gate | `npm run test:cross-client -- --require-ssh` against the built server, the SSH machine included |
+| Cross-client gate | `npm run test:cross-client -- --require-ssh` against the built server, the WSL-shaped and SSH machines included |
 
 The web client smoke, the phone app, the Android APK and the SSH machine
 suites run beside them and are expected green too.

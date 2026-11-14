@@ -60,7 +60,8 @@ export type PairedWindow = {
 const openWindows = new Map<string, TailnetMeshService>()
 const changeListeners = new Set<() => void>()
 let ticketsGiven = 0
-const windowApi: PairedWindow['api'] = {
+/** The bridge every paired window here shares, for a caller that cannot count on `window.api` still being it. */
+export const pairedWindowApi: PairedWindow['api'] = {
   async environmentsTicket(route) {
     const parsed = parseEnvironmentRoute(route)
     const mesh = parsed?.kind === 'tailnet' ? openWindows.get(parsed.connection) : undefined
@@ -86,7 +87,7 @@ const windowApi: PairedWindow['api'] = {
     return () => changeListeners.delete(listener)
   },
 }
-configureEnvironmentStudio(windowApi, { WebSocket: windowSocket('file://') })
+configureEnvironmentStudio(pairedWindowApi, { WebSocket: windowSocket('file://') })
 let windowBefore: unknown
 
 /**
@@ -112,7 +113,7 @@ export async function pairedWindow(peer: PairableMachine, scopes: TailnetScope[]
   return {
     mesh,
     machine: { id, machineName: paired.connection.machineName, scopes },
-    api: windowApi,
+    api: pairedWindowApi,
     environmentsChanged: () => {
       for (const listener of changeListeners) listener()
     },
@@ -134,11 +135,11 @@ export function openPairedWindow(mesh: TailnetMeshService, connectionId: string)
   const global = globalThis as unknown as { window?: unknown }
   if (openWindows.size === 0) {
     windowBefore = global.window
-    global.window = { api: windowApi }
+    global.window = { api: pairedWindowApi }
   }
   openWindows.set(connectionId, mesh)
   return () => {
-    closeEnvironmentStudio(pairedRoute(connectionId), windowApi)
+    closeEnvironmentStudio(pairedRoute(connectionId), pairedWindowApi)
     if (!openWindows.delete(connectionId)) return
     if (openWindows.size === 0) global.window = windowBefore
   }

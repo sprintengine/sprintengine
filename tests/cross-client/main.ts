@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,13 +16,17 @@ import { approvalAfter, isReplyTo, isUserMessage, resolvedAfter, type Feed, type
 import type { HostConfig, HostReady } from './host'
 import { Matrix } from './matrix'
 import { runSshLeg } from './ssh'
+import { runWslLeg } from './wsl'
 
 // The cross-client gate (scripts/cross-client-gate.mjs bundles and runs this).
 // One real Studio server build, started by a host process, and several clients
 // on it at once, each the code that surface really runs: the desktop window
 // over the Studio protocol, a paired desktop and the phone over the tailnet
-// lane, a read-only embed, and an SSH machine. They share one chat, and every
-// scenario is checked from every client's side: what one does, all see.
+// lane, and a read-only embed. They share one chat, and every scenario is
+// checked from every client's side: what one does, all see. Then the machine
+// legs, each a chat of its own on another machine's Studio as the desktop
+// window reaches it: a WSL-shaped distribution (`sh` for wsl.exe), which the
+// phone and the paired desktop must not reach, and an SSH machine.
 
 type Options = { root: string; serverBundle: string; hostBundle: string; phoneBundle: string; requireSsh: boolean }
 
@@ -177,6 +181,18 @@ async function main(): Promise<number> {
   const embedCutter = await cutter({ port: webPort })
   if (!('port' in embedCutter.address)) throw new Error('The embed’s cutter has no port.')
   const embedOrigin = `http://127.0.0.1:${embedCutter.address.port}`
+  // The server tree a WSL distribution or an SSH machine is given, built once
+  // when a leg first asks for it, as `npm run build:server:wsl` builds it.
+  let serverTree: string | null = null
+  const machineTree = () => {
+    if (serverTree) return serverTree
+    const tree = join(scratch, 'server-tree')
+    execFileSync(process.execPath, [join(options.root, 'scripts', 'build-server.mjs'), '--wsl', '--out-dir', tree], {
+      cwd: options.root,
+      stdio: 'pipe',
+    })
+    return (serverTree = tree)
+  }
   const host = new Host(
     {
       bundle: options.serverBundle,
@@ -572,13 +588,22 @@ async function main(): Promise<number> {
       )
     })
 
+    // While the desktop and its paired devices are still up: they are who must not reach it.
+    await runWslLeg({
+      serverTree: machineTree,
+      scratch,
+      matrix,
+      version: (JSON.parse(readFileSync(join(options.root, 'package.json'), 'utf8')) as { version: string }).version,
+      devices: [peer, phone],
+    })
+
     for (const client of clients) await client.close()
     clients.length = 0
     await host.stop()
 
     await runSshLeg({
       root: options.root,
-      scratch,
+      serverTree: machineTree,
       matrix,
       cacheDir: process.env.STUDIO_TEST_CACHE || join(tmpdir(), 'se-ssh-node-cache'),
     })
