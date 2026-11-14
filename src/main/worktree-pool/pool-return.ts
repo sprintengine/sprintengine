@@ -395,6 +395,7 @@ export async function returnUnused(
 export async function release(
   ctx: PoolContext,
   leaseId: string,
+  options: { dropUnusedBranch?: boolean } = {},
 ): Promise<'returned' | 'held' | 'postponed' | 'busy' | 'not-found'> {
   const found = findLease(ctx, leaseId)
   if (!found) return 'not-found'
@@ -406,15 +407,17 @@ export async function release(
   const branch = found.slot.lease?.branch ?? null
   const base = found.slot.baseSha
   const outcome = await returnSlot(ctx, found.pool, found.slot)
-  if (outcome === 'returned' && branch && base) await dropUnusedBranch(ctx, found.pool, branch, base)
+  if (options.dropUnusedBranch && outcome === 'returned' && branch && base) {
+    await dropUnusedBranch(ctx, found.pool, branch, base)
+  }
   return outcome === 'skipped' ? 'busy' : outcome
 }
 
 /**
- * A lease given back by the window that took it is one nobody worked in: a
- * New chat that held a worktree while the person typed, then had Worktree
- * turned off, moved to another project or closed. Its branch was made for the
- * lease and still points where the lease began, so it holds nothing; deleting
+ * A lease its window gives back as unused: a New chat that held a worktree
+ * while the person typed, then had Worktree turned off, moved to another
+ * project or closed. Its branch was made for the lease and still points where
+ * the lease began, so it holds nothing; deleting
  * it now rather than at the next cleanup sweep keeps a stray `agent/chat-…`
  * from showing in the branch list. A branch with a commit of its own is kept.
  */

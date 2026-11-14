@@ -3682,6 +3682,16 @@ export default function WorkspaceManager() {
   const newChatProjectOptions = useMemo(() => newChatProjectOptionsOf(workspaces), [workspaces])
   const selectNewChatProject = (path: string) => {
     setNewChatPanelState((prev) => (prev ? { ...prev, folderPath: path, folderLabel: newChatFolderLabel(path) } : prev))
+    rescopeOpenDraft(path)
+  }
+  // The parked draft is scoped to the project the person picks, not only the
+  // one the door opened on: the sidebar's Drafts row names it, and read "No
+  // project" beside a composer showing the chosen one. Only while the door is
+  // showing the draft (not a scheduled agent being edited, not an extension).
+  const rescopeOpenDraft = (path: string) => {
+    const open = newChatPanelState
+    if (!open || open.mode === 'extension' || open.editingScheduledAgentId || open.editingRemoteScheduledAgent) return
+    rescopeNewChatDraft(workspaceWindowId, path)
   }
   // "No project": main makes the root the chats without one live under, and
   // the door scopes to it. Each chat started there gets its own folder in it
@@ -3716,6 +3726,7 @@ export default function WorkspaceManager() {
     const dir = await window.api.openDir(defaultPath ? { defaultPath } : undefined)
     if (!dir) return
     setNewChatPanelState((prev) => (prev ? { ...prev, folderPath: dir, folderLabel: newChatFolderLabel(dir) } : prev))
+    rescopeOpenDraft(dir)
   }
   // The New-chat selector's Import-from-Git clone lives HERE, not in the
   // selector (remote-sessions-ux / project-selector-sources): a clone that

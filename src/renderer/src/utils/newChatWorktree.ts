@@ -256,7 +256,8 @@ async function giveBackUnusedWorktree(
 ): Promise<void> {
   if (!made.made) return
   try {
-    if (made.made.leaseId) await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId })
+    if (made.made.leaseId)
+      await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId, unused: true })
     else if (!hostId) await worktreesApi.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
   } catch {
     // Left for the sweep.

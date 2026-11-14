@@ -792,21 +792,6 @@ test('NewAgentPanel interaction', async () => {
       resetNewChatDraftsForTests()
     })
 
-    await check('a parked draft names the project the composer is on, not only the one it opened on', async () => {
-      seedStore()
-      const { readNewChatDraft, resetNewChatDraftsForTests } = await import('./newChatDraft')
-      resetNewChatDraftsForTests()
-      const view = await render({
-        draftKey: 'win-4',
-        folderPath: '/Users/dev/picked',
-        initialSelection: { kind: 'conversation' },
-      })
-      await typeInto(view, 'run nightly')
-      assert.equal(readNewChatDraft('win-4')?.folderPath, '/Users/dev/picked')
-      view.unmount()
-      resetNewChatDraftsForTests()
-    })
-
     await check('a parked draft keeps the worktree chip as it was left', async () => {
       seedStore()
       const { readNewChatDraft, resetNewChatDraftsForTests } = await import('./newChatDraft')
