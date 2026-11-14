@@ -250,7 +250,7 @@ export async function snapshot({ procRoot = '/proc', pidDir, keys, sampleMs = 50
 /**
  * The pids a suspended or closed session left behind: every process whose
  * command line carries `--session-id <id>`, and, while its shell still runs its
- * script, that shell and everything under it. `selfPid` (the helper) is never
+ * script, that shell and everything under it. `selfPid` (this server) is never
  * in the list.
  */
 export function survivorPids({ procRoot = '/proc', pidDir, cliSessionId, key, uid, selfPid }) {

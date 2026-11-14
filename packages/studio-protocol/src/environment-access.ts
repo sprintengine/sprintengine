@@ -2,6 +2,7 @@ import { studioParams, studioParamsRefused, type StudioMethodTable } from './con
 import {
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
+  STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY,
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
@@ -133,6 +134,24 @@ export type StudioLaunchTokenChange = { digest: string; identity: StudioLaunchId
 /** The most token changes one call carries: a desktop's live WSL terminal agents, with room. */
 export const MAX_LAUNCH_TOKEN_CHANGES = 256
 
+/** A launch file, by its path under the terminal launch directory, and its bytes. */
+export type StudioLaunchFile = { path: string; b64: string }
+
+/** What a WSL terminal's launch files may total in one call: a startup script and its host-context file. */
+export const MAX_LAUNCH_FILE_BYTES = 512 * 1024
+
+/** Why a session is still working, as the processes it left say (the idle reaper's reasons). */
+export type StudioSubtreeLiveReason = 'listening_port' | 'busy_cpu' | 'tool_shell'
+
+/** What is asked of a WSL terminal's processes inside the distribution. */
+export type StudioTerminalProcessesAsk =
+  /** Whether each session (by its pid file key) still works: a key absent from the answer is undetermined. */
+  | { op: 'snapshot'; keys: string[] }
+  /** End what a closed session left: its CLI by `--session-id`, and its shell's tree while it runs its script. */
+  | { op: 'kill'; cliSessionId: string; key: string }
+  /** End every session this desktop's profile launched there (the desktop quit, or one before it did not). */
+  | { op: 'endAll' }
+
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
   { ok: true; id: string; url: string; code: string | null; paste: boolean } | { ok: false; message: string }
@@ -184,6 +203,21 @@ export type StudioEnvironmentAccessMethodMap = {
     params: { tokens: StudioLaunchTokenChange[]; replace?: boolean }
     result: { held: number }
   }
+  /**
+   * Write (`write`, under the terminal launch directory, each file private) or
+   * remove (`remove`, by top-level name) a WSL terminal's launch files: its
+   * startup script, which holds the launch's secrets, and its host-context
+   * file. The desktop's shell alone asks: the terminal is its pty.
+   */
+  'environment.launchFiles': {
+    params: { write?: StudioLaunchFile[]; remove?: string[] }
+    result: { paths: string[] }
+  }
+  /** Read or end the processes the desktop's WSL terminals left. The desktop's shell alone asks. */
+  'environment.terminalProcesses': {
+    params: StudioTerminalProcessesAsk
+    result: { verdicts?: Record<string, StudioSubtreeLiveReason | null>; killed?: number[] }
+  }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
   'providers.signInStart': { params: { commandId: string; providerId: string }; result: StudioSignInStarted }
   /** Send the code the browser showed back to a sign-in that asked for one. */
@@ -213,6 +247,24 @@ const SIGNS_IN = 'It runs a CLI’s login on this machine and keeps its credenti
 const PROVES =
   'It says which agent a launch token proves, for the terminal agents the desktop that holds this Studio launched, so only that desktop asks.'
 const TOKEN_ID = /^[A-Za-z0-9_.:-]{1,200}$/u
+const LAUNCHES =
+  'It writes, reads and ends what the desktop that holds this Studio launched here in its own terminals, so only that desktop asks.'
+const LAUNCH_ENTRY = /^[A-Za-z0-9._-]{1,200}$/u
+const PID_KEY = /^[A-Za-z0-9._-]{1,200}$/u
+const terminalHost = {
+  scope: null,
+  mutation: false,
+  capability: STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY,
+  owner: LAUNCHES,
+  shell: LAUNCHES,
+} as const
+
+/** A launch file's path: plain segments under the launch directory, its first a plain name. */
+function launchPath(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 400 || value.includes('\\') || value.includes('\0')) return false
+  const segments = value.split('/')
+  return LAUNCH_ENTRY.test(segments[0]) && segments.every((part) => part !== '' && part !== '.' && part !== '..')
+}
 
 function launchIdentity(value: unknown): StudioLaunchIdentity | null | undefined {
   if (value === null) return null
@@ -364,6 +416,75 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
       if (value.replace !== undefined && typeof value.replace !== 'boolean')
         return studioParamsRefused('"replace" is true or false, when given.')
       return studioParams({ tokens, ...(value.replace === true ? { replace: true } : {}) })
+    },
+  },
+  'environment.launchFiles': {
+    ...terminalHost,
+    params: (value) => {
+      const write = value.write
+      const remove = value.remove
+      if (write === undefined && remove === undefined)
+        return studioParamsRefused('Say what to "write", what to "remove", or both.')
+      let bytes = 0
+      const files: StudioLaunchFile[] = []
+      if (write !== undefined) {
+        if (!Array.isArray(write) || write.length === 0 || write.length > 16)
+          return studioParamsRefused('"write" lists 1 to 16 { path, b64 }.')
+        for (const entry of write) {
+          const file = entry as Record<string, unknown> | null
+          if (!file || typeof file !== 'object' || !launchPath(file.path) || typeof file.b64 !== 'string')
+            return studioParamsRefused(
+              'Each file is { path, b64 }: a path of plain names under the launch directory, and its bytes in base64.',
+            )
+          bytes += file.b64.length
+          files.push({ path: file.path, b64: file.b64 })
+        }
+        if (bytes > (MAX_LAUNCH_FILE_BYTES * 4) / 3 + 64)
+          return studioParamsRefused(`A terminal's launch files total at most ${MAX_LAUNCH_FILE_BYTES} bytes.`)
+      }
+      if (
+        remove !== undefined &&
+        !(
+          Array.isArray(remove) &&
+          remove.length <= 64 &&
+          remove.every((name) => typeof name === 'string' && LAUNCH_ENTRY.test(name))
+        )
+      )
+        return studioParamsRefused('"remove" lists at most 64 plain names in the launch directory.')
+      return studioParams({
+        ...(files.length > 0 ? { write: files } : {}),
+        ...(remove !== undefined ? { remove: remove as string[] } : {}),
+      })
+    },
+  },
+  'environment.terminalProcesses': {
+    ...terminalHost,
+    params: (value) => {
+      if (value.op === 'endAll') return studioParams({ op: 'endAll' as const })
+      if (value.op === 'snapshot') {
+        const keys = value.keys
+        if (
+          !Array.isArray(keys) ||
+          keys.length > 256 ||
+          !keys.every((key) => typeof key === 'string' && PID_KEY.test(key))
+        )
+          return studioParamsRefused('"keys" lists at most 256 sessions\' pid file keys.')
+        return studioParams({ op: 'snapshot' as const, keys: keys as string[] })
+      }
+      if (value.op === 'kill') {
+        const cliSessionId = value.cliSessionId
+        const key = value.key
+        if (
+          typeof cliSessionId !== 'string' ||
+          (cliSessionId !== '' && !/^[A-Za-z0-9._:-]{1,128}$/u.test(cliSessionId))
+        )
+          return studioParamsRefused('"cliSessionId" is the CLI\'s session id, or empty.')
+        if (typeof key !== 'string' || (key !== '' && !PID_KEY.test(key)))
+          return studioParamsRefused('"key" is the session\'s pid file key, or empty.')
+        if (!cliSessionId && !key) return studioParamsRefused('Name the CLI session, the pid file key, or both.')
+        return studioParams({ op: 'kill' as const, cliSessionId, key })
+      }
+      return studioParamsRefused('"op" is snapshot, kill or endAll.')
     },
   },
   'providers.signInStart': {

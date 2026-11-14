@@ -1,4 +1,5 @@
 import type { Duplex } from 'node:stream'
+import type { DistributionTerminalHost } from '../../server/wsl/distribution-terminal-host'
 import type { ConversationPullRequests } from '../automation/conversation-pull-request-tools'
 
 import { toolError, toolSuccess } from '../../shared/modules/mcp-tools'
@@ -222,6 +223,8 @@ export type StudioRpcServiceOptions = {
   signIns?: () => Promise<SignIns>
   /** Records the desktop that holds this Studio hands over (`environment-adopt`): a server a desktop reaches over its front door. */
   adoption?: EnvironmentAdoption
+  /** What a WSL distribution does for the desktop's terminals (`environment-terminal-host`). */
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
   /** The launch tokens of the desktop's WSL terminal agents, by digest (`environment-launch-tokens`): a WSL distribution's Studio. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** What stopping this Studio would end (`environment-work`): a server a desktop reaches over its front door. */
@@ -499,6 +502,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.adoption ? { adoption: options.adoption } : {}),
       ...(options.work ? { work: options.work } : {}),
       ...(options.launchTokens ? { launchTokens: options.launchTokens } : {}),
+      ...(options.terminalHost ? { terminalHost: options.terminalHost } : {}),
       // The desktop that holds a WSL or SSH machine's Studio connects its
       // windows to this one's listener through its front door (`ws`), asking
       // for each connection's ticket here, over its own shell connection.

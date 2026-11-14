@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 
+import type { DistributionTerminalHost } from './wsl/distribution-terminal-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { resolveSocketPath } from '../main/automation/automation-service'
 import {
@@ -92,6 +93,8 @@ export type StudioServerOptions = {
    * terminal of their own. Not served when not said.
    */
   signIns?: () => Promise<SignIns>
+  /** A WSL distribution's Studio: what it does for the desktop's WSL terminals (`distribution-terminal-host.ts`). */
+  terminalHost?: DistributionTerminalHost
 }
 
 export type StudioServerReady = {
@@ -266,6 +269,7 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
+    ...(options.terminalHost ? { terminalHost: options.terminalHost } : {}),
   })
   // The chat surface over this core's chats (`session.*`): what a window that
   // follows and drives a chat here reaches it by, the desktop's window over

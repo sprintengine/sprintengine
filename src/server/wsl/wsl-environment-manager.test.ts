@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -41,6 +42,7 @@ import { lineTransport, readTicket } from './studio-door'
 import { relayShellToolsets } from './wsl-tool-relay'
 import { followRelayedAgentState } from './agent-state-relay'
 import { createWslLaunchTokens } from './wsl-launch-tokens'
+import { terminalHostOf } from './wsl-terminal-host-client'
 import { createWslEnvironmentAccess } from './wsl-environment-access'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
@@ -361,6 +363,24 @@ test("a WSL terminal agent reaches the distribution's own gateway, proven by the
   assert.match(String(taken?.error?.message), /already belongs to another agent/u, 'the live one was told again')
   after.close()
 }, 60_000)
+
+test("a WSL terminal's startup files are written by the distribution's server, privately, and its processes asked there", async () => {
+  const home = fakeHome('terminal-host')
+  const { manager: wsl } = manager({ homes: { Ubuntu: home } })
+  const connection = await wsl.connect('Ubuntu')
+  const { sessionDir, pidDir } = connection.terminals
+  assert.ok(sessionDir?.startsWith(`${home}/`), 'launch files live under the Linux home')
+  assert.ok(pidDir, 'and each shell records its pid in a directory of its own')
+  assert.ok(connection.terminals.resourcesDir.endsWith('/resources'), 'the hooks and the MCP bridge ship in its tree')
+  const host = terminalHostOf(connection)
+  const { paths } = await host.launchFiles({
+    write: [{ path: 'sid-a-1.sh', b64: Buffer.from("export T='x'\n").toString('base64') }],
+  })
+  assert.deepEqual(paths, [`${sessionDir}/sid-a-1.sh`])
+  assert.equal(statSync(paths[0]).mode & 0o777, 0o600)
+  assert.deepEqual((await host.processes({ op: 'endAll' })).killed, [])
+  assert.equal(existsSync(paths[0]), false, 'ending every session drops their launch files')
+}, 30_000)
 
 test("a WSL agent lists the editor, tours, terminals and agent launches, which in process are the Windows gateway's own", async () => {
   const home = fakeHome('own-tools')

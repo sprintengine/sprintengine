@@ -333,6 +333,70 @@ test("a WSL terminal agent's launch tokens are told to the distribution's Studio
   assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-launch-tokens'), false)
 })
 
+test("a WSL terminal's launch files and processes are the shell's alone to ask of the distribution's Studio", async () => {
+  const asked: unknown[] = []
+  const started = await startTestServer({
+    terminalHost: {
+      launchFiles: (params) => {
+        asked.push(params)
+        return { paths: (params.write ?? []).map((file) => `/home/dev/sessions/${file.path}`) }
+      },
+      processes: async (ask) => {
+        asked.push(ask)
+        return ask.op === 'snapshot' ? { verdicts: { 'sid-a-1': 'busy_cpu' } } : { killed: [7] }
+      },
+    },
+  })
+  cleanups.push(() => started.dispose())
+  const shell = await shellOf(started.server)
+  assert.ok((shell.welcome.capabilities as string[]).includes('environment-terminal-host'))
+  assert.deepEqual(
+    (await shell.request('environment.launchFiles', { write: [{ path: 'sid-a-1.sh', b64: 'eA==' }] })).result,
+    { paths: ['/home/dev/sessions/sid-a-1.sh'] },
+  )
+  assert.deepEqual(
+    (await shell.request('environment.terminalProcesses', { op: 'snapshot', keys: ['sid-a-1'] })).result,
+    {
+      verdicts: { 'sid-a-1': 'busy_cpu' },
+    },
+  )
+  assert.deepEqual(
+    (await shell.request('environment.terminalProcesses', { op: 'kill', cliSessionId: 'aaaa', key: 'sid-a-1' })).result,
+    { killed: [7] },
+  )
+  // Paths that leave the launch directory, and asks of no shape, are refused before they are served.
+  for (const params of [
+    { write: [{ path: '../../.bashrc', b64: '' }] },
+    { write: [{ path: '/etc/passwd', b64: '' }] },
+    { remove: ['a/b'] },
+    {},
+  ])
+    assert.equal(errorCode(await shell.request('environment.launchFiles', params)), 'invalid_params')
+  assert.equal(
+    errorCode(await shell.request('environment.terminalProcesses', { op: 'kill', cliSessionId: '', key: '' })),
+    'invalid_params',
+  )
+  assert.equal(
+    errorCode(await shell.request('environment.terminalProcesses', { op: 'snapshot', keys: ['$(rm -rf /)'] })),
+    'invalid_params',
+  )
+  const servedBefore = asked.length
+  // An owner's own client, not the shell: refused, as every shell method is.
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  assert.equal(errorCode(await owner.request('environment.terminalProcesses', { op: 'endAll' })), 'owner_required')
+  assert.equal(
+    errorCode(await owner.request('environment.launchFiles', { write: [{ path: 'x.sh', b64: '' }] })),
+    'owner_required',
+  )
+  assert.equal(asked.length, servedBefore, 'nothing refused reached the distribution')
+
+  // A Studio that runs no desktop's terminals does not offer them.
+  const plain = await startTestServer()
+  cleanups.push(() => plain.dispose())
+  const plainShell = await shellOf(plain.server)
+  assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-terminal-host'), false)
+})
+
 test('a hand-over is the shell’s alone, answered once per command id', async () => {
   const handed: unknown[] = []
   const started = await startTestServer({

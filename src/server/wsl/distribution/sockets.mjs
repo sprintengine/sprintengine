@@ -1,14 +1,14 @@
-// The helper's private runtime directory, where each session shell records
+// The private runtime directory where each WSL terminal's shell records
 // its pid:
 //
 //   <runtime>/sprintengine/<profile>/sessions/    each session shell's pid file
 //
 // <runtime> is `$XDG_RUNTIME_DIR` when it is a directory this user owns and no
 // one else can enter, else `/tmp/sprintengine-<uid>`. Every directory the
-// helper creates is 0700: only this user can enter it.
+// server creates is 0700: only this user can enter it.
 //
 // A directory someone else created first (a shared `/tmp`) is refused rather
-// than used: the helper would otherwise keep its pid files where another user
+// than used: the server would otherwise keep its pid files where another user
 // can replace them.
 
 import { lstatSync, mkdirSync } from 'node:fs'
@@ -43,7 +43,7 @@ export function ensurePrivateDir(path, uid) {
   return path
 }
 
-/** The base under which the helper's per-profile directory goes. */
+/** The base under which the per-profile directory goes. */
 export function runtimeBase({ env, uid }) {
   const xdg = env.XDG_RUNTIME_DIR
   if (xdg && xdg.startsWith('/') && ownedPrivateDir(xdg, uid)) return join(xdg, 'sprintengine')

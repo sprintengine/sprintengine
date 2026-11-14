@@ -102,6 +102,13 @@ export type WslServerConnection = {
    * the discovery file an agent's MCP bridge there reads.
    */
   dataDir: string
+  /**
+   * What a WSL terminal of this desktop's names inside the distribution: the
+   * server's Node, its resources (the hooks and the MCP bridge), the private
+   * directory launch files are written into and the one each shell records its
+   * pid in. The directories are null where the server could not make them.
+   */
+  terminals: { nodePath: string; resourcesDir: string; sessionDir: string | null; pidDir: string | null }
   /** A fresh, admitted connection for `purpose` (the shell role's Studio connection). */
   open(purpose: FrontDoorPurpose): Promise<Duplex>
 }
@@ -496,7 +503,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       },
       secrets: { kind: 'key-file' },
       flags: {},
-      wsl: { distro: handle.distro },
+      wsl: { distro: handle.distro, profile: deps.profile.id },
     }
   }
 
@@ -591,6 +598,12 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       environmentId: server.ready.environmentId,
       agentStateSocket: server.ready.frontDoor?.agentStateSocket ?? null,
       dataDir: wslServerPaths(server.boot.home, deps.profile).dataDir,
+      terminals: {
+        nodePath: server.boot.execPath,
+        resourcesDir: `${server.boot.appDir.replace(/\/+$/u, '')}/resources`,
+        sessionDir: server.ready.frontDoor?.sessionDir ?? null,
+        pidDir: server.ready.frontDoor?.pidDir ?? null,
+      },
       open: async (purpose) => (await openDoor(handle, purpose)).stream,
     }
     // Lost when the owner connection ends: closed, or a ping unanswered.

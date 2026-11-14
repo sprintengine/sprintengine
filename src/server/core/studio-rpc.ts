@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { basename, join } from 'node:path'
@@ -90,6 +91,8 @@ export function createStudioRpc(
     canvas?: StudioCanvasHost
     /** A CLI's login on this machine with no terminal; a Studio without it leaves `providers.signIn*` unserved. */
     signIns?: () => Promise<SignIns>
+    /** A WSL distribution's: what it does for the desktop's WSL terminals. */
+    terminalHost?: DistributionTerminalHost
   } = {},
 ): StudioRpcService {
   // The dev servers this machine publishes on the tailnet: Settings and the
@@ -109,6 +112,7 @@ export function createStudioRpc(
     // A WSL distribution's gateway knows the desktop's terminal agents that run
     // inside it by their launch tokens, which the desktop says by digest.
     ...(options.hostKind === 'wsl' ? { launchTokens: applyGatewayLaunchTokenChanges } : {}),
+    ...(options.hostKind === 'wsl' && options.terminalHost ? { terminalHost: options.terminalHost } : {}),
     // And says what stopping it would end, which that desktop asks before it
     // stops a WSL server for being idle and for its quit question.
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'

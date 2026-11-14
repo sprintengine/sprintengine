@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises'
+import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -415,6 +416,7 @@ export async function startTestServer(
     adoption?: EnvironmentAdoption
     work?: () => StudioEnvironmentWork
     launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
+    terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
@@ -476,6 +478,7 @@ export async function startTestServer(
     ...(input.adoption ? { adoption: input.adoption } : {}),
     ...(input.work ? { work: input.work } : {}),
     ...(input.launchTokens ? { launchTokens: input.launchTokens } : {}),
+    ...(input.terminalHost ? { terminalHost: input.terminalHost } : {}),
     ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),

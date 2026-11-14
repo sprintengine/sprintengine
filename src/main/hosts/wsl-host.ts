@@ -40,6 +40,10 @@ import { cliProbeRequest, detectResultFromHelper, type HelperProbeAnswer } from 
 import { splitSubcommand } from '../git-run'
 import type { RunOutcome } from '../process-run'
 import type { GatewayLaunchIdentity } from '../../server/core/gateway-launch-tokens'
+import type {
+  StudioLaunchFile,
+  StudioTerminalProcessesAsk,
+} from '../../../packages/studio-protocol/src/environment-access'
 import type { SubtreeLiveReason } from '../terminal-subtree-probe'
 import type {
   ExecutionHost,
@@ -140,6 +144,20 @@ export type WslDistributionLink = {
    */
   issueLaunchToken(distro: string, identity: GatewayLaunchIdentity): { token: string; sent: Promise<void> }
   revokeLaunchToken(distro: string, token: string): void
+  /**
+   * What the distribution's server does for this desktop's WSL terminals
+   * (`distribution-terminal-host.ts`): on the running server, or with `start`
+   * on one started for it. Null when it is not running and not to be started.
+   */
+  terminalHost(distro: string, options: { start: boolean }): Promise<WslTerminalHostClient | null>
+}
+
+/** The terminal host of a distribution's server, over this desktop's owner connection to it. */
+export type WslTerminalHostClient = {
+  launchFiles(params: { write?: StudioLaunchFile[]; remove?: string[] }): Promise<{ paths: string[] }>
+  processes(
+    ask: StudioTerminalProcessesAsk,
+  ): Promise<{ verdicts?: Record<string, SubtreeLiveReason | null>; killed?: number[] }>
 }
 
 /** What a launch needs to know of the distribution's server. */
@@ -148,6 +166,9 @@ export type WslDistributionFacts = {
   agentStateSocket: string | null
   /** Its data directory, where its gateway's discovery file is: what the MCP bridge there reads. */
   dataDir: string
+  /** Where it writes a launch's files and where each launch's shell records its pid; null where it could not. */
+  sessionDir: string | null
+  pidDir: string | null
 }
 
 export type WslHostDeps = {
@@ -181,6 +202,25 @@ const DETECT_TIMEOUT_MS = 60_000
 const HOME_TIMEOUT_MS = 45_000
 const MAX_PREPARE_ROUNDS = 4
 
+/** `work`'s answer, or a rejection once `ms` pass without one. */
+function withDeadline<T>(work: Promise<T> | undefined, ms: number): Promise<T | undefined> {
+  if (!work) return Promise.resolve(undefined)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('no answer in time')), ms)
+    timer.unref?.()
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      },
+    )
+  })
+}
+
 function failedRun(error: unknown): RunOutcome {
   return {
     code: 1,
@@ -192,10 +232,13 @@ function failedRun(error: unknown): RunOutcome {
 }
 
 /** The distribution's server as a launch is prepared against it. */
-type PreparedServer = { agentStateSocket: string; dataDir: string }
+type PreparedServer = { agentStateSocket: string; dataDir: string; sessionDir: string; pidDir: string }
 
 const sameServer = (a: PreparedServer, b: PreparedServer) =>
-  a.agentStateSocket === b.agentStateSocket && a.dataDir === b.dataDir
+  a.agentStateSocket === b.agentStateSocket &&
+  a.dataDir === b.dataDir &&
+  a.sessionDir === b.sessionDir &&
+  a.pidDir === b.pidDir
 
 function defaultPluginCopy(info: WslHelperInfo, server: PreparedServer): Promise<WslPluginCopy | null> {
   const env = wslHelperEnvironment()
@@ -364,14 +407,20 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
         },
       )
     }
-    const { agentStateSocket, dataDir } = await deps.distribution.connect(distro)
+    const { agentStateSocket, dataDir, sessionDir, pidDir } = await deps.distribution.connect(distro)
     if (!agentStateSocket) {
       throw new WslSetupError(
         `The Studio server in ${distro} could not open the socket its terminal agents report to, so a terminal agent there would not show what it is doing.`,
         { fatal: false, code: 'start' },
       )
     }
-    return { agentStateSocket, dataDir }
+    if (!sessionDir || !pidDir) {
+      throw new WslSetupError(
+        `The Studio server in ${distro} could not make the private directory a terminal's startup script is written to, so nothing can be started there.`,
+        { fatal: false, code: 'start' },
+      )
+    }
+    return { agentStateSocket, dataDir, sessionDir, pidDir }
   }
 
   function integration(): HostAgentIntegration | null {
@@ -418,12 +467,21 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   // files are written (and so its terminal started) only once it knows them.
   const tokensInFlight = new Set<Promise<void>>()
 
-  // A launch file's path as the helper takes it: relative to its session
-  // directory, which every launch file must be inside.
-  function sessionRelative(info: WslHelperInfo, hostPath: string): string | null {
-    const prefix = `${info.sessionDir}/`
+  // A launch file's path as the distribution's server takes it: relative to
+  // its launch directory, which every launch file must be inside.
+  function sessionRelative(sessionDir: string, hostPath: string): string | null {
+    const prefix = `${sessionDir}/`
     return hostPath.startsWith(prefix) && hostPath.length > prefix.length ? hostPath.slice(prefix.length) : null
   }
+
+  // The server a launch was prepared against, while that preparation stands.
+  const preparedServer = (): PreparedServer | null => {
+    const info = helper.info()
+    return info && prepared?.info === info ? prepared.server : null
+  }
+
+  const terminalHost = (start: boolean) =>
+    deps.distribution ? deps.distribution.terminalHost(distro, { start }) : Promise.resolve(null)
 
   return {
     id,
@@ -456,46 +514,48 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       }
     },
     prepare,
-    retainSession: (leaseId) => {
-      helper.retain(leaseId)
-      deps.distribution?.hold(distro, leaseId)
-    },
-    releaseSession: (leaseId) => {
-      helper.release(leaseId)
-      deps.distribution?.release(distro, leaseId)
-    },
+    retainSession: (leaseId) => deps.distribution?.hold(distro, leaseId),
+    releaseSession: (leaseId) => deps.distribution?.release(distro, leaseId),
     agentIntegration: integration,
     launchTarget() {
       const own = settings()
-      const info = helper.info()
+      const server = preparedServer()
       return {
         kind: 'wsl',
         distro,
         env: own?.env ?? {},
         ...(own?.shell ? { shell: own.shell } : {}),
         integration: integration(),
-        ...(info ? { sessionDir: info.sessionDir, pidDir: info.pidDir } : {}),
+        ...(server ? { sessionDir: server.sessionDir, pidDir: server.pidDir } : {}),
       }
     },
     async writeLaunchFiles(files) {
       await Promise.all([...tokensInFlight])
       if (files.length === 0) return
-      const info = helper.info() ?? (await helper.start())
-      const relative = files.map((file) => {
-        const path = sessionRelative(info, file.path)
-        if (!path) throw new Error(`${file.path} is not inside the WSL helper's launch directory.`)
+      const server = preparedServer()
+      const host = await terminalHost(true)
+      if (!server || !host) throw new Error(`The Studio server in ${distro} is not ready for a terminal.`)
+      const write = files.map((file) => {
+        const path = sessionRelative(server.sessionDir, file.path)
+        if (!path) throw new Error(`${file.path} is not inside the launch directory in ${distro}.`)
         return { path, b64: Buffer.from(file.content, 'utf8').toString('base64') }
       })
-      await helper.request('session.write', { files: relative })
+      await host.launchFiles({ write })
     },
     discardLaunchFiles(paths) {
-      const info = helper.info()
-      if (!info) return
+      const server = preparedServer()
+      if (!server) return
       // Top-level entries only: a Cursor host-context plugin is a directory.
       const names = [
-        ...new Set(paths.flatMap((path) => (path ? [sessionRelative(info, path)?.split('/')[0] ?? ''] : []))),
+        ...new Set(
+          paths.flatMap((path) => (path ? [sessionRelative(server.sessionDir, path)?.split('/')[0] ?? ''] : [])),
+        ),
       ].filter(Boolean)
-      if (names.length > 0) void helper.requestIfRunning('session.remove', { names }).catch(() => undefined)
+      // Never starts the server: one that is not running holds nothing to tidy.
+      if (names.length > 0)
+        void terminalHost(false)
+          .then((host) => host?.launchFiles({ remove: names }))
+          .catch(() => undefined)
     },
     issueChannelToken(identity) {
       // A launch with no agent identity has nothing for a token to prove.
@@ -533,14 +593,17 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       })
       if (keyed.length === 0) return result
       try {
-        const answer = await helper.request<{ verdicts: Record<string, SubtreeLiveReason | null> }>(
-          'proc.snapshot',
-          { keys: keyed.map((entry) => entry.key) },
-          { timeoutMs: SNAPSHOT_TIMEOUT_MS },
+        // A session runs only while its server is held up, so a server that is
+        // not running is not started to be asked: every session is undetermined.
+        const host = await terminalHost(false)
+        const answer = await withDeadline(
+          host?.processes({ op: 'snapshot', keys: keyed.map((entry) => entry.key) }),
+          SNAPSHOT_TIMEOUT_MS,
         )
+        const verdicts = answer?.verdicts ?? {}
         for (const entry of keyed) {
-          if (Object.prototype.hasOwnProperty.call(answer.verdicts, entry.key)) {
-            result.set(entry.sessionId, answer.verdicts[entry.key] ?? null)
+          if (Object.prototype.hasOwnProperty.call(verdicts, entry.key)) {
+            result.set(entry.sessionId, verdicts[entry.key] ?? null)
           }
         }
       } catch {
@@ -551,20 +614,22 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     async killSessionSurvivors(cliSessionId, ref) {
       const key = wslSessionPidKey(ref?.startupScriptPath)
       if (!cliSessionId && !key) return []
-      const params = { cliSessionId, key: key ?? '' }
+      const ask = { op: 'kill' as const, cliSessionId, key: key ?? '' }
       if (ref?.quitting) {
         // The app is quitting: the ptys were ended and waited on already, so
-        // there is no grace to give, and a helper that is not running is not
-        // started for this (its `shutdown` ends every session anyway).
-        const answer = await helper.requestIfRunning<{ killed: number[] }>('proc.killSession', params).catch(() => null)
+        // there is no grace to give, and a server that is not running is not
+        // started for this.
+        const host = await terminalHost(false).catch(() => null)
+        const answer = await host?.processes(ask).catch(() => null)
         return Array.isArray(answer?.killed) ? answer.killed : []
       }
       // The pty kill reaches the shell first; what is still there after a
       // moment is what would otherwise run on inside the VM.
       if (survivorDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, survivorDelayMs))
       try {
-        const answer = await helper.request<{ killed: number[] }>('proc.killSession', params)
-        return Array.isArray(answer.killed) ? answer.killed : []
+        const host = await terminalHost(true)
+        const answer = await host?.processes(ask)
+        return Array.isArray(answer?.killed) ? answer.killed : []
       } catch {
         return []
       }

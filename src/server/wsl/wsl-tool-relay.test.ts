@@ -67,6 +67,7 @@ test("a WSL agent's call runs through the Windows side's registry as that agent'
     driveMountRoot: '/mnt/',
     agentStateSocket: null,
     dataDir: '/home/dev/.local/share/sprintengine-studio/data',
+    terminals: { nodePath: '/usr/bin/node', resourcesDir: '/srv/studio/resources', sessionDir: null, pidDir: null },
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -147,6 +148,7 @@ async function relayed(shell: ReturnType<typeof definition>[], own: McpToolRegis
     driveMountRoot: '/mnt/',
     agentStateSocket: null,
     dataDir: '/home/dev/.local/share/sprintengine-studio/data',
+    terminals: { nodePath: '/usr/bin/node', resourcesDir: '/srv/studio/resources', sessionDir: null, pidDir: null },
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -342,6 +344,7 @@ test('a toolset is offered with each tool name once, and offered again when its 
     driveMountRoot: '/mnt/',
     agentStateSocket: null,
     dataDir: '/home/dev/.local/share/sprintengine-studio/data',
+    terminals: { nodePath: '/usr/bin/node', resourcesDir: '/srv/studio/resources', sessionDir: null, pidDir: null },
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -384,6 +387,7 @@ test('a tools stream that closes while the server stays up is opened again, and 
     driveMountRoot: '/mnt/',
     agentStateSocket: null,
     dataDir: '/home/dev/.local/share/sprintengine-studio/data',
+    terminals: { nodePath: '/usr/bin/node', resourcesDir: '/srv/studio/resources', sessionDir: null, pidDir: null },
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })
@@ -438,6 +442,7 @@ test('a tools stream that fails to open is tried again while the server is up, a
     driveMountRoot: '/mnt/',
     agentStateSocket: null,
     dataDir: '/home/dev/.local/share/sprintengine-studio/data',
+    terminals: { nodePath: '/usr/bin/node', resourcesDir: '/srv/studio/resources', sessionDir: null, pidDir: null },
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
   })

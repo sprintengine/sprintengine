@@ -207,6 +207,14 @@ export const STUDIO_ENVIRONMENT_ADOPT_CAPABILITY = 'environment-adopt' as const
 export const STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY = 'environment-launch-tokens' as const
 
 /**
+ * `environment.launchFiles` and `environment.terminalProcesses`
+ * (`environment-access.ts`): a WSL terminal's startup files written inside the
+ * distribution, and the processes its sessions leave, read and ended there,
+ * for the desktop whose `wsl.exe` ptys they are.
+ */
+export const STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY = 'environment-terminal-host' as const
+
+/**
  * `providers.signInStart`, `.signInPaste`, `.signInWait` and `.signInCancel`
  * (`environment-access.ts`): a CLI's own login on this Studio's machine, with
  * no terminal (decision R34). Served where the machine has no terminal of the
@@ -396,6 +404,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
+  STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,

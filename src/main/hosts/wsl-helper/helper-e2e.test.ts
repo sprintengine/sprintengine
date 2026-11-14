@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -44,7 +44,6 @@ beforeAll(async () => {
         env: {
           PATH: process.env.PATH,
           HOME: join(temp, 'home'),
-          SPRINTENGINE_HELPER_SOCKET_BASE: join(temp, 'rt'),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       }),
@@ -73,36 +72,11 @@ async function waitFor<T>(read: () => T | undefined, ms = 5_000): Promise<T> {
   }
 }
 
-test('the handshake gives main the helper paths, its runtime directory private', async () => {
+test('the handshake gives main the helper paths', async () => {
   const info = await client.start()
   assert.equal(client.state(), 'ready')
-  assert.equal(info.pidDir, join(temp, 'rt', 'abc123def456', 'sessions'))
-  assert.equal(statSync(join(temp, 'rt', 'abc123def456')).mode & 0o777, 0o700)
   assert.equal(info.nodePath, process.execPath)
   assert.equal(await client.start(), info, 'a second start reuses the running helper')
-})
-
-test("a launch's files are written inside the Linux home, private, and removed by name", async () => {
-  const info = await client.start()
-  assert.equal(
-    info.sessionDir,
-    join(temp, 'home', '.local', 'share', 'sprintengine-studio', 'sessions', 'abc123def456'),
-  )
-  assert.equal(statSync(info.sessionDir).mode & 0o777, 0o700)
-  assert.ok(info.pidDir.startsWith(join(temp, 'rt', 'abc123def456')), 'the pid files sit beside the sockets')
-  assert.equal(statSync(info.pidDir).mode & 0o777, 0o700)
-  await client.request('session.write', {
-    files: [{ path: 'sid-9-1.sh', b64: Buffer.from("export T='x'\n").toString('base64') }],
-  })
-  const script = join(info.sessionDir, 'sid-9-1.sh')
-  assert.equal(readFileSync(script, 'utf8'), "export T='x'\n")
-  assert.equal(statSync(script).mode & 0o777, 0o600)
-  await assert.rejects(
-    client.request('session.write', { files: [{ path: '../../.bashrc', b64: '' }] }),
-    /Refusing the launch file path/u,
-  )
-  await client.request('session.remove', { names: ['sid-9-1.sh'] })
-  assert.equal(existsSync(script), false)
 })
 
 test('git through the helper takes stdin: a hunk applied to the index, and paths checked against ignores', async () => {
@@ -169,7 +143,7 @@ test('a directory the helper watches reports its changes to main, and stops when
   missing.close()
 })
 
-test('main asks the helper to run argv and git, and to read processes', async () => {
+test('main asks the helper to run argv and git', async () => {
   const echoed = await client.request<{ code: number; stdout: string }>('run', {
     argv: ['sh', '-c', 'printf "%s" "$1"', 'sh', "a 'quoted' $arg"],
     timeoutMs: 5_000,
@@ -189,9 +163,6 @@ test('main asks the helper to run argv and git, and to read processes', async ()
     })
     assert.equal(top.stdout.trim(), 'true')
   }
-  // No /proc here: every session is undetermined, never "safe to reap".
-  const snapshot = await client.request<{ verdicts: Record<string, unknown> }>('proc.snapshot', { keys: ['sid-a-1'] })
-  if (!existsSync('/proc/self')) assert.deepEqual(snapshot.verdicts, {})
 })
 
 test('shutdown ends the helper', async () => {

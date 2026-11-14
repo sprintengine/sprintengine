@@ -155,27 +155,11 @@ test('the hello goes out only after the helper booted, and carries the protocol,
     protocol: WSL_HELPER_PROTOCOL,
     appVersion: '0.4.0',
     profile: 'abc123def456',
-    // The first helper this main starts ends what an earlier main left running.
-    endOrphans: true,
   })
   assert.equal(client.state(), 'ready')
   await client.shutdown()
   const shutdown = fake.written.map((line) => JSON.parse(line) as Frame).find((frame) => frame.t === 'shutdown')
-  assert.deepEqual(shutdown, { t: 'shutdown', endSessions: true }, "the app's own shutdown ends its sessions there")
-})
-
-test('only the first helper a main starts ends orphans, and an idle stop leaves sessions alone', async () => {
-  const h = harness([healthy(), healthy()], { idleMs: 10 })
-  const client = createWslHelperClient(h.deps)
-  await client.start()
-  await new Promise((resolve) => setTimeout(resolve, 60))
-  assert.equal(client.state(), 'stopped', 'stopped once idle')
-  const idleStop = h.spawned[0].written.map((line) => JSON.parse(line) as Frame).find((frame) => frame.t === 'shutdown')
-  assert.deepEqual(idleStop, { t: 'shutdown', endSessions: false })
-  await client.start()
-  const hello = JSON.parse(h.spawned[1].written[0]) as Frame
-  assert.equal(hello.endOrphans, false, 'a later helper never ends what this main is running')
-  await client.shutdown()
+  assert.deepEqual(shutdown, { t: 'shutdown' })
 })
 
 test('a request made while the helper is stopped waits for it to start, and concurrent starts share one', async () => {
@@ -286,19 +270,11 @@ test('a Node that cannot run drops its marker so the next start installs it agai
   assert.deepEqual(h.unready, [{ node: true, app: false }])
 })
 
-test('the helper stops a while after the last session and request, and not before', async () => {
+test('the helper stops a while after its last request, and not before', async () => {
   const h = harness([healthy({ ping: () => ({}) })], { idleMs: 30 })
   const client = createWslHelperClient(h.deps)
   await client.start()
-  client.retain('sid-1#1')
-  client.retain('sid-2#2')
-  await new Promise((resolve) => setTimeout(resolve, 60))
-  assert.equal(client.state(), 'ready', 'held while a session lives')
-  client.release('sid-1#1')
-  client.release('sid-1#1')
-  await new Promise((resolve) => setTimeout(resolve, 60))
-  assert.equal(client.state(), 'ready', 'a double release does not drop the other hold')
-  client.release('sid-2#2')
+  await client.request('ping')
   await new Promise((resolve) => setTimeout(resolve, 100))
   assert.equal(client.state(), 'stopped')
   const fake = h.spawned[0]
@@ -328,19 +304,6 @@ test('a helper that dies is started again on the next need, after a backoff that
   await new Promise((resolve) => setImmediate(resolve))
   await client.request('ping')
   assert.deepEqual(h.sleeps, [1_000, 2_000])
-  await client.shutdown()
-})
-
-test('a helper that dies while sessions still run there is started again without being asked', async () => {
-  const h = harness([healthy()], { now: () => 5_000 })
-  const client = createWslHelperClient(h.deps)
-  await client.start()
-  client.retain('sid-1#1')
-  h.spawned[0].close(1)
-  await new Promise((resolve) => setTimeout(resolve, 1_300))
-  assert.equal(h.spawned.length, 2, 'restarted after the backoff, so live hooks find the sockets again')
-  assert.equal(client.state(), 'ready')
-  client.release('sid-1#1')
   await client.shutdown()
 })
 

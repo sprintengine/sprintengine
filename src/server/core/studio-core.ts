@@ -100,6 +100,7 @@ import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/w
 import type { WslServers } from '../wsl/desktop-wsl-servers'
 import { followRelayedAgentState } from '../wsl/agent-state-relay'
 import { createWslLaunchTokens } from '../wsl/wsl-launch-tokens'
+import { createWslTerminalSessions, terminalHostOf, type WslTerminalSessions } from '../wsl/wsl-terminal-host-client'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
@@ -298,7 +299,18 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         const servers = wslServersForHosts
         if (!servers) throw noWslServers(distro)
         const connection = await servers.manager.connect(distro)
-        return { agentStateSocket: connection.agentStateSocket, dataDir: connection.dataDir }
+        return {
+          agentStateSocket: connection.agentStateSocket,
+          dataDir: connection.dataDir,
+          sessionDir: connection.terminals.sessionDir,
+          pidDir: connection.terminals.pidDir,
+        }
+      },
+      terminalHost: async (distro, { start }) => {
+        const servers = wslServersForHosts
+        if (!servers) return null
+        const connection = start ? await servers.manager.connect(distro) : servers.manager.current(distro)
+        return connection ? terminalHostOf(connection) : null
       },
       hold: (distro, key) => wslServersForHosts?.manager.hold(distro, key),
       release: (distro, key) => wslServersForHosts?.manager.release(distro, key),
@@ -361,12 +373,20 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     process.platform === 'win32' && options.wslServers
       ? options.wslServers({ readHostSettings: () => agentLaunchSettings.get().hosts })
       : null
+  const wslTerminalSessions: WslTerminalSessions | null = wslServers
+    ? createWslTerminalSessions(wslServers.manager, (message) => {
+        void writeDiagnosticLog({ level: 'info', source: 'terminal', title: 'WSL terminal agents', message })
+      })
+    : null
   if (wslServers) {
     wslServersForHosts = wslServers
     // Settings › Machines reads the server's state with the machine list.
     wslServers.onStatus(() => hosts.notifyChanged())
     // A new connection may have missed a revoke: it is told every live token.
     wslServers.onConnected((connection) => wslLaunchTokens.connected(connection.distro, connection))
+    // The run's first connection to a distribution ends what an earlier run's
+    // WSL terminals left running there.
+    wslServers.onConnected((connection) => wslTerminalSessions?.connected(connection))
   }
   const environmentClients = combineEnvironmentClients(
     wslServers
@@ -492,10 +512,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       conversationRuntime.onSessionIdle(listener),
     flushTranscripts: () => conversationRuntime.flushTranscripts(),
     // Each WSL server drains its own chats, within the quit's ten seconds,
-    // beside this process's.
+    // beside this process's, once it has ended what this desktop's WSL
+    // terminals left there (ending `wsl.exe` does not reach Linux processes).
     shutdown: async () => {
       await Promise.all([
-        wslServers?.manager.shutdown({ budgetMs: 10_000 }).catch(() => undefined),
+        (wslTerminalSessions?.endAll(2_000) ?? Promise.resolve())
+          .then(() => wslServers?.manager.shutdown({ budgetMs: 8_000 }))
+          .catch(() => undefined),
         wslServers?.access.close().catch(() => undefined),
         conversationRuntime.shutdown(),
       ])
