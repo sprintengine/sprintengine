@@ -224,4 +224,3 @@ export function isPathInside(path: string, parent: string): boolean {
 export function isWslDriveMountPath(path: string): boolean {
   return WSL_DRIVE_MOUNT.test(forwardSlashes(path))
 }
-

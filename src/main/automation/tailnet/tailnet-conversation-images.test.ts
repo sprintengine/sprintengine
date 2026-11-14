@@ -37,4 +37,3 @@ test('only a generated picture or a read of a picture names a file', () => {
   assert.equal(conversationImagePathOf({ name: 'GenerateImage', kind: 'other', input: {} }), null)
   assert.equal(conversationImagePathOf({ name: 'GenerateImage', kind: 'other', input: 'not an object' }), null)
 })
-
