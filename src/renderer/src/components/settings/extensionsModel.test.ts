@@ -88,7 +88,9 @@ test('a module built for another host API says which way, in words', () => {
   // It says what to do about it: update it, where the guide is, and that an agent can do it.
   const said = problemText(moduleProblem(older, undefined)!)
   expect(said).toMatch(/^Built for an older version of Studio\. It needs updating to host API 2/)
-  expect(said).toContain('docs/module-authors/drop-in-extensions.md')
+  // Named as a reader finds it, not by a path in Studio's own repository.
+  expect(said).toContain('“Host API version” section of the extension SDK’s README (@sprintengine/module-sdk)')
+  expect(said).not.toMatch(/docs\//)
   expect(said).toContain('ask an agent to update it')
 })
 

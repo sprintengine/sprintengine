@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
 import { allowsMultipleInstances, claimAppInstance, configureDevUserData } from './app-instance'
@@ -10,13 +11,16 @@ afterEach(() => {
 })
 
 function fakeApp(options: { isPackaged?: boolean; lock?: boolean } = {}) {
-  const calls = { setPath: [] as Array<[string, string]>, locks: 0 }
+  const calls = { setPath: [] as Array<[string, string]>, logs: [] as string[], locks: 0 }
   return {
     calls,
     app: {
       isPackaged: options.isPackaged ?? false,
       setPath: (name: string, value: string) => {
         calls.setPath.push([name, value])
+      },
+      setAppLogsPath: (value: string) => {
+        calls.logs.push(value)
       },
       requestSingleInstanceLock: () => {
         calls.locks += 1
@@ -31,10 +35,13 @@ test('a dev build pinned to a profile moves there, a packaged build never does',
   const dev = fakeApp()
   configureDevUserData(dev.app as never)
   assert.deepEqual(dev.calls.setPath, [['userData', '/Users/dev/profiles/one']])
+  // Its logs go with it, not into the real home's shared logs folder.
+  assert.deepEqual(dev.calls.logs, [join('/Users/dev/profiles/one', 'logs')])
 
   const packaged = fakeApp({ isPackaged: true })
   configureDevUserData(packaged.app as never)
   assert.deepEqual(packaged.calls.setPath, [])
+  assert.deepEqual(packaged.calls.logs, [])
 
   delete process.env.SPRINTENGINE_USER_DATA_DIR
   const unpinned = fakeApp()
