@@ -682,8 +682,10 @@ test('a server with nothing to do is stopped once it has been idle', async () =>
 test("a WSL terminal holds its server: its agent's reports reach this PC through it, it is not stopped for being idle, and a crash starts it again", async () => {
   const home = fakeHome('held')
   const lines: string[] = []
+  const statuses: WslServerStatus[] = []
   const { manager: wsl } = manager({
     homes: { Ubuntu: home },
+    statuses,
     idleMs: 500,
     connected: (connection) =>
       void followRelayedAgentState(
@@ -713,9 +715,17 @@ test("a WSL terminal holds its server: its agent's reports reach this PC through
   await new Promise((resolve) => setTimeout(resolve, 1_500))
   assert.equal(wsl.status('Ubuntu').state, 'ready')
   // A crash while held: started again after the backoff, with no message sent.
+  // Read from the statuses it went through, not by polling the current one,
+  // so a loaded runner that polls late still sees the crash it reported.
+  const beforeCrash = statuses.length
+  const since = () => statuses.slice(beforeCrash).map((status) => status.state)
   process.kill(readServerPid(home), 'SIGKILL')
-  await waitFor(() => wsl.status('Ubuntu').state === 'unavailable')
-  await waitFor(() => wsl.status('Ubuntu').state === 'ready', 20_000)
+  await waitFor(() => since().includes('unavailable'), 20_000).catch(() =>
+    assert.fail(`the crash was never reported: ${since().join(', ') || 'no status since'}`),
+  )
+  await waitFor(() => since().slice(since().indexOf('unavailable')).includes('ready'), 30_000).catch(() =>
+    assert.fail(`the held server was not started again: ${since().join(', ')}`),
+  )
   // Let go: idle again, and stopped.
   wsl.release('Ubuntu', 'sid-1')
   await waitFor(() => wsl.status('Ubuntu').state === 'stopped', 10_000)
