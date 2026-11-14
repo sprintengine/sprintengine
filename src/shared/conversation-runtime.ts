@@ -204,6 +204,13 @@ export type ConversationPlanDocumentInput = ConversationKey & {
  * the runtime sends what it is given, and a message held for a turn's end is
  * held by whoever holds it (the view, or the lane's host).
  */
+/**
+ * What a runtime holds of a session's command id: a receipt (or the command
+ * running now), none, or no such session to ask of (its server restarted, or
+ * the chat started another).
+ */
+export type ConversationCommandReceiptState = 'kept' | 'none' | 'no_session'
+
 export type ConversationSendTurnInput = Omit<ConversationSendRequest<ConversationImageAttachment>, 'queue'> & {
   sessionId: string
   commandId?: string

@@ -52,7 +52,7 @@ export function connectChatOverStudio(service: ConversationService): StudioChatW
   const chat = createStudioChatBackend({
     conversation: service,
     readableRoots: () => ['/'],
-    hasReceipt: async () => false,
+    commandReceipt: async () => 'none',
     commands: notServed,
   })
   const server = createStudioRpcServer({

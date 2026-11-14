@@ -116,7 +116,8 @@ function receiptsKeeper() {
       kept.set(key, { fingerprint: commandFingerprint, result })
       return result
     },
-    has: async (sessionId: string, commandId: string) => kept.has(keyOf(sessionId, commandId)),
+    receipt: async (sessionId: string, commandId: string) =>
+      kept.has(keyOf(sessionId, commandId)) ? ('kept' as const) : ('none' as const),
   }
 }
 
@@ -214,7 +215,7 @@ function chatOver(api: Api) {
       onEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
       onLifecycleEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
     },
-    hasReceipt: receipts.has,
+    commandReceipt: receipts.receipt,
     // The chat suites name files on a stubbed disk; nothing here is confined but by the stubs.
     readableRoots: () => ['/'],
     commands: (input) => call(api, 'conversationCommands', input),

@@ -360,6 +360,15 @@ export type ConversationGatewayHost = {
     fingerprint?: string,
     carried?: ConversationHeldSend,
   ): Promise<ConversationGatewayCommandResult>
+  /**
+   * Whether a device's send under `commandId` was carried out before: held
+   * here as a queued message, or in the chat's log by its receipt (or being
+   * carried out now), whatever has restarted since. A repeat of it is
+   * answered from that, so a caller that would stage its pictures and files
+   * again (long gone, after a restart) asks this first, and sends the repeat
+   * without them rather than refusing it into a second turn.
+   */
+  sentBefore(key: ConversationKey, deviceId: string, commandId: string): Promise<boolean>
 }
 
 /**
@@ -1888,6 +1897,10 @@ export function createConversationGatewayHost(
             registry.checkoutChanges!.file({ workspaceId: key.workspaceId, agentId: key.agentId }, selection, path),
         }
       : {}),
+    async sentBefore(key, deviceId, commandId) {
+      if (registry.heldMessages?.heldBefore?.(JSON.stringify([deviceId, commandId]))) return true
+      return runtime.hasChatCommandReceipt(key, commandId)
+    },
     command(key, deviceId, commandId, command, fingerprint, carried) {
       if (command.kind === 'setModel') return setModel(key, commandId, command.modelId, fingerprint)
       if (command.kind === 'fork') return fork(key, deviceId, commandId, command)

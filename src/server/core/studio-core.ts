@@ -47,7 +47,13 @@ import {
 import { TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 import { WEB_UPLOADS_DIRNAME } from '../web/web-uploads'
 import { attachmentImagesRoot } from '../../main/attachment-image-file'
-import { createConversationLaunchService } from '../../main/conversation-launch-service'
+import { createConversationLaunchService, SUBAGENT_TASK_ORIGIN } from '../../main/conversation-launch-service'
+import {
+  createPendingFirstMessages,
+  FIRST_MESSAGE_CLIENT_ID,
+  FIRST_MESSAGES_FILENAME,
+  recoverFirstMessages,
+} from '../../main/conversation-first-messages'
 import { createSubagentLifecycle, subagentChangesOf } from '../../main/subagent-lifecycle'
 import { createConversationCheckoutChanges } from '../../main/conversation-checkout-changes'
 import { createConversationImportService } from '../../main/conversation-import/conversation-import-service'
@@ -649,7 +655,14 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // machine's New chat, `conversation.create`, a module). The record goes
   // through the sequenced bus like any agent the core registers, so every
   // client hears about the chat the moment it exists.
+  // A launched chat's first message, written down until it is answered, and
+  // sent at the next start when a stop cut it off (conversation-first-messages.ts).
+  const firstMessages = createPendingFirstMessages({
+    filePath: join(dataDir, FIRST_MESSAGES_FILENAME),
+    warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
+  })
   const conversationLaunchService = createConversationLaunchService({
+    firstMessages,
     getWorkspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
     getLaunchSettings: () => agentLaunchSettings.get(),
     writeAgent: (workspaceId, agentId, agent) =>
@@ -1269,6 +1282,33 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     },
   })
   void scheduledMessages.start()
+
+  // The first messages of chats a launch made that the last stop cut off,
+  // sent now through each chat's ordinary send under the id they were meant
+  // to go under: one that went before the stop is answered from the chat's
+  // receipt and runs no second turn.
+  void recoverFirstMessages({
+    store: firstMessages,
+    findChat: (launchCommandId) => {
+      for (const record of workspaceRegistry.getRecords())
+        for (const [agentId, agent] of Object.entries(record.agents ?? {}))
+          if (agent?.launchCommandId === launchCommandId) return { workspaceId: record.id, agentId }
+      return null
+    },
+    send: async (chat, commandId, message) => {
+      const host = createConversationHost(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {})
+      const key = host.resolveKey(chat.workspaceId, chat.agentId)
+      if (!key) return { ok: false, message: 'The chat is no longer there.' }
+      const sent = await host.command(key, FIRST_MESSAGE_CLIENT_ID, commandId, {
+        kind: 'send',
+        message: message.message,
+        ...(message.skills?.length ? { skills: message.skills } : {}),
+        ...(message.mode ? { mode: message.mode } : {}),
+      })
+      return sent.ok ? { ok: true } : { ok: false, message: sent.message ?? 'The chat did not take it.' }
+    },
+    warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
+  }).catch(() => undefined)
   const stopFollowingScheduledMessages = [
     powerActivity.onResume(() => scheduledMessages.wake()),
     powerActivity.onScreenLockChange((locked) => {
