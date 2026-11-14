@@ -30,7 +30,7 @@ import {
 function askSchedules<T>(
   machine: PairedMachine | EnvironmentTarget,
   work: (client: StudioClient) => Promise<T>,
-  timeoutMs?: number,
+  options: { timeoutMs?: number; change?: boolean } = {},
 ): Promise<EnvironmentAnswer<T>> {
   return askEnvironment(
     'route' in machine ? machine : pairedTarget(machine),
@@ -40,9 +40,36 @@ function askSchedules<T>(
       message: `${machineName} cannot take schedules from here yet. Update SprintEngine Studio there to use its schedules from here.`,
     }),
     work,
-    timeoutMs === undefined ? {} : { timeoutMs },
+    {
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      // A change goes now or not at all: one the client held for the
+      // machine's return would be carried out there after this window had
+      // said it was not, and the person, told it failed, makes it again.
+      ...(options.change ? { onlyWhenConnected: true } : {}),
+    },
   )
 }
+
+/**
+ * A change that did not go, in words that say what became of it: refused
+ * with the machine away, nothing was made there; one that went and was not
+ * answered in time may still be carried out there, and a retry under the
+ * same command id makes it once.
+ */
+function changeRefusal<T>(answer: EnvironmentAnswer<T>, machineName: string, done: string): EnvironmentAnswer<T> {
+  if (answer.ok || answer.code !== 'unavailable') return answer
+  return /did not answer in time/u.test(answer.message)
+    ? {
+        ...answer,
+        message: `${machineName} did not answer in time. It may still be ${done} there once it answers; trying again does not do it twice.`,
+      }
+    : {
+        ...answer,
+        message: `${machineName} is not connected, so nothing was ${done} there. Try again once it is back.`,
+      }
+}
+
+const nameOf = (machine: PairedMachine | EnvironmentTarget) => ('route' in machine ? machine.name : machine.machineName)
 
 /**
  * That machine's scheduled agents, and whether it takes a schedule from here:
@@ -67,20 +94,56 @@ export async function pairedScheduledAgentAction(
   if (!SCHEDULED_AGENT_ACTIONS.has(action))
     return { ok: false, code: 'invalid_arguments', message: 'Run, pause, resume or delete it.' }
   const commandId = environmentCommandId()
-  const answer = await askSchedules<unknown>(
-    machine,
-    (client) =>
-      action === 'run'
-        ? client.rpc['schedules.runNow']({ id, commandId })
-        : action === 'pause'
-          ? client.rpc['schedules.pause']({ id, commandId })
-          : action === 'resume'
-            ? client.rpc['schedules.resume']({ id, commandId })
-            : client.rpc['schedules.delete']({ id, commandId }),
-    // A run waits on the chat starting over there, a CLI and all.
-    action === 'run' ? 60_000 : undefined,
+  const answer = changeRefusal(
+    await askSchedules<unknown>(
+      machine,
+      (client) =>
+        action === 'run'
+          ? client.rpc['schedules.runNow']({ id, commandId })
+          : action === 'pause'
+            ? client.rpc['schedules.pause']({ id, commandId })
+            : action === 'resume'
+              ? client.rpc['schedules.resume']({ id, commandId })
+              : client.rpc['schedules.delete']({ id, commandId }),
+      // A run waits on the chat starting over there, a CLI and all.
+      { change: true, ...(action === 'run' ? { timeoutMs: 60_000 } : {}) },
+    ),
+    nameOf(machine),
+    ACTION_DONE[action],
   )
   return answer.ok ? { ok: true, id, action } : answer
+}
+
+/**
+ * Pause every schedule there until `until` (epoch ms; null until resumed),
+ * or (`'resume'`) end that pause: what this desktop's Pause all asks of each
+ * machine it owns. Refused, not held for later, with the machine away.
+ */
+export async function pairedScheduledAgentsPauseAll(
+  machine: PairedMachine | EnvironmentTarget,
+  until: number | null | 'resume',
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  const commandId = environmentCommandId()
+  const answer = changeRefusal(
+    await askSchedules<unknown>(
+      machine,
+      (client) =>
+        until === 'resume'
+          ? client.rpc['schedules.resumeAll']({ commandId })
+          : client.rpc['schedules.pauseAll']({ until, commandId }),
+      { change: true },
+    ),
+    nameOf(machine),
+    until === 'resume' ? 'resumed' : 'paused',
+  )
+  return answer.ok ? { ok: true } : answer
+}
+
+const ACTION_DONE: Record<MeshScheduledAgentAction, string> = {
+  run: 'started',
+  pause: 'paused',
+  resume: 'resumed',
+  delete: 'deleted',
 }
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
@@ -95,6 +158,8 @@ const text = (value: unknown) => (typeof value === 'string' && value.trim() ? va
 export async function createPairedScheduledAgent(
   machine: PairedMachine | EnvironmentTarget,
   input: Partial<MeshCreateScheduledAgentInput> & { workspaceRoot?: string },
+  /** The same for every try of one draft, so a retry after a lost answer makes it once. */
+  commandId: string = environmentCommandId(),
 ): Promise<MeshCreateScheduledAgentResult> {
   const workspaceId = text(input.workspaceId)
   const workspaceRoot = text(input.workspaceRoot)
@@ -108,8 +173,13 @@ export async function createPairedScheduledAgent(
     ...(workspaceId ? { workspaceId } : { workspaceRoot: workspaceRoot! }),
     ...scheduleDraftOf(input, { prompt, cron, cli }),
   }
-  const commandId = environmentCommandId()
-  const answer = await askSchedules(machine, (client) => client.rpc['schedules.create']({ ...draft, commandId }))
+  const answer = changeRefusal(
+    await askSchedules(machine, (client) => client.rpc['schedules.create']({ ...draft, commandId }), {
+      change: true,
+    }),
+    nameOf(machine),
+    'scheduled',
+  )
   if (!answer.ok) return answer
   const agent = scheduledAgentViewOf(answer.value.schedule)
   return agent
@@ -121,6 +191,8 @@ export async function createPairedScheduledAgent(
 export async function updatePairedScheduledAgent(
   machine: PairedMachine | EnvironmentTarget,
   input: Partial<MeshUpdateScheduledAgentInput>,
+  /** The same for every try of one edit, so a retry after a lost answer saves it once. */
+  commandId: string = environmentCommandId(),
 ): Promise<MeshUpdateScheduledAgentResult> {
   const id = text(input.id)
   const prompt = text(input.prompt)
@@ -140,8 +212,13 @@ export async function updatePairedScheduledAgent(
     skills: scheduleIds(input.skills),
     mcpServers: scheduleIds(input.mcpServers),
   }
-  const commandId = environmentCommandId()
-  const answer = await askSchedules(machine, (client) => client.rpc['schedules.update']({ ...change, commandId }))
+  const answer = changeRefusal(
+    await askSchedules(machine, (client) => client.rpc['schedules.update']({ ...change, commandId }), {
+      change: true,
+    }),
+    nameOf(machine),
+    'saved',
+  )
   if (!answer.ok) return answer
   const agent = scheduledAgentViewOf(answer.value.schedule)
   return agent

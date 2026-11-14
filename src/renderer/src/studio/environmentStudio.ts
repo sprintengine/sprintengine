@@ -235,20 +235,44 @@ function open(api: EnvironmentApi, route: string): Held {
 export async function withEnvironmentStudio<T>(
   target: EnvironmentTarget,
   work: (client: StudioClient) => Promise<T>,
-  options: { timeoutMs?: number; api?: EnvironmentApi } = {},
+  options: {
+    timeoutMs?: number
+    api?: EnvironmentApi
+    /**
+     * Refused at once, nothing asked, unless the connection is open now: a
+     * change the person waits on, which the client would otherwise hold
+     * and carry out on the next connect, after the ask has said it failed.
+     */
+    onlyWhenConnected?: boolean
+  } = {},
 ): Promise<T> {
   const api = options.api ?? window.api
   const entry = use(api, target.route)
   entry.asking += 1
   let timer: ReturnType<typeof setTimeout> | undefined
+  // An ask answered "did not answer in time" is over: its work never starts
+  // afterwards, when a connection that took that long opens at last.
+  let over = false
+  let started = false
+  const away = () => new StudioError('unavailable', `${target.name} is not connected.`)
   try {
     return await Promise.race([
-      entry.opening.then(work),
+      entry.opening.then((client) => {
+        if (over) throw new StudioError('unavailable', `${target.name} did not answer in time.`)
+        if (options.onlyWhenConnected && client.state !== 'open') throw away()
+        started = true
+        return work(client)
+      }),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new StudioError('unavailable', `${target.name} did not answer in time.`)),
-          options.timeoutMs ?? ASK_TIMEOUT_MS,
-        )
+        timer = setTimeout(() => {
+          over = true
+          // Never connected in that time, a connected-only ask asked nothing.
+          reject(
+            options.onlyWhenConnected && !started
+              ? away()
+              : new StudioError('unavailable', `${target.name} did not answer in time.`),
+          )
+        }, options.timeoutMs ?? ASK_TIMEOUT_MS)
       }),
     ])
   } finally {
@@ -401,7 +425,7 @@ export async function askEnvironment<T>(
   capability: StudioCapability | null,
   unsupported: (name: string) => { code: string; message: string },
   work: (client: StudioClient) => Promise<T>,
-  options: { timeoutMs?: number; api?: EnvironmentApi } = {},
+  options: { timeoutMs?: number; api?: EnvironmentApi; onlyWhenConnected?: boolean } = {},
 ): Promise<EnvironmentAnswer<T>> {
   try {
     const value = await withEnvironmentStudio(

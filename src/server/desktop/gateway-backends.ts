@@ -42,6 +42,7 @@ export type GatewayBackendDeps = Pick<
   | 'resolveAgentPermissionPreset'
   | 'createWorkspace'
   | 'getScheduledAgents'
+  | 'machineSchedules'
   | 'defaultChatCli'
   | 'projectUsage'
   | 'getModuleRegistrySnapshot'

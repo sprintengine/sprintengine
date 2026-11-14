@@ -11,6 +11,11 @@ import { showToast } from '../store/toastStore'
 import { formatTimeOfDay } from './clockFormat'
 import { resolveSnoozePresets } from './workspaceSnooze'
 import { schedulesApi } from '../studio/schedules'
+import { pairedScheduledAgentsPauseAll } from '../studio/pairedSchedules'
+import {
+  ownedScheduledMachines,
+  type RemoteScheduledMachine,
+} from '../components/workspace/sidebar/useRemoteScheduledAgents'
 
 /** How long "Pause all" holds: an hour, until tomorrow morning, or until the person resumes them. */
 export type PauseAllChoiceId = 'hour' | 'tomorrow' | 'until-resumed'
@@ -96,7 +101,39 @@ export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused:
   return true
 }
 
-/** Pause every scheduled agent until a choice's time, and say so. */
+/**
+ * Ask the same of each machine this desktop owns whose schedules are listed
+ * (an SSH machine, a WSL distribution): what did not take, by machine, in words.
+ */
+async function acrossOwnedMachines(
+  machines: readonly RemoteScheduledMachine[],
+  until: number | null | 'resume',
+): Promise<{ done: string[]; missed: string[] }> {
+  const answers = await Promise.all(
+    machines.map(async (machine) => ({
+      machine,
+      answer: await pairedScheduledAgentsPauseAll({ route: machine.route, name: machine.machineName }, until).catch(
+        (error: unknown) => ({ ok: false as const, message: errorText(error) }),
+      ),
+    })),
+  )
+  return {
+    done: answers.filter(({ answer }) => answer.ok).map(({ machine }) => machine.machineName),
+    missed: answers.flatMap(({ answer }) => (answer.ok ? [] : [answer.message])),
+  }
+}
+
+/** "build-box", "build-box and nas", "build-box, nas and pi". */
+function listed(names: readonly string[]): string {
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+}
+
+/**
+ * Pause every scheduled agent until a choice's time, and say so: this
+ * device's, and those of each machine it owns that the Scheduled section
+ * lists. A machine that could not be reached keeps running its own, and
+ * the person is told which.
+ */
 export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<boolean> {
   const result = await schedulesApi
     .pauseAllScheduledAgents(choice.until)
@@ -105,15 +142,23 @@ export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<b
     showToast({ tone: 'error', title: 'Not paused', description: result.message })
     return false
   }
+  const machines = await acrossOwnedMachines(ownedScheduledMachines(), choice.until)
+  const where = machines.done.length ? ` Here and on ${listed(machines.done)}.` : ''
   showToast({
-    tone: 'neutral',
+    tone: machines.missed.length ? 'warn' : 'neutral',
     title: scheduledAgentsPauseWords(result.pause, Date.now()),
-    description: 'None runs at its times until then. Runs already going carry on.',
+    description: machines.missed.length
+      ? `${where.trim()} Not paused: ${machines.missed.join(' ')} Its schedules keep running there.`.trim()
+      : `None runs at its times until then. Runs already going carry on.${where}`,
   })
   return true
 }
 
-/** End the pause of them all, and say so. A schedule paused on its own stays paused. */
+/**
+ * End the pause of them all, here and on each machine it owns whose
+ * schedules are all paused, and say so. A schedule paused on its own stays
+ * paused.
+ */
 export async function resumeAllScheduledAgents(): Promise<boolean> {
   const result = await schedulesApi
     .resumeAllScheduledAgents()
@@ -122,10 +167,16 @@ export async function resumeAllScheduledAgents(): Promise<boolean> {
     showToast({ tone: 'error', title: 'Not resumed', description: result.message })
     return false
   }
+  const machines = await acrossOwnedMachines(
+    ownedScheduledMachines().filter((machine) => machine.pausedAll !== null),
+    'resume',
+  )
   showToast({
-    tone: 'neutral',
+    tone: machines.missed.length ? 'warn' : 'neutral',
     title: 'Scheduled agents resumed',
-    description: 'Each runs next at its next time. One you paused yourself stays paused.',
+    description: machines.missed.length
+      ? `Not resumed: ${machines.missed.join(' ')}`
+      : 'Each runs next at its next time. One you paused yourself stays paused.',
   })
   return true
 }

@@ -65,6 +65,14 @@ export type StudioScheduledAgentsDeps = {
    * and with `asked` when a person pressed Run now.
    */
   waitingFor?: (agent: ScheduledAgent, context?: { asked: boolean }) => string | null
+  /**
+   * What the scheduler waits on before it runs anything, however it is
+   * started (the core at start, or the desktop's Scheduled agents switch):
+   * the hand-over's first plan, which takes out what is another
+   * environment's, so a schedule handed over runs there only. One that never
+   * resolves (a plan that failed) holds it. Absent, nothing is waited on.
+   */
+  after?: Promise<unknown>
 }
 
 export type StudioScheduledAgents = {
@@ -77,10 +85,18 @@ export type StudioScheduledAgents = {
   setModulePermissions(read: (moduleId: string) => readonly string[] | undefined): void
   /**
    * Read the store, settle runs the last stop cut off, and start the
-   * scheduler, once `after` (where given) has resolved; never when it
-   * rejects. Again after `stop`, only the scheduler.
+   * scheduler, once the deps' `after` has resolved; never when it rejects.
+   * Again after `stop`, only the scheduler.
    */
-  start(options?: { after?: Promise<unknown> }): Promise<void>
+  start(): Promise<void>
+  /**
+   * Why none of them runs now though none is paused (the hand-over's journal
+   * could not be read), told on `schedules.list` and every change; null once
+   * they may run.
+   */
+  held(): string | null
+  /** Say why they are held, or (null) that they no longer are. */
+  hold(reason: string | null): void
   /** Stop the scheduler; a run already starting finishes starting. */
   stop(): Promise<void>
   running(): boolean
@@ -213,6 +229,7 @@ export function createStudioScheduledAgents(deps: StudioScheduledAgentsDeps): St
   let prepared: Promise<void> | null = null
   let releaseWakeOnResume: (() => void) | null = null
   let on = false
+  let heldBy: string | null = null
   // Read once, and the runs the last process left on their way settled before
   // any schedule is looked at, so a one-time schedule is due or done.
   const prepare = () =>
@@ -251,16 +268,23 @@ export function createStudioScheduledAgents(deps: StudioScheduledAgentsDeps): St
     setModulePermissions(read) {
       getModulePermissions = read
     },
-    async start(options = {}) {
+    held: () => heldBy,
+    hold(reason) {
+      if (heldBy === reason) return
+      heldBy = reason
+      scheduledAgents.notifyChanged()
+    },
+    async start() {
       on = true
       await prepare()
       // Nothing runs before what is handed to another environment is taken
       // out (the hand-over's plan): a schedule handed over runs there only.
       // A plan that failed holds them: the store may still list what is the
-      // machine's.
+      // machine's. Whoever starts it (the core, or the desktop's switch)
+      // waits on the same plan.
       if (
-        options.after &&
-        !(await options.after.then(
+        deps.after &&
+        !(await deps.after.then(
           () => true,
           () => false,
         ))

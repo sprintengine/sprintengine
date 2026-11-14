@@ -99,13 +99,21 @@ function requestRefusal(refusal: ScheduleRequestRefusal): StudioSchedulesRefusal
 const missing = (id: string) => refused('not_found', `No scheduled agent "${id}".`)
 
 export function createStudioSchedulesDomain(
-  deps: ScheduleRequestDeps & { service: ScheduledAgentsService },
+  deps: ScheduleRequestDeps & {
+    service: ScheduledAgentsService
+    /** Why none runs now though none is paused; null while they run. */
+    held?: () => string | null
+  },
 ): StudioSchedulesDomain {
   const { service } = deps
-  const state = (agents: readonly ScheduledAgentView[]): StudioSchedules => ({
-    schedules: agents.map(studioScheduleOf),
-    pausedAll: service.pausedAll(),
-  })
+  const state = (agents: readonly ScheduledAgentView[]): StudioSchedules => {
+    const held = deps.held?.() ?? null
+    return {
+      schedules: agents.map(studioScheduleOf),
+      pausedAll: service.pausedAll(),
+      ...(held ? { held } : {}),
+    }
+  }
   const written = (
     result: { ok: true; agent: ScheduledAgentView } | { ok: false; message: string },
   ): Answer<StudioSchedule, 'invalid_params'> =>

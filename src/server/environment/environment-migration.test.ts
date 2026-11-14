@@ -82,17 +82,17 @@ function rig(
   const clients: EnvironmentClients = {
     async clientFor() {
       return reachable
-        ? { ok: true, client, name: 'build-box' }
+        ? { ok: true, client, name: 'dev@build-box' }
         : { ok: false, code: 'unavailable', message: 'build-box is not connected.' }
     },
     onConnected: () => () => undefined,
   }
-  const refusals: Array<{ route: string; ids: string[] }> = []
+  const refusals: Array<{ route: string; name: string; ids: string[] }> = []
   const migration = createEnvironmentMigration({
     dataDir,
     stores,
     clients,
-    onRefused: (route, refused) => refusals.push({ route, ids: refused.map((each) => each.id) }),
+    onRefused: ({ route, name }, refused) => refusals.push({ route, name, ids: refused.map((each) => each.id) }),
   })
   return {
     dataDir,
@@ -335,7 +335,11 @@ test('what the machine did not take stays planned and goes again; what it keeps 
   )
   assert.deepEqual(migration.waiting(), [ROUTE])
   assert.equal(migration.handedOver(ROUTE), true, 'its workspace was taken, so the replicas follow')
-  assert.deepEqual(refusals, [{ route: ROUTE, ids: ['sa-1'] }], 'the person is told')
+  assert.deepEqual(
+    refusals,
+    [{ route: ROUTE, name: 'dev@build-box', ids: ['sa-1'] }],
+    'the person is told, of the machine by its name, not its id',
+  )
 
   // The next connect sends only that one, under a call of its own.
   refuse = false

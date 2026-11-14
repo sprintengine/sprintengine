@@ -225,7 +225,10 @@ export function createEnvironmentMigration(deps: {
    * files changed since the plan, which stay where they lie. The person is
    * told, not only the log.
    */
-  onRefused?: (route: string, refused: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>) => void
+  onRefused?: (
+    machine: { route: string; name: string },
+    refused: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>,
+  ) => void
   now?: () => number
 }): EnvironmentMigration {
   const spellingOf = deps.spellingOf ?? ((route: string) => machineSpellingOf(route))
@@ -795,14 +798,14 @@ export function createEnvironmentMigration(deps: {
               `${route} did not take ${each.kind} ${each.id}; it is sent again on the next connect: ${each.reason}`,
             )
           await write(next)
-          deps.onRefused?.(route, [...refused, ...stayed])
+          deps.onRefused?.({ route, name: reached.name }, [...refused, ...stayed])
           return true
         }
         delete working.refused
         working.state = 'delivered'
         working.workspacesHandedOver = true
         await write(next)
-        if (stayed.length) deps.onRefused?.(route, stayed)
+        if (stayed.length) deps.onRefused?.({ route, name: reached.name }, stayed)
       }
       await retire(working)
       await write(next)

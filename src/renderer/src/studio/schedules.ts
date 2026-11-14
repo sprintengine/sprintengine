@@ -42,6 +42,10 @@ export type SchedulesApi = {
   resumeAllScheduledAgents(): Promise<{ ok: true } | { ok: false; message: string }>
   /** The pause of them all, said with every change to the list. Returns the unsubscriber. */
   onScheduledAgentsPauseChanged(cb: (pause: ScheduledAgentsPause | null) => void): () => void
+  /** Why none runs now though none is paused; null while they run. */
+  getScheduledAgentsHeld(): Promise<string | null>
+  /** The same, said with every change to the list. Returns the unsubscriber. */
+  onScheduledAgentsHeldChanged(cb: (held: string | null) => void): () => void
 }
 
 const UNSERVED = 'This Studio does not serve its scheduled agents to this window.'
@@ -144,6 +148,18 @@ export const schedulesApi: SchedulesApi = {
       reread: rereadOnReopen(
         () => call('schedules.list', {}),
         (state) => cb(state.pausedAll),
+      ),
+    }),
+  getScheduledAgentsHeld: async () => (await call('schedules.list', {})).held ?? null,
+  onScheduledAgentsHeldChanged: (cb) =>
+    followWindowStudioPush({
+      topic: 'schedules.changed',
+      params: {},
+      capability: STUDIO_SCHEDULES_CAPABILITY,
+      onPayload: (state) => cb(state.held ?? null),
+      reread: rereadOnReopen(
+        () => call('schedules.list', {}),
+        (state) => cb(state.held ?? null),
       ),
     }),
 }
