@@ -1,6 +1,8 @@
 import { lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
+import { readConfinedFile, writeConfinedFile } from './confined-file'
+
 import {
   BACKLOG_DEPENDENCIES_PLANNED_KEY,
   backlogDependenciesPlannedFromFields,
@@ -343,14 +345,14 @@ export async function ensureBacklogItemIds(input: BacklogEnsureIdsInput): Promis
         if (!target) continue
         let content: string
         try {
-          content = await readFile(target, 'utf-8')
+          content = await readConfinedFile(target, 'utf-8')
         } catch {
           // A file that vanished between scan and write is skipped; the next scan
           // re-evaluates it.
           continue
         }
         const next = serializeBacklogFrontmatterFields(content, { id: formatBacklogNumericId(numericId) })
-        if (next !== content) await writeFile(target, next, 'utf-8')
+        if (next !== content) await writeConfinedFile(target, next)
       }
 
       return { ok: true, key, assignments }
@@ -478,7 +480,7 @@ async function drainLegacyBacklogSidecar(workspace: ValidWorkspace, legacyPath: 
     if (!target) continue
     let content: string
     try {
-      content = await readFile(target, 'utf-8')
+      content = await readConfinedFile(target, 'utf-8')
     } catch {
       // Orphan: the markdown is gone, so the record describes nothing.
       continue
@@ -491,7 +493,7 @@ async function drainLegacyBacklogSidecar(workspace: ValidWorkspace, legacyPath: 
     const next = serializeBacklogFrontmatterFields(content, updates)
     if (next !== content) {
       try {
-        await writeFile(target, next, 'utf-8')
+        await writeConfinedFile(target, next)
       } catch (error) {
         throw new Error(`Could not migrate Backlog item ${relativePath}: ${errorMessage(error)}`)
       }
@@ -539,12 +541,12 @@ async function loadMigratedStore(workspace: ValidWorkspace): Promise<BacklogObje
     if (!target) continue
     let content: string
     try {
-      content = await readFile(target, 'utf-8')
+      content = await readConfinedFile(target, 'utf-8')
     } catch {
       continue
     }
     const next = serializeBacklogFrontmatterFields(content, migration.updates)
-    if (next !== content) await writeFile(target, next, 'utf-8')
+    if (next !== content) await writeConfinedFile(target, next)
   }
 
   // Orphan GC: drop records whose source file no longer exists on disk.
@@ -649,7 +651,7 @@ export async function listBacklogItems(workspaceRoot: string): Promise<BacklogLi
       try {
         const sourcePath = await realBacklogFilePath(workspace.location, relativePath)
         if (!sourcePath) continue
-        raw = await readFile(sourcePath, 'utf-8')
+        raw = await readConfinedFile(sourcePath, 'utf-8')
       } catch {
         continue
       }
@@ -758,7 +760,7 @@ export async function readBacklogItem(workspaceRoot: string, relativePath: strin
     if (!target) throw new Error('Backlog item path escaped the backlog root.')
     let raw: string
     try {
-      raw = await readFile(target, 'utf-8')
+      raw = await readConfinedFile(target, 'utf-8')
     } catch {
       return { ok: false, message: `Backlog item ${normalized} does not exist in this workspace.` }
     }
@@ -822,7 +824,7 @@ async function nextBacklogNumericId(workspace: ValidWorkspace): Promise<number> 
     try {
       const sourcePath = await realBacklogFilePath(workspace.location, relativePath)
       if (!sourcePath) continue
-      content = await readFile(sourcePath, 'utf-8')
+      content = await readConfinedFile(sourcePath, 'utf-8')
     } catch {
       continue
     }
@@ -925,7 +927,7 @@ export async function createBacklogItem(input: BacklogCreateInput): Promise<Back
       await mkdir(dirname(target), { recursive: true })
       // `wx` fails instead of clobbering if a file appears between the uniqueness
       // check and the write.
-      await writeFile(target, `${frontmatterBlock}\n${body}`, { encoding: 'utf-8', flag: 'wx' })
+      await writeConfinedFile(target, `${frontmatterBlock}\n${body}`, { exclusive: true })
 
       const record: BacklogObjectRecord = {
         id: stableBacklogObjectId(relativePath),
@@ -962,7 +964,7 @@ export async function repairBacklogIntegrity(
     return await withBacklogMutationLock(workspace, async () => {
       let content: string
       try {
-        content = await readFile(target, 'utf-8')
+        content = await readConfinedFile(target, 'utf-8')
       } catch {
         return { ok: false, message: `Backlog item ${relativePath} does not exist in this workspace.` }
       }
@@ -974,7 +976,7 @@ export async function repairBacklogIntegrity(
         }
         const sanitized = content.replaceAll('\0', '\\0')
         const next = serializeBacklogFrontmatterFields(sanitized, { updated: new Date().toISOString() })
-        await writeFile(target, next, 'utf-8')
+        await writeConfinedFile(target, next)
         return { ok: true, relativePath, issue: input.issue, replacements }
       }
 
@@ -990,7 +992,7 @@ export async function repairBacklogIntegrity(
         try {
           const candidateSource = await realBacklogFilePath(workspace.location, candidatePath)
           if (!candidateSource) continue
-          candidate = await readFile(candidateSource, 'utf-8')
+          candidate = await readConfinedFile(candidateSource, 'utf-8')
         } catch {
           continue
         }
@@ -1003,7 +1005,7 @@ export async function repairBacklogIntegrity(
       const numericId = await nextBacklogNumericId(workspace)
       const withId = serializeBacklogFrontmatterFields(content, { id: formatBacklogNumericId(numericId) })
       const next = serializeBacklogFrontmatterFields(withId, { updated: new Date().toISOString() })
-      await writeFile(target, next, 'utf-8')
+      await writeConfinedFile(target, next)
       return { ok: true, relativePath, issue: input.issue, previousNumericId, numericId }
     })
   } catch (error) {
@@ -1030,7 +1032,7 @@ export async function createBacklogEpic(input: BacklogCreateEpicInput): Promise<
     await mkdir(dirname(target), { recursive: true })
     // `wx` fails instead of clobbering if a file appears between the uniqueness
     // check and the write.
-    await writeFile(target, content, { encoding: 'utf-8', flag: 'wx' })
+    await writeConfinedFile(target, content, { exclusive: true })
 
     const slug = relativePath.slice(EPICS_PREFIX.length).replace(/\.md$/i, '')
     return { ok: true, slug, relativePath }
@@ -1324,7 +1326,7 @@ async function readDurableBacklogLinks(workspaceRoot: string, relativePath: stri
     const normalizedPath = validateBacklogRelativePath(relativePath)
     const target = await realBacklogFilePath(workspace.location, normalizedPath)
     if (!target) return []
-    const { fields } = parseBacklogFrontmatter(await readFile(target, 'utf-8'))
+    const { fields } = parseBacklogFrontmatter(await readConfinedFile(target, 'utf-8'))
     return durableBacklogLinksFromFrontmatter(fields) as BacklogItemLinkPayload[]
   } catch {
     // A missing or unreadable item contributes no links; the caller's own write
@@ -1426,7 +1428,7 @@ async function writeBacklogFrontmatter(
 
     let content: string
     try {
-      content = await readFile(target, 'utf-8')
+      content = await readConfinedFile(target, 'utf-8')
     } catch (error) {
       const detail = isMissingFileError(error) ? 'file not found' : errorMessage(error)
       throw new Error(`Could not read Backlog item: ${detail}`)
@@ -1439,7 +1441,7 @@ async function writeBacklogFrontmatter(
       // age and Date.parse would silently anchor it to UTC midnight.
       const next = serializeBacklogFrontmatterFields(changed, { updated: new Date().toISOString() })
       try {
-        await writeFile(target, next, 'utf-8')
+        await writeConfinedFile(target, next)
       } catch (error) {
         throw new Error(`Could not write Backlog item: ${errorMessage(error)}`)
       }

@@ -48,6 +48,7 @@ import {
   updateBacklogTriage,
   withBacklogWorkspaceLock,
 } from '../backlog-service'
+import { readConfinedFile } from '../confined-file'
 
 /** A workspace as this service needs it: its id, name and project folder. */
 export type ModuleBacklogWorkspace = { id: string; name: string; folderPath: string | null }
@@ -113,7 +114,7 @@ function nodeBacklogFsIn(folder: string | null): BacklogFilesystemAdapter {
     async readfile(path) {
       const real = await realPathInBacklogFolder(folder, path)
       if (!real) throw new Error('This file is a link to a file outside the Backlog folder.')
-      return readFile(real, 'utf-8')
+      return readConfinedFile(real, 'utf-8')
     },
   }
 }

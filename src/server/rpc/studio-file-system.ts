@@ -164,7 +164,8 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
       if (!fileSystem) return unserved('files.readText')
       const at = await placePath(fileSystem, path, asking, 'read')
       if (!at.ok) return unplaced(at)
-      return ok({ text: await fileSystem.readText(at.path) })
+      // A path held to known folders is its checked real path: read it without following a link put there since.
+      return ok({ text: await fileSystem.readText(at.path, { confined: !namesAnyPath(asking) }) })
     },
     'files.exists': async ({ path }, asking) => {
       if (!fileSystem) return unserved('files.exists')

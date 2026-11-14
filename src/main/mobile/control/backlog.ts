@@ -1,5 +1,5 @@
 import { basename, isAbsolute, join, resolve } from 'path'
-import { readdir, readFile } from 'fs/promises'
+import { readdir } from 'fs/promises'
 
 import {
   defaultBacklogKeyFor,
@@ -12,6 +12,7 @@ import {
   realBacklogFolder,
   realPathInBacklogFolder,
 } from '../../backlog-service'
+import { readConfinedFile } from '../../confined-file'
 import {
   backlogTitleFromPath,
   extractBacklogTitle,
@@ -115,7 +116,7 @@ async function buildBacklogEpics(
     try {
       // An epic file that links out of the backlog reads as absent, as the desktop's reads do.
       const real = await realPathInBacklogFolder(folder, join(epicsDir, file))
-      raw = real === null ? null : await readFile(real, 'utf-8')
+      raw = real === null ? null : await readConfinedFile(real, 'utf-8')
     } catch {
       raw = null
     }
@@ -228,7 +229,7 @@ async function toBacklogItemSnapshot(
   let raw: string | null = null
   try {
     const source = await realBacklogFilePath(backlogLocation, record.source.relativePath)
-    raw = source === null ? null : await readFile(source, 'utf-8')
+    raw = source === null ? null : await readConfinedFile(source, 'utf-8')
   } catch {
     raw = null
   }

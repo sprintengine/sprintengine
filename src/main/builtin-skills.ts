@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises'
+import { mkdir, readFile, readdir, rm, stat } from 'fs/promises'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
 import { isAbsolute, join, relative, resolve } from 'path'
@@ -18,6 +18,7 @@ import type {
   ModuleSkillStatusResult,
 } from '../shared/modules/skills'
 import type { HostAgentIntegration } from './hosts/execution-host'
+import { copyConfinedDirectory, realFolderPath, writeConfinedFile } from './confined-file'
 import { isPathInsideOrEqual } from './path-containment'
 import { integrationLedger } from './integrations/ledger'
 import { gitTracksPath } from './skills/studio-plugin'
@@ -170,7 +171,8 @@ export async function hashSkillDirectory(root: string, ignoredNames = new Set<st
 export async function copySkillDirectory(sourceDir: string, destinationDir: string): Promise<void> {
   await rm(destinationDir, { recursive: true, force: true })
   await mkdir(join(destinationDir, '..'), { recursive: true })
-  await cp(sourceDir, destinationDir, { recursive: true, force: false, errorOnExist: true })
+  // Into its real folder, through no link put in the copy's way after the caller checked it.
+  await copyConfinedDirectory(sourceDir, await realFolderPath(destinationDir))
 }
 
 /**
@@ -195,10 +197,9 @@ export async function writeManagedSkillManifest(input: {
     installedAt: timestamp,
     updatedAt: timestamp,
   }
-  await writeFile(
-    join(input.destinationDir, MANAGED_SKILL_MANIFEST_FILE),
+  await writeConfinedFile(
+    await realFolderPath(join(input.destinationDir, MANAGED_SKILL_MANIFEST_FILE)),
     `${JSON.stringify(manifest, null, 2)}\n`,
-    'utf-8',
   )
 }
 
