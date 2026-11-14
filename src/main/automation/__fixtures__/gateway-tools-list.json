@@ -334,7 +334,7 @@
     },
     {
       "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
+      "sha256": "2ecb5b66a25e3ef459e817f99c14f4ffe229ce6d8202cce944ccc2fb00971e09"
     },
     {
       "name": "schedule.create",
@@ -772,7 +772,7 @@
     },
     {
       "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
+      "sha256": "2ecb5b66a25e3ef459e817f99c14f4ffe229ce6d8202cce944ccc2fb00971e09"
     },
     {
       "name": "schedule.create",
