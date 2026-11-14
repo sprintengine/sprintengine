@@ -44,6 +44,6 @@ export const webDevicesApi: WebDevicesApi = {
       params: {},
       capability: STUDIO_WEB_DEVICES_CAPABILITY,
       onPayload: cb,
-      onReopen: rereadOnReopen(async () => (await served()).request('webDevices.status', {}), cb),
+      reread: rereadOnReopen(async () => (await served()).request('webDevices.status', {}), cb),
     }),
 }

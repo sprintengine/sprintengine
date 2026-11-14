@@ -171,7 +171,7 @@ export const extensionsApi: ExtensionsApi = {
       params: {},
       capability: STUDIO_EXTENSIONS_CAPABILITY,
       onPayload: cb,
-      onReopen: rereadOnReopen(() => extensions('cardFeed.get', {}), cb),
+      reread: rereadOnReopen(() => extensions('cardFeed.get', {}), cb),
     }),
   hostedSourcesFeedGet: () => extensions('sourcesFeed.get', {}),
   listThirdPartyModules: () => modules('module.installed', {}),

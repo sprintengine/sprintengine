@@ -14,7 +14,7 @@ import {
   type UsageReportRequest,
   type UsageReportResult,
 } from '../../../../packages/studio-protocol/src/public'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
 
 // The window's way to what its Studio keeps beside its chats: the Studio
@@ -64,26 +64,13 @@ function followState<T extends StudioPushTopic>(
   read: () => Promise<StudioTopicPayload<T>>,
   listener: (state: StudioTopicPayload<T>) => void,
 ): () => void {
-  let alive = true
-  const stopPush = followWindowStudioPush({
+  return followWindowStudioPush({
     topic,
     params: {} as never,
     capability: STUDIO_CHAT_STORES_CAPABILITY,
-    onPayload: (state) => {
-      if (alive) listener(state)
-    },
-    onReopen: () =>
-      void read().then(
-        (state) => {
-          if (alive) listener(state)
-        },
-        () => undefined,
-      ),
+    onPayload: listener,
+    reread: rereadOnReopen(read, listener),
   })
-  return () => {
-    alive = false
-    stopPush()
-  }
 }
 
 export const chatStoresApi: ChatStoresApi = {

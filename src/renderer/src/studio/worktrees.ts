@@ -108,7 +108,7 @@ export const worktreesApi: WorktreesApi = {
       capability: STUDIO_WORKTREES_CAPABILITY,
       onPayload: cb,
       // The installs running now, each as its own change.
-      onReopen: rereadOnReopen(
+      reread: rereadOnReopen(
         async () => (await call('worktrees.installs', {})).installs,
         (installs) => installs.forEach(cb),
       ),

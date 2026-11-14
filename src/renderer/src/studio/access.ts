@@ -70,6 +70,6 @@ export const accessApi: AccessApi = {
       params: {},
       capability: STUDIO_ACCESS_CAPABILITY,
       onPayload: cb,
-      onReopen: rereadOnReopen(async () => (await served()).request('localApps.status', {}), cb),
+      reread: rereadOnReopen(async () => (await served()).request('localApps.status', {}), cb),
     }),
 }

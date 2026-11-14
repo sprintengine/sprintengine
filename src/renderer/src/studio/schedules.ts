@@ -124,7 +124,7 @@ export const schedulesApi: SchedulesApi = {
       params: {},
       capability: STUDIO_SCHEDULES_CAPABILITY,
       onPayload: (state) => cb(state.schedules),
-      onReopen: rereadOnReopen(
+      reread: rereadOnReopen(
         () => call('schedules.list', {}),
         (state) => cb(state.schedules),
       ),
@@ -141,7 +141,7 @@ export const schedulesApi: SchedulesApi = {
       params: {},
       capability: STUDIO_SCHEDULES_CAPABILITY,
       onPayload: (state) => cb(state.pausedAll),
-      onReopen: rereadOnReopen(
+      reread: rereadOnReopen(
         () => call('schedules.list', {}),
         (state) => cb(state.pausedAll),
       ),

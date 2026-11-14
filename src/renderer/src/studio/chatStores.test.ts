@@ -12,6 +12,8 @@ const fake = vi.hoisted(() => ({
   subscriptions: [] as Array<{ topic: string; listener: Listener }>,
   requests: [] as Array<{ method: string; params: unknown }>,
   answer: { reading: 0 } as unknown,
+  // Set: each read waits here until the test answers it.
+  held: null as Array<{ answer: (value: unknown) => void; fail: (error: unknown) => void }> | null,
 }))
 
 vi.mock('./windowStudioClient', () => {
@@ -23,6 +25,8 @@ vi.mock('./windowStudioClient', () => {
     },
     request: async (method: string, params: unknown) => {
       fake.requests.push({ method, params })
+      const held = fake.held
+      if (held) return new Promise((answer, fail) => held.push({ answer, fail }))
       return fake.answer
     },
   }
@@ -53,6 +57,7 @@ beforeEach(() => {
   fake.watchers.clear()
   fake.subscriptions.length = 0
   fake.requests.length = 0
+  fake.held = null
 })
 
 test('a follow hears pushes, and reads the state again only when the connection comes back', async () => {
@@ -87,6 +92,66 @@ test('a follow hears pushes, and reads the state again only when the connection 
   await becomes('open')
   assert.equal(fake.requests.length, 1)
   assert.equal(heard.length, 2)
+})
+
+test('a push that comes while the state is read again is not overwritten by the older answer', async () => {
+  const heard: unknown[] = []
+  const stop = chatStoresApi.onUsageLimitsChanged((state) => heard.push(state))
+  await settle()
+  fake.held = []
+  await becomes('reconnecting')
+  await becomes('open')
+  assert.equal(fake.held.length, 1, 'the state is being read')
+
+  // A change is pushed before the read's answer, which was taken before it.
+  fake.subscriptions[0]!.listener.onPayload({ pushed: 'newer' })
+  assert.deepEqual(heard, [], 'held until the read is answered')
+  fake.held[0]!.answer({ reading: 'older' })
+  await settle()
+  assert.deepEqual(heard, [{ reading: 'older' }, { pushed: 'newer' }], 'the push lands last')
+
+  // With no read out, a push is heard at once.
+  fake.subscriptions[0]!.listener.onPayload({ pushed: 'later' })
+  assert.deepEqual(heard.at(-1), { pushed: 'later' })
+  stop()
+})
+
+test("a read the connection's next reopen overtook is dropped, and a failed one lets held pushes through", async () => {
+  const heard: unknown[] = []
+  const stop = chatStoresApi.onUsageLimitsChanged((state) => heard.push(state))
+  await settle()
+  fake.held = []
+  await becomes('reconnecting')
+  await becomes('open')
+  // Dropped again before the read was answered, and back: a second read.
+  await becomes('reconnecting')
+  await becomes('open')
+  assert.equal(fake.held.length, 2)
+  fake.subscriptions[0]!.listener.onPayload({ pushed: 1 })
+
+  // The second connection's answer goes first; the first one's, coming late, is dropped.
+  fake.held[1]!.answer({ reading: 'second' })
+  await settle()
+  fake.held[0]!.answer({ reading: 'first' })
+  await settle()
+  assert.deepEqual(heard, [{ reading: 'second' }, { pushed: 1 }])
+
+  // A read that fails hands on what it held.
+  await becomes('reconnecting')
+  await becomes('open')
+  fake.subscriptions[0]!.listener.onPayload({ pushed: 2 })
+  fake.held[2]!.fail(new Error('refused'))
+  await settle()
+  assert.deepEqual(heard.at(-1), { pushed: 2 })
+
+  // Stopped while a read is out: neither its answer nor a push is heard.
+  await becomes('reconnecting')
+  await becomes('open')
+  fake.subscriptions[0]!.listener.onPayload({ pushed: 3 })
+  stop()
+  fake.held[3]!.answer({ reading: 'after stop' })
+  await settle()
+  assert.deepEqual(heard.at(-1), { pushed: 2 })
 })
 
 test('each change carries a command id of its own, kept on the request a resend repeats', async () => {
