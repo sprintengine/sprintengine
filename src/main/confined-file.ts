@@ -281,8 +281,12 @@ async function copyConfinedFile(source: string, destination: string, options: Co
   const from = await openConfined(source, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0), hardLinks)
   try {
     const flags = constants.O_WRONLY | constants.O_CREAT | (options.overwrite ? 0 : constants.O_EXCL)
-    const { handle: to } = await openConfined(destination, flags, hardLinks)
+    const { handle: to, stat: there } = await openConfined(destination, flags, hardLinks)
     try {
+      // The same file under another name (a hard link the owner may copy
+      // over): emptying it would empty the source before a byte is read.
+      if (there.dev === from.stat.dev && there.ino === from.stat.ino)
+        throw Object.assign(new Error('Cannot copy a file over itself.'), { code: 'EINVAL' })
       if (options.overwrite) await to.truncate(0)
       await to.chmod(from.stat.mode & 0o7777)
       const buffer = Buffer.allocUnsafe(1024 * 1024)

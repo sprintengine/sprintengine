@@ -170,6 +170,42 @@ test('copies, renames, moves and dropped pictures', async () => {
   }
 })
 
+test('a copy into itself or over itself is refused, and nothing is emptied or made', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-fs-self-copy-')))
+  try {
+    await mkdir(join(root, 'a', 'sub'), { recursive: true })
+    await writeFile(join(root, 'a', 'keep.txt'), 'kept', 'utf-8')
+    await mkdir(join(root, 'b'))
+    await link(join(root, 'a', 'keep.txt'), join(root, 'b', 'keep.txt'))
+    for (const owner of [true, false]) {
+      // Into its own subfolder: cp refuses this; a walk would copy its own copy until the name is too long.
+      await expect(files().copy(join(root, 'a'), join(root, 'a', 'sub'), 'rename', owner)).rejects.toThrow(
+        'Cannot copy a file or folder into itself.',
+      )
+      await expect(files().copy(join(root, 'a'), join(root, 'a'), 'rename', owner)).rejects.toThrow(
+        'Cannot copy a file or folder into itself.',
+      )
+      // Over itself: the file would be emptied before it is read.
+      await expect(files().copy(join(root, 'a', 'keep.txt'), join(root, 'a'), 'overwrite', owner)).rejects.toThrow(
+        'Cannot copy a file or folder into itself.',
+      )
+      await expect(files().copy(join(root, 'a'), root, 'overwrite', owner)).rejects.toThrow(
+        'Cannot copy a file or folder into itself.',
+      )
+    }
+    // The same file under its second name, which only the owner may copy over.
+    await expect(files().copy(join(root, 'b', 'keep.txt'), join(root, 'a'), 'overwrite', true)).rejects.toThrow(
+      'Cannot copy a file over itself.',
+    )
+    // (A held client's copy of a file with a second name is refused before this.)
+    expect(await readFile(join(root, 'a', 'keep.txt'), 'utf-8')).toBe('kept')
+    expect((await readdir(join(root, 'a'))).sort()).toEqual(['keep.txt', 'sub'])
+    expect(await readdir(join(root, 'a', 'sub'))).toEqual([])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('a Studio with no Trash says so rather than removing the file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sprintengine-fs-trash-'))
   try {

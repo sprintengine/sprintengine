@@ -219,6 +219,10 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
       const from = owner ? await realFolderPath(sourcePath) : sourcePath
       const into = owner ? await realpath(toFolder) : toFolder
       const hardLinks = owner ? 'allow' : 'refuse'
+      // A folder copied into itself would copy its own copy without end, and a
+      // file or folder copied over itself would be emptied before it is read.
+      if (isInsideOrEqual(into, from) || join(into, sourceName) === from)
+        throw new Error('Cannot copy a file or folder into itself.')
       if (onConflict === 'rename') {
         const destinationPath = await getUniqueCopyPath(toFolder, sourceName, sourcePath, pathExists)
         await copyConfined(from, join(into, basename(destinationPath)), { hardLinks })
