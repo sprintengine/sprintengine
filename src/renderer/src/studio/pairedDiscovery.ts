@@ -125,7 +125,8 @@ export async function browsePairedMachine(
     })
   } catch (error) {
     const refused = environmentRefusal(pairedTarget(machine), error)
-    if (refused.kind === 'outdated')
+    // Reached, but the two do not share a protocol: said as a gap, with which side to update.
+    if (refused.kind === 'outdated' || refused.kind === 'incompatible')
       return {
         connectionId: machine.id,
         reachable: true,

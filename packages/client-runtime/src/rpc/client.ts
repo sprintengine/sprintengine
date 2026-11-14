@@ -9,7 +9,7 @@ import {
   type ConversationService,
   type EventStreamOptions,
 } from './conversations.js'
-import { StudioError, isTerminalStudioCode } from './errors.js'
+import { StudioError, byeError, isTerminalStudioCode } from './errors.js'
 import {
   STUDIO_METHODS,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
@@ -770,7 +770,7 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       throw new StudioError('unauthorized', 'No credential: pass `auth`, or a transport that brings its own.')
     }
     const assembler = createStudioChunkAssembler()
-    let bye: { code: string; message: string; retryAfterMs?: number } | null = null
+    let bye: StudioError | null = null
     let ended = false
     let greeted: ((welcome: StudioWelcomeFrame) => void) | null = null
     let refused: ((error: StudioError) => void) | null = null
@@ -799,12 +799,8 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
           greeted?.(frame)
           return
         case 'bye':
-          bye = {
-            code: frame.code,
-            message: frame.message,
-            ...(frame.retryAfterMs === undefined ? {} : { retryAfterMs: frame.retryAfterMs }),
-          }
-          refused?.(new StudioError(frame.code, frame.message, frame.retryAfterMs))
+          bye = byeError(frame)
+          refused?.(bye)
           return
         case 'res':
           answer(frame)
@@ -886,12 +882,9 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     next.onClose((error) => {
       clearTimeout(timer)
       ended = true
-      const why = bye as { code: string; message: string; retryAfterMs?: number } | null
-      const failure = new StudioError(
-        why?.code ?? 'disconnected',
-        why?.message ?? error?.message ?? 'The connection to Studio closed.',
-        why?.retryAfterMs,
-      )
+      const failure =
+        (bye as StudioError | null) ??
+        new StudioError('disconnected', error?.message ?? 'The connection to Studio closed.')
       refused?.(failure)
       if (transport === next) disconnected()
       // The supervisor decides what a loss means; one it has moved on from is ignored.
@@ -909,7 +902,12 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     try {
       const welcomed = await greeting
       const window = checkStudioProtocolVersion(welcomed.protocolVersion, welcomed.minProtocolVersion)
-      if (!window.ok) throw new StudioError('unsupported_protocol_version', window.message)
+      if (!window.ok)
+        throw new StudioError('unsupported_protocol_version', window.message, undefined, undefined, {
+          protocolVersion: welcomed.protocolVersion,
+          minProtocolVersion: welcomed.minProtocolVersion,
+          version: welcomed.server.version,
+        })
       return { welcomed, opened: next, ended: () => ended }
     } catch (error) {
       next.close()

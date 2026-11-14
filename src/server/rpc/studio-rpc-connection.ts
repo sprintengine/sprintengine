@@ -9,7 +9,6 @@ import {
   STUDIO_TOPICS,
   STUDIO_UPDATE_SESSION_CAPABILITY,
   STUDIO_UPDATE_SESSION_METHODS,
-  checkStudioProtocolVersion,
   studioIncompatibility,
   isStudioMethod,
   isStudioTopic,
@@ -329,14 +328,19 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     options.onClosed(connection)
   }
 
-  function bye(code: StudioByeCode, message: string, retryAfterMs?: number): void {
+  function bye(
+    code: StudioByeCode,
+    message: string,
+    retryAfterMs?: number,
+    window?: { protocolVersion: number; minProtocolVersion: number },
+  ): void {
     if (state === 'closed') return
     // Written ahead of anything still queued: what is queued is exactly what
     // a revoked or fallen-behind client should no longer be sent.
     if (!socket.destroyed) {
       try {
         socket.write(
-          `${JSON.stringify({ t: 'bye', code, message, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) })}\n`,
+          `${JSON.stringify({ t: 'bye', code, message, ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...window })}\n`,
         )
         socket.end()
       } catch {
@@ -1674,16 +1678,18 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     // with a token: a pairing code is never spent on a client that could not
     // use what it pairs.
     // Before authentication, the refusal names the protocol numbers and not
-    // this Studio's version.
+    // this Studio's version: in the client's words, with this Studio's window
+    // for the client to judge which side is behind.
     if (
       incompatible &&
       !(frame.client.capabilities?.includes(STUDIO_UPDATE_SESSION_CAPABILITY) && 'token' in frame.auth)
     ) {
-      const refused = checkStudioProtocolVersion(
-        frame.protocolVersion,
-        frame.minProtocolVersion ?? frame.protocolVersion,
-      )
-      bye('unsupported_protocol_version', refused.ok ? incompatible.message : refused.message)
+      const window = { protocolVersion: info.protocolVersion, minProtocolVersion: info.minProtocolVersion }
+      const refused = studioIncompatibility(window, {
+        protocolVersion: frame.protocolVersion,
+        minProtocolVersion: frame.minProtocolVersion ?? frame.protocolVersion,
+      })
+      bye('unsupported_protocol_version', refused?.message ?? incompatible.message, undefined, window)
       return
     }
     const outcome = authenticator.authenticate(frame.auth, frame.client)

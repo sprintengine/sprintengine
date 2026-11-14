@@ -1,6 +1,8 @@
 import {
   StudioError,
   connect,
+  isStudioVersionFailure,
+  presentStudioFailure,
   webSocketTransport,
   type StudioClient,
   type StudioClientState,
@@ -219,25 +221,28 @@ export function closeDesktopStudios(): void {
   for (const opening of open) opening.then((client) => client.close(), () => undefined);
 }
 
-/** A failed ask, in the phone's words for what went wrong. */
+/**
+ * A failed ask, in the phone's words for what went wrong: read by the shared
+ * runtime (`presentStudioFailure`), so a version refusal names which side to
+ * update, the desktop or this app.
+ */
 export function studioFailure(error: unknown): { errorCode: ApiErrorCode; message: string; code: string | null } {
   const code = error instanceof StudioError ? error.code : null;
-  const message = error instanceof Error && error.message ? error.message : "The desktop could not answer.";
-  switch (code) {
+  const failure = presentStudioFailure(error);
+  const message =
+    isStudioVersionFailure(failure.kind) || (error instanceof Error && error.message) ? failure.message : "The desktop could not answer.";
+  switch (failure.kind) {
+    case "server-outdated":
+      // A desktop whose Studio predates what was asked: said about the desktop.
+      return { errorCode: "command_not_supported", message: code === "unsupported_protocol_version" ? message : DESKTOP_STUDIO_OUTDATED, code };
+    case "client-outdated":
+    case "incompatible":
+      return { errorCode: "command_not_supported", message, code };
     case "unauthorized":
-    case "revoked":
-    case "peer_mismatch":
       return { errorCode: "unauthenticated", message, code };
-    case "scope_required":
-    case "owner_required":
+    case "forbidden":
       return { errorCode: "unauthorized", message, code };
-    case "outdated":
-    case "unknown_method":
-      return { errorCode: "command_not_supported", message: DESKTOP_STUDIO_OUTDATED, code };
-    case "not_found":
-    case "invalid_params":
-      return { errorCode: "invalid_payload", message, code };
     default:
-      return { errorCode: "desktop_unavailable", message, code };
+      return { errorCode: code === "not_found" || code === "invalid_params" ? "invalid_payload" : "desktop_unavailable", message, code };
   }
 }

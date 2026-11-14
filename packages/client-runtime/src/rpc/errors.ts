@@ -1,3 +1,8 @@
+import type { StudioByeFrame, StudioProtocolWindow } from '../protocol.js'
+
+/** The Studio a version refusal was about: its protocol window, and its version once it has said it. */
+export type StudioErrorStudio = StudioProtocolWindow & { version?: string }
+
 /**
  * A refusal from Studio, or the client's own: `code` is the protocol's word for
  * it (`scope_required`, `ceiling_exceeded`, `unauthorized`, …), `retryAfterMs`
@@ -8,13 +13,19 @@ export class StudioError extends Error {
   readonly retryAfterMs?: number
   /** The id Studio logged the real cause under, when it answered in stable words instead. */
   readonly errorId?: string
+  /**
+   * On an `unsupported_protocol_version`, the Studio's window when it said it:
+   * what tells which side is behind (`presentStudioFailure`).
+   */
+  readonly studio?: StudioErrorStudio
 
-  constructor(code: string, message: string, retryAfterMs?: number, errorId?: string) {
+  constructor(code: string, message: string, retryAfterMs?: number, errorId?: string, studio?: StudioErrorStudio) {
     super(message)
     this.name = 'StudioError'
     this.code = code
     if (retryAfterMs !== undefined) this.retryAfterMs = retryAfterMs
     if (errorId !== undefined) this.errorId = errorId
+    if (studio !== undefined) this.studio = studio
   }
 }
 
@@ -39,4 +50,13 @@ export const TERMINAL_CODES: ReadonlySet<string> = new Set([
 export function isTerminalStudioCode(code: string, retryAfterMs?: number): boolean {
   if (code === 'hello_required' && retryAfterMs !== undefined) return false
   return TERMINAL_CODES.has(code)
+}
+
+/** A `bye`, as the error it closes the client with: the Studio's window kept when it named one. */
+export function byeError(frame: StudioByeFrame): StudioError {
+  const studio =
+    frame.protocolVersion !== undefined && frame.minProtocolVersion !== undefined
+      ? { protocolVersion: frame.protocolVersion, minProtocolVersion: frame.minProtocolVersion }
+      : undefined
+  return new StudioError(frame.code, frame.message, frame.retryAfterMs, undefined, studio)
 }

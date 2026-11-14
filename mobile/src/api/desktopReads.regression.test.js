@@ -97,6 +97,15 @@ test("a refused change is said in the phone's words", async () => {
   closeDesktopStudios();
 });
 
+test("a desktop past this app's protocol is said as this app to update, not the desktop", async () => {
+  const desktop = fakeDesktopStudio({ answer: () => ({}), window: { protocolVersion: 99, minProtocolVersion: 98 } });
+  const refused = await readDesktopSnapshot(target(), { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.errorCode, "command_not_supported");
+  assert.match(refused.message, /needs Studio protocol 98 or newer.*Update this app\./);
+  closeDesktopStudios();
+});
+
 test("the desktop says when a backlog moved, while the phone listens, and not after", async () => {
   const desktop = desktopWith(["backlog:read"]);
   const options = { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket };

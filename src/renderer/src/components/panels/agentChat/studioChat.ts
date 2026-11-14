@@ -1,5 +1,7 @@
 import {
   StudioError,
+  isStudioVersionFailure,
+  presentStudioFailure,
   type ConversationFollowFrame,
   type ConversationRef,
   type StudioClient,
@@ -42,33 +44,27 @@ import type { ConversationTransport } from './conversationTransport'
 
 export type ClientSource = () => Promise<StudioClient>
 
-// Refusals about the connection rather than the request: the window's client
-// reconnects by itself, so they are told as one calm sentence instead of the
-// socket's own words, which mean nothing to someone using a chat.
-const CONNECTION_CODES = new Set([
-  'environment_changed',
-  'offline',
-  'timeout',
-  'disconnected',
-  'closed',
-  'hello_timeout',
-  'shutting_down',
-  'resync_required',
-  'too_many_connections',
-  'internal_error',
-  'unauthorized',
-  'busy',
-])
+// Refusals about the connection rather than the request (`presentStudioFailure`'s
+// `connection`): the window's client reconnects by itself, so they are told as
+// one calm sentence instead of the socket's own words, which mean nothing to
+// someone using a chat. A refused ticket is one too: the client asks for a
+// fresh one when it is next asked.
+const lostConnection = (error: unknown): boolean =>
+  error instanceof StudioError && (error.code === 'unauthorized' || presentStudioFailure(error).kind === 'connection')
 const FORK_NEEDS_NEWER_STUDIO =
   'This Studio is older than this window and cannot fork a chat. Update it, then try again.'
 const CONNECTION_LOST = 'This window lost its connection to Studio. It reconnects by itself; try again in a moment.'
 
+// Anything else in the words the runtime gives it: a version refusal names
+// the side to update, not the socket's "this end" or "the other end".
 const messageOf = (error: unknown): string =>
-  error instanceof StudioError && CONNECTION_CODES.has(error.code)
+  lostConnection(error)
     ? CONNECTION_LOST
-    : error instanceof Error
-      ? error.message
-      : String(error)
+    : error instanceof StudioError
+      ? presentStudioFailure(error).message
+      : error instanceof Error
+        ? error.message
+        : String(error)
 
 // How long a push stream first waits before following a client that replaced
 // one that closed, or retrying one that could not connect. Each failure in a
@@ -76,9 +72,9 @@ const messageOf = (error: unknown): string =>
 // and again (a machine away, a socket evicted) is not asked every moment.
 const PUSH_FOLLOW_RETRY_MS = 2_000
 const PUSH_FOLLOW_MAX_MS = 60_000
-// How long it waits at once where the Studio is older than the protocol (a
-// paired desktop not yet updated), whether the connect said so or the stream
-// ended with it: what reads it says so in words (`environmentStudioOutdated`).
+// How long it waits at once where the two do not share a protocol (a paired
+// desktop, or this app, not yet updated), whether the connect said so or the
+// stream ended with it: what reads it says so in words (`presentStudioFailure`).
 const PUSH_FOLLOW_OUTDATED_MS = 60_000
 // A stream that stayed up this long ended for a reason of its own, not as one
 // more failure in a row: the next one waits the first wait again.
@@ -96,7 +92,7 @@ export async function ask<M extends StudioMethod>(
   try {
     return await (await client()).request(method, params)
   } catch (error) {
-    throw error instanceof StudioError && CONNECTION_CODES.has(error.code) ? new Error(CONNECTION_LOST) : error
+    throw lostConnection(error) ? new Error(CONNECTION_LOST) : error
   }
 }
 
@@ -120,8 +116,7 @@ export async function askUntilAnswered<M extends StudioMethod>(
     try {
       return await (await client()).request(method, params)
     } catch (error) {
-      const lost = error instanceof StudioError && CONNECTION_CODES.has(error.code)
-      if (!lost) throw error
+      if (!lostConnection(error)) throw error
       if (replays >= HOLD_REPLAYS) throw new Error(CONNECTION_LOST)
       await new Promise((resolve) => setTimeout(resolve, HOLD_REPLAY_MS))
     }
@@ -219,7 +214,7 @@ function followPush<T extends 'conversation.commands' | 'conversation.events'>(
     if (stopped) return
     failures += 1
     const after =
-      error instanceof StudioError && error.code === 'outdated'
+      error instanceof StudioError && isStudioVersionFailure(presentStudioFailure(error).kind)
         ? PUSH_FOLLOW_OUTDATED_MS
         : Math.min(PUSH_FOLLOW_RETRY_MS * 2 ** (failures - 1), PUSH_FOLLOW_MAX_MS)
     timer = setTimeout(() => {

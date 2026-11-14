@@ -158,6 +158,15 @@ test('a stream frame is the conversation laneâ€™s frame, validated by the laneâ€
     code: 'revoked',
     message: 'Revoked in Settings.',
   })
+  // A version refusal keeps the Studio's window, both numbers or neither.
+  const refused = { t: 'bye', code: 'unsupported_protocol_version', message: 'Update this app.' }
+  assert.deepEqual(parseStudioServerFrame({ ...refused, protocolVersion: 3, minProtocolVersion: 2 }), {
+    ...refused,
+    protocolVersion: 3,
+    minProtocolVersion: 2,
+  })
+  assert.deepEqual(parseStudioServerFrame({ ...refused, protocolVersion: 3 }), refused)
+  assert.deepEqual(parseStudioServerFrame({ ...refused, protocolVersion: 0, minProtocolVersion: 'x' }), refused)
   assert.deepEqual(
     parseStudioServerFrame({
       t: 'res',

@@ -1,6 +1,8 @@
 import {
   StudioError,
   connect,
+  isStudioVersionFailure,
+  presentStudioFailure,
   webSocketTransport,
   type StudioClient,
   type StudioWebSocketConstructor,
@@ -176,33 +178,49 @@ export function createPeerStudios(
   }
 }
 
-/** Why a paired machine did not answer, in the kinds a caller tells apart. */
+/**
+ * Why a paired machine did not answer, in the kinds a caller tells apart.
+ * `outdated` is that machine's Studio behind this one; `incompatible` a
+ * protocol mismatch where it is not, or not known to be (this app behind it),
+ * whose words say which side to update.
+ */
 export type PeerRefusal = {
-  kind: 'outdated' | 'unauthorized' | 'unavailable' | 'refused'
+  kind: 'outdated' | 'incompatible' | 'unauthorized' | 'unavailable' | 'refused'
   /** The refusal's own code, for a caller that names it. */
   code: string
   message: string
 }
 
-/** A failed ask, read: an older Studio, a pairing it refuses, a machine away, or a refusal of what was asked. */
+/**
+ * A failed ask, read (`presentStudioFailure`): an older Studio, an older app,
+ * a pairing it refuses, a machine away, or a refusal of what was asked.
+ */
 export function peerRefusal(target: { machineName: string }, error: unknown): PeerRefusal {
   const code = error instanceof StudioError ? error.code : 'unavailable'
-  const message = error instanceof Error && error.message ? error.message : `${target.machineName} could not answer.`
-  switch (code) {
-    case 'outdated':
-    case 'unknown_method':
-    case 'unsupported_protocol_version':
-      return { kind: 'outdated', code, message: peerStudioOutdated(target.machineName) }
+  const failure = presentStudioFailure(error)
+  const message =
+    isStudioVersionFailure(failure.kind) || (error instanceof Error && error.message)
+      ? failure.message
+      : `${target.machineName} could not answer.`
+  switch (failure.kind) {
+    case 'server-outdated':
+      return {
+        kind: 'outdated',
+        code,
+        message: code === 'unsupported_protocol_version' ? message : peerStudioOutdated(target.machineName),
+      }
+    case 'client-outdated':
+    case 'incompatible':
+      return { kind: 'incompatible', code, message }
     case 'unauthorized':
-    case 'revoked':
-    case 'peer_mismatch':
-    case 'scope_required':
-    case 'owner_required':
+    case 'forbidden':
       return { kind: 'unauthorized', code, message }
-    case 'unavailable':
-    case 'closed':
-      return { kind: 'unavailable', code, message }
     default:
-      return { kind: 'refused', code, message }
+      // A machine away is said `unavailable` here too, by the ticket that could not be bought.
+      return {
+        kind: failure.kind === 'connection' || code === 'unavailable' ? 'unavailable' : 'refused',
+        code,
+        message,
+      }
   }
 }

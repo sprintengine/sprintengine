@@ -411,6 +411,20 @@ test("a chat the desktop no longer has stops as unavailable until retry", async 
   done(stream);
 });
 
+test("a desktop past this app's protocol stops the chat, says to update this app, and is not asked again", async () => {
+  const f = fixture({ window: { protocolVersion: 99, minProtocolVersion: 98 } });
+  const stream = f.open();
+  await until(() => f.states.includes("unavailable"), "unavailable");
+  assert.match(f.details.at(-1), /needs Studio protocol 98 or newer.*Update this app\./);
+  assert.ok(!f.states.includes("offline"), "never told as a desktop out of reach");
+  // Longer than the first retry's wait: a final refusal is not tried again.
+  const sockets = f.desktop.socketUrls.length;
+  await sleep(1_500);
+  assert.equal(f.desktop.socketUrls.length, sockets);
+  assert.equal(f.states.at(-1), "unavailable");
+  done(stream);
+});
+
 test("an upload is begun with its size and sent in the pieces the desktop names, read from the file as it goes", async () => {
   files.set("file:///photo.jpg", Buffer.alloc(1_300, 7).toString("base64"));
   const f = fixture({

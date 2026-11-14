@@ -23,7 +23,7 @@ import {
   type StudioClient,
   type StudioClientState,
 } from '../src/index'
-import { isTerminalStudioCode } from '../src/runtime'
+import { isTerminalStudioCode, presentStudioFailure } from '../src/runtime'
 import { connectToStudio, discoverStudio, socketTransport, studioDataDir } from '../src/node'
 
 const ref = { workspaceId: 'ws-1', agentId: 'agent-1' }
@@ -589,7 +589,8 @@ test('a Studio this client cannot talk to is still reached for its updates, and 
     await rm(dataDir, { recursive: true, force: true })
   })
   const token = pairFakeClient(auth, 'maintainer', ['conversation:read', 'environment:maintain'])
-  // The normal client is refused, in words.
+  // The normal client is refused, in words that tell it which side is behind:
+  // the Studio names its window, and this client judges it against its own.
   await assert.rejects(
     connect({
       transport: socketTransport({ dataDir }),
@@ -597,7 +598,15 @@ test('a Studio this client cannot talk to is still reached for its updates, and 
       auth: { token },
       reconnect: false,
     }),
-    (error: StudioError) => error.code === 'unsupported_protocol_version',
+    (error: StudioError) => {
+      assert.equal(error.code, 'unsupported_protocol_version')
+      assert.deepEqual(error.studio, { protocolVersion: 3, minProtocolVersion: 2 })
+      assert.deepEqual(presentStudioFailure(error), {
+        kind: 'client-outdated',
+        message: 'This Studio needs Studio protocol 2 or newer, and this app speaks 1. Update this app.',
+      })
+      return true
+    },
   )
   const session = await openStudioUpdateSession({
     transport: socketTransport({ dataDir }),

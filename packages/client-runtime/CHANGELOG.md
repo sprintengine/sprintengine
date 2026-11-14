@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- A protocol mismatch names the side to update. `presentStudioFailure(error)`
+  reads any failed ask into one kind a client acts on (`client-outdated`,
+  `server-outdated`, `incompatible`, `unauthorized`, `forbidden`,
+  `connection`, `refused`) and words a person can act on; a version refusal is
+  judged from the Studio's window (`StudioError.studio`, from the `bye` or the
+  welcome), never from the refusal's words. `isStudioVersionFailure(kind)`
+  says which kinds are final until one side updates. The desktop window, its
+  main process and the phone read their failures through it.
 - A mutation still unanswered when its connection dropped is sent again only
   where that cannot carry it out twice: to the same run of the server
   (`welcome.bootId`), or anywhere for a method whose receipts are durable. One

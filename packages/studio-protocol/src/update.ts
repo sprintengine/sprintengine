@@ -117,22 +117,26 @@ export type StudioUpdateMethodName = keyof StudioUpdateMethodMap
 /**
  * How a client stands with a Studio whose window does not meet its own, and
  * why, in words that name both versions and which side to update; null when
- * the two windows meet. What a Studio puts in the `incompatible` frame.
+ * the two windows meet. What a Studio puts in the `incompatible` frame and in
+ * its `unsupported_protocol_version` bye, and what a client shows for either.
+ * Without the Studio's `version` (a bye, sent before the client has
+ * authenticated) the words name the protocol numbers alone.
  */
 export function studioIncompatibility(
-  server: StudioProtocolWindow & { version: string },
+  server: StudioProtocolWindow & { version?: string },
   client: StudioProtocolWindow,
 ): { compatibility: StudioIncompatibleFrame['compatibility']; message: string } | null {
   const compatibility = studioCompatibility(server, client)
+  const studio = server.version ? `This Studio (${server.version})` : 'This Studio'
   if (compatibility === 'client-outdated')
     return {
       compatibility,
-      message: `This Studio (${server.version}) needs Studio protocol ${server.minProtocolVersion} or newer, and this app speaks ${client.protocolVersion}. Update this app.`,
+      message: `${studio} needs Studio protocol ${server.minProtocolVersion} or newer, and this app speaks ${client.protocolVersion}. Update this app.`,
     }
   if (compatibility === 'server-outdated')
     return {
       compatibility,
-      message: `This Studio (${server.version}) speaks Studio protocol ${server.protocolVersion}, and this app needs ${client.minProtocolVersion} or newer. Update the Studio.`,
+      message: `${studio} speaks Studio protocol ${server.protocolVersion}, and this app needs ${client.minProtocolVersion} or newer. Update the Studio.`,
     }
   return null
 }

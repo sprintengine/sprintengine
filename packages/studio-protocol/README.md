@@ -43,7 +43,7 @@ Studio → client
   { t: 'push', sub, payload }                      // one message of a stream with no cursor
   { t: 'subFailed', sub, code, message, retryable, retryAfterMs?, errorId? }
   { t: 'chunk', frameId, index, total, json }      // a frame over STUDIO_MAX_FRAME_BYTES
-  { t: 'bye', code, message, retryAfterMs? }       // Studio is closing the connection
+  { t: 'bye', code, message, retryAfterMs?, protocolVersion?, minProtocolVersion? } // Studio is closing the connection
 ```
 
 A refusal Studio tells in stable words, in place of a cause that could name
@@ -52,8 +52,10 @@ cause, for someone looking into it to quote.
 
 `hello` is the first frame, within `STUDIO_HELLO_TIMEOUT_MS`. It is answered by
 `welcome`, or by `bye` and a close: `unauthorized` for a credential Studio does
-not hold, `unsupported_protocol_version` with both numbers named
-(`checkStudioProtocolVersion`). Validate what a Studio sends with
+not hold, `unsupported_protocol_version` with both numbers named, in the
+client's words (`studioIncompatibility`), and Studio's own window
+(`protocolVersion`, `minProtocolVersion`), from which the client judges which
+side is behind (`studioCompatibility`) rather than reading the words. Validate what a Studio sends with
 `parseStudioServerFrame`; a Studio validates what a client sends with
 `parseStudioClientFrame` and `parseStudioMethodParams`.
 

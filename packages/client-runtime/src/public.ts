@@ -19,6 +19,12 @@ export {
   type ChatServerOffer,
 } from './capabilities/chatCapabilities.js'
 export { StudioError, TERMINAL_CODES, isTerminalStudioCode } from './rpc/errors.js'
+export {
+  isStudioVersionFailure,
+  presentStudioFailure,
+  type StudioFailure,
+  type StudioFailureKind,
+} from './rpc/failure.js'
 export type { StudioTransport, StudioTransportFactory } from './rpc/transport.js'
 export {
   webSocketTransport,

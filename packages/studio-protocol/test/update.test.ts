@@ -75,6 +75,14 @@ test('the words name both versions and the side to update', () => {
     compatibility: 'server-outdated',
     message: 'This Studio (1.2.3) speaks Studio protocol 3, and this app needs 4 or newer. Update the Studio.',
   })
+  // Before a client has authenticated, the words name the protocol numbers and not the Studio's version.
+  assert.deepEqual(
+    studioIncompatibility({ protocolVersion: 3, minProtocolVersion: 2 }, { protocolVersion: 1, minProtocolVersion: 1 }),
+    {
+      compatibility: 'client-outdated',
+      message: 'This Studio needs Studio protocol 2 or newer, and this app speaks 1. Update this app.',
+    },
+  )
 })
 
 // What two ends that disagree on everything else still speak. A change here is
