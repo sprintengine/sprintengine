@@ -106,6 +106,13 @@ export type CliDetectModule = {
   resolveBinary(binary: string, env: Record<string, string>): { path: string } | null
 }
 
+/** Where the libraries a WSL distribution's Studio runs for the desktop's terminals now live. */
+export const DISTRIBUTION_DIR = join(process.cwd(), 'src', 'server', 'wsl', 'distribution')
+
+export async function loadDistributionModule<T>(name: string): Promise<T> {
+  return (await import(pathToFileURL(join(DISTRIBUTION_DIR, name)).href)) as T
+}
+
 export async function loadHelperModule<T>(relative: string): Promise<T> {
   return (await import(pathToFileURL(join(HELPER_DIR, relative)).href)) as T
 }

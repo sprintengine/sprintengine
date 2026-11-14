@@ -1058,12 +1058,12 @@ function createTerminalStartupScript(sessionId: string, extension: 'sh' | 'ps1',
 }
 
 /**
- * A WSL launch's startup script, as a file for the helper to write into its
- * private launch directory inside the distribution, and the Linux path it is
- * run from. Never a Windows file read through `/mnt/<drive>`: a distribution
- * that mounts its drives elsewhere (`[automount] root = /`), or not at all,
- * would not find it. Throws when the helper is not up, which is the one
- * reason there is no directory to name.
+ * A WSL launch's startup script, as a file for the distribution's Studio server
+ * to write into its private launch directory, and the Linux path it is run
+ * from. Never a Windows file read through `/mnt/<drive>`: a distribution that
+ * mounts its drives elsewhere (`[automount] root = /`), or not at all, would
+ * not find it. Throws when that server is not up, which is the one reason
+ * there is no directory to name.
  */
 function wslStartupScript(
   sessionId: string,
@@ -1079,14 +1079,14 @@ function wslStartupScript(
 function requireWslSessionDir(host: WslLaunchTarget): string {
   if (host.sessionDir) return host.sessionDir
   throw new Error(
-    `The WSL helper for ${host.distro ?? 'this distribution'} is not running, so nothing can be started there. ` +
+    `The Studio server in ${host.distro ?? 'this distribution'} is not running, so nothing can be started there. ` +
       'Try again in a moment; if it keeps failing, Settings ▸ Machines says why.',
   )
 }
 
 /**
  * The WSL startup script's first commands: record this shell's Linux pid in
- * the helper's private directory, then delete the script. The script is one
+ * the private directory of the distribution's Studio server, then delete the script. The script is one
  * line, which bash has read whole before running any of it, and it holds the
  * launch's secrets (a provider key, the MCP channel token); once read it is
  * not left on disk for anything else running as this user to find.
@@ -1164,7 +1164,7 @@ export type HostContextDelivery = {
  * than to an empty flag: `--append-system-prompt-file ""` is worse than silence.
  *
  * `onHost` is a WSL launch's: the document is not written here but added to
- * `files` under the helper's launch directory `dir` (with its paths as Linux
+ * `files` under the server's launch directory `dir` (with its paths as Linux
  * names them), and `filePath` is its Linux path.
  */
 export function resolveHostContextDelivery(input: {

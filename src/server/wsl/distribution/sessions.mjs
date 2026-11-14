@@ -19,7 +19,13 @@
 import { chmodSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { checkTreePath } from './files.mjs'
+/** A relative path of plain segments: nothing absolute, no `..`, no backslash or NUL. */
+function checkTreePath(path) {
+  if (typeof path !== 'string' || path === '' || path.startsWith('/') || path.includes('\\') || path.includes('\0')) {
+    return false
+  }
+  return path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
+}
 
 const ENTRY = /^[A-Za-z0-9._-]{1,200}$/u
 export const MAX_SESSION_WRITE_BYTES = 16 * 1024 * 1024
@@ -64,7 +70,7 @@ export function writeSessionFiles(dir, files) {
     if (typeof file.b64 !== 'string') throw new Error(`${file.path} has no content.`)
     total += file.b64.length
   }
-  if (total > MAX_SESSION_WRITE_BYTES) throw new Error('The launch files are larger than the helper accepts.')
+  if (total > MAX_SESSION_WRITE_BYTES) throw new Error('The launch files are larger than this server accepts.')
   const paths = []
   for (const file of files) {
     const target = join(dir, file.path)

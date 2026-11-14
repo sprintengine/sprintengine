@@ -327,6 +327,22 @@ distribution's own Studio server. Run every step that is listed.
    **Expect:** it answers, as any process of this user reaches the
    distribution's gateway, but it is no agent: a plain shell carries no
    launch token, and the closed terminal's token was revoked.
+8. Start an agent in a WSL terminal. **distro:**
+   `ls -l ~/.local/share/sprintengine-studio/sessions/*/`.
+   **Expect:** its startup script was there and deleted itself once read
+   (the directory is `drwx------`; a host-context file, if any, is
+   `-rw-------`).
+9. In that agent, start `python3 -m http.server 8765`, then leave the
+   terminal idle past the reaper's idle time.
+   **Expect:** the terminal is not suspended (a listening port holds it).
+   Stop the server and wait again: it is suspended.
+10. Start an agent, then close its terminal tab.
+    **Expect:** **distro:** `pgrep -af claude` (or the CLI used) no longer
+    lists it within a few seconds.
+11. Start an agent, then quit the app. **distro:** `pgrep -af claude`.
+    **Expect:** nothing the terminal started is left running. Start the app
+    again with a stray session left on purpose (`kill -9` the app instead of
+    quitting): the first WSL launch after the restart ends it.
 
 ## Throughput
 

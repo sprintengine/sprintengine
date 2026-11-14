@@ -11,6 +11,7 @@ import { startStudioServer, type StudioServer, type StudioServerOptions } from '
 import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
 import { createAgentStateRelay, type AgentStateRelay } from '../wsl/agent-state-relay'
+import { createDistributionTerminalHost, type DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import { createAgentStateListener, type AgentStateListener } from '../terminals/agent-state-listener'
 import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
@@ -51,6 +52,24 @@ export function headlessServerOptions(
     // Where the desktop holds this server, its people have no terminal here.
     ...(envelope.wsl || envelope.detached ? { signIns: signInsLoaded } : {}),
     log,
+  }
+}
+
+/**
+ * Inside WSL: what this Studio does for the desktop's WSL terminals (their
+ * launch files and the processes they leave). Its directories must be this
+ * user's alone; where they cannot be, there is none, and a WSL terminal's
+ * launch says so.
+ */
+function distributionTerminals(
+  profile: string,
+  log: (message: string) => void,
+): { terminalHost?: DistributionTerminalHost } {
+  try {
+    return { terminalHost: createDistributionTerminalHost({ profile }) }
+  } catch (error) {
+    log(`WSL terminals cannot start here: ${error instanceof Error ? error.message : String(error)}`)
+    return {}
   }
 }
 
@@ -176,8 +195,13 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
   // PATH lacks where the person's CLIs live.
   const loginEnvironment =
     envelope.wsl || envelope.detached ? adoptLoginEnvironment(log).catch(() => undefined) : Promise.resolve()
-  const server = await startStudioServer({
+  // Made here, not with the options: it makes its private directories.
+  const serverOptions = {
     ...headlessServerOptions(envelope, log),
+    ...(envelope.wsl ? distributionTerminals(envelope.wsl.profile, log) : {}),
+  }
+  const server = await startStudioServer({
+    ...serverOptions,
     // The desktop opened this directory and took its lock: it is the one
     // writer now, and this server leaves saying so.
     onDataDirLost: () =>
@@ -233,6 +257,8 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       socketPath: doors.socketPath,
       driveMountRoot: envelope.wsl ? readDriveMountRoot() : null,
       agentStateSocket: agentStateListener?.socketPath ?? null,
+      sessionDir: serverOptions.terminalHost?.sessionDir ?? null,
+      pidDir: serverOptions.terminalHost?.pidDir ?? null,
     }
     if (doors.port === null && doors.socketPath === null) {
       await doors.close()

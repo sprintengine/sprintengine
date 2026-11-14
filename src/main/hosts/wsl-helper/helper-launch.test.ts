@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import {
+  loadDistributionModule,
   loadHelperModule,
   type ProcModule,
   type RunModule,
@@ -38,8 +39,8 @@ function shortTemp(prefix: string): string {
 
 beforeAll(async () => {
   temp = shortTemp('se-launch-')
-  sessions = await loadHelperModule<SessionsModule>('lib/sessions.mjs')
-  proc = await loadHelperModule<ProcModule>('lib/proc.mjs')
+  sessions = await loadDistributionModule<SessionsModule>('sessions.mjs')
+  proc = await loadDistributionModule<ProcModule>('proc.mjs')
   run = await loadHelperModule<RunModule>('lib/run.mjs')
 })
 

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import { arch, platform } from 'node:os'
 import type { Duplex } from 'node:stream'
 import type { ConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
@@ -40,6 +41,7 @@ import {
   STUDIO_WINDOW_TICKETS_CAPABILITY,
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
+  STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
@@ -248,6 +250,8 @@ export type StudioRpcServerOptions = {
   /** Records the desktop that holds this Studio hands over. Advertised as `environment-adopt` only when given. */
   adoption?: EnvironmentAdoption
   work?: () => StudioEnvironmentWork
+  /** What a WSL distribution does for the desktop's terminals. Advertised as `environment-terminal-host` only when given. */
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
   /** The desktop's WSL terminal agents' launch tokens, by digest. Advertised as `environment-launch-tokens` only when given. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal. Advertised as `provider-sign-in-flow` only when given. */
@@ -335,6 +339,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_ENVIRONMENT_ADOPT_CAPABILITY || options.adoption !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_WORK_CAPABILITY || options.work !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY || options.launchTokens !== undefined) &&
+        (capability !== STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY || options.terminalHost !== undefined) &&
         (capability !== STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY || options.signIns !== undefined) &&
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
         (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
@@ -393,6 +398,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.adoption ? { adoption: options.adoption } : {}),
     ...(options.work ? { work: options.work } : {}),
     ...(options.launchTokens ? { launchTokens: options.launchTokens } : {}),
+    ...(options.terminalHost ? { terminalHost: options.terminalHost } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),

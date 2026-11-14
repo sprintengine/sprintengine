@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import {
+  loadDistributionModule,
   loadHelperModule,
   type CliDetectModule,
   type FilesModule,
@@ -32,11 +33,11 @@ let detect: CliDetectModule
 beforeAll(async () => {
   temp = mkdtempSync(join(tmpdir(), 'se-wsl-helper-core-'))
   frames = await loadHelperModule<FramesModule>('lib/frames.mjs')
-  proc = await loadHelperModule<ProcModule>('lib/proc.mjs')
+  proc = await loadDistributionModule<ProcModule>('proc.mjs')
   loginEnv = await loadHelperModule<LoginEnvModule>('lib/login-env.mjs')
   files = await loadHelperModule<FilesModule>('lib/files.mjs')
   run = await loadHelperModule<RunModule>('lib/run.mjs')
-  sockets = await loadHelperModule<SocketsModule>('lib/sockets.mjs')
+  sockets = await loadDistributionModule<SocketsModule>('sockets.mjs')
   detect = await loadHelperModule<CliDetectModule>('lib/cli-detect.mjs')
 })
 

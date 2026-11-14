@@ -15,11 +15,14 @@ import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
 import {
-  STUB_HELPER_INFO,
-  stubWslHelper,
-  type StubHelper,
-  stubWslDistributionLink,
   STUB_AGENT_STATE_SOCKET,
+  STUB_PID_DIR,
+  STUB_SESSION_DIR,
+  stubWslDistributionLink,
+  stubWslHelper,
+  type StubDistributionLink,
+  type StubHelper,
+  type StubTerminalHostHandlers,
 } from '../../tests/wsl-helper-stub'
 import { WslSetupError } from './hosts/wsl-setup-error'
 
@@ -55,7 +58,7 @@ afterEach(() => {
 // The runtime keeps the pty module it first imported, so the stand-in is one
 // object that records into whichever case is running.
 let nextPid = 80_000
-let current: { spawned: Harness['spawned']; helper: StubHelper } | null = null
+let current: { spawned: Harness['spawned']; helper: StubHelper; distribution: StubDistributionLink } | null = null
 const mockPty = {
   spawn(command: string, args: string[]): MockPty {
     const exits: Array<(event: { exitCode: number }) => void> = []
@@ -75,22 +78,19 @@ const mockPty = {
         return { dispose: () => undefined }
       },
     }
-    current?.spawned.push({ command, args, process, requestsBefore: current.helper.requests.length })
+    current?.spawned.push({ command, args, process, requestsBefore: current.distribution.asked.length })
     return process
   },
 }
 
-async function harness(handlers: Record<string, (params: never) => unknown> = {}): Promise<Harness> {
+async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness> {
   const spawned: Harness['spawned'] = []
   const helper = stubWslHelper('Ubuntu', {
     home: () => ({ home: '/home/dev' }),
     'files.ensureTree': () => ({ current: true }),
-    'session.write': () => ({ paths: [] }),
-    'session.remove': () => ({}),
-    'proc.killSession': () => ({ killed: [] }),
-    ...handlers,
   })
-  current = { spawned, helper }
+  const distribution = stubWslDistributionLink(undefined, terminal)
+  current = { spawned, helper, distribution }
   const sender: TerminalViewer = { isGone: () => false, deliver: () => undefined }
   restore = standIn({
     electron: {
@@ -102,7 +102,6 @@ async function harness(handlers: Record<string, (params: never) => unknown> = {}
     },
     'node-pty': mockPty,
   })
-  const distribution = stubWslDistributionLink()
   const registryModule = await import('./hosts/host-registry')
   registryModule.installHostRegistry(
     registryModule.createHostRegistry({
@@ -146,11 +145,10 @@ const agent = (sessionId: string) => ({
   mcpSettings: { syncEnabled: false, servers: {} } satisfies McpSettings,
 })
 
-type SessionWrite = { files: Array<{ path: string; b64: string }> }
-const writes = (helper: StubHelper) =>
-  helper.requests
-    .filter((request) => request.method === 'session.write')
-    .map((request) => request.params as SessionWrite)
+type LaunchFiles = { write?: Array<{ path: string; b64: string }>; remove?: string[] }
+const launchFileAsks = (h: Harness) =>
+  h.distribution.asked.filter((ask) => ask.method === 'launchFiles').map((ask) => ask.params as LaunchFiles)
+const writes = (h: Harness) => launchFileAsks(h).flatMap((ask) => (ask.write ? [{ files: ask.write }] : []))
 const decoded = (b64: string) => Buffer.from(b64, 'base64').toString('utf8')
 
 test('an agent on a WSL machine runs its startup script from inside the distribution, written first', async () => {
@@ -161,15 +159,15 @@ test('an agent on a WSL machine runs its startup script from inside the distribu
   assert.ok(call)
   assert.equal(call.command, 'wsl.exe')
   const script = call.args.at(-1) ?? ''
-  assert.ok(script.startsWith(`${STUB_HELPER_INFO.sessionDir}/`), script)
+  assert.ok(script.startsWith(`${STUB_SESSION_DIR}/`), script)
   assert.ok(!call.args.some((arg) => arg.startsWith('/mnt/')), `nothing through a drive mount: ${call.args}`)
-  const written = writes(h.helper)
+  const written = writes(h)
   assert.equal(written.length, 1)
-  assert.equal(`${STUB_HELPER_INFO.sessionDir}/${written[0].files[0].path}`, script)
-  const writeAt = h.helper.requests.findIndex((request) => request.method === 'session.write')
+  assert.equal(`${STUB_SESSION_DIR}/${written[0].files[0].path}`, script)
+  const writeAt = h.distribution.asked.findIndex((ask) => ask.method === 'launchFiles')
   assert.ok(writeAt < call.requestsBefore, 'the script was written before the terminal started')
   const text = decoded(written[0].files[0].b64)
-  assert.ok(text.includes(`'${STUB_HELPER_INFO.pidDir}'`), "the shell records its pid in the helper's own directory")
+  assert.ok(text.includes(`'${STUB_PID_DIR}'`), "the shell records its pid in the distribution server's own directory")
   // Its hooks report to the distribution's Studio server, which it holds up while it runs.
   assert.ok(text.includes(`export SPRINTENGINE_AGENT_STATE_SOCKET='${STUB_AGENT_STATE_SOCKET}'`), text)
   assert.equal(h.distribution.holds.size, 1)
@@ -185,11 +183,7 @@ test('an agent on a WSL machine runs its startup script from inside the distribu
   assert.equal(h.distribution.tokens.size, 0, 'revoked with the session')
   assert.equal(h.distribution.holds.size, 0, 'and its hold on the server let go')
   assert.ok(
-    h.helper.requests.some(
-      (request) =>
-        request.method === 'session.remove' &&
-        (request.params as { names: string[] }).names.includes(script.slice(STUB_HELPER_INFO.sessionDir.length + 1)),
-    ),
+    launchFileAsks(h).some((ask) => ask.remove?.includes(script.slice(STUB_SESSION_DIR.length + 1))),
     'its launch files are removed there',
   )
   await h.runtime.shutdown()
@@ -212,20 +206,20 @@ test('every chat CLI starts as a terminal agent inside the distribution', async 
     assert.equal(result.ok, true, `${cli}: ${JSON.stringify(result)}`)
     const call = h.spawned.at(-1)
     assert.equal(call?.command, 'wsl.exe', cli)
-    const script = writes(h.helper).at(-1)?.files[0]
+    const script = writes(h).at(-1)?.files[0]
     assert.ok(script && call?.args.at(-1)?.endsWith(script.path), `${cli} runs the script written for it`)
     assert.match(decoded(script.b64), new RegExp(`\\b${binary}\\b`, 'u'), `${cli} starts ${binary}`)
   }
   await h.runtime.shutdown()
 })
 
-test('a plain terminal on a WSL machine waits for the helper and carries no token', async () => {
+test("a plain terminal on a WSL machine waits for its distribution's server and carries no token", async () => {
   const h = await harness()
   const result = await h.spawn({ sessionId: 'wsl-plain', kind: 'terminal', shellOnly: true })
   assert.equal(result.ok, true, JSON.stringify(result))
-  assert.ok(h.helper.starts > 0, 'the helper was started for it')
+  assert.ok(h.distribution.connects() > 0, 'the server was started for it')
   assert.equal(h.distribution.tokens.size, 0)
-  const text = decoded(writes(h.helper)[0].files[0].b64)
+  const text = decoded(writes(h)[0].files[0].b64)
   assert.ok(!text.includes('SPRINTENGINE_MCP_CHANNEL_TOKEN'))
   await h.runtime.shutdown()
 })
@@ -246,10 +240,11 @@ test('a WSL launch whose helper cannot start fails with the reason, and nothing 
   await h.runtime.shutdown()
 })
 
-test('a startup script the helper could not write fails the launch clearly, and its token goes with it', async () => {
+test('a startup script the distribution could not write fails the launch clearly, and its token goes with it', async () => {
   const h = await harness({
-    'session.write': () => {
-      throw new Error('No space left on device')
+    launchFiles: (params) => {
+      if (params.write) throw new Error('No space left on device')
+      return { paths: [] }
     },
   })
   const result = await h.spawn(agent('wsl-nospace'))
@@ -260,11 +255,11 @@ test('a startup script the helper could not write fails the launch clearly, and 
   await h.runtime.shutdown()
 })
 
-test('quitting ends what WSL sessions left running, at once, without starting a stopped helper', async () => {
+test('quitting ends what WSL sessions left running, at once, without starting a stopped server', async () => {
   const kills: Array<{ cliSessionId: string; key: string }> = []
   const h = await harness({
-    'proc.killSession': (params: { cliSessionId: string; key: string }) => {
-      kills.push(params)
+    processes: (ask) => {
+      if (ask.op === 'kill') kills.push({ cliSessionId: ask.cliSessionId, key: ask.key })
       return { killed: [4242] }
     },
   })
@@ -279,11 +274,12 @@ test('quitting ends what WSL sessions left running, at once, without starting a 
   assert.deepEqual(kills.map((kill) => kill.key).sort(), [...keys].sort(), "each session's tree, by its pid file")
   assert.ok(Date.now() - started < 1_800, 'no survivor grace on the way out')
 
-  // With the helper already gone, quitting does not start it again.
+  // With the server already gone, quitting does not start it again.
   const second = await harness()
   assert.equal((await second.spawn(agent('wsl-q3'))).ok, true)
-  await second.helper.shutdown()
-  const startsBefore = second.helper.starts
+  second.distribution.running = false
+  const asksBefore = second.distribution.asked.length
   await second.runtime.shutdown()
-  assert.equal(second.helper.starts, startsBefore)
+  assert.ok(second.distribution.asked.slice(asksBefore).every((ask) => !ask.started))
+  assert.equal(second.distribution.running, false)
 })

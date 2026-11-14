@@ -37,7 +37,7 @@ test('a headless server says where it runs: in a WSL distribution, detached on a
   const kind = (overrides: Partial<ServerBootstrapEnvelope>) =>
     headlessServerOptions({ ...headless, ...overrides }, () => undefined).hostKind
   assert.equal(kind({}), 'local')
-  assert.equal(kind({ wsl: { distro: 'Ubuntu' } }), 'wsl')
+  assert.equal(kind({ wsl: { distro: 'Ubuntu', profile: '0123456789ab' } }), 'wsl')
   assert.equal(kind({ detached: { idleMs: null, origin: 'bootstrap', startedBy: 'Studio on dev-macbook-air' } }), 'ssh')
 })
 
@@ -46,8 +46,11 @@ test('a headless server says how it is updated: by the desktop that installed it
   const updates = (overrides: Partial<ServerBootstrapEnvelope>) =>
     headlessServerOptions({ ...headless, ...overrides }, () => undefined).updates!.status()
   const detached = (origin: 'bootstrap' | 'systemd') => ({ detached: { idleMs: null, origin, startedBy: 'x' } })
-  assert.equal(updates({ wsl: { distro: 'Ubuntu' } }).method, 'bootstrap')
-  assert.match(updates({ wsl: { distro: 'Ubuntu' } }).manual ?? '', /Windows PC that started it/)
+  assert.equal(updates({ wsl: { distro: 'Ubuntu', profile: '0123456789ab' } }).method, 'bootstrap')
+  assert.match(
+    updates({ wsl: { distro: 'Ubuntu', profile: '0123456789ab' } }).manual ?? '',
+    /Windows PC that started it/,
+  )
   assert.equal(updates(detached('bootstrap')).method, 'bootstrap')
   assert.match(updates(detached('bootstrap')).manual ?? '', /when it next connects/)
   assert.equal(updates(detached('systemd')).method, 'manual')
@@ -150,7 +153,7 @@ test('a front door is opened only by a headless server with an owner token hash 
       owner: { tokenHash: hash },
       listeners: { gateway: true, tailnet: 'off', frontDoor: { loopback: true } },
       secrets: { kind: 'key-file' },
-      wsl: { distro: 'Ubuntu-24.04' },
+      wsl: { distro: 'Ubuntu-24.04', profile: '0123456789ab' },
       ...overrides,
     })
   assert.equal(parseServerBootstrapEnvelope(wsl()).ok, true)
@@ -164,5 +167,7 @@ test('a front door is opened only by a headless server with an owner token hash 
   refused({ listeners: { gateway: true, tailnet: 'from-settings', frontDoor: { loopback: true } } }, /tailnet/u)
   refused({ listeners: { gateway: true, tailnet: 'off', frontDoor: {} } }, /frontDoor/u)
   refused({ role: 'desktop-local', secrets: { kind: 'shell', available: true } }, /headless/u)
-  refused({ wsl: { distro: 'two words' } }, /distribution name/u)
+  refused({ wsl: { distro: 'two words', profile: '0123456789ab' } }, /distribution name/u)
+  refused({ wsl: { distro: 'Ubuntu' } }, /profile id/u)
+  refused({ wsl: { distro: 'Ubuntu', profile: '../x' } }, /profile id/u)
 })

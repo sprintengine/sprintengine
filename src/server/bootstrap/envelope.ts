@@ -106,7 +106,8 @@ export type ServerBootstrapEnvelope = {
   }
   secrets: ServerSecretsMode
   /** Set for a server inside a WSL distribution: which one, as the Windows side names it. */
-  wsl?: { distro: string }
+  /** A WSL distribution's server: which, and the desktop profile it serves (its terminal directories are that profile's). */
+  wsl?: { distro: string; profile: string }
   /**
    * Set for a server that outlives whoever started it (an SSH machine's
    * managed server, phase 8): its starter's stdin ending is not its parent
@@ -162,6 +163,10 @@ export type FrontDoorReady = {
    * desktop on the `agent-state` purpose; null where it did not open.
    */
   agentStateSocket: string | null
+  /** Where a WSL terminal's launch files are written; null where that directory could not be made private. */
+  sessionDir: string | null
+  /** Where each WSL terminal's shell records its pid; null with `sessionDir`. */
+  pidDir: string | null
 }
 
 /** The server's answer once its gateway is listening. */
@@ -273,6 +278,8 @@ export function parseServerBootstrapEnvelope(value: unknown): EnvelopeParseResul
   if (value.wsl !== undefined) {
     if (!isRecord(value.wsl) || typeof value.wsl.distro !== 'string' || !/^[A-Za-z0-9._-]+$/u.test(value.wsl.distro))
       return fail('wsl.distro is not a distribution name.')
+    if (typeof value.wsl.profile !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/u.test(value.wsl.profile))
+      return fail('wsl.profile is not a profile id.')
   }
   const secrets = value.secrets
   if (!isRecord(secrets)) return fail('secrets is missing.')

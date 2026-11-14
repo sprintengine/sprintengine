@@ -13,25 +13,22 @@
 // port anywhere. The app's hooks, status line and OpenCode plugin report to
 // the distribution's own Studio server, which relays them to the desktop
 // (`src/server/wsl/agent-state-relay.ts`), and an agent's MCP bridge reaches
-// that server's gateway (`src/server/wsl/wsl-launch-tokens.ts`). The helper
-// answers main's
-// questions about the distribution: which processes a session left running,
-// which CLIs are installed, the home folder, and running a program or git. It
-// writes each launch's startup script where only this user can read it
-// (`lib/sessions.mjs`), and watches git directories for the Git pane, because
-// a watch Windows places on a `\\wsl.localhost` path hears nothing.
+// that server's gateway (`src/server/wsl/wsl-launch-tokens.ts`), which also
+// writes each launch's startup script and reads and ends the processes a
+// session leaves (`src/server/wsl/distribution-terminal-host.ts`). The helper
+// answers main's questions about the distribution that are left: which CLIs
+// are installed, the home folder, and running a program or git, and watches
+// git directories for the Git pane, because a watch Windows places on a
+// `\\wsl.localhost` path hears nothing.
 //
 // Lifetime. It exits when its stdin closes (main quit, crashed, or killed the
 // `wsl.exe`), when main says `shutdown`, or on a signal, and on the way out it
-// ends every process group it started. When the app
-// quits, main's `shutdown` also asks it to end every session the app launched
-// here, because ending the Windows `wsl.exe` of a terminal does not reach the
-// Linux processes under it. Main stops it about two minutes after the last WSL
-// session on this machine ends, so the VM can idle. Plain Node, no
+// ends every process group it started. Main stops it about two minutes after
+// its last request, so the VM can idle. Plain Node, no
 // dependencies: it runs on the pinned Linux Node main installed next to it,
 // never on the person's own.
 
-import { readFileSync, rmSync, watch as fsWatch } from 'node:fs'
+import { readFileSync, watch as fsWatch } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,36 +37,22 @@ import { createCliDetector } from './lib/cli-detect.mjs'
 import { ensureTree } from './lib/files.mjs'
 import { createLineDecoder, decodeFrame, encodeFrame, PROTOCOL_VERSION } from './lib/frames.mjs'
 import { captureLoginEnv } from './lib/login-env.mjs'
-import { endAllSessions, snapshot, survivorPids } from './lib/proc.mjs'
 import { checkRunRequest, childEnv, decodeStdin, killAllChildren, runArgv } from './lib/run.mjs'
-import { clearSessionDir, ensureSessionDir, removeSessionEntries, writeSessionFiles } from './lib/sessions.mjs'
-import { ensurePrivateDir, ensureSocketDir } from './lib/sockets.mjs'
 
 // Main's own frames can carry a plugin copy, so the cap is generous; it is
 // still a cap, because a broken writer should end the helper rather than fill
 // its memory.
 const MAX_MAIN_LINE_BYTES = 64 * 1024 * 1024
 const HELLO_TIMEOUT_MS = 30_000
-const CLI_SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/u
 // The Git pane watches a handful of directories per open checkout.
 const MAX_WATCHES = 512
 
 const uid = typeof process.getuid === 'function' ? process.getuid() : -1
 const helperDir = dirname(fileURLToPath(import.meta.url))
 const appDir = dirname(helperDir)
-const procRoot = process.env.SPRINTENGINE_HELPER_PROC_ROOT || '/proc'
-// Tests point these at a temporary directory; production never sets them.
-const socketBase = process.env.SPRINTENGINE_HELPER_SOCKET_BASE || undefined
-
 let exiting = false
 const watches = new Map()
 let nextWatchId = 1
-// Set by the hello: the session pid files live beside the sockets, in the
-// directory the helper made private, and the launch files in the profile's
-// own directory under the Linux home.
-let pidDir = null
-let sessionDir = null
-
 function send(frame) {
   if (exiting) return
   try {
@@ -92,12 +75,6 @@ const detector = createCliDetector({
   onPathsChanged: () => send({ t: 'ev', event: 'pathsChanged' }),
 })
 
-/** Ends every session this profile launched here, and drops their launch files. */
-function endSessions() {
-  endAllSessions({ procRoot, pidDir, uid, selfPid: process.pid })
-  if (sessionDir) clearSessionDir(sessionDir)
-}
-
 function closeWatch(id) {
   const watcher = watches.get(id)
   if (!watcher) return
@@ -109,16 +86,9 @@ function closeWatch(id) {
   }
 }
 
-async function shutdown(code, options = {}) {
+async function shutdown(code) {
   if (exiting) return
   exiting = true
-  if (options.endSessions) {
-    try {
-      endSessions()
-    } catch {
-      // Best effort on the way out; nothing is left to report to.
-    }
-  }
   killAllChildren()
   detector.close()
   for (const id of [...watches.keys()]) closeWatch(id)
@@ -129,14 +99,7 @@ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => v
 
 async function start(hello) {
   const profile = String(hello.profile ?? '')
-  const socketDir = ensureSocketDir({ env: process.env, uid, profile, base: socketBase })
-  pidDir = ensurePrivateDir(join(socketDir, 'sessions'), uid)
   const home = process.env.HOME || homedir()
-  sessionDir = ensureSessionDir({ home, uid, profile })
-  // The first helper a main starts: anything its pid files still name was
-  // launched by a main that has since gone (it crashed, or was killed before
-  // it could end them), and nothing will ever manage it again.
-  if (hello.endOrphans === true) endSessions()
   // Read in the background now; the first CLI check or git command waits on it.
   void loginEnv()
   return {
@@ -146,8 +109,6 @@ async function start(hello) {
     arch: process.arch,
     nodePath: process.execPath,
     appDir,
-    pidDir,
-    sessionDir,
   }
 }
 
@@ -164,26 +125,6 @@ const methods = {
         ...(env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: env.XDG_CONFIG_HOME } : {}),
       },
     }
-  },
-  async 'proc.snapshot'(params) {
-    const keys = Array.isArray(params?.keys) ? params.keys.filter((key) => typeof key === 'string') : []
-    return { verdicts: await snapshot({ procRoot, pidDir, keys, uid }) }
-  },
-  async 'proc.killSession'(params) {
-    const cliSessionId =
-      typeof params?.cliSessionId === 'string' && CLI_SESSION_ID.test(params.cliSessionId) ? params.cliSessionId : ''
-    const key = typeof params?.key === 'string' ? params.key : ''
-    const killed = []
-    for (const pid of survivorPids({ procRoot, pidDir, cliSessionId, key, uid, selfPid: process.pid })) {
-      try {
-        process.kill(pid, 'SIGKILL')
-        killed.push(pid)
-      } catch {
-        // Gone between the read and the kill, which is the goal.
-      }
-    }
-    if (key && /^[A-Za-z0-9._-]+$/u.test(key)) rmSync(join(pidDir, `${key}.pid`), { force: true })
-    return { killed }
   },
   async 'cli.detect'(params) {
     const requests = Array.isArray(params?.requests) ? params.requests : []
@@ -216,13 +157,6 @@ const methods = {
   },
   async 'files.ensureTree'(params) {
     return ensureTree({ appDir, name: params?.name, digest: params?.digest, files: params?.files })
-  },
-  async 'session.write'(params) {
-    return { paths: writeSessionFiles(sessionDir, params?.files) }
-  },
-  async 'session.remove'(params) {
-    removeSessionEntries(sessionDir, params?.names)
-    return {}
   },
   async 'watch.add'(params) {
     const path = params?.path
@@ -286,7 +220,7 @@ async function handleFrame(frame) {
     return
   }
   if (frame.t === 'req' && Number.isInteger(frame.id)) void handleRequest(frame)
-  else if (frame.t === 'shutdown') void shutdown(0, { endSessions: frame.endSessions === true })
+  else if (frame.t === 'shutdown') void shutdown(0)
 }
 
 const decoder = createLineDecoder({

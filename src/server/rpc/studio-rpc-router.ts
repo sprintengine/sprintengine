@@ -36,6 +36,7 @@ import type {
   StudioLaunchTokenChange,
 } from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
+import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
@@ -254,6 +255,8 @@ export type StudioRpcRouterOptions = {
   adoption?: EnvironmentAdoption
   /** What stopping this Studio would end (`environment.work`); without it, that method is answered `unavailable`. */
   work?: () => StudioEnvironmentWork
+  /** What a WSL distribution does for the desktop's WSL terminals (`environment.launchFiles`, `.terminalProcesses`). */
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
   /** The desktop's WSL terminal agents' launch tokens (`environment.launchTokens`); without it, answered `unavailable`. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
@@ -2110,6 +2113,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'environment.work': () => {
       if (!options.work) return unserved('environment.work')
       return { ok: true, result: options.work() }
+    },
+    'environment.launchFiles': (params) => {
+      if (!options.terminalHost) return unserved('environment.launchFiles')
+      try {
+        return { ok: true, result: options.terminalHost.launchFiles(params) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.terminalProcesses': async (params) => {
+      if (!options.terminalHost) return unserved('environment.terminalProcesses')
+      return { ok: true, result: await options.terminalHost.processes(params) }
     },
     'environment.launchTokens': (params) => {
       if (!options.launchTokens) return unserved('environment.launchTokens')

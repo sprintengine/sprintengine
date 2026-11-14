@@ -11,7 +11,10 @@ import { afterAll, beforeAll, test } from 'vitest'
 import {
   STUB_AGENT_STATE_SOCKET,
   STUB_HELPER_INFO,
+  STUB_PID_DIR,
   STUB_SERVER_DATA_DIR,
+  STUB_SESSION_DIR,
+  type StubTerminalHostHandlers,
   stubWslDistributionLink,
   stubWslHelper,
 } from '../../../tests/wsl-helper-stub'
@@ -49,16 +52,32 @@ const PLUGIN_COPY: WslPluginCopy = {
 }
 
 /** A stand-in for the core's WSL servers, answering `socket` for the agent-state socket. */
-function distributionLink(socket: () => string | null = () => STUB_AGENT_STATE_SOCKET) {
-  return stubWslDistributionLink(() => ({ agentStateSocket: socket(), dataDir: STUB_SERVER_DATA_DIR }))
+function distributionLink(
+  socket: () => string | null = () => STUB_AGENT_STATE_SOCKET,
+  terminal: StubTerminalHostHandlers = {},
+) {
+  return stubWslDistributionLink(
+    () => ({
+      agentStateSocket: socket(),
+      dataDir: STUB_SERVER_DATA_DIR,
+      sessionDir: STUB_SESSION_DIR,
+      pidDir: STUB_PID_DIR,
+    }),
+    terminal,
+  )
 }
 
 function hostWith(
   handlers: Parameters<typeof stubWslHelper>[1],
-  extra: { plugin?: WslPluginCopy | null; launcher?: 'written' | 'failed'; socket?: () => string | null } = {},
+  extra: {
+    plugin?: WslPluginCopy | null
+    launcher?: 'written' | 'failed'
+    socket?: () => string | null
+    terminal?: StubTerminalHostHandlers
+  } = {},
 ) {
   const helper = stubWslHelper('Debian', handlers)
-  const distribution = distributionLink(extra.socket)
+  const distribution = distributionLink(extra.socket, extra.terminal)
   const sockets: string[] = []
   const host = createWslHost('Debian', {
     readSettings: () => undefined,
@@ -222,22 +241,34 @@ test('a command is an argv run by the helper, and a helper that cannot start is 
   assert.match(host.summary().reason ?? '', /no network/u)
 })
 
-test('the reaper reads sessions by pid-file key; a failed read holds them all', async () => {
+test("the reaper reads sessions by pid-file key from the distribution's server; a failed read, or none running, holds them all", async () => {
   let fail = false
-  const { helper, host } = hostWith({
-    'proc.snapshot': () => {
-      if (fail) throw new Error('gone')
-      return { verdicts: { 'sid-a-1': 'listening_port', 'sid-b-2': null } }
+  const { host, distribution } = hostWith(
+    {},
+    {
+      terminal: {
+        processes: () => {
+          if (fail) throw new Error('gone')
+          return { verdicts: { 'sid-a-1': 'listening_port', 'sid-b-2': null } }
+        },
+      },
     },
-  })
+  )
   const refs = [
     { sessionId: 'a', rootPid: 11, startupScriptPath: 'C:\\Users\\dev\\terminal-startup\\sid-a-1.sh' },
     { sessionId: 'b', rootPid: 12, startupScriptPath: 'C:\\Users\\dev\\terminal-startup\\sid-b-2.sh' },
     { sessionId: 'c', rootPid: 13, startupScriptPath: 'C:\\Users\\dev\\terminal-startup\\sid-c-3.sh' },
     { sessionId: 'd', rootPid: 14 },
   ]
+  assert.equal((await host.probeSubtrees(refs)).size, 0, 'a server that is not running is not started to be asked')
+  assert.equal(distribution.asked.length, 0)
+  distribution.running = true
   const verdicts = await host.probeSubtrees(refs)
-  assert.deepEqual(helper.requests[0].params, { keys: ['sid-a-1', 'sid-b-2', 'sid-c-3'] })
+  assert.deepEqual(distribution.asked[0], {
+    method: 'processes',
+    params: { op: 'snapshot', keys: ['sid-a-1', 'sid-b-2', 'sid-c-3'] },
+    started: false,
+  })
   assert.equal(verdicts.get('a'), 'listening_port')
   assert.equal(verdicts.get('b'), null)
   assert.equal(verdicts.has('c'), false, 'no verdict is undetermined')
@@ -245,21 +276,19 @@ test('the reaper reads sessions by pid-file key; a failed read holds them all', 
   fail = true
   assert.equal((await host.probeSubtrees(refs)).size, 0)
 })
-
 test('the survivor kill names the session id and the pid file, and does nothing without either', async () => {
-  const { helper, host } = hostWith({ 'proc.killSession': () => ({ killed: [101, 102] }) })
+  const { host, distribution } = hostWith({}, { terminal: { processes: () => ({ killed: [101, 102] }) } })
   assert.deepEqual(
     await host.killSessionSurvivors('11111111-2222', { startupScriptPath: 'C:\\x\\terminal-startup\\k-1.sh' }),
     [101, 102],
   )
-  assert.deepEqual(helper.requests[0].params, { cliSessionId: '11111111-2222', key: 'k-1' })
+  assert.deepEqual(distribution.asked[0].params, { op: 'kill', cliSessionId: '11111111-2222', key: 'k-1' })
   // A plain terminal has no CLI session: its shell's subtree is still ended.
   await host.killSessionSurvivors('', { startupScriptPath: 'C:\\x\\terminal-startup\\k-2.sh' })
-  assert.deepEqual(helper.requests[1].params, { cliSessionId: '', key: 'k-2' })
+  assert.deepEqual(distribution.asked[1].params, { op: 'kill', cliSessionId: '', key: 'k-2' })
   assert.deepEqual(await host.killSessionSurvivors(''), [])
-  assert.equal(helper.requests.length, 2)
+  assert.equal(distribution.asked.length, 2)
 })
-
 test('CLI detection is one request, read with the same parser as every probe', async () => {
   const { helper, host } = hostWith({
     'cli.detect': () => ({
@@ -359,8 +388,9 @@ test('prepare starts the helper, writes the plugin copy only when it changed, an
   })
   const target = host.launchTarget()
   assert.equal(target.kind === 'wsl' && target.integration?.agentStateSocketPath, STUB_AGENT_STATE_SOCKET)
-  assert.equal(target.kind === 'wsl' && target.sessionDir, STUB_HELPER_INFO.sessionDir)
-  assert.equal(target.kind === 'wsl' && target.pidDir, STUB_HELPER_INFO.pidDir)
+  // Its launch files and pid files are the distribution's server's.
+  assert.equal(target.kind === 'wsl' && target.sessionDir, STUB_SESSION_DIR)
+  assert.equal(target.kind === 'wsl' && target.pidDir, STUB_PID_DIR)
 
   // A second prepare against the same helper does nothing again.
   current = true
@@ -403,7 +433,7 @@ test('prepare does not finish on a preparation for a helper that restarted under
   // for a helper that is gone, and a launch must not go ahead without hooks,
   // socket or gateway because of it.
   const first = { ...STUB_HELPER_INFO }
-  const second = { ...STUB_HELPER_INFO, pidDir: '/run/user/1000/sprintengine/abc123def456/sessions-2' }
+  const second = { ...STUB_HELPER_INFO, appDir: '/home/dev/.local/share/sprintengine-studio/0.4.1' }
   let current = first
   let homes = 0
   const helper = stubWslHelper('Debian', {
@@ -426,8 +456,7 @@ test('prepare does not finish on a preparation for a helper that restarted under
   })
   await host.prepare()
   assert.equal(homes, 2, 'prepared again for the helper that is running now')
-  const target = host.launchTarget()
-  assert.equal(target.kind === 'wsl' && target.pidDir, second.pidDir)
+  assert.equal(host.agentIntegration()?.commandRuntime.executable, second.nodePath)
   assert.equal(host.agentIntegration()?.agentStateSocketPath, STUB_AGENT_STATE_SOCKET)
 
   // One that keeps restarting fails with a reason rather than looping.
@@ -435,7 +464,7 @@ test('prepare does not finish on a preparation for a helper that restarted under
   const flapping = stubWslHelper('Debian', {
     home: () => {
       flips += 1
-      current = { ...STUB_HELPER_INFO, pidDir: `/run/flip-${flips}` }
+      current = { ...STUB_HELPER_INFO, appDir: `/run/flip-${flips}` }
       return { home: '/home/dev' }
     },
     'files.ensureTree': () => ({ current: true }),
@@ -482,46 +511,53 @@ test('a host with no distribution server prepares no launch, and still reads the
   assert.equal((await host.homeDir())?.host, '/home/dev', 'the home needs no launch')
 })
 
-test("a launch's files are written into the helper's directory by relative name, and nowhere else", async () => {
-  const { helper, host } = hostWith({ 'session.write': () => ({ paths: [] }), 'session.remove': () => ({}) })
-  await helper.start()
-  const dir = STUB_HELPER_INFO.sessionDir
+test("a launch's files are written into the distribution server's launch directory by relative name, and nowhere else", async () => {
+  const { host, distribution } = hostWith({
+    home: () => ({ home: '/home/dev' }),
+    'files.ensureTree': () => ({ current: true }),
+  })
+  await host.prepare()
+  const dir = STUB_SESSION_DIR
   await host.writeLaunchFiles?.([
     { path: `${dir}/sid-1-17.sh`, content: "export A='1'\n" },
     { path: `${dir}/host-context-sid-1/rules/host-context.mdc`, content: 'é' },
   ])
-  const write = helper.requests.find((request) => request.method === 'session.write')
-  assert.deepEqual(write?.params, {
-    files: [
-      { path: 'sid-1-17.sh', b64: Buffer.from("export A='1'\n").toString('base64') },
-      { path: 'host-context-sid-1/rules/host-context.mdc', b64: Buffer.from('é').toString('base64') },
-    ],
+  assert.deepEqual(distribution.asked[0], {
+    method: 'launchFiles',
+    params: {
+      write: [
+        { path: 'sid-1-17.sh', b64: Buffer.from("export A='1'\n").toString('base64') },
+        { path: 'host-context-sid-1/rules/host-context.mdc', b64: Buffer.from('é').toString('base64') },
+      ],
+    },
+    started: true,
   })
   await assert.rejects(
     host.writeLaunchFiles?.([{ path: '/home/dev/.bashrc', content: 'x' }]) ?? Promise.reject(new Error('none')),
-    /not inside the WSL helper's launch directory/u,
+    /not inside the launch directory/u,
   )
   host.discardLaunchFiles?.([`${dir}/sid-1-17.sh`, `${dir}/host-context-sid-1`, '/etc/passwd', undefined])
   await new Promise((resolve) => setTimeout(resolve, 0))
-  const remove = helper.requests.find((request) => request.method === 'session.remove')
-  assert.deepEqual(remove?.params, { names: ['sid-1-17.sh', 'host-context-sid-1'] })
-  // A stopped helper is not started to tidy.
-  await helper.shutdown()
-  const before = helper.starts
+  assert.deepEqual(distribution.asked[1], {
+    method: 'launchFiles',
+    params: { remove: ['sid-1-17.sh', 'host-context-sid-1'] },
+    started: false,
+  })
+  // A server that is not running is not started to tidy.
+  distribution.running = false
   host.discardLaunchFiles?.([`${dir}/sid-2-18.sh`])
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.equal(helper.starts, before)
+  assert.equal(distribution.asked.length, 2)
 })
-
 test('at quit the survivor kill gives no grace and starts nothing', async () => {
-  const { helper, host } = hostWith({ 'proc.killSession': () => ({ killed: [7] }) })
+  const { host, distribution } = hostWith({}, { terminal: { processes: () => ({ killed: [7] }) } })
   assert.deepEqual(
     await host.killSessionSurvivors('', { startupScriptPath: '/x/sessions/k-1.sh', quitting: true }),
     [],
-    'no helper running: nothing is started for it',
+    'no server running: nothing is started for it',
   )
-  assert.equal(helper.starts, 0)
-  await helper.start()
+  assert.equal(distribution.running, false)
+  distribution.running = true
   const started = Date.now()
   assert.deepEqual(
     await host.killSessionSurvivors('', { startupScriptPath: '/x/sessions/k-1.sh', quitting: true }),
@@ -529,9 +565,8 @@ test('at quit the survivor kill gives no grace and starts nothing', async () => 
   )
   assert.ok(Date.now() - started < 1_000)
 })
-
 test("a WSL host's launch tokens are its distribution server's, and its directory watches its helper's", async () => {
-  const { helper, host, distribution } = hostWith({ 'session.write': () => ({ paths: [] }) })
+  const { helper, host, distribution } = hostWith({})
   assert.equal(host.issueChannelToken?.(null), undefined, 'a launch with no agent has nothing to prove')
   const identity = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'codex' }
   const token = host.issueChannelToken?.(identity) ?? ''
@@ -553,13 +588,11 @@ test("a WSL host's launch tokens are its distribution server's, and its director
   assert.equal(helper.watches[0].closed, true)
 })
 
-test("a session holds the helper and the distribution's server, and lets both go", () => {
-  const { helper, host, distribution } = hostWith({})
+test("a session holds the distribution's server, and lets it go", () => {
+  const { host, distribution } = hostWith({})
   host.retainSession('sid#1')
-  assert.deepEqual([...helper.retained], ['sid#1'])
   assert.deepEqual([...distribution.holds], ['Debian/sid#1'])
   host.releaseSession('sid#1')
-  assert.equal(helper.retained.size, 0)
   assert.equal(distribution.holds.size, 0)
 })
 

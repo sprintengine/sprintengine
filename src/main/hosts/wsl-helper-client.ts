@@ -22,12 +22,11 @@
 //   the start at once with the reason, and is answered the same way for a
 //   while rather than retried on every call.
 //
-// Lifetime: the helper is held while any WSL session on this machine lives
-// (`retain`/`release`, keyed by session id so a double release is harmless)
-// and while any request is in flight. About two minutes after the last of
-// both, it is asked to shut down and then killed, so the WSL VM can idle. A
-// helper that dies on its own is started again by the next thing that needs
-// it, after a backoff that grows with each crash in a row.
+// Lifetime: the helper is held while any request is in flight. About two
+// minutes after the last, it is asked to shut down and then killed, so the
+// WSL VM can idle. (A WSL terminal holds its distribution's Studio server, not
+// the helper.) A helper that dies on its own is started again by the next
+// thing that needs it, after a backoff that grows with each crash in a row.
 
 import { randomBytes } from 'node:crypto'
 import type { Readable, Writable } from 'node:stream'
@@ -47,10 +46,6 @@ export type WslHelperInfo = {
   arch: string
   nodePath: string
   appDir: string
-  /** Where each session's startup script records its shell's pid; private to this user. */
-  pidDir: string
-  /** Where each launch's startup script and host-context file are written; private to this user. */
-  sessionDir: string
 }
 
 export type HelperProcess = {
@@ -183,8 +178,6 @@ export type WslHelperClient = {
    * for it, and the answer is null. For tidying that can wait.
    */
   requestIfRunning<T>(method: string, params?: unknown): Promise<T | null>
-  retain(sessionId: string): void
-  release(sessionId: string): void
   /**
    * Watches a Linux directory inside the distribution. Registered with the
    * running helper, and again with each helper started after it; a watch never
@@ -213,11 +206,7 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
   let fatal: { error: WslSetupError; at: number } | null = null
   let nextId = 1
   const pending = new Map<number, Pending>()
-  const sessions = new Set<string>()
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  // Whether this client has had a helper up before: the first one is told to
-  // end what an earlier main left running in the distribution.
-  let startedBefore = false
   type WatchEntry = {
     path: string
     recursive: boolean
@@ -242,10 +231,10 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
 
   function armIdle(): void {
     clearIdle()
-    if (state !== 'ready' || sessions.size > 0 || pending.size > 0) return
+    if (state !== 'ready' || pending.size > 0) return
     idleTimer = setTimeout(() => {
       idleTimer = null
-      if (state === 'ready' && sessions.size === 0 && pending.size === 0) {
+      if (state === 'ready' && pending.size === 0) {
         log(`Stopping the WSL helper for ${deps.distro}: nothing has used it for ${Math.round(idleMs / 1000)} s.`)
         void stop()
       }
@@ -296,9 +285,8 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       crashes = now() - entry.startedAt > HEALTHY_RUN_MS ? 1 : crashes + 1
       lastCrashAt = now()
       log(`The WSL helper for ${deps.distro} exited on its own (${crashes} in a row).`)
-      // Sessions still run there, and their hooks and MCP bridges need the
-      // helper's sockets: start it again, after the backoff, rather than
-      // waiting for something to ask.
+      // One that keeps dying is held as failed for a while, rather than
+      // started again by every request.
       if (crashes >= MAX_AUTO_RESTARTS) {
         fatal = {
           error: new WslSetupError(
@@ -307,11 +295,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
           ),
           at: now(),
         }
-      } else if (sessions.size > 0) {
-        const retry = setTimeout(() => {
-          if (sessions.size > 0 && state === 'stopped') void start().catch(() => undefined)
-        }, backoffMs(crashes))
-        retry.unref?.()
       }
     }
   }
@@ -420,7 +403,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
               protocol: WSL_HELPER_PROTOCOL,
               appVersion: deps.appVersion,
               profile: deps.profile,
-              endOrphans: !startedBefore,
             })}\n`,
           )
           return
@@ -561,7 +543,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
         running = entry
         state = 'ready'
         fatal = null
-        startedBefore = true
         // Deliberately not reset: `crashes` counts exits in a row, and a helper
         // that starts and then dies again at once should back off further.
         armIdle()
@@ -679,16 +660,14 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
     )
   }
 
-  // `endSessions` is for the app quitting: the helper then also ends every
-  // session the app launched in the distribution. An idle stop leaves them.
-  async function stop(options: { endSessions: boolean } = { endSessions: false }): Promise<void> {
+  async function stop(): Promise<void> {
     const entry = running
     if (!entry) return
     state = 'stopping'
     entry.intentional = true
     clearIdle()
     try {
-      entry.process.stdin.write(`${JSON.stringify({ t: 'shutdown', endSessions: options.endSessions })}\n`)
+      entry.process.stdin.write(`${JSON.stringify({ t: 'shutdown' })}\n`)
       entry.process.stdin.end()
     } catch {
       // The pipe is already gone, which ends the helper too.
@@ -713,14 +692,6 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
     lastError: () => (fatal && now() - fatal.at < FATAL_HOLD_MS ? fatal.error : null),
     start,
     request,
-    retain(sessionId) {
-      sessions.add(sessionId)
-      clearIdle()
-    },
-    release(sessionId) {
-      if (!sessions.delete(sessionId)) return
-      armIdle()
-    },
     requestIfRunning,
     watch(path, recursive, listener, onError) {
       const entry: WatchEntry = { path, recursive, listener, onError, remote: null, closed: false }
@@ -741,9 +712,8 @@ export function createWslHelperClient(deps: WslHelperClientDeps): WslHelperClien
       }
     },
     async shutdown() {
-      sessions.clear()
       await starting?.catch(() => undefined)
-      await stop({ endSessions: true })
+      await stop()
     },
   }
 }

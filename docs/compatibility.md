@@ -630,6 +630,14 @@ agent's identity from the token its MCP bridge presents. `replace` drops every t
 named again (a reconnect). The token itself never crosses. Served by a WSL distribution's
 Studio only; a desktop whose distribution lacks it launches terminal agents whose bridges
 prove nothing there.
+`environment-terminal-host` (2026-11-14) adds `environment.launchFiles` (`{ write?: [{ path,
+b64 }], remove?: [name] }` → `{ paths }`) and `environment.terminalProcesses` (`{ op:
+'snapshot', keys }` → `{ verdicts }`, `{ op: 'kill', cliSessionId, key }` → `{ killed }`,
+`{ op: 'endAll' }` → `{ killed }`), both the shell's: a WSL terminal's startup files written
+into a private launch directory inside the distribution, and the processes its sessions
+leave read and ended there. Served by a WSL distribution's Studio only. The envelope's `wsl`
+gained `profile`, and the `ready` frame's `frontDoor` gained `sessionDir` and `pidDir`
+(private to the desktop and the server it starts, one build).
 The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a
 WSL distribution's Studio says where it mounts the Windows drives (`/mnt/` unless
 its wsl.conf says otherwise, null when it mounts none), so a client on Windows
