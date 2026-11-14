@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, realpath, rename, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
@@ -14,6 +14,7 @@ import type {
   WorkspaceFolderCheckResult,
 } from '../../../packages/studio-protocol/src/public'
 import { writeAttachmentImageFile } from '../../main/attachment-image-file'
+import { writeConfinedFile } from '../../main/confined-file'
 import { resolveEditorSaveTarget } from '../../main/editor-save-target'
 import { getUniqueCopyPath } from '../../main/filesystem-copy'
 import { createFilesystemReadHandlers } from '../../main/filesystem-read'
@@ -61,7 +62,8 @@ export type StudioFileSystem = {
   readableRoots(): Promise<readonly string[]>
   writableRoots(): Promise<readonly string[]>
   listDirectory(path: string): Promise<StudioDirectoryEntry[]>
-  readText(path: string): Promise<string>
+  /** `confined`: `path` is a real path checked to be inside a folder; a link put there since is not followed. */
+  readText(path: string, options?: { confined?: boolean }): Promise<string>
   readImage(path: string): Promise<string>
   exists(path: string): Promise<boolean>
   stat(path: string): Promise<StudioPathStat>
@@ -156,7 +158,7 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
     readableRoots: async () => [...(await options.readableRoots())],
     writableRoots: async () => [...(await options.writableRoots())],
     listDirectory: (path) => reads.readDirectory(path),
-    readText: (path) => reads.readTextFile(path),
+    readText: (path, readOptions) => reads.readTextFile(path, readOptions),
     readImage: (path) => reads.readImageDataUrl(path),
     exists: (path) => pathExists(path),
     stat: (path) => reads.statPath(path),
@@ -175,14 +177,16 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
       }),
     defaultWorkspaceParent: () => (options.defaultWorkspaceParent ?? defaultParent)(),
 
+    // Writes go to the real path checked and never through a link put there
+    // after the check (`writeConfinedFile`).
     async writeText(path, text, roots) {
-      await writeFile(await resolveEditorSaveTarget(path, roots), text, 'utf-8')
+      await writeConfinedFile(await resolveEditorSaveTarget(path, roots), text)
     },
     saveDroppedImage: (input) => writeAttachmentImageFile(input, 'pasted'),
     async createFile(parentPath, name) {
-      const filePath = join(parentPath, normalizeEntryName(name))
-      await writeFile(filePath, '', { encoding: 'utf-8', flag: 'wx' })
-      return filePath
+      const entryName = normalizeEntryName(name)
+      await writeConfinedFile(join(await realpath(parentPath), entryName), '', { exclusive: true })
+      return join(parentPath, entryName)
     },
     async createDirectory(parentPath, name, existing) {
       const dirPath = join(parentPath, normalizeEntryName(name))

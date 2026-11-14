@@ -3,6 +3,7 @@ import { extname } from 'path'
 import { pathToFileURL } from 'url'
 import { imageMimeType } from './filesystem-image'
 import { MAX_IMAGE_DATA_URL_BYTES, MAX_TEXT_FILE_READ_BYTES } from './filesystem-read-limits'
+import { readConfinedFile } from './confined-file'
 import { checkWorkspaceFolder, pathExists } from './filesystem-workspace'
 import { expandHomePath } from './home-path'
 import { createProjectLogoResolver, readProjectIconFile, type ProjectLogoIo } from './project-logo'
@@ -48,7 +49,11 @@ export function createFilesystemReadHandlers(options: { opener?: FileOpener; pro
       const entries = await readdir(dirPath, { withFileTypes: true })
       return entries.map((entry) => ({ name: entry.name, isDir: entry.isDirectory() }))
     },
-    async readTextFile(filePath: string) {
+    /**
+     * Read a text file. `confined`: `filePath` is a real path checked to be
+     * inside a folder, and is read without following a link put there since.
+     */
+    async readTextFile(filePath: string, options: { confined?: boolean } = {}) {
       const targetStats = await stat(filePath)
       if (!targetStats.isFile()) {
         throw new Error('Only files can be read.')
@@ -59,7 +64,7 @@ export function createFilesystemReadHandlers(options: { opener?: FileOpener; pro
         )
       }
 
-      const content = await readFile(filePath)
+      const content = options.confined ? await readConfinedFile(filePath) : await readFile(filePath)
       if (looksLikeBinary(content)) {
         throw new Error('File appears to be binary and cannot be opened as text.')
       }

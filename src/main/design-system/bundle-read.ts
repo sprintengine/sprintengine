@@ -1,7 +1,8 @@
-import { readdir, readFile, realpath, stat } from 'fs/promises'
+import { readdir, realpath, stat } from 'fs/promises'
 import { extname, join, resolve } from 'path'
 
 import { isSafeManifestRelativePath } from '../../../packages/module-sdk/src/manifest-validate'
+import { readConfinedFile } from '../confined-file'
 import { isPathInsideOrEqual } from '../path-containment'
 
 import {
@@ -135,7 +136,7 @@ class AssetInliner {
     if (!realBundleDir || !real || !isPathInsideOrEqual(realBundleDir, real)) return null
     let bytes: Buffer
     try {
-      bytes = await readFile(real)
+      bytes = await readConfinedFile(real)
     } catch {
       return null
     }
@@ -251,7 +252,7 @@ async function readTextOrNull(bundleDir: string, path: string): Promise<string |
   const real = await realPathInBundle(bundleDir, path)
   if (!real) return null
   try {
-    return await readFile(real, 'utf8')
+    return await readConfinedFile(real, 'utf-8')
   } catch {
     return null
   }
@@ -289,7 +290,7 @@ export async function readDesignSystemBundle(bundleDir: string): Promise<DesignS
     const real = await realpath(join(bundleDir, DESIGN_SYSTEM_MANIFEST_FILENAME))
     if (!isPathInsideOrEqual(await realpath(bundleDir), real))
       throw Object.assign(new Error('The manifest is a link out of the bundle.'), { code: 'ENOENT' })
-    manifestContents = await readFile(real, 'utf8')
+    manifestContents = await readConfinedFile(real, 'utf-8')
   } catch (error) {
     const code = codeOf(error)
     if (code === 'ENOENT') {

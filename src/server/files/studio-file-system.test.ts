@@ -1,9 +1,26 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+
+// A step run once, right after the next `realpath` of a given path answers:
+// how a test puts a link in place between a path's check and its use.
+const afterRealpath = vi.hoisted(() => ({ at: null as null | { path: string; run: () => Promise<void> } }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const realpath = (async (path: string, options?: unknown) => {
+    const answer = await (actual.realpath as (path: string, options?: unknown) => Promise<string>)(path, options)
+    const step = afterRealpath.at
+    if (step && path === step.path) {
+      afterRealpath.at = null
+      await step.run()
+    }
+    return answer
+  }) as typeof actual.realpath
+  return { ...actual, realpath, default: { ...actual, realpath } }
+})
 
 import { createStudioFileSystem } from './studio-file-system'
 
@@ -198,3 +215,34 @@ describe('new files and folders are named, never placed by path', () => {
     })
   }
 })
+
+// A save is checked, then written: a link put at the file between the two must
+// not carry the save to the file it points at.
+test.runIf(process.platform !== 'win32')(
+  'a link swapped in after a save is checked is not written through',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-fs-swap-')))
+    const project = join(root, 'project')
+    const file = join(project, 'notes.md')
+    const secret = join(root, 'private', 'secret.md')
+    try {
+      await mkdir(project)
+      await mkdir(join(root, 'private'))
+      await writeFile(secret, 'PRIVATE_CANARY\n')
+      await writeFile(file, 'notes\n')
+      afterRealpath.at = {
+        path: project,
+        run: async () => {
+          await rm(file)
+          await symlink(secret, file)
+        },
+      }
+      await expect(files().writeText(file, 'saved\n', [project])).rejects.toThrow()
+      expect(afterRealpath.at).toBeNull()
+      expect(await readFile(secret, 'utf-8')).toBe('PRIVATE_CANARY\n')
+    } finally {
+      afterRealpath.at = null
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)

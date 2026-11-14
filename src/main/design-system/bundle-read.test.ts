@@ -542,7 +542,13 @@ test('bundle-read', async () => {
         .split(',')
         .map((name) => name.trim())
         .filter(Boolean)
-      assert.deepEqual(imported.sort(), ['readFile', 'readdir', 'realpath', 'stat'], 'read-only fs surface')
+      assert.deepEqual(imported.sort(), ['readdir', 'realpath', 'stat'], 'read-only fs surface')
+      // Files are read through the confined reader, and nothing else of it.
+      assert.match(
+        code,
+        /import \{ readConfinedFile \} from '\.\.\/confined-file'/,
+        'reads go through readConfinedFile',
+      )
 
       // The one module the read path reaches that DOES run a process is
       // `entry-added-at`, and it is held to the other half of the same contract:

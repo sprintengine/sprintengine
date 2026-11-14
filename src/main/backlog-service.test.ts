@@ -31,7 +31,24 @@ import {
   updateBacklogType,
 } from './backlog-service'
 import { workspaceStorePath } from './workspace-store'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+// A step run once, right after the next `realpath` of a given path answers:
+// how a test puts a link in place between a path's check and its use.
+const afterRealpath = vi.hoisted(() => ({ at: null as null | { path: string; run: () => Promise<void> } }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const realpath = (async (path: string, options?: unknown) => {
+    const answer = await (actual.realpath as (path: string, options?: unknown) => Promise<string>)(path, options)
+    const step = afterRealpath.at
+    if (step && path === step.path) {
+      afterRealpath.at = null
+      await step.run()
+    }
+    return answer
+  }) as typeof actual.realpath
+  return { ...actual, realpath, default: { ...actual, realpath } }
+})
 
 test('backlog-service', async () => {
   const PRECISE_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -1681,3 +1698,41 @@ test('backlog files are read and written only where they really are inside the b
     await rm(root, { force: true, recursive: true })
   }
 })
+
+// The check and the write are two steps: a link put at the item between them
+// must not carry the write (or the read before it) to the file it points at.
+test.runIf(process.platform !== 'win32')(
+  'a link swapped in after a backlog file is checked is not written through',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-swap-')))
+    const project = join(root, 'project')
+    const item = join(project, 'backlog', 'unfiled', 'item.md')
+    const secret = join(root, 'private', 'secret.md')
+    const secretText = '---\nstatus: idea\n---\n# PRIVATE_CANARY\n'
+    try {
+      await mkdir(dirname(item), { recursive: true })
+      await mkdir(dirname(secret))
+      await writeFile(secret, secretText, 'utf-8')
+      await writeFile(item, '---\nstatus: idea\n---\n# Item\n', 'utf-8')
+      afterRealpath.at = {
+        path: item,
+        run: async () => {
+          await rm(item)
+          await symlink(secret, item)
+        },
+      }
+      const updated = await updateBacklogStatus({
+        workspaceRoot: project,
+        relativePath: 'backlog/unfiled/item.md',
+        status: 'ready',
+      })
+      assert.equal(afterRealpath.at, null, 'the link was put in place after the check')
+      assert.equal(updated.ok, false)
+      assert.ok(!JSON.stringify(updated).includes('PRIVATE_CANARY'))
+      assert.equal(await readFile(secret, 'utf-8'), secretText)
+    } finally {
+      afterRealpath.at = null
+      await rm(root, { force: true, recursive: true })
+    }
+  },
+)
