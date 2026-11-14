@@ -26,8 +26,6 @@ export type ServerIpcSubscription = { unsubscribe: string; id: 'argument' | 'res
 export type ServerIpcChannel = { retry?: 'once'; subscription?: ServerIpcSubscription }
 
 const SERVER_IPC_CHANNEL_TABLE = {
-  'hosts:home': { retry: 'once' },
-  'hosts:list': { retry: 'once' },
   // The Schedules window's (registered with the server's domains, refused
   // while scheduled agents is off).
 } as const satisfies Readonly<Record<string, ServerIpcChannel>>

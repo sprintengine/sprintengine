@@ -354,6 +354,14 @@ export const STUDIO_WEB_DEVICES_CAPABILITY = 'web-devices' as const
 export const STUDIO_TAILNET_CAPABILITY = 'tailnet' as const
 
 /**
+ * The machines a desktop's own computer offers (`hosts.ts`): itself and its
+ * WSL distributions, with how each one's Studio server stands
+ * (`hosts.list`, with the `hosts.changed` stream). An owner's. Offered by a
+ * desktop's Studio; a machine's own Studio (WSL, SSH) offers none.
+ */
+export const STUDIO_EXECUTION_HOSTS_CAPABILITY = 'execution-hosts' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -416,6 +424,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_WORKSPACE_SYNC_CAPABILITY,
   STUDIO_WEB_DEVICES_CAPABILITY,
   STUDIO_TAILNET_CAPABILITY,
+  STUDIO_EXECUTION_HOSTS_CAPABILITY,
 ] as const
 
 /**

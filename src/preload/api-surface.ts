@@ -14,7 +14,6 @@ import { pullRequestApi } from './api/pull-request'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
 import { modulesApi } from './api/modules'
-import { hostsApi } from './api/hosts'
 import { sshEnvironmentsApi } from './api/ssh-environments'
 import { environmentsApi } from './api/environments'
 import { splashApi } from './api/splash'
@@ -59,7 +58,6 @@ export const apiModules = {
   ...clipboardApi,
   ...chatExportApi,
   ...filesystemApi,
-  ...hostsApi,
   ...sshEnvironmentsApi,
   ...environmentsApi,
   ...gitApi,

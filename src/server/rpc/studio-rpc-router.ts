@@ -17,6 +17,7 @@ import {
   type StudioErrorCode,
   type FileWatchEvent,
   type SkillSourceUpdateCheck,
+  type HostsListResult,
   type StudioGrant,
   type StudioHandlers,
   type StudioMethod,
@@ -187,8 +188,17 @@ export type StudioRpcRouter = {
   readonly worktrees: StudioWorktrees | null
   /** The workspace registry's change stream, where this Studio serves its windows' registry. */
   readonly workspaceSync: StudioWorkspaceSync | null
+  /** The `hosts.changed` stream, where this Studio lists its computer's machines. */
+  readonly hosts: StudioHosts | null
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
+}
+
+/** The machines a desktop's computer offers (`hosts.*`): the core's host registry. */
+export type StudioHosts = {
+  list(options: { refresh?: boolean; all?: boolean }): Promise<HostsListResult>
+  /** Every time the list may read differently. */
+  subscribe(listener: () => void): () => void
 }
 
 export type StudioRpcRouterOptions = {
@@ -228,6 +238,8 @@ export type StudioRpcRouterOptions = {
   pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
+  /** The machines this desktop's computer offers; without it, `hosts.*` is answered `unavailable`. */
+  hosts?: StudioHosts
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
   discovery?: StudioDiscovery
   /** What this machine has and lacks for its background work; without it, `environment.readiness` is answered `unavailable`. */
@@ -1944,6 +1956,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.discovery
         ? discovered(await options.discovery.extensions(workspaceId, cli), voice)
         : unserved('workspaces.extensions'),
+    'hosts.list': async (asked) =>
+      options.hosts ? { ok: true, result: await options.hosts.list(asked) } : unserved('hosts.list'),
     'localServers.list': async (target) =>
       options.localServers
         ? { ok: true, result: await options.localServers.list(target) }
@@ -2366,6 +2380,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     git: options.git ?? null,
     worktrees: options.worktrees ?? null,
     workspaceSync: options.workspaceSync ?? null,
+    hosts: options.hosts ?? null,
     close: () => {
       if (exportSweep) clearTimeout(exportSweep)
       exportSweep = null

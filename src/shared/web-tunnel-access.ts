@@ -42,8 +42,6 @@ const TUNNEL_OWNER = "A browser tab reaches this desktop's own channels only und
 const owner = (...permissions: StudioPermission[]): StudioAccess => ({ permissions, owner: TUNNEL_OWNER })
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
-  'hosts:home': owner('workspace:read'),
-  'hosts:list': owner('workspace:read'),
   // The front door's own channels.
   [WEB_BROWSE_FOLDERS_CHANNEL]: owner('filesystem:read'),
   [WEB_PREVIEWS_LIST_CHANNEL]: owner('workspace:read'),

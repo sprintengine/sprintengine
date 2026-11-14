@@ -3,7 +3,6 @@ import type { IpcMain } from 'electron'
 import type { createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { createConversationService } from '../../main/conversation-service'
-import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { createStudioChatBackend } from '../../main/studio-rpc/studio-chat-backend'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
@@ -58,7 +57,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   const dataDir = () => core.platform.paths.dataDir()
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()
-  registerHostsIpc(ipc, { hosts: core.hosts })
   // One conversation service over the core's chats, which the Studio RPC's
   // chat surface serves to every client, the app's own windows included.
   const conversationService = {

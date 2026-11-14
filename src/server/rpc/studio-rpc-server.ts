@@ -21,6 +21,7 @@ import {
   STUDIO_ACCESS_CAPABILITY,
   STUDIO_WEB_DEVICES_CAPABILITY,
   STUDIO_TAILNET_CAPABILITY,
+  STUDIO_EXECUTION_HOSTS_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_PULL_REQUESTS_CAPABILITY,
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
@@ -60,7 +61,7 @@ import {
 } from '../../../packages/studio-protocol/src/public'
 import { createStudioRpcConnection, type StudioRpcConnection } from './studio-rpc-connection'
 import { createStudioRpcListener, type StudioRpcListener } from './studio-rpc-listener'
-import { createStudioRpcRouter } from './studio-rpc-router'
+import { createStudioRpcRouter, type StudioHosts } from './studio-rpc-router'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
@@ -210,6 +211,8 @@ export type StudioRpcServerOptions = {
   pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started, for owners. Advertised as `local-servers` only when given. */
   localServers?: StudioLocalServers
+  /** The machines a desktop's computer offers, for owners. Advertised as `execution-hosts` only when given. */
+  hosts?: StudioHosts
   /** What a client reads before it starts a chat. Advertised as `workspaces` only when given. */
   discovery?: StudioDiscovery
   /** The terminals on this machine. Advertised as `terminals` only when given: where the server holds a terminal runtime. */
@@ -346,6 +349,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_ACCESS_CAPABILITY || options.access !== undefined) &&
         (capability !== STUDIO_WEB_DEVICES_CAPABILITY || (options.webDevices?.() ?? null) !== null) &&
         (capability !== STUDIO_TAILNET_CAPABILITY || options.tailnet !== undefined) &&
+        (capability !== STUDIO_EXECUTION_HOSTS_CAPABILITY || options.hosts !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined) &&
@@ -377,6 +381,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
+    ...(options.hosts ? { hosts: options.hosts } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),
     ...(options.relayedEnvironments ? { relayedEnvironments: options.relayedEnvironments } : {}),
