@@ -730,6 +730,12 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     handle.restartTimer = setTimeout(() => {
       handle.restartTimer = null
       if (handle.holds.size === 0 || handle.server || handle.starting) return
+      // The timer has waited the backoff out. `retryAt` is on the app's clock,
+      // which can read behind the timers' (a Node timer fires up to a
+      // millisecond before `Date.now()` reaches its end, and the wall clock
+      // can be set back): read against it, the start would be turned away as
+      // too soon, and nothing would try again.
+      handle.retryAt = Math.min(handle.retryAt, now())
       void connect(handle.distro).catch((error: unknown) =>
         log(
           `The Studio server in ${handle.distro} did not start again for its WSL terminals: ${error instanceof Error ? error.message : String(error)}`,
