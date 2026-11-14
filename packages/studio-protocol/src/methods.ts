@@ -684,7 +684,11 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
   'conversation.resolveApproval': command('conversation.resolveApproval', 'resolveApproval', operateDurably),
   'conversation.answerQuestion': command('conversation.answerQuestion', 'answerQuestion', operateDurably),
   'conversation.resolvePlan': command('conversation.resolvePlan', 'resolvePlan', operateDurably),
-  'conversation.setPermissionPreset': command('conversation.setPermissionPreset', 'setPermissionPreset', operateDurably),
+  'conversation.setPermissionPreset': command(
+    'conversation.setPermissionPreset',
+    'setPermissionPreset',
+    operateDurably,
+  ),
   'conversation.setModel': command('conversation.setModel', 'setModel', operateDurably),
   'conversation.cancelQueued': command('conversation.cancelQueued', 'cancelQueued'),
   'conversation.stopSubagent': command('conversation.stopSubagent', 'stopSubagent'),
