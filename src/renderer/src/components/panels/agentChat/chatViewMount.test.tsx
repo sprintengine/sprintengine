@@ -1214,9 +1214,10 @@ function runningTurnSend() {
   return { sendTurn, calls, release: () => release() }
 }
 
-test('a sent draft is let go once its message is in the log, not when its turn ends', async () => {
-  // The send answers when the turn ends. A reload before then read the kept
-  // copy back into the composer, beside the message already sent.
+test('a sent draft leaves storage as the send goes, so a reload mid-turn cannot bring it back', async () => {
+  // The send answers when the turn ends. A reload once the Studio had taken
+  // the message, but before the view saw it in the log, read a kept copy back
+  // into the composer, and a second send would run it twice.
   const turn = runningTurnSend()
   const chat = await mountChat({ sendTurn: turn.sendTurn })
   const { composerDraftStore } = await import('./draftStore')
@@ -1224,7 +1225,9 @@ test('a sent draft is let go once its message is in the log, not when its turn e
   try {
     await chat.act(async () => chat.type('Run the whole suite'))
     await chat.act(async () => chat.enter())
-    expect(saved(), 'kept while the send has not landed').toBe('Run the whole suite')
+    expect(turn.calls).toHaveLength(1)
+    expect(saved(), 'nothing of the sent draft is in storage for a reload to read').toBe('')
+    expect(chat.draft()).toBe('')
     const { localTurnId } = turn.calls[0] as { localTurnId: string }
     await chat.act(async () => {
       chat.emit({
@@ -1233,10 +1236,30 @@ test('a sent draft is let go once its message is in the log, not when its turn e
       })
       chat.emit({ type: 'event', event: event('turn_started', { turnId: 't1' }) })
     })
-    expect(saved(), "the message is the chat's now").toBe('')
+    expect(saved()).toBe('')
     expect(chat.draft()).toBe('')
   } finally {
     turn.release()
+    await chat.unmount()
+  }
+})
+
+test('a send that fails puts its draft back, on screen and in storage', async () => {
+  let fail = (_message: string) => undefined as void
+  const sendTurn = vi.fn<SendTurn>(
+    () => new Promise((resolve) => (fail = (message) => resolve({ ok: false, message }))),
+  )
+  const chat = await mountChat({ sendTurn })
+  const { composerDraftStore } = await import('./draftStore')
+  const saved = () => composerDraftStore().getState().read('workspace', 'agent').text
+  try {
+    await chat.act(async () => chat.type('Rerun the migration'))
+    await chat.act(async () => chat.enter())
+    expect(saved(), 'cleared while the send is out').toBe('')
+    await chat.act(async () => fail('The provider is restarting.'))
+    expect(chat.draft()).toBe('Rerun the migration')
+    expect(saved(), 'kept at once, for a reload right after').toBe('Rerun the migration')
+  } finally {
     await chat.unmount()
   }
 })
