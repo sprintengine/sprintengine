@@ -19,7 +19,6 @@ import {
   TAILNET_IDENTITY_PATH,
   TAILNET_STREAM_PATH,
   TAILNET_STUDIO_PATH,
-  tailnetEnvironmentStudioPath,
   TAILNET_MCP_PATH,
   TAILNET_WS_TICKET_PATH,
 } from './tailnet-routes'
@@ -95,8 +94,6 @@ const LEGACY_ROUTES: { [R in TailnetDeviceRoute]: (scopes: TailnetScope[]) => bo
   stream: () => true,
   // Newer still: the Studio protocol, whose methods are judged one by one by the Studio router.
   studio: () => true,
-  // Newest: a machine this desktop relays, which a device must at least follow chats to reach.
-  relay: (scopes) => legacy(scopes, 'conversation:read'),
 }
 
 test('each of the six scopes carries only permissions from the closed set, and none a device was never given', () => {
@@ -152,14 +149,11 @@ test('each upgrade path names its route, and every declared route is one some re
     assert.equal(tailnetUpgradeRouteOf(gone), null, gone)
   assert.equal(tailnetUpgradeRouteOf(TAILNET_STUDIO_PATH), 'studio')
   assert.equal(tailnetUpgradeRouteOf(TAILNET_MCP_PATH), null)
-  assert.equal(tailnetUpgradeRouteOf(tailnetEnvironmentStudioPath('env-build-box')), 'relay')
-  assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/environments/../studio'), null)
-  assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/environments/env-build-box/terminal'), null)
+  // No path reaches a machine this desktop holds: SSH and WSL machines are reached from this desktop only.
+  assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/environments/env-build-box/studio'), null)
   // No entry in the table goes unconsulted: each is what some request is judged by.
   const resolved = new Set<string>([
-    ...[TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH, tailnetEnvironmentStudioPath('env-build-box')].map((path) =>
-      tailnetUpgradeRouteOf(path)!,
-    ),
+    ...[TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH].map((path) => tailnetUpgradeRouteOf(path)!),
     tailnetDeviceRouteOf('GET', TAILNET_IDENTITY_PATH)!,
     tailnetDeviceRouteOf('POST', TAILNET_WS_TICKET_PATH)!,
     tailnetDeviceRouteOf('POST', TAILNET_MCP_PATH)!,
@@ -229,7 +223,6 @@ test('a device stored before permissions loads as it was and is judged by its sc
     assert.deepEqual(device.scopes, ['backlog:read', 'conversation:operate'])
     const principal = tailnetDevicePrincipal(device.scopes)
     assert.deepEqual([...principal.permissions].sort(), ['backlog:read', 'conversation:operate', 'conversation:read'])
-    assert.equal(authorizeStudioAccess(principal, TAILNET_ROUTE_ACCESS.relay).ok, true)
     assert.equal(authorizeStudioAccess(principal, tailnetToolAccess('workspace.list', false)).ok, false)
     assert.equal(authorizeStudioAccess(principal, tailnetToolAccess('terminal.read', false)).ok, false)
   } finally {

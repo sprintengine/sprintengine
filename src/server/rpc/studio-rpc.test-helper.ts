@@ -14,7 +14,6 @@ import {
   type StudioCreatedConversation,
   type StudioEnvironmentReadiness,
   type StudioEnvironmentWork,
-  type StudioRelayedEnvironment,
   type StudioGrant,
   type StudioParsedServerFrame,
   type StudioProtocolWindow,
@@ -411,7 +410,6 @@ export async function startTestServer(
     protocol?: StudioProtocolWindow
     modules?: StudioModules
     readiness?: () => Promise<StudioEnvironmentReadiness>
-    relayedEnvironments?: () => Promise<StudioRelayedEnvironment[]>
     environmentAccess?: StudioEnvironmentAccess
     adoption?: EnvironmentAdoption
     work?: () => StudioEnvironmentWork
@@ -472,7 +470,6 @@ export async function startTestServer(
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),
     ...(input.readiness ? { readiness: input.readiness } : {}),
-    ...(input.relayedEnvironments ? { relayedEnvironments: input.relayedEnvironments } : {}),
     ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
     ...(input.adoption ? { adoption: input.adoption } : {}),
     ...(input.work ? { work: input.work } : {}),

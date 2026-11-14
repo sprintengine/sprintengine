@@ -369,17 +369,12 @@ the connection. The socket carries no `Origin`, except a desktop window's,
 which names its origin when it asks for the ticket and carries exactly that
 one. A ticket answer from a Studio that serves the endpoint says so with
 `studioPath`; a device that finds it missing is talking to an older Studio.
-A machine the desktop holds behind its front door (an SSH machine's server)
-is reached the same way at `/tailnet/v1/environments/<environmentId>/studio`
-(2026-11-13): `ws-ticket` with `{ environmentId }` answers a ticket that
-machine minted and that path as `studioPath`. That ticket opens only that path.
-A ticket for this desktop opens none of a machine's paths, and a device that
-may not follow chats is given no ticket. The desktop checks the device as it
-checks it on its own path, then carries the socket to the machine. The
-machine serves it with the device's scopes cut to `conversation:read`,
-`conversation:operate`, `conversation:create` and `workspaces:read`, never an
-owner's, so never a terminal. A narrowed or removed pairing closes it, and the
-device connects again with a fresh ticket. It is a connection envelope — `hello` /
+A paired device reaches only that desktop's own Studio: an SSH machine or a
+WSL distribution the desktop holds is reached from that desktop alone. The
+path that carried a device's socket on to such a machine
+(`/tailnet/v1/environments/<environmentId>/studio`, 2026-11-13) was removed
+on 2026-11-14: it is not found, and `ws-ticket` ignores an `environmentId`
+and answers a ticket for this desktop's own path. It is a connection envelope — `hello` /
 `welcome`, requests answered by id, subscriptions keyed by id — around the
 conversation contract, which it depends on and re-exports rather than copies:
 a stream's frames are the conversation lane's own server frames, and a
@@ -614,28 +609,13 @@ reaches it. Served by a WSL distribution's or an SSH machine's Studio, which a
 desktop reaches over its front door. `environment.revokeWindow` (`{ windowKey }`, also
 the shell's) ends a window document's connections there and voids its unspent
 tickets when the document goes; the desktop names each document afresh.
-`device-tickets` (2026-11-13) adds `environment.deviceTicket` (`{ deviceId, name, scopes }`
-→ `{ token, path }`, the shell's): a ticket on the window listener's `/device` path
-for a paired device the desktop relays (good once, for thirty seconds, no
-`Origin` at all, `Host: 127.0.0.1`). The connection is audited, held to the
-folders the machine knows, and never an owner's (`clientId` `relay:<deviceId>`).
-Its scopes are exactly those named, each of them one of
-`STUDIO_RELAYED_DEVICE_SCOPES`; any other is refused `invalid_params`.
-`relayed-environments` (2026-11-13) adds `environment.relayed` (`{}` →
-`{ environments: [{ environmentId, name, kind: 'ssh' | 'wsl', connected, machine?, mark? }] }`,
-`conversation:read`, devices included): the machines a desktop relays its paired
-devices to. `machine` (the host and port) is answered to the owner only; a device gets
-the name, the mark and the route, which is all it needs. A client reads the list with
-`relayedEnvironmentsOf`, which drops an entry it cannot use. A device reaches one at
-`/tailnet/v1/environments/<environmentId>/studio`
-on the desktop's tailnet listener with a ticket from `ws-ticket` naming the
-`environmentId`; a paired desktop names it as the route
-`relay:<pairing>.<environmentId>`, ranked last (after `ssh`: a relay admits the client
-as a device, so a machine this desktop also holds over SSH is reached as its owner). A
-desktop without it relays nothing, and a client lists no relayed machines.
-A WSL distribution a desktop runs is listed as `kind: 'wsl'` (2026-11-13) once the desktop
-has heard its server's environment id; a device's ticket starts the distribution's server
-when it is not running. An older client drops entries of a kind it does not know.
+`device-tickets` (`environment.deviceTicket`, the window listener's `/device` path) and
+`relayed-environments` (`environment.relayed`, the `relay:<pairing>.<environmentId>`
+route kind), both of 2026-11-13, were removed on 2026-11-14: a paired device no longer
+reaches an SSH machine or a WSL distribution through the desktop that holds it. A
+Studio no longer advertises either capability and answers both methods
+`unknown_method`; a client that checks the capability first, as every one did, lists
+no such machine. `parseEnvironmentRoute` reads a `relay:` string as no route.
 `environment-work` (2026-11-13) adds `environment.work` (`{}` → `{ working, schedules,
 watches, messages, resumes }`, the shell's): whether a chat works on this Studio and what it
 does on its own, which a desktop asks over its owner connection to a WSL distribution's
@@ -882,8 +862,8 @@ server stands (`hosts.list`, with `refresh` and `all`, and the
 `hosts.changed` stream, which carries nothing: the client lists again).
 Offered by a desktop's Studio only; a WSL distribution's or an SSH machine's
 Studio is one of those machines and offers none. Both are an owner's, and no
-paired device reaches them (a device reaches a distribution's chats through
-the desktop's `relay:` route). New chat's folder picker asks a
+paired device reaches them, nor a distribution's chats, which are reached
+from the desktop alone. New chat's folder picker asks a
 distribution's own Studio where it keeps projects
 (`files.defaultWorkspaceParent`) instead. Same build on both ends: the
 window's `hosts:list`, `hosts:home` and `hosts:changed` channels are gone,

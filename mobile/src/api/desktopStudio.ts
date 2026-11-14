@@ -30,21 +30,15 @@ const TICKET_PATH = "/tailnet/v1/ws-ticket";
 const TICKET_TIMEOUT_MS = 10_000;
 
 /**
- * A paired desktop's Studio, or (`relayedEnvironmentId`) a machine that
- * desktop relays this phone to: an SSH machine it holds, reached at
- * `/tailnet/v1/environments/<id>/studio` on the same listener with the same
- * device token, where the machine admits this phone with its own grant, cut
- * to what a relayed device may hold and never an owner's.
+ * A paired desktop's Studio. The phone reaches only the desktop itself: an
+ * SSH machine or a WSL distribution that desktop holds is reached from that
+ * desktop alone.
  */
-export type DesktopTarget = { baseUrl: string; deviceToken: string; relayedEnvironmentId?: string };
+export type DesktopTarget = { baseUrl: string; deviceToken: string };
 
-/** The Studio a session names: its desktop's, or the machine that desktop relays it to. */
+/** The Studio a session names: its desktop's. */
 export function studioTargetOf(session: DesktopTarget): DesktopTarget {
-  return {
-    baseUrl: session.baseUrl,
-    deviceToken: session.deviceToken,
-    ...(session.relayedEnvironmentId ? { relayedEnvironmentId: session.relayedEnvironmentId } : {}),
-  };
+  return { baseUrl: session.baseUrl, deviceToken: session.deviceToken };
 }
 
 type NativeSocket = new (
@@ -81,8 +75,7 @@ async function mintTicket(target: DesktopTarget, fetchImpl: typeof fetch): Promi
     response = await fetchImpl(`${target.baseUrl}${TICKET_PATH}`, {
       method: "POST",
       headers: { authorization: `Bearer ${target.deviceToken}`, "content-type": "application/json" },
-      // A relayed machine's ticket is that machine's, minted for this device there.
-      body: JSON.stringify(target.relayedEnvironmentId ? { environmentId: target.relayedEnvironmentId } : {}),
+      body: "{}",
       signal: controller.signal,
     });
   } catch {
@@ -120,7 +113,7 @@ function heard(key: string, welcome: StudioWelcomeFrame): void {
 }
 
 function clientKey(target: DesktopTarget): string {
-  return `${target.baseUrl}\n${target.deviceToken}\n${target.relayedEnvironmentId ?? ""}`;
+  return `${target.baseUrl}\n${target.deviceToken}`;
 }
 
 /**

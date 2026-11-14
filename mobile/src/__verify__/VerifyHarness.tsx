@@ -351,10 +351,6 @@ function VerifyShell() {
   );
 
   const sessionData = useMemo<SessionDataValue>(() => {
-    const value = verifySessionData();
-    return { ...value, chatSessions: value.sessions };
-  }, []);
-  function verifySessionData(): Omit<SessionDataValue, "chatSessions"> {
     const projects = buildProjectList(verifySnapshot);
     return {
       session: verifySession,
@@ -396,7 +392,7 @@ function VerifyShell() {
       markDeviceRevoked: noop,
       disconnect: noop,
     };
-  }
+  }, []);
 
   return (
     <PairingLinkProvider value={pairingLink}>

@@ -16,7 +16,6 @@ import {
   sameEnvironmentRoute,
   type EnvironmentRoute,
 } from '../src/environment'
-import { relayedEnvironmentsOf } from '../src/environment-access'
 import { STUDIO_METHODS } from '../src/methods'
 
 const ENV = '6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b'
@@ -74,10 +73,9 @@ test('a route string that names nothing is not a route, and formatting one throw
   assert.throws(() => formatEnvironmentRoute({ kind: 'wsl', distro: '' }))
 })
 
-test('routes are ordered this machine, WSL, tailnet, SSH, relay, keeping the order within a kind and each once', () => {
-  assert.deepEqual([...ENVIRONMENT_ROUTE_KINDS], ['local', 'wsl', 'tailnet', 'ssh', 'relay'])
+test('routes are ordered this machine, WSL, tailnet, SSH, keeping the order within a kind and each once', () => {
+  assert.deepEqual([...ENVIRONMENT_ROUTE_KINDS], ['local', 'wsl', 'tailnet', 'ssh'])
   const given: EnvironmentRoute[] = [
-    { kind: 'relay', via: 't1', environment: 'env-b' },
     { kind: 'ssh', machine: 'b' },
     { kind: 'tailnet', connection: 't2' },
     { kind: 'ssh', machine: 'a' },
@@ -94,7 +92,6 @@ test('routes are ordered this machine, WSL, tailnet, SSH, relay, keeping the ord
     'tailnet:t1',
     'ssh:b',
     'ssh:a',
-    'relay:t1.env-b',
   ])
   assert.equal(JSON.stringify(given), before, 'the input is not sorted in place')
   assert.equal(sameEnvironmentRoute({ kind: 'ssh', machine: 'a' }, { kind: 'ssh', machine: 'a' }), true)
@@ -114,48 +111,11 @@ test('a chat address round-trips through its key, and the key has exactly one co
   assert.throws(() => formatChatAddress({ environmentId: 'a:b', chatId: 'c' }))
 })
 
-test('a relay route names the pairing it goes through and the machine it reaches, and reads back the same', () => {
-  const route: EnvironmentRoute = { kind: 'relay', via: 'pair-1', environment: '0b9f-4c' }
-  assert.equal(formatEnvironmentRoute(route), 'relay:pair-1.0b9f-4c')
-  assert.deepEqual(parseEnvironmentRoute('relay:pair-1.0b9f-4c'), route)
-  for (const bad of ['relay:', 'relay:pair-1', 'relay:.env', 'relay:pair-1.', 'relay:a.b.c', 'relay:a b.c'])
-    assert.equal(parseEnvironmentRoute(bad), null, bad)
-  assert.ok(sameEnvironmentRoute(route, { kind: 'relay', via: 'pair-1', environment: '0b9f-4c' }))
-  assert.ok(!sameEnvironmentRoute(route, { kind: 'relay', via: 'pair-2', environment: '0b9f-4c' }))
-})
-
-test("a desktop's relayed list is read as a client may use it: an entry that cannot be a route is dropped, the rest kept", () => {
-  const BOX = '7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f'
-  const DISTRO = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
-  const answer = {
-    environments: [
-      {
-        environmentId: BOX,
-        name: 'build-box',
-        kind: 'ssh',
-        connected: true,
-        machine: { host: 'build-box', port: 22 },
-        mark: { kind: 'server', color: 'teal' },
-      },
-      // A dot would split the route; a slash would leave the socket path.
-      { environmentId: 'a.b', name: 'dotted', kind: 'ssh', connected: true },
-      { environmentId: '../x', name: 'climbing', kind: 'ssh', connected: true },
-      { environmentId: ENV, name: '', kind: 'ssh', connected: true },
-      { environmentId: DISTRO, name: 'other kind', kind: 'docker', connected: true },
-      { environmentId: BOX, name: 'twice', kind: 'ssh', connected: true },
-      { environmentId: ENV, name: 'half a mark', kind: 'ssh', connected: 'yes', mark: { kind: 'server' } },
-      // A WSL distribution the desktop runs.
-      { environmentId: DISTRO, name: 'WSL: Ubuntu', kind: 'wsl', connected: true },
-      null,
-      'build-box',
-    ],
-  }
-  assert.deepEqual(relayedEnvironmentsOf(answer), [
-    { environmentId: BOX, name: 'build-box', kind: 'ssh', connected: true, mark: { kind: 'server', color: 'teal' } },
-    { environmentId: ENV, name: 'half a mark', kind: 'ssh', connected: false },
-    { environmentId: DISTRO, name: 'WSL: Ubuntu', kind: 'wsl', connected: true },
-  ])
-  for (const bad of [null, {}, { environments: 'all' }, []]) assert.deepEqual(relayedEnvironmentsOf(bad), [])
+test('no route reaches a machine through a paired desktop: SSH and WSL machines are reached only from the desktop that holds them', () => {
+  for (const gone of ['relay:pair-1.0b9f-4c', 'relay:pair-1']) assert.equal(parseEnvironmentRoute(gone), null, gone)
+  assert.equal(isEnvironmentRoute({ kind: 'relay', via: 'pair-1', environment: '0b9f-4c' }), false)
+  assert.equal(STUDIO_METHODS['environment.relayed' as keyof typeof STUDIO_METHODS], undefined)
+  assert.equal(STUDIO_METHODS['environment.deviceTicket' as keyof typeof STUDIO_METHODS], undefined)
 })
 
 test('a hand-over call names no record only when it stages parts for the records that follow', () => {

@@ -24,7 +24,6 @@
   },
   "include": [
     "src/api/tailnetControlClient.ts",
-    "src/api/relayedMachines.ts",
     "src/features/conversations/chatActivity.ts",
     "src/features/conversations/subagentLogic.ts",
     "src/features/conversations/quoteLogic.ts",

@@ -186,20 +186,6 @@ export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' a
 export const STUDIO_WINDOW_TICKETS_CAPABILITY = 'window-tickets' as const
 
 /**
- * `environment.deviceTicket` (`environment-access.ts`): a ticket for one
- * connection of a paired device the desktop that holds this Studio relays,
- * never an owner's, asked for by that desktop's shell alone.
- */
-export const STUDIO_DEVICE_TICKETS_CAPABILITY = 'device-tickets' as const
-
-/**
- * `environment.relayed` (`environment-access.ts`): the machines this desktop
- * relays its paired devices to (`relay:` routes), which a device reaches at
- * `/tailnet/v1/environments/<environmentId>/studio` on this desktop.
- */
-export const STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY = 'relayed-environments' as const
-
-/**
  * `environment.work` (`environment-access.ts`): whether a chat works here and
  * what this Studio does on its own, asked by the desktop that holds it before
  * it stops the server for being idle and for its quit question.
@@ -400,8 +386,6 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
-  STUDIO_DEVICE_TICKETS_CAPABILITY,
-  STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
   STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,

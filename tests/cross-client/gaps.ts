@@ -67,6 +67,6 @@ export const NOT_RUN = [
     what: 'WSL',
     why: 'WSL 2 does not run on the hosted Windows runners (no nested virtualization)',
     manual:
-      'On a Windows PC with a WSL 2 distribution: build the app (npm run dist:win), turn on WSL chats, start a chat in the distribution, send a turn, answer its approval from the phone and from a paired desktop, then quit and reopen the app and send again.',
+      'On a Windows PC with a WSL 2 distribution: build the app (npm run dist:win), turn on WSL chats, start a chat in the distribution, send a turn, answer its approval, then quit and reopen the app and send again.',
   },
 ] as const

@@ -1,12 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 
-import {
-  STUDIO_RELAYED_DEVICE_SCOPES,
-  type StudioGrant,
-  type StudioRelayedDeviceScope,
-  type StudioRelayedEnvironment,
-} from '../../../../packages/studio-protocol/src/public'
+import type { StudioGrant } from '../../../../packages/studio-protocol/src/public'
 import type { StudioAuthenticator } from '../../../server/rpc/studio-rpc-types'
 import { tailnetDeviceStudioScopes, type TailnetDevice } from '../../../shared/tailnet'
 import type { TailnetDeviceStore } from './tailnet-devices'
@@ -30,63 +25,6 @@ import type { TailnetDeviceStore } from './tailnet-devices'
 export type TailnetStudioHost = {
   /** Serve one device's socket under the authenticator given; it ends when the stream does. */
   attach(stream: Duplex, authenticator: StudioAuthenticator): void
-}
-
-/**
- * The machines this desktop holds behind their front doors (an SSH
- * machine's server, later a WSL distribution's), for a paired device to reach
- * through this desktop (`/tailnet/v1/environments/<id>/studio`). The device
- * proves itself here; the machine admits the socket by a device ticket this
- * desktop asks it for, with the device's grant cut to the relayed ceiling.
- */
-export type TailnetEnvironmentRelay = {
-  /** A device ticket on the machine whose environment id this is, or why there is none. */
-  ticket(
-    environmentId: string,
-    device: { deviceId: string; name: string; scopes: StudioRelayedDeviceScope[] },
-  ): Promise<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>
-  /** A fresh stream to that machine's window listener (the front door's `ws`). */
-  open(environmentId: string): Promise<Duplex>
-  /** The machines a device may be relayed to (`environment.relayed`). */
-  list(): Promise<StudioRelayedEnvironment[]>
-}
-
-/**
- * One relay over the owners of each kind of machine this desktop holds: its
- * SSH machines (main's sessions) and its WSL distributions (the core's
- * servers). Each machine is its owner's, found by the environment ids that
- * owner lists; a device never names an owner, only an environment.
- */
-export function combineEnvironmentRelays(relays: ReadonlyArray<TailnetEnvironmentRelay>): TailnetEnvironmentRelay {
-  const ownerOf = async (environmentId: string): Promise<TailnetEnvironmentRelay | null> => {
-    for (const relay of relays) {
-      const listed = await relay.list().catch(() => [])
-      if (listed.some((entry) => entry.environmentId === environmentId)) return relay
-    }
-    return null
-  }
-  return {
-    async ticket(environmentId, device) {
-      const owner = await ownerOf(environmentId)
-      return owner
-        ? owner.ticket(environmentId, device)
-        : { ok: false, code: 'unknown_route', message: 'This desktop holds no machine by that id.' }
-    },
-    async open(environmentId) {
-      const owner = await ownerOf(environmentId)
-      if (!owner) throw new Error('That machine is not connected to this desktop.')
-      return owner.open(environmentId)
-    },
-    async list() {
-      return (await Promise.all(relays.map((relay) => relay.list().catch(() => [])))).flat()
-    },
-  }
-}
-
-/** What a paired device may do on a machine this desktop relays: its own scopes here, cut to the relayed ceiling. */
-export function relayedDeviceScopes(device: TailnetDevice): StudioRelayedDeviceScope[] {
-  const held = new Set<string>(tailnetDeviceStudioScopes(device.scopes))
-  return STUDIO_RELAYED_DEVICE_SCOPES.filter((scope) => held.has(scope))
 }
 
 /** A device's client id on the Studio protocol: its own, kept apart from apps and browsers. */

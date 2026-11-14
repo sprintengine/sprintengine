@@ -79,35 +79,29 @@ export function environmentDescriptorOf(
  *     id it saved it under (stable when its label or address is edited).
  *   - `tailnet:<connection>`: a desktop paired over the tailnet, by the id of
  *     the pairing (stable when the machine is renamed).
- *   - `relay:<connection>.<environmentId>`: a machine a paired desktop relays
- *     its devices to (an SSH machine it holds), through that pairing, by the
- *     machine's environment id. The machine admits the device itself, held to
- *     the device's grant, never an owner (design-wsl-ssh-direct).
+ *
+ * An SSH machine or a WSL distribution is reached only from the desktop that
+ * holds its connection: a paired device has no route to it.
  */
 export type EnvironmentRoute =
   | { kind: 'local' }
   | { kind: 'wsl'; distro: string }
   | { kind: 'ssh'; machine: string }
   | { kind: 'tailnet'; connection: string }
-  | { kind: 'relay'; via: string; environment: EnvironmentId }
 
 export type EnvironmentRouteKind = EnvironmentRoute['kind']
 
 /**
  * The route kinds, best first: this machine; a server on this PC over
- * loopback; a direct socket over the tailnet; an SSH tunnel, which costs a
- * session and a forward; then a paired desktop's relay, last because it
- * admits this client as that desktop's device, held to the relayed ceiling,
- * where every route above is this client's own. A machine this desktop holds
- * over SSH and a paired desktop also relays is reached as its owner. The
- * order decides which of an environment's routes a client tries first.
+ * loopback; a direct socket over the tailnet; then an SSH tunnel, which costs
+ * a session and a forward. The order decides which of an environment's routes
+ * a client tries first.
  */
 export const ENVIRONMENT_ROUTE_KINDS = [
   'local',
   'wsl',
   'tailnet',
   'ssh',
-  'relay',
 ] as const satisfies readonly EnvironmentRouteKind[]
 
 // The names WSL accepts for a distribution: letters, digits, `.`, `_` and `-`.
@@ -133,14 +127,12 @@ export function isEnvironmentRoute(route: unknown): route is EnvironmentRoute {
       return text(value.machine, KEY)
     case 'tailnet':
       return text(value.connection, KEY)
-    case 'relay':
-      return text(value.via, KEY) && isEnvironmentId(value.environment)
     default:
       return false
   }
 }
 
-/** A route as one string: `local`, `wsl:Ubuntu`, `ssh:<id>`, `tailnet:<id>`, `relay:<id>.<environmentId>`. Throws on a route no parse would give. */
+/** A route as one string: `local`, `wsl:Ubuntu`, `ssh:<id>`, `tailnet:<id>`. Throws on a route no parse would give. */
 export function formatEnvironmentRoute(route: EnvironmentRoute): string {
   if (!isEnvironmentRoute(route)) throw new Error(`Not an environment route: ${JSON.stringify(route)}`)
   switch (route.kind) {
@@ -152,8 +144,6 @@ export function formatEnvironmentRoute(route: EnvironmentRoute): string {
       return `ssh:${route.machine}`
     case 'tailnet':
       return `tailnet:${route.connection}`
-    case 'relay':
-      return `relay:${route.via}.${route.environment}`
   }
 }
 
@@ -175,13 +165,6 @@ export function parseEnvironmentRoute(value: unknown): EnvironmentRoute | null {
     case 'tailnet':
       route = { kind: 'tailnet', connection: rest }
       break
-    case 'relay': {
-      // Neither a pairing's id nor an environment id has a dot.
-      const dot = rest.indexOf('.')
-      if (dot < 0) return null
-      route = { kind: 'relay', via: rest.slice(0, dot), environment: rest.slice(dot + 1) }
-      break
-    }
     default:
       return null
   }
@@ -203,8 +186,6 @@ function routeKey(route: EnvironmentRoute): string {
       return `ssh:${route.machine}`
     case 'tailnet':
       return `tailnet:${route.connection}`
-    case 'relay':
-      return `relay:${route.via}.${route.environment}`
   }
 }
 

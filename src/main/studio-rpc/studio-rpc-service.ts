@@ -23,7 +23,6 @@ import {
 import {
   createStudioWindowListener,
   type StudioWindowListener,
-  type StudioDeviceTicketRequest,
   type StudioWindowTicketRequest,
 } from '../../server/rpc/studio-window-listener'
 import type { StudioWindowTicket } from '../../shared/studio-connection'
@@ -32,7 +31,6 @@ import {
   STUDIO_SCOPES,
   type StudioEnvironmentReadiness,
   type StudioEnvironmentWork,
-  type StudioRelayedEnvironment,
   type StudioGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
@@ -219,8 +217,6 @@ export type StudioRpcServiceOptions = {
   discovery?: StudioDiscovery
   /** What this machine has and lacks for its background work (`environment-readiness`). */
   readiness?: () => Promise<StudioEnvironmentReadiness>
-  /** The machines this desktop relays its paired devices to (`relayed-environments`). */
-  relayedEnvironments?: () => Promise<StudioRelayedEnvironment[]>
   /** A CLI's login on this machine with no terminal (`provider-sign-in-flow`): a server a desktop reaches over its front door. */
   signIns?: () => Promise<SignIns>
   /** Records the desktop that holds this Studio hands over (`environment-adopt`): a server a desktop reaches over its front door. */
@@ -288,15 +284,6 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
 
   function windowListener(): StudioWindowListener {
     windows ??= createStudioWindowListener({
-      // A device the desktop that holds this Studio relays: a client of this
-      // server, audited, held to the folders it knows, never an owner.
-      attachDevice: (stream, deviceAuthenticator) =>
-        hub().attach(stream, {
-          authenticator: deviceAuthenticator,
-          ownWindow: false,
-          audited: true,
-          knownFoldersOnly: true,
-        }),
       attach: (stream, windowAuthenticator, windowKey) =>
         hub().attach(stream, {
           authenticator: windowAuthenticator,
@@ -505,7 +492,6 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.hosts ? { hosts: options.hosts } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.readiness ? { readiness: options.readiness } : {}),
-      ...(options.relayedEnvironments ? { relayedEnvironments: options.relayedEnvironments } : {}),
       ...(options.signIns ? { signIns: options.signIns } : {}),
       ...(options.adoption ? { adoption: options.adoption } : {}),
       ...(options.work ? { work: options.work } : {}),
@@ -518,8 +504,6 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
               windowTicket: async (request: StudioWindowTicketRequest) =>
                 grantOf(await windowListener().ticket(request)),
               revokeWindow: (windowKey: string) => windows?.revokeWindow(windowKey),
-              deviceTicket: async (request: StudioDeviceTicketRequest) =>
-                grantOf(await windowListener().deviceTicket(request)),
             },
           }
         : {}),

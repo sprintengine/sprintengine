@@ -20,7 +20,6 @@ import { createAgentStateService } from './agent-state-service'
 import { primeDefaultWslDistro } from './hosts/wsl-distro'
 import { configureWslHelpers } from './hosts/wsl-helper-runtime'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
-import { combineEnvironmentRelays, type TailnetEnvironmentRelay } from './automation/tailnet/tailnet-studio-endpoint'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
 import { createDesktopEnvironments } from './environments/desktop-environments'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
@@ -1664,23 +1663,13 @@ export function createAppServices(
           })
         return { ok: false, code: 'unsupported_route', message: 'This computer runs no WSL distributions.' }
       }
-      // A machine a paired desktop relays this one to: that pairing's device
-      // token buys the ticket there, naming the machine's environment.
-      const paired =
-        route.kind === 'tailnet'
-          ? { connection: route.connection }
-          : route.kind === 'relay'
-            ? { connection: route.via, environmentId: route.environment }
-            : null
-      if (!paired)
+      if (route.kind !== 'tailnet')
         return { ok: false, code: 'unsupported_route', message: 'This window reaches that machine through this one.' }
-      if (automationService)
-        return automationService.mesh().windowTicket(paired.connection, origin, paired.environmentId)
+      if (automationService) return automationService.mesh().windowTicket(route.connection, origin)
       if (server)
         return server.rpc.call<EnvironmentTicketResult>(SERVER_METHODS.meshWindowTicket, {
-          connectionId: paired.connection,
+          connectionId: route.connection,
           origin,
-          ...(paired.environmentId ? { environmentId: paired.environmentId } : {}),
         })
       return { ok: false, code: 'unavailable', message: 'Studio’s server is not running yet.' }
     },
@@ -1741,35 +1730,6 @@ export function createAppServices(
   const terminalAttachGuard: { current: ((windowKey: string, sessionId: string) => boolean) | null } = {
     current: null,
   }
-  // A paired device reaches this desktop's SSH machines and WSL distributions
-  // through its tailnet listener: main holds the SSH sessions and the core the
-  // WSL servers, so each mints a device's ticket on its own machines and opens
-  // each socket's stream. Out of process the server asks main the same for SSH
-  // over the shell link (`environmentDeviceTicket`, `sshOpen`).
-  const environmentRelays: TailnetEnvironmentRelay[] = [
-    ...(ssh
-      ? [
-          {
-            ticket: (environmentId: string, device: Parameters<TailnetEnvironmentRelay['ticket']>[1]) =>
-              ssh.environments.deviceTicket(environmentId, device),
-            open: (environmentId: string) => ssh.environments.openEnvironment(environmentId),
-            list: async () => ssh.environments.relayedEnvironments(),
-          },
-        ]
-      : []),
-    ...(wslServersOfCore
-      ? [
-          {
-            ticket: (environmentId: string, device: Parameters<TailnetEnvironmentRelay['ticket']>[1]) =>
-              wslServersOfCore.access.deviceTicket(environmentId, device),
-            open: (environmentId: string) => wslServersOfCore.access.openEnvironment(environmentId),
-            list: async () => wslServersOfCore.access.relayedEnvironments(),
-          },
-        ]
-      : []),
-  ]
-  if (automationService && environmentRelays.length > 0)
-    automationService.linkEnvironments(combineEnvironmentRelays(environmentRelays))
   const studioRpc = automationService
     ? createStudioRpc(core, automationService, {
         updates: desktopUpdates,

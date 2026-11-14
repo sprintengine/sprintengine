@@ -1,16 +1,6 @@
 import { formatEnvironmentRoute, type EnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
-import {
-  meshEnvironmentSource,
-  relayEnvironmentSource,
-  sshEnvironmentSource,
-  wslEnvironmentSources,
-} from '../../shared/environment-keys'
-import {
-  meshConnection,
-  relayConnection,
-  sshConnection,
-  wslConnectionReport,
-} from '../../shared/environment-connections'
+import { meshEnvironmentSource, sshEnvironmentSource, wslEnvironmentSources } from '../../shared/environment-keys'
+import { meshConnection, sshConnection, wslConnectionReport } from '../../shared/environment-connections'
 import type { ExecutionHostId, ExecutionHostSettings, ExecutionHostSummary } from '../../shared/execution-host'
 import type { MeshConnection, MeshMachineReachability } from '../../shared/tailnet-mesh'
 import type { SshEnvironmentSummary } from '../../shared/ssh-environments'
@@ -106,7 +96,7 @@ export function createDesktopEnvironments(deps: {
         machines.map((machine) => ({
           route: { kind: 'ssh', machine: machine.id },
           connection: sshConnection(machine),
-          // The window its server record or relay last said: the machine's compatibility.
+          // The window its server record last said: the machine's compatibility.
           window: machine.protocol ?? null,
         })),
       )
@@ -127,22 +117,6 @@ export function createDesktopEnvironments(deps: {
         (mesh?.list() ?? []).map((connection) => ({
           route: { kind: 'tailnet', connection: connection.id },
           connection: meshConnection(reach.get(connection.id)),
-        })),
-      )
-      // The machines each paired desktop relays this one to: a `relay:` route
-      // each, up while that desktop answers and holds the machine's Studio.
-      const relays = (mesh?.list() ?? []).flatMap((connection) =>
-        (reach.get(connection.id)?.relayed ?? []).map((machine) => ({ via: connection, machine })),
-      )
-      registry.observe(
-        'relay',
-        relays.map(({ via, machine }) => relayEnvironmentSource(via.id, machine)),
-      )
-      registry.report(
-        'relay',
-        relays.map(({ via, machine }) => ({
-          route: { kind: 'relay', via: via.id, environment: machine.environmentId },
-          connection: relayConnection(reach.get(via.id), machine.connected),
         })),
       )
     }
@@ -172,9 +146,6 @@ export function createDesktopEnvironments(deps: {
         return
       case 'tailnet':
         await meshReachability?.check?.(route.connection)
-        return
-      case 'relay':
-        await meshReachability?.check?.(route.via)
         return
     }
   }

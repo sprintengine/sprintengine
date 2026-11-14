@@ -1403,16 +1403,11 @@ A window's change to a copy is made on the machine first and refused in words
 when it is not connected. The window drives the chat on its own client of the
 machine (the loopback route and a ticket from the machine's window listener);
 the gateway's tools act on it as a client of the machine
-(`src/server/core/environment-chat-calls.ts`). Devices do not see these chats
-through the desktop (`workspaces.list` leaves copies out): they reach the
-machine itself. The desktop lists the machines it relays (`environment.relayed`,
-to whoever may read chats); the phone files each as a session of its own,
-never stored, whose client gets its ticket from the desktop's `ws-ticket`
-naming the machine and connects at `/tailnet/v1/environments/<environmentId>/studio`;
-a paired desktop names each as the route `relay:<pairing>.<environmentId>` and
-reaches it on the window's per-route client. The machine admits each as that
-device, with its grant cut to `STUDIO_RELAYED_DEVICE_SCOPES`, never an owner,
-so never a terminal. A settled chat of the machine is deleted by the
+(`src/server/core/environment-chat-calls.ts`). Paired devices (the phone,
+another desktop) do not see these chats (`workspaces.list` leaves copies
+out), and do not reach the machine: an SSH machine is reached only from the
+desktop that holds its connection. (A device route through the desktop,
+built on 2026-11-13, was removed on 2026-11-14.) A settled chat of the machine is deleted by the
 machine's own Studio (`settledChats.*` on the window's client of it), and a
 schedule handed over takes the pictures its prompt names.
 

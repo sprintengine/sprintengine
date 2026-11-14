@@ -180,7 +180,7 @@ export function usePhoneConversation(
 ) {
   const api = useMemo(
     () => apiOverride ?? (session ? createDesktopConversationsApi(studioTargetOf(session)) : null),
-    [session?.baseUrl, session?.deviceToken, session?.relayedEnvironmentId, apiOverride],
+    [session?.baseUrl, session?.deviceToken, apiOverride],
   );
   // A chat opened earlier in this run draws what it held at once, on the
   // first frame, and then asks the desktop only for what followed.

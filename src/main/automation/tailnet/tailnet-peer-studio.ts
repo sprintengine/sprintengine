@@ -39,8 +39,6 @@ export function peerStudioOutdated(machineName: string): string {
 export async function peerStudioTicket(
   target: Omit<PeerStudioTarget, 'id'>,
   origin?: string,
-  /** A machine that desktop relays this pairing to (`relay:` route): the ticket is that machine's. */
-  environmentId?: string,
 ): Promise<{ url: string; token: string }> {
   let answer: Awaited<ReturnType<typeof requestTailnetJson>>
   try {
@@ -49,10 +47,7 @@ export async function peerStudioTicket(
       method: 'POST',
       path: TAILNET_WS_TICKET_PATH,
       token: target.deviceToken,
-      body: {
-        ...(origin === undefined ? {} : { origin }),
-        ...(environmentId === undefined ? {} : { environmentId }),
-      },
+      body: origin === undefined ? {} : { origin },
     })
   } catch {
     throw new StudioError('unavailable', `${target.machineName} did not answer.`)

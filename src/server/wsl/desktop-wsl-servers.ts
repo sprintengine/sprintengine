@@ -26,7 +26,7 @@ export type WslServers = {
   onConnected(listener: (connection: WslServerConnection) => void): void
   /** Who hears a status change (Settings › Machines). */
   onStatus(listener: (status: WslServerStatus) => void): void
-  /** How this desktop's windows and paired devices reach each distribution's own Studio. */
+  /** How this desktop's windows reach each distribution's own Studio. */
   access: WslEnvironmentAccess
 }
 
@@ -114,7 +114,6 @@ export function createDesktopWslServers(options: DesktopWslServersOptions): WslS
   })
   const access = createWslEnvironmentAccess({
     manager,
-    onConnected: (listener) => void connectedListeners.push(listener),
     ...(options.log ? { log: options.log } : {}),
   })
   return {
