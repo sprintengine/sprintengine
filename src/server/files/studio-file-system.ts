@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
@@ -127,6 +127,7 @@ export function plainProjectLogoIo(): ProjectLogoIo {
       return { isFile: stats.isFile(), size: stats.size, mtimeMs: stats.mtimeMs }
     },
     readFile,
+    realpath,
     async downscaleRaster(bytes: Buffer, mimeType: string) {
       if (!imageWithinDecodeLimits(bytes)) throw new Error('That picture is too large to decode.')
       return { bytes, mimeType }
