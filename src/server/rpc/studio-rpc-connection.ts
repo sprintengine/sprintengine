@@ -54,7 +54,7 @@ import {
   projectConversationEvent,
   type ConversationSnapshotFrame,
 } from '../conversation-stream-shaping'
-import { studioErrorId, type StudioRpcAnswer, type StudioRpcRouter } from './studio-rpc-router'
+import { studioClientEvent, studioErrorId, type StudioRpcAnswer, type StudioRpcRouter } from './studio-rpc-router'
 import type { ClientToolConnection, ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
@@ -562,12 +562,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
 
   // ── Streams ───────────────────────────────────────────────────────────────
 
-  function redactedSnapshotPart(part: ConversationSnapshotFrame): ConversationSnapshotFrame {
-    return { ...part, page: { ...part.page, events: part.page.events.map((event) => redact(event)) } }
+  /** An event as this client is shown it: redacted, and its own sends under the ids it chose. */
+  function shown(grant: StudioGrant, event: ConversationEvent): ConversationEvent {
+    return studioClientEvent(grant, redact(event))
   }
 
   /** Everything a join produced, queued as one paced unit ahead of the live events that follow it. */
-  function sendReplay(frames: ConversationServerFrame[], subscription: Subscription): void {
+  function sendReplay(frames: ConversationServerFrame[], subscription: Subscription, grant: StudioGrant): void {
     const sub = subscription.id
     // A replay stops at the next whole frame once its subscription is gone:
     // the rest of a snapshot, or its fence, would hand the client a cursor for
@@ -583,13 +584,16 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       if (source.type === 'snapshot') {
         // Redacted a part at a time as the writer reaches it, never whole: a
         // snapshot can run to tens of megabytes.
-        const parts = conversationSnapshotParts(source as ConversationSnapshotFrame, redactedSnapshotPart)
+        const parts = conversationSnapshotParts(source as ConversationSnapshotFrame, (part) => ({
+          ...part,
+          page: { ...part.page, events: part.page.events.map((event) => shown(grant, event)) },
+        }))
         bytes += parts.bytes
         producers.push(() => parts.frames(wire, current))
       } else {
         const json = JSON.stringify(
           source.type === 'event'
-            ? { ...source, event: redact(projectConversationEvent(source.event as ConversationEvent)) }
+            ? { ...source, event: shown(grant, projectConversationEvent(source.event as ConversationEvent)) }
             : source,
         )
         bytes += Buffer.byteLength(json)
@@ -688,13 +692,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       if (frame.type === 'synchronized') {
         const frames = subscription.replay
         subscription.replay = null
-        sendReplay(frames, subscription)
+        sendReplay(frames, subscription, grant)
       }
       return
     }
     if (frame.type === 'event') {
       const projected = projectConversationEvent(frame.event as ConversationEvent)
-      const event = redact(projected)
+      const event = shown(grant, projected)
       // A copy the queue may extend in place without touching the runtime's
       // own, or the projection every subscriber shares.
       const owned =

@@ -444,6 +444,52 @@ test('command ids are namespaced per client, and a retried id is carried out onc
   assert.deepEqual(backend.stops, ['client:one:halt'])
 })
 
+test('a client reads its own message under the command id it chose, everywhere it reads the chat', async () => {
+  // The chat records each message under its sender's namespaced id. A client
+  // that drew its message as it sent it matches the chat's copy by its own
+  // id; under any other it drew the message twice until its send was answered.
+  const { path, auth, backend } = await serve()
+  const sentId = (frame: StudioParsedServerFrame) =>
+    frame.t === 'frame' && frame.frame.type === 'event' ? frame.frame.event.payload?.commandId : undefined
+  backend.emit('agent-1', 'user_message', { text: 'from the phone', commandId: 'client:phone:p1' })
+  backend.emit('agent-1', 'user_message', { text: 'from the owner', commandId: 'owner:o1' })
+  backend.emit('agent-1', 'user_message', { text: 'from another app', commandId: 'client:other:x1' })
+  const phone = await open(path, pairFakeClient(auth, 'phone', ['conversation:read']))
+  phone.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  const snapshot = await phone.next((frame) => frame.t === 'frame' && frame.frame.type === 'snapshot')
+  assert.deepEqual(
+    snapshot.t === 'frame' && snapshot.frame.type === 'snapshot'
+      ? snapshot.frame.page.events.map((event) => event.payload?.commandId)
+      : null,
+    // Another's id is no id this client chose, and is left as it is held.
+    ['p1', 'owner:o1', 'client:other:x1'],
+  )
+  await phone.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  backend.emit('agent-1', 'user_message', { text: 'again from the phone', commandId: 'client:phone:p2' })
+  assert.equal(sentId(await phone.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')), 'p2')
+  const read = await request(phone, 'read', 'conversation.event', { key, seq: 1, id: 'e1' })
+  assert.equal(read.ok && (read.result as { event: { payload: { commandId: string } } }).event.payload.commandId, 'p1')
+
+  // The owner, resuming after a cursor, reads its own the same way.
+  backend.emit('agent-1', 'user_message', { text: 'again from the owner', commandId: 'owner:o2' })
+  const owner = await open(path, OWNER_TOKEN)
+  owner.send({
+    t: 'sub',
+    id: 'chat',
+    topic: 'conversation.session',
+    params: { key },
+    cursor: { afterSeq: 3, generation: 'log-1' },
+  })
+  const replayed = [
+    sentId(await owner.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')),
+    sentId(await owner.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')),
+  ]
+  assert.deepEqual(replayed, ['client:phone:p2', 'o2'])
+  // What the chat records is left as it is.
+  const stored = await backend.event({ ...key, workspaceRoot: '/Users/dev/app' }, 5, 'e5')
+  assert.equal(stored.ok && stored.event.payload?.commandId, 'owner:o2')
+})
+
 test('a create retried while the first is starting, and after, makes one chat', async () => {
   const { path, auth, backend } = await serve()
   const app = await open(path, pairFakeClient(auth, 'app', ['conversation:create']))
