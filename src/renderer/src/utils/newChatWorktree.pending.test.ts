@@ -155,7 +155,7 @@ test('Start in the project goes ahead while an attempt runs, and the worktree it
   })
   assert.equal(await attempt, false)
   assert.deepEqual(writes, [], 'the chat stays in the project')
-  assert.deepEqual(givenBack, [{ pool: { kind: 'release', leaseId: 'lease-1' } }])
+  assert.deepEqual(givenBack, [{ pool: { kind: 'release', leaseId: 'lease-1', unused: true } }])
 
   // A retry asked of it afterwards (another window's button, say) has nothing left to make.
   stubWorktree(async () => ({ ok: true, data: { path: `${PROJECT}-wt2`, branch: 'agent/chat-2', baseRef: 'main' } }))
