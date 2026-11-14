@@ -4,6 +4,8 @@ import { NavigationContainer, type LinkingOptions, type NavigatorScreenParams } 
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { ALL_CHAT_OFFERS } from "../api/chatOffers";
+
 import { ToastProvider } from "../components/Toast";
 import { RichRendererHost } from "../components/document/rich/RichRendererHost";
 import { buildProjectList, resolveCurrentProject } from "../features/projects/projectContext";
@@ -99,7 +101,7 @@ const linking: LinkingOptions<VerifyRootParamList> = {
       //   sprintengine://verify/chat-twins/ws-docs      (two desktops: pick one)
       //   sprintengine://verify/chat/ws-notices         (Studio's own messages)
       //   sprintengine://verify/chat/ws-files           (files attached by path)
-      // Mark unread (the fixture desktop advertises `chat-mark-unread`): open
+      // Mark unread (the fixture desktop keeps its chats' rest): open
       // the green chat, then its More menu's Mark unread closes it back to a
       // green row, and opening it again lands on "New" above its second turn.
       // Long-press a read row on `…/home` for the same from the list.
@@ -152,7 +154,11 @@ function ChatLinkTwins({
   }, [chats, workspaceId]);
   return (
     <ChatsContext.Provider value={value}>
-      <ChatLinkScreen link={{ workspaceId, agentId: agent ?? null }} onBack={noop} onOpen={onOpen} />
+      <ChatLinkScreen
+        link={{ kind: "chat", environmentId: null, chatId: workspaceId, agentId: agent ?? null }}
+        onBack={noop}
+        onOpen={onOpen}
+      />
     </ChatsContext.Provider>
   );
 }
@@ -353,7 +359,6 @@ function VerifyShell() {
             {
               ...verifySession,
               desktopName: "mac-mini",
-              tailnetCapabilities: verifySession.tailnetCapabilities,
               tailnetScopes: ["conversation:operate"],
             },
           ]
@@ -379,8 +384,6 @@ function VerifyShell() {
       refreshFleet: noop,
       backlogCapabilities: { canUpdate: true },
       sendBacklogUpdate: asyncNoop,
-      sendBacklogCreate: async () => ({ ok: true } as never),
-      revokeOnDesktop: asyncNoop,
       selectSession: noop,
       removeSession: noop,
       renameSession: noop,
@@ -401,6 +404,7 @@ function VerifyShell() {
               activeDeviceId={verifySession.deviceId}
               conversationsApiOverride={fakeConversationsApi}
               lifecycleApiOverride={fakeLifecycleApi}
+              offersOverride={ALL_CHAT_OFFERS}
               notesStore={verifyNotesStore}
               sessions={verifySessions}
               workspacesApiOverride={fakeWorkspacesApi}

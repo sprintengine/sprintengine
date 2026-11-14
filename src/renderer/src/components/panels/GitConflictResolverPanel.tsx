@@ -2,16 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react'
 import MonacoEditor from '@monaco-editor/react'
 import {
   combineConflictSides,
+  conflictSideLabels,
   hasGitConflictMarkers,
+  lineEndingOf,
   parseGitConflictBlocks,
   replaceGitConflictBlock,
 } from '../../utils/gitConflictMarkers'
+import { getGitEntry, useGitStatus } from '../../hooks/useGitStatus'
 import { remeasureMonacoFontsOnLoad, useCodeFontFamily } from '../../utils/fonts'
 import { useMonacoBaseTheme } from '../../hooks/useAppTheme'
 import { detectLanguage } from '../../utils/files'
 import { configureMonacoLanguages } from '../../utils/patchLanguage'
 import { EmptyState, GhostButton, InlineNotice, PanelHeader, PrimaryButton, Section, Spinner } from '../ui'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
+import { gitApi } from '../../studio/git'
 
 type ResolverState =
   | { status: 'loading' }
@@ -21,27 +25,42 @@ type ResolverState =
 type Props = {
   repoRoot: string
   filePath: string
+  /** The conflict is over: the file is no longer conflicted and nothing is in progress. */
+  onFinished?: () => void
 }
 
-export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) {
+export default function GitConflictResolverPanel({ repoRoot, filePath, onFinished }: Props) {
   const [state, setState] = useState<ResolverState>({ status: 'loading' })
   const language = detectLanguage(filePath)
   const monacoTheme = useMonacoBaseTheme()
   const codeFontFamily = useCodeFontFamily()
   const dialog = useConfirmDialog()
   const blocks = useMemo(() => (state.status === 'ready' ? parseGitConflictBlocks(state.content) : []), [state])
+  const git = useGitStatus(repoRoot)
+  const operation = git.status?.operation ?? null
+  const labels = conflictSideLabels(operation)
+  // Once git says the file is no longer conflicted and the merge (or rebase,
+  // or pick) is over, the tab has nothing left to resolve: it closes, rather
+  // than staying behind on the content it loaded.
+  const conflictPath = state.status === 'ready' ? state.conflict.path : null
+  const stillConflicted = getGitEntry(git.status, conflictPath)?.status === 'conflicted'
+  const finished =
+    git.repoState === 'ready' && git.status !== null && conflictPath !== null && !stillConflicted && operation === null
+  useEffect(() => {
+    if (finished) onFinished?.()
+  }, [finished, onFinished])
 
   useEffect(() => {
     let cancelled = false
     setState({ status: 'loading' })
 
     const load = async () => {
-      if (typeof window.api.getGitConflictFile !== 'function') {
+      if (typeof gitApi.getGitConflictFile !== 'function') {
         setState({ status: 'error', message: 'Restart the app to enable the conflict resolver.' })
         return
       }
 
-      const conflict = await window.api.getGitConflictFile(repoRoot, filePath)
+      const conflict = await gitApi.getGitConflictFile(repoRoot, filePath)
       if (cancelled) return
       if (!conflict) {
         setState({ status: 'error', message: 'This file is not available as a Git conflict.' })
@@ -98,7 +117,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
 
     setState({ ...state, saving: true, message: null })
     try {
-      const result = await window.api.resolveGitConflict(repoRoot, filePath, state.content)
+      const result = await gitApi.resolveGitConflict(repoRoot, filePath, state.content)
       setState((current) =>
         current.status === 'ready'
           ? {
@@ -141,8 +160,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
     <div className="flex h-full flex-col overflow-hidden bg-[color:var(--bg-app)] text-[color:var(--text-default)]">
       {/* The identity row is the shared primitive: the panel names itself, the
           file it is resolving is the scope beside it. The two-line band this
-          replaced ran a second caption — "Pulled version / Your stashed changes
-          / Final result" — that each pane below already carries as its own
+          replaced ran a second caption naming the two sides and the result — that each pane below already carries as its own
           title, and a hand-rolled save button beside it (2112). */}
       <PanelHeader
         title="Resolve conflict"
@@ -163,16 +181,16 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
             title keep a subtle line. The status line above them takes none. */}
         <div className="grid min-h-0 grid-cols-2 border-b border-[color:var(--border-subtle)]">
           <ConflictReadOnlyPane
-            title="Pulled version"
+            title={labels.ours}
             content={state.conflict.ours ?? ''}
             language={language}
-            empty="No pulled version for this conflict."
+            empty="This side has no version of the file."
           />
           <ConflictReadOnlyPane
-            title="Your stashed changes"
+            title={labels.theirs}
             content={state.conflict.theirs ?? ''}
             language={language}
-            empty="No stashed version for this conflict."
+            empty="This side has no version of the file."
           />
         </div>
 
@@ -192,14 +210,19 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
                         Conflict {block.index + 1}
                       </div>
                       <div className="grid gap-1">
-                        <ConflictActionButton label="Use pulled" onClick={() => applyBlock(block.index, block.ours)} />
                         <ConflictActionButton
-                          label="Use stashed"
+                          label={labels.useOurs}
+                          onClick={() => applyBlock(block.index, block.ours)}
+                        />
+                        <ConflictActionButton
+                          label={labels.useTheirs}
                           onClick={() => applyBlock(block.index, block.theirs)}
                         />
                         <ConflictActionButton
                           label="Use both"
-                          onClick={() => applyBlock(block.index, combineConflictSides(block))}
+                          onClick={() =>
+                            applyBlock(block.index, combineConflictSides(block, lineEndingOf(state.content)))
+                          }
                         />
                       </div>
                     </div>

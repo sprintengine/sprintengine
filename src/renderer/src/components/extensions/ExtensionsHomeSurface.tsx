@@ -24,6 +24,7 @@ import {
 } from './extensionsHomeTiles'
 import { homeCardCount, homeCardGrid, newHomeCardSlugs } from './homeCards'
 import { openBuildExtension } from './buildExtensionHost'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 // The Extensions home (the app rail's Extensions glyph, 2026-09-05): the page
 // the glyph opens, in the card region, with the Extensions drawer standing
@@ -210,8 +211,8 @@ function useDesignSystemLibraryCount(): { ready: boolean; count: number } {
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
-    if (typeof window.api?.listDesignSystemLibrary !== 'function') return () => {}
-    void window.api
+    if (typeof agentSkillsApi.listDesignSystemLibrary !== 'function') return () => {}
+    void agentSkillsApi
       .listDesignSystemLibrary()
       .then((result: { entries: DesignSystemLibraryEntry[] }) => {
         if (!mounted.current) return

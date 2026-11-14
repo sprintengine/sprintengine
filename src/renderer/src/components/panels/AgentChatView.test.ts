@@ -77,7 +77,8 @@ import {
 import { dispatchPanelCommandEvent } from '../../utils/panelCommands'
 import { useToastStore } from '../../store/toastStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 test('AgentChatView', async () => {
   // Most of this suite reads static markup, which needs no DOM. The composer
@@ -974,7 +975,12 @@ test('AgentChatView', async () => {
 
   // --- the work timeline renders lanes as live rows, children nested ---------
 
+  // Drawn as a chat of the window's own Studio, welcomed, whose steps' paths are read and linked.
+  const laneWindow = { api: { platform: 'darwin' } as Record<string, unknown> }
+  vi.stubGlobal('window', laneWindow)
+  await installStudioLoopback(laneWindow).welcomed()
   const laneMarkup = renderToStaticMarkup(createElement(WorkTimeline, { tools: laneTools, live: true }))
+  vi.unstubAllGlobals()
   assert.ok(laneMarkup.includes('Explore agent'), 'a running lane names the agent that was spawned')
   assert.ok(laneMarkup.includes('general-purpose agent'), 'concurrent lanes both render')
   assert.ok(laneMarkup.includes('map the reducer'), 'a lane says what its agent was sent to do')
@@ -1267,7 +1273,7 @@ test('AgentChatView', async () => {
   // equality: a re-typed array here would pass a deepEqual today and drift
   // tomorrow. The other half of the pairing — that the boundary accepts exactly
   // these values — is asserted against the real handler in
-  // src/main/ipc/conversation-ipc.test.ts.
+  // src/main/studio-rpc/studio-chat-backend-inputs.test.ts.
   assert.equal(ATTACHABLE_IMAGE_TYPES, SHARED_ATTACHABLE_IMAGE_TYPES, 'the composer offers the shared media-type set')
   assert.equal(MAX_ATTACHMENT_BYTES, SHARED_MAX_ATTACHMENT_BYTES, 'the composer sizes against the shared ceiling')
   assert.equal(MAX_ATTACHMENTS_PER_TURN, SHARED_MAX_ATTACHMENTS_PER_TURN, 'the composer trims to the shared cap')

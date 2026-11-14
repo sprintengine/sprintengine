@@ -6,6 +6,7 @@ import {
   nextConversationUsage,
   applyAgentState,
   backgroundResultTaskId,
+  eventTurnId,
   isResumed,
   openReasoningRun,
   projectConversation,
@@ -15,6 +16,7 @@ import {
   readString,
   reopenAgentLane,
   type ConversationProjection,
+  type ConversationProjectionOptions,
   type TranscriptEntry,
   type TranscriptToolEntry,
   type UserTurn,
@@ -39,6 +41,8 @@ export type IncrementalConversationState = {
   // transcript's shape (pending approvals, the latest failed turn, prompt
   // history) is keyed on it, so it is not recomputed per token.
   structureRevision: number
+  // How this client reads the events, kept for every refold.
+  options: ConversationProjectionOptions
 }
 
 // A batch of appended events is applied one at a time while that stays cheap:
@@ -86,7 +90,10 @@ function folded(state: Pick<IncrementalConversationState, 'events' | 'length'>):
 // A failure without a turn id (an interrupt) closes the latest turn still
 // streaming, as the fold resolves it, so the two never disagree about whether
 // a run is open.
-function reasoningWindows(events: readonly ConversationEvent[]): Map<string, ReasoningWindow> {
+function reasoningWindows(
+  events: readonly ConversationEvent[],
+  options: ConversationProjectionOptions,
+): Map<string, ReasoningWindow> {
   const windows = new Map<string, ReasoningWindow>()
   // Turns in the order the fold creates them, and whether each still streams.
   const streaming = new Map<string, boolean>()
@@ -94,8 +101,18 @@ function reasoningWindows(events: readonly ConversationEvent[]): Map<string, Rea
     const window = windows.get(turnId)
     if (window && window.endedAt === undefined) window.endedAt = at
   }
+  const running = () => [...streaming].findLast(([, live]) => live)?.[0]
   for (const event of events) {
-    const turnId = readString(event.payload, 'turnId')
+    // The turn the fold files the event under, an unnamed one included.
+    const turnId = eventTurnId(event, running)
+    if (event.type === 'session_closed' && options.sessionEndSettlesWork) {
+      for (const [id, live] of streaming) {
+        if (!live) continue
+        close(id, event.createdAt)
+        streaming.set(id, false)
+      }
+      continue
+    }
     if (!turnId) {
       if (event.type !== 'turn_failed') continue
       const active = [...streaming].findLast(([, live]) => live)?.[0]
@@ -211,15 +228,17 @@ function reconcileProjection(previous: ConversationProjection, next: Conversatio
 export function createConversationProjectionState(
   events: readonly ConversationEvent[] = [],
   userTurns: UserTurn[] = [],
+  options: ConversationProjectionOptions = {},
 ): IncrementalConversationState {
-  const projection = projectConversation(events, userTurns)
+  const projection = projectConversation(events, userTurns, options)
   return {
+    options,
     projection,
     userTurns,
     events,
     length: events.length,
     ownsEvents: false,
-    reasoning: reasoningWindows(events),
+    reasoning: reasoningWindows(events, options),
     entryIndexes: indexEntries(projection.entries),
     structureRevision: 0,
   }
@@ -234,7 +253,7 @@ function rebuild(
   ownsEvents: boolean,
   batch: Batch | null = null,
 ): IncrementalConversationState {
-  const next = createConversationProjectionState(events, userTurns)
+  const next = createConversationProjectionState(events, userTurns, state.options)
   const projection = reconcileProjection(state.projection, next.projection)
   if (batch) batch.entries = projection.entries
   return {
@@ -406,6 +425,8 @@ function fastProjection(
   if (event.type === 'tool_output') {
     const id = readString(event.payload, 'toolUseId', 'callId', 'id', 'toolCallId')
     if (!id) return null
+    // What a step changed counts toward its turn's changes, which the fold sums.
+    if (Array.isArray(event.payload?.fileChanges)) return null
     // A background agent's launch notice keeps its lane open; only the fold
     // knows how to read one.
     if (isBackgroundLaunchAck(readString(event.payload, 'preview', 'output', 'text'))) return null

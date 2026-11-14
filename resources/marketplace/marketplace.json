@@ -2,27 +2,6 @@
   "schemaVersion": 1,
   "plugins": [
     {
-      "id": "review",
-      "name": "Reviews",
-      "publisher": {
-        "name": "SprintEngine Labs",
-        "verified": true
-      },
-      "summary": "Guided, human-led review of a pull request, branch, or patch.",
-      "category": "Code Quality",
-      "icon": "icons/review.svg",
-      "latest": 2,
-      "source": "https://github.com/sprintengine/studio-releases/tree/main/plugins/review",
-      "provides": [
-        "module"
-      ],
-      "signature": {
-        "algorithm": "ed25519",
-        "publicKey": "MCowBQYDK2VwAyEAptxscrkw0So+0D3Pm2FupKpxqOyaNmpUR909RrGSuX0=",
-        "signature": "ljBGRcu6X4vbNgR01EnVH2dRZbyx50z4SMYoAcOse4JviLvgI7mVic9XR77W6FmsVwZyQv6C0tN0+jSpoR5rCA=="
-      }
-    },
-    {
       "id": "claude-agent",
       "name": "Claude Code",
       "publisher": {

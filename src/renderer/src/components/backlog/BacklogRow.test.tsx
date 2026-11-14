@@ -673,16 +673,12 @@ test('BacklogRow', async () => {
   })
 
   run('epic assignment mutates only the child frontmatter via update/create-epic, not items.json', () => {
-    // setEpic → backlog:update-epic (frontmatter only); create → create-epic writer
+    // setEpic → backlog.edit's epic (frontmatter only); create → create-epic writer
     // then assign. items.json is never written for epic membership.
+    assert.match(backlogPanelSource, /backlogApi\.updateBacklogEpic\(\{/, 'setEpic mutates through backlog.edit (epic)')
     assert.match(
       backlogPanelSource,
-      /window\.api\.updateBacklogEpic\(\{/,
-      'setEpic mutates through the update-epic IPC',
-    )
-    assert.match(
-      backlogPanelSource,
-      /window\.api\.createBacklogEpic\(\{ workspaceRoot: folderPath, title \}\)/,
+      /backlogApi\.createBacklogEpic\(\{ workspaceRoot: folderPath, title \}\)/,
       'New epic uses the create-epic writer',
     )
     assert.match(
@@ -812,8 +808,8 @@ test('BacklogRow', async () => {
     )
     assert.match(
       backlogPanelSource,
-      /window\.api\.updateBacklogHighlight\(/,
-      'the handler mutates through the backlog:update-highlight IPC, not renderer state',
+      /backlogApi\.updateBacklogHighlight\(/,
+      'the handler mutates through backlog.edit (highlight), not renderer state',
     )
     assert.match(
       backlogPanelSource,
@@ -911,8 +907,8 @@ test('BacklogRow', async () => {
   run('prerequisites persist only through the dependsOn frontmatter IPC, never items.json', () => {
     assert.match(
       backlogPanelSource,
-      /window\.api\.updateBacklogDependencies\(\{/,
-      'setDependencies mutates through the update-dependencies IPC',
+      /backlogApi\.updateBacklogDependencies\(\{/,
+      'setDependencies mutates through backlog.edit (dependencies)',
     )
     assert.match(
       backlogPanelSource,
@@ -938,8 +934,8 @@ test('BacklogRow', async () => {
   run('mockup attachments persist only through the mockups frontmatter IPC, never items.json', () => {
     assert.match(
       backlogPanelSource,
-      /window\.api\.updateBacklogMockups\(\{/,
-      'setMockups mutates through the update-mockups IPC',
+      /backlogApi\.updateBacklogMockups\(\{/,
+      'setMockups mutates through backlog.edit (mockups)',
     )
     assert.match(
       backlogPanelSource,

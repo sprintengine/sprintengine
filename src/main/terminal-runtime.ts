@@ -1,5 +1,4 @@
-import { BrowserWindow, type WebContents } from 'electron'
-import * as pty from 'node-pty'
+import type * as Pty from 'node-pty'
 import type {
   AgentCli,
   AgentPhase,
@@ -42,7 +41,7 @@ import {
   unresolvedObservedCheckout,
   type ObservedCheckout,
 } from '../shared/observed-checkout'
-import type { TerminalSpawnPayload } from './ipc/terminal-ipc'
+import type { TerminalSpawnPayload } from './terminal-spawn-payload'
 import { normalizeExecutionHostId, wslHostId } from '../shared/execution-host'
 import { isWindowsPath, wslToWindowsPath } from '../shared/host-paths'
 import { hostRegistry } from './hosts/host-registry'
@@ -68,7 +67,6 @@ import {
   type DeferredPromptOutcome,
   type DeferredPromptReadiness,
 } from './deferred-prompt-delivery'
-import { isCanvasWorkerWindow } from './canvas/canvas-worker-window'
 import { getSharedCredentialStore } from './secret-store'
 import { getErrorMessage } from './error-message'
 import { getTerminalErrorMessage } from './terminal-error'
@@ -86,7 +84,6 @@ import {
   clearAgentStallTimer,
   clearTerminalIdleTimer,
   createFailedTerminalSession,
-  createHeadlessTerminalSender,
   createInitialAgentState,
   createInitialTerminalActivity,
   createSuspendedPlaceholderSession,
@@ -141,11 +138,34 @@ import type { ChangelistEdit } from '../shared/git/changelists'
 import type { TerminalSessionDeltaEntry, TerminalSessionsDelta } from '../shared/ipc/terminal'
 import { parsePromptCacheReading } from '../shared/prompt-cache'
 import { noteStatusLineRateLimits } from './usage-limits/store'
-import { broadcastToAllWindows } from './window-broadcast'
+import { deliverTerminalEvent, type TerminalViewer } from '../server/terminals/terminal-viewer'
 import { readTerminalOutputTail, type TerminalOutputTail } from './terminal-output-tail'
 import { worktreeLeases, type WorktreeLeases } from './worktree-leases'
 
-type TerminalRuntimeOptions = {
+// The native pty module, loaded the first time a terminal starts rather than
+// when this file is: the Studio server runs this runtime in every process it
+// is composed in, and a server tree without the module (a WSL or SSH
+// machine's, which carries no native code) must still start. Whether it
+// loads at all is asked once, by `ptyAvailable`, before a server says it
+// serves terminals.
+let ptyModule: typeof Pty | null = null
+function loadPty(): typeof Pty {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded on first use, see above
+  ptyModule ??= require('node-pty') as typeof Pty
+  return ptyModule
+}
+
+/** Whether this process can start a pty: the native module is there and loads. */
+export function ptyAvailable(): boolean {
+  try {
+    loadPty()
+    return true
+  } catch {
+    return false
+  }
+}
+
+export type TerminalRuntimeOptions = {
   diagnosticsEnabled: boolean
   logMainPerfEvent(scope: string, event: string, payload: Record<string, unknown>): void
   // Turns a hook-reported cwd into the checkout containing it.
@@ -158,11 +178,11 @@ type TerminalRuntimeOptions = {
     pruneUnlistedServers?: boolean
     executionPathStyle?: TerminalPathStyle
     // The machine the CLI runs on: it decides the gateway entry (this app's
-    // own binary here, the pinned Node and the helper's bridge in WSL).
+    // own binary here, the distribution server's Node and bridge in WSL).
     hostId?: string
     // What that machine's `agentIntegration()` said when this launch was
     // prepared. The sync answers from it rather than asking again, so a
-    // helper restarting mid-launch cannot make the gateway entry and the
+    // server restarting mid-launch cannot make the gateway entry and the
     // launch disagree.
     integration?: HostAgentIntegration | null
   }): Promise<{ ok: true } | { ok: false; message: string }>
@@ -284,31 +304,31 @@ type TerminalRuntimeOptions = {
   worktreeLeases?: WorktreeLeases
 }
 
-type TerminalIpcHandlers = {
-  spawnTerminal(sender: WebContents, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult>
+type TerminalSessionHandlers = {
+  spawnTerminal(viewer: TerminalViewer, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult>
   writeTerminal(sessionId: string, data: string): void
   resizeTerminal(sessionId: string, cols: number, rows: number): void
-  getTerminalStatus(sessionId: string, sender?: WebContents): Promise<{ processAlive: boolean; suspended: boolean }>
+  getTerminalStatus(sessionId: string, viewer?: TerminalViewer): Promise<{ processAlive: boolean; suspended: boolean }>
   listTerminals(): TerminalSessionSnapshot[]
   setTerminalVisible(
     sessionId: string,
     visible: boolean,
-    sender?: WebContents,
+    viewer?: TerminalViewer,
     options?: TerminalVisibilityOptions,
   ): void
   suspendTerminal(sessionId: string): void
-  resumeTerminal(sender: WebContents, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult>
+  resumeTerminal(viewer: TerminalViewer, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult>
   killTerminal(sessionId: string): void
   setIdleSuspendThresholdMs(value: unknown): void
   setKeepRecentTerminalsAlive(value: unknown): void
   setTerminalReapExempt(sessionId: string, exempt: boolean): void
-  ackTerminalOutput(sessionId: string, units: number, sender?: WebContents): void
+  ackTerminalOutput(sessionId: string, units: number, viewer?: TerminalViewer): void
   /** First messages that could not be typed in, handed to the window that asks, once. */
   takeUndeliveredPrompts(): TerminalPromptUndelivered[]
 }
 
-type TerminalRuntime = {
-  ipcHandlers: TerminalIpcHandlers
+export type TerminalRuntime = {
+  sessions: TerminalSessionHandlers
   // The conversation peek's read of a session: whether its runtime reports
   // prompts, and the prompts captured for it. Exposed as a plain reader rather
   // than an IPC handler so the peek service can be assembled outside the
@@ -351,6 +371,10 @@ type TerminalRuntime = {
   // Send the pending sessions broadcast now. The quit path and the tests
   // that read the wire synchronously are its callers.
   flushSessionsBroadcast(): void
+  // Each coalesced delta, as the `terminal.sessions` stream sends it.
+  onSessionsDelta(listener: (delta: TerminalSessionsDelta) => void): () => void
+  // A first message could not be typed in: `takeUndeliveredPrompts` has it.
+  onPromptUndelivered(listener: () => void): () => void
 }
 
 let terminalDiagnostics = createTerminalDiagnostics({
@@ -375,7 +399,7 @@ let onObservedCheckoutResolved: TerminalRuntimeOptions['onObservedCheckoutResolv
 let onAgentToolCall: TerminalRuntimeOptions['onAgentToolCall']
 let onAgentSessionExit: TerminalRuntimeOptions['onAgentSessionExit']
 let leases: WorktreeLeases = worktreeLeases
-// Launches waiting for their folder's hold, by session (`spawnTerminalFromIpc`).
+// Launches waiting for their folder's hold, by session (`spawnTerminal`).
 const spawnWaits = new Map<string, AbortController>()
 
 // Whether a CLI can report authoritative agent state: true exactly when its
@@ -450,12 +474,20 @@ export function createTerminalRuntime(options: TerminalRuntimeOptions): Terminal
       return () => terminalSessionsChangedListeners.delete(listener)
     },
     flushSessionsBroadcast: flushTerminalSessionsBroadcast,
-    ipcHandlers: {
-      spawnTerminal: spawnTerminalFromIpc,
+    onSessionsDelta(listener) {
+      terminalSessionsDeltaListeners.add(listener)
+      return () => terminalSessionsDeltaListeners.delete(listener)
+    },
+    onPromptUndelivered(listener) {
+      promptUndeliveredListeners.add(listener)
+      return () => promptUndeliveredListeners.delete(listener)
+    },
+    sessions: {
+      spawnTerminal,
       writeTerminal: writeTerminalInput,
       resizeTerminal: safeResizeTerminal,
-      async getTerminalStatus(sessionId, sender) {
-        const session = terminals.get(sessionId) ?? (await rehydrateSuspendedTerminalFromSidecar(sessionId, sender))
+      async getTerminalStatus(sessionId, viewer) {
+        const session = terminals.get(sessionId) ?? (await rehydrateSuspendedTerminalFromSidecar(sessionId, viewer))
         return {
           processAlive: Boolean(session && isTerminalProcessAlive(session)),
           suspended: Boolean(session?.suspended && !session.isDisposed),
@@ -515,15 +547,9 @@ function trackAgentListenerRecord(record: Promise<void>): void {
   })
 }
 
-function sendTerminalEvent(sender: Electron.WebContents, channel: string, payload: string | number): void {
-  if (!sender.isDestroyed()) {
-    sender.send(channel, payload)
-  }
-}
-
 const terminalOutput = createTerminalOutputBuffer({
   getSession: (sessionId) => terminals.get(sessionId),
-  sendTerminalEvent,
+  sendTerminalEvent: deliverTerminalEvent,
   recordDataBatch: (session, cause, chunkCount, byteCount) => {
     terminalDiagnostics.recordDataBatch(session, cause, chunkCount, byteCount)
   },
@@ -555,28 +581,11 @@ const terminalOutput = createTerminalOutputBuffer({
  * Only the window the session is routed to may speak for its pane: another
  * window's late ack is about a pane that no longer receives this stream.
  */
-function ackTerminalOutput(sessionId: string, units: number, sender?: WebContents): void {
+function ackTerminalOutput(sessionId: string, units: number, viewer?: TerminalViewer): void {
   const session = terminals.get(sessionId)
   if (!session || session.isDisposed) return
-  if (sender && session.sender !== sender) return
+  if (viewer && session.viewer !== viewer) return
   terminalOutput.ack(sessionId, units)
-}
-
-/**
- * The event sink for a main-process spawn. A live window streams output to the
- * UI immediately; with every window closed the headless sender stands in — the
- * sender is an event sink, not a capability, so the pty still runs and buffers,
- * and a window opened later reattaches through `spawnTerminalFromIpc`'s
- * existing-session branch, adopting the real WebContents and replaying
- * scrollback. The one definition for every main-process spawn: the launch
- * service's spawn port in `src/main/app-services.ts`.
- */
-export function resolveSpawnEventSink(): WebContents {
-  return (
-    BrowserWindow.getAllWindows().find(
-      (win) => !win.isDestroyed() && !win.webContents.isDestroyed() && !isCanvasWorkerWindow(win),
-    )?.webContents ?? createHeadlessTerminalSender()
-  )
 }
 
 /**
@@ -594,6 +603,10 @@ export const TERMINAL_SESSIONS_BROADCAST_COALESCE_MS = 16
 
 let pendingSessionsBroadcast: ReturnType<typeof setTimeout> | null = null
 const terminalSessionsChangedListeners = new Set<() => void>()
+// Who hears each delta and each prompt that could not be typed in: the Studio
+// server's `terminal.sessions` and `terminal.promptUndelivered` streams.
+const terminalSessionsDeltaListeners = new Set<(delta: TerminalSessionsDelta) => void>()
+const promptUndeliveredListeners = new Set<() => void>()
 
 /**
  * What the next broadcast carries. It used to be a full snapshot of every
@@ -722,9 +735,15 @@ function flushTerminalSessionsBroadcast(): void {
 
   if (upserts.length > 0 || removed.length > 0) {
     const delta: TerminalSessionsDelta = { upserts, removed }
-    broadcastToAllWindows('terminal:sessions-delta', delta)
+    for (const listener of terminalSessionsDeltaListeners) {
+      try {
+        listener(delta)
+      } catch (error) {
+        console.warn('[terminal-runtime] sessions-delta listener failed', error)
+      }
+    }
   }
-  // Main-process listeners hear the same beat the windows do, so none of them
+  // Main-process listeners hear the same beat the clients do, so none of them
   // has to poll the session list.
   for (const listener of terminalSessionsChangedListeners) {
     try {
@@ -738,7 +757,7 @@ function flushTerminalSessionsBroadcast(): void {
 function setTerminalVisible(
   sessionId: string,
   visible: boolean,
-  sender?: WebContents,
+  viewer?: TerminalViewer,
   options?: TerminalVisibilityOptions,
 ): void {
   const session = terminals.get(sessionId)
@@ -750,9 +769,9 @@ function setTerminalVisible(
   // session of a workspace it shows. Taken at its word, that froze the window
   // the terminal is actually in. The same rule the output acks follow
   // (`ackTerminalOutput`). A suspended session is the exception: its recorded
-  // sender can be a dead window or a sidecar's noop sink, and the reveal below
-  // adopts whichever window is painting it.
-  if (sender && session.sender !== sender && !session.suspended && !session.sender.isDestroyed()) return
+  // viewer can be a pane that has gone or a sidecar's headless one, and the
+  // reveal below adopts whichever pane is painting it.
+  if (viewer && session.viewer !== viewer && !session.suspended && !session.viewer.isGone()) return
   // A pane that has just been built holds nothing, whatever the last pane in
   // its place was sent. Forget that, so the reveal below (now or later) paints
   // it in full instead of "catching up" an empty xterm by zero bytes.
@@ -762,7 +781,7 @@ function setTerminalVisible(
     session.rendererDeliveredTo = undefined
   }
   // A suspended session has no live pty routing output anywhere, and its
-  // recorded sender can be a dead window (or the noop sender of a placeholder
+  // recorded viewer can be a pane that has gone (or the headless viewer of a placeholder
   // rehydrated from a snapshot sidecar). Adopt the revealing window so the
   // replay below actually reaches the view being painted. So does a live one
   // routed to a window that is gone — a pane terminal's pop-out window that
@@ -770,9 +789,9 @@ function setTerminalVisible(
   // show it stays blank. Adopted, that window is sent the screen in full
   // (nothing says what it holds), whether or not this is a hidden→visible
   // edge.
-  const adopted = Boolean(sender && session.sender !== sender && (session.suspended || session.sender.isDestroyed()))
-  if (adopted && sender) {
-    session.sender = sender
+  const adopted = Boolean(viewer && session.viewer !== viewer && (session.suspended || session.viewer.isGone()))
+  if (adopted && viewer) {
+    session.viewer = viewer
   }
   // While a terminal is hidden the agent keeps running and we keep appending to
   // the retained replay buffer, but we stop forwarding output to its (frozen)
@@ -815,7 +834,7 @@ function setTerminalVisible(
     const catchUp = becameVisible ? revealCatchUp(session) : null
     if (catchUp !== null) {
       if (catchUp) {
-        sendTerminalEvent(session.sender, `terminal:data:${sessionId}`, catchUp)
+        deliverTerminalEvent(session.viewer, { type: 'data', data: catchUp })
         // Only a live pty has a flow to hold back; a dead one's state is gone.
         if (isTerminalProcessAlive(session)) terminalOutput.noteRendererSent(sessionId, catchUp.length)
       }
@@ -835,7 +854,7 @@ function setTerminalVisible(
       const replay = session.replaySnapshot ?? materializeTerminalReplay(session)
       noteRendererCaughtUp(session)
       if (replay) {
-        sendTerminalEvent(session.sender, `terminal:replay:${sessionId}`, replay)
+        deliverTerminalEvent(session.viewer, { type: 'replay', data: replay })
         logMainPerfEvent('TerminalRuntime', 'terminal-replay-sent', {
           sessionId,
           workspaceId: session.workspaceId,
@@ -887,13 +906,13 @@ function revealCatchUp(session: TerminalSession): string | null {
 
 /** Whether the session's current pane was sent its output, by this window. */
 function rendererHoldsSessionOutput(session: TerminalSession): boolean {
-  return session.rendererDeliveredOffset !== undefined && session.rendererDeliveredTo === session.sender
+  return session.rendererDeliveredOffset !== undefined && session.rendererDeliveredTo === session.viewer
 }
 
 /** The pane now holds everything the session has produced, by replay or by catch-up. */
 function noteRendererCaughtUp(session: TerminalSession): void {
   session.rendererDeliveredOffset = session.output.endOffset
-  session.rendererDeliveredTo = session.sender
+  session.rendererDeliveredTo = session.viewer
 }
 
 // How long after a pty resize to treat incoming output as a repaint (alt-screen
@@ -942,7 +961,7 @@ function flushPendingTerminalResize(sessionId: string, session: TerminalSession)
 // Freeze-the-view: kill the agent process to reclaim its RAM but KEEP the
 // session (painted scrollback + --resume launch flags) so it can be resumed on
 // the next keystroke. Unlike disposeTerminal this does not remove the session
-// and does not fire `terminal:exit` (the view stays painted). The pty `onExit`
+// and does not send the pane an `exit` (the view stays painted). The pty `onExit`
 // handler finalizes the suspend
 // (sets `suspended`, broadcasts) by branching on the `suspending` flag set here.
 export function suspendTerminal(sessionId: string): void {
@@ -1131,7 +1150,7 @@ function writeTerminalSnapshotSidecar(
 // seeding the raw buffer when the render fails.
 async function rehydrateSuspendedTerminalFromSidecar(
   sessionId: string,
-  sender?: WebContents,
+  viewer?: TerminalViewer,
 ): Promise<TerminalSession | undefined> {
   if (!snapshotSidecars) return undefined
   const sidecar = await snapshotSidecars.read(sessionId)
@@ -1146,7 +1165,7 @@ async function rehydrateSuspendedTerminalFromSidecar(
   if (existing && !existing.isDisposed) return existing
   const session = createSuspendedPlaceholderSession({
     sessionId,
-    sender,
+    viewer,
     savedAt: sidecar.savedAt,
     kind: sidecar.kind,
     workspaceId: sidecar.workspaceId,
@@ -1189,7 +1208,7 @@ async function rehydrateSuspendedTerminalFromSidecar(
 // `resume: true` — the existing launch path renders `--resume <sessionId>` for
 // Claude and attaches a fresh pty. A non-suspended session falls through to the
 // normal spawn/reattach path unchanged (no-op relaunch).
-async function resumeTerminal(sender: WebContents, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult> {
+async function resumeTerminal(viewer: TerminalViewer, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult> {
   const existing = terminals.get(payload.sessionId)
   // Carry the agent's captured harness session id forward from the suspended
   // session before it is disposed, so an in-session resume still targets the
@@ -1228,7 +1247,7 @@ async function resumeTerminal(sender: WebContents, payload: TerminalSpawnPayload
   // The host too: a resumed CLI's conversation lives in the home of the
   // machine it ran on, whatever the payload now asks for.
   const hostId = existing?.hostId ?? payload.hostId
-  return spawnTerminalFromIpc(sender, { ...payload, resume: true, cliSessionId, ...(hostId ? { hostId } : {}) })
+  return spawnTerminal(viewer, { ...payload, resume: true, cliSessionId, ...(hostId ? { hostId } : {}) })
 }
 
 function disposeTerminal(sessionId: string): void {
@@ -1284,14 +1303,14 @@ function disposeTerminal(sessionId: string): void {
 // The session's machine ends what it left running: `ps` by `--session-id` on
 // macOS and Linux, CIM on Windows, and inside the distribution for WSL, where
 // killing `wsl.exe` on the Windows side does not reach the Linux processes.
-// There the helper also ends the session shell's whole subtree (found through
+// There the distribution's Studio server also ends the session shell's whole subtree (found through
 // its pid file), so a plain WSL terminal that carries no CLI session id still
 // leaves nothing behind.
 function killSessionSurvivors(session: TerminalSession): void {
   const host = hostRegistry().get(session.hostId)
   if (!session.cliSessionId && host.kind !== 'wsl') return
   // A suspended WSL session had its survivors ended when it was suspended.
-  // Closing it later must not start a stopped helper (and wake the VM) to look
+  // Closing it later must not start a stopped server (and wake the VM) to look
   // again for what is already gone.
   if (host.kind === 'wsl' && session.suspended) return
   void host
@@ -1300,7 +1319,7 @@ function killSessionSurvivors(session: TerminalSession): void {
 }
 
 // A session holds its machine while its pty lives: for WSL that keeps the
-// helper running, and the last release lets it stop a while later so the VM
+// distribution's Studio server running, and the last release lets it stop a while later so the VM
 // can idle. Keyed per pty, so a relaunch under the same session id never has
 // its hold dropped by the old pty's late exit.
 let nextHostLease = 1
@@ -1455,8 +1474,7 @@ function stopStaleTerminalSweep(): void {
 
 // Reap terminals nobody has looked at for the stale window: not on screen, no
 // user input, and no process output (see `getTerminalUnseenSince`). Disposing
-// through `disposeTerminal` deliberately skips the renderer `terminal:exit`
-// event, so agent launch flags stay intact and reopening the workspace
+// through `disposeTerminal` deliberately sends the pane no `exit`, so agent launch flags stay intact and reopening the workspace
 // re-launches the CLI with resume.
 // `guardHolds` (sessionId → hold reason, built by the guarded sweep) names
 // sessions that must NOT be reaped this pass because killing the CLI would
@@ -1797,8 +1815,8 @@ async function buildReapGuardHolds(
 ): Promise<Map<string, string>> {
   const holds = new Map<string, string>()
   // Grouped by machine, one read per machine: `ps` on macOS and Linux, CIM for
-  // native Windows, and the helper's /proc read for each WSL distribution,
-  // whose pty pid is only `wsl.exe` (the helper finds the session shell from
+  // native Windows, and the distribution server's /proc read for each WSL
+  // distribution, whose pty pid is only `wsl.exe` (it finds the session shell from
   // the pid file its startup script wrote).
   const byHost = new Map<string, HostProcessRef[]>()
   const probed: string[] = []
@@ -1915,11 +1933,11 @@ async function disposeAllTerminals(): Promise<void> {
   })
   await Promise.all(sessions.map((session) => waitForTerminalExit(session, 500)))
   // A WSL terminal's pty is the Windows `wsl.exe`; ending it does not reach
-  // the Linux processes under it, so each machine's helper ends what its
+  // the Linux processes under it, so each distribution's server ends what its
   // sessions left running (by pid file and `--session-id`), with no grace:
   // the ptys were just waited on. A suspended session's were ended when it
-  // was suspended. Bounded, so a wedged helper cannot hold the quit; the
-  // helper's own shutdown, which follows, ends every session it knows of too.
+  // was suspended. Bounded, so a wedged server cannot hold the quit; the
+  // core's quit, which follows, ends every session it launched there too.
   const survivorKills = sessions.flatMap((session) => {
     const host = hostRegistry().get(session.hostId)
     if (host.kind !== 'wsl' || session.suspended) return []
@@ -2721,7 +2739,7 @@ function notifyAgentPhaseListeners(
 
 function retainFailedTerminalSession(input: {
   sessionId: string
-  sender?: WebContents
+  viewer?: TerminalViewer
   message: string
   exitCode?: number
   kind?: TerminalSession['kind']
@@ -2862,7 +2880,13 @@ function reportUndeliveredPrompt(
   })
   undeliveredPrompts.push(event)
   if (undeliveredPrompts.length > MAX_UNDELIVERED_PROMPTS) undeliveredPrompts.shift()
-  broadcastToAllWindows('terminal:prompt-undelivered', undefined, { skipCanvasWorker: true })
+  for (const listener of promptUndeliveredListeners) {
+    try {
+      listener()
+    } catch (error) {
+      console.warn('[terminal-runtime] prompt-undelivered listener failed', error)
+    }
+  }
 }
 
 function attachTerminalSession(
@@ -2935,7 +2959,7 @@ function attachTerminalSession(
     terminalSession.deferredPrompt?.observeExit()
     // Freeze-the-view: a suspend-kill is NOT a real exit. Finalize the suspended
     // state and keep the session + painted scrollback; do not mark the session
-    // exited or fire `terminal:exit` (which would unmount the view). Resume
+    // exited or send the pane an `exit` (which would unmount the view). Resume
     // relaunches under the same session id.
     if (terminalSession.suspending || terminalSession.suspended) {
       terminalSession.suspending = false
@@ -3029,7 +3053,7 @@ function attachTerminalSession(
       broadcastTerminalSessionsChanged(terminalSession)
     }
     if (!terminalSession.isDisposed) {
-      sendTerminalEvent(terminalSession.sender, `terminal:exit:${sessionId}`, event.exitCode)
+      deliverTerminalEvent(terminalSession.viewer, { type: 'exit', exitCode: event.exitCode })
     }
   })
 
@@ -3048,9 +3072,9 @@ function attachTerminalSession(
  * for, up to the lease's limit, and the launch is refused with its reason
  * after that. A reattach starts nothing and holds nothing.
  */
-async function spawnTerminalFromIpc(sender: WebContents, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult> {
+async function spawnTerminal(viewer: TerminalViewer, payload: TerminalSpawnPayload): Promise<TerminalSpawnResult> {
   const existing = terminals.get(payload.sessionId)
-  if ((existing && !existing.isDisposed) || !payload.cwd) return spawnTerminalNow(sender, payload)
+  if ((existing && !existing.isDisposed) || !payload.cwd) return spawnTerminalNow(viewer, payload)
   // Killing the session (or quitting) while it waits abandons the launch.
   const stop = new AbortController()
   spawnWaits.get(payload.sessionId)?.abort()
@@ -3066,14 +3090,14 @@ async function spawnTerminalFromIpc(sender: WebContents, payload: TerminalSpawnP
   }
   if ('busy' in folderHold) return { ok: false, sessionId: payload.sessionId, message: folderHold.busy, exitCode: 1 }
   try {
-    return await spawnTerminalNow(sender, payload)
+    return await spawnTerminalNow(viewer, payload)
   } finally {
     folderHold.release()
   }
 }
 
 async function spawnTerminalNow(
-  sender: WebContents,
+  viewer: TerminalViewer,
   {
     sessionId,
     cols,
@@ -3120,7 +3144,7 @@ async function spawnTerminalNow(
       resumeRequested: resume,
       visible,
     })
-    existingSession.sender = sender
+    existingSession.viewer = viewer
     existingSession.workspaceId = workspaceId ?? existingSession.workspaceId
     existingSession.agentId = agentId ?? existingSession.agentId
     existingSession.agentName = agentName ?? existingSession.agentName
@@ -3148,7 +3172,7 @@ async function spawnTerminalNow(
     terminalOutput.resetRendererFlow(sessionId)
     noteRendererCaughtUp(existingSession)
     if (replay) {
-      sendTerminalEvent(sender, `terminal:replay:${sessionId}`, replay)
+      deliverTerminalEvent(viewer, { type: 'replay', data: replay })
       logMainPerfEvent('TerminalRuntime', 'terminal-replay-sent', {
         sessionId,
         workspaceId: workspaceId ?? existingSession.workspaceId,
@@ -3159,7 +3183,7 @@ async function spawnTerminalNow(
       })
     }
     if (existingSession.hasExited) {
-      sendTerminalEvent(sender, `terminal:exit:${sessionId}`, existingSession.exitCode ?? 0)
+      deliverTerminalEvent(viewer, { type: 'exit', exitCode: existingSession.exitCode ?? 0 })
     }
     broadcastTerminalSessionsChanged(existingSession)
     return { ok: true, sessionId } satisfies TerminalSpawnResult
@@ -3216,7 +3240,7 @@ async function spawnTerminalNow(
     ? cliRuntimes
     : { ...cliRuntimes, [agentCli]: host.cliRuntime(agentCli, cliRuntimes?.[agentCli]) }
 
-  // A WSL machine needs its helper before anything is launched there: it
+  // A WSL machine needs its Studio server before anything is launched there: it
   // writes the startup script inside the distribution (nothing is run through
   // a `/mnt/<drive>` mount), and an agent's hooks, status line and MCP bridge
   // all report through it. Every launch there, a plain terminal's too, waits
@@ -3304,7 +3328,7 @@ async function spawnTerminalNow(
       if (!prepared.ok) {
         retainFailedTerminalSession({
           sessionId,
-          sender,
+          viewer,
           message: prepared.message,
           kind: kind ?? (shellOnly ? 'terminal' : 'agent'),
           workspaceId,
@@ -3319,8 +3343,8 @@ async function spawnTerminalNow(
           agentSession: materializeAgentSessionIdentity(sessionId, workspaceId, agentSession),
           visible,
         })
-        sendTerminalEvent(sender, `terminal:error:${sessionId}`, prepared.message)
-        sendTerminalEvent(sender, `terminal:exit:${sessionId}`, 1)
+        deliverTerminalEvent(viewer, { type: 'error', message: prepared.message })
+        deliverTerminalEvent(viewer, { type: 'exit', exitCode: 1 })
         return { ok: false, sessionId, message: prepared.message, exitCode: 1 } satisfies TerminalSpawnResult
       }
       launchIntegration = prepared.integration
@@ -3347,7 +3371,7 @@ async function spawnTerminalNow(
       if (!syncResult.ok) {
         retainFailedTerminalSession({
           sessionId,
-          sender,
+          viewer,
           message: syncResult.message,
           kind: kind ?? (shellOnly ? 'terminal' : 'agent'),
           workspaceId,
@@ -3362,8 +3386,8 @@ async function spawnTerminalNow(
           agentSession: materializeAgentSessionIdentity(sessionId, workspaceId, agentSession),
           visible,
         })
-        sendTerminalEvent(sender, `terminal:error:${sessionId}`, syncResult.message)
-        sendTerminalEvent(sender, `terminal:exit:${sessionId}`, 1)
+        deliverTerminalEvent(viewer, { type: 'error', message: syncResult.message })
+        deliverTerminalEvent(viewer, { type: 'exit', exitCode: 1 })
         return {
           ok: false,
           sessionId,
@@ -3444,9 +3468,10 @@ async function spawnTerminalNow(
     }
     // Every agent launch is issued its own gateway token, bound to its
     // conversation: the agent's MCP bridge presents it, and the gateway takes
-    // the agent's identity from it. In WSL it is also the token the bridge
-    // opens its channel with, exported by the startup script; here it rides in
-    // the terminal's environment. The session revokes it when it ends.
+    // the agent's identity from it. In WSL the gateway is the distribution's
+    // own Studio's, which the host tells the token's digest, and the token is
+    // exported by the startup script; here it rides in the terminal's
+    // environment. The session revokes it when it ends.
     const launchIdentity: GatewayLaunchIdentity | null =
       !shellOnly && workspaceId && agentId
         ? { workspaceId, agentId, ...(agentName ? { agentName } : {}), cliId: agentCli }
@@ -3513,7 +3538,7 @@ async function spawnTerminalNow(
         )
     unownedLaunchPromptPath = launchPromptPath
     // A WSL launch's startup script (and host-context file) are written inside
-    // the distribution by its helper, and the terminal runs them from there.
+    // the distribution by its Studio server, and the terminal runs them from there.
     if (hostFiles && hostFiles.length > 0) {
       const label = host.summary().label
       if (!host.writeLaunchFiles) throw new Error(`${label} cannot take this terminal's startup script.`)
@@ -3537,7 +3562,7 @@ async function spawnTerminalNow(
     }
 
     const initialSize = getTerminalSize(cols, rows)
-    const termProcess = pty.spawn(command, args, {
+    const termProcess = loadPty().spawn(command, args, {
       name: 'xterm-256color',
       cols: initialSize.cols,
       rows: initialSize.rows,
@@ -3562,7 +3587,7 @@ async function spawnTerminalNow(
     const terminalSession: TerminalSession = {
       sessionId,
       process: termProcess,
-      sender,
+      viewer,
       isReady: process.platform !== 'win32',
       hasExited: false,
       exitedAt: null,
@@ -3616,7 +3641,7 @@ async function spawnTerminalNow(
     const message = getTerminalErrorMessage(error)
     retainFailedTerminalSession({
       sessionId,
-      sender,
+      viewer,
       message,
       kind: kind ?? (shellOnly ? 'terminal' : 'agent'),
       workspaceId,
@@ -3631,8 +3656,8 @@ async function spawnTerminalNow(
       agentSession: materializeAgentSessionIdentity(sessionId, workspaceId, agentSession),
       visible,
     })
-    sendTerminalEvent(sender, `terminal:error:${sessionId}`, message)
-    sendTerminalEvent(sender, `terminal:exit:${sessionId}`, 1)
+    deliverTerminalEvent(viewer, { type: 'error', message })
+    deliverTerminalEvent(viewer, { type: 'exit', exitCode: 1 })
     return {
       ok: false,
       sessionId,

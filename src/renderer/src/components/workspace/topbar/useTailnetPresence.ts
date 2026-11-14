@@ -2,6 +2,8 @@ import { useSyncExternalStore } from 'react'
 
 import type { TailnetLiveState, TailnetRemoteStatus } from '../../../../../shared/tailnet'
 import type { MeshConnection, MeshMachineReachability, MeshPairRequestView } from '../../../../../shared/tailnet-mesh'
+import { clientSupports } from '../../../clientCapabilities'
+import { tailnetApi } from '../../../studio/tailnet'
 
 // The Remote glyph's one data source (remote-sessions-ux /
 // remote-glyph-topbar): the pushed tailnet payloads plus the mesh's
@@ -28,43 +30,9 @@ export type TailnetPresence = {
   meshRequests: readonly MeshPairRequestView[]
   /** connectionId → main's last reachability answer for that machine (phase 4). */
   meshReachability: ReadonlyMap<string, MeshMachineReachability>
-  /**
-   * connectionId → the last change that machine pushed (the change feed,
-   * 2026-09-05). A surface showing that machine re-reads when this moves;
-   * `revision` is the mesh's own stamp, so a consumer can tell a new push
-   * from a re-render.
-   */
-  meshRemoteChanges: ReadonlyMap<string, MeshRemoteChange>
-}
-
-type MeshChangeKind = 'workspaces' | 'conversations'
-type MeshRemoteChange = {
-  /** The kind the latest push named. */
-  what: MeshChangeKind
-  revision: number
-  at: number
-  /**
-   * The mesh revision of the latest push of each kind. Pushes of both kinds
-   * can land between two renders; a reader that re-reads by kind compares
-   * these rather than `what`, so neither is lost.
-   */
-  revisions: Partial<Record<MeshChangeKind, number>>
 }
 
 const EMPTY_LIVE_STATE: TailnetLiveState = { revision: 0, devices: [] }
-
-/** The bridge functions presence needs; a host missing any of them gets a quiet, absent glyph. */
-function hasTailnetPresenceBridge(api: Partial<Window['api']> | undefined): boolean {
-  return (
-    !!api &&
-    typeof api.onTailnetEvent === 'function' &&
-    typeof api.onMeshEvent === 'function' &&
-    typeof api.tailnetGetStatus === 'function' &&
-    typeof api.tailnetGetLiveState === 'function' &&
-    typeof api.meshListConnections === 'function' &&
-    typeof api.meshGetLiveState === 'function'
-  )
-}
 
 export function useTailnetPresence(): TailnetPresence {
   return useSyncExternalStore(subscribePresence, readPresence, readPresence)
@@ -78,7 +46,6 @@ const INITIAL_PRESENCE: TailnetPresence = {
   mesh: [],
   meshRequests: [],
   meshReachability: new Map(),
-  meshRemoteChanges: new Map(),
 }
 
 let presence: TailnetPresence = INITIAL_PRESENCE
@@ -121,20 +88,20 @@ function subscribePresence(listener: () => void): () => void {
 }
 
 function startPresence(): (() => void) | null {
-  // A host without the complete tailnet/mesh bridge (partial test harnesses,
-  // narrower preloads) gets a quiet, absent glyph rather than a throw — and
-  // the guard covers EVERY function called below, not just the subscriptions.
-  if (typeof window === 'undefined' || !hasTailnetPresenceBridge(window.api)) return null
+  // Studio's own window only: a browser tab administers neither the
+  // listener nor the mesh, so it shows no Remote glyph. A read that is
+  // refused or fails leaves its part empty rather than throwing.
+  if (typeof window === 'undefined' || !clientSupports('tailnet-admin')) return null
   let cancelled = false
   const readConnections = (): void => {
-    void window.api
+    void tailnetApi
       .meshListConnections()
       .then((connections) => {
         if (!cancelled) updatePresence(() => ({ mesh: connections }))
       })
       .catch(() => {})
   }
-  void window.api
+  void tailnetApi
     .tailnetGetStatus()
     .then((initial) => {
       // Every push carries a fresher status, so a push already applied
@@ -142,7 +109,7 @@ function startPresence(): (() => void) | null {
       if (!cancelled && !statusPushed) updatePresence(() => ({ status: initial }))
     })
     .catch(() => {})
-  void window.api
+  void tailnetApi
     .tailnetGetLiveState()
     .then((initial) => {
       if (cancelled || initial.revision < tailnetRevision) return
@@ -151,7 +118,7 @@ function startPresence(): (() => void) | null {
     })
     .catch(() => {})
   readConnections()
-  void window.api
+  void tailnetApi
     .meshGetLiveState()
     .then((initial) => {
       if (cancelled || initial.revision < meshRevision) return
@@ -165,14 +132,17 @@ function startPresence(): (() => void) | null {
     })
     .catch(() => {})
 
-  const offTailnet = window.api.onTailnetEvent((payload) => {
-    if (payload.revision < tailnetRevision) return
+  // Revisions count within one server's lifetime. `current` is the state as
+  // it stands when the stream (re)opens, so it is applied whatever its
+  // revision: after the server restarts, its count starts again below ours.
+  const offTailnet = tailnetApi.onTailnetEvent((payload) => {
+    if (payload.event.kind !== 'current' && payload.revision < tailnetRevision) return
     tailnetRevision = payload.revision
     statusPushed = true
     updatePresence(() => ({ status: payload.status, live: payload.live }))
   })
-  const offMesh = window.api.onMeshEvent((event) => {
-    if (event.revision < meshRevision) return
+  const offMesh = tailnetApi.onMeshEvent((event) => {
+    if (event.kind !== 'current' && event.revision < meshRevision) return
     meshRevision = event.revision
     if (event.kind === 'machine-paired' || event.kind === 'machine-forgotten') {
       readConnections()
@@ -180,16 +150,22 @@ function startPresence(): (() => void) | null {
         updatePresence((current) => {
           const meshReachability = new Map(current.meshReachability)
           meshReachability.delete(event.connectionId)
-          const meshRemoteChanges = new Map(current.meshRemoteChanges)
-          meshRemoteChanges.delete(event.connectionId)
           return {
             meshReachability:
               meshReachability.size === current.meshReachability.size ? current.meshReachability : meshReachability,
-            meshRemoteChanges:
-              meshRemoteChanges.size === current.meshRemoteChanges.size ? current.meshRemoteChanges : meshRemoteChanges,
           }
         })
       }
+      return
+    }
+    if (event.kind === 'current') {
+      // The mesh as it stands, at following and again after a reconnect:
+      // whatever was missed meanwhile is replaced whole, the list included.
+      readConnections()
+      updatePresence(() => ({
+        meshRequests: event.requests,
+        meshReachability: new Map(event.reachability.map((entry) => [entry.connectionId, entry])),
+      }))
       return
     }
     if (event.kind === 'pair-request') {
@@ -207,19 +183,7 @@ function startPresence(): (() => void) | null {
         meshReachability.set(entry.connectionId, entry)
         return { meshReachability }
       })
-      return
     }
-    updatePresence((current) => {
-      const meshRemoteChanges = new Map(current.meshRemoteChanges)
-      const previous = current.meshRemoteChanges.get(event.connectionId)
-      meshRemoteChanges.set(event.connectionId, {
-        what: event.what,
-        revision: event.revision,
-        at: Date.now(),
-        revisions: { ...previous?.revisions, [event.what]: event.revision },
-      })
-      return { meshRemoteChanges }
-    })
   })
   return () => {
     cancelled = true

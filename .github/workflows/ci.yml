@@ -168,7 +168,8 @@ jobs:
 
   # The phone app under mobile/: its own package and lockfile, so its own
   # install and its own gate (mobile/package.json's `ci`): typecheck, ESLint,
-  # the token lint and the regression suite. The Android build is the job
+  # the token lint, the regression suite, and the shared client runtime's and
+  # conversation timeline's tests under the phone's settings. The Android build is the job
   # below; there is no iOS build, which needs Xcode and a signing team.
   # Skipped under the release gate: the desktop release does not ship it.
   mobile:
@@ -299,3 +300,56 @@ jobs:
           src/main/environments/ssh/askpass.test.ts
           src/main/environments/ssh/ssh-environment.docker.test.ts
           src/main/environments/ssh/ssh-variants.docker.test.ts
+
+  # The cut-overs' proof (tests/cross-client/main.ts): one real server build
+  # (build:server) driven by several clients at once, each the code that
+  # surface runs: the desktop window over the Studio protocol, a paired desktop
+  # and the phone's own protocol client over the tailnet lane, a read-only
+  # embed, a WSL-shaped distribution (`sh` for wsl.exe, which the phone and the
+  # paired desktop must not reach), and an SSH machine against the same
+  # dockerized sshd as the job above. One shared chat; create, stream, upload,
+  # approval, sub-agent, schedule, a dropped connection resumed by cursor, and
+  # the server killed and started again. Its output says what is a known gap
+  # and what is simulated.
+  # Runs under the release gate too: it is where the phone is checked against
+  # the build being released.
+  cross-client:
+    name: Cross-client gate
+    if: ${{ inputs.release_gate || github.event_name == 'workflow_dispatch' || github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The tag the SSH machine fixture looks for, built as the job above builds it.
+      - name: Build the test sshd image
+        timeout-minutes: 12
+        run: |
+          for attempt in 1 2 3; do
+            docker build -t sprintengine-test-sshd:1 \
+              -f src/main/environments/ssh/__fixtures__/sshd.Dockerfile \
+              src/main/environments/ssh/__fixtures__ && exit 0
+            echo "::warning::sshd image build failed (attempt $attempt)"
+          done
+          exit 1
+
+      - name: Build the server
+        run: npm run build:server
+
+      - name: Cross-client gate
+        env:
+          STUDIO_TEST_DOCKER: '1'
+        run: npm run test:cross-client -- --require-ssh

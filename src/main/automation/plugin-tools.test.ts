@@ -142,8 +142,8 @@ test('neither tool changes anything, and both stay with agents on this machine',
   assert.equal(tools().offer.mutates, false)
 })
 
-test('out of process the shell offers them as its own `plugin` toolset', () => {
-  assert.ok((SHELL_TOOLSETS as readonly string[]).includes('plugin'))
+test('the plugin sources are the Studio’s: no shell offers a `plugin` toolset, the server serves the tools itself', () => {
+  assert.equal((SHELL_TOOLSETS as readonly string[]).includes('plugin'), false)
   assert.deepEqual(
     gatewayToolDefinitions('plugin', Object.values(tools())).map((tool) => tool.name),
     ['search', 'offer'],

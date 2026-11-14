@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { WebContents } from 'electron'
+import { headlessTerminalViewer, type TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings, TerminalSpawnResult } from '../shared/electron-api'
 import { createTerminalSnapshotSidecarStore } from './terminal-snapshot-sidecar'
 import { createAgentPromptStore } from './agent-prompt-store'
@@ -26,9 +26,7 @@ test('terminal-runtime', async () => {
   type SyncInput = Parameters<SyncMcpConfig>[0]
   type SyncResult = Awaited<ReturnType<SyncMcpConfig>>
   type TerminalRuntime = ReturnType<RuntimeModule['createTerminalRuntime']>
-  type AgentSessionMetadata = NonNullable<
-    Parameters<TerminalRuntime['ipcHandlers']['spawnTerminal']>[1]['agentSession']
-  >
+  type AgentSessionMetadata = NonNullable<Parameters<TerminalRuntime['sessions']['spawnTerminal']>[1]['agentSession']>
   type AgentSessionExitEvent = Parameters<Parameters<TerminalRuntime['registerAgentSessionExitListener']>[0]>[0]
   type AgentPhaseEvent = Parameters<Parameters<TerminalRuntime['registerAgentPhaseListener']>[0]>[0]
   type AgentStateFrame = Parameters<TerminalRuntime['ingestAgentStateFrame']>[0]
@@ -91,7 +89,7 @@ test('terminal-runtime', async () => {
     },
   }
 
-  const mockSender = createMockWebContents()
+  const mockSender = createMockViewer()
   const defaultMockWindows = [
     {
       isDestroyed: () => false,
@@ -126,6 +124,18 @@ test('terminal-runtime', async () => {
   async function main(): Promise<void> {
     try {
       const runtimeModule = (await import('./terminal-runtime')) as RuntimeModule
+      // What every client hears, recorded beside the default pane's events
+      // while a window is open (`withNoWindows` stands for none).
+      const listening = runtimeModule.createTerminalRuntime({
+        diagnosticsEnabled: false,
+        logMainPerfEvent: () => undefined,
+      })
+      listening.onSessionsDelta((delta) => {
+        if (mockWindows.length) mockSender.sent.push({ channel: 'sessions', payload: delta })
+      })
+      listening.onPromptUndelivered(() => {
+        if (mockWindows.length) mockSender.sent.push({ channel: 'prompt-undelivered', payload: undefined })
+      })
       // The gate-behavior sweeps below spawn only a handful of agents, which the
       // default recency floor (keep the N most recent alive) would spare wholesale.
       // Disable the floor so each per-session gate is exercised in isolation; the
@@ -243,7 +253,7 @@ test('terminal-runtime', async () => {
       logMainPerfEvent: () => undefined,
     })
 
-    const spawnResult = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+    const spawnResult = await runtime.sessions.spawnTerminal(mockSender, {
       sessionId: 'session-wakeup',
       cols: 120,
       rows: 30,
@@ -297,7 +307,7 @@ test('terminal-runtime', async () => {
         'an expired wakeup must not park the session',
       )
     } finally {
-      runtime.ipcHandlers.killTerminal('session-wakeup')
+      runtime.sessions.killTerminal('session-wakeup')
     }
   }
 
@@ -338,7 +348,7 @@ test('terminal-runtime', async () => {
     })
 
     const sessionId = 'session-observed'
-    const spawnResult = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+    const spawnResult = await runtime.sessions.spawnTerminal(mockSender, {
       sessionId,
       cols: 120,
       rows: 30,
@@ -353,7 +363,7 @@ test('terminal-runtime', async () => {
     })
     assert.equal(spawnResult.ok, true, JSON.stringify(spawnResult))
 
-    const snapshot = () => runtime.ipcHandlers.listTerminals().find((entry) => entry.sessionId === sessionId)
+    const snapshot = () => runtime.sessions.listTerminals().find((entry) => entry.sessionId === sessionId)
     const settle = async () => {
       for (let i = 0; i < 20; i += 1) await new Promise((r) => setImmediate(r))
       // The broadcast is coalesced behind a frame's timer; the resolver's
@@ -401,12 +411,12 @@ test('terminal-runtime', async () => {
       assert.equal(snapshot()?.observedCheckout?.cwd, worktreeRoot)
       assert.equal(snapshot()?.observedCheckout?.resolved, false)
       assert.ok(
-        !mockSender.sent.some((event) => event.channel === 'terminal:sessions-delta'),
+        !mockSender.sent.some((event) => event.channel === 'sessions'),
         'the move itself does not broadcast (unresolved renders as launch intent — a flicker)',
       )
       await settle()
       assert.ok(
-        mockSender.sent.some((event) => event.channel === 'terminal:sessions-delta'),
+        mockSender.sent.some((event) => event.channel === 'sessions'),
         'git answering broadcasts, even though thinking↔tool_use churn does not',
       )
       const wt = snapshot()?.observedCheckout
@@ -464,7 +474,7 @@ test('terminal-runtime', async () => {
       assert.equal(snapshot()?.observedCheckout?.cwd, '/unanswerable')
       assert.equal(snapshot()?.observedCheckout?.resolved, false, 'null from the resolver stays unresolved')
       assert.ok(
-        mockSender.sent.some((event) => event.channel === 'terminal:sessions-delta'),
+        mockSender.sent.some((event) => event.channel === 'sessions'),
         'an unanswerable move still broadcasts the unresolved observation',
       )
 
@@ -501,12 +511,12 @@ test('terminal-runtime', async () => {
       // Suspend then resume under the same session id: the observation rides
       // across the gap, so the resumed tab keeps saying where the agent was
       // until its first hook frame re-observes.
-      runtime.ipcHandlers.suspendTerminal(sessionId)
+      runtime.sessions.suspendTerminal(sessionId)
       mockPty.spawnCalls[0]?.process.emitExit({ exitCode: 0 })
       await settle()
       assert.equal(snapshot()?.suspended, true)
       assert.equal(snapshot()?.observedCheckout?.cwd, '/race/src', 'a suspended session keeps its observation')
-      const resumed = await runtime.ipcHandlers.resumeTerminal(mockSender as unknown as WebContents, {
+      const resumed = await runtime.sessions.resumeTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -532,7 +542,7 @@ test('terminal-runtime', async () => {
       // moments ago asks fresh on its first observation: the cached answer may
       // predate a branch switch made just before this launch.
       const secondId = 'session-observed-2'
-      const second = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const second = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: secondId,
         cols: 120,
         rows: 30,
@@ -554,7 +564,7 @@ test('terminal-runtime', async () => {
         await settle()
         assert.equal(resolveCalls.length, callsBeforeSecond + 1, 'a first observation bypasses the cache')
       } finally {
-        runtime.ipcHandlers.killTerminal(secondId)
+        runtime.sessions.killTerminal(secondId)
       }
 
       // A pull request record change re-emits the sessions the record says it
@@ -564,7 +574,7 @@ test('terminal-runtime', async () => {
       // filter and the broadcast.
       // Let the previous session's teardown broadcast land before counting.
       await settle()
-      const broadcasts = () => mockSender.sent.filter((event) => event.channel === 'terminal:sessions-delta').length
+      const broadcasts = () => mockSender.sent.filter((event) => event.channel === 'sessions').length
       const broadcastsBeforeRecord = broadcasts()
       const seen: string[] = []
       runtimeModule.notePullRequestRecordChanged((session) => {
@@ -579,7 +589,7 @@ test('terminal-runtime', async () => {
       await settle()
       assert.ok(broadcasts() > broadcastsBeforeRecord, 'the sessions the change reaches are re-emitted')
     } finally {
-      runtime.ipcHandlers.killTerminal(sessionId)
+      runtime.sessions.killTerminal(sessionId)
       await rm(workspaceRoot, { recursive: true, force: true })
     }
   }
@@ -611,7 +621,7 @@ test('terminal-runtime', async () => {
     })
 
     const spawnAgentTerminal = async (sessionId: string, agentId: string): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -820,11 +830,11 @@ test('terminal-runtime', async () => {
     }
   }
 
-  // Headless spawn + window attach: main spawns an agent with no window using the
-  // headless sender — the PTY runs and retains scrollback while every outbound
-  // send no-ops — and a window that opens later reattaches through the
-  // spawnTerminal existing-session branch, adopting the real WebContents and
-  // replaying the buffered output.
+  // Headless spawn + pane attach: main spawns an agent with no pane using the
+  // headless viewer — the PTY runs and retains scrollback while nothing is
+  // delivered — and a pane that opens later reattaches through the
+  // spawnTerminal existing-session branch, adopting its viewer and replaying
+  // the buffered output.
   async function assertHeadlessSpawnAttachesToLaterWindow(runtimeModule: RuntimeModule): Promise<void> {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-headless-'))
     mockPty.spawnCalls = []
@@ -835,9 +845,7 @@ test('terminal-runtime', async () => {
       logMainPerfEvent: () => undefined,
     })
 
-    const { createHeadlessTerminalSender } = await import('./terminal-session')
-
-    const headless = await runtime.ipcHandlers.spawnTerminal(createHeadlessTerminalSender(), {
+    const headless = await runtime.sessions.spawnTerminal(headlessTerminalViewer(), {
       sessionId: 'session-headless',
       cols: 100,
       rows: 30,
@@ -860,7 +868,7 @@ test('terminal-runtime', async () => {
 
       // A window opens later: the same-sessionId spawn adopts the real sender
       // and replays the buffered scrollback instead of respawning.
-      const reattach = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const reattach = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-headless',
         cols: 100,
         rows: 30,
@@ -875,7 +883,7 @@ test('terminal-runtime', async () => {
       })
       assert.equal(reattach.ok, true, JSON.stringify(reattach))
       assert.equal(mockPty.spawnCalls.length, 1, 'reattach adopts the live session; no second PTY')
-      const replay = mockSender.sent.find((event) => event.channel === 'terminal:replay:session-headless')
+      const replay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(replay, 'reattach replays scrollback to the newly attached window')
       assert.ok(
         String(replay?.payload ?? '').includes('headless output before any window'),
@@ -885,7 +893,7 @@ test('terminal-runtime', async () => {
       // The agent dragged to another chat reattaches from there: the session
       // follows it, and still says which chat its process was launched in,
       // which is the one that process names in everything it reports.
-      const moved = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const moved = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-headless',
         cols: 100,
         rows: 30,
@@ -899,11 +907,11 @@ test('terminal-runtime', async () => {
         mcpSettings: { syncEnabled: false, servers: {} } satisfies McpSettings,
       })
       assert.equal(moved.ok, true, JSON.stringify(moved))
-      const snapshot = runtime.ipcHandlers.listTerminals().find((entry) => entry.sessionId === 'session-headless')
+      const snapshot = runtime.sessions.listTerminals().find((entry) => entry.sessionId === 'session-headless')
       assert.equal(snapshot?.workspaceId, 'ws-moved')
       assert.equal(snapshot?.launchWorkspaceId, 'ws-headless')
     } finally {
-      runtime.ipcHandlers.killTerminal('session-headless')
+      runtime.sessions.killTerminal('session-headless')
     }
   }
 
@@ -939,9 +947,9 @@ test('terminal-runtime', async () => {
         mcp: { syncEnabled: true, servers: {} },
       }),
       terminal: {
-        list: () => runtime.ipcHandlers.listTerminals(),
-        spawn: (payload) => runtime.ipcHandlers.spawnTerminal(runtimeModule.resolveSpawnEventSink(), payload),
-        kill: (sessionId) => runtime.ipcHandlers.killTerminal(sessionId),
+        list: () => runtime.sessions.listTerminals(),
+        spawn: (payload) => runtime.sessions.spawnTerminal(headlessTerminalViewer(), payload),
+        kill: (sessionId) => runtime.sessions.killTerminal(sessionId),
       },
     })
 
@@ -956,7 +964,7 @@ test('terminal-runtime', async () => {
       if (!launched.ok) return
       assert.equal(mockPty.spawnCalls.length, 1, 'a windowless agent.launch still creates the pty')
       assert.equal(
-        (await runtime.ipcHandlers.getTerminalStatus(launched.sessionId)).processAlive,
+        (await runtime.sessions.getTerminalStatus(launched.sessionId)).processAlive,
         true,
         'the launched session is live with no window open',
       )
@@ -976,7 +984,7 @@ test('terminal-runtime', async () => {
 
       // The launch record rides the session snapshot — this is what the renderer
       // projects a tab from when a window finally opens.
-      const snapshot = runtime.ipcHandlers.listTerminals().find((entry) => entry.sessionId === launched.sessionId)
+      const snapshot = runtime.sessions.listTerminals().find((entry) => entry.sessionId === launched.sessionId)
       assert.equal(snapshot?.agentRecord?.agentId, launched.agentId)
       assert.equal(snapshot?.agentRecord?.cli, 'claude-code')
       assert.equal(snapshot?.agentRecord?.cliPermissionPreset, 'bypass')
@@ -994,7 +1002,7 @@ test('terminal-runtime', async () => {
 
       // A window opens later and the projected tab attaches by session id — the
       // same-sessionId spawn the renderer issues — replaying what buffered.
-      const reattach = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const reattach = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: launched.sessionId,
         cols: 120,
         rows: 30,
@@ -1009,7 +1017,7 @@ test('terminal-runtime', async () => {
       })
       assert.equal(reattach.ok, true, JSON.stringify(reattach))
       assert.equal(mockPty.spawnCalls.length, 1, 'the projected tab attaches; it never launches a second agent')
-      const replay = mockSender.sent.find((event) => event.channel === `terminal:replay:${launched.sessionId}`)
+      const replay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(replay, 'the later window replays the headless launch scrollback')
       assert.ok(
         String(replay?.payload ?? '').includes('launched output before any window'),
@@ -1048,7 +1056,7 @@ test('terminal-runtime', async () => {
     })
 
     const spawnHiddenAgent = async (sessionId: string, agentWorkspaceId: string): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -1108,8 +1116,8 @@ test('terminal-runtime', async () => {
         'once the background work finishes the held session must reap on the next sweep',
       )
     } finally {
-      runtime.ipcHandlers.killTerminal('session-bg-shell')
-      runtime.ipcHandlers.killTerminal('session-guard-quiet')
+      runtime.sessions.killTerminal('session-bg-shell')
+      runtime.sessions.killTerminal('session-guard-quiet')
     }
   }
 
@@ -1131,7 +1139,7 @@ test('terminal-runtime', async () => {
     })
 
     const spawnHiddenAgent = async (sessionId: string, agentWorkspaceId: string): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -1193,29 +1201,29 @@ test('terminal-runtime', async () => {
 
       assert.equal(oldProcess.killed, true, 'suspending must kill the underlying pty to reclaim RAM')
 
-      const oldStatus = await runtime.ipcHandlers.getTerminalStatus('session-old')
+      const oldStatus = await runtime.sessions.getTerminalStatus('session-old')
       assert.deepEqual(
         oldStatus,
         { processAlive: false, suspended: true },
         'reaped agent must be suspended (frozen + resumable), not gone',
       )
 
-      const stillListed = runtime.ipcHandlers.listTerminals().map((session) => session.sessionId)
+      const stillListed = runtime.sessions.listTerminals().map((session) => session.sessionId)
       assert.ok(
         stillListed.includes('session-old'),
         'suspended session must be retained so its painted scrollback can replay on reopen',
       )
 
       assert.equal(
-        mockSender.sent.some((event) => event.channel === 'terminal:exit:session-old'),
+        mockSender.sent.some((event) => event.channel === 'exit'),
         false,
-        'a suspend is not an exit: the view must stay painted, so no terminal:exit is emitted',
+        'a suspend is not an exit: the view must stay painted, so no exit is sent',
       )
 
       // The awaiting-input agent stays live: a terminal blocked on the user must
       // never be frozen out from under them.
       assert.deepEqual(
-        await runtime.ipcHandlers.getTerminalStatus('session-awaiting'),
+        await runtime.sessions.getTerminalStatus('session-awaiting'),
         { processAlive: true, suspended: false },
         'an agent awaiting user input must never be suspended by the reaper',
       )
@@ -1246,7 +1254,7 @@ test('terminal-runtime', async () => {
 
     try {
       const sessionId = 'session-suspend-mid-turn'
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -1273,16 +1281,16 @@ test('terminal-runtime', async () => {
         event: null,
         ts: Date.now(),
       })
-      const midTurn = runtime.ipcHandlers.listTerminals().find((s) => s.sessionId === sessionId)
+      const midTurn = runtime.sessions.listTerminals().find((s) => s.sessionId === sessionId)
       assert.equal(midTurn?.activity.kind, 'working', 'precondition: the agent reads as working')
       assert.equal(midTurn?.agentState?.phase, 'thinking')
 
       // Pause it mid-turn, the way the agent pane's suspend control does.
-      runtime.ipcHandlers.suspendTerminal(sessionId)
+      runtime.sessions.suspendTerminal(sessionId)
       spawned.emitExit({ exitCode: 0 })
       await delay(20)
 
-      const frozen = runtime.ipcHandlers.listTerminals().find((s) => s.sessionId === sessionId)
+      const frozen = runtime.sessions.listTerminals().find((s) => s.sessionId === sessionId)
       assert.equal(frozen?.suspended, true, 'the session is still there, frozen and resumable')
       assert.equal(frozen?.processAlive, false)
       assert.equal(frozen?.activity.kind, 'idle', 'a paused chat must not keep claiming a turn in flight')
@@ -1310,7 +1318,7 @@ test('terminal-runtime', async () => {
     })
 
     const spawnHiddenAgent = async (sessionId: string, agentWorkspaceId: string): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -1338,9 +1346,9 @@ test('terminal-runtime', async () => {
       // Stagger real keystrokes so the recency order is unambiguous (spawn
       // timestamps can share a millisecond): mid, then new, most recent last.
       await delay(5)
-      runtime.ipcHandlers.writeTerminal('floor-mid', 'x')
+      runtime.sessions.writeTerminal('floor-mid', 'x')
       await delay(5)
-      runtime.ipcHandlers.writeTerminal('floor-new', 'x')
+      runtime.sessions.writeTerminal('floor-new', 'x')
 
       // At rest the hook way: every selectable CLI reports lifecycle frames now
       // (the spawn stamp `starting` is a protected working phase), so the sweep
@@ -1404,7 +1412,7 @@ test('terminal-runtime', async () => {
 
     try {
       for (const sessionId of ['session-lock-a', 'session-lock-b']) {
-        const spawned = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+        const spawned = await runtime.sessions.spawnTerminal(mockSender, {
           sessionId,
           cols: 120,
           rows: 30,
@@ -1425,9 +1433,9 @@ test('terminal-runtime', async () => {
       markAgentAtRest(runtime, 'session-lock-a', 'ws-session-lock-a')
       markAgentAtRest(runtime, 'session-lock-b', 'ws-session-lock-b')
 
-      runtime.ipcHandlers.setTerminalReapExempt('session-lock-a', true)
+      runtime.sessions.setTerminalReapExempt('session-lock-a', true)
       assert.equal(
-        runtime.ipcHandlers.listTerminals().find((s) => s.sessionId === 'session-lock-a')?.reapExempt,
+        runtime.sessions.listTerminals().find((s) => s.sessionId === 'session-lock-a')?.reapExempt,
         true,
         'the lock must surface on the session snapshot for the renderer control',
       )
@@ -1441,7 +1449,7 @@ test('terminal-runtime', async () => {
       )
       mockPty.spawnCalls[1]?.process.emitExit({ exitCode: 0 })
       await delay(20)
-      assert.deepEqual(await runtime.ipcHandlers.getTerminalStatus('session-lock-b'), {
+      assert.deepEqual(await runtime.sessions.getTerminalStatus('session-lock-b'), {
         processAlive: false,
         suspended: true,
       })
@@ -1452,12 +1460,12 @@ test('terminal-runtime', async () => {
       // says so, and must STILL be sent the replay — a suspended pty is dead,
       // so that resend is the only thing that can paint it.
       mockSender.sent = []
-      const sender = mockSender as unknown as WebContents
-      runtime.ipcHandlers.setTerminalVisible('session-lock-b', true, sender)
-      runtime.ipcHandlers.setTerminalVisible('session-lock-b', true, sender)
-      const replaysOf = () => mockSender.sent.filter((event) => event.channel === 'terminal:replay:session-lock-b')
+      const sender = mockSender
+      runtime.sessions.setTerminalVisible('session-lock-b', true, sender)
+      runtime.sessions.setTerminalVisible('session-lock-b', true, sender)
+      const replaysOf = () => mockSender.sent.filter((event) => event.channel === 'replay')
       assert.equal(replaysOf().length, 1, 'a repeat reveal of a pane that holds the screen sends nothing')
-      runtime.ipcHandlers.setTerminalVisible('session-lock-b', true, sender, { freshPane: true })
+      runtime.sessions.setTerminalVisible('session-lock-b', true, sender, { freshPane: true })
       const replays = replaysOf()
       assert.equal(replays.length, 2, 'a fresh pane must be sent the replay even when already visible')
       assert.ok(
@@ -1471,12 +1479,12 @@ test('terminal-runtime', async () => {
       const staleReaped = runtimeModule.reapStaleTerminals(wellPastStale)
       assert.equal(staleReaped.includes('session-lock-a'), false, 'the locked agent must survive the stale backstop')
       assert.ok(
-        runtime.ipcHandlers.listTerminals().some((s) => s.sessionId === 'session-lock-a'),
+        runtime.sessions.listTerminals().some((s) => s.sessionId === 'session-lock-a'),
         'the locked agent must still be listed after the stale sweep',
       )
 
       // Unlock → the very next idle sweep reclaims it.
-      runtime.ipcHandlers.setTerminalReapExempt('session-lock-a', false)
+      runtime.sessions.setTerminalReapExempt('session-lock-a', false)
       assert.deepEqual(
         runtimeModule.runIdleAgentReapSweep(wellPastIdle),
         ['session-lock-a'],
@@ -1512,7 +1520,7 @@ test('terminal-runtime', async () => {
     const spawnAgent = async (
       overrides: Pick<AgentSessionMetadata, 'executionId' | 'system'> & { workspaceId: string },
     ): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: overrides.executionId,
         cols: 120,
         rows: 30,
@@ -1629,7 +1637,7 @@ test('terminal-runtime', async () => {
     const spawnAgent = async (
       overrides: Pick<AgentSessionMetadata, 'executionId' | 'system'> & { workspaceId: string },
     ): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: overrides.executionId,
         cols: 120,
         rows: 30,
@@ -1696,7 +1704,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const hiddenSpawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const hiddenSpawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_stale_hidden',
         cols: 120,
         rows: 30,
@@ -1707,7 +1715,7 @@ test('terminal-runtime', async () => {
       })
       assert.equal(hiddenSpawn.ok, true, JSON.stringify(hiddenSpawn))
 
-      const visibleSpawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const visibleSpawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_stale_visible',
         cols: 120,
         rows: 30,
@@ -1718,7 +1726,7 @@ test('terminal-runtime', async () => {
       })
       assert.equal(visibleSpawn.ok, true, JSON.stringify(visibleSpawn))
 
-      const beforeSweep = runtime.ipcHandlers
+      const beforeSweep = runtime.sessions
         .listTerminals()
         .map((session) => session.sessionId)
         .sort()
@@ -1731,14 +1739,14 @@ test('terminal-runtime', async () => {
       const reaped = runtimeModule.reapStaleTerminals(wellPastStale)
       assert.deepEqual(reaped, ['session_stale_hidden'], 'only the unseen hidden terminal is reaped')
 
-      const afterSweep = runtime.ipcHandlers.listTerminals().map((session) => session.sessionId)
+      const afterSweep = runtime.sessions.listTerminals().map((session) => session.sessionId)
       assert.deepEqual(afterSweep, ['session_stale_visible'])
       const hiddenProcess = mockPty.spawnCalls.find((call) => call.process)?.process
       assert.equal(hiddenProcess?.killed, true, 'reaping must kill the underlying pty')
       assert.equal(
-        mockSender.sent.some((event) => event.channel === 'terminal:exit:session_stale_hidden'),
+        mockSender.sent.some((event) => event.channel === 'exit'),
         false,
-        'reaped terminals must not emit terminal:exit so renderer launch flags survive for resume',
+        "reaped terminals must send no exit, so the pane's launch flags survive for resume",
       )
     } finally {
       await runtime.shutdown()
@@ -1786,7 +1794,7 @@ test('terminal-runtime', async () => {
       sessionId: string,
       agentWorkspaceId: string,
     ): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -1833,7 +1841,7 @@ test('terminal-runtime', async () => {
       liveProcess.emitData('live painted output\r\n')
       await delay(20)
 
-      runtime.ipcHandlers.suspendTerminal('session-frozen')
+      runtime.sessions.suspendTerminal('session-frozen')
       frozenProcess.emitExit({ exitCode: 0 })
       // The suspend-time sidecar lands once the async headless render settles.
       await waitFor('suspend-time sidecar write', async () => (await sidecarStore.read('session-frozen')) !== null)
@@ -1878,13 +1886,13 @@ test('terminal-runtime', async () => {
       )
 
       assert.deepEqual(
-        await runtime2.ipcHandlers.getTerminalStatus('session-frozen', mockSender as unknown as WebContents),
+        await runtime2.sessions.getTerminalStatus('session-frozen', mockSender),
         { processAlive: false, suspended: true },
         'a persisted suspend must rehydrate as suspended so the renderer pauses instead of launching',
       )
       mockSender.sent = []
-      runtime2.ipcHandlers.setTerminalVisible('session-frozen', true, mockSender as unknown as WebContents)
-      const frozenReplay = mockSender.sent.find((event) => event.channel === 'terminal:replay:session-frozen')
+      runtime2.sessions.setTerminalVisible('session-frozen', true, mockSender)
+      const frozenReplay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(
         typeof frozenReplay?.payload === 'string' && frozenReplay.payload.includes('frozen painted output'),
         'revealing the rehydrated terminal must replay the painted screen',
@@ -1893,13 +1901,13 @@ test('terminal-runtime', async () => {
       // Quit-path sidecars carry raw bytes; rehydration renders them to a
       // faithful snapshot before the placeholder is revealed.
       assert.deepEqual(
-        await runtime2.ipcHandlers.getTerminalStatus('session-live', mockSender as unknown as WebContents),
+        await runtime2.sessions.getTerminalStatus('session-live', mockSender),
         { processAlive: false, suspended: true },
         'a quit-dumped live agent must also rehydrate as suspended',
       )
       mockSender.sent = []
-      runtime2.ipcHandlers.setTerminalVisible('session-live', true, mockSender as unknown as WebContents)
-      const liveReplay = mockSender.sent.find((event) => event.channel === 'terminal:replay:session-live')
+      runtime2.sessions.setTerminalVisible('session-live', true, mockSender)
+      const liveReplay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(
         typeof liveReplay?.payload === 'string' && liveReplay.payload.includes('live painted output'),
         'revealing a quit-dumped terminal must replay its painted screen',
@@ -1907,7 +1915,7 @@ test('terminal-runtime', async () => {
 
       // Resume consumes the sidecar (dispose-then-respawn under the same id).
       mockPty.spawnCalls = []
-      const resumed = await runtime2.ipcHandlers.resumeTerminal(mockSender as unknown as WebContents, {
+      const resumed = await runtime2.sessions.resumeTerminal(mockSender, {
         sessionId: 'session-frozen',
         cols: 120,
         rows: 30,
@@ -1928,7 +1936,7 @@ test('terminal-runtime', async () => {
       )
 
       // Dispose is terminal: killing the rehydrated placeholder deletes its sidecar.
-      runtime2.ipcHandlers.killTerminal('session-live')
+      runtime2.sessions.killTerminal('session-live')
       assert.equal(
         await sidecarStore.read('session-live'),
         null,
@@ -1971,13 +1979,13 @@ test('terminal-runtime', async () => {
     }
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const listed = (runtime: TerminalRuntime) =>
-      runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'session-release')
+      runtime.sessions.listTerminals().find((session) => session.sessionId === 'session-release')
 
     const runtime = runtimeModule.createTerminalRuntime(runtimeOptions)
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId: 'session-release',
         cols: 120,
         rows: 30,
@@ -1999,7 +2007,7 @@ test('terminal-runtime', async () => {
       await delay(20)
       assert.ok((listed(runtime)?.retainedOutputBytes ?? 0) > 100_000, 'a live agent retains its stream')
 
-      runtime.ipcHandlers.suspendTerminal('session-release')
+      runtime.sessions.suspendTerminal('session-release')
       pty.emitExit({ exitCode: 0 })
       const start = Date.now()
       while (!(await sidecarStore.read('session-release'))) {
@@ -2015,8 +2023,8 @@ test('terminal-runtime', async () => {
       // The frozen screen is still there, instantly, and nothing was spawned.
       const spawnsBefore = mockPty.spawnCalls.length
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-release', true, sender)
-      const replay = mockSender.sent.find((event) => event.channel === 'terminal:replay:session-release')
+      runtime.sessions.setTerminalVisible('session-release', true, sender)
+      const replay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(
         typeof replay?.payload === 'string' && replay.payload.includes('the last thing the agent painted'),
         'revealing the paused agent repaints its last screen',
@@ -2037,21 +2045,21 @@ test('terminal-runtime', async () => {
     // After a restart: the placeholder paints from the sidecar and holds no raw stream.
     const runtime2 = runtimeModule.createTerminalRuntime(runtimeOptions)
     try {
-      assert.deepEqual(await runtime2.ipcHandlers.getTerminalStatus('session-release', sender), {
+      assert.deepEqual(await runtime2.sessions.getTerminalStatus('session-release', sender), {
         processAlive: false,
         suspended: true,
       })
       assert.equal(listed(runtime2)?.retainedOutputBytes, 0, 'a restored paused agent holds only its frozen screen')
       mockSender.sent = []
-      runtime2.ipcHandlers.setTerminalVisible('session-release', true, sender)
-      const replay = mockSender.sent.find((event) => event.channel === 'terminal:replay:session-release')
+      runtime2.sessions.setTerminalVisible('session-release', true, sender)
+      const replay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(
         typeof replay?.payload === 'string' && replay.payload.includes('the last thing the agent painted'),
         'the frozen screen survives the restart',
       )
 
       // Settled: disposing releases the screen too, and the session is gone.
-      runtime2.ipcHandlers.killTerminal('session-release')
+      runtime2.sessions.killTerminal('session-release')
       assert.equal(listed(runtime2), undefined)
       assert.equal(runtime2.readTerminalOutput('session-release'), undefined)
     } finally {
@@ -2070,15 +2078,15 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-exit-release-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     const listed = (sessionId: string) =>
-      runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === sessionId)
+      runtime.sessions.listTerminals().find((session) => session.sessionId === sessionId)
     const spawn = async (sessionId: string, kind: 'agent' | 'terminal'): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -2153,8 +2161,8 @@ test('terminal-runtime', async () => {
       // Reopening the tab paints the final screen and its scrollback, and spawns nothing.
       const spawnsBefore = mockPty.spawnCalls.length
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-exit-release', true, sender)
-      const replay = mockSender.sent.find((event) => event.channel === 'terminal:replay:session-exit-release')
+      runtime.sessions.setTerminalVisible('session-exit-release', true, sender)
+      const replay = mockSender.sent.find((event) => event.channel === 'replay')
       assert.ok(
         typeof replay?.payload === 'string' && replay.payload.includes('the final screen of the finished run'),
         'revealing the exited agent repaints its final screen',
@@ -2184,18 +2192,16 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-delta-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     type Delta = import('../shared/ipc/terminal').TerminalSessionsDelta
     const deltas = (): Delta[] =>
-      mockSender.sent
-        .filter((event) => event.channel === 'terminal:sessions-delta')
-        .map((event) => event.payload as Delta)
+      mockSender.sent.filter((event) => event.channel === 'sessions').map((event) => event.payload as Delta)
     const spawn = async (sessionId: string): Promise<void> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -2265,7 +2271,7 @@ test('terminal-runtime', async () => {
       assert.equal('pullRequests' in (sent[0]?.upserts[0] ?? {}), false, 'so are unchanged pull requests')
 
       mockSender.sent = []
-      runtime.ipcHandlers.killTerminal('delta-b')
+      runtime.sessions.killTerminal('delta-b')
       runtime.flushSessionsBroadcast()
       sent = deltas()
       assert.deepEqual(sent, [{ upserts: [], removed: ['delta-b'] }], 'a disposed session is named, not re-listed')
@@ -2275,7 +2281,7 @@ test('terminal-runtime', async () => {
       assert.deepEqual(deltas(), [], 'nothing changed: nothing is sent')
 
       // The full list is still whole, for a window that is just subscribing.
-      const listedA = runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'delta-a')
+      const listedA = runtime.sessions.listTerminals().find((session) => session.sessionId === 'delta-a')
       assert.equal(listedA?.fileChanges.length, 1)
     } finally {
       await runtime.shutdown()
@@ -2287,14 +2293,14 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-reveal-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     const channel = (name: string) => mockSender.sent.filter((event) => event.channel === name)
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId: 'session-reveal',
         cols: 120,
         rows: 30,
@@ -2308,17 +2314,17 @@ test('terminal-runtime', async () => {
       assert.ok(pty)
       pty.emitData('seen while visible\r\n')
       await delay(30)
-      assert.equal(channel('terminal:data:session-reveal').length, 1)
+      assert.equal(channel('data').length, 1)
 
-      runtime.ipcHandlers.setTerminalVisible('session-reveal', false, sender)
+      runtime.sessions.setTerminalVisible('session-reveal', false, sender)
       pty.emitData('missed ─ one\r\n')
       pty.emitData('missed two\r\n')
       await delay(30)
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-reveal', true, sender)
-      assert.deepEqual(channel('terminal:replay:session-reveal'), [], 'no reset-and-replay of the whole window')
+      runtime.sessions.setTerminalVisible('session-reveal', true, sender)
+      assert.deepEqual(channel('replay'), [], 'no reset-and-replay of the whole window')
       assert.deepEqual(
-        channel('terminal:data:session-reveal').map((event) => event.payload),
+        channel('data').map((event) => event.payload),
         ['missed ─ one\r\nmissed two\r\n'],
         'exactly the bytes the pane missed, once',
       )
@@ -2328,20 +2334,20 @@ test('terminal-runtime', async () => {
       pty.emitData('after the reveal\r\n')
       await delay(30)
       assert.deepEqual(
-        channel('terminal:data:session-reveal').map((event) => event.payload),
+        channel('data').map((event) => event.payload),
         ['after the reveal\r\n'],
       )
 
       // Hidden through more output than is retained: what it missed is gone
       // from the head, so the pane is repainted from the whole window instead.
-      runtime.ipcHandlers.setTerminalVisible('session-reveal', false, sender)
+      runtime.sessions.setTerminalVisible('session-reveal', false, sender)
       const block = `${'z'.repeat(1_022)}\r\n`
       for (let index = 0; index < 3_000; index += 1) pty.emitData(block)
       await delay(30)
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-reveal', true, sender)
-      assert.equal(channel('terminal:replay:session-reveal').length, 1, 'fell off the head: full repaint')
-      assert.equal(channel('terminal:data:session-reveal').length, 0)
+      runtime.sessions.setTerminalVisible('session-reveal', true, sender)
+      assert.equal(channel('replay').length, 1, 'fell off the head: full repaint')
+      assert.equal(channel('data').length, 0)
     } finally {
       await runtime.shutdown()
     }
@@ -2356,17 +2362,17 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-visibility-sender-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const workspaceWindow = mockSender as unknown as WebContents
-    const popOut = createMockWebContents()
-    const popOutWindow = popOut as unknown as WebContents
+    const workspaceWindow = mockSender
+    const popOut = createMockViewer()
+    const popOutWindow = popOut
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     const dataTo = (contents: { sent: SentEvent[] }) =>
-      contents.sent.filter((event) => event.channel === 'terminal:data:session-moving').map((event) => event.payload)
-    const spawn = (sender: WebContents) =>
-      runtime.ipcHandlers.spawnTerminal(sender, {
+      contents.sent.filter((event) => event.channel === 'data').map((event) => event.payload)
+    const spawn = (sender: TerminalViewer) =>
+      runtime.sessions.spawnTerminal(sender, {
         sessionId: 'session-moving',
         cols: 120,
         rows: 30,
@@ -2381,7 +2387,7 @@ test('terminal-runtime', async () => {
       assert.ok(pty)
 
       // A window the session is not routed to says "hidden": nothing changes.
-      runtime.ipcHandlers.setTerminalVisible('session-moving', false, popOutWindow)
+      runtime.sessions.setTerminalVisible('session-moving', false, popOutWindow)
       pty.emitData('still live in the workspace window\r\n')
       await delay(30)
       assert.deepEqual(dataTo(mockSender), ['still live in the workspace window\r\n'])
@@ -2391,29 +2397,29 @@ test('terminal-runtime', async () => {
       assert.equal((await spawn(popOutWindow)).ok, true)
       mockSender.sent = []
       popOut.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-moving', false, workspaceWindow)
+      runtime.sessions.setTerminalVisible('session-moving', false, workspaceWindow)
       pty.emitData('live in the pop-out\r\n')
       await delay(30)
       assert.deepEqual(dataTo(popOut), ['live in the pop-out\r\n'], 'the window it left does not freeze it')
       assert.deepEqual(dataTo(mockSender), [])
 
       // The routed window still decides for itself.
-      runtime.ipcHandlers.setTerminalVisible('session-moving', false, popOutWindow)
+      runtime.sessions.setTerminalVisible('session-moving', false, popOutWindow)
       popOut.sent = []
       pty.emitData('missed while hidden\r\n')
       await delay(30)
       assert.deepEqual(dataTo(popOut), [], 'hidden by its own window, it is not fed')
-      runtime.ipcHandlers.setTerminalVisible('session-moving', true, popOutWindow)
+      runtime.sessions.setTerminalVisible('session-moving', true, popOutWindow)
       assert.deepEqual(dataTo(popOut), ['missed while hidden\r\n'])
 
       // The pop-out closes while the output is still routed to it (its
       // re-attach landed after the workspace window took the terminal back).
       // The window that does show it takes the route on its next word, and is
       // sent the whole screen: nothing says what its pane holds.
-      popOut.isDestroyed = () => true
+      popOut.gone = true
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-moving', true, workspaceWindow)
-      const replays = mockSender.sent.filter((event) => event.channel === 'terminal:replay:session-moving')
+      runtime.sessions.setTerminalVisible('session-moving', true, workspaceWindow)
+      const replays = mockSender.sent.filter((event) => event.channel === 'replay')
       assert.equal(replays.length, 1, 'adopted, the pane is repainted')
       assert.match(String(replays[0]?.payload), /missed while hidden/)
       pty.emitData('back in the workspace window\r\n')
@@ -2435,16 +2441,16 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-settled-history-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     const listed = () =>
-      runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'session-settled-history')
+      runtime.sessions.listTerminals().find((session) => session.sessionId === 'session-settled-history')
     const channel = (name: string) => mockSender.sent.filter((event) => event.channel === name)
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId: 'session-settled-history',
         cols: 120,
         rows: 30,
@@ -2474,11 +2480,11 @@ test('terminal-runtime', async () => {
       assert.ok(read.includes('history line 2999'))
 
       // A workspace switch away and back: the pane already holds all of it.
-      runtime.ipcHandlers.setTerminalVisible('session-settled-history', false, sender)
+      runtime.sessions.setTerminalVisible('session-settled-history', false, sender)
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-settled-history', true, sender)
-      assert.deepEqual(channel('terminal:replay:session-settled-history'), [], 'no reset-and-repaint')
-      assert.deepEqual(channel('terminal:data:session-settled-history'), [], 'and nothing to catch up')
+      runtime.sessions.setTerminalVisible('session-settled-history', true, sender)
+      assert.deepEqual(channel('replay'), [], 'no reset-and-repaint')
+      assert.deepEqual(channel('data'), [], 'and nothing to catch up')
 
       // The dying CLI's last bytes, after the release: not part of what is read.
       pty.emitData('a straggler after the screen was rendered\r\n')
@@ -2490,8 +2496,8 @@ test('terminal-runtime', async () => {
 
       // A fresh pane (a remount) is painted in full, deep history included.
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-settled-history', true, sender, { freshPane: true })
-      const replay = channel('terminal:replay:session-settled-history')[0]?.payload
+      runtime.sessions.setTerminalVisible('session-settled-history', true, sender, { freshPane: true })
+      const replay = channel('replay')[0]?.payload
       assert.ok(typeof replay === 'string' && replay.includes('history line 5\r'), 'a fresh pane gets the history')
     } finally {
       await runtime.shutdown()
@@ -2507,13 +2513,13 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-catch-up-flow-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId: 'session-catch-up-flow',
         cols: 120,
         rows: 30,
@@ -2528,18 +2534,18 @@ test('terminal-runtime', async () => {
       pty.emitData('x'.repeat(1_000))
       await delay(30)
 
-      runtime.ipcHandlers.setTerminalVisible('session-catch-up-flow', false, sender)
+      runtime.sessions.setTerminalVisible('session-catch-up-flow', false, sender)
       pty.emitData('y'.repeat(150_000))
       await delay(30)
       mockSender.sent = []
-      runtime.ipcHandlers.setTerminalVisible('session-catch-up-flow', true, sender)
-      const caughtUp = mockSender.sent.filter((event) => event.channel === 'terminal:data:session-catch-up-flow')
+      runtime.sessions.setTerminalVisible('session-catch-up-flow', true, sender)
+      const caughtUp = mockSender.sent.filter((event) => event.channel === 'data')
       assert.equal(caughtUp.length, 1, 'the pane is caught up as live data')
       assert.equal(pty.pauses, 0, 'a pane that has not acked since the reveal is not waited on')
 
-      runtime.ipcHandlers.ackTerminalOutput('session-catch-up-flow', 1_000, sender)
+      runtime.sessions.ackTerminalOutput('session-catch-up-flow', 1_000, sender)
       assert.equal(pty.pauses, 1, 'the unparsed catch-up holds the pty back once the pane acks')
-      runtime.ipcHandlers.ackTerminalOutput('session-catch-up-flow', 148_000, sender)
+      runtime.sessions.ackTerminalOutput('session-catch-up-flow', 148_000, sender)
       assert.equal(pty.resumes, 1, 'and lets it go once the pane has parsed it')
     } finally {
       await runtime.shutdown()
@@ -2560,9 +2566,9 @@ test('terminal-runtime', async () => {
       logMainPerfEvent: () => undefined,
       syncMcpConfig: async (): Promise<SyncResult> => ({ ok: true }),
     })
-    const snapshot = () => runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-overtaken')
+    const snapshot = () => runtime.sessions.listTerminals().find((session) => session.sessionId === 'sess-overtaken')
     try {
-      const spawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const spawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-overtaken',
         cols: 120,
         rows: 30,
@@ -2608,7 +2614,7 @@ test('terminal-runtime', async () => {
       await ingest('SubagentStop', 8_000)
       assert.equal(snapshot()?.activeSubagents, 0)
     } finally {
-      runtime.ipcHandlers.killTerminal('sess-overtaken')
+      runtime.sessions.killTerminal('sess-overtaken')
       await runtime.shutdown()
       await rm(workspaceRoot, { recursive: true, force: true })
     }
@@ -2621,13 +2627,13 @@ test('terminal-runtime', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-terminal-runtime-flow-'))
     mockPty.spawnCalls = []
     mockSender.sent = []
-    const sender = mockSender as unknown as WebContents
+    const sender = mockSender
     const runtime = runtimeModule.createTerminalRuntime({
       diagnosticsEnabled: false,
       logMainPerfEvent: () => undefined,
     })
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(sender, {
+      const result = await runtime.sessions.spawnTerminal(sender, {
         sessionId: 'session-flow',
         cols: 120,
         rows: 30,
@@ -2647,20 +2653,20 @@ test('terminal-runtime', async () => {
       assert.equal(pty.pauses, 0, 'a pane that has never acked does not pause the pty')
       await delay(30)
 
-      runtime.ipcHandlers.ackTerminalOutput('session-flow', 1_000, sender)
+      runtime.sessions.ackTerminalOutput('session-flow', 1_000, sender)
       assert.equal(pty.pauses, 1, 'past the high watermark once the pane is known to ack')
       // Another window's ack is about a pane that is not this session's.
-      runtime.ipcHandlers.ackTerminalOutput('session-flow', 150_000, {} as WebContents)
+      runtime.sessions.ackTerminalOutput('session-flow', 150_000, createMockViewer())
       assert.equal(pty.resumes, 0)
-      runtime.ipcHandlers.ackTerminalOutput('session-flow', 140_000, sender)
+      runtime.sessions.ackTerminalOutput('session-flow', 140_000, sender)
       assert.equal(pty.resumes, 0, 'still above the low watermark')
-      runtime.ipcHandlers.ackTerminalOutput('session-flow', 8_000, sender)
+      runtime.sessions.ackTerminalOutput('session-flow', 8_000, sender)
       assert.equal(pty.resumes, 1, 'resumed once the pane caught up')
 
       // Hiding the pane while paused lets the pty run: a hidden pane is sent nothing.
       pty.emitData('z'.repeat(150_000))
       assert.equal(pty.pauses, 2)
-      runtime.ipcHandlers.setTerminalVisible('session-flow', false, sender)
+      runtime.sessions.setTerminalVisible('session-flow', false, sender)
       assert.equal(pty.resumes, 2)
     } finally {
       await runtime.shutdown()
@@ -2689,7 +2695,7 @@ test('terminal-runtime', async () => {
     })
 
     const spawnAgent = async (sessionId: string, kind: 'agent' | 'terminal'): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -2727,7 +2733,7 @@ test('terminal-runtime', async () => {
       const disposed = await spawnAgent('session-disposed', 'agent')
       disposed.emitData('disposed painted output\r\n')
       await delay(20)
-      runtime.ipcHandlers.killTerminal('session-disposed')
+      runtime.sessions.killTerminal('session-disposed')
       disposed.emitExit({ exitCode: 0 })
       await delay(20)
       assert.equal(
@@ -2759,7 +2765,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const firstSpawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const firstSpawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_replay',
         cols: 120,
         rows: 30,
@@ -2773,13 +2779,13 @@ test('terminal-runtime', async () => {
       mockPty.spawnCalls[0]?.process.emitData('retained terminal output\r\n')
       await delay(20)
       assert.equal(
-        mockSender.sent.some((event) => event.channel === 'terminal:data:session_replay'),
+        mockSender.sent.some((event) => event.channel === 'data'),
         true,
-        'initial live output should still use terminal:data',
+        'initial live output still goes out as data',
       )
 
       mockSender.sent = []
-      const reattach = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const reattach = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_replay',
         cols: 120,
         rows: 30,
@@ -2791,11 +2797,11 @@ test('terminal-runtime', async () => {
 
       assert.equal(reattach.ok, true, JSON.stringify(reattach))
       assert.deepEqual(
-        mockSender.sent.filter((event) => event.channel === 'terminal:replay:session_replay'),
-        [{ channel: 'terminal:replay:session_replay', payload: 'retained terminal output\r\n' }],
+        mockSender.sent.filter((event) => event.channel === 'replay'),
+        [{ channel: 'replay', payload: 'retained terminal output\r\n' }],
       )
       assert.equal(
-        mockSender.sent.some((event) => event.channel === 'terminal:data:session_replay'),
+        mockSender.sent.some((event) => event.channel === 'data'),
         false,
         'reattached retained output must not be delivered as live terminal data',
       )
@@ -2815,7 +2821,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const hiddenSpawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const hiddenSpawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_hidden_replay',
         cols: 120,
         rows: 30,
@@ -2830,13 +2836,13 @@ test('terminal-runtime', async () => {
       mockPty.spawnCalls[0]?.process.emitData('hidden terminal output\r\n')
       await delay(20)
       assert.equal(
-        mockSender.sent.some((event) => event.channel === 'terminal:data:session_hidden_replay'),
+        mockSender.sent.some((event) => event.channel === 'data'),
         false,
-        'hidden terminal output must not fan out over live terminal:data IPC',
+        'hidden terminal output is not sent live as data',
       )
 
       mockSender.sent = []
-      const reattach = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const reattach = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_hidden_replay',
         cols: 120,
         rows: 30,
@@ -2849,8 +2855,8 @@ test('terminal-runtime', async () => {
 
       assert.equal(reattach.ok, true, JSON.stringify(reattach))
       assert.deepEqual(
-        mockSender.sent.filter((event) => event.channel === 'terminal:replay:session_hidden_replay'),
-        [{ channel: 'terminal:replay:session_hidden_replay', payload: 'hidden terminal output\r\n' }],
+        mockSender.sent.filter((event) => event.channel === 'replay'),
+        [{ channel: 'replay', payload: 'hidden terminal output\r\n' }],
       )
     } finally {
       await runtime.shutdown()
@@ -2878,7 +2884,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_identity_env',
         cols: 120,
         rows: 30,
@@ -2900,7 +2906,7 @@ test('terminal-runtime', async () => {
       // No agent identity passed → identity vars are stripped, including the stale
       // value inherited from the app process, so a plain terminal claims none.
       mockPty.spawnCalls = []
-      const plain = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const plain = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_identity_env_plain',
         cols: 120,
         rows: 30,
@@ -2941,7 +2947,7 @@ test('terminal-runtime', async () => {
       syncMcpConfig: async (): Promise<SyncResult> => ({ ok: true }),
     })
     const snapshotFor = (sessionId: string) =>
-      runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === sessionId)
+      runtime.sessions.listTerminals().find((session) => session.sessionId === sessionId)
     const events: AgentPhaseEvent[] = []
     const unregister = runtime.registerAgentPhaseListener((event) => {
       events.push(event)
@@ -2949,7 +2955,7 @@ test('terminal-runtime', async () => {
     const last = () => events[events.length - 1]
 
     try {
-      const spawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const spawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-background',
         cols: 120,
         rows: 30,
@@ -3020,7 +3026,7 @@ test('terminal-runtime', async () => {
       assert.equal(last()?.turnEnd, true, 'a session start resets outstanding work')
     } finally {
       unregister()
-      runtime.ipcHandlers.killTerminal('sess-background')
+      runtime.sessions.killTerminal('sess-background')
       await runtime.shutdown()
     }
   }
@@ -3042,14 +3048,14 @@ test('terminal-runtime', async () => {
       logMainPerfEvent: () => undefined,
       syncMcpConfig: async (): Promise<SyncResult> => ({ ok: true }),
     })
-    const snapshot = () => runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-turn-end')
+    const snapshot = () => runtime.sessions.listTerminals().find((session) => session.sessionId === 'sess-turn-end')
     const events: AgentPhaseEvent[] = []
     const unregister = runtime.registerAgentPhaseListener((event) => {
       events.push(event)
     })
 
     try {
-      const spawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const spawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-turn-end',
         cols: 120,
         rows: 30,
@@ -3110,7 +3116,7 @@ test('terminal-runtime', async () => {
       assert.equal(snapshot()?.agentState?.phase, 'thinking')
     } finally {
       unregister()
-      runtime.ipcHandlers.killTerminal('sess-turn-end')
+      runtime.sessions.killTerminal('sess-turn-end')
       await runtime.shutdown()
     }
   }
@@ -3134,7 +3140,7 @@ test('terminal-runtime', async () => {
       snapshotSidecars: sidecarStore,
     }
     const runtime = runtimeModule.createTerminalRuntime(runtimeOptions)
-    const snapshot = () => runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-context')
+    const snapshot = () => runtime.sessions.listTerminals().find((session) => session.sessionId === 'sess-context')
     const base = Date.now()
     const frame = (overrides: Partial<AgentStateFrame>): AgentStateFrame => ({
       type: 'agent_state',
@@ -3147,12 +3153,12 @@ test('terminal-runtime', async () => {
     })
     const sentSessionsChanges = async (): Promise<number> => {
       await delay(runtimeModule.TERMINAL_SESSIONS_BROADCAST_COALESCE_MS + 10)
-      return mockSender.sent.filter((event) => event.channel === 'terminal:sessions-delta').length
+      return mockSender.sent.filter((event) => event.channel === 'sessions').length
     }
 
     let contextPty: MockPtyProcess
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-context',
         cols: 120,
         rows: 30,
@@ -3258,7 +3264,7 @@ test('terminal-runtime', async () => {
       // Parked across an app restart: the reading rides the snapshot sidecar.
       contextPty.emitData('context painted output\r\n')
       await delay(20)
-      runtime.ipcHandlers.suspendTerminal('sess-context')
+      runtime.sessions.suspendTerminal('sess-context')
       contextPty.emitExit({ exitCode: 0 })
       const start = Date.now()
       while (!(await sidecarStore.read('sess-context'))) {
@@ -3276,8 +3282,8 @@ test('terminal-runtime', async () => {
 
     const runtime2 = runtimeModule.createTerminalRuntime(runtimeOptions)
     try {
-      await runtime2.ipcHandlers.getTerminalStatus('sess-context', mockSender as unknown as WebContents)
-      const rehydrated = runtime2.ipcHandlers
+      await runtime2.sessions.getTerminalStatus('sess-context', mockSender)
+      const rehydrated = runtime2.sessions
         .listTerminals()
         .find((session) => session.sessionId === 'sess-context')?.contextUsage
       assert.equal(rehydrated?.usedPercentage, 15, 'a chat parked across a restart still says how full it was')
@@ -3324,7 +3330,7 @@ test('terminal-runtime', async () => {
     const stopForwarding = forwardStatusLineRateLimits((rateLimits, at) => forwarded.push({ rateLimits, at }))
     const twelve = { five_hour: { usedPercentage: 12, resetsAt: base + 3_600_000 } }
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-usage',
         cols: 120,
         rows: 30,
@@ -3378,7 +3384,7 @@ test('terminal-runtime', async () => {
       snapshotSidecars: sidecarStore,
     }
     const runtime = runtimeModule.createTerminalRuntime(runtimeOptions)
-    const snapshot = () => runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-ledger')
+    const snapshot = () => runtime.sessions.listTerminals().find((session) => session.sessionId === 'sess-ledger')
     const base = Date.now()
     const frame = (overrides: Partial<AgentStateFrame>): AgentStateFrame => ({
       type: 'agent_state',
@@ -3393,11 +3399,11 @@ test('terminal-runtime', async () => {
     // answerable after that window.
     const sentSessionsChanges = async (): Promise<number> => {
       await delay(runtimeModule.TERMINAL_SESSIONS_BROADCAST_COALESCE_MS + 10)
-      return mockSender.sent.filter((event) => event.channel === 'terminal:sessions-delta').length
+      return mockSender.sent.filter((event) => event.channel === 'sessions').length
     }
 
     const spawnLedgerAgent = async (): Promise<MockPtyProcess> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-ledger',
         cols: 120,
         rows: 30,
@@ -3526,7 +3532,7 @@ test('terminal-runtime', async () => {
       // hundreds of kilobytes. Past the cap the LEAST recently edited entry is
       // the one that falls off — the list is read newest-first. On a session of
       // its own, so the ledger asserted above stays the one the edits built.
-      const bulk = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const bulk = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-ledger-bulk',
         cols: 120,
         rows: 30,
@@ -3551,8 +3557,7 @@ test('terminal-runtime', async () => {
       }
       await delay(runtimeModule.TERMINAL_SESSIONS_BROADCAST_COALESCE_MS + 10)
       const capped =
-        runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-ledger-bulk')?.fileChanges ??
-        []
+        runtime.sessions.listTerminals().find((session) => session.sessionId === 'sess-ledger-bulk')?.fileChanges ?? []
       assert.equal(capped.length, 500, 'the ledger is capped')
       assert.equal(capped[0]?.path, '/repo/bulk/file-599.ts', 'the newest edit is still at the front')
       assert.deepEqual(
@@ -3568,7 +3573,7 @@ test('terminal-runtime', async () => {
       runtime.ingestAgentStateFrame(frame({ agentId: 'agent-ledger-bulk', ts: base + 3000, event: 'SubagentStart' }))
       await delay(runtimeModule.TERMINAL_SESSIONS_BROADCAST_COALESCE_MS + 10)
       const bulkSnapshot = () =>
-        runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-ledger-bulk')
+        runtime.sessions.listTerminals().find((session) => session.sessionId === 'sess-ledger-bulk')
       assert.equal(bulkSnapshot()?.activeSubagents, 1)
       bulkPty.emitExit({ exitCode: 0 })
       await delay(runtimeModule.TERMINAL_SESSIONS_BROADCAST_COALESCE_MS + 10)
@@ -3579,7 +3584,7 @@ test('terminal-runtime', async () => {
         500,
         'but what it edited is still what it edited — the ledger outlives the turn, not the count of live work',
       )
-      runtime.ipcHandlers.killTerminal('sess-ledger-bulk')
+      runtime.sessions.killTerminal('sess-ledger-bulk')
 
       // Parked across an app restart: the ledger is in the snapshot sidecar, the
       // only place it is ever written down, so a frozen chat still says what it
@@ -3587,7 +3592,7 @@ test('terminal-runtime', async () => {
       // A sidecar is only written for a session with something painted on it.
       ledgerPty.emitData('ledger painted output\r\n')
       await delay(20)
-      runtime.ipcHandlers.suspendTerminal('sess-ledger')
+      runtime.sessions.suspendTerminal('sess-ledger')
       ledgerPty.emitExit({ exitCode: 0 })
       const waitForSidecar = async (): Promise<void> => {
         const start = Date.now()
@@ -3617,8 +3622,8 @@ test('terminal-runtime', async () => {
     // the ledger lives and dies with the process that earned it.
     const runtime2 = runtimeModule.createTerminalRuntime(runtimeOptions)
     try {
-      await runtime2.ipcHandlers.getTerminalStatus('sess-ledger', mockSender as unknown as WebContents)
-      const rehydrated = runtime2.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-ledger')
+      await runtime2.sessions.getTerminalStatus('sess-ledger', mockSender)
+      const rehydrated = runtime2.sessions.listTerminals().find((session) => session.sessionId === 'sess-ledger')
       assert.deepEqual(
         rehydrated?.fileChanges,
         [
@@ -3633,7 +3638,7 @@ test('terminal-runtime', async () => {
       assert.equal(rehydrated?.activeSubagents, 0, 'a placeholder owns no background work')
 
       mockPty.spawnCalls = []
-      const resumed = await runtime2.ipcHandlers.resumeTerminal(mockSender as unknown as WebContents, {
+      const resumed = await runtime2.sessions.resumeTerminal(mockSender, {
         sessionId: 'sess-ledger',
         cols: 120,
         rows: 30,
@@ -3647,7 +3652,7 @@ test('terminal-runtime', async () => {
       })
       assert.equal(resumed.ok, true, JSON.stringify(resumed))
       assert.deepEqual(
-        runtime2.ipcHandlers.listTerminals().find((session) => session.sessionId === 'sess-ledger')?.fileChanges,
+        runtime2.sessions.listTerminals().find((session) => session.sessionId === 'sess-ledger')?.fileChanges,
         [],
         'a respawned pty starts a fresh ledger — the count belongs to the process that did the work',
       )
@@ -3688,7 +3693,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const spawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const spawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-changelists',
         cols: 120,
         rows: 30,
@@ -3712,7 +3717,7 @@ test('terminal-runtime', async () => {
       )
 
       // A plain terminal has no agent and must never get an owned list.
-      const shell = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const shell = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-changelists-shell',
         cols: 120,
         rows: 30,
@@ -3807,7 +3812,7 @@ test('terminal-runtime', async () => {
       )
       assert.equal(edits.length, 1, 'the throwing seam was called')
       assert.equal(
-        runtime.ipcHandlers.listTerminals().some((session) => session.sessionId === 'sess-changelists'),
+        runtime.sessions.listTerminals().some((session) => session.sessionId === 'sess-changelists'),
         true,
         'and the session survived it',
       )
@@ -3821,7 +3826,7 @@ test('terminal-runtime', async () => {
       // insert and delete twice and the changelist's spans went wrong. Both must
       // see each edit ONCE.
       const ledgerOf = (path: string) =>
-        runtime.ipcHandlers
+        runtime.sessions
           .listTerminals()
           .find((session) => session.sessionId === 'sess-changelists')
           ?.fileChanges.find((change) => change.path === path)
@@ -3932,7 +3937,7 @@ test('terminal-runtime', async () => {
       agentPty.emitExit({ exitCode: 0 })
       assert.deepEqual(exited, ['agent-changelists'], 'the agent’s list is marked exited once, on exit')
     } finally {
-      runtime.ipcHandlers.killTerminal('sess-changelists-shell')
+      runtime.sessions.killTerminal('sess-changelists-shell')
       await runtime.shutdown()
       await rm(workspaceRoot, { recursive: true, force: true })
     }
@@ -3950,10 +3955,10 @@ test('terminal-runtime', async () => {
     })
 
     const snapshotFor = (sessionId: string) =>
-      runtime.ipcHandlers.listTerminals().find((session) => session.sessionId === sessionId)
+      runtime.sessions.listTerminals().find((session) => session.sessionId === sessionId)
 
     try {
-      const spawn = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const spawn = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'sess-ingest',
         cols: 120,
         rows: 30,
@@ -4016,7 +4021,7 @@ test('terminal-runtime', async () => {
       // and must preserve the working `since` so a "working for Xs" reading can
       // accumulate. The idle→working transition above already broadcast once;
       // these three churn frames must add zero broadcasts.
-      const broadcastsBefore = mockSender.sent.filter((e) => e.channel === 'terminal:sessions-delta').length
+      const broadcastsBefore = mockSender.sent.filter((e) => e.channel === 'sessions').length
       runtime.ingestAgentStateFrame(frame('thinking', 2001))
       runtime.ingestAgentStateFrame(frame('tool_use', 2002))
       runtime.ingestAgentStateFrame(frame('thinking', 2003))
@@ -4028,7 +4033,7 @@ test('terminal-runtime', async () => {
         base + 2000,
         'working since must be preserved across thinking ↔ tool_use churn',
       )
-      const broadcastsAfter = mockSender.sent.filter((e) => e.channel === 'terminal:sessions-delta').length
+      const broadcastsAfter = mockSender.sent.filter((e) => e.channel === 'sessions').length
       assert.equal(broadcastsAfter, broadcastsBefore, 'within-working churn must not re-broadcast')
 
       // Output arbitration: for a hook agent the output path must NOT override an
@@ -4117,7 +4122,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_standard_optional_mcp',
         cols: 120,
         rows: 30,
@@ -4158,7 +4163,7 @@ test('terminal-runtime', async () => {
       },
     })
     const spawn = (sessionId: string): Promise<TerminalSpawnResult> =>
-      runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -4194,7 +4199,7 @@ test('terminal-runtime', async () => {
       const removing = exclusive(await leases.tryExclusive(workspaceRoot, 'this worktree is being removed'))
       const killed = spawn('session_folder_killed')
       await new Promise((resolve) => setTimeout(resolve, 20))
-      runtime.ipcHandlers.killTerminal('session_folder_killed')
+      runtime.sessions.killTerminal('session_folder_killed')
       const abandoned = await killed
       assert.equal(abandoned.ok, false)
       assert.match(abandoned.ok ? '' : (abandoned.message ?? ''), /Stopped waiting for the worktree/)
@@ -4223,7 +4228,7 @@ test('terminal-runtime', async () => {
     })
 
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session_failure',
         cols: 120,
         rows: 30,
@@ -4234,9 +4239,7 @@ test('terminal-runtime', async () => {
         shellOnly: false,
         mcpSettings: { syncEnabled: false, servers: {} } satisfies McpSettings,
       })
-      const failedSnapshot = runtime.ipcHandlers
-        .listTerminals()
-        .find((session) => session.sessionId === 'session_failure')
+      const failedSnapshot = runtime.sessions.listTerminals().find((session) => session.sessionId === 'session_failure')
 
       assert.deepEqual(result, {
         ok: false,
@@ -4253,12 +4256,10 @@ test('terminal-runtime', async () => {
         message: failureMessage,
       })
       assert.deepEqual(
-        mockSender.sent.filter(
-          (event) => event.channel.startsWith('terminal:error:') || event.channel.startsWith('terminal:exit:'),
-        ),
+        mockSender.sent.filter((event) => event.channel.startsWith('error') || event.channel.startsWith('exit')),
         [
-          { channel: 'terminal:error:session_failure', payload: failureMessage },
-          { channel: 'terminal:exit:session_failure', payload: 1 },
+          { channel: 'error', payload: failureMessage },
+          { channel: 'exit', payload: 1 },
         ],
       )
     } finally {
@@ -4297,18 +4298,20 @@ test('terminal-runtime', async () => {
     }
   }
 
-  function createMockWebContents(): {
-    isDestroyed(): boolean
-    send(channel: string, payload: unknown): void
-    sent: SentEvent[]
-  } {
-    return {
-      sent: [],
-      isDestroyed: () => false,
-      send(channel: string, payload: unknown): void {
-        this.sent.push({ channel, payload })
+  // A pane, as the runtime streams to it: each event it is handed, by type
+  // (`replay`, `data`, `exit`, `error`), and every sessions delta beside them
+  // (`sessions`) for the default pane, which stands for every client.
+  function createMockViewer(): TerminalViewer & { sent: SentEvent[]; gone: boolean } {
+    const viewer = {
+      sent: [] as SentEvent[],
+      gone: false,
+      isGone: () => viewer.gone,
+      deliver(event: Parameters<TerminalViewer['deliver']>[0]): void {
+        const payload = event.type === 'exit' ? event.exitCode : event.type === 'error' ? event.message : event.data
+        viewer.sent.push({ channel: event.type, payload })
       },
     }
+    return viewer
   }
 
   let nextMockPtyPid = 50_000
@@ -4394,7 +4397,7 @@ test('terminal-runtime', async () => {
       sessionId: string,
       options: { spawnSkillId?: string; connectorLaunch?: boolean } = {},
     ): Promise<void> => {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -4464,7 +4467,7 @@ test('terminal-runtime', async () => {
     })
 
     const spawn = (sessionId: string): Promise<TerminalSpawnResult> =>
-      runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      runtime.sessions.spawnTerminal(mockSender, {
         sessionId,
         cols: 120,
         rows: 30,
@@ -4518,7 +4521,7 @@ test('terminal-runtime', async () => {
         /exit 127; fi;/.test(startupScript),
         `the guard must exit rather than fall through to the shell exec: ${startupScript}`,
       )
-      runtime.ipcHandlers.killTerminal('session-preflight-resolved')
+      runtime.sessions.killTerminal('session-preflight-resolved')
     } finally {
       runtimeModule.__setAgentCliPreflightForTest({
         platform: 'darwin',
@@ -4542,7 +4545,7 @@ test('terminal-runtime', async () => {
     mockPty.spawnCalls = []
 
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-no-cli',
         cols: 120,
         rows: 30,
@@ -4558,7 +4561,7 @@ test('terminal-runtime', async () => {
       assert.equal(mockPty.spawnCalls.length, 0, 'nothing is spawned, least of all codex')
 
       // The legitimate CLI-less spawn still works.
-      const shell = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const shell = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-plain-shell',
         cols: 120,
         rows: 30,
@@ -4569,7 +4572,7 @@ test('terminal-runtime', async () => {
       })
       assert.equal(shell.ok, true, JSON.stringify(shell))
       assert.equal(mockPty.spawnCalls.length, 1)
-      runtime.ipcHandlers.killTerminal('session-plain-shell')
+      runtime.sessions.killTerminal('session-plain-shell')
     } finally {
       await runtime.shutdown()
       await rm(workspaceRoot, { recursive: true, force: true })
@@ -4603,7 +4606,7 @@ test('terminal-runtime', async () => {
         }),
     })
     try {
-      const spawnResult = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const spawnResult = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-pr-seam',
         cols: 120,
         rows: 30,
@@ -4647,10 +4650,10 @@ test('terminal-runtime', async () => {
       )
       await waitFor(() => resolutions.length >= 2)
       assert.deepEqual(resolutions[1], { sessionId: 'session-pr-seam', branch: 'agent/feature', fresh: true })
-      const snapshot = runtime.ipcHandlers.listTerminals().find((entry) => entry.sessionId === 'session-pr-seam')
+      const snapshot = runtime.sessions.listTerminals().find((entry) => entry.sessionId === 'session-pr-seam')
       assert.deepEqual(snapshot?.pullRequests ?? [], [], 'a URL on a frame files nothing')
     } finally {
-      runtime.ipcHandlers.killTerminal('session-pr-seam')
+      runtime.sessions.killTerminal('session-pr-seam')
       await runtime.shutdown()
       await rm(workspaceRoot, { recursive: true, force: true })
     }
@@ -4670,7 +4673,7 @@ test('terminal-runtime', async () => {
     mockPty.spawnCalls = []
 
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-muse-agent',
         cols: 120,
         rows: 30,
@@ -4712,7 +4715,7 @@ test('terminal-runtime', async () => {
       logMainPerfEvent: () => undefined,
     })
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-kimi-first-message',
         cols: 120,
         rows: 30,
@@ -4757,7 +4760,7 @@ test('terminal-runtime', async () => {
       })
       await settle(800)
       assert.equal(pty.writes.filter((data) => data.startsWith(PASTE_START)).length, 1, 'delivered exactly once')
-      assert.ok(!mockSender.sent.some((event) => event.channel === 'terminal:prompt-undelivered'))
+      assert.ok(!mockSender.sent.some((event) => event.channel === 'prompt-undelivered'))
     } finally {
       await runtime.shutdown()
       await rm(workspaceRoot, { recursive: true, force: true })
@@ -4779,7 +4782,7 @@ test('terminal-runtime', async () => {
       logDiagnostic: (diagnostic) => logged.push(`${diagnostic.title}: ${diagnostic.message} ${diagnostic.details}`),
     })
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: 'session-kimi-exits',
         cols: 120,
         rows: 30,
@@ -4807,9 +4810,9 @@ test('terminal-runtime', async () => {
       await settle(1_000)
       assert.equal(pty.writes.length, 0, 'nothing is typed into the shell the CLI left behind')
 
-      const nudges = mockSender.sent.filter((event) => event.channel === 'terminal:prompt-undelivered')
+      const nudges = mockSender.sent.filter((event) => event.channel === 'prompt-undelivered')
       assert.equal(nudges.length, 1, 'the window is told there is something to take')
-      assert.deepEqual(runtime.ipcHandlers.takeUndeliveredPrompts(), [
+      assert.deepEqual(runtime.sessions.takeUndeliveredPrompts(), [
         {
           sessionId: 'session-kimi-exits',
           workspaceId: 'ws-kimi',
@@ -4820,7 +4823,7 @@ test('terminal-runtime', async () => {
           reason: 'exited',
         },
       ])
-      assert.deepEqual(runtime.ipcHandlers.takeUndeliveredPrompts(), [], 'taken once, by one window')
+      assert.deepEqual(runtime.sessions.takeUndeliveredPrompts(), [], 'taken once, by one window')
       assert.equal(logged.length, 1)
       assert.ok(!logged[0]?.includes('Refactor the parser'), 'the log records that it happened, not the text')
 
@@ -4829,7 +4832,7 @@ test('terminal-runtime', async () => {
       mockPty.spawnCalls = []
       mockSender.sent = []
       await withNoWindows(async () => {
-        const headless = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+        const headless = await runtime.sessions.spawnTerminal(mockSender, {
           sessionId: 'session-kimi-headless',
           cols: 120,
           rows: 30,
@@ -4848,8 +4851,8 @@ test('terminal-runtime', async () => {
         assert.ok(headlessPty)
         headlessPty.emitData('\x1b]6973;sprintengine-cli-exited\x07')
       })
-      assert.equal(mockSender.sent.filter((event) => event.channel === 'terminal:prompt-undelivered').length, 0)
-      const queued = runtime.ipcHandlers.takeUndeliveredPrompts()
+      assert.equal(mockSender.sent.filter((event) => event.channel === 'prompt-undelivered').length, 0)
+      const queued = runtime.sessions.takeUndeliveredPrompts()
       assert.deepEqual(
         queued.map((event) => [event.sessionId, event.text, event.reason]),
         [['session-kimi-headless', 'Write the release notes', 'exited']],

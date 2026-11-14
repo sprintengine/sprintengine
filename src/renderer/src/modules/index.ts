@@ -4,6 +4,10 @@ import type { MarketplacePluginRegistryInstallResult } from '../../../shared/ele
 import { activeForChannel } from '../../../shared/modules/dev-only'
 import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { toModuleWorkspaceView, type ModuleWorkspaceView } from '../../../shared/modules/workspace-view'
+import { STUDIO_MODULES_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
+import { isModuleEvent } from '../../../shared/modules/events'
+import { followWindowStudioPush } from '../studio/windowStudioPush'
+import { windowModuleMethodCaller, windowModuleServiceCaller } from '../studio/moduleMethods'
 import { markStartup } from '../utils/startupTimeline'
 import { agentRuntimeRendererModule } from './agent-runtime-module'
 import { backlogRendererModule } from './backlog-module'
@@ -14,6 +18,10 @@ import { gitRendererModule } from './git-module'
 import { memoryRendererModule } from './memory-module'
 import { scheduledAgentsRendererModule } from './scheduled-agents-module'
 import { createRendererHost, type RendererModule } from './renderer-host'
+import { filesApi } from '../studio/files'
+import { gitApi } from '../studio/git'
+import { extensionsApi } from '../studio/extensions'
+import { watchWindowStudio, windowHasStudio, windowStudioState } from '../studio/windowStudioClient'
 
 // Bundled renderer capability modules. Features migrate onto the host one at a
 // time; this list grows as each renderer surface is extracted from the
@@ -177,8 +185,8 @@ if (typeof window !== 'undefined') {
         onThirdPartyRendererModulesLoaded(() => {
           void workspaceOpener.openFirstLoads()
         })
-        if (typeof window.api?.onThirdPartyModulesChanged === 'function') {
-          window.api.onThirdPartyModulesChanged(() => {
+        if (windowHasStudio()) {
+          extensionsApi.onThirdPartyModulesChanged(() => {
             void refreshThirdPartyRendererModules().catch((error) => {
               console.error('[modules] could not refresh installed renderer modules:', error)
             })
@@ -198,8 +206,8 @@ if (typeof window !== 'undefined') {
         // only when the overrides object changes identity — the store hands out a
         // new one exactly when enablement changes — and once more when the
         // third-party modules finish loading, which widens the universe.
-        if (typeof window.api?.setModuleRegistrySnapshot === 'function') {
-          const pushSnapshot = window.api.setModuleRegistrySnapshot
+        if (windowHasStudio()) {
+          const pushSnapshot = extensionsApi.setModuleRegistrySnapshot
           startModuleRegistrySnapshotMirror({
             build: () =>
               buildModuleRegistrySnapshot({
@@ -232,6 +240,12 @@ if (typeof window !== 'undefined') {
                 stopThirdParty()
               }
             },
+            // The Studio keeps the registry in memory: one that restarted is
+            // told again when the window's connection opens.
+            resendOn: (resend) =>
+              watchWindowStudio(window.api, () => {
+                if (windowStudioState(window.api) === 'open') resend()
+              }),
           })
         }
         // Workspace-view source for RendererHost.getWorkspace: a fresh snapshot
@@ -320,11 +334,24 @@ if (typeof window !== 'undefined') {
             })
           },
         })
-        // One preload listener backs every module's subscriptions; the kernel
-        // filters each envelope down to the module and topic that asked for it.
-        if (typeof window.api?.onModuleEvent === 'function') {
-          rendererHost.setModuleEventSource((cb) => window.api.onModuleEvent(cb))
-        }
+        // One `module.events` stream of the window's Studio backs every
+        // module's subscriptions; the kernel filters each event down to the
+        // module and topic that asked for it.
+        // A module's renderer half calls its own declared methods over the
+        // same client: `module.read` and `module.operate`.
+        rendererHost.setModuleMethodCaller(windowModuleMethodCaller())
+        // And the host's services (the Backlog's writes, the usage query).
+        rendererHost.setModuleServiceCaller(windowModuleServiceCaller())
+        rendererHost.setModuleEventSource((cb) =>
+          followWindowStudioPush({
+            topic: 'module.events',
+            params: {},
+            capability: STUDIO_MODULES_CAPABILITY,
+            onPayload: (payload) => {
+              if (isModuleEvent(payload)) cb(payload)
+            },
+          }),
+        )
         // Effective working root: the worktree for worktree-backed
         // workspaces, the primary checkout otherwise. Every live-runtime surface
         // below resolves workspace-relative paths against this, never against
@@ -342,10 +369,10 @@ if (typeof window !== 'undefined') {
             return { ok: false, code: 'unknown_workspace', message: `No open workspace "${workspaceId}".` }
           const root = workspaceWorktree.workspaceWorkingRoot(workspace)
           if (!root) return { ok: false, code: 'no_folder', message: 'The workspace has no folder.' }
-          if (typeof window.api?.getModuleWorkspaceGitInfo !== 'function') {
+          if (typeof gitApi.getModuleWorkspaceGitInfo !== 'function') {
             return { ok: false, code: 'unavailable', message: 'Workspace git information is not available here.' }
           }
-          return window.api.getModuleWorkspaceGitInfo(root)
+          return gitApi.getModuleWorkspaceGitInfo(root)
         })
         // File-watch backend over the shell's fs watch plumbing (the same
         // window.api surface runStateSynchronizer rides).
@@ -354,8 +381,8 @@ if (typeof window !== 'undefined') {
             resolveFolderPath: resolveWorkingRoot,
             // A module may watch a file under a folder the shared watcher
             // drops for everyone else (`node_modules/`, build output).
-            watchPath: (path, cb) => window.api.watchPath(path, cb, { includeIgnored: true }),
-            readFile: (path) => window.api.readfile(path),
+            watchPath: (path, cb) => filesApi.watchPath(path, cb, { includeIgnored: true }),
+            readFile: (path) => filesApi.readfile(path),
           }),
         )
         // Tab focus over the layout tab helpers: a chat is an agent tab whose
@@ -529,8 +556,8 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
   try {
     // Older preload bundles may not carry the bridge yet; treat that as "no
     // third-party renderer entries" rather than failing the boot.
-    if (typeof window.api?.listThirdPartyRendererEntries !== 'function') return
-    const served = await window.api.listThirdPartyRendererEntries()
+    if (!windowHasStudio()) return
+    const served = await extensionsApi.listThirdPartyRendererEntries()
     const { loadThirdPartyRendererEntries, rendererEntriesForRefresh } = await import('./third-party-loader')
     const loaded = await loadThirdPartyRendererEntries(
       rendererHost,

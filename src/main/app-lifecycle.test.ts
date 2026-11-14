@@ -72,6 +72,7 @@ test('app-lifecycle', async () => {
     let prepareForInstall: ((report?: (leg: LegReport) => void) => Promise<void>) | null = null
     registerAppLifecycle({
       diagnosticsEnabled: false,
+      refreshHostedFeeds: async () => undefined,
       allowMultipleInstances: true,
       terminalRuntime: {
         shutdown: async () => {

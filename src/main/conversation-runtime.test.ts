@@ -2317,10 +2317,12 @@ test('conversation-runtime', async () => {
       ),
       'utf-8',
     )
+    // A command's receipt is a line of the log too, with no `type`.
     return content
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as Record<string, any>)
+      .filter((line) => typeof line.type === 'string')
   }
 
   function openAiProvider(baseUrl: string): LoadedConversationProvider {

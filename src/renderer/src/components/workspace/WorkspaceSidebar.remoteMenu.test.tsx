@@ -9,10 +9,10 @@ test('WorkspaceSidebar.remoteMenu', async () => {
   // A chat on a paired machine that no window here has open offers the menu
   // a local chat does (owner report 2026-10-21: "There should effectively be
   // no difference"), each item asking the machine that keeps the chat: Star,
-  // Highlight color, Snooze and Auto-settle over its `chat-row-menu`, Mark
-  // unread over `chat-mark-unread`, Settle over `conversation-lifecycle`.
+  // Highlight color, Snooze, Auto-settle, Mark unread and Settle, on that
+  // machine's Studio (`chat-lifecycle`), asked by this window's own client.
   // Only what is about a workspace here, which the row does not have until it
-  // is opened, is left out: Rename, New chat in project, Reveal folder (the
+  // is opened, is left out: New chat in project, Reveal folder (the
   // folder is on the other machine), and Close workspace.
   //
   // This mounts the real sidebar because the row and its menu are drawn there,
@@ -91,8 +91,6 @@ test('WorkspaceSidebar.remoteMenu', async () => {
     // …and one awake, which keeps the project's header up.
     chat({ workspaceId: 'rw4', chatTitle: 'Another chat' }),
   ]
-  const changes: unknown[] = []
-  const settles: unknown[] = []
 
   domWindow.api = {
     platform: 'darwin',
@@ -115,12 +113,12 @@ test('WorkspaceSidebar.remoteMenu', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
+  const studio = fakePairedStudios(domWindow.api as object, {
+    'conversation.list': () => ({ conversations: listed }),
+    'workspaces.list': () => ({
       workspaces: ['rw1', 'rw2', 'rw3', 'rw4'].map((id) => ({
         id,
         name: 'parser',
@@ -128,31 +126,20 @@ test('WorkspaceSidebar.remoteMenu', async () => {
         folderPath: '/Users/dev/parser',
         repository: null,
       })),
-      gaps: [],
     }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations: listed,
-      access: 'operate',
-      modelSwitch: false,
-      lifecycle: true,
-      rowMenu: true,
-      markUnread: true,
-    }),
-    meshSettleConversation: async (input: unknown) => {
-      settles.push(input)
-      return { ok: true }
-    },
-    meshChangeConversation: async (input: { change: { kind: string; starred?: boolean } }) => {
-      changes.push(input)
+    'conversation.settle': () => ({ settledAt: 1 }),
+    'conversation.highlight': (params) => {
       // The machine writes it, and its next list says so.
-      if (input.change.kind === 'highlight' && input.change.starred)
+      if (params.starred)
         listed = listed.map((entry) =>
-          entry.workspaceId === 'rw1' ? { ...entry, highlight: { starred: true } } : entry,
+          entry.workspaceId === params.workspaceId ? { ...entry, highlight: { starred: true } } : entry,
         )
-      return { ok: true, workspaceId: 'rw1' }
+      return { starred: params.starred === true, color: null }
     },
-  }
+    'conversation.snooze': (params) => ({ snoozedUntil: params.until }),
+    'conversation.setAutoSettle': (params) => ({ enabled: params.enabled }),
+  })
+  const changes = () => studio.writes()
 
   async function main(): Promise<void> {
     const React = await import('react')
@@ -269,7 +256,8 @@ test('WorkspaceSidebar.remoteMenu', async () => {
           `the menu offers ${label}: ${items.join(', ')}`,
         )
       assert.ok((surface.textContent ?? '').includes('Highlight color'), 'and the highlight swatches')
-      for (const label of ['Rename', 'Close workspace', 'New chat in project'])
+      // Rename is the machine's own (its Studio keeps the name); these are a workspace here's.
+      for (const label of ['Close workspace', 'New chat in project'])
         assert.ok(!items.some((item) => item.startsWith(label)), `and not ${label}, a workspace here's`)
       // Reveal folder is there, off, saying why: the folder is on the Mini.
       const reveal = [...surface.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) =>
@@ -280,8 +268,8 @@ test('WorkspaceSidebar.remoteMenu', async () => {
 
       // Star asks the machine, and the row moves to Starred at once.
       await click(surface, 'Star')
-      assert.deepEqual(changes, [
-        { connectionId: 'c1', workspaceId: 'rw1', change: { kind: 'highlight', starred: true } },
+      assert.deepEqual(changes(), [
+        { connectionId: 'c1', method: 'conversation.highlight', params: { workspaceId: 'rw1', starred: true } },
       ])
       assert.ok(menu(), 'Star leaves the menu open to show the change, as on a local row')
       assert.ok(
@@ -316,10 +304,10 @@ test('WorkspaceSidebar.remoteMenu', async () => {
       assert.ok(sleepy, 'unfolded, the sleeping chat is there')
       const wakeMenu = await openMenuOf('Sleepy chat')
       await click(wakeMenu, 'Wake now')
-      assert.deepEqual(changes.at(-1), {
+      assert.deepEqual(changes().at(-1), {
         connectionId: 'c1',
-        workspaceId: 'rw2',
-        change: { kind: 'snooze', until: null },
+        method: 'conversation.snooze',
+        params: { workspaceId: 'rw2', until: null },
       })
 
       // Move to New Window opens it in a window of its own.
@@ -349,10 +337,10 @@ test('WorkspaceSidebar.remoteMenu', async () => {
           `the opened row offers ${label}: ${followedItems.join(', ')}`,
         )
       await click(followedMenu, 'Auto-settle')
-      assert.deepEqual(changes.at(-1), {
+      assert.deepEqual(changes().at(-1), {
         connectionId: 'c1',
-        workspaceId: 'rw4',
-        change: { kind: 'auto-settle', enabled: true },
+        method: 'conversation.setAutoSettle',
+        params: { workspaceId: 'rw4', enabled: true },
       })
       await act(async () => {
         dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -375,7 +363,7 @@ test('WorkspaceSidebar.remoteMenu', async () => {
             marks: false,
             canMarkUnread: false,
             isDetachedWindow: true,
-            workspaceId: 'rw9',
+            chatLink: 'sprintengine://chat/env-box/rw9',
             starred: false,
             color: null,
             snoozedUntil: null,

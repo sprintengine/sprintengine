@@ -28,6 +28,7 @@ import { serversUnchangedDuringSync } from '../../../../../../../shared/mcp/serv
 import { useWorkspaceStore } from '../../../../../store/workspaceStore'
 import { OutlineButton, OverflowMenu } from '../../../../ui'
 import { skillSourceCommitsUrl } from '../skills/skillsSurfaceModel'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 /**
  * Whether the overflow offers "Remove source" for this source.
@@ -103,14 +104,14 @@ export function SourceTabActions({
   const commitsUrl = skillSourceCommitsUrl(source)
 
   const sync = async (): Promise<void> => {
-    if (typeof window.api.skillsSyncSource !== 'function' || syncing) return
+    if (typeof agentSkillsApi.skillsSyncSource !== 'function' || syncing) return
     setSyncing(true)
     try {
       // The servers ride the call because MCP settings live in this store, not
       // on disk in main. Read at click time, not at render: a settings object
       // captured when this control last rendered can be minutes old.
       const sent = mcpServersNow()
-      const result = await window.api.skillsSyncSource({
+      const result = await agentSkillsApi.skillsSyncSource({
         sourceId: source.id,
         workspaceRoot,
         mcpServers: sent,
@@ -149,17 +150,17 @@ export function SourceTabActions({
   }
 
   const checkForUpdates = async (): Promise<void> => {
-    if (typeof window.api.skillsCheckSourceUpdates !== 'function') return
+    if (typeof agentSkillsApi.skillsCheckSourceUpdates !== 'function') return
     try {
-      onCheckReport(source, sourceUpdateCheckLine(await window.api.skillsCheckSourceUpdates(), source.id))
+      onCheckReport(source, sourceUpdateCheckLine(await agentSkillsApi.skillsCheckSourceUpdates(), source.id))
     } catch (error) {
       onSyncFailed(source, error instanceof Error ? error.message : String(error))
     }
   }
 
   const remove = async (): Promise<void> => {
-    if (typeof window.api.skillsRemoveSource !== 'function') return
-    const result = await window.api.skillsRemoveSource({ sourceId: source.id })
+    if (typeof agentSkillsApi.skillsRemoveSource !== 'function') return
+    const result = await agentSkillsApi.skillsRemoveSource({ sourceId: source.id })
     if (!result.ok) {
       onSyncFailed(source, result.message)
       return

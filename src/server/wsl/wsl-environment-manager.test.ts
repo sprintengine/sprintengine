@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -15,14 +16,18 @@ import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import { afterAll, afterEach, beforeAll, test } from 'vitest'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
 import type { WslListing } from '../../main/hosts/wsl-distro'
 import { streamedAppPayload, WSL_DATA_REL, type StreamedPayload } from '../../main/hosts/wsl-install'
-import { installTree, wslNodeDigests } from '../../main/hosts/wsl-helper-runtime'
+import { installTree, wslNodeDigests } from '../../main/hosts/wsl-tree-install'
 import { WSL_NODE_VERSION } from '../../main/hosts/wsl-node-runtime'
 import type { WslRunner } from '../../main/hosts/wsl-runner'
 import type { RunOutcome } from '../../main/process-run'
-import { connect } from '../../../packages/agent-sdk/src/client'
+import {
+  connect,
+  webSocketTransport,
+  type StudioWebSocketConstructor,
+} from '../../../packages/client-runtime/src/public'
 import { createConnection } from 'node:net'
 import { desktopToolParts } from '../../main/automation/gateway-tools-parity.test-helper'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
@@ -33,10 +38,15 @@ import {
   type WslServerStatus,
 } from './wsl-environment-manager'
 import { readTreeBuild } from './desktop-wsl-servers'
-import { lineTransport, readTicket, relayShellToolsets } from './wsl-tool-relay'
+import { lineTransport, readTicket } from './studio-door'
+import { relayShellToolsets } from './wsl-tool-relay'
+import { followRelayedAgentState } from './agent-state-relay'
+import { createWslLaunchTokens } from './wsl-launch-tokens'
+import { terminalHostOf } from './wsl-terminal-host-client'
+import { createWslEnvironmentAccess } from './wsl-environment-access'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
-import type { ConversationBackend } from '../core/conversation-backend'
-import { createRoutedConversationBackend } from '../core/routed-conversation-backend'
+import type { StudioClient } from '../../../packages/client-runtime/src/public'
+import { createWslEnvironmentClients } from './wsl-environment-clients'
 
 // The WSL server end to end, with a plain `sh` standing in for `wsl.exe` and
 // a temporary home for each distribution: the real server tree is built the
@@ -102,7 +112,7 @@ function fakeRunner(
 ): WslRunner & { spawned: number } {
   const env = (distro: string) => ({ PATH: process.env.PATH, HOME: homes[distro], WSL_DISTRO_NAME: distro })
   let skipKills = extra.skipKills ?? 0
-  const asProcess = (child: ReturnType<typeof spawn>): HelperProcess => {
+  const asProcess = (child: ReturnType<typeof spawn>): WslStdioProcess => {
     child.stdin?.on('error', () => undefined)
     return {
       stdin: child.stdin!,
@@ -125,7 +135,7 @@ function fakeRunner(
                 setTimeout(() => (listener as (...args: unknown[]) => void)(...args), closeDelayMs)
             : (listener as (...args: unknown[]) => void),
         ),
-    } as HelperProcess
+    } as WslStdioProcess
   }
   const run = (distro: string, file: string, args: string[], body: Buffer | Readable): Promise<RunOutcome> =>
     new Promise((resolve) => {
@@ -172,6 +182,7 @@ function manager(options: {
   now?: () => number
   idleMs?: number
   pingMs?: number
+  ownerPingMs?: number
   orphanOnKill?: boolean
   skipKills?: number
 }) {
@@ -203,6 +214,7 @@ function manager(options: {
     ...(options.now ? { now: options.now } : {}),
     ...(options.idleMs ? { idleMs: options.idleMs } : {}),
     ...(options.pingMs ? { pingMs: options.pingMs } : {}),
+    ...(options.ownerPingMs ? { ownerPingMs: options.ownerPingMs } : {}),
   })
   cleanups.push(() => created.shutdown({ budgetMs: 5_000 }))
   return { manager: created, runner }
@@ -220,8 +232,7 @@ test('a first chat installs the server tree, starts it, and reaches it over loop
     existsSync(join(home, WSL_DATA_REL, 'data-0123456789ab', 'run', 'studio.lock')),
     'the profile has its own data',
   )
-  const threads = await connection.backend.listThreads({ workspaceRoot: join(home, 'repo'), workspaceId: 'ws-1' })
-  assert.ok(threads.ok, threads.ok ? '' : threads.message)
+  await connection.owner.request('server.ping', {})
   assert.equal(await wsl.connect('Ubuntu-24.04'), connection, 'a second connect reuses the running server')
   assert.deepEqual(
     statuses.map((status) => status.state),
@@ -240,6 +251,7 @@ async function agentSession(socketPath: string) {
   const socket = createConnection(socketPath)
   await new Promise<void>((resolve, reject) => socket.once('connect', resolve).once('error', reject))
   socket.setEncoding('utf8')
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
   const waiting = new Map<number, (message: Record<string, any>) => void>()
   let buffer = ''
   socket.on('data', (chunk: string) => {
@@ -259,8 +271,123 @@ async function agentSession(socketPath: string) {
         socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: next, method, params })}\n`)
       }),
     close: () => socket.end(),
+    /** Settles when the gateway ends the connection. */
+    closed,
   }
 }
+
+const BRIDGE = join(ROOT, 'resources', 'automation', 'mcp-stdio-bridge.mjs')
+
+/** The answer to a request, or null when none comes within `ms` (a notification-like connect answers none). */
+function replyWithin(answer: Promise<Record<string, any>>, ms = 1_000): Promise<Record<string, any> | null> {
+  return Promise.race([answer, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))])
+}
+
+test("a WSL terminal agent reaches the distribution's own gateway, proven by the launch token this desktop told it", async () => {
+  const home = fakeHome('launch-tokens')
+  let tokens: ReturnType<typeof createWslLaunchTokens> | null = null
+  const { manager: wsl } = manager({
+    homes: { Ubuntu: home },
+    connected: (connection) => tokens?.connected(connection.distro, connection),
+  })
+  tokens = createWslLaunchTokens({ connect: (distro) => wsl.connect(distro), current: (distro) => wsl.current(distro) })
+  const agent = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'claude-code' }
+  const issued = tokens.issue('Ubuntu', agent)
+  await issued.sent
+  const connection = wsl.current('Ubuntu')!
+
+  // The app's own bridge, as the launch's MCP entry starts it: the server's
+  // data directory names its gateway, and the token rides in the environment.
+  const out = await new Promise<string>((resolve, reject) => {
+    const child = spawn(process.execPath, [BRIDGE], {
+      env: {
+        PATH: process.env.PATH,
+        SPRINTENGINE_USER_DATA_DIR: connection.dataDir,
+        SPRINTENGINE_WORKSPACE_ID: agent.workspaceId,
+        SPRINTENGINE_AGENT_ID: agent.agentId,
+        SPRINTENGINE_AGENT_CLI: agent.cliId,
+        SPRINTENGINE_MCP_CHANNEL_TOKEN: issued.token,
+      },
+    })
+    let text = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      text += chunk.toString('utf8')
+      if (text.includes('\n')) child.stdin.end()
+    })
+    child.on('error', reject)
+    child.on('close', () => resolve(text))
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`)
+  })
+  const listed = JSON.parse(out.split('\n')[0]) as { result?: { tools?: unknown[] } }
+  assert.ok((listed.result?.tools?.length ?? 0) > 0, "the distribution's gateway answered the bridge")
+
+  // What the token proves: a connection it identified belongs to that agent,
+  // and cannot take a second launch's token.
+  const { socketPath } = JSON.parse(
+    readFileSync(join(connection.dataDir, 'sprintengine-studio-mcp-info.json'), 'utf8'),
+  ) as { socketPath: string }
+  const other = tokens.issue('Ubuntu', { workspaceId: 'ws-2', agentId: 'agent-2' })
+  await other.sent
+  const proven = await agentSession(socketPath)
+  void proven.call('sprintengine.studio/connect', { ...agent, launchToken: issued.token })
+  // Said again as the same agent, with another launch's token.
+  const second = await replyWithin(proven.call('sprintengine.studio/connect', { ...agent, launchToken: other.token }))
+  assert.match(String(second?.error?.message), /already belongs to another agent/u)
+
+  // Revoked with its terminal: the connection it proved is ended there, and
+  // the same token proves nothing.
+  tokens.revoke('Ubuntu', issued.token)
+  const ended = await Promise.race([
+    proven.closed.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ])
+  assert.equal(ended, true, 'the distribution ended the connection the revoked token proved')
+  const unproven = await agentSession(socketPath)
+  void unproven.call('sprintengine.studio/connect', { ...agent, launchToken: issued.token })
+  const unbound = await replyWithin(
+    unproven.call('sprintengine.studio/connect', { ...agent, launchToken: other.token }),
+  )
+  assert.equal(unbound?.error, undefined, 'nothing bound the connection, so another token is not refused')
+  unproven.close()
+
+  // A server started again is told the live tokens anew, and not the revoked one.
+  process.kill(readServerPid(home), 'SIGKILL')
+  await waitFor(() => wsl.status('Ubuntu').state === 'unavailable')
+  await new Promise((resolve) => setTimeout(resolve, 2_100))
+  const again = await wsl.connect('Ubuntu')
+  await waitFor(() => false, 300).catch(() => undefined)
+  const { socketPath: next } = JSON.parse(
+    readFileSync(join(again.dataDir, 'sprintengine-studio-mcp-info.json'), 'utf8'),
+  ) as { socketPath: string }
+  const after = await agentSession(next)
+  const agent2 = { workspaceId: 'ws-2', agentId: 'agent-2' }
+  void after.call('sprintengine.studio/connect', { ...agent2, launchToken: other.token })
+  const refused = await replyWithin(after.call('sprintengine.studio/connect', { ...agent2, launchToken: issued.token }))
+  assert.equal(refused?.error, undefined, 'the revoked token is not live there, so it is not a second launch')
+  const third = tokens.issue('Ubuntu', { workspaceId: 'ws-3', agentId: 'agent-3' })
+  await third.sent
+  const taken = await replyWithin(after.call('sprintengine.studio/connect', { ...agent2, launchToken: third.token }))
+  assert.match(String(taken?.error?.message), /already belongs to another agent/u, 'the live one was told again')
+  after.close()
+}, 60_000)
+
+test("a WSL terminal's startup files are written by the distribution's server, privately, and its processes asked there", async () => {
+  const home = fakeHome('terminal-host')
+  const { manager: wsl } = manager({ homes: { Ubuntu: home } })
+  const connection = await wsl.connect('Ubuntu')
+  const { sessionDir, pidDir } = connection.terminals
+  assert.ok(sessionDir?.startsWith(`${home}/`), 'launch files live under the Linux home')
+  assert.ok(pidDir, 'and each shell records its pid in a directory of its own')
+  assert.ok(connection.terminals.resourcesDir.endsWith('/resources'), 'the hooks and the MCP bridge ship in its tree')
+  const host = terminalHostOf(connection)
+  const { paths } = await host.launchFiles({
+    write: [{ path: 'sid-a-1.sh', b64: Buffer.from("export T='x'\n").toString('base64') }],
+  })
+  assert.deepEqual(paths, [`${sessionDir}/sid-a-1.sh`])
+  assert.equal(statSync(paths[0]).mode & 0o777, 0o600)
+  assert.deepEqual((await host.processes({ op: 'endAll' })).killed, [])
+  assert.equal(existsSync(paths[0]), false, 'ending every session drops their launch files')
+}, 30_000)
 
 test("a WSL agent lists the editor, tours, terminals and agent launches, which in process are the Windows gateway's own", async () => {
   const home = fakeHome('own-tools')
@@ -362,25 +489,139 @@ test('with the bridge chosen, the server is reached through the stdio relay and 
   const { manager: wsl } = manager({ homes: { Debian: home }, transport: 'stdio' })
   const connection = await wsl.connect('Debian')
   assert.equal(wsl.status('Debian').transport, 'stdio')
-  const threads = await connection.backend.listThreads({ workspaceRoot: join(home, 'repo'), workspaceId: 'ws-1' })
-  assert.ok(threads.ok)
+  await connection.owner.request('server.ping', {})
 })
 
-test('a lost wire is reconnected once, and a call meanwhile waits for it instead of opening another', async () => {
+test('a lost owner connection is reconnected once, and a call meanwhile waits for it instead of opening another', async () => {
   const home = fakeHome('reconnect')
   const connections: WslServerConnection[] = []
   const { manager: wsl } = manager({ homes: { Ubuntu: home }, connected: (connection) => connections.push(connection) })
   const first = await wsl.connect('Ubuntu')
   const pid = readServerPid(home)
-  first.backend.close()
+  first.owner.close()
   const second = await wsl.connect('Ubuntu')
   assert.notEqual(second, first)
-  assert.equal(connections.length, 2, 'one reconnect, not a second wire beside it')
+  assert.equal(connections.length, 2, 'one reconnect, not a second connection beside it')
   assert.equal(await wsl.connect('Ubuntu'), second)
   assert.equal(readServerPid(home), pid, 'the same server')
-  const threads = await second.backend.listThreads({ workspaceRoot: join(home, 'repo'), workspaceId: 'ws-1' })
-  assert.ok(threads.ok)
+  await second.owner.request('server.ping', {})
 })
+
+test("the desktop's owner connection is the server's Studio, and its end is the server lost, reconnected once", async () => {
+  const home = fakeHome('owner')
+  const connections: WslServerConnection[] = []
+  const { manager: wsl } = manager({ homes: { Ubuntu: home }, connected: (connection) => connections.push(connection) })
+  const first = await wsl.connect('Ubuntu')
+  const pid = readServerPid(home)
+  assert.ok(first.owner.supports('environment-work'), 'the owner connection reaches the Studio a desktop holds')
+  const work = await first.owner.request('environment.work', {})
+  assert.deepEqual(work, { working: false, schedules: [], watches: [], messages: 0, resumes: 0 })
+  first.owner.close()
+  const second = await wsl.connect('Ubuntu')
+  assert.notEqual(second, first)
+  assert.equal(second.owner.state === 'closed', false)
+  assert.equal(connections.length, 2)
+  assert.equal(readServerPid(home), pid, 'the same server')
+})
+
+test('a server that leaves its owner connection’s pings unanswered is lost, and reconnected once it answers again', async () => {
+  const home = fakeHome('owner-ping')
+  const connections: WslServerConnection[] = []
+  const { manager: wsl } = manager({
+    homes: { Ubuntu: home },
+    ownerPingMs: 300,
+    connected: (connection) => connections.push(connection),
+  })
+  const first = await wsl.connect('Ubuntu')
+  const pid = readServerPid(home)
+  // The socket stays open; only the answers stop.
+  process.kill(pid, 'SIGSTOP')
+  try {
+    for (let waited = 0; first.owner.state !== 'closed' && waited < 5_000; waited += 100)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(first.owner.state, 'closed', 'two pings unanswered end the owner connection')
+    assert.equal(wsl.current('Ubuntu'), null, 'the server is not handed out while it does not answer')
+  } finally {
+    process.kill(pid, 'SIGCONT')
+  }
+  const second = await wsl.connect('Ubuntu')
+  assert.notEqual(second, first)
+  assert.equal(readServerPid(home), pid, 'the same server, not one started in its place')
+  assert.equal(connections.length, 2)
+}, 30_000)
+
+/** Node's WebSocket, saying the origin a window's would (none for a device: the desktop writes its upgrade). */
+function socketFrom(origin: string | null): StudioWebSocketConstructor {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init?: unknown) => unknown }).WebSocket
+  return class {
+    constructor(url: string) {
+      return (origin === null ? new NodeWebSocket(url) : new NodeWebSocket(url, { headers: { origin } })) as never
+    }
+  } as unknown as StudioWebSocketConstructor
+}
+
+for (const transport of ['auto', 'stdio'] as const)
+  test(`a window reaches the distribution's own Studio through this PC's route, ${transport === 'auto' ? 'over loopback' : 'through the stdio bridge'}`, async () => {
+    const home = fakeHome(`route-${transport}`)
+    const { manager: wsl } = manager({ homes: { Ubuntu: home }, transport })
+    const access = createWslEnvironmentAccess({ manager: wsl })
+    cleanups.push(() => access.close())
+    const window = { windowKey: 'window-1-1', origin: 'file://' }
+    // The ticket starts the server: opening a chat there is using it.
+    const first = await access.windowTicket('Ubuntu', window)
+    assert.ok(first.ok, first.ok ? '' : first.message)
+    assert.match(first.url, /^ws:\/\/127\.0\.0\.1:\d+\/ws\?ticket=/u)
+    const studio = await connect({
+      transport: webSocketTransport({ ticket: async () => first, WebSocket: socketFrom('file://') }),
+      client: { name: 'Studio window' },
+      reconnect: false,
+    })
+    assert.equal(studio.grant.owner, true)
+    assert.equal(studio.welcome.environment.hostKind, 'wsl')
+    const environmentId = wsl.current('Ubuntu')!.environmentId
+    assert.equal(studio.welcome.environment.id, environmentId)
+    assert.ok((await studio.request('conversation.list', {})).conversations)
+    studio.close()
+    // Good once, and only from the origin it was minted for.
+    await assert.rejects(
+      connect({
+        transport: webSocketTransport({ ticket: async () => first, WebSocket: socketFrom('file://') }),
+        client: { name: 'Studio window' },
+        reconnect: false,
+      }),
+    )
+    const foreign = await access.windowTicket('Ubuntu', window)
+    assert.ok(foreign.ok)
+    await assert.rejects(
+      connect({
+        transport: webSocketTransport({ ticket: async () => foreign, WebSocket: socketFrom('https://example.com') }),
+        client: { name: 'Studio window' },
+        reconnect: false,
+      }),
+    )
+    // The route's port is kept: the next ticket names the same one.
+    const kept = await access.windowTicket('Ubuntu', window)
+    assert.ok(kept.ok)
+    assert.equal(new URL(kept.url).port, new URL(first.url).port)
+    // A window that goes is revoked there: its connections end.
+    const doomed = await connect({
+      transport: webSocketTransport({ ticket: async () => kept, WebSocket: socketFrom('file://') }),
+      client: { name: 'Studio window' },
+      reconnect: false,
+    })
+    const ended = doomed.closed.then(
+      () => 'closed',
+      (error: unknown) => (error as { code?: string }).code ?? 'closed',
+    )
+    access.revokeWindow('window-1-1')
+    // Promptly on both: the stdio bridge ends when the server ends its side.
+    assert.equal(
+      await Promise.race([ended, new Promise((resolve) => setTimeout(() => resolve('still open'), 5_000))]),
+      'revoked',
+    )
+
+    await wsl.stop('Ubuntu')
+  }, 60_000)
 
 test('a lost wire to a server too busy to answer at once is reconnected when it does, not taken for hung', async () => {
   const home = fakeHome('busy')
@@ -392,7 +633,7 @@ test('a lost wire to a server too busy to answer at once is reconnected when it 
   // under load or a VM waking from sleep is, while its wire drops.
   process.kill(pid, 'SIGSTOP')
   try {
-    first.backend.close()
+    first.owner.close()
     await new Promise((resolve) => setTimeout(resolve, 6_000))
   } finally {
     try {
@@ -417,7 +658,7 @@ test('a server whose wire is being reconnected is not stopped for being idle onc
   // Its idle clock runs out while the reconnect waits on a server slow to answer.
   process.kill(pid, 'SIGSTOP')
   try {
-    first.backend.close()
+    first.owner.close()
     await new Promise((resolve) => setTimeout(resolve, 2_500))
   } finally {
     process.kill(pid, 'SIGCONT')
@@ -428,6 +669,126 @@ test('a server whose wire is being reconnected is not stopped for being idle onc
   wsl.touch('Ubuntu')
   await new Promise((resolve) => setTimeout(resolve, 500))
   assert.equal(wsl.status('Ubuntu').state, 'ready')
+  assert.equal(readServerPid(home), pid)
+  assert.equal(
+    statuses.some((status) => status.state === 'stopped'),
+    false,
+  )
+}, 30_000)
+
+test('a server with nothing to do is stopped once it has been idle', async () => {
+  const home = fakeHome('idle-nothing')
+  const statuses: WslServerStatus[] = []
+  const { manager: wsl } = manager({ homes: { Ubuntu: home }, statuses, idleMs: 1_000 })
+  await wsl.connect('Ubuntu')
+  for (let waited = 0; wsl.status('Ubuntu').state !== 'stopped' && waited < 10_000; waited += 100)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.equal(wsl.status('Ubuntu').state, 'stopped')
+}, 30_000)
+
+test("a WSL terminal holds its server: its agent's reports reach this PC through it, it is not stopped for being idle, and a crash starts it again", async () => {
+  const home = fakeHome('held')
+  const lines: string[] = []
+  const statuses: WslServerStatus[] = []
+  // The app's clock (the wall clock) and its timers' (a monotonic one) can
+  // disagree: by a millisecond as each is rounded, or more once the wall
+  // clock is set back. Set back here once the crash is reported.
+  let behind = 0
+  const { manager: wsl } = manager({
+    homes: { Ubuntu: home },
+    statuses,
+    now: () => Date.now() - behind,
+    idleMs: 500,
+    connected: (connection) =>
+      void followRelayedAgentState(
+        connection,
+        (line) => lines.push(line),
+        () => undefined,
+        50,
+      ),
+  })
+  wsl.hold('Ubuntu', 'sid-1')
+  await waitFor(() => wsl.current('Ubuntu') !== null)
+  const connection = wsl.current('Ubuntu')!
+  assert.ok(connection.agentStateSocket, 'the server says where its terminal agents report')
+  // A hook inside the distribution writes a frame; this PC hears the line.
+  const frame = JSON.stringify({ type: 'agent_state', agentId: 'agent-1', workspaceId: 'ws-1', event: 'Stop' })
+  await waitFor(
+    () => lines.includes(frame),
+    10_000,
+    () =>
+      new Promise<void>((resolve) => {
+        const socket = createConnection(connection.agentStateSocket!, () => socket.end(`${frame}\n`))
+        socket.on('close', () => resolve())
+        socket.on('error', () => resolve())
+      }),
+  )
+  // Well past the idle bound: still running while held.
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  assert.equal(wsl.status('Ubuntu').state, 'ready')
+  // A crash while held: started again after the backoff, with no message sent.
+  // Read from the statuses it went through, not by polling the current one,
+  // so a loaded runner that polls late still sees the crash it reported.
+  const beforeCrash = statuses.length
+  const since = () => statuses.slice(beforeCrash).map((status) => status.state)
+  process.kill(readServerPid(home), 'SIGKILL')
+  await waitFor(() => since().includes('unavailable'), 20_000).catch(() =>
+    assert.fail(`the crash was never reported: ${since().join(', ') || 'no status since'}`),
+  )
+  // The backoff is the restart timer's to wait out: a clock that reads
+  // behind when it fires does not turn the restart away.
+  behind = 1_000
+  await waitFor(() => since().slice(since().indexOf('unavailable')).includes('ready'), 30_000).catch(() =>
+    assert.fail(`the held server was not started again: ${since().join(', ')}`),
+  )
+  // Let go: idle again, and stopped.
+  wsl.release('Ubuntu', 'sid-1')
+  await waitFor(() => wsl.status('Ubuntu').state === 'stopped', 10_000)
+}, 60_000)
+
+test('a server with a schedule of its own to run is not stopped for being idle', async () => {
+  const home = fakeHome('idle-schedule')
+  // A schedule in the server's own store: the server runs it, whoever is connected.
+  const dataDir = join(home, WSL_DATA_REL, 'data-0123456789ab')
+  mkdirSync(dataDir, { recursive: true })
+  writeFileSync(
+    join(dataDir, 'scheduled-agents.json'),
+    JSON.stringify({
+      version: 1,
+      agents: [
+        {
+          id: 'sa-1',
+          prompt: 'Triage the issues opened since the last run.',
+          schedule: { cron: '0 9 * * *', timezone: 'UTC' },
+          folderPath: join(home, 'repo'),
+          hostId: null,
+          cli: 'codex',
+          cliModel: null,
+          permissionPreset: null,
+          skills: [],
+          mcpServers: [],
+          worktree: null,
+          ownerModuleId: null,
+          createdAt: 1,
+          updatedAt: 1,
+          lastRun: null,
+          lastFailureSeenAt: null,
+        },
+      ],
+    }),
+  )
+  const statuses: WslServerStatus[] = []
+  const { manager: wsl } = manager({ homes: { Ubuntu: home }, statuses, idleMs: 1_000 })
+  await wsl.connect('Ubuntu')
+  const pid = readServerPid(home)
+  await new Promise((resolve) => setTimeout(resolve, 3_000))
+  assert.equal(wsl.status('Ubuntu').state, 'ready')
+  // The quit question names it.
+  const asked = await wsl.backgroundWork()
+  assert.deepEqual(
+    asked.map(({ distro, work }) => [distro, work.schedules.map((schedule) => schedule.id)]),
+    [['Ubuntu', ['sa-1']]],
+  )
   assert.equal(readServerPid(home), pid)
   assert.equal(
     statuses.some((status) => status.state === 'stopped'),
@@ -452,7 +813,7 @@ test('a server that stops answering its pings is taken for hung, stopped, and sa
     }
   }
   assert.match(wsl.status('Ubuntu').reason ?? '', /stopped answering, so it was stopped/u)
-  await waitFor(() => first.backend.isOpen() === false)
+  await waitFor(() => first.owner.state === 'closed')
   await waitFor(() => {
     try {
       process.kill(pid, 0)
@@ -562,7 +923,7 @@ test('a server killed under a running distribution is a crash; under a stopped o
   process.kill(pid, 'SIGKILL')
   await waitFor(() => wsl.status('Ubuntu').state === 'unavailable')
   assert.match(wsl.status('Ubuntu').reason ?? '', /stopped unexpectedly/u)
-  assert.equal(first.backend.isOpen(), false)
+  await waitFor(() => first.owner.state === 'closed')
   await assert.rejects(wsl.connect('Ubuntu'), /tried again in \d+ s/u, 'a crash is not restarted at once')
 
   const { manager: shutDown } = manager({
@@ -728,35 +1089,46 @@ test("the desktop's toolsets are offered to the WSL server, and a second connect
 })
 
 /**
- * A Windows front door's router over `wsl`, with a workspace in `home/repo`
- * and nothing running in this process, and the chat in it on the mock
- * provider, as the chat view starts and sends it.
+ * A chat in `home/repo` on the distribution's own Studio, as the desktop's
+ * core drives it over its owner connection (design-wsl-ssh-direct PR 3c):
+ * the folder as Windows spells it, respelled at the client's edge, on the
+ * mock provider, its events followed on each connection the core makes.
  */
-function routedChat(wsl: ReturnType<typeof manager>['manager'], home: string) {
-  const local = {
-    onEvent: () => () => undefined,
-    listSessions: () => ({ ok: true, sessions: [] }),
-  } as unknown as ConversationBackend
+function distroChat(wsl: ReturnType<typeof manager>['manager'], home: string) {
+  const clients = createWslEnvironmentClients({ manager: wsl, onConnected: () => undefined })
   const folder = `\\\\wsl.localhost\\Ubuntu${join(home, 'repo').replaceAll('/', '\\')}`
-  const router = createRoutedConversationBackend({
-    local,
-    workspace: () => ({ hostId: 'wsl:Ubuntu', folderPath: folder }),
-    chatServerOn: () => true,
-    servers: wsl,
-    platform: 'win32',
-  })
   const events: ConversationEvent[] = []
-  router.onEvent((event) => events.push(event))
+  let followed: StudioClient | null = null
+  let commands = 0
+  const client = async (): Promise<StudioClient> => {
+    const reached = await clients.clientFor('wsl:Ubuntu')
+    if (!reached.ok) throw new Error(reached.message)
+    if (followed !== reached.client) {
+      followed = reached.client
+      reached.client.subscribe('conversation.events', {}, { onPayload: (event) => void events.push(event) })
+    }
+    return reached.client
+  }
   const key = { workspaceRoot: folder, workspaceId: 'ws-1', agentId: 'agent' }
+  const sendOnly = async (sessionId: string) =>
+    (await client())
+      .request('session.send', { commandId: `send-${++commands}`, sessionId, message: '/tools' })
+      .catch((error: unknown) => ({ ok: false as const, message: String(error) }))
   return {
-    router,
     events,
     key,
-    start: () => router.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' }),
+    start: async () =>
+      (await client()).request('session.start', {
+        commandId: `start-${++commands}`,
+        ...key,
+        providerId: 'mock-provider',
+        modelId: 'mock-model',
+      }),
+    sendOnly,
     /** A turn that runs to its end; resolves once its `turn_completed` has arrived. */
     async send(sessionId: string) {
       const before = events.filter((event) => event.type === 'turn_completed').length
-      const sent = await router.sendTurn({ sessionId, message: '/tools' })
+      const sent = await sendOnly(sessionId)
       if (sent.ok) await waitFor(() => events.filter((event) => event.type === 'turn_completed').length > before)
       return sent
     },
@@ -775,7 +1147,7 @@ test('a killed server is not taken for a loopback that failed, says it was kille
     log: (message) => logs.push(message),
     now: () => clock,
   })
-  const chat = routedChat(wsl, home)
+  const chat = distroChat(wsl, home)
   const started = await chat.start()
   assert.ok(started.ok, started.ok ? '' : started.message)
   const first = await chat.send(started.session.sessionId)
@@ -802,8 +1174,8 @@ test('a killed server is not taken for a loopback that failed, says it was kille
   // The next message, after the crash backoff: the server starts again,
   // reached over loopback, and does not hold the session the chat view kept.
   clock += 60_000
-  const stale = await chat.router.sendTurn({ sessionId: started.session.sessionId, message: '/tools' })
-  assert.equal(stale.ok ? null : stale.code, 'session_not_found')
+  const stale = await chat.sendOnly(started.session.sessionId)
+  assert.equal(stale.ok, false, 'the restarted server does not hold the old session')
   assert.equal(wsl.status('Ubuntu').transport, 'loopback', 'a restarted server is reached over loopback again')
   // What the view does then, as after an app restart: start the chat's
   // session again (it resumes from its transcript) and send on that one.
@@ -811,10 +1183,8 @@ test('a killed server is not taken for a loopback that failed, says it was kille
   assert.ok(restarted.ok, restarted.ok ? '' : restarted.message)
   const again = await chat.send(restarted.session.sessionId)
   assert.ok(again.ok, again.ok ? '' : again.message)
-  const transcript = await chat.router.readTranscript(chat.key, { all: true })
-  assert.ok(transcript.ok, transcript.ok ? '' : transcript.message)
   assert.equal(
-    transcript.events.filter((event) => event.type === 'user_message').length,
+    chat.events.filter((event) => event.type === 'user_message' && event.workspaceId === 'ws-1').length,
     2,
     'one chat, both turns, across the restart',
   )
@@ -832,7 +1202,7 @@ test('WSL shut down under a chat: nothing starts it again until the next message
     closeDelayMs: 500,
     log: (message) => logs.push(message),
   })
-  const chat = routedChat(wsl, home)
+  const chat = distroChat(wsl, home)
   const started = await chat.start()
   assert.ok(started.ok, started.ok ? '' : started.message)
   assert.ok((await chat.send(started.session.sessionId)).ok)
@@ -854,8 +1224,8 @@ test('WSL shut down under a chat: nothing starts it again until the next message
 
   // The next message starts the VM (here, the shell) and the server, and the chat resumes.
   state = 'Running'
-  const stale = await chat.router.sendTurn({ sessionId: started.session.sessionId, message: '/tools' })
-  assert.equal(stale.ok ? null : stale.code, 'session_not_found')
+  const stale = await chat.sendOnly(started.session.sessionId)
+  assert.equal(stale.ok, false)
   const restarted = await chat.start()
   assert.ok(restarted.ok, restarted.ok ? '' : restarted.message)
   const again = await chat.send(restarted.session.sessionId)

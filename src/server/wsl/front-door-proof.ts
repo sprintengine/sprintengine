@@ -35,12 +35,22 @@ export const FRONT_DOOR_PROOF_VERSION = 1
 
 /** What a connection is for once it is admitted. */
 export type FrontDoorPurpose =
-  /** The conversation backend the front door routes a distribution's chats to. */
-  | 'backend'
   /** A Studio protocol connection, as the shell role (the toolsets the front door offers). */
   | 'studio'
+  /**
+   * A window's socket, carried by the desktop's loopback route to the server's
+   * window listener, which admits it only with a ticket it minted: the proof
+   * says the stream came through the front door, never who the window is.
+   */
+  | 'ws'
+  /**
+   * A WSL distribution's terminal agents' phase reports, relayed to the
+   * desktop that holds it as lines (`agent-state-relay.ts`). Only a WSL
+   * distribution's Studio serves it.
+   */
+  | 'agent-state'
 
-const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['backend', 'studio'])
+const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['studio', 'ws', 'agent-state'])
 const NONCE_BYTES = 32
 // A preamble line is a few hundred bytes; anything longer is not one.
 const MAX_PREAMBLE_LINE = 4_096

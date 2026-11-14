@@ -1,25 +1,52 @@
-// A workspace on an SSH machine, its files and git read on that machine: a
-// real SshEnvironment (a plain `sh` standing in for ssh, the real server tree
-// and relay), a git repository in the machine's home, and the desktop's own
-// IPC registrations behind the machine-aware wrapper, asked with paths spelled
-// `ssh://<id>/…`. A decoy folder of the same plain path exists on this side
-// too, and is never what answers.
+// A workspace on an SSH machine, its files and git read and changed on that
+// machine by its own Studio (design-wsl-ssh-direct PR 2): a real
+// SshEnvironment (a plain `sh` standing in for ssh, the real server tree and
+// relay), a git repository in the machine's home, and the window's own files
+// and git modules, asked with paths spelled `ssh://<id>/…`. They reach the
+// machine's Studio as a window does: a ticket its window listener minted, over
+// main's owner connection, spent on a socket main's loopback route carries
+// through the front door (`ws`).
 
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, test } from 'vitest'
+import { afterAll, beforeAll, test, vi } from 'vitest'
 
+import {
+  connect,
+  webSocketTransport,
+  type StudioClient,
+  type StudioWebSocketConstructor,
+} from '../../../../packages/client-runtime/src/public'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../../shared/ssh-environments'
 import { machinePath } from '../../../shared/machine-paths'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { WSL_NODE_VERSION } from '../../hosts/wsl-node-runtime'
-import { machineAwareIpc, machineOfArgs, plainArgs, spelledResult } from './machine-ipc'
+import { createLoopbackRoute } from '../environment-route'
 import { SshEnvironment } from './ssh-environment'
 import { serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
+
+// The real modules: every other suite gets their stand-ins.
+const { filesApi } = await vi.importActual<typeof import('../../../renderer/src/studio/files')>(
+  '../../../renderer/src/studio/files',
+)
+const { gitApi } = await vi.importActual<typeof import('../../../renderer/src/studio/git')>(
+  '../../../renderer/src/studio/git',
+)
+const { configureEnvironmentStudio, closeEnvironmentStudios } = await vi.importActual<
+  typeof import('../../../renderer/src/studio/environmentStudio')
+>('../../../renderer/src/studio/environmentStudio')
+
+function socketFrom(origin: string): StudioWebSocketConstructor {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
+  return class {
+    constructor(url: string) {
+      return new NodeWebSocket(url, { headers: { origin } }) as never
+    }
+  } as unknown as StudioWebSocketConstructor
+}
 
 const ROOT = join(__dirname, '..', '..', '..', '..')
 const VERSION = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version
@@ -47,33 +74,6 @@ afterAll(() => {
     }
   }
   if (scratch) rmSync(scratch, { recursive: true, force: true })
-})
-
-test('machine paths: found in arguments, made plain, spelled again in answers (never file contents)', () => {
-  assert.deepEqual(machineOfArgs(['ssh://e1/home/dev/repo', 'src']), { id: 'e1' })
-  assert.deepEqual(machineOfArgs([{ rootPath: 'ssh://e1/home/dev/repo', query: '/src' }]), { id: 'e1' })
-  assert.equal(machineOfArgs(['/Users/dev/repo']), null)
-  assert.deepEqual(machineOfArgs(['ssh://e1/a', 'ssh://e2/b']), { mixed: true })
-  assert.deepEqual(machineOfArgs(['ssh://../etc']), { mixed: true }, 'a malformed one is refused, never read here')
-  assert.deepEqual(plainArgs([{ rootPath: 'ssh://e1/home/dev/repo' }, ['ssh://e1/x']]), [
-    { rootPath: '/home/dev/repo' },
-    ['/x'],
-  ])
-  assert.equal(spelledResult('e1', 'git:get-repo-root', '/home/dev/repo'), 'ssh://e1/home/dev/repo')
-  assert.deepEqual(
-    spelledResult('e1', 'fs:search-files', {
-      ok: true,
-      results: [{ path: '/home/dev/repo/a.ts', parentPath: '/home/dev/repo', name: 'a.ts' }],
-    }),
-    {
-      ok: true,
-      results: [{ path: 'ssh://e1/home/dev/repo/a.ts', parentPath: 'ssh://e1/home/dev/repo', name: 'a.ts' }],
-    },
-  )
-  assert.equal(
-    spelledResult('e1', 'fs:readfile', '/* a file that starts with a slash */'),
-    '/* a file that starts with a slash */',
-  )
 })
 
 test('a workspace on an SSH machine: the explorer, search, git status, diffs, staging and a commit, all on the machine', async () => {
@@ -108,7 +108,7 @@ test('a workspace on an SSH machine: the explorer, search, git status, diffs, st
         env: { PATH: process.env.PATH, HOME: home, SHELL: '/bin/sh' },
         stdio: ['pipe', 'pipe', 'pipe'],
       }) as unknown as SessionProcess,
-    app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+    app: { version: VERSION, channel: 'latest' },
     dataName: 'data',
     startedBy: 'Studio on dev-macbook-air',
     serverTree: () => ({ dir: tree, digest }),
@@ -126,77 +126,78 @@ test('a workspace on an SSH machine: the explorer, search, git status, diffs, st
     ).pid,
   )
 
-  // The desktop's channels, as main registers them, behind the wrapper.
-  const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
-  const localCalls: string[] = []
-  const fakeIpcMain = {
-    handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) =>
-      handlers.set(channel, listener),
-  }
-  const ipc = machineAwareIpc(fakeIpcMain as never, {
-    call: (id, channel, args) => {
-      assert.equal(id, 'e1')
-      return connection.backend.machine(channel, args)
+  // The machine's home is a scratch folder on this computer, so its plain
+  // paths are real here too. This window has no Studio of its own (no bridge
+  // to one), so every answer below is the machine's.
+  const route = createLoopbackRoute({ open: () => connection.open('ws') })
+  const routePort = await route.port()
+  const routes: string[] = []
+  const api = {}
+  const host = globalThis as { window?: { api?: object } }
+  host.window = { api }
+  configureEnvironmentStudio(api, {
+    connect: async (asked) => {
+      routes.push(asked)
+      const minted = await connection.owner.request('environment.windowTicket', {
+        windowKey: 'window-1-1',
+        origin: 'file://',
+      })
+      const ticket = { url: `ws://127.0.0.1:${routePort}${minted.path}`, token: minted.token }
+      return connect({
+        transport: webSocketTransport({ ticket: async () => ticket, WebSocket: socketFrom('file://') }),
+        client: { name: 'Studio window' },
+        reconnect: false,
+      }) as Promise<StudioClient>
     },
   })
-  for (const channel of [
-    'fs:readdir',
-    'fs:readfile',
-    'fs:search-files',
-    'git:get-repo-root',
-    'git:get-status',
-    'git:get-file-base',
-    'git:stage',
-    'git:commit',
-    'fs:watch-start',
-    'fs:write-file',
-    'terminal:create',
-  ])
-    ipc.handle(channel, (_event: unknown, ...args: unknown[]) => {
-      localCalls.push(`${channel} ${JSON.stringify(args)}`)
-      return 'answered on this computer'
+  try {
+    const root = machinePath('e1', repo)
+
+    const listing = await filesApi.readdir(`${root}/src`)
+    assert.deepEqual(listing.map((entry) => entry.name).sort(), ['app.ts', 'new.ts'])
+    assert.equal(await filesApi.readfile(`${root}/src/app.ts`), 'export const answer = 42\n')
+    assert.equal(await filesApi.pathExists(`${root}/src/new.ts`), true)
+    const found = await filesApi.searchFiles(root, 'new', { purpose: 'mention', limit: 10 })
+    assert.ok(found.ok)
+    assert.ok(
+      found.results.some((entry) => entry.path === `${root}/src/new.ts` && entry.parentPath === `${root}/src`),
+      JSON.stringify(found),
+    )
+
+    // A save there: what is written is the person's text, even where it reads as a path here.
+    await filesApi.writefile(`${root}/notes.md`, root, { roots: [root] })
+    assert.equal(readFileSync(join(repo, 'notes.md'), 'utf8'), root)
+    assert.equal(await filesApi.createFile(root, 'more.md'), `${root}/more.md`)
+
+    assert.equal(await gitApi.getGitRepoRoot(`${root}/src`), root)
+    const status = await gitApi.getGitStatus(root)
+    assert.equal(status.repoRoot, root)
+    assert.deepEqual(Object.keys(status.files).sort(), [
+      `${root}/more.md`,
+      `${root}/notes.md`,
+      `${root}/src/app.ts`,
+      `${root}/src/new.ts`,
+    ])
+    assert.deepEqual(await gitApi.getGitFileBase(root, `${root}/src/app.ts`), {
+      ok: true,
+      content: 'export const answer = 41\n',
     })
-  const invoke = (channel: string, ...args: unknown[]) =>
-    Promise.resolve(handlers.get(channel)!({ sender: { id: 1 } }, ...args))
-  const root = machinePath('e1', repo)
 
-  // A local path is this computer's, as before.
-  assert.equal(await invoke('fs:readdir', '/Users/dev/somewhere'), 'answered on this computer')
+    await gitApi.stageGitPaths(root, [`${root}/src/app.ts`, `${root}/src/new.ts`])
+    const committed = await gitApi.commitGitChanges(root, 'Answer correctly')
+    assert.ok(committed.ok, JSON.stringify(committed))
+    assert.match(git('log', '--oneline', '-1'), /Answer correctly/u)
 
-  const listing = (await invoke('fs:readdir', `${root}/src`)) as Array<{ name: string; isDir: boolean }>
-  assert.deepEqual(listing.map((entry) => entry.name).sort(), ['app.ts', 'new.ts'])
-  assert.equal(await invoke('fs:readfile', `${root}/src/app.ts`), 'export const answer = 42\n')
-  const found = (await invoke('fs:search-files', { rootPath: root, query: 'new', purpose: 'mention', limit: 10 })) as {
-    ok: boolean
-    results: Array<{ path: string }>
+    // One client of the machine, by its route, for all of it.
+    assert.deepEqual([...new Set(routes)], ['ssh:e1'])
+    // A machine's checkout is not followed: its views refresh by asking again.
+    gitApi.watchGitCheckout(root, () => undefined)()
+    // Two machines, or a machine and this computer, in one ask are refused in words.
+    await assert.rejects(filesApi.copyPath(`${root}/notes.md`, '/Users/dev/elsewhere'), /two machines/u)
+  } finally {
+    closeEnvironmentStudios(api as never)
+    delete host.window
+    await route.close()
+    machine.disconnect()
   }
-  assert.ok(found.ok)
-  assert.ok(
-    found.results.some((entry) => entry.path === `${root}/src/new.ts`),
-    JSON.stringify(found),
-  )
-
-  assert.equal(await invoke('git:get-repo-root', `${root}/src`), root)
-  const status = (await invoke('git:get-status', root)) as { repoRoot: string; files: Record<string, unknown> }
-  assert.equal(status.repoRoot, root)
-  assert.deepEqual(Object.keys(status.files).sort(), [`${root}/src/app.ts`, `${root}/src/new.ts`])
-  assert.deepEqual(await invoke('git:get-file-base', root, `${root}/src/app.ts`), {
-    ok: true,
-    content: 'export const answer = 41\n',
-  })
-
-  await invoke('git:stage', root, [`${root}/src/app.ts`, `${root}/src/new.ts`])
-  const committed = (await invoke('git:commit', root, 'Answer correctly')) as { ok: boolean; message?: string }
-  assert.ok(committed.ok, JSON.stringify(committed))
-  assert.match(git('log', '--oneline', '-1'), /Answer correctly/u)
-
-  // No watch for a machine's folder; a refusal in words for anything else.
-  assert.equal(await invoke('fs:watch-start', `${root}/src`), null)
-  await assert.rejects(
-    invoke('fs:write-file', `${root}/src/app.ts`, 'x'),
-    /Not available for SSH machines yet \(Studio's fs:write-file channel\)/u,
-  )
-  await assert.rejects(invoke('terminal:create', { cwd: root }), /Not available for SSH machines yet/u)
-  assert.deepEqual(localCalls, ['fs:readdir ["/Users/dev/somewhere"]'], 'nothing about the machine was answered here')
-  machine.disconnect()
 })

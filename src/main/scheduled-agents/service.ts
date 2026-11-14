@@ -20,12 +20,14 @@ import { moduleConversationCeiling } from '../module-host/module-conversation-se
 import { clampToModuleToolCaller, moduleToolCallerCeiling } from '../module-host/module-tool-caller'
 import type { ScheduledAgentsScheduler } from './scheduler'
 import type { ScheduledPromptImages } from './prompt-images'
-import type { ScheduledAgentsStore } from './store'
+import { readStoredScheduledAgent, type ScheduledAgentsStore } from './store'
 
 /** Lowers a validated draft's preset before it is stored; the identity when absent. */
 type CapPreset = (preset: CliPermissionPreset | null) => CliPermissionPreset | null
 
 export type ScheduledAgentsService = {
+  /** Settles once the schedule file has been read: a list asked before then would be empty. */
+  loaded(): Promise<void>
   list(options?: { ownerModuleId?: string }): ScheduledAgentView[]
   get(id: string): ScheduledAgentView | null
   create(
@@ -78,6 +80,13 @@ export type ScheduledAgentsService = {
   onRun(listener: (agent: ScheduledAgentView, run: ScheduledAgentRun) => void): () => void
   /** A run finished starting, however it went: the scheduler's report. */
   notifyRan(agent: ScheduledAgent, run: ScheduledAgentLastRun): void
+  /**
+   * Keep a scheduled agent another Studio kept, under its own id, as that
+   * Studio's file held it (`environment.adopt`): read as this store reads its
+   * own file. Refused when one with that id is already here, or when it does
+   * not read.
+   */
+  adopt(record: unknown): Promise<{ ok: true } | { ok: false; reason: 'exists' | 'invalid'; message: string }>
 }
 
 export type ScheduledAgentsServiceDeps = {
@@ -86,6 +95,8 @@ export type ScheduledAgentsServiceDeps = {
   now?: () => number
   /** Keeps the images a prompt names past the temp folder's clearing (`prompt-images.ts`). Absent, prompts are stored as written. */
   promptImages?: ScheduledPromptImages
+  /** Why this machine cannot run a schedule now (the scheduler's `waitingFor`); absent, every one can. */
+  waitingFor?: (agent: ScheduledAgent) => string | null
 }
 
 export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): ScheduledAgentsService {
@@ -93,17 +104,23 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
   const listeners = new Set<(agents: ScheduledAgentView[]) => void>()
   const runListeners = new Set<(agent: ScheduledAgentView, run: ScheduledAgentRun) => void>()
 
-  const view = (agent: ScheduledAgent): ScheduledAgentView => ({
-    ...agent,
-    nextRunAt: deps.scheduler.nextRunAt(agent.id),
-  })
+  const view = (agent: ScheduledAgent): ScheduledAgentView => {
+    const waiting = deps.waitingFor?.(agent) ?? null
+    return { ...agent, nextRunAt: deps.scheduler.nextRunAt(agent.id), ...(waiting ? { waiting } : {}) }
+  }
   const listViews = (): ScheduledAgentView[] => deps.store.list().map(view)
   // A prompt's temp images, copied where a later run can still read them.
   const withKeptImages = async (draft: ScheduledAgentDraft): Promise<ScheduledAgentDraft> =>
     deps.promptImages ? { ...draft, prompt: await deps.promptImages.keep(draft.prompt) } : draft
   const pruneImages = (): void => {
     if (!deps.promptImages) return
-    void deps.promptImages.prune(deps.store.list().map((agent) => agent.prompt)).catch(() => undefined)
+    // A run on its way still sends its prompt (after a restart, too), even
+    // once its schedule has closed or gone.
+    const prompts = [
+      ...deps.store.list().map((agent) => agent.prompt),
+      ...Object.values(deps.store.runs()).map((run) => run.prompt),
+    ]
+    void deps.promptImages.prune(prompts).catch(() => undefined)
   }
   const changed = (): void => {
     deps.scheduler.refresh()
@@ -128,6 +145,7 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
   })
 
   return {
+    loaded: () => deps.store.load(),
     list(options) {
       const owner = options?.ownerModuleId
       return listViews().filter((agent) => owner === undefined || agent.ownerModuleId === owner)
@@ -184,6 +202,8 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
       const fired = await deps.scheduler.runNow(id)
       if (fired.ok) return { ok: true, run: fired.run }
       if (fired.refused === 'unknown') return notFound(id)
+      if (fired.refused === 'waiting')
+        return { ok: false, message: `It is waiting: ${fired.waiting ?? 'this machine cannot run it yet'}.` }
       return {
         ok: false,
         message:
@@ -272,6 +292,15 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
       return () => listeners.delete(listener)
     },
     notifyChanged: changed,
+    async adopt(record) {
+      await deps.store.load()
+      const read = readStoredScheduledAgent(record, now())
+      if (!read.ok) return { ok: false, reason: 'invalid', message: read.message }
+      if (!(await deps.store.restore(read.agent)))
+        return { ok: false, reason: 'exists', message: 'A scheduled agent with that id is already here.' }
+      changed()
+      return { ok: true }
+    },
     onRun(listener) {
       runListeners.add(listener)
       return () => runListeners.delete(listener)

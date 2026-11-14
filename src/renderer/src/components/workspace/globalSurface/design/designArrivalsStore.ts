@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 import type { DesignSystemBundleArrivals } from '../../../../../../shared/design-system/arrivals'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
 
 // The arrival dates the Design ROW counts, held outside the Design door.
 //
@@ -12,7 +13,7 @@ import type { DesignSystemBundleArrivals } from '../../../../../../shared/design
 //
 // Two sources feed it, and they must agree:
 //
-//   - `window.api.listDesignSystemArrivals()`, the cheap library-wide read. Once
+//   - `agentSkillsApi.listDesignSystemArrivals()`, the cheap library-wide read. Once
 //     on first subscribe, hourly while anyone is watching, and on demand when
 //     the library itself changes.
 //   - `reportDesignArrivals`, called by the door with what it just read. The
@@ -131,14 +132,14 @@ async function load(): Promise<void> {
   // Absent in a detached window and in tests, where `window.api` is whatever the
   // test installed. An empty, READY store is the honest answer there — a count
   // of nothing, not a row stuck reporting that it is still loading.
-  if (typeof window === 'undefined' || typeof window.api?.listDesignSystemArrivals !== 'function') {
+  if (typeof window === 'undefined' || typeof agentSkillsApi.listDesignSystemArrivals !== 'function') {
     loadedOnce = true
     publish({ bundles: snapshot.bundles, loadState: 'ready' })
     return
   }
   loadInFlight = true
   try {
-    const result = await window.api.listDesignSystemArrivals()
+    const result = await agentSkillsApi.listDesignSystemArrivals()
     loadedOnce = true
     publish({ bundles: result.bundles, loadState: 'ready' })
   } catch {

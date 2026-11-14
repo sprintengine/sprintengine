@@ -10,6 +10,8 @@ import { GhostButton, OutlineButton } from '../ui/Buttons'
 import { RowButton } from '../ui/RowButton'
 import { WorkingMark } from '../ui/WorkingMark'
 import { hostPlatform } from '../../clientCapabilities'
+import { listTerminals, writeTerminal } from '../../studio/terminals'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 /** The listbox the palette's field controls while the Skills tab is showing. */
 export const INSTALLED_SKILLS_RESULTS_ID = 'installed-skills-results'
@@ -168,7 +170,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
     if (!pluginId) return
     let cancelled = false
     setLoaded(null)
-    void window.api
+    void agentSkillsApi
       .installedSkillsList(request())
       .then((next) => {
         if (!cancelled) setLoaded({ context: contextKey, result: next })
@@ -286,11 +288,11 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
     run(async () => {
       // Recheck both the installation and the target immediately before paste.
       // Never attach: that would copy a global skill into every project harness.
-      const inventory = await window.api.installedSkillsList(request())
+      const inventory = await agentSkillsApi.installedSkillsList(request())
       if (!inventory.ok) throw new Error(inventory.message)
       if (!inventory.skills.some((entry) => entry.id === skill.id))
         throw new Error('This installation changed. Refresh and choose it again.')
-      const live = (await window.api.terminalList()).filter(
+      const live = (await listTerminals()).filter(
         (candidate) =>
           candidate.kind === 'agent' &&
           candidate.processAlive &&
@@ -304,7 +306,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
       if (!mountedRef.current || currentContextRef.current !== contextKey) return
       // The path identifies the selected copy even when names collide across
       // scopes. Plain prompt input works for both native and prompt-shim CLIs.
-      await window.api.terminalWrite(
+      await writeTerminal(
         target.sessionId,
         bracketedPaste(`Use the skill at ${JSON.stringify(`${skill.path}/SKILL.md`)}. `),
       )
@@ -312,7 +314,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
     })
   const removeSkill = (skill: InstalledSkill) =>
     run(async () => {
-      const removed = await window.api.installedSkillRemove({ ...request(), installationId: skill.id })
+      const removed = await agentSkillsApi.installedSkillRemove({ ...request(), installationId: skill.id })
       if (!removed.ok) throw new Error(removed.message)
       if (!mountedRef.current || currentContextRef.current !== contextKey) return
       back()

@@ -11,9 +11,10 @@ import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 import { createConversationLifecycle, createConversationListChangeFilter } from './conversation-lifecycle'
 import { createConversationTools } from './conversation-tools'
 
-// A paired desktop's row menu on a chat here: Star, Highlight color, Snooze
-// and Auto-settle, written to this machine's record as its own menu writes
-// them (`chat-row-menu`).
+// The row menu on a chat here, as the agents' tools write it: Star,
+// Highlight color, Snooze and Auto-settle, written to this machine's record
+// as its own menu writes them. A paired device writes the same record through
+// the Studio (`chat-lifecycle`).
 
 const NOW = 1_000_000
 const TAILNET: McpConnectionContext = { metadata: { kind: 'remote-tailnet', deviceId: 'device-1' } }

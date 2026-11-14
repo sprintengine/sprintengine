@@ -21,6 +21,11 @@ export function hostMachineRef(hostId: ExecutionHostId | null | undefined): Mach
   return hostId && isWslHostId(hostId) ? { kind: 'wsl', hostId } : { kind: 'local' }
 }
 
+/** A machine ref that names another machine than this computer, or null for this one: nothing to mark. */
+export function otherMachineRef(ref: MachineRef | null): MachineRef | null {
+  return ref && ref.kind !== 'local' ? ref : null
+}
+
 /** The ref for an SSH machine, by the host its config resolves to (what every device agrees on). */
 export function sshMachineRef(machine: Pick<SshEnvironmentSummary, 'resolved' | 'destination'>): MachineRef {
   return machine.resolved
@@ -73,7 +78,7 @@ export function useWorkspaceMachineRef(
   workspace:
     | {
         hostId?: ExecutionHostId | null
-        environment?: { kind: 'ssh'; id: string; label: string } | null
+        environment?: { kind: 'ssh' | 'wsl'; id: string; label: string } | null
         remoteOrigin?: { machineName: string } | null
       }
     | null

@@ -1,14 +1,19 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useSyncExternalStore } from 'react'
 
-import { windowStudioClient } from '../../../studio/windowStudioClient'
-import { ipcChatServices, type ChatServices } from './chatServices'
-import { createStudioChatServices, createStudioConversationParts } from './studioChat'
-import { remotePullRequestHost, type PullRequestHost } from './pullRequestHost'
+import { negotiateChatCapabilities, type ChatCapabilities } from '../../../../../../packages/client-runtime/src/public'
+import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
+import { followWindowStudioPush } from '../../../studio/windowStudioPush'
+import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
+
+import type { ChatServices } from './chatServices'
+import type { StudioTransportParts } from './studioChat'
+import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
+import { studioPullRequestHost, type PullRequestHost } from './pullRequestHost'
+import { unwatchPullRequest as unwatchConversationPullRequest } from '../../workspace/useConversationPullRequests'
 import type {
   ConversationAttachmentInput,
   ConversationAttachmentResult,
   ConversationForkInput,
-  ConversationForkResult,
   ConversationInterruptInput,
   ConversationLoadEarlierInput,
   ConversationPageResult,
@@ -19,9 +24,11 @@ import type {
   ConversationHandoffInput,
   ConversationHandoffResult,
   ConversationImageAttachment,
+  ConversationKey,
   ConversationMcpServerActionInput,
   ConversationMcpServerActionResult,
   ConversationRewindResult,
+  ConversationSendRequest,
   ConversationSendTurnInput,
   ConversationSessionFrame,
   ConversationSessionSummary,
@@ -39,189 +46,33 @@ import type {
   ConversationSubscribeInput,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationTurnDiffInput,
   ConversationTurnDiffResult,
 } from '../../../../../shared/conversation-runtime'
-import { parseConversationRevertAnswer } from '../../../../../../packages/conversation-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
-import type { ConversationAttachedFile } from '../../../../../shared/conversation/attachedFiles'
-import type { ConversationMentionRef } from '../../../../../shared/conversation/mentions'
+import type { ConversationAddress } from '../../../../../../packages/studio-protocol/src/public'
+import type { UsageLimitProvider } from '../../../../../shared/usage-limits'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
-import type {
-  MeshConversationAccess,
-  MeshConversationCommandResult,
-  MeshConversationKey,
-  MeshConversationLink,
-  MeshQueuedMessage,
-  MeshScheduledMessage,
-  MeshConversationUsageLimits,
-  MeshSubagent,
-  MeshUsageLimitResumeAction,
-} from '../../../../../shared/tailnet-mesh'
+import type { MeshUsageLimitResumeAction } from '../../../../../shared/tailnet-mesh'
 
 // Where a chat view's conversation lives. The view — its transcript, pending
 // dock, composer — is the same whether the conversation runs on this machine
-// or on a paired one; only the calls behind it differ. The local transport is
-// the conversation IPC; a remote one is the Mesh's, which follows the
-// conversation over the tailnet from main.
+// or on another; only the calls behind it differ. Every transport is a client
+// of the Studio that holds the chat, over the Studio protocol: the window's
+// own, an SSH machine's or a paired desktop's (`pairedChat.ts`), over this
+// window's own client of it.
 //
-// What a transport cannot do is said by its capabilities, not inferred from a
-// provider id: a remote device chooses a permanent approval rule only where
-// the machine saves one for it, may not choose a bypass preset, reverts a checkpoint on the other machine's disk only where
-// that machine does it, and has none of this machine's skills, files or
-// history index to offer.
+// What a transport can do is said by its capabilities, which every transport
+// reads from what the chat's server said (`negotiateChatCapabilities`): a
+// window's own Studio's welcome, a paired machine's, an embed's.
+// None is a constant, and none is inferred from where the chat runs.
 //
-// A conversation on this machine is reached one of two ways, chosen once per
-// window (`window.api.studioChatTransport`): the conversation IPC, or the
-// Studio protocol over the window's Studio client. Both answer every call
-// with the same shapes, and the chat view cannot tell them apart. The IPC is
-// the default while the protocol path has its release beside it.
+// A conversation on this machine is reached over the Studio protocol, through
+// the window's Studio client, as every other client reaches it.
 
-export type ConversationTransportCapabilities = {
-  /** Send, stop, answer approvals and questions, change the preset. */
-  operate: boolean
-  /**
-   * An answered side question is kept in the chat's transcript, where a
-   * marker opens it again. Here, always; on a paired machine, where it
-   * advertises keeping them (`conversation-side-question-records`).
-   */
-  keepsSideQuestions: boolean
-  /** Start a provider session here before the first send. A remote send resumes one over there. */
-  startSession: boolean
-  /**
-   * Offer "always allow" rules, which outlive the conversation. A paired
-   * machine's chat does where that machine saves one for its own workspace
-   * (`conversation-permanent-approvals`).
-   */
-  permanentApprovals: boolean
-  /**
-   * Make a quote as a token: a chip in the composer, marked in the reply, and
-   * expanded for the agent where the chat runs. A paired machine's chat does
-   * where that machine expands one (`conversation-quote-tokens`); any other
-   * quotes as a blockquote, whose words it can read.
-   */
-  quotes: boolean
-  /**
-   * Revert a turn's files from its checkpoint. A paired machine's chat does,
-   * in that machine's checkout, where it advertises doing so
-   * (`conversation-checkpoint-revert`).
-   */
-  checkpointRevert: boolean
-  /**
-   * Pick another model of the chat's CLI: before the first turn, and — where
-   * the provider declares `liveModelSwitch` — mid-conversation too.
-   */
-  modelSwitch: boolean
-  /** Attach skills and mention files from this machine. */
-  composerContext: boolean
-  /**
-   * Mention files and folders of the chat's folder (@). Here, this machine's,
-   * searched on this disk; on a paired machine, that machine's, searched there
-   * through `searchMentions`, where it advertises the search and takes the
-   * mentions (`conversation-file-search`, `conversation-send-mentions`).
-   */
-  mentions: boolean
-  /**
-   * Attach files of any type by their path on this computer. Here the agent
-   * reads each where it is; for a paired machine each goes up to it with the
-   * message, where it advertises taking files (`conversation-message-files`).
-   */
-  attachFiles: boolean
-  /**
-   * The `/` menu lists what the chat's CLI runs in the chat's folder. Here,
-   * asked of this machine; on a paired machine, of that machine through
-   * `listCommands`, where it advertises the list (`conversation-commands`).
-   */
-  commandList: boolean
-  /**
-   * Carry the images a message attaches to wherever the chat runs. Offered
-   * only where the session says its provider reads them (`capabilities.images`).
-   * A paired machine's chat carries them too: main puts each in that
-   * machine's upload store, as the phone does, and the send names them.
-   */
-  imageAttachments: boolean
-  /** The local history index: the editable title, cost, search. */
-  localHistory: boolean
-  /** Paths in the transcript name files on this machine's disk. */
-  localFiles: boolean
-  /** The runtime echoes an optimistic turn's id back on its `user_message`. */
-  optimisticTurns: boolean
-  /**
-   * The session's permission preset is known before a session reports it. A
-   * remote one is known only once the machine's list names it — a desktop
-   * built before the list carried it never does — and a picker showing a guess
-   * would be worse than none.
-   */
-  reportsPreset: boolean
-  /**
-   * The chat takes all four permission presets. A paired machine built before
-   * Manual and Auto came back reads either as No flag, so there only Bypass
-   * and No flag are offered.
-   */
-  permissionModes: boolean
-  /**
-   * Hand a message to a turn that is running (a steer), where the provider
-   * takes one. Without it, sending a queued message now stops the turn first.
-   */
-  steer: boolean
-  /**
-   * A message queued while the turn runs is handed at once to the machine the
-   * chat runs on (`queue`), which holds it and sends it when the turn ends,
-   * and which says what it holds. Without it the queue is this view's own,
-   * sent from here when the turn ends — so only while this machine is awake.
-   */
-  hostQueue: boolean
-  /**
-   * The machine that holds the queue holds a message whole: its images,
-   * files, skills and mentions go to it with its words (`queue`), and it
-   * sends them with the message when the turn ends
-   * (`conversation-queued-attachments`). Without it only a message of words
-   * alone is handed over, and one carrying more waits in this view.
-   */
-  hostQueueAttachments: boolean
-  /**
-   * Attach skills to a message. Here, the workspace's own; on a paired
-   * machine, that machine's, listed through `remoteExtensions`, where it
-   * advertises taking them (`conversation-send-skills`).
-   */
-  skills: boolean
-  /**
-   * The machine the chat runs on opens a pull request for it: Create PR asks
-   * it through `pullRequestHost`, where it advertises that
-   * (`chat-create-pull-request`). False here, where the chat's checkout is
-   * this computer's and Create PR asks this computer's shell.
-   */
-  hostPullRequests: boolean
-  /**
-   * The machine the chat runs on keeps and sends the messages scheduled into
-   * it for a time, and says which it keeps: the "+"'s Schedule and the tray's
-   * rows ask it through `scheduleSend`, `sendScheduledNow` and
-   * `cancelScheduled`, where it advertises that (`conversation-scheduled-sends`).
-   * False here, where this computer's main keeps a local chat's.
-   */
-  hostSchedule: boolean
-  /**
-   * The machine the chat runs on says what it knows of its agents' usage
-   * limits, and sends the resume after one: the strip draws its plans'
-   * windows and the tray its notice, whose buttons ask it through
-   * `usageLimitResume`, where it advertises that (`conversation-usage-limits`).
-   * False here, where this computer's main reads a local chat's.
-   */
-  hostUsageLimits: boolean
-  /**
-   * The machine the chat runs on reads its changes for this window, as its own
-   * Diff tab reads them: Changes opens them here in the Diff tab, where it
-   * advertises that (`conversation-changes`). False here, where the Diff tab
-   * reads a local chat's checkout itself.
-   */
-  hostChanges: boolean
-  /**
-   * The person's words can be passed to one agent of a chat here. Always for a
-   * chat on this machine; a paired machine's says so where it advertises
-   * `conversation-agent-message`.
-   */
-  agentMessages: boolean
-}
+export type ConversationTransportCapabilities = ChatCapabilities
 
 /** What an action answers: the local session API's result, or a remote command's. */
 type ConversationTransportResult =
@@ -229,23 +80,47 @@ type ConversationTransportResult =
   // `code` as the runtime names a refusal (`session_not_found`: the session is gone there).
   | { ok: false; message: string; code?: string }
 
-export type ConversationTransport = {
-  kind: 'local' | 'remote'
-  /** The paired machine the conversation runs on, for a remote transport. */
-  machineName?: string
-  /** Where a remote chat's skills and MCP servers are listed: the machine and the project there. */
-  remoteExtensions?: { connectionId: string; workspaceId: string }
+/**
+ * The environment a chat runs in, as its server names it: what a chat view
+ * says of where it runs, in place of a kind. Every transport answers one.
+ */
+export type ChatEnvironment = {
   /**
-   * What a remote chat's `/` list is kept under in this window, in place of a
-   * folder (`remoteCommandsFolder`): no folder of this disk names it.
+   * The Studio's id (`welcome.environment.id`). Null before its welcome. What
+   * the window and its shell reach of the chat's disk is asked of this
+   * (`useShellReach`).
    */
-  commandsFolder?: string
-  /** Where a remote chat's Create PR does its work, used where `capabilities.hostPullRequests` is. */
-  pullRequestHost?: PullRequestHost
+  // The one identity type an environment has (env-identity), never a second.
+  readonly id: EnvironmentId | null
+  /**
+   * What the person calls the machine, where it is not the window's own
+   * Studio (a paired machine's name); null for the window's own, which the
+   * view calls Studio.
+   */
+  readonly label: string | null
+  /**
+   * The route this window reaches the environment by (`tailnet:<pairing>`,
+   * `ssh:<machine>`, …: `formatEnvironmentRoute`); null for the window's own
+   * Studio. What is asked of that environment beside the chat's own calls (a
+   * paired desktop's skills and MCP servers, the pane a fork it made opens
+   * as) is asked by it.
+   */
+  readonly route: string | null
+}
+
+export type ConversationTransport = {
+  /**
+   * Where the chat's Create PR does its work: the server it runs on, in its
+   * own checkout there. Used where `capabilities.hostPullRequests` is.
+   */
+  pullRequestHost?(key: ConversationKey): PullRequestHost
   capabilities: ConversationTransportCapabilities
+  readonly environment: ChatEnvironment
   subscribe(input: ConversationSubscribeInput, cb: (frame: ConversationSessionFrame) => void): () => void
   loadEarlier(input: ConversationLoadEarlierInput): Promise<ConversationPageResult>
   toolDetail(input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
+  /** The whole of an event that crossed cut to fit (`wireClipped`), by the `seq` and `id` it came under. */
+  readEvent(input: ConversationEventReadInput): Promise<ConversationEventReadResult>
   turnDiff(input: ConversationTurnDiffInput): Promise<ConversationTurnDiffResult>
   send(input: ConversationSendTurnInput): Promise<ConversationTransportResult>
   interrupt(input: ConversationInterruptInput): Promise<ConversationTransportResult>
@@ -262,37 +137,44 @@ export type ConversationTransport = {
    * (`conversation-reasoning-effort`).
    */
   setReasoningEffort?(input: { sessionId: string; effort?: string }): Promise<ConversationTransportResult>
+  // The chat's server holds its queue, keeps its scheduled messages and sends
+  // the resume after a usage limit. Each call names the chat (`key`), as the
+  // view keys every call; a paired machine's transport names it by its own key.
   /**
-   * Hand a message to the machine the chat runs on, to hold until the turn
+   * Hand a message to the server the chat runs on, to hold until the turn
    * ends and send then; answered once it holds it. Used where
    * `capabilities.hostQueue` is, with what it carries beside its words only
    * where `capabilities.hostQueueAttachments` is.
    */
-  queue?(input: {
+  queue?(
+    input: { key: ConversationKey } & Pick<
+      ConversationSendRequest<ConversationImageAttachment>,
+      'message' | 'attachments' | 'skills' | 'mentions' | 'files'
+    >,
+  ): Promise<ConversationTransportResult>
+  /** Take back a message that server holds, by its id there. */
+  cancelQueued?(input: { key: ConversationKey; queuedId: string }): Promise<ConversationTransportResult>
+  /**
+   * Stop the server the chat runs on watching one of its pull requests
+   * (`pullRequests.unwatch` on its Studio). A server whose Studio does not
+   * take it is refused in words.
+   */
+  unwatchPullRequest?(input: { key: ConversationKey; url: string }): Promise<ConversationTransportResult>
+  /**
+   * Have the server the chat runs on keep a message and send it at `sendAt`
+   * (epoch ms), or when `untilLimitReset`'s usage limit resets; answered once
+   * it keeps it. Used where `capabilities.hostSchedule` is.
+   */
+  scheduleSend?(input: {
+    key: ConversationKey
     message: string
-    attachments?: ConversationImageAttachment[]
-    skills?: string[]
-    mentions?: ConversationMentionRef[]
-    files?: ConversationAttachedFile[]
+    sendAt: number
+    untilLimitReset?: UsageLimitProvider
   }): Promise<ConversationTransportResult>
-  /** Take back a message that machine holds, by its id there. */
-  cancelQueued?(input: { queuedId: string }): Promise<ConversationTransportResult>
-  /**
-   * Stop the machine the chat runs on watching one of its pull requests
-   * (`chat-unwatch-pull-request`). Absent here, where the window's own Studio
-   * keeps the watch. A pull request is listed as watched only by a machine
-   * that takes this, and an older one is refused in words.
-   */
-  unwatchPullRequest?(input: { url: string }): Promise<ConversationTransportResult>
-  /**
-   * Have the machine the chat runs on keep a message and send it at `sendAt`
-   * (epoch ms); answered once it keeps it. Used where `capabilities.hostSchedule` is.
-   */
-  scheduleSend?(input: { message: string; sendAt: number }): Promise<ConversationTransportResult>
-  /** Send a message that machine keeps now (a refused one again), by its id there. */
-  sendScheduledNow?(input: { scheduledId: string }): Promise<ConversationTransportResult>
-  /** Delete a message that machine keeps, by its id there: Delete, and Edit's taking it back. */
-  cancelScheduled?(input: { scheduledId: string }): Promise<ConversationTransportResult>
+  /** Send a message that server keeps now (a refused one again), by its id there. */
+  sendScheduledNow?(input: { key: ConversationKey; scheduledId: string }): Promise<ConversationTransportResult>
+  /** Delete a message that server keeps, by its id there: Delete, and Edit's taking it back. */
+  cancelScheduled?(input: { key: ConversationKey; scheduledId: string }): Promise<ConversationTransportResult>
   /**
    * Act on the notice a usage limit left on the chat's turn, on the machine
    * that sends its resume: schedule it (`always`: for every chat a limit
@@ -300,6 +182,7 @@ export type ConversationTransport = {
    * `capabilities.hostUsageLimits` is.
    */
   usageLimitResume?(input: {
+    key: ConversationKey
     action: MeshUsageLimitResumeAction
     always?: boolean
   }): Promise<ConversationTransportResult>
@@ -345,13 +228,14 @@ export type ConversationTransport = {
    * Start a new chat beside this one holding it up to an earlier message
    * ("Fork from here"). Absent where the transport cannot. A paired machine's
    * chat has it: the fork is made over there, beside the chat, and opens
-   * here as a pane of its own onto that machine (`forkRemoteChat`); its
+   * here as a pane of its own onto that machine (`openPairedFork`); its
    * session declares `fork` only where that machine takes the command
    * (`conversation-fork`). The key a remote fork is handed is not the one it
    * forks: it names the chat by its ids over there. Offered only where the
-   * session declares `fork` as well.
+   * session declares `fork` as well. The chat's Studio names the fork beside
+   * the workspace's other chats and answers where it is (`conversation.fork`).
    */
-  fork?(input: ConversationForkInput): Promise<ConversationForkResult>
+  fork?(input: ChatForkInput): Promise<ChatForkResult>
   /**
    * A step's picture as a data URL, asked of the machine the conversation runs
    * on by the step's id. Absent for a local chat, which reads it off this disk.
@@ -381,14 +265,13 @@ export type ConversationTransport = {
    */
   messageSubagent?(input: ConversationMessageSubagentInput): Promise<ConversationTransportResult>
   /**
-   * Restart the chat's agent on the machine it runs on, as Restart agent
-   * session does for a chat here (which suspends its session through the
-   * conversation IPC itself): answered with a `notice` where it had none
-   * running, and nothing was done. A paired machine's chat has it, refused in
-   * words for a machine that does not take the command
-   * (`conversation-restart-session`).
+   * End the chat's agent session on the server it runs on, keeping the
+   * conversation, so the next message starts it again
+   * (`conversation.restartSession`): answered with a `notice` where it had
+   * none running, and nothing was done. Used where
+   * `capabilities.restartSession` is.
    */
-  restartSession?(): Promise<ConversationTransportResult>
+  restartSession?(input: { key: ConversationKey }): Promise<ConversationTransportResult>
   /**
    * Reconnect, switch or sign in to one of a live chat's MCP servers, where
    * the session lists the action (`capabilities.mcpServerActions`). A paired
@@ -429,107 +312,21 @@ export type ConversationTransport = {
 export type ConversationToolImageResult =
   { ok: true; src: string } | { ok: false; unsupported: boolean; message: string }
 
-const LOCAL_CAPABILITIES: ConversationTransportCapabilities = {
-  operate: true,
-  keepsSideQuestions: true,
-  startSession: true,
-  permanentApprovals: true,
-  quotes: true,
-  checkpointRevert: true,
-  modelSwitch: true,
-  composerContext: true,
-  mentions: true,
-  attachFiles: true,
-  commandList: true,
-  imageAttachments: true,
-  localHistory: true,
-  localFiles: true,
-  optimisticTurns: true,
-  reportsPreset: true,
-  permissionModes: true,
-  steer: true,
-  // The chat runs here: its queue is on the machine that sends it already.
-  hostQueue: false,
-  hostQueueAttachments: false,
-  skills: true,
-  hostPullRequests: false,
-  // Main keeps and sends a local chat's scheduled messages itself.
-  hostSchedule: false,
-  // And reads a local chat's usage limits, and sends its resume, itself.
-  hostUsageLimits: false,
-  // Its Diff tab reads a local chat's checkout itself.
-  hostChanges: false,
-  agentMessages: true,
-}
+/** This window's Studio implementation's parts, read at call time so a replaced client is the one used. */
+const localParts = () => studioImplementation().parts
 
-type LocalParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'services'>
-
-/** The conversation IPC, read off `window.api` at call time so a test's stub is the one used. */
-const ipcConversationParts: Required<
-  Pick<LocalParts, 'setModel' | 'attachment' | 'rewind' | 'handoff' | 'fork' | 'startSession' | 'revert'>
-> &
-  LocalParts = {
-  subscribe: (input, cb) => window.api.onConversationSession(input, cb),
-  loadEarlier: (input) => window.api.conversationLoadEarlier(input),
-  toolDetail: (input) => window.api.conversationToolDetail(input),
-  turnDiff: (input) => window.api.conversationTurnDiff(input),
-  send: (input) => window.api.conversationSessionSendTurn(input),
-  interrupt: (input) => window.api.conversationSessionInterrupt(input),
-  respond: (input) => window.api.conversationSessionRespondToRequest(input),
-  setPermissionPreset: async (input) =>
-    typeof window.api.conversationSessionSetPermission === 'function'
-      ? window.api.conversationSessionSetPermission(input)
-      : { ok: false, message: 'Changing tool permissions mid-conversation needs an app restart.' },
-  setModel: (input) => window.api.conversationSessionSetModel(input),
-  attachment: (input) => window.api.conversationAttachment(input),
-  rewind: (input) => window.api.conversationRewindToTurn(input),
-  handoff: (input) => window.api.conversationHandoff(input),
-  fork: (input) => window.api.conversationForkAtTurn(input),
-  startSession: (input) => window.api.conversationSessionStart(input),
-  revert: (input) => window.api.conversationRevertToTurn(input),
-  stopSubagent: (input) => window.api.conversationSessionStopSubagent(input),
-  messageSubagent: (input) => window.api.conversationSessionMessageSubagent(input),
-  askSideQuestion: (input) => window.api.conversationSessionAskSideQuestion(input),
-  cancelSideQuestion: (input) => window.api.conversationSessionCancelSideQuestion(input),
-  readContextBreakdown: (input) => window.api.conversationSessionContextBreakdown(input),
-}
-
-// One Studio implementation per window object, so its client and the
-// subscriptions keyed by transport are this window's.
-const studioImplementations = new WeakMap<object, { parts: LocalParts; services: ChatServices }>()
-
-function studioImplementation(): { parts: LocalParts; services: ChatServices } {
-  const api = window.api as object
-  let known = studioImplementations.get(api)
-  if (!known) {
-    const client = () => windowStudioClient(window.api)
-    known = { parts: createStudioConversationParts(client), services: createStudioChatServices(client) }
-    studioImplementations.set(api, known)
-  }
-  return known
-}
-
-/** Whether this window's chat view is on the Studio protocol. */
-export function chatOverStudioProtocol(): boolean {
-  return typeof window !== 'undefined' && window.api?.studioChatTransport === 'studio'
-}
-
-const localParts = (): typeof ipcConversationParts =>
-  chatOverStudioProtocol() ? (studioImplementation().parts as typeof ipcConversationParts) : ipcConversationParts
-
-/** The window's services, by the same choice as its conversations. */
-export function windowChatServices(): ChatServices {
-  return chatOverStudioProtocol() ? studioImplementation().services : ipcChatServices
-}
-
-// Each call is answered by the implementation the window chose, read when it
+// Each call is answered by this window's Studio implementation, read when it
 // is made; the object itself never changes, so what is keyed by it (a shared
 // subscription, a picture cache) stays put.
 const windowServices: ChatServices = {
+  followPush: followWindowStudioPush,
   providers: {
     list: (input) => windowChatServices().providers.list(input),
     models: (input) => windowChatServices().providers.models(input),
     secretStatus: (input) => windowChatServices().providers.secretStatus(input),
+    signIn: (input) => windowChatServices().providers.signIn(input),
+    setSecret: (input) => windowChatServices().providers.setSecret(input),
+    clearSecret: (input) => windowChatServices().providers.clearSecret(input),
   },
   files: {
     get canStat() {
@@ -550,388 +347,152 @@ const windowServices: ChatServices = {
       return windowChatServices().commands.onChanged
     },
   },
+  sessions: {
+    list: (input) => windowChatServices().sessions.list(input),
+    stop: (input) => windowChatServices().sessions.stop(input),
+    suspend: (input) => windowChatServices().sessions.suspend(input),
+    terminalHandoff: (input) => windowChatServices().sessions.terminalHandoff(input),
+    onLifecycleEvent: (listener, onReconnected) =>
+      windowChatServices().sessions.onLifecycleEvent(listener, onReconnected),
+  },
+  history: {
+    threads: (input) => windowChatServices().history.threads(input),
+    search: (input) => windowChatServices().history.search(input),
+    cancelSearch: (requestId) => windowChatServices().history.cancelSearch(requestId),
+  },
+  approvalRules: {
+    list: () => windowChatServices().approvalRules.list(),
+    revoke: (ruleId) => windowChatServices().approvalRules.revoke(ruleId),
+  },
 }
 
-export const localConversationTransport: ConversationTransport = {
-  kind: 'local',
-  capabilities: LOCAL_CAPABILITIES,
-  subscribe: (input, cb) => localParts().subscribe(input, cb),
-  loadEarlier: (input) => localParts().loadEarlier(input),
-  toolDetail: (input) => localParts().toolDetail(input),
-  turnDiff: (input) => localParts().turnDiff(input),
-  send: (input) => localParts().send(input),
-  interrupt: (input) => localParts().interrupt(input),
-  respond: (input) => localParts().respond(input),
-  setPermissionPreset: (input) => localParts().setPermissionPreset(input),
-  setModel: (input) => localParts().setModel(input),
-  attachment: (input) => localParts().attachment(input),
-  rewind: (input) => localParts().rewind(input),
-  handoff: (input) => localParts().handoff(input),
-  fork: (input) => localParts().fork(input),
-  startSession: (input) => localParts().startSession(input),
-  revert: (input) => localParts().revert(input),
-  // The IPC's, in a window on either implementation, as the composer's server
-  // rows have always asked it.
-  mcpServerAction: (input) => window.api.conversationSessionMcpAction(input),
-  // Read off the implementation the window chose, so it is absent where that
-  // one has no way to do it.
-  get stopSubagent() {
-    return localParts().stopSubagent
-  },
-  get messageSubagent() {
-    return localParts().messageSubagent
-  },
-  get askSideQuestion() {
-    return localParts().askSideQuestion
-  },
-  get cancelSideQuestion() {
-    return localParts().cancelSideQuestion
-  },
-  get readContextBreakdown() {
-    return localParts().readContextBreakdown
-  },
-  services: windowServices,
+/** What a transport over one Studio is built from: its chat parts and services, read at each call. */
+export type StudioTransportImplementation = {
+  parts: () => StudioTransportParts
+  services: ChatServices
+  /** Stop the Studio watching one of the chat's pull requests. */
+  unwatchPullRequest(input: { key: ConversationKey; url: string }): Promise<ConversationTransportResult>
+  /** Where Create PR does its work, for a Studio whose checkout this window's shell reaches. */
+  pullRequestHost?(key: ConversationKey): PullRequestHost
+  /** What the person calls the machine (`ChatEnvironment.label`); absent for the window's own Studio. */
+  label?: string
+  /** The route this window reaches it by (`ChatEnvironment.route`); absent for the window's own Studio. */
+  route?: string
 }
+
+/**
+ * A chat on one Studio over the protocol, whose capabilities are read off the
+ * welcome `welcome` answers when asked (that Studio's latest): read again only
+ * when that changes. The window's own Studio by default; an environment's
+ * (`environmentChat.ts`) is the same transport over that environment's client.
+ */
+export function studioConversationTransport(
+  welcome: () => Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant' | 'environment'> | null,
+  implementation: StudioTransportImplementation = windowImplementation,
+): ConversationTransport {
+  let said: { welcome: object | null; capabilities: ConversationTransportCapabilities } | null = null
+  // Held while the id is, as views key memos on it.
+  let where: ChatEnvironment | null = null
+  return {
+    ...studioCalls(implementation),
+    get capabilities() {
+      const now = welcome()
+      if (said?.welcome !== now)
+        said = { welcome: now, capabilities: negotiateChatCapabilities(now ? { via: 'studio', welcome: now } : null) }
+      return said.capabilities
+    },
+    get environment() {
+      const id = welcome()?.environment.id ?? null
+      if (where?.id !== id) where = { id, label: implementation.label ?? null, route: implementation.route ?? null }
+      return where
+    },
+  }
+}
+
+function studioCalls(
+  implementation: StudioTransportImplementation,
+): Omit<ConversationTransport, 'capabilities' | 'environment'> {
+  const parts = implementation.parts
+  return {
+    subscribe: (input, cb) => parts().subscribe(input, cb),
+    loadEarlier: (input) => parts().loadEarlier(input),
+    toolDetail: (input) => parts().toolDetail(input),
+    readEvent: (input) => parts().readEvent(input),
+    turnDiff: (input) => parts().turnDiff(input),
+    send: (input) => parts().send(input),
+    interrupt: (input) => parts().interrupt(input),
+    respond: (input) => parts().respond(input),
+    setPermissionPreset: (input) => parts().setPermissionPreset(input),
+    setModel: (input) => parts().setModel(input),
+    attachment: (input) => parts().attachment(input),
+    rewind: (input) => parts().rewind(input),
+    handoff: (input) => parts().handoff(input),
+    fork: (input) => parts().fork(input),
+    startSession: (input) => parts().startSession(input),
+    revert: (input) => parts().revert(input),
+    mcpServerAction: (input) => parts().mcpServerAction(input),
+    stopSubagent: (input) => parts().stopSubagent(input),
+    messageSubagent: (input) => parts().messageSubagent(input),
+    askSideQuestion: (input) => parts().askSideQuestion(input),
+    cancelSideQuestion: (input) => parts().cancelSideQuestion(input),
+    readContextBreakdown: (input) => parts().readContextBreakdown(input),
+    queue: (input) => parts().queue(input),
+    restartSession: (input) => parts().restartSession(input),
+    unwatchPullRequest: (input) => implementation.unwatchPullRequest(input),
+    ...(implementation.pullRequestHost
+      ? { pullRequestHost: (key: ConversationKey) => implementation.pullRequestHost!(key) }
+      : {}),
+    cancelQueued: (input) => parts().cancelQueued(input),
+    scheduleSend: (input) => parts().scheduleSend(input),
+    sendScheduledNow: (input) => parts().sendScheduledNow(input),
+    cancelScheduled: (input) => parts().cancelScheduled(input),
+    usageLimitResume: (input) => parts().usageLimitResume(input),
+    services: implementation.services,
+  }
+}
+
+const windowImplementation: StudioTransportImplementation = {
+  parts: localParts,
+  services: windowServices,
+  unwatchPullRequest: async ({ key, url }) => {
+    const stopped = await unwatchConversationPullRequest({ workspaceId: key.workspaceId, agentId: key.agentId }, url)
+    return stopped.ok ? { ok: true } : { ok: false, message: stopped.message }
+  },
+  pullRequestHost: (key) => studioPullRequestHost({ workspaceId: key.workspaceId, agentId: key.agentId }),
+}
+
+export const localConversationTransport: ConversationTransport = studioConversationTransport(() => readWelcome())
+
+/** Where to fork a chat, and the new chat's id; the Studio that holds it names it. */
+export type ChatForkInput = ConversationForkInput extends infer Fork
+  ? Fork extends unknown
+    ? Omit<Fork, 'title'>
+    : never
+  : never
+
+/** A fork made: where it is and what it was called, as a Studio answers `conversation.fork`. */
+export type ChatForkResult = { ok: true; address: ConversationAddress; name: string } | { ok: false; message: string }
 
 const ConversationTransportContext = createContext<ConversationTransport>(localConversationTransport)
 
 export const ConversationTransportProvider = ConversationTransportContext.Provider
 
+const windowApi = (): object | null =>
+  typeof window === 'undefined' ? null : ((window.api as object | undefined) ?? null)
+const watchWelcome = (listener: () => void) => {
+  const api = windowApi()
+  return api ? watchWindowStudioWelcome(api, listener) : () => undefined
+}
+const readWelcome = () => {
+  const api = windowApi()
+  return api ? windowStudioWelcome(api) : null
+}
+
+/**
+ * The chat's transport, and a render whenever the window's Studio welcomes it
+ * again: what a chat here may do is read off that welcome.
+ */
 export function useConversationTransport(): ConversationTransport {
+  useSyncExternalStore(watchWelcome, readWelcome, readWelcome)
   return useContext(ConversationTransportContext)
-}
-
-/**
- * What a paired machine's chat's command list is kept under in this window:
- * the chat itself, as no folder of this disk names it, so two of that
- * machine's chats in different folders never share a list.
- */
-export function remoteCommandsFolder(key: MeshConversationKey): string {
-  return `mesh:${key.connectionId}/${key.workspaceId}/${key.agentId}`
-}
-
-const commandResult = (result: MeshConversationCommandResult): ConversationTransportResult =>
-  result.ok ? { ok: true, ...(result.notice ? { notice: result.notice } : {}) } : { ok: false, message: result.message }
-
-/**
- * A conversation on a paired machine, over the Mesh. The key it was made for
- * is the one every call names: the local key a view passes carries this
- * machine's idea of a workspace root, which means nothing over there.
- * `onLink` receives the connection state main narrates beside the frames, and
- * `onQueued` what the machine holds for the conversation's turn to end, and
- * `onScheduled` what it keeps for a time, `onUsageLimits` what it knows of
- * its usage limits for it, and `onSubagents` which sub-agents the chat has.
- */
-export function createRemoteConversationTransport(input: {
-  key: MeshConversationKey
-  machineName: string
-  access: MeshConversationAccess | null
-  onLink?: (link: MeshConversationLink) => void
-  onQueued?: (messages: MeshQueuedMessage[]) => void
-  onScheduled?: (messages: MeshScheduledMessage[]) => void
-  onUsageLimits?: (said: MeshConversationUsageLimits) => void
-  onSubagents?: (subagents: MeshSubagent[]) => void
-  /** The machine recorded a pull request Create PR opened there as the chat's. */
-  onPullRequestRecorded?: () => void
-}): ConversationTransport {
-  const { key } = input
-  return {
-    kind: 'remote',
-    machineName: input.machineName,
-    capabilities: {
-      operate: input.access === 'operate',
-      // Turned on from the machine's list, when it keeps an answered side
-      // question in the chat (`conversation-side-question-records`).
-      keepsSideQuestions: false,
-      startSession: false,
-      // Turned on from the machine's list, when it saves an "always allow"
-      // rule a device chose (`conversation-permanent-approvals`).
-      permanentApprovals: false,
-      // Turned on from the machine's list, when it expands a quote's token for
-      // its agent (`conversation-quote-tokens`).
-      quotes: false,
-      // Turned on from the machine's list, when it reverts a turn's files
-      // itself (`conversation-checkpoint-revert`): the checkpoint is on its disk.
-      checkpointRevert: false,
-      modelSwitch: false,
-      composerContext: false,
-      // Turned on from the machine's list, when it searches a chat's folder
-      // and takes what is mentioned of it; when it takes files; and when it
-      // lists the slash commands a chat's CLI runs there.
-      mentions: false,
-      attachFiles: false,
-      commandList: false,
-      // Whether this chat takes them is the machine's list's to say, through
-      // the session the pane builds from it.
-      imageAttachments: true,
-      localHistory: false,
-      localFiles: false,
-      optimisticTurns: false,
-      reportsPreset: false,
-      // Turned on from the machine's list, when it advertises the four modes.
-      permissionModes: false,
-      // Turned on from the machine's list, when it takes a message into a
-      // running turn (`conversation-steer-sends`). Without it a remote Send
-      // now stops the turn and sends after.
-      steer: false,
-      // Turned on from the machine's list, when it advertises queued sends,
-      // and when it holds what a queued message carries too.
-      hostQueue: false,
-      hostQueueAttachments: false,
-      // Turned on from the machine's list, when it takes skills with a message.
-      skills: false,
-      // Turned on from the machine's list, when it opens pull requests for its chats.
-      hostPullRequests: false,
-      // Turned on from the machine's list, when it keeps messages scheduled for a time.
-      hostSchedule: false,
-      // Turned on from the machine's list, when it says what it knows of its usage limits.
-      hostUsageLimits: false,
-      // Turned on from the machine's list, when it reads a chat's changes for this window.
-      hostChanges: false,
-      agentMessages: false,
-    },
-    remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId },
-    commandsFolder: remoteCommandsFolder(key),
-    pullRequestHost: remotePullRequestHost(key, () => input.onPullRequestRecorded?.()),
-    subscribe: (subscription, cb) =>
-      window.api.onMeshConversationSession({ key, turnLimit: subscription.turnLimit }, (frame) => {
-        if (frame.type === 'link') input.onLink?.(frame)
-        else if (frame.type === 'queued') input.onQueued?.(frame.messages)
-        else if (frame.type === 'scheduled') input.onScheduled?.(frame.messages)
-        else if (frame.type === 'usageLimits') input.onUsageLimits?.(frame)
-        else if (frame.type === 'subagents') input.onSubagents?.(frame.subagents)
-        // A chat's changes are read by the Diff tab, which follows for itself.
-        else if (frame.type === 'changes') return
-        else cb(frame)
-      }),
-    loadEarlier: (page) =>
-      window.api.meshConversationLoadEarlier({ key, beforeCursor: page.beforeCursor, turnLimit: page.turnLimit }),
-    toolDetail: (detail) => window.api.meshConversationToolDetail({ key, toolUseId: detail.toolUseId }),
-    turnDiff: (diff) => window.api.meshConversationTurnDiff({ key, turnSeq: diff.turnSeq, path: diff.path }),
-    // The images go as a chat here sends them; main uploads each to the
-    // machine before the send that names them.
-    send: async (turn) =>
-      commandResult(
-        await window.api.meshConversationSend({
-          key,
-          message: turn.message,
-          ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
-          // The machine resolves them against its own folder, as its own
-          // composer's chips are.
-          ...(turn.skills?.length ? { skills: turn.skills.map((skill) => skill.id) } : {}),
-          // Named by their paths in the chat's folder there, as its search
-          // named them; offered only where the machine takes them.
-          ...(turn.mentions?.length ? { mentions: turn.mentions } : {}),
-          // Files from this computer: main puts each in that machine's store
-          // first, and the send names them, as it names the images.
-          ...(turn.files?.length ? { files: turn.files } : {}),
-          ...(turn.steer ? { steer: true } : {}),
-          // The mode the chat's turn runs in, as a chat here sends it. Main
-          // refuses one other than the default for a machine that would run
-          // it in the default mode instead.
-          ...(turn.mode && turn.mode !== 'default' ? { mode: turn.mode } : {}),
-        }),
-      ),
-    // What it carries goes up first, as a send's does, and the machine keeps
-    // it with the message; main refuses it in words for one that would not.
-    queue: async (turn) =>
-      commandResult(
-        await window.api.meshConversationSend({
-          key,
-          message: turn.message,
-          queue: true,
-          ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
-          ...(turn.skills?.length ? { skills: turn.skills } : {}),
-          ...(turn.mentions?.length ? { mentions: turn.mentions } : {}),
-          ...(turn.files?.length ? { files: turn.files } : {}),
-        }),
-      ),
-    cancelQueued: async (held) =>
-      commandResult(await window.api.meshConversationCancelQueued({ key, queuedId: held.queuedId })),
-    searchMentions: async ({ query }) => {
-      const result = await window.api.meshConversationSearchFiles({ key, query })
-      return result.ok ? { ok: true, entries: result.entries } : { ok: false, message: result.message }
-    },
-    // Kept as this window keeps a list read here: under the chat's own key,
-    // never a folder of this disk's (`remoteCommandsFolder`).
-    listCommands: async ({ refresh }) => {
-      const result = await window.api.meshConversationCommands({ key, ...(refresh ? { refresh: true } : {}) })
-      if (!result.ok) throw new Error(result.message)
-      return {
-        cli: result.cli,
-        cwd: remoteCommandsFolder(key),
-        commands: result.commands,
-        fetchedAt: result.fetchedAt,
-        ...(result.error ? { error: result.error } : {}),
-      }
-    },
-    scheduleSend: async (scheduled) =>
-      commandResult(
-        await window.api.meshConversationScheduleSend({ key, message: scheduled.message, sendAt: scheduled.sendAt }),
-      ),
-    sendScheduledNow: async (scheduled) =>
-      commandResult(await window.api.meshConversationSendScheduledNow({ key, scheduledId: scheduled.scheduledId })),
-    cancelScheduled: async (scheduled) =>
-      commandResult(await window.api.meshConversationCancelScheduled({ key, scheduledId: scheduled.scheduledId })),
-    usageLimitResume: async (resume) =>
-      commandResult(
-        await window.api.meshConversationUsageLimitResume({
-          key,
-          action: resume.action,
-          ...(resume.always ? { always: true } : {}),
-        }),
-      ),
-    unwatchPullRequest: async (input) => {
-      const answer = await window.api.meshChangeConversation({
-        connectionId: key.connectionId,
-        workspaceId: key.workspaceId,
-        change: { kind: 'unwatch-pull-request', agentId: key.agentId, url: input.url },
-      })
-      return answer.ok ? { ok: true } : { ok: false, message: answer.message }
-    },
-    interrupt: async () => commandResult(await window.api.meshConversationInterrupt({ key })),
-    restartSession: async () => commandResult(await window.api.meshConversationRestartSession({ key })),
-    // Offered only for an action the pane's session lists, which it does
-    // where the machine takes the command; a sign-in never is.
-    mcpServerAction: async (asked) => {
-      if (asked.action === 'sign-in')
-        return {
-          ok: false,
-          message: `Sign in to ${asked.serverId} on ${input.machineName}: its agent waits for the sign-in there.`,
-        }
-      const done = await window.api.meshConversationMcpServerAction({
-        key,
-        serverId: asked.serverId,
-        action: asked.action,
-      })
-      return done.ok ? { ok: true } : { ok: false, message: done.message }
-    },
-    // Offered only where the machine takes it and lists the chat's provider
-    // as able (the pane's session says `stopSubagent`).
-    stopSubagent: async (input) =>
-      commandResult(await window.api.meshConversationStopSubagent({ key, toolUseId: input.toolUseId })),
-    // Offered only where the machine takes it and lists the chat's provider
-    // as able (the pane's session says `messageSubagent`).
-    messageSubagent: async (input) =>
-      commandResult(
-        await window.api.meshConversationMessageSubagent({
-          key,
-          toolUseId: input.toolUseId,
-          message: input.message,
-        }),
-      ),
-    // Offered only where the machine takes it and lists the chat's provider as
-    // able (the pane's session says `handoff`). The file is written over
-    // there, so its path means nothing here.
-    handoff: async () => {
-      const handed = await window.api.meshConversationHandoff({ key })
-      return handed.ok ? { ok: true, path: '' } : { ok: false, message: handed.message }
-    },
-    // Offered only where the machine takes it and lists the chat's provider
-    // as able (the pane's session says `rewind`).
-    rewind: async (turn) => {
-      const rewound = await window.api.meshConversationRewind({ key, turnSeq: turn.turnSeq })
-      return rewound.ok ? { ok: true } : { ok: false, message: rewound.message }
-    },
-    // Used only where the machine reverts files itself (the pane turns
-    // `checkpointRevert` on). The paths are that machine's checkout's, shown
-    // in the dialog and sent back as they came, never looked for here.
-    revert: async (turn) => {
-      const result = await window.api.meshConversationRevert({
-        key,
-        turnSeq: turn.turnSeq,
-        ...(turn.undo ? { undo: true } : {}),
-        ...(turn.confirmed ? { confirmed: true, files: turn.files ?? [] } : {}),
-      })
-      const answer = parseConversationRevertAnswer(result.data)
-      if (!result.ok)
-        return { ok: false, message: result.message, ...(answer && 'changed' in answer ? { changed: true } : {}) }
-      if (!answer || 'changed' in answer)
-        return { ok: false, message: `${input.machineName} answered with files this build cannot read.` }
-      return { ok: true, ...answer }
-    },
-    // Each of these offered only where the machine takes it and lists the
-    // chat's provider as able (the pane's session says `fork`, `sideQuestion`,
-    // `contextBreakdown`). Every one names the chat by its ids over there; the
-    // session id a view passes is the list's, which means nothing to them.
-    fork: async (fork) => {
-      const forked = await window.api.meshConversationFork({
-        key,
-        fork:
-          fork.side === 'user'
-            ? { kind: 'fork', newAgentId: fork.newAgentId, side: 'user', turnSeq: fork.turnSeq }
-            : { kind: 'fork', newAgentId: fork.newAgentId, side: 'assistant', turnId: fork.turnId },
-      })
-      return forked.ok ? { ok: true } : { ok: false, message: forked.message }
-    },
-    askSideQuestion: (question) =>
-      window.api.meshConversationSideQuestion({
-        key,
-        requestId: question.requestId,
-        question: question.question,
-        ...(question.history?.length ? { history: question.history } : {}),
-      }),
-    cancelSideQuestion: (question) =>
-      window.api.meshConversationCancelSideQuestion({ key, requestId: question.requestId }),
-    readContextBreakdown: () => window.api.meshConversationContextBreakdown({ key }),
-    respond: async (response) => {
-      if (response.answers && response.approved)
-        return commandResult(
-          await window.api.meshConversationAnswerQuestion({
-            key,
-            requestId: response.requestId,
-            answers: response.answers,
-          }),
-        )
-      // "Always" is offered only where the machine saves the rule
-      // (`permanentApprovals`); main refuses it in words for one that would not.
-      const decision = !response.approved
-        ? 'deny'
-        : response.decision === 'always' || response.decision === 'conversation'
-          ? response.decision
-          : 'once'
-      return commandResult(
-        await window.api.meshConversationResolveApproval({ key, requestId: response.requestId, decision }),
-      )
-    },
-    // The CLI's own mode rides beside its preset where the chat's session
-    // lists any, which the pane does only for a machine that runs them.
-    setPermissionPreset: async (change) =>
-      commandResult(
-        await window.api.meshConversationSetPermissionPreset({
-          key,
-          preset: change.permissionPreset,
-          ...(change.permissionMode ? { permissionMode: change.permissionMode } : {}),
-        }),
-      ),
-    // Offered only while the machine advertises model switching; the pane turns
-    // `modelSwitch` on from its list, and the chip stays locked without it.
-    setModel: async (change) =>
-      commandResult(await window.api.meshConversationSetModel({ key, modelId: change.modelId })),
-    // That machine keeps the chat's effort and sends each turn at it, so the
-    // send leaves it out.
-    setReasoningEffort: async (change) =>
-      commandResult(
-        await window.api.meshConversationSetReasoningEffort({
-          key,
-          ...(change.effort ? { effort: change.effort } : {}),
-        }),
-      ),
-    toolImage: async (image) => {
-      const result = await window.api.meshConversationToolImage({ key, toolUseId: image.toolUseId })
-      return result.ok
-        ? { ok: true, src: result.dataUrl }
-        : { ok: false, unsupported: result.code === 'images_unsupported', message: result.message }
-    },
-    attachment: async (stored) => {
-      const result = await window.api.meshConversationAttachment({ key, ref: stored.ref })
-      const picture = result.ok ? /^data:([^;,]+);base64,(.*)$/su.exec(result.dataUrl) : null
-      return picture
-        ? { ok: true, mediaType: picture[1]!, dataBase64: picture[2]! }
-        : { ok: false, message: result.ok ? 'The picture could not be read.' : result.message }
-    },
-    // A chat followed from a paired machine still reads this window's Studio
-    // for providers, files, plans and command lists, as it always has.
-    services: windowServices,
-  }
 }

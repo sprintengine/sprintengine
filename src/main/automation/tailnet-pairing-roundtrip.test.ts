@@ -193,75 +193,13 @@ test('tailnet-pairing-roundtrip', async () => {
         deviceToken: string
         scopes: string[]
         transportVersion: number
-        capabilities: string[]
       }
       assert.ok(device.deviceToken, 'pairing returns a device token')
       assert.ok(device.scopes.includes('backlog:read'), 'the default grant is the structured set')
       // A scanned client has made exactly one call at this point. It should not
       // have to make a second one to learn which wire it just joined.
-      assert.equal(device.transportVersion, 2)
-      assert.deepEqual(device.capabilities, [
-        'events',
-        'upload',
-        'conversations',
-        'conversation-models',
-        'conversation-images',
-        'conversation-permission-modes',
-        'conversation-hello',
-        'conversation-plans',
-        'conversation-cli-permission-modes',
-        'conversation-lifecycle',
-        'conversation-queued-sends',
-        'conversation-send-skills',
-        'conversation-steer-sends',
-        'conversation-message-images',
-        'conversation-message-files',
-        'conversation-stop-subagent',
-        'conversation-agent-message',
-        'conversation-handoff',
-        'conversation-rewind',
-        'conversation-checkpoint-revert',
-        'conversation-fork',
-        'conversation-side-questions',
-        'conversation-side-question-records',
-        'conversation-context-breakdown',
-        'conversation-send-mentions',
-        'conversation-file-search',
-        'conversation-commands',
-        'conversation-send-mode',
-        'conversation-reasoning-effort',
-        'conversation-mcp-server-actions',
-        'conversation-restart-session',
-        'conversation-scheduled-sends',
-        'conversation-usage-limits',
-        'conversation-queued-attachments',
-        'conversation-permanent-approvals',
-        'conversation-quote-tokens',
-        'conversation-subagents',
-        'conversation-changes',
-        'new-chat-worktree',
-        'new-chat-effort',
-        'cli-runtime-catalog',
-        'chat-mark-unread',
-        'new-chat-worktree-name',
-        'new-chat-in-worktree',
-        'new-chat-no-project',
-        'workspace-extensions',
-        'new-chat-skills',
-        'canvas-machine-boards',
-        'chat-create-pull-request',
-        'chat-row-menu',
-        'usage-report',
-        'chat-rename',
-        'chat-auto-compact',
-        'chat-unwatch-pull-request',
-        'chat-delete',
-        'chat-search',
-        'approval-rules',
-        'scheduled-agents',
-        'scheduled-agents-edit',
-        'mcp-oauth',
-      ])
+      assert.equal(device.transportVersion, 3)
+      assert.equal('capabilities' in device, false, 'what it may do is the Studio welcome’s to say')
 
       // The pairing is real only if the token it produced actually drives tools.
       const called = await call(scanned.port, 'POST', '/tailnet/v1/mcp', {
@@ -397,71 +335,9 @@ test('tailnet-pairing-roundtrip', async () => {
       const health = await call(harness.port, 'GET', '/tailnet/v1/health')
       assert.equal(health.status, 200)
       const body = health.body as Record<string, unknown>
-      assert.deepEqual(Object.keys(body).sort(), ['capabilities', 'product', 'protocolVersions', 'transportVersion'])
+      assert.deepEqual(Object.keys(body).sort(), ['product', 'protocolVersions', 'transportVersion'])
       assert.deepEqual(body.protocolVersions, [...SUPPORTED_MCP_PROTOCOL_VERSIONS])
-      assert.equal(body.transportVersion, 2)
-      assert.deepEqual(body.capabilities, [
-        'events',
-        'upload',
-        'conversations',
-        'conversation-models',
-        'conversation-images',
-        'conversation-permission-modes',
-        'conversation-hello',
-        'conversation-plans',
-        'conversation-cli-permission-modes',
-        'conversation-lifecycle',
-        'conversation-queued-sends',
-        'conversation-send-skills',
-        'conversation-steer-sends',
-        'conversation-message-images',
-        'conversation-message-files',
-        'conversation-stop-subagent',
-        'conversation-agent-message',
-        'conversation-handoff',
-        'conversation-rewind',
-        'conversation-checkpoint-revert',
-        'conversation-fork',
-        'conversation-side-questions',
-        'conversation-side-question-records',
-        'conversation-context-breakdown',
-        'conversation-send-mentions',
-        'conversation-file-search',
-        'conversation-commands',
-        'conversation-send-mode',
-        'conversation-reasoning-effort',
-        'conversation-mcp-server-actions',
-        'conversation-restart-session',
-        'conversation-scheduled-sends',
-        'conversation-usage-limits',
-        'conversation-queued-attachments',
-        'conversation-permanent-approvals',
-        'conversation-quote-tokens',
-        'conversation-subagents',
-        'conversation-changes',
-        'new-chat-worktree',
-        'new-chat-effort',
-        'cli-runtime-catalog',
-        'chat-mark-unread',
-        'new-chat-worktree-name',
-        'new-chat-in-worktree',
-        'new-chat-no-project',
-        'workspace-extensions',
-        'new-chat-skills',
-        'canvas-machine-boards',
-        'chat-create-pull-request',
-        'chat-row-menu',
-        'usage-report',
-        'chat-rename',
-        'chat-auto-compact',
-        'chat-unwatch-pull-request',
-        'chat-delete',
-        'chat-search',
-        'approval-rules',
-        'scheduled-agents',
-        'scheduled-agents-edit',
-        'mcp-oauth',
-      ])
+      assert.equal(body.transportVersion, 3)
 
       const scanned = parsePairingUrl(harness.service.offerPairing().pairingUrl ?? '')
       assert.equal(scanned.port, harness.port, 'the probed port and the pairing port are one port')

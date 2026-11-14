@@ -6,7 +6,7 @@ import { SERVER_EVENTS, SERVER_METHODS, type ServerMirrorState } from '../../ser
 import { emptyAgentLaunchSettings } from '../../shared/launch-settings'
 import { installGitHostResolver } from '../git-run'
 import { installHostRegistry } from '../hosts/host-registry'
-import { createRemoteCore, createRemoteCredentialStore, createRemoteGitHubTokenStore } from './remote-core'
+import { createRemoteCore, createRemoteGitHubTokenStore } from './remote-core'
 import { createServerStateMirror } from './server-mirror'
 
 // What the shell reads of the server out of process: the mirror, fed by the
@@ -75,6 +75,68 @@ test('pushes keep it current and reach its subscribers', async () => {
   assert.deepEqual(seen, ['acme,build-box', 'event:workspace.created'])
   assert.deepEqual(records, [2])
   assert.equal(mirror.launchSettings.get().lastSelectedCli, 'codex')
+})
+
+test("the server's paired desktops reach the shell, from the snapshot and then from each push", async () => {
+  const { shell, server } = pair()
+  const mini = {
+    id: 'tnc_1',
+    machineName: 'mac-mini',
+    endpoint: '100.64.0.2:8443',
+    deviceId: 'dev_1',
+    deviceName: 'build-box',
+    scopes: ['workspace:read'],
+    pairedAt: '2026-11-01T00:00:00.000Z',
+    lastConnectedAt: null,
+    pairedVia: 'link',
+  }
+  server.handle(SERVER_METHODS.mirrorSnapshot, () => ({ ...snapshotWith([]), meshConnections: [mini] }) as never)
+  const mirror = createServerStateMirror({ rpc: shell })
+  assert.deepEqual(mirror.meshConnections.list(), [])
+  let heard = 0
+  mirror.meshConnections.onChanged(() => (heard += 1))
+  await mirror.load()
+  assert.deepEqual(
+    mirror.meshConnections.list().map((connection) => connection.id),
+    ['tnc_1'],
+  )
+  const environmentId = '3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a'
+  server.emit(SERVER_EVENTS.mirrorMeshConnections, [{ ...mini, environmentId }])
+  await settle()
+  assert.equal(mirror.meshConnections.list()[0]?.environmentId, environmentId)
+  // A server with no mesh sends none: nothing is paired, rather than a stale list.
+  server.emit(SERVER_EVENTS.mirrorMeshConnections, null)
+  await settle()
+  assert.deepEqual(mirror.meshConnections.list(), [])
+  assert.equal(heard, 3)
+})
+
+test('whether each paired desktop answers reaches the shell, from the snapshot and then from each push', async () => {
+  const { shell, server } = pair()
+  const reach = {
+    connectionId: 'tnc_1',
+    machineName: 'mac-mini',
+    checking: false,
+    reachable: true,
+    unauthorized: false,
+    checkedAt: 10,
+    lastReachedAt: 10,
+    detail: null,
+  }
+  server.handle(SERVER_METHODS.mirrorSnapshot, () => ({ ...snapshotWith([]), meshReachability: [reach] }) as never)
+  const mirror = createServerStateMirror({ rpc: shell })
+  let heard = 0
+  mirror.meshReachability.onChanged(() => (heard += 1))
+  await mirror.load()
+  assert.equal(mirror.meshReachability.list()[0]?.reachable, true)
+  server.emit(SERVER_EVENTS.mirrorMeshReachability, [{ ...reach, reachable: false, detail: 'Timed out.' }])
+  await settle()
+  assert.equal(mirror.meshReachability.list()[0]?.reachable, false)
+  // A server with no mesh sends none.
+  server.emit(SERVER_EVENTS.mirrorMeshReachability, null)
+  await settle()
+  assert.deepEqual(mirror.meshReachability.list(), [])
+  assert.equal(heard, 3)
 })
 
 test('an agent record the shell writes goes to the server, answered at once', async () => {
@@ -166,22 +228,11 @@ test("Diagnostics reads the folders the server's chats run in, one poll behind",
   installGitHostResolver(null)
 })
 
-test('a credential and the GitHub token are asked of the server', async () => {
+test('the GitHub token is asked of the server', async () => {
   const { shell, server } = pair()
-  server.handle(SERVER_METHODS.resolveSecretForLaunch, (params) => ({
-    ok: true,
-    providerId: (params as { cli: string }).cli,
-    value: 'sk-test',
-    source: 'settings',
-  }))
   server.handle(SERVER_METHODS.githubToken, (params) => ((params as { op: string }).op === 'resolve' ? 'ghp_x' : null))
-  assert.equal(
-    ((await createRemoteCredentialStore(shell).resolveSecret('codex')) as { value: string }).value,
-    'sk-test',
-  )
   assert.equal(await createRemoteGitHubTokenStore(shell).resolveToken(), 'ghp_x')
   // No server: a resolve is not an error, it is no token.
   shell.close('gone')
   assert.equal(await createRemoteGitHubTokenStore(shell).resolveToken('explicit'), 'explicit')
-  assert.equal((await createRemoteCredentialStore(shell).resolveSecret('codex')).ok, false)
 })

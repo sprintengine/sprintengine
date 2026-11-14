@@ -11,7 +11,7 @@ const test = require("node:test");
 // design-system/glyphs, and every ink against its contrast floor in both
 // themes.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   MACHINE_COLOURS,
   MACHINE_COLOUR_TOKEN,

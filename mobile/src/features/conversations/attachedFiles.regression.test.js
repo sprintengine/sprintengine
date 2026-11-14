@@ -6,8 +6,8 @@ const {
   attachedFileType,
   middleTruncateFileName,
   parseAttachedFiles,
-} = require("../../../.mobile-test-build/src/features/conversations/attachedFiles.js");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/attachedFiles.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 
 const POSIX = "/Users/dev/Documents/Quarterly report.pdf";
 const DRIVE = "C:\\Users\\dev\\Documents\\Pairing plan.docx";
@@ -101,17 +101,17 @@ test("a long name is cut in the middle and keeps its extension", () => {
 
 test("the person's bubble carries the files its user_message recorded; its text is only their words", () => {
   const user = (payload) => ({ id: "e1", seq: 1, sessionId: "s", workspaceId: "w", agentId: "a", type: "user_message", createdAt: 1, payload });
-  const [row] = projectConversation([user({ turnId: "t1", text: "Summarise these", files: [{ path: POSIX }, { path: UNC }] })]).rows;
+  const [row] = projectPhoneConversation([user({ turnId: "t1", text: "Summarise these", files: [{ path: POSIX }, { path: UNC }] })]).rows;
   assert.equal(row.kind, "message");
   assert.equal(row.role, "user");
   assert.equal(row.text, "Summarise these");
   assert.deepEqual(row.files, [{ path: POSIX }, { path: UNC }]);
   // A list the phone cannot read leaves the bubble its words, and no cards.
-  const [unread] = projectConversation([user({ turnId: "t1", text: "Summarise", files: "nope" })]).rows;
+  const [unread] = projectPhoneConversation([user({ turnId: "t1", text: "Summarise", files: "nope" })]).rows;
   assert.equal(unread.text, "Summarise");
   assert.equal("files" in unread, false);
   // Files alone, with no words.
-  const [bare] = projectConversation([user({ turnId: "t1", text: "", files: [{ path: DRIVE }] })]).rows;
+  const [bare] = projectPhoneConversation([user({ turnId: "t1", text: "", files: [{ path: DRIVE }] })]).rows;
   assert.equal(bare.text, "");
   assert.deepEqual(bare.files, [{ path: DRIVE }]);
 });

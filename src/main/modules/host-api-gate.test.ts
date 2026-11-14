@@ -64,6 +64,7 @@ test('the resolver keeps a gated module out and says it needs another build', ()
   assert.deepEqual(resolution.order, [])
   const error = resolution.errors.find((entry) => entry.id === 'future')
   assert.equal(error?.code, 'incompatible_host_api')
-  assert.match(error?.message ?? '', /different host API/)
+  // The check's own words: which host API it needs, and which side to update.
+  assert.match(error?.message ?? '', /needs host API 99, and this version of the app provides \d+\. Update the app/)
   assert.doesNotMatch(error?.message ?? '', /trust/)
 })

@@ -30,7 +30,7 @@ Pick the smallest surface that does the job. `extension.create` takes a
 | Calling GitHub as the user | main: `getGitHubService(host).request` / `.graphql` (read-only) / `.download` (logs) | `github` | — |
 | A workspace's branch and GitHub remote | `host.getWorkspaceGitInfo(workspaceId)` (renderer or main) | `ipc:workspace-read` | — |
 | Saving data | renderer: `get/setModuleAppState`, `get/setWorkspaceModuleState`; main: `getModuleStorage(host)` (`list({ prefix })`, `getMany`, `watch`), `host.getModuleDataDir()` past 1 MB | `storage` | panel |
-| Renderer ↔ main | main `registerIpc('<id>:…')`, renderer `host.invoke`; main → renderer `host.emit` / `host.subscribe` | `module:bridge` | chat-companion |
+| Renderer ↔ main | main `host.registerMethods<Contract>({ … })`, renderer `host.methods<Contract>().read` / `.operate`; main → renderer `host.emit` / `host.subscribe` | `module:bridge` | chat-companion |
 | Skills agents can use | main: `host.registerSkills`, `host.ensureSkillInstalled`, `host.getSkillStatus` | — | — |
 | Files inside the module (HTML, WASM) | `host.getAssetUrl('runtime/index.html')`; main: `host.getAssetPath('dist/worker.cjs')` | — | — |
 

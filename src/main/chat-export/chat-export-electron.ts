@@ -11,11 +11,10 @@ import {
   type WebContents,
 } from 'electron'
 
-import { conversationWorkingRoot, type AgentState } from '../../shared/agent-state'
 import type { ChatExportFileFormat, ChatExportInput, ChatExportResult } from '../../shared/chat-export'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import { usageAgentLabel } from '../../shared/usage-report'
-import { runChatExport, type ChatExportChat, type ChatExportDeps } from './chat-export-service'
+import { runChatExport, type ChatExportDeps } from './chat-export-service'
 import { renderChatExportPdf } from './chat-export-pdf'
 import { CHAT_EXPORT_EXTENSIONS } from './chat-export-filename'
 
@@ -35,38 +34,12 @@ const FILTERS: Readonly<Record<ChatExportFileFormat, SaveDialogOptions['filters'
   markdown: [{ name: 'Markdown', extensions: [CHAT_EXPORT_EXTENSIONS.markdown] }],
 }
 
-type ExportWorkspace = { id: string; name?: string; folderPath?: string | null; agents?: Record<string, AgentState> }
-
-/** The chat as its workspace records it: a conversation with a folder to read its transcript under. */
-export function chatExportChatOf(
-  workspaces: readonly ExportWorkspace[],
-  workspaceId: string,
-  agentId: string,
-): ChatExportChat | null {
-  const workspace = workspaces.find((candidate) => candidate.id === workspaceId)
-  const agent = workspace?.agents?.[agentId]
-  if (!workspace || !agent || agent.runtimeKind !== 'conversation') return null
-  const workspaceRoot = conversationWorkingRoot(agent, workspace.folderPath)
-  if (!workspaceRoot) return null
-  return {
-    title: agent.name,
-    project: workspace.name?.trim() || null,
-    providerId: agent.conversation?.providerId ?? null,
-    modelId: agent.conversation?.modelId ?? null,
-    workspaceRoot,
-  }
-}
-
 export function createElectronChatExportDeps(options: {
   sender: WebContents
-  workspaces: () => readonly ExportWorkspace[]
-  readSource: ChatExportDeps['readSource']
   /** A CLI's own name, as its manifest gives it. */
   cliDisplayName: (cli: string) => string | null
 }): ChatExportDeps {
   return {
-    chat: (workspaceId, agentId) => chatExportChatOf(options.workspaces(), workspaceId, agentId),
-    readSource: options.readSource,
     engineName: (providerId) => {
       const cli = cliForConversationProvider(providerId)
       return cli ? (options.cliDisplayName(cli) ?? usageAgentLabel(cli)) : null

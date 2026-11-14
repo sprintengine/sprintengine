@@ -1,10 +1,9 @@
 {
   "id": "main",
   "title": "Main entry",
-  "summary": "src/main.ts, built to entry.main: Node in Studio's main process, for services, MCP tools and the window half's own background code.",
+  "summary": "src/main.ts, built to entry.main: Node in Studio's main process, for services, MCP tools, and the methods the window half (or a client granted them) calls.",
   "requires": [],
-  "permissions": [],
-  "permissionsWithRenderer": ["module:bridge"],
+  "permissions": ["module:bridge"],
   "dependsOn": ["agent-runtime"],
   "entry": {
     "main": "dist/main.cjs"

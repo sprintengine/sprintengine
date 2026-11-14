@@ -5,6 +5,10 @@ import { plainSkillInvocation } from '../../../shared/skill-invocation'
 import { hasInstalledNativeSkillTarget, renderSkillInvocationTemplate } from './skillInvocation'
 import { isWindowsPath, isWslDriveMountPath, toWslPath, wslToWindowsPath } from '../../../shared/host-paths'
 import { powerShellSingleQuoted } from '../../../shared/powershell-quote'
+import { listTerminals, writeTerminal } from '../studio/terminals'
+import { agentSetupApi } from '../studio/agentSetup'
+import { agentSkillsApi } from '../studio/agentSkills'
+import { extensionsApi } from '../studio/extensions'
 
 export const SPRINTENGINE_FILE_DROP_MIME = 'application/x-sprintengine-file-drop'
 const SPRINTENGINE_COMMIT_DROP_MIME = 'application/x-sprintengine-commit-drop'
@@ -75,11 +79,11 @@ export async function pasteDroppedCommitIntoTerminal(input: {
   const hash = parseCommitDropHash(input.dataTransfer)
   if (!hash) return { ok: false, message: 'No commit hash was dropped.' }
 
-  const sessions = await window.api.terminalList()
+  const sessions = await listTerminals()
   const session = sessions.find((candidate) => candidate.sessionId === input.sessionId && candidate.processAlive)
   if (!session) return { ok: false, message: 'Terminal session is no longer running.' }
 
-  await window.api.terminalWrite(input.sessionId, bracketedPaste(hash))
+  await writeTerminal(input.sessionId, bracketedPaste(hash))
   return { ok: true, text: hash }
 }
 
@@ -160,7 +164,7 @@ export async function sendSkillToTerminal(input: {
   sessionId: string
   workspaceRoot: string
 }): Promise<TerminalDropResult> {
-  const sessions = await window.api.terminalList()
+  const sessions = await listTerminals()
   const session = sessions.find((candidate) => candidate.sessionId === input.sessionId && candidate.processAlive)
   if (!session) return { ok: false, message: 'Terminal session is no longer running.' }
   // A shell has no agent to read a skill, and which CLI is running is what
@@ -173,8 +177,8 @@ export async function sendSkillToTerminal(input: {
   let reachable: AgentSkill | undefined
   try {
     const [pluginsResult, capabilities] = await Promise.all([
-      window.api.pluginsList(),
-      window.api.agentCapabilities({ workspaceRoot: input.workspaceRoot, pluginId: session.cli }),
+      extensionsApi.pluginsList(),
+      agentSkillsApi.agentCapabilities({ workspaceRoot: input.workspaceRoot, pluginId: session.cli }),
     ])
     // Either read failing leaves the form of the invocation unknown, and a
     // guessed one is worse than none: a Claude tab silently handed a sentence
@@ -208,7 +212,7 @@ export async function sendSkillToTerminal(input: {
   // invocation is complete, and the caret sits where arguments go. Nothing is
   // submitted — a bracketed paste is text at the prompt, not a keypress.
   const text = `${invocation} `
-  await window.api.terminalWrite(input.sessionId, bracketedPaste(text))
+  await writeTerminal(input.sessionId, bracketedPaste(text))
   return { ok: true, text }
 }
 
@@ -238,7 +242,7 @@ export async function sendFileDropToTerminal(input: {
     return { ok: false, message: 'Drop files into a terminal from the same workspace.' }
   }
 
-  const sessions = await window.api.terminalList()
+  const sessions = await listTerminals()
   const session = sessions.find((candidate) => candidate.sessionId === input.sessionId && candidate.processAlive)
   if (!session) return { ok: false, message: 'Terminal session is no longer running.' }
 
@@ -248,14 +252,14 @@ export async function sendFileDropToTerminal(input: {
 
   const skillInvocation = await resolveBacklogSkillInvocation(payload, session)
   if (skillInvocation) {
-    await window.api.terminalWrite(input.sessionId, bracketedPaste(skillInvocation))
+    await writeTerminal(input.sessionId, bracketedPaste(skillInvocation))
     return { ok: true, text: skillInvocation, ...(backlog ? { backlog } : {}) }
   }
 
   const text = formatDroppedPathsForTerminal(payload, session)
   if (!text) return { ok: false, message: 'No valid file path was available to drop.' }
 
-  await window.api.terminalWrite(input.sessionId, bracketedPaste(text))
+  await writeTerminal(input.sessionId, bracketedPaste(text))
   return { ok: true, text, ...(backlog ? { backlog } : {}) }
 }
 
@@ -334,11 +338,11 @@ async function resolveBacklogSkillInvocation(
 
   try {
     const [status, pluginsResult] = await Promise.all([
-      window.api.builtinSkillStatus({
+      agentSetupApi.builtinSkillStatus({
         workspaceRoot: payload.rootPath,
         skillId: BACKLOG_SKILL_ID,
       }),
-      window.api.pluginsList(),
+      extensionsApi.pluginsList(),
     ])
     if (!status.ok || !pluginsResult.ok) return null
     return backlogSkillInvocationForDrop(payload, session, pluginsResult.plugins, status.targets)

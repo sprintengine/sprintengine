@@ -1,6 +1,127 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+The lane is gone: every client follows and drives a chat on the Studio
+protocol, and this package keeps the contract that protocol carries. Nothing
+outside this repository uses what is removed.
+
+### Removed (the lane's own frames and capabilities)
+
+- **Client frames other than `command`.** `ConversationClientFrame` is a
+  command alone; `parseConversationClientFrame` no longer reads `subscribe`,
+  `list`, `loadEarlier`, `getToolDetail`, `getEvent` or `getTurnDiff`, and
+  `parseConversationClientMessage` no longer reads `hello`, `watchQueued`,
+  `watchScheduled`, `watchUsageLimits`, `watchSubagents`, `watchChanges`,
+  `getChangesDiff`, `getChangedFile`, `askSideQuestion`, `cancelSideQuestion`
+  or `getContextBreakdown`. Their request types go with them
+  (`ConversationHelloRequest`, `ConversationWatch*Request`,
+  `ConversationChangesDiffRequest`, `ConversationChangedFileRequest`,
+  `ConversationContextBreakdownRequest`), and `parseConversationChangesRequest`
+  and `parseConversationClientCapabilities`. `parseConversationSideQuestionRequest`
+  stays: the Studio protocol reads a side question's params with it.
+- **`conversation-hello` and `conversation-image-downscale`**
+  (`CONVERSATION_HELLO_CAPABILITY`, `CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY`),
+  which described the lane's own handshake and upload route, leave
+  `CONVERSATION_CAPABILITIES`. `ConversationHelloAnswer` stays: it is a
+  welcome's `conversation`.
+- **The lane's frame decoder:** `decodeConversationServerFrame`,
+  `ConversationUnknownFrame`, `ConversationDecodedFrame`,
+  `CONVERSATION_MAX_JOINED_FRAME_BYTES` and `CONVERSATION_MAX_SNAPSHOT_PARTS`.
+  `conversationUtf8Length` stays; `parseConversationServerFrame` reads a
+  frame.
+- `conciseConversationSendRequest`, which no transport uses.
+
+### Removed (the lane's own readers)
+
+Every client now follows and drives a chat on the Studio protocol, which
+carries the answers below as its own method results; the readers a lane
+client used for them go:
+
+- `createConversationChunkAssembler` and `createConversationSnapshotAssembler`
+  (a lane socket's chunked frames and split snapshots);
+- `parseConversationSideQuestionAnswer`, `parseConversationContextBreakdownAnswer`,
+  `parseConversationFileSearchAnswer`, `parseConversationChangesDiff` and
+  `parseConversationChangedFileSides` (answers to the lane's requests);
+- `conversationPeerSupports` and `checkConversationProtocolVersion` (the lane's
+  `hello`; a Studio client reads the welcome).
+
+### Added (a step's kind and tone without its words)
+
+- **`presentedToolKind`** and **`presentedToolTone`**: the kind and the tone
+  `presentToolItem` gives a step, apart from its title, so a view that only
+  counts what went wrong does not word every step. `presentToolItem` reads
+  them from these.
+
+### Added (a message scheduled for a limit's reset)
+
+- **`scheduleSend.untilLimitReset`**: the provider whose usage limit the
+  message waits on. `sendAt` is when the client read it would reset; the
+  desktop asks the limit again when the time comes and moves the message to a
+  later reset if one stands. A scheduled message says it back in its
+  `scheduled` frame. Optional: an older desktop schedules it for `sendAt`.
+
+### Added (one send shape and one approval union)
+
+- **`ConversationSendRequest`** (`send.ts`): one message a person sends a
+  chat, whichever way it travels — words, the bubble's id, mentions, files,
+  skills (`ConversationSkillRef`), pictures, reasoning effort, mode, `steer`,
+  `queue`, `composedAt` and `confirmedStale`. Its pictures' form is the
+  transport's own (`Picture`: bytes in one machine, `ConversationSendUpload`
+  between two). The Studio protocol's `session.send`, the desktop runtime's
+  input and a paired desktop's mesh IPC derive from it.
+- **`ConversationLaneSend`**: the request as the lane carries it, each part as
+  a single table says (`as-is`, `uploaded` into `uploadIds`, skills `by-id`,
+  flags `true` or absent, the mode unless default, and two parts the lane says
+  its own way, `ConversationLaneNotCarried`). `ConversationCommand`'s `send`
+  is `{ kind: 'send' } & ConversationLaneSend`, and the wire's first send its
+  words and uploads; a part added to the request fails typecheck until the
+  table places it. The wire is unchanged.
+- **`ConversationApprovalDecision`**, `CONVERSATION_APPROVAL_DECISIONS` and
+  `isConversationApprovalDecision`: every answer to a permission request.
+  `ConversationRequestDecision` and `ConversationPermanentRequestDecision` are
+  its two halves, and `ConversationCommand` has one `resolveApproval` taking
+  the whole union (`always` still behind `conversation-permanent-approvals`).
+  `ConversationWireMention` is `ConversationMentionRef`.
+
+### Added (what the rest of a chat's operations answer)
+
+- `ConversationListSessionsResult`, `ConversationMcpServerActionResult`,
+  `ConversationSideQuestionResult`, `ConversationContextBreakdown` and its
+  rows, `ConversationContextBreakdownResult`, `ConversationTerminalHandoffResult`,
+  `ConversationProviderSignInResult`, `ConversationHistoryThread`,
+  `ConversationThreadsResult`, `ConversationSearchHit`,
+  `ConversationSearchResult`, `ConversationApprovalRule`,
+  `ConversationApprovalRulesResult` and `ConversationApprovalRuleRevokeResult`
+  (`sessions.ts`): the answers of the Studio protocol's session controls,
+  history and settings methods, defined here once and re-exported by the desktop.
+
+### Added (forward-compatible decoding)
+
+- **`decodeConversationServerFrame`** reads one frame's JSON text the way a
+  client of a newer desktop must: a frame of a type this build does not know
+  decodes to `{ type: 'unknown', frameType }` (`ConversationUnknownFrame`)
+  rather than null, so a client passes over it instead of treating it as
+  broken; an event of an unknown type is an event, so its sequence still moves
+  the cursor. With `createConversationChunkAssembler` and
+  `createConversationSnapshotAssembler`, moved from the phone app, and
+  `CONVERSATION_MAX_JOINED_FRAME_BYTES`, `CONVERSATION_MAX_SNAPSHOT_PARTS` and
+  `conversationUtf8Length`.
+
+### Changed (breaking for an exhaustive switch on phase)
+
+- **A listed chat in a phase this build does not know is listed**, with the
+  phase `unknown`, where it was dropped: a `sessions` frame now carries
+  `ConversationListedThread[]`, whose `phase` may be `unknown`, so a consumer
+  that switches on it exhaustively must handle it. `readableConversationPhase`
+  reads it as idle.
+
+### Changed (the phone's rules, adopted)
+
+- A listed chat's `chatTitle` is trimmed; a `host` with a blank label is left
+  out; a pull request's `url` must be a web page with no credentials before its
+  host, and is kept trimmed; one whose title cannot be read is kept with an
+  empty title.
 
 ### Added (session shapes)
 

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { authorizeStudioAccess, isStudioPermission } from '../../packages/studio-protocol/src/permissions'
+import { isStudioPermission } from '../../packages/studio-protocol/src/permissions'
 import { SERVER_IPC_CHANNELS } from './ipc-channel-owners'
 import { WEB_TUNNEL_CHANNELS } from './web-client'
 import {
+  WEB_HTTP_ACCESS,
   WEB_OWNER_TUNNEL_PERMISSIONS,
   WEB_TUNNEL_ACCESS,
   webTunnelAllows,
@@ -34,14 +35,7 @@ const LEGACY_EXCLUDED = new Set([
   'workspace-sync:set-settled-chats-settings',
   'workspace-sync:set-module-run-states',
 ])
-const LEGACY_SINGLE = new Set([
-  'credential:secrets:status',
-  'github:token-status',
-  'github:list-repos',
-  'scheduled-agents:list',
-  'scheduled-agents:mark-seen',
-  'scheduled-agents:pause-state',
-])
+const LEGACY_SINGLE = new Set(['github:token-status', 'github:list-repos'])
 function legacyWebTunnelAllows(channel: string): boolean {
   if (Object.hasOwn(WEB_TUNNEL_CHANNELS, channel)) return true
   if (LEGACY_SINGLE.has(channel)) return true
@@ -60,8 +54,8 @@ test('every channel the server owns and the front door adds says what it needs, 
       assert.ok(access.localOnly.length > 0, channel)
       continue
     }
-    // The tunnel is an owner's: no channel is open to another browser.
-    assert.equal(access.owner, true, channel)
+    // The tunnel is an owner's: no channel is open to another browser, and it says why.
+    assert.equal(typeof access.owner, 'string', channel)
     assert.ok(access.permissions.length > 0, channel)
     for (const permission of access.permissions) assert.equal(isStudioPermission(permission), true, channel)
   }
@@ -69,23 +63,16 @@ test('every channel the server owns and the front door adds says what it needs, 
 
 test('an owner’s tab reaches exactly the channels it reached before permissions', () => {
   for (const channel of CHANNELS) assert.equal(webTunnelAllows(channel), legacyWebTunnelAllows(channel), channel)
-  // The exclusions a tab must keep, among them what main's rest sweep reads
-  // that only a desktop window can say.
-  for (const channel of [
-    'workspace-sync:set-settled-chats-settings',
-    'workspace-sync:set-module-run-states',
-    'conversation:sessions:terminal-handoff',
-    'conversation:secrets:set',
-    'tailnet:update-device-scopes',
-    'studio-local-apps:offer',
-    'mesh:pair',
-  ])
+  // The exclusions a tab must keep. What main's rest sweep reads that only a
+  // desktop window can say is the protocol's now, which takes it from no
+  // browser (`studio-workspace-sync.ts`).
+  for (const channel of ['conversation:sessions:terminal-handoff', 'conversation:secrets:set'])
     assert.equal(webTunnelAllows(channel), false, channel)
 })
 
 test('a name no table holds is refused, even where the old prefix rule would have let it through', () => {
   // These reach no handler: the server registers exactly the channels above
-  // (src/server/desktop/server-ipc.test.ts holds it to that).
+  // (src/main/ipc-inventory.test.ts holds it to that).
   for (const channel of ['backlog:drop-everything', 'conversation:sessions:new-thing', 'constructor', '__proto__', ''])
     assert.equal(webTunnelAllows(channel), false, channel)
 })
@@ -98,15 +85,11 @@ test('a browser that is not the owner reaches no channel at all', () => {
 
 test('an owner’s tab holds only the permissions some channel it reaches needs, and nothing for terminals or upkeep', () => {
   const needed = new Set(
-    Object.values(WEB_TUNNEL_ACCESS).flatMap((access) => ('permissions' in access ? access.permissions : [])),
+    [...Object.values(WEB_TUNNEL_ACCESS), ...Object.values(WEB_HTTP_ACCESS)].flatMap((access) =>
+      'permissions' in access ? access.permissions : [],
+    ),
   )
   assert.deepEqual([...WEB_OWNER_TUNNEL_PERMISSIONS].sort(), [...needed].sort())
-  for (const permission of ['terminal:read', 'terminal:operate', 'environment:maintain', 'tools:offer'])
+  for (const permission of ['environment:maintain', 'tools:offer'])
     assert.equal(WEB_OWNER_TUNNEL_PERMISSIONS.includes(permission as never), false, permission)
-  // And the owner principal is refused where a channel is the desktop's, whatever it holds.
-  const decision = authorizeStudioAccess(
-    webTunnelPrincipal({ owner: true }),
-    WEB_TUNNEL_ACCESS['workspace-sync:set-module-run-states'],
-  )
-  assert.equal(!decision.ok && decision.reason, 'local_only')
 })

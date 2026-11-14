@@ -5,7 +5,9 @@
  * is what the store shows, and the stale copy leaves localStorage.
  */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+vi.mock('../studio/agentSettings', () => import('../studio/agentSettings.double'))
 import { createFakeLaunchSettingsMain, installFakeWindow, settleIpc } from './launchSettingsFakeMain.test-helper'
 import { LAUNCH_SETTINGS_KEYS } from './launchSettingsReadModel'
 

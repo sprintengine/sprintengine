@@ -101,17 +101,22 @@ const TEMPLATE_ORDER = [
 
 // dist/scaffold.js (published) and src/scaffold.ts (in the repository) both sit
 // one level below the package root, so one relative step finds the folders.
-const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// Worked out when asked, not when the module loads: an app that bundles this
+// file into CommonJS (Studio's server) has no `import.meta.url`, and always
+// passes the templates it ships instead.
+function packageRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), '..')
+}
 
 export function defaultTemplatesRoot(): string {
-  return join(PACKAGE_ROOT, 'templates')
+  return join(packageRoot(), 'templates')
 }
 
 /** This package's own version: what a project scaffolded by its CLI depends on. */
 export function sdkPackageVersion(): string {
-  const pkg = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: unknown }
+  const pkg = JSON.parse(readFileSync(join(packageRoot(), 'package.json'), 'utf8')) as { version?: unknown }
   if (typeof pkg.version !== 'string' || pkg.version === '') {
-    throw new Error(`${join(PACKAGE_ROOT, 'package.json')} carries no version.`)
+    throw new Error(`${join(packageRoot(), 'package.json')} carries no version.`)
   }
   return pkg.version
 }

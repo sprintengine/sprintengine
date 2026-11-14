@@ -178,7 +178,14 @@ test('the tools methods name their scopes, and their params are checked', () => 
   assert.ok(STUDIO_SCOPES.includes('tools:offer'))
   assert.ok(STUDIO_SCOPES.includes('files:write'))
   assert.equal(STUDIO_METHODS['tools.offer'].scope, 'tools:offer')
-  assert.equal(STUDIO_METHODS['tools.grant'].owner, true)
+  assert.equal(STUDIO_METHODS['tools.grant'].owner, undefined)
+  assert.equal(STUDIO_METHODS['tools.grant'].scope, 'conversation:operate')
+  // Opening a chat to an app's tools changes what its agent may call: a setting.
+  assert.deepEqual(STUDIO_METHODS['tools.grant'].extraPermissions, ['settings:write'])
+  // What a client that offers tools reads beside its offer is the client tools' own.
+  assert.equal(STUDIO_METHODS['tools.catalog'].scope, 'tools:offer')
+  assert.equal(STUDIO_TOPICS['tools.catalog'].scope, 'tools:offer')
+  assert.deepEqual(STUDIO_METHODS['tools.grants'].extraPermissions, ['tools:offer'])
   assert.equal(STUDIO_METHODS['tools.grant'].mutation, true)
   assert.equal(STUDIO_TOPICS['tools.catalog'].push, true)
   assert.deepEqual(parseStudioMethodParams('tools.offer', { toolset: offer(), reach: 'all' }), {

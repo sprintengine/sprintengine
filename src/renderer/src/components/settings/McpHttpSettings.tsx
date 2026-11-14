@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useState } from 'react'
 
 import { MCP_HTTP_CLIENT_NAME_MAX, mcpHttpClientConfig, type McpHttpStatus } from '../../../../shared/mcp-http'
 import { STUDIO_MCP_SERVER_ID } from '../../../../shared/product-identity'
+import { clientSupports } from '../../clientCapabilities'
+import { accessApi } from '../../studio/access'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
 import { Field, GhostButton, InlineNotice, Input, OutlineButton, PrimaryButton, useConfirmDialog } from '../ui'
 import { SettingCard, SettingsRow } from './SettingsAtoms'
@@ -10,6 +12,10 @@ import { SettingCard, SettingsRow } from './SettingsAtoms'
 // takes a URL. Each client gets a token of its own, named for it here, and
 // "Copy MCP URL" puts the URL and that token on the clipboard together: the
 // token is kept only hashed, so this is the one time it can be copied.
+//
+// A token is minted at Studio's own desktop window only (`mcpHttp.create` is
+// a window's): a web tab lists and revokes the clients, and says where a new
+// one is made.
 
 export function McpHttpSettings() {
   const [status, setStatus] = useState<McpHttpStatus | null>(null)
@@ -20,9 +26,8 @@ export function McpHttpSettings() {
   const nameId = useId()
 
   const refresh = useCallback(async () => {
-    if (typeof window.api.mcpHttpStatus !== 'function') return
     try {
-      setStatus(await window.api.mcpHttpStatus())
+      setStatus(await accessApi.mcpHttpStatus())
     } catch {
       // Status stays unknown; the rows do not render.
     }
@@ -33,12 +38,14 @@ export function McpHttpSettings() {
   }, [refresh])
 
   if (!status) return null
+  // The desktop's own window, which alone may mint a token.
+  const mints = clientSupports('tailnet-admin')
 
   const create = async () => {
     if (name === null) return
     setError(null)
     try {
-      const made = await window.api.mcpHttpCreate(name)
+      const made = await accessApi.mcpHttpCreate(name)
       setStatus(made.status)
       if (!made.ok) {
         setError(made.message)
@@ -61,7 +68,7 @@ export function McpHttpSettings() {
     })
     if (!confirmed) return
     setCopied(null)
-    setStatus(await window.api.mcpHttpRevoke(id))
+    setStatus(await accessApi.mcpHttpRevoke(id))
   }
 
   const now = Date.now()
@@ -116,7 +123,13 @@ export function McpHttpSettings() {
           </SettingsRow>
         ) : null}
       </SettingCard>
-      {name === null ? (
+      {name === null && !mints ? (
+        <p className="text-meta text-[color:var(--text-muted)]">
+          A new MCP URL is made in the desktop app, or on this server’s machine with{' '}
+          <code>studio-server mcp-token --name &lt;client&gt;</code>.
+        </p>
+      ) : null}
+      {name === null && mints ? (
         <OutlineButton
           onClick={() => {
             setCopied(null)

@@ -45,8 +45,6 @@ export type ImageCodec = {
 
 export type DownscaledImage = { bytes: Uint8Array; mediaType: string }
 
-export type ConversationImageDownscaler = (bytes: Uint8Array, mediaType: string) => Promise<DownscaledImage>
-
 export function downscaleConversationImage(codec: ImageCodec, bytes: Uint8Array, mediaType: string): DownscaledImage {
   const original = { bytes, mediaType }
   // A picture whose header declares more than a decoder should allocate is

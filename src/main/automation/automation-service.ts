@@ -24,9 +24,7 @@ import type { McpHttpCreateResult, McpHttpStatus } from '../../shared/mcp-http'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet/tailnet-service'
-import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
-import type { TailnetCanvasHost } from './tailnet/tailnet-canvas-stream'
-import type { ConversationImageDownscaler } from '../conversation-image-downscale'
+import type { TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
 
 // Owns the always-on Studio MCP gateway lifecycle, local socket endpoint, and
 // discovery files external clients read to find it. The old enabled setting is
@@ -58,24 +56,22 @@ type AutomationServiceOptions = {
   resolveGatewayTools: (context?: McpConnectionContext) => McpToolRegistration[]
   /** Client tools: each agent connection's own catalog of the tools clients offer, and its notices. */
   clientTools?: McpSocketServerOptions['clientTools']
-  resolveConversationHost?: () => ConversationGatewayHost
+  /** This machine's own kind and colour, said on the tailnet's `identity`. */
+  selfMachine?: () => { kind: string; color: string } | null
   /**
-   * Shrinks a picture a paired device uploads, for the model: the shell's
-   * image codec, which only a desktop has. Absent, uploads are kept as they
-   * came and `conversation-image-downscale` is not advertised.
+   * Bind the tailnet listener here instead of this machine's Tailscale
+   * interface. Only a library caller sets it, to drive the real listener on
+   * loopback (the cross-client gate); the app and the server's entry never
+   * do, so a shipped Studio still binds only Tailscale.
    */
-  downscaleUpload?: ConversationImageDownscaler
-  /**
-   * This machine's canvas service, for a paired desktop's Canvas pane
-   * (`canvas-live-boards`). Only the process that runs the service has one.
-   */
-  canvas?: TailnetCanvasHost
+  tailnetBindAddress?: string
   /** Absolute path of the shipped stdio bridge script, when the app knows it. */
   resolveBridgeScriptPath?: () => string | null
   /**
-   * The live-state push (remote-sessions-ux): tailnet listener/pairing/socket
-   * changes and mesh lifecycle, for broadcast to every window. Wired by the
-   * app shell; absent in tests and headless embeddings, where nothing listens.
+   * Tailnet listener, pairing and socket changes, and the mesh's lifecycle,
+   * for the shell's notifications. Windows follow the same changes on the
+   * Studio protocol (`tailnet.changed`, `mesh.changed`: `onTailnetChanged`,
+   * `onMeshChanged` below). Absent in tests and headless embeddings.
    */
   onTailnetEvent?: (payload: TailnetPushPayload) => void
   /**
@@ -92,6 +88,29 @@ type AutomationServiceOptions = {
 export type AutomationService = ReturnType<typeof createAutomationService>
 
 export function createAutomationService(options: AutomationServiceOptions) {
+  // Who follows the tailnet's and the mesh's changes: the Studio protocol's
+  // streams, one listener per following connection.
+  const tailnetListeners = new Set<(payload: TailnetPushPayload) => void>()
+  const meshListeners = new Set<(event: MeshEvent) => void>()
+  function announce<T>(listeners: Set<(value: T) => void>, value: T, shell?: (value: T) => void): void {
+    for (const listener of [shell, ...listeners]) {
+      if (!listener) continue
+      try {
+        listener(value)
+      } catch (error) {
+        warn(
+          'Tailnet remote control',
+          `A change could not be delivered: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+  }
+  function follow<T>(listeners: Set<(value: T) => void>, listener: (value: T) => void): () => void {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }
   let lastError: string | null = null
   let server: ReturnType<typeof createMcpSocketServer> | null = null
   let socketPath: string | null = null
@@ -101,6 +120,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
   // whichever door it came through — the connection identity is what differs.
   let audit: GatewayAuditStore | null = null
   let tailnet: TailnetRemoteService | null = null
+  let studioHost: TailnetStudioHost | null = null
   // The outbound half. Independent of the listener above: driving
   // another machine does not require having opened your own door, and a build
   // with remote control off can still be a Mesh client.
@@ -191,9 +211,15 @@ export function createAutomationService(options: AutomationServiceOptions) {
       resolveTools: options.resolveGatewayTools,
       ...(options.clientTools ? { clientTools: options.clientTools } : {}),
       isMutation: (tool) => isStudioGatewayMutation(tool, options.resolveGatewayTools),
-      conversations: options.resolveConversationHost?.(),
-      ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
-      ...(options.canvas ? { canvas: options.canvas } : {}),
+      ...(options.selfMachine ? { machine: options.selfMachine } : {}),
+      // Read when a device's Studio socket opens: the Studio server is built
+      // after this gateway, and links itself with `linkStudio`.
+      studio: () => studioHost,
+      // The machines this desktop holds behind their front doors, linked by
+      // whoever holds their sessions (main), read when a device's socket opens.
+      ...(options.tailnetBindAddress === undefined
+        ? {}
+        : { resolveBindAddress: () => options.tailnetBindAddress ?? null }),
       onToolCall: ({ context, tool, args, durationMs, result, error, servedBy }) => {
         // A token refused at the door is kept too, though nothing ran.
         if (
@@ -205,7 +231,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
           return
         auditStore().record({ connection: context.metadata, tool, args, durationMs, result, error, servedBy })
       },
-      onEvent: options.onTailnetEvent,
+      onEvent: (payload) => announce(tailnetListeners, payload, options.onTailnetEvent),
       // The reverse half of a both-ways pairing lands in the mesh: the
       // machine that just asked to drive this one can now be driven back.
       onReverseGrant: (input) => {
@@ -236,7 +262,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
         return tailnetService().revokeDevice(deviceId).devices.length < before
       },
       hasWindow: options.hasWindow,
-      onEvent: options.onMeshEvent,
+      onEvent: (event) => announce(meshListeners, event, options.onMeshEvent),
       log: (text) => warn('Tailnet mesh', text),
     })
     return mesh
@@ -396,16 +422,6 @@ export function createAutomationService(options: AutomationServiceOptions) {
     tailnet?.notifyToolsListChanged()
   }
 
-  // The change feed to paired devices. Only the tailnet listener has one; the
-  // local socket's clients are agents on this machine, which read on demand.
-  function notifyWorkspacesChanged(): void {
-    tailnet?.notifyWorkspacesChanged()
-  }
-
-  function notifyConversationsChanged(): void {
-    tailnet?.notifyConversationsChanged()
-  }
-
   /**
    * Settles once the socket gateway's first start has been attempted — never
    * rejects, since a gateway that failed to start reports that in its status
@@ -419,6 +435,13 @@ export function createAutomationService(options: AutomationServiceOptions) {
   return {
     initialize,
     whenGatewayReady,
+    /**
+     * The Studio server a paired device's socket on `/tailnet/v1/studio` is
+     * served by: this machine's one, the one its windows use.
+     */
+    linkStudio: (host: TailnetStudioHost): void => {
+      studioHost = host
+    },
     /** The one mutation audit, shared with every other listener (the Studio RPC's owner socket). */
     gatewayAudit: (): GatewayAuditStore => auditStore(),
     getStatus,
@@ -428,8 +451,6 @@ export function createAutomationService(options: AutomationServiceOptions) {
     createMcpHttpClient,
     revokeMcpHttpClient,
     notifyToolsListChanged,
-    notifyWorkspacesChanged,
-    notifyConversationsChanged,
     getTailnetStatus: (): TailnetRemoteStatus => tailnetService().getStatus(),
     getTailnetLiveState: (): TailnetLiveState => tailnetService().getLiveState(),
     setTailnetEnabled: (next: boolean): Promise<TailnetRemoteStatus> => tailnetService().setEnabled(next),
@@ -457,11 +478,16 @@ export function createAutomationService(options: AutomationServiceOptions) {
       id: string
       scopes?: unknown
       code?: unknown
-      via?: 'ipc' | 'tool'
+      via?: 'window' | 'tool'
     }): TailnetApprovePairRequestResult => tailnetService().approvePairRequest(input),
-    denyTailnetPairRequest: (id: string, via?: 'ipc' | 'tool'): TailnetRemoteStatus =>
+    denyTailnetPairRequest: (id: string, via?: 'window' | 'tool'): TailnetRemoteStatus =>
       tailnetService().denyPairRequest(id, via),
     listTailnetPeers: (): Promise<TailnetPeerScan> => tailnetService().listPeers(),
+    /** Every change to the listener, its requests and live connections (`tailnet.changed`). */
+    onTailnetChanged: (listener: (payload: TailnetPushPayload) => void): (() => void) =>
+      follow(tailnetListeners, listener),
+    /** Every whole-app fact of the mesh (`mesh.changed`). */
+    onMeshChanged: (listener: (event: MeshEvent) => void): (() => void) => follow(meshListeners, listener),
     /** The Mesh client: the machines this Studio drives. */
     mesh: (): TailnetMeshService => meshService(),
   }

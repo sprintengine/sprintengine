@@ -32,7 +32,13 @@ export type ConversationTranscriptLimits = {
   fullReadBytes: number
   /** Byte budget of one snapshot or earlier page; it ends early, turn-aligned where it can be. */
   pageBytes: number
-  /** A reconnect further behind than either of these gets a fresh snapshot instead of the missed events. */
+  /**
+   * A reconnect further behind than either of these gets a fresh snapshot
+   * instead of the missed events. The bytes are the wire's page budget
+   * (`CONVERSATION_WIRE_PAGE_BYTES`, which a test holds this to), as stored:
+   * a catch-up crosses a wire projected, which is never larger, so a replay
+   * is bounded as a snapshot is.
+   */
   catchUpEvents: number
   catchUpBytes: number
 }
@@ -41,7 +47,7 @@ export const DEFAULT_TRANSCRIPT_LIMITS: ConversationTranscriptLimits = {
   fullReadBytes: MAX_CONVERSATION_TRANSCRIPT_BYTES,
   pageBytes: 8 * 1024 * 1024,
   catchUpEvents: 2000,
-  catchUpBytes: 8 * 1024 * 1024,
+  catchUpBytes: 2 * 1024 * 1024,
 }
 
 /** Generation of a transcript that does not exist yet. */
@@ -53,6 +59,14 @@ const HEAD_BYTES = 64 * 1024
 const MAX_RECORD_BYTES = 16 * 1024 * 1024
 const MAX_CONCURRENT_READS = 4
 const MAX_CACHED_OFFSETS = 4096
+// The chats whose offsets are kept, the ones paged most recently: a page
+// leaves a mark at each turn, so a long session reading many chats deep would
+// otherwise keep thousands for each of them.
+const OFFSET_TRANSCRIPTS = 32
+// A page remembers where each turn it reads begins, and a record at least
+// this often, so paging back from any cursor (a wire cuts a page shorter than
+// this reader read it) seeks to near it rather than reading down from the end.
+const OFFSET_MARK_BYTES = 256 * 1024
 // The parsed ends of the transcripts read most recently, kept so reading one
 // again parses only what was appended since. The bytes are the source lines'.
 const PARSED_TAIL_TRANSCRIPTS = 8
@@ -119,12 +133,11 @@ export class ConversationTranscriptReader {
   sync(
     root: string,
     path: string,
-    input: { afterSeq?: number; generation?: string; turnLimit?: number; forceSnapshot?: boolean },
+    input: { afterSeq?: number; generation?: string; turnLimit?: number },
   ): Promise<TranscriptSyncResult> {
     return this.read(root, path, async (records, generation) => {
       const { afterSeq } = input
       if (
-        !input.forceSnapshot &&
         afterSeq !== undefined &&
         Number.isSafeInteger(afterSeq) &&
         afterSeq >= 0 &&
@@ -142,12 +155,26 @@ export class ConversationTranscriptReader {
   before(root: string, path: string, beforeCursor: number, turnLimit?: number): Promise<ConversationPage> {
     return this.read(root, path, async (records, generation, file) => {
       const cached = this.offsets.get(path)
-      const offset = cached?.generation === generation ? cached.bySeq.get(beforeCursor) : undefined
+      // Where the record at the cursor starts, or else the nearest newer one
+      // a page remembered: what lies between is read and skipped.
+      let offset: number | undefined
+      if (cached?.generation === generation) {
+        offset = cached.bySeq.get(beforeCursor)
+        let nearest = Number.POSITIVE_INFINITY
+        if (offset === undefined)
+          for (const [seq, at] of cached.bySeq)
+            if (seq >= beforeCursor && seq < nearest) {
+              nearest = seq
+              offset = at
+            }
+      }
       // Within the parsed tail, skipping to the cursor costs no read.
       const tail = this.tails.get(path)
       const parsed = tail?.generation === generation && offset !== undefined && offset > tail.start
       const source =
-        offset !== undefined && file && !parsed ? backwardRecords(file, offset) : skipFrom(records, beforeCursor)
+        offset !== undefined && file && !parsed
+          ? skipFrom(backwardRecords(file, offset), beforeCursor)
+          : skipFrom(records, beforeCursor)
       return (await this.page(path, generation, source, turnLimit)).page
     })
   }
@@ -178,6 +205,25 @@ export class ConversationTranscriptReader {
       }
       const events = newest.reverse().flat()
       return Number.isFinite(maxEvents) ? events.slice(-maxEvents) : events
+    })
+  }
+
+  /**
+   * The event a page, a catch-up or the live stream gave out under `seq` and
+   * `id`, as stored. Within a merged run of deltas that is the span from the
+   * delta `id` names (the run's first, or where a catch-up's cursor fell)
+   * through the one numbered `seq` (the run's last, or a live delta's own).
+   * Read back from the end as far as it takes. Undefined when the log has no
+   * such event.
+   */
+  eventAt(root: string, path: string, seq: number, id: string): Promise<ConversationEvent | undefined> {
+    return this.read(root, path, async (records) => {
+      for await (const record of records) {
+        if (record.lastSeq < seq) return undefined
+        if (record.firstSeq > seq) continue
+        return spanOf(record, seq, id)
+      }
+      return undefined
     })
   }
 
@@ -288,8 +334,14 @@ export class ConversationTranscriptReader {
     let bytes = 0
     let hasMore = false
     let head: number | null = null
+    let sinceMark = 0
     for await (const record of records) {
       head ??= record.lastSeq
+      sinceMark += record.bytes
+      if (record.offset !== undefined && (record.event.type === 'user_message' || sinceMark >= OFFSET_MARK_BYTES)) {
+        this.remember(path, generation, record.firstSeq, record.offset)
+        sinceMark = 0
+      }
       if (turns === limit) {
         // Enough turns; what is left before the oldest belongs to this page
         // only if no earlier turn exists (the session's opening events).
@@ -324,9 +376,13 @@ export class ConversationTranscriptReader {
 
   private remember(path: string, generation: string, seq: number, offset: number): void {
     let cached = this.offsets.get(path)
-    if (!cached || cached.generation !== generation) {
-      cached = { generation, bySeq: new Map() }
-      this.offsets.set(path, cached)
+    if (!cached || cached.generation !== generation) cached = { generation, bySeq: new Map() }
+    // Most recently paged last; the least recent goes past the bound.
+    this.offsets.delete(path)
+    this.offsets.set(path, cached)
+    for (const oldest of this.offsets.keys()) {
+      if (this.offsets.size <= OFFSET_TRANSCRIPTS) break
+      this.offsets.delete(oldest)
     }
     if (cached.bySeq.size >= MAX_CACHED_OFFSETS) cached.bySeq.clear()
     cached.bySeq.set(seq, offset)
@@ -628,6 +684,28 @@ async function* skipFrom(records: Records, beforeCursor: number): Records {
  * its last delta's sequence. With `afterSeq`, only the deltas after it are
  * kept — a reconnect can land in the middle of a run.
  */
+/** The span of a record from the event `id` names through the one numbered `seq`, or undefined. */
+function spanOf(record: TranscriptRecord, seq: number, id: string): ConversationEvent | undefined {
+  const { parts, ...event } = record.event
+  const text = typeof event.payload?.text === 'string' ? event.payload.text : null
+  if (!Array.isArray(parts) || parts.length === 0 || text === null)
+    return event.id === id && record.lastSeq === seq ? { ...event, seq } : undefined
+  const first = parts.findIndex((part) => part[0] === id)
+  const last = seq === record.lastSeq ? parts.length - 1 : parts.findIndex((part) => part[3] === seq)
+  if (first === -1 || last < first) return undefined
+  let start = 0
+  for (let index = 0; index < first; index++) start += parts[index][2]
+  let end = start
+  for (let index = first; index <= last; index++) end += parts[index][2]
+  return {
+    ...event,
+    id,
+    createdAt: parts[first][1],
+    seq,
+    payload: { ...event.payload, text: text.slice(start, end) },
+  }
+}
+
 function compact(record: TranscriptRecord, afterSeq?: number): ConversationEvent {
   const { parts, ...event } = record.event
   if (!Array.isArray(parts) || parts.length === 0) return { ...event, seq: record.lastSeq }

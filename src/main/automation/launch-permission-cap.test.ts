@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, test } from 'vitest'
 
 import type { AgentLaunchRequest } from '../../shared/agent-launch'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
@@ -17,11 +20,16 @@ import {
   type AgentPermissionResolver,
 } from './launch-permission-cap'
 
+// The workspace's folder is a real one: a paired device names a folder only
+// inside a project this machine has open, and that check reads the disk.
+const APP_FOLDER = realpathSync(mkdtempSync(join(tmpdir(), 'launch-cap-app-')))
+afterAll(() => rmSync(APP_FOLDER, { recursive: true, force: true }))
+
 const WORKSPACE: Workspace = {
   id: 'ws-1',
   name: 'App',
   mode: 'standard',
-  folderPath: '/Users/dev/app',
+  folderPath: APP_FOLDER,
   templateId: 'solo',
   layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
   agents: {},
@@ -100,7 +108,7 @@ function harness(
         agentId,
         agentName: 'Scout',
         cli: 'claude-code',
-        cwd: '/Users/dev/app',
+        cwd: APP_FOLDER,
         processAlive: true,
         suspended: false,
         visible: false,
@@ -193,7 +201,7 @@ function scheduledAgent(fields: Partial<ScheduledAgentView>): ScheduledAgentView
     id: 'sa-1',
     prompt: 'tidy up',
     schedule: { cron: '0 9 * * *', timezone: 'UTC' },
-    folderPath: '/Users/dev/app',
+    folderPath: APP_FOLDER,
     hostId: null,
     cli: 'claude-code',
     cliModel: null,
@@ -275,7 +283,7 @@ for (const { tool, args } of LAUNCHING_TOOLS) {
     const h = harness('none')
     // backlog.work finds its project from the caller's workspace or from a
     // folder it names; an external caller names the folder.
-    const external = tool === 'backlog.work' ? { ...args, projectRoot: '/Users/dev/app' } : args
+    const external = tool === 'backlog.work' ? { ...args, projectRoot: APP_FOLDER } : args
     await h.call(tool, { ...external, permissionPreset: 'bypass' }, EXTERNAL_CALLER)
     await h.call(tool, external, EXTERNAL_CALLER)
     assert.deepEqual(forwarded(h), ['bypass', undefined])
@@ -284,7 +292,7 @@ for (const { tool, args } of LAUNCHING_TOOLS) {
 
   test(`${tool}: a paired device launches as it did before`, async () => {
     const h = harness('none')
-    const remote = tool === 'backlog.work' ? { ...args, projectRoot: '/Users/dev/app' } : args
+    const remote = tool === 'backlog.work' ? { ...args, projectRoot: APP_FOLDER } : args
     await h.call(tool, { ...remote, permissionPreset: 'bypass' }, PAIRED_DEVICE)
     assert.deepEqual(forwarded(h), ['bypass'])
     assert.equal(h.resolved, 0)

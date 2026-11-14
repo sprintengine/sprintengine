@@ -3,37 +3,18 @@ import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
 
 /**
  * The toolsets the shell offers a server out of process (phase 6, 6.3,
- * decision R78): phase 5's browser and canvas, then the editor, tours,
- * terminals and agent launches, which act on a screen or a terminal the
- * shell holds.
+ * decision R78): phase 5's browser and canvas, then the editor and tours,
+ * which act on a screen the shell holds.
  *
- * A toolset's tools are `<toolset>.<tool>` on the wire, so the terminal
- * family's `agent.launch` and `agent.status` ride an `agent` toolset beside
- * `terminal`, under the names agents already call. `backlog.work` stays the
- * server's: its family is, and no offer may shadow a family the server serves.
- * It starts its terminal through `ShellBridge.terminals`. The worktree pool's
- * `worktree` family is the shell's too: main keeps the pool, and a pool driven
- * from two processes would race over its slots. So is `artifacts`: a publish
- * reads the page from this machine's disk and signs in with its credentials,
- * and its clone of the site is one main keeps. And `extension`: making an
- * extension project uses the templates and the guide shipped beside the app,
- * through the same scaffold as the New chat door. And `plugin`: the plugin
- * sources are main's, and an offer draws in a chat window of the shell's. And
- * `visual`: a preview is drawn in a hidden window of the app.
+ * The terminals are the server's (studio-agent-terminals.ts), so `terminal.*`,
+ * `agent.*` and `backlog.work` are its own tools in every mode. The worktree
+ * pool's `worktree` family is the server's, as the pool is (studio-worktree-pool.ts).
+ * And `visual`: a preview is drawn in a hidden window of the app. `extension`
+ * and `plugin` are the server's own (the scaffold and the plugin sources are
+ * its extensions'), and so is `artifacts` (Settings ▸ Artifacts and its
+ * clone of the site are its own; it asks the shell only for a page's picture).
  */
-export const SHELL_TOOLSETS = [
-  'browser',
-  'canvas',
-  'editor',
-  'tour',
-  'visual',
-  'terminal',
-  'agent',
-  'worktree',
-  'artifacts',
-  'extension',
-  'plugin',
-] as const
+export const SHELL_TOOLSETS = ['browser', 'canvas', 'editor', 'tour', 'visual'] as const
 
 /** Whether a gateway tool is one the shell offers, out of process, and not the server's. */
 export function isShellToolName(name: string): boolean {
@@ -44,15 +25,4 @@ export function isShellToolName(name: string): boolean {
 /** The automation tools a server out of process serves itself: every one but the shell's. */
 export function serverAutomationTools(backends: AutomationBackends): McpToolRegistration[] {
   return createAutomationTools(backends).filter((tool) => !isShellToolName(tool.name))
-}
-
-/** The automation tools the shell offers, as its `terminal` and `agent` toolsets. */
-export function shellTerminalToolsets(
-  backends: AutomationBackends,
-): Array<{ name: 'terminal' | 'agent'; registrations: McpToolRegistration[] }> {
-  const tools = createAutomationTools(backends)
-  return (['terminal', 'agent'] as const).map((name) => ({
-    name,
-    registrations: tools.filter((tool) => tool.name.startsWith(`${name}.`)),
-  }))
 }

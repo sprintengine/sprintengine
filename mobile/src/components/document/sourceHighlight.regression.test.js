@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
   highlightSource,
-} = require("../../../.mobile-test-build/src/components/document/sourceHighlight.js");
+} = require("../../../.mobile-test-build/mobile/src/components/document/sourceHighlight.js");
 test("native highlighting preserves exact source across supported grammars", () => {
   for (const [language, source] of [
     ["ts", 'const answer = "hello"; // note\nreturn 42;\n'],

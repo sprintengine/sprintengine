@@ -96,11 +96,11 @@ test('a page that is not a workspace window is ignored on every channel', () => 
 test('a second launch carrying a chat link goes to the router alone', () => {
   const opened: ChatLink[] = []
   let windowsRaised = 0
-  routeSecondLaunch(['/opt/SprintEngine Studio/sprintengine-studio', 'sprintengine://chat/ws1?agent=a1'], {
+  routeSecondLaunch(['/opt/SprintEngine Studio/sprintengine-studio', 'sprintengine://chat/env-here/ws1?agent=a1'], {
     openChatLink: (link) => void opened.push(link),
     openWindow: () => void (windowsRaised += 1),
   })
-  assert.deepEqual(opened, [{ kind: 'chat', chatId: 'ws1', agentId: 'a1' }])
+  assert.deepEqual(opened, [{ kind: 'chat', environmentId: 'env-here', chatId: 'ws1', agentId: 'a1' }])
   assert.equal(windowsRaised, 0, 'the router raises the window the chat opens in, and only that one')
 })
 

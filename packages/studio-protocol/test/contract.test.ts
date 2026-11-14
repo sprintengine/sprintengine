@@ -108,14 +108,17 @@ test('a topic table needs a validator for every topic, and a push topic says so'
   void notPush
 })
 
-test('every method of the protocol has a scope declaration and a validator; only the server’s own take no scope', () => {
+test('every method of the protocol has a scope declaration and a validator; only the server’s own and an owner’s take no scope', () => {
   for (const [method, definition] of Object.entries(STUDIO_METHODS)) {
     assert.ok(Object.hasOwn(definition, 'scope'), method)
     assert.equal(typeof definition.params, 'function', method)
-    if (definition.scope === null) assert.ok(method.startsWith('server.'), method)
+    // `update.status` too: how a client that cannot talk to this Studio recovers.
+    // The terminals too: no scope reaches them, and only an owner's connection may.
+    if (definition.scope === null)
+      assert.ok(method.startsWith('server.') || method === 'update.status' || definition.owner, method)
   }
   for (const [topic, definition] of Object.entries(STUDIO_TOPICS)) {
-    assert.ok(definition.scope, topic)
+    assert.ok(definition.scope || definition.owner, topic)
     assert.equal(typeof definition.params, 'function', topic)
   }
 })

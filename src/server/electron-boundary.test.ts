@@ -58,8 +58,16 @@ const SERVER_BOUND: readonly string[] = [
   // Providers and the agent CLIs they run.
   'src/main/providers/**',
   'src/main/model-discovery/service.ts',
+  // The CLIs' detection, installs and version check, and what the agents are
+  // set up with (core/studio-agent-services.ts).
+  'src/main/cli-runtimes.ts',
+  'src/main/cli-version-advisory-service.ts',
+  'src/main/agent-config-import.ts',
+  'src/main/studio-area-skill-store.ts',
   // Launch.
   'src/main/conversation-launch-service.ts',
+  // The conversation service the IPC and the Studio protocol both serve.
+  'src/main/conversation-service.ts',
   'src/main/agent-launch-service.ts',
   'src/main/terminal-launch.ts',
   'src/main/managed-runtime.ts',
@@ -92,7 +100,7 @@ const SERVER_BOUND: readonly string[] = [
   'src/main/module-host/module-secrets.ts',
   'src/main/module-host/enablement-store.ts',
   'src/main/modules/agent-runtime-module.ts',
-  'src/main/modules/scheduled-agents-module.ts',
+  'src/main/modules/scheduled-agents-switch.ts',
   'src/main/modules/third-party-main-loader.ts',
   // Settings and credentials.
   'src/main/launch-settings-store.ts',

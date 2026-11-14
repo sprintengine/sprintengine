@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.markUnread', async () => {
   // Mark unread is main's (`conversation.mark_unread`, a phone's too): the row
@@ -47,11 +50,11 @@ test('WorkspaceSidebar.markUnread', async () => {
   dom.window.ResizeObserver = NoopResizeObserver as unknown as typeof dom.window.ResizeObserver
 
   const marked: string[] = []
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
     workspaceMarkUnread: async (workspaceId: string) => {
       marked.push(workspaceId)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 
-import type { StudioClient } from '../../../../../packages/agent-sdk/src/index'
+import { negotiateChatCapabilities, type StudioClient } from '../../../../../packages/client-runtime/src/public'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { InlineNotice } from '../../components/ui/InlineNotice'
 import type { UserTurn } from '../../components/panels/agentChat/conversationProjection'
@@ -8,6 +8,8 @@ import { deriveConversationTimelineRows } from '../../components/panels/agentCha
 import {
   ConversationTransportProvider,
   type ConversationTransport,
+  type ChatEnvironment,
+  type ConversationTransportCapabilities,
 } from '../../components/panels/agentChat/conversationTransport'
 import {
   createConversationProjectionState,
@@ -30,39 +32,23 @@ const NO_USER_TURNS: UserTurn[] = []
 // drops it before anything is sent.
 const NO_FOLDER = 'embed'
 
-const READ_ONLY = {
-  operate: false,
-  // The Studio serving the embed keeps them; the view only reads them.
-  keepsSideQuestions: true,
-  startSession: false,
-  permanentApprovals: false,
-  quotes: false,
-  checkpointRevert: false,
-  modelSwitch: false,
-  composerContext: false,
-  mentions: false,
-  attachFiles: false,
-  commandList: false,
-  imageAttachments: false,
-  localHistory: false,
-  localFiles: false,
-  optimisticTurns: false,
-  reportsPreset: false,
-  permissionModes: false,
-  steer: false,
-  hostQueue: false,
-  hostQueueAttachments: false,
-  skills: false,
-  hostPullRequests: false,
-  hostSchedule: false,
-  hostUsageLimits: false,
-  hostChanges: false,
-  agentMessages: false,
-} as const
+/**
+ * The embed's capabilities, read off its Studio's welcome as any chat's are,
+ * with the grant narrowed to reading: the view reads and does nothing else,
+ * whatever more its client may do.
+ */
+function readOnlyCapabilities(client: StudioClient): ConversationTransportCapabilities {
+  const { welcome } = client
+  return negotiateChatCapabilities({
+    via: 'studio',
+    welcome: { ...welcome, grant: { ...welcome.grant, owner: false, scopes: ['conversation:read'] } },
+  })
+}
 
 const refused = async () => ({ ok: false as const, message: 'This view is read-only.' })
 
 function embedTransport(client: StudioClient): ConversationTransport {
+  let said: { welcome: object; capabilities: ConversationTransportCapabilities } | null = null
   const source = () => Promise.resolve(client)
   const parts = createStudioConversationParts(source)
   // The folder leaves as `undefined`, which the wire drops: the server finds
@@ -72,12 +58,23 @@ function embedTransport(client: StudioClient): ConversationTransport {
     ...input,
     key: { ...input.key, workspaceRoot: noFolder },
   })
+  let where: ChatEnvironment | null = null
   return {
-    kind: 'remote',
-    capabilities: READ_ONLY,
+    get capabilities() {
+      if (said?.welcome !== client.welcome)
+        said = { welcome: client.welcome, capabilities: readOnlyCapabilities(client) }
+      return said.capabilities
+    },
+    // The Studio it was let into, which is its own: no machine to name.
+    get environment() {
+      const id = client.welcome.environment.id
+      if (where?.id !== id) where = { id, label: null, route: null }
+      return where
+    },
     subscribe: (input, cb) => parts.subscribe(keyed(input), cb),
     loadEarlier: (input) => parts.loadEarlier(keyed(input)),
     toolDetail: (input) => parts.toolDetail({ ...input, workspaceRoot: noFolder }),
+    readEvent: (input) => parts.readEvent({ ...input, workspaceRoot: noFolder }),
     turnDiff: (input) => parts.turnDiff(keyed(input)),
     send: refused,
     interrupt: refused,

@@ -55,7 +55,7 @@ Templates combine. `--with` adds parts on top of the one you start from, and
 
 | Part | What it adds |
 | --- | --- |
-| `main` | `src/main.ts` and `entry.main` with its `build:main` script, `dependsOn: ["agent-runtime"]`, and `module:bridge` when the project has a renderer |
+| `main` | `src/main.ts`, its methods' contract in `src/methods.ts`, and `entry.main` with its `build:main` script, `dependsOn: ["agent-runtime"]`, and `module:bridge` |
 | `mcp` | MCP tools registered from `entry.main` (`mcp:tools`); brings `main` when missing |
 | `settings` | A Settings section (`storage`) |
 | `door` | A full-page surface drawn with the host's door shell |
@@ -119,7 +119,7 @@ import { registerRenderer } from '../src/renderer'
 
 const main = createFakeMainHost({ manifest })            // id and permissions from the manifest
 await registerMain(main.host)
-await main.ipc.invoke('my-extension:start', { workspaceId: 'ws-app' })   // as the renderer would
+await main.methods.operate('start', { workspaceId: 'ws-app' })          // as the renderer would
 main.services.conversations.emitEvent(ref, { type: 'turn_completed' })  // make the agent answer
 await main.tools.call('my_extension_search', { query: 'x' })            // as an agent would
 
@@ -165,8 +165,9 @@ const html = await renderer.render.surface('my-extension')   // a door, rendered
 
   A permission the host checks is refused as the host refuses it
   (`permission_missing`, or a throw); a disclosure-only one used undeclared is
-  listed in `undeclared`. `ipc.invoke` needs `module:bridge` and clones like
-  IPC; `tools.call` hands the handler agent metadata. The module app state is
+  listed in `undeclared`. `methods.read` / `methods.operate` call your
+  declared methods as the window would, refused as the host refuses and
+  carried as JSON; `tools.call` hands the handler agent metadata. The module app state is
   the windows' to write: `setAppState(key, value)` pushes a Settings change
   that `watchModuleAppState` hears (`appState` seeds it).
   `getModuleDataDir()` hands out a temporary folder (`dispose()` removes it;
@@ -229,7 +230,7 @@ The manifest fields that matter most:
 | `id` | `^[a-z0-9][a-z0-9-]{0,62}$`, equal to the install folder name, not one of `BUNDLED_MODULE_IDS`. |
 | `version` | Positive integer. |
 | `source` | `"third-party"`. |
-| `engines` | `{ "hostApi": 1 }` — **required**. See "Host API version". |
+| `engines` | `{ "hostApi": 2 }` — **required**. See "Host API version". |
 | `permissions` | What the module touches; shown before anyone trusts it. |
 | `dependsOn` | Module ids that load first, e.g. `scheduled-agents`, `agent-runtime`. |
 | `entry` | `{ "renderer": "dist/renderer.mjs", "main": "dist/main.cjs" }`. |
@@ -246,12 +247,19 @@ every `entry.renderer` and asset it serves.
 ## Host API version
 
 `HOST_API_VERSION` names the host contract this SDK describes, as one integer;
-this release has `HOST_API_VERSION = 1` and `HOST_API_MIN_SUPPORTED = 1`. A third-party manifest must declare the version it was built
+this release has `HOST_API_VERSION = 2` and `HOST_API_MIN_SUPPORTED = 2`. A third-party manifest must declare the version it was built
 against:
 
 ```json
-"engines": { "hostApi": 1 }
+"engines": { "hostApi": 2 }
 ```
+
+Host API 2 replaced host API 1's IPC channels with declared methods
+(`MainHost.registerMethods`, `RendererHost.methods`; see "Calling your
+entry.main from the renderer"). A module built for host API 1 is refused, and
+Settings and the bell say what to change: `registerIpc` becomes
+`registerMethods`, `host.invoke` becomes `host.methods().read` or `.operate`,
+and `engines.hostApi` becomes 2.
 
 Studio loads a module when that number is within
 `[HOST_API_MIN_SUPPORTED, HOST_API_VERSION]` of the app, and otherwise refuses
@@ -297,7 +305,7 @@ checked on every call, and a module without them gets `permission_missing`:
 | `github` | `getGitHubService` |
 | `mcp:tools` | `MainHost.registerMcpTools` |
 | `agents:companion` | Attaching a companion agent |
-| `module:bridge` | The renderer → own `entry.main` bridge (`RendererHost.invoke`). The broad `ipc:invoke` still opens it for older manifests; declare `module:bridge` instead |
+| `module:bridge` | Declaring methods your window code calls (`MainHost.registerMethods`, `RendererHost.methods`). The broad `ipc:invoke` also allows it; declare `module:bridge` instead |
 | `backlog.read` | `getBacklogService` reads; `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` |
 | `backlog.write` | `getBacklogService` writes; the renderer's `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` |
 | `usage:read` | `getUsageService`, `RendererHost.queryUsage` |
@@ -319,21 +327,28 @@ export const registerMain: RegisterMain = (host) => {
   if (!host.supports('conversations')) return
   const chats = getConversationService(host)
 
-  host.registerIpc('my-module:ask', async (_event, workspaceId: string) => {
-    const created = await chats.create({
-      workspaceId,
-      prompt: 'Summarise what changed on this branch.',
-      skills: ['my-review-guide'], // installed before the first turn and invoked in it
-    })
-    if (!created.ok) return created // { ok: false, code, message }
-    const { conversation } = created
-    const off = chats.subscribe(conversation, async (event) => {
-      if (event.type !== 'turn_completed') return
-      off()
-      const reply = await chats.reply(conversation) // the agent's last message of the turn
-      if (reply.ok) host.emit('summary', reply.text)
-    })
-    return { ok: true, agentId: conversation.agentId }
+  host.registerMethods({
+    ask: {
+      access: 'operate',
+      params: readWorkspaceId, // (value) => { ok: true, params } | { ok: false, message }
+      handler: async ({ workspaceId }, { commandId }) => {
+        const created = await chats.create({
+          commandId, // a retried call finds the chat the first one made
+          workspaceId,
+          prompt: 'Summarise what changed on this branch.',
+          skills: ['my-review-guide'], // installed before the first turn and invoked in it
+        })
+        if (!created.ok) return created // { ok: false, code, message }
+        const { conversation } = created
+        const off = chats.subscribe(conversation, async (event) => {
+          if (event.type !== 'turn_completed') return
+          off()
+          const reply = await chats.reply(conversation) // the agent's last message of the turn
+          if (reply.ok) host.emit('summary', reply.text)
+        })
+        return { ok: true, result: { agentId: conversation.agentId } }
+      },
+    },
   })
 }
 ```
@@ -557,8 +572,9 @@ Beyond plain requests:
 - `listChatRuntimes()` — the agent runtimes a chat can run on, as the
   renderer lists them, with the ones this machine lacks marked unavailable
   (`host.supports('chat-runtimes')`).
-- `registerIpc(channel, handler)` — a channel your renderer calls through
-  `invoke`; it must start with `<moduleId>:`.
+- `registerMethods(methods)` — the methods your renderer (or a client the
+  person granted them) calls through `methods`: each with its access (`read`
+  or `operate`), a params validator and a handler. Needs `module:bridge`.
 - `provideService` / `getService` / `requireService(token)` — the service bridge. A
   third-party module resolves only the services the SDK publishes (its
   exported tokens and the ones behind the `get*Service` helpers).
@@ -615,8 +631,8 @@ your module's enablement, so turning it off removes it without a reload; an id
 another module already holds is a registration error that fails your module's
 load.
 
-- **Who you are:** `moduleId` — your manifest id, the prefix of your
-  `invoke` channels.
+- **Who you are:** `moduleId` — your manifest id, the module your
+  `methods()` calls reach.
 - **Where you appear:** `registerPanel`, `registerWorkspaceType`,
   `registerSidebarNavEntry`, `registerGlobalSurface`, `registerModalSurface`,
   `registerTopBarItem`, `registerSettingsSection`, `registerCommand`,
@@ -667,7 +683,7 @@ load.
 - **Usage:** `queryUsage(query)` (declare `usage:read`). See "Token usage".
 - **Theme:** `watchColorScheme(cb)` for a runtime you host (Monaco, a chart
   library); ordinary UI reads `THEME_TOKENS`.
-- **Bridge and events:** `invoke(channel, payload)` and `subscribe(topic, cb)`.
+- **Methods and events:** `methods<Contract>()` (`read`, `operate`) and `subscribe(topic, cb)`.
 - **Assets:** `getAssetUrl(relativePath)`.
 
 The TSDoc on each member in `dist/index.d.ts` is the reference for its exact
@@ -675,29 +691,60 @@ behaviour.
 
 ## Calling your entry.main from the renderer
 
+Declare what your window code calls as methods, in one contract both halves
+import:
+
 ```ts
+// src/methods.ts
+export type EventsMethods = {
+  'events.count': { access: 'read'; params: { day: string }; result: number }
+  'events.save': { access: 'operate'; params: { events: string[] }; result: { saved: number }; errors: 'full' }
+}
+
 // entry.main
 export const registerMain: RegisterMain = (host) => {
-  host.registerIpc('my-module:save-events', async (_event, payload) => {
-    // Node APIs available here
-    return { saved: true }
+  host.registerMethods<EventsMethods>({
+    'events.count': { access: 'read', params: readDay, handler: ({ day }) => ({ ok: true, result: count(day) }) },
+    'events.save': {
+      access: 'operate',
+      params: readEvents,
+      handler: async ({ events }) =>
+        (await save(events))
+          ? { ok: true, result: { saved: events.length } }
+          : { ok: false, code: 'full', message: 'No room left.' },
+    },
   })
 }
 
 // entry.renderer
-const result = await host.invoke('my-module:save-events', { events })
+const methods = host.methods<EventsMethods>()
+const answer = await methods.operate('events.save', { events })
+if (!answer.ok) host.toast({ title: answer.message, tone: 'error' })
 ```
 
-The channel must start with your own module id. The host routes an invoke only
-to a channel registered through `registerIpc` whose owner declares
-`module:bridge` (consent: "Let its window code talk to its own background
-code"). The broad `ipc:invoke`, which the bridge used to need, still opens it,
-so an older manifest keeps working. A refused invoke rejects with an Error whose `code` is a
-`ModuleBridgeRefusalCode` (`unknown_channel` | `not_bridgeable` |
-`permission_missing`).
+- **Access.** A `read` method changes nothing and is reached by a client
+  granted `modules:read`; an `operate` one changes something, needs
+  `modules:operate`, and is carried out once per command id (a retry is
+  answered with the first answer; the handler is told the id as
+  `context.commandId`, to pass to a chat it sends to). `methods().read` offers
+  only `read` methods and `operate` only `operate` ones.
+- **Params.** Every method reads its params with its own validator,
+  `(value) => { ok: true, params } | { ok: false, message }`; a refusal is
+  answered `invalid_params` in your words and the handler never runs.
+- **Answers.** A handler answers `{ ok: true, result }` (JSON) or its own
+  `{ ok: false, code, message }`. A call never throws: the host's refusals are
+  answers too: `module_unavailable` (not running here: switched off, refused,
+  or failed to load), `module_method_unknown`, `invalid_params`,
+  `scope_required`, `unavailable` (a handler that threw, or no connection).
+- **Names** are a lower-case letter, then letters, digits, dots and dashes;
+  your module id is their namespace. Declaring methods needs `module:bridge`
+  (consent: "Let its window code talk to its own background code"); the broad
+  `ipc:invoke` also allows it.
 
-**This bridge is a contract, not a security boundary.** All renderer code runs
-in one world; trust gating is the boundary.
+They travel over the window's Studio connection to the server your module
+runs on (`module.read` / `module.operate` on the Studio protocol), as every
+other client's calls do. The window shares one world with every module's
+renderer code, so trust gating stays the boundary.
 
 ## Module events (main → renderer)
 
@@ -705,8 +752,8 @@ in one world; trust gating is the boundary.
 `RendererHost.subscribe(topic, cb)`. Only your module's subscribers receive
 it; one emit reaches every open window, in order per module. **Nothing is
 replayed**: keep the durable answer readable through an IPC channel and let
-the event say "read it again". Payloads must be structured-cloneable; delivery
-pauses while your module is off.
+the event say "read it again". Payloads must be JSON (they ride the Studio
+protocol's `module.events` stream); delivery pauses while your module is off.
 
 ## Module storage
 
@@ -862,22 +909,28 @@ sidebar like the ones they make themselves, and they can close them.
 import { getScheduledAgentsService, type RegisterMain } from '@sprintengine/module-sdk'
 
 export const registerMain: RegisterMain = (host) => {
-  host.registerIpc('weather-deck:schedule-refresh', async (_event, folderPath: string) => {
-    const created = await getScheduledAgentsService(host).create({
-      prompt: 'Refresh the forecast notes for the watched city.',
-      schedule: { cron: '0 9 * * 1-5', timezone: 'Europe/Dublin' },
-      folderPath,
-      hostId: null,
-      cli: 'claude-code',
-      cliModel: null,
-      permissionPreset: null,
-      skills: [],
-      mcpServers: [],
-      worktree: null,
-      name: 'Morning forecast', // the sidebar's title; absent, the prompt's first line
-      tag: 'city:dublin', // your own label; each run's chat carries it
-    })
-    return created.ok ? created.agent.id : null
+  host.registerMethods({
+    'forecast.schedule': {
+      access: 'operate',
+      params: readFolderPath,
+      handler: async (folderPath) => {
+        const created = await getScheduledAgentsService(host).create({
+          prompt: 'Refresh the forecast notes for the watched city.',
+          schedule: { cron: '0 9 * * 1-5', timezone: 'Europe/Dublin' },
+          folderPath,
+          hostId: null,
+          cli: 'claude-code',
+          cliModel: null,
+          permissionPreset: null,
+          skills: [],
+          mcpServers: [],
+          worktree: null,
+          name: 'Morning forecast', // the sidebar's title; absent, the prompt's first line
+          tag: 'city:dublin', // your own label; each run's chat carries it
+        })
+        return created.ok ? { ok: true, result: created.agent.id } : created
+      },
+    },
   })
 }
 ```
@@ -1071,8 +1124,8 @@ valid for the app:
 
 ## Versioning
 
-Semver; `1.0.0-beta.0` is the first release of this contract (see
-`CHANGELOG.md`). The package version and the host API version move
+Semver; `1.0.0-beta.0` was the first release of this contract, and
+`2.0.0-beta.1` the first for host API 2 (see `CHANGELOG.md`). The package version and the host API version move
 separately: a new SDK release that only adds optional types keeps
 `HOST_API_VERSION`, and a module declares the host API, not the package
 version. In the app repository a drift guard (`drift/sdk-drift-guard.ts`,

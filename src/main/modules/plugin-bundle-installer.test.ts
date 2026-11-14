@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../../server/terminals/terminal-viewer'
 import type { MarketplacePluginInstallInput, McpClientTarget, McpSettings } from '../../shared/electron-api'
 import { canonicalManifestPayload, validateMarketplacePluginManifest } from '../../shared/marketplace'
 import type { PluginManifest, PluginMcpConfigFormat } from '../../shared/plugin-manifest'
@@ -15,12 +16,7 @@ import {
   canonicalManifestPayload as moduleCanonicalPayload,
   validateThirdPartyModuleManifest,
 } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
-import { readTrustedMarketplacePublisherFingerprintsSync } from '../marketplace/trusted-publishers'
-import type { ModuleTrustContext } from './module-signature'
 import { installMarketplacePlugin } from './plugin-bundle-installer'
-import { planThirdPartyMainModules } from './third-party-main-loader'
-import { discoverUserModules } from './user-module-registry'
 import { test } from 'vitest'
 
 test('plugin-bundle-installer', async () => {
@@ -69,15 +65,18 @@ test('plugin-bundle-installer', async () => {
     await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   }
 
-  function createMockWebContents(): WebContents & { sent: SentEvent[] } {
+  // A window, and the terminal pane in it the launch streams to.
+  function createMockWebContents(): WebContents & TerminalViewer & { sent: SentEvent[] } {
     const sender = {
       sent: [] as SentEvent[],
       isDestroyed: () => false,
+      isGone: () => false,
+      deliver: () => undefined,
       send(channel: string, payload: unknown): void {
         sender.sent.push({ channel, payload })
       },
     }
-    return sender as unknown as WebContents & { sent: SentEvent[] }
+    return sender as unknown as WebContents & TerminalViewer & { sent: SentEvent[] }
   }
 
   async function withElectronMock<T>(userDataDir: string, sender: WebContents, fn: () => Promise<T>): Promise<T> {
@@ -476,7 +475,7 @@ test('plugin-bundle-installer', async () => {
         })
 
         try {
-          const launch = await runtime.ipcHandlers.spawnTerminal(sender, {
+          const launch = await runtime.sessions.spawnTerminal(sender, {
             sessionId: 'bundle-mcp-launch',
             cols: 100,
             rows: 24,
@@ -490,12 +489,12 @@ test('plugin-bundle-installer', async () => {
           })
 
           assert.equal(launch.ok, true, JSON.stringify(launch))
-          assert.equal((await runtime.ipcHandlers.getTerminalStatus('bundle-mcp-launch')).processAlive, true)
+          assert.equal((await runtime.sessions.getTerminalStatus('bundle-mcp-launch')).processAlive, true)
           assert.equal(syncInputs.length, 1)
           assert.equal(syncInputs[0].clients.includes('codex'), true)
           assert.equal(syncInputs[0].settings.servers['bundle-mcp']?.enabled, true)
         } finally {
-          runtime.ipcHandlers.killTerminal('bundle-mcp-launch')
+          runtime.sessions.killTerminal('bundle-mcp-launch')
           await runtime.shutdown()
         }
       })
@@ -758,71 +757,6 @@ test('plugin-bundle-installer', async () => {
   })
 
   await suiteRun
-})
-
-// The first-party review module's own manifest was signed before `files`
-// existed, and nobody but the owner can re-sign it. Its bundle's plugin.json,
-// signed by the same trusted publisher, digests every file of the module, so
-// installing the bundle vouches for the module's code: the install records the
-// content it verified, and discovery holds the folder to exactly that.
-test('the shipped review bundle installs trusted, and code swapped in afterwards is refused', async () => {
-  const bundlePath = findMarketplaceResourcePath('plugins/review')
-  assert.ok(bundlePath)
-  const temp = await mkdtemp(join(tmpdir(), 'mc-marketplace-review-'))
-  try {
-    const moduleRoot = join(temp, 'modules')
-    const baseContext: ModuleTrustContext = {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: readTrustedMarketplacePublisherFingerprintsSync({ isPackaged: true }),
-    }
-    const services: Parameters<typeof installMarketplacePlugin>[1] = {
-      trustContext: () => baseContext,
-      mcpConfigService: createMcpConfigService({ lookupPlugin: () => undefined, homeDir: () => join(temp, 'home') }),
-      moduleRoot: () => moduleRoot,
-    }
-
-    const result = await installMarketplacePlugin({ localFolder: bundlePath }, services, {
-      requireTrustedModuleComponents: true,
-    })
-    assert.equal(result.ok, true, JSON.stringify(result))
-    if (!result.ok) return
-    const module = result.installed.find((component) => component.kind === 'module')
-    assert.equal(module?.id, 'review')
-    assert.equal(module?.trustStatus, 'trusted')
-    assert.match(module?.manifestFp ?? '', /^[0-9a-f]{64}$/)
-
-    // What the install receipt records is what vouches at every later launch.
-    const vouched: ModuleTrustContext = {
-      ...baseContext,
-      verifiedModuleInstalls: new Map([['review', module!.manifestFp!]]),
-    }
-    const listed = await discoverUserModules(moduleRoot, vouched)
-    assert.deepEqual(listed.rejected, [])
-    assert.equal(listed.modules[0]?.trust.status, 'trusted')
-    assert.equal(listed.modules[0]?.trust.via, 'publisher')
-    assert.ok(listed.modules[0]?.trust.verifiedFiles?.['dist/main.cjs'])
-    const planned = planThirdPartyMainModules(listed)
-    assert.deepEqual(planned.ineligible, {}, 'the first-party module stays load eligible')
-
-    // The review module signs its own `files`, so the first-party signature
-    // covers its code even without the install record.
-    const unvouched = await discoverUserModules(moduleRoot, baseContext)
-    assert.deepEqual(unvouched.rejected, [])
-    assert.equal(unvouched.modules[0]?.trust.status, 'trusted')
-
-    // Code swapped in after the install no longer matches what was vouched for.
-    await writeFile(join(moduleRoot, 'review', 'dist', 'main.cjs'), 'exports.registerMain = () => {}\n')
-    const swapped = await discoverUserModules(moduleRoot, vouched)
-    assert.deepEqual(swapped.modules, [], JSON.stringify(swapped.rejected))
-    assert.ok(
-      swapped.rejected[0]?.issues.some(
-        (issue) => issue.path === 'files.dist/main.cjs' && /does not match the signed digests/.test(issue.message),
-      ),
-      JSON.stringify(swapped.rejected),
-    )
-  } finally {
-    await rm(temp, { recursive: true, force: true })
-  }
 })
 
 // The install prompt's grant is recorded for a signed module, and a grant

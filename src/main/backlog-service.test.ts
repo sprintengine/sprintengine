@@ -1,13 +1,27 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  link,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
 import { parseBacklogFrontmatter } from '../shared/backlog/frontmatter'
 import {
   addOrUpdateBacklogLink,
+  BACKLOG_ITEM_MAX_BYTES,
   createBacklogEpic,
   createBacklogItem,
+  ensureBacklogItemIds,
   listBacklogItems,
   moveBacklogObjectSource,
   readBacklogItem,
@@ -30,7 +44,24 @@ import {
   updateBacklogType,
 } from './backlog-service'
 import { workspaceStorePath } from './workspace-store'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+// A step run once, right after the next `realpath` of a given path answers:
+// how a test puts a link in place between a path's check and its use.
+const afterRealpath = vi.hoisted(() => ({ at: null as null | { path: string; run: () => Promise<void> } }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const realpath = (async (path: string, options?: unknown) => {
+    const answer = await (actual.realpath as (path: string, options?: unknown) => Promise<string>)(path, options)
+    const step = afterRealpath.at
+    if (step && path === step.path) {
+      afterRealpath.at = null
+      await step.run()
+    }
+    return answer
+  }) as typeof actual.realpath
+  return { ...actual, realpath, default: { ...actual, realpath } }
+})
 
 test('backlog-service', async () => {
   const PRECISE_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -1177,6 +1208,27 @@ test('backlog-service', async () => {
     }
   }
 
+  // An item renamed to a name without `.md` drops out of the scan but keeps its
+  // id. Creation used to mint past only the files the scan lists, so the next new
+  // item got the same number.
+  async function testIdsCountEveryFile(): Promise<void> {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'sprintengine-backlog-ids-'))
+    try {
+      const first = await createBacklogItem({ workspaceRoot: tempRoot, title: 'First item' })
+      assert.equal(first.ok, true)
+      const firstPath = join(tempRoot, first.ok ? first.relativePath : '')
+      const renamed = join(dirname(firstPath), 'Renamed item')
+      await writeFile(renamed, await readFile(firstPath, 'utf-8'))
+      await rm(firstPath)
+      const second = await createBacklogItem({ workspaceRoot: tempRoot, title: 'Second item' })
+      assert.equal(second.ok, true)
+      assert.equal(first.ok ? first.numericId : 0, 1)
+      assert.equal(second.ok ? second.numericId : 0, 2, 'the renamed file still owns id 1')
+    } finally {
+      await rm(tempRoot, { force: true, recursive: true })
+    }
+  }
+
   // The sidecar was tracked and ~550KB in a real project, and a scan or a link
   // re-resolve that confirms what is already stored must not touch it. Two guards
   // hold that line: the record keeps its prior `updatedAt` when nothing else moved,
@@ -1592,6 +1644,7 @@ test('backlog-service', async () => {
     .then(() => testBacklogIntegrityRepairsAreNarrowAndIdempotent())
     .then(() => testListAndReadBacklogItemsAreReadOnly())
     .then(() => testConfirmingRewritesLeaveTheSidecarAlone())
+    .then(() => testIdsCountEveryFile())
     .then(() => testLegacySidecarMigration())
     .then(() => testNewItemsAreFiledUnderTheirEpic())
     .then(() => testListingWalksNestedEpicFolders())
@@ -1604,4 +1657,224 @@ test('backlog-service', async () => {
     })
 
   await suiteRun
+})
+
+// A repository is anyone's to write, so a link in its backlog must not make
+// Studio read, send or write a file elsewhere on the disk: every read and
+// write holds the file's real path to the backlog's real folder.
+test('backlog files are read and written only where they really are inside the backlog', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-links-')))
+  const project = join(root, 'project')
+  const outside = join(root, 'private')
+  const secret = join(outside, 'secret.md')
+  const secretText = '---\nstatus: idea\n---\n# PRIVATE_CANARY\n'
+  try {
+    await mkdir(join(project, 'backlog', 'unfiled'), { recursive: true })
+    await mkdir(outside)
+    await writeFile(secret, secretText, 'utf-8')
+    await writeFile(join(project, 'backlog', 'unfiled', 'kept.md'), '# Kept\n', 'utf-8')
+    await symlink(secret, join(project, 'backlog', 'unfiled', 'escape.md'))
+    await symlink(join(project, 'backlog', 'unfiled', 'kept.md'), join(project, 'backlog', 'unfiled', 'alias.md'))
+    // An epic folder that is a link out of the project.
+    await symlink(outside, join(project, 'backlog', 'leak'))
+
+    const escaped = await readBacklogItem(project, 'backlog/unfiled/escape.md')
+    assert.equal(escaped.ok, false)
+    assert.ok(!JSON.stringify(escaped).includes('PRIVATE_CANARY'))
+    assert.equal((await readBacklogItem(project, 'backlog/leak/secret.md')).ok, false, 'nor through a linked folder')
+    assert.equal((await readBacklogItem(project, 'backlog/unfiled/kept.md')).ok, true)
+    assert.equal((await readBacklogItem(project, 'backlog/unfiled/alias.md')).ok, true, 'a link inside still reads')
+
+    const listed = await listBacklogItems(project)
+    assert.ok(listed.ok)
+    assert.ok(!JSON.stringify(listed).includes('PRIVATE_CANARY'))
+
+    // Writes through a link are refused and leave the file it points at alone.
+    const status = await updateBacklogStatus({
+      workspaceRoot: project,
+      relativePath: 'backlog/unfiled/escape.md',
+      status: 'ready',
+    })
+    assert.equal(status.ok, false)
+    const created = await createBacklogItem({ workspaceRoot: project, title: 'Planted', epic: 'leak' })
+    assert.equal(created.ok, false)
+    assert.equal(await readFile(secret, 'utf-8'), secretText)
+    assert.deepEqual(await readdir(outside), ['secret.md'])
+
+    // A `backlog` folder that is itself a link out of the project is no backlog of it.
+    const linked = join(root, 'linked')
+    await mkdir(linked)
+    await symlink(outside, join(linked, 'backlog'))
+    assert.equal((await readBacklogItem(linked, 'backlog/secret.md')).ok, false)
+    const linkedList = await listBacklogItems(linked)
+    assert.ok(!JSON.stringify(linkedList).includes('PRIVATE_CANARY'))
+
+    // A root a repository committed is not honoured: only the person sets one, in Settings.
+    const committing = join(root, 'committing')
+    await mkdir(join(committing, '.sprintengine', 'backlog'), { recursive: true })
+    await writeFile(
+      join(committing, '.sprintengine', 'backlog', 'config.json'),
+      `${JSON.stringify({ schemaVersion: 2, root: outside })}\n`,
+      'utf-8',
+    )
+    const location = await resolveBacklogLocation(committing)
+    assert.equal(location.ok && location.location.isDefault, true)
+    assert.equal((await readBacklogItem(committing, 'backlog/secret.md')).ok, false)
+    // Nor does the store's config, first written here to keep a derived key, take it up.
+    const ensured = await ensureBacklogItemIds({ workspaceRoot: committing, items: [] })
+    assert.equal(ensured.ok, true, ensured.ok ? '' : ensured.message)
+    const stored = JSON.parse(
+      await readFile(workspaceStorePath(committing, 'backlog', 'config.json'), 'utf-8'),
+    ) as Record<string, unknown>
+    assert.equal(typeof stored['key'], 'string')
+    assert.equal(stored['root'], undefined)
+    assert.deepEqual(await readdir(outside), ['secret.md'])
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
+})
+
+// The check and the write are two steps: a link put at the item between them
+// must not carry the write (or the read before it) to the file it points at.
+test.runIf(process.platform !== 'win32')(
+  'a link swapped in after a backlog file is checked is not written through',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-swap-')))
+    const project = join(root, 'project')
+    const item = join(project, 'backlog', 'unfiled', 'item.md')
+    const secret = join(root, 'private', 'secret.md')
+    const secretText = '---\nstatus: idea\n---\n# PRIVATE_CANARY\n'
+    try {
+      await mkdir(dirname(item), { recursive: true })
+      await mkdir(dirname(secret))
+      await writeFile(secret, secretText, 'utf-8')
+      await writeFile(item, '---\nstatus: idea\n---\n# Item\n', 'utf-8')
+      afterRealpath.at = {
+        path: item,
+        run: async () => {
+          await rm(item)
+          await symlink(secret, item)
+        },
+      }
+      const updated = await updateBacklogStatus({
+        workspaceRoot: project,
+        relativePath: 'backlog/unfiled/item.md',
+        status: 'ready',
+      })
+      assert.equal(afterRealpath.at, null, 'the link was put in place after the check')
+      assert.equal(updated.ok, false)
+      assert.ok(!JSON.stringify(updated).includes('PRIVATE_CANARY'))
+      assert.equal(await readFile(secret, 'utf-8'), secretText)
+    } finally {
+      afterRealpath.at = null
+      await rm(root, { force: true, recursive: true })
+    }
+  },
+)
+
+// A paired device reaches these files: a huge file, or one whose second name
+// (a hard link) is a file elsewhere on the disk, is refused, not read into
+// memory or written through.
+test.runIf(process.platform !== 'win32')(
+  'backlog files past the size limit, or with a second name, are neither read nor written',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-bounds-')))
+    const project = join(root, 'project')
+    const unfiled = join(project, 'backlog', 'unfiled')
+    const secret = join(root, 'private', 'canary.txt')
+    const secretText = 'PRIVATE_CANARY\n'
+    try {
+      await mkdir(unfiled, { recursive: true })
+      await mkdir(dirname(secret))
+      await writeFile(secret, secretText, 'utf-8')
+      await writeFile(join(unfiled, 'big.md'), `---\nstatus: idea\n---\n${'a'.repeat(BACKLOG_ITEM_MAX_BYTES)}`, 'utf-8')
+      await link(secret, join(unfiled, 'hard.md'))
+
+      const big = await readBacklogItem(project, 'backlog/unfiled/big.md')
+      assert.equal(big.ok, false)
+      assert.match(big.ok ? '' : big.message, /over the 1 MB/)
+      const hard = await readBacklogItem(project, 'backlog/unfiled/hard.md')
+      assert.equal(hard.ok, false)
+      assert.ok(!JSON.stringify(hard).includes('PRIVATE_CANARY'))
+      assert.match(hard.ok ? '' : hard.message, /hard link/)
+      const listed = await listBacklogItems(project)
+      assert.ok(listed.ok)
+      assert.deepEqual(
+        listed.items.map((item) => item.relativePath),
+        [],
+        'the list skips both',
+      )
+
+      const updated = await updateBacklogStatus({
+        workspaceRoot: project,
+        relativePath: 'backlog/unfiled/hard.md',
+        status: 'ready',
+      })
+      assert.equal(updated.ok, false)
+      assert.equal(await readFile(secret, 'utf-8'), secretText, "the other name's file is untouched")
+      assert.equal((await stat(join(unfiled, 'big.md'))).size > BACKLOG_ITEM_MAX_BYTES, true)
+      const bigUpdate = await updateBacklogStatus({
+        workspaceRoot: project,
+        relativePath: 'backlog/unfiled/big.md',
+        status: 'ready',
+      })
+      assert.equal(bigUpdate.ok, false)
+
+      const created = await createBacklogItem({
+        workspaceRoot: project,
+        title: 'Huge',
+        description: 'b'.repeat(BACKLOG_ITEM_MAX_BYTES),
+      })
+      assert.equal(created.ok, false, 'an item past the limit is not written')
+      assert.match(created.ok ? '' : created.message, /over the 1 MB/)
+    } finally {
+      await rm(root, { force: true, recursive: true })
+    }
+  },
+)
+
+test('a working-agent link is recorded only on an item that is there, inside the backlog', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-assign-')))
+  const project = join(root, 'project')
+  const unfiled = join(project, 'backlog', 'unfiled')
+  const secret = join(root, 'private', 'secret.md')
+  const link = {
+    id: 'weather-deck:kept',
+    moduleId: 'weather-deck',
+    type: 'execution' as const,
+    label: 'Weather Deck forecast',
+    target: { kind: 'weather-deck.forecast', id: 'kept' },
+  }
+  try {
+    await mkdir(unfiled, { recursive: true })
+    await mkdir(dirname(secret))
+    await writeFile(secret, '# PRIVATE_CANARY\n', 'utf-8')
+    await writeFile(join(unfiled, 'kept.md'), '# Kept\n', 'utf-8')
+    await symlink(secret, join(unfiled, 'escape.md'))
+
+    const missing = await addOrUpdateBacklogLink({
+      workspaceRoot: project,
+      relativePath: 'backlog/unfiled/none.md',
+      link,
+    })
+    assert.equal(missing.ok, false)
+    assert.match(missing.ok ? '' : missing.message, /does not exist/)
+    const escaped = await addOrUpdateBacklogLink({
+      workspaceRoot: project,
+      relativePath: 'backlog/unfiled/escape.md',
+      link,
+    })
+    assert.equal(escaped.ok, false)
+    assert.match(escaped.ok ? '' : escaped.message, /escaped the backlog root/)
+    const kept = await addOrUpdateBacklogLink({ workspaceRoot: project, relativePath: 'backlog/unfiled/kept.md', link })
+    assert.equal(kept.ok, true, kept.ok ? '' : kept.message)
+    const store = await readBacklogObjectStore(project)
+    assert.ok(store.ok)
+    assert.deepEqual(
+      store.store.items.map((record) => record.source.relativePath),
+      ['backlog/unfiled/kept.md'],
+    )
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
 })

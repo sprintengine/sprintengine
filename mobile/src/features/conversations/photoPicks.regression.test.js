@@ -8,14 +8,14 @@ const test = require("node:test");
 // photos and files together), each photo is read and refused on its own, and
 // each joins the tray as it uploads, so a failure part way keeps the rest.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { librarySelection, readPickedImages, uploadEach } = require(
   path.join(buildRoot, "src/features/conversations/photoPicks.js"),
 );
-const { CHAT_IMAGE_MAX_BYTES, chatImageMaxBytes } = require(
+const { CHAT_IMAGE_MAX_BYTES } = require(
   path.join(buildRoot, "src/features/conversations/composerOptions.js"),
 );
-const { CONVERSATION_MAX_IMAGES } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+const { CONVERSATION_MAX_IMAGES } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
 
 const jpeg = (name, size = 1024) => ({
   asset: { uri: `file:///cache/${name}`, fileName: name, mimeType: "image/jpeg", fileSize: size },
@@ -46,14 +46,12 @@ test("several photos are added in the order they were picked", () => {
 
 test("each photo is held to the size limit on its own, and the rest are still added", () => {
   const big = jpeg("big.jpg", CHAT_IMAGE_MAX_BYTES + 1);
-  const read = readPickedImages([jpeg("a.jpg"), big, jpeg("c.jpg")], chatImageMaxBytes(false), 16);
+  const read = readPickedImages([jpeg("a.jpg"), big, jpeg("c.jpg")], CHAT_IMAGE_MAX_BYTES, 16);
   assert.deepEqual(
     read.images.map((image) => image.name),
     ["a.jpg", "c.jpg"],
   );
   assert.equal(read.problem, "One of the 3 photos was left out. Choose an image smaller than 5 MB.");
-  // A desktop that sizes pictures itself takes the same photo.
-  assert.equal(readPickedImages([big], chatImageMaxBytes(true), 16).images.length, 1);
 });
 
 test("a pick of one that cannot be sent says only why, as a single pick always has", () => {

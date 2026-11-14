@@ -22,7 +22,7 @@ restart.
 | --- | --- |
 | `moduleId`, `hostApiVersion`, `supports(capability)` | Identity; ask `supports` before using a newer capability. |
 | `listChatRuntimes()` | `Promise<[{ id, label, available, models, lastSelected }]>`: the agent runtimes a chat can run on, as the renderer lists them, with missing ones `available: false`. `id` is the runtime id every `cli` takes. May probe (cached a minute). `supports('chat-runtimes')`. |
-| `registerIpc(channel, handler)` | A channel the renderer calls with `host.invoke`. Must start with `<moduleId>:`; the module must declare `module:bridge`. Handler: `(event, payload) => result`; `event` is opaque. Validate `payload` — it is input. |
+| `registerMethods<Contract>(methods)` | Methods the renderer calls with `host.methods<Contract>()`: each `{ access: 'read' \| 'operate', params, handler }`. `params` validates what was sent (`{ ok: true, params }` or `{ ok: false, message }`, answered `invalid_params`); the handler gets `(params, { clientId, commandId? })` and answers `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names: a lower-case letter, then letters, digits, dots, dashes. Needs `module:bridge`. Host API 1's `registerIpc` is gone. |
 | `emit(topic, payload?)` | Push a signal to your renderer's `host.subscribe(topic, cb)` in every window. No replay. |
 | `registerMcpTools(tools)` | Tools on the Studio MCP gateway every agent is connected to. Needs `mcp:tools`. |
 | `registerSkills(skills)` / `ensureSkillInstalled(root, id)` / `getSkillStatus(root, id)` | Ship skills (folders with SKILL.md) inside the module, put them in a workspace, or check without writing (below). |

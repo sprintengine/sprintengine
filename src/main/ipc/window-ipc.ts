@@ -180,6 +180,18 @@ export function registerWindowIpc(ipcMain: IpcMain, options: RegisterWindowIpcOp
     },
   )
 
+  // Studio deleted these paths: the other windows close what they have open
+  // under them (the editor window's tabs), as the deleting window closes its own.
+  ipcMain.handle('window:paths-removed', (event, input: unknown) => {
+    const paths = Array.isArray(input) ? input.filter((path): path is string => typeof path === 'string' && !!path) : []
+    if (paths.length === 0) return
+    const sender = BrowserWindow.fromWebContents(event.sender)
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win === sender || win.isDestroyed()) continue
+      win.webContents.send('workspace:paths-removed', paths)
+    }
+  })
+
   // The diff window's "Show in the app". Shaped like a docked file, but it is a
   // HAND-OFF rather than a broadcast, and the difference is the whole point:
   // the diff window closes itself on the strength of this call, so a broadcast

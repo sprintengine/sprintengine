@@ -1,4 +1,5 @@
 import type { App } from 'electron'
+import { join } from 'node:path'
 import { readStudioEnv } from '../shared/studio-env'
 
 /**
@@ -9,7 +10,7 @@ import { readStudioEnv } from '../shared/studio-env'
  * there first, or it would contend for the default profile's lock.
  */
 
-type AppIdentity = Pick<App, 'isPackaged' | 'setPath'>
+type AppIdentity = Pick<App, 'isPackaged' | 'setPath' | 'setAppLogsPath'>
 
 /**
  * A from-source build can be pinned to its own userData directory
@@ -20,6 +21,10 @@ export function configureDevUserData(app: AppIdentity): void {
   const userDataDir = readStudioEnv('SPRINTENGINE_USER_DATA_DIR')?.trim()
   if (!userDataDir || app.isPackaged) return
   app.setPath('userData', userDataDir)
+  // Logs go with the profile. Electron puts them under the real home's
+  // Library/Logs (or the profile's default folder) whatever userData is, so
+  // every pinned build would write into one shared folder.
+  app.setAppLogsPath(join(userDataDir, 'logs'))
 }
 
 /**

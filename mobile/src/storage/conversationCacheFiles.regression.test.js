@@ -8,7 +8,7 @@ const vm = require("node:vm");
 const { createHash } = require("node:crypto");
 const { createRequire } = require("node:module");
 const { test } = require("node:test");
-const compiled = path.resolve(__dirname, "../../.mobile-test-build/src/storage/conversationCache.js");
+const compiled = path.resolve(__dirname, "../../.mobile-test-build/mobile/src/storage/conversationCache.js");
 const localRequire = createRequire(compiled);
 
 function phone() {
@@ -80,6 +80,8 @@ const event = (seq) => ({
   sessionId: "s",
   workspaceId: "w",
   agentId: "a",
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload: { text: `${seq}` },
 });

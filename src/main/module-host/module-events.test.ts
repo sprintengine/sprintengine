@@ -1,36 +1,21 @@
 import assert from 'node:assert/strict'
-import type { IpcMain } from 'electron'
 
-import { MODULE_EVENTS_CHANNEL, type ModuleEventEnvelope } from '../../shared/modules/events'
+import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createMainKernel } from './main-host'
 import { test } from 'vitest'
 
 test('module-events', async () => {
-  // The module-owned event channel: the main→renderer push a module gets
-  // through its scoped host, and the subscribe verb the request/response bridge
+  // A module's events: the push to its client half a module gets through its
+  // scoped host (the Studio's `module.events` stream), and the subscribe verb the request/response bridge
   // does not have. What is pinned here is the routing contract — identity is the
   // host's, topic and payload are the module's — plus the two decisions the item
   // asked for: no replay buffer, and no flood bound.
 
-  function createFakeIpcMain(): { ipcMain: IpcMain; handlers: Map<string, (...args: unknown[]) => unknown> } {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>()
-    const ipcMain = {
-      handle(channel: string, handler: (...args: unknown[]) => unknown): void {
-        handlers.set(channel, handler)
-      },
-      removeHandler(channel: string): void {
-        handlers.delete(channel)
-      },
-    } as unknown as IpcMain
-    return { ipcMain, handlers }
-  }
-
   function testEmitStampsScopedIdentityAndTime(): void {
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
     let clock = 1_000
-    const kernel = createMainKernel(ipcMain, {
+    const kernel = createMainKernel({
       deliverModuleEvent: (event) => delivered.push(event),
       now: () => (clock += 1),
     })
@@ -50,8 +35,7 @@ test('module-events', async () => {
   }
 
   function testEmitValidatesTheTopic(): void {
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain, { deliverModuleEvent: () => {} })
+    const kernel = createMainKernel({ deliverModuleEvent: () => {} })
     const host = kernel.hostFor('widgets')
 
     assert.throws(() => host.emit('', {}), /non-empty topic/)
@@ -66,8 +50,7 @@ test('module-events', async () => {
 
   function testTopicIsTrimmedNotRewritten(): void {
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
-    createMainKernel(ipcMain, { deliverModuleEvent: (event) => delivered.push(event) })
+    createMainKernel({ deliverModuleEvent: (event) => delivered.push(event) })
       .hostFor('widgets')
       .emit('  run-status  ')
     assert.equal(delivered[0]?.topic, 'run-status', 'the topic is trimmed, never prefixed by the host')
@@ -78,8 +61,7 @@ test('module-events', async () => {
     // so a window opened after startup still sees launch diagnostics. Events are
     // signals: one emitted with no window open is dropped, and a subscriber must
     // be correct having missed it.
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain)
+    const kernel = createMainKernel()
     assert.doesNotThrow(
       () => kernel.hostFor('widgets').emit('run-status', { phase: 'done' }),
       'an emit with no delivery wired is a no-op, never a throw',
@@ -96,8 +78,7 @@ test('module-events', async () => {
     // user-visible. Dropping an event would instead make a subscriber wrong — a
     // door that never learns its run finished — so nothing here is bounded.
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain, {
+    const kernel = createMainKernel({
       deliverModuleEvent: (event) => delivered.push(event),
       now: () => 0,
     })
@@ -106,19 +87,8 @@ test('module-events', async () => {
     assert.equal(delivered.length, 100, 'every emit is delivered, identical repeats included')
   }
 
-  function testEventChannelNameIsReservedAgainstModules(): void {
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain)
-    assert.throws(
-      () => kernel.hostFor('impostor').registerIpc(MODULE_EVENTS_CHANNEL, async () => null),
-      /already registered by module "@host"/,
-      'a module cannot claim the host-owned events channel and impersonate the fan-out',
-    )
-  }
-
   async function testEmitFlowsThroughALoadedModule(): Promise<void> {
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
     const module: CapabilityModule = {
       manifest: { id: 'widgets', displayName: 'Widgets', version: 1, defaultEnabled: true },
       registerMain(host) {
@@ -128,7 +98,6 @@ test('module-events', async () => {
       },
     }
     const loaded = loadMainModules({
-      ipcMain,
       modules: [module],
       deliverModuleEvent: (event) => delivered.push(event),
     })
@@ -144,12 +113,24 @@ test('module-events', async () => {
     // The delivery is best effort per client, so a payload that cannot cross
     // to a client is refused at `emit`, back to the module that sent it.
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
-    const host = createMainKernel(ipcMain, { deliverModuleEvent: (event) => delivered.push(event) }).hostFor('widgets')
+    const host = createMainKernel({ deliverModuleEvent: (event) => delivered.push(event) }).hostFor('widgets')
     assert.throws(() => host.emit('run-status', { onDone: () => undefined }), /widgets.*run-status.*cannot be sent/)
     assert.equal(delivered.length, 0, 'nothing half-sent')
-    host.emit('run-status', { at: new Date(0), tags: new Set(['a']) })
-    assert.equal(delivered.length, 1, 'what structured clone carries is delivered')
+    assert.throws(() => host.emit('run-status', { at: new Date(0) }), /payload\.at is a Date, not a plain object/)
+    assert.throws(() => host.emit('run-status', { ratio: Number.NaN }), /payload\.ratio is NaN/)
+    const cycle: Record<string, unknown> = {}
+    cycle.self = cycle
+    assert.throws(() => host.emit('run-status', cycle), /refers back to itself/)
+    assert.equal(delivered.length, 0, 'nothing half-sent')
+    const shared = { phase: 'done' }
+    host.emit('run-status', {
+      at: '1970-01-01T00:00:00.000Z',
+      tags: ['a'],
+      first: shared,
+      second: shared,
+      skipped: undefined,
+    })
+    assert.equal(delivered.length, 1, 'a JSON value is delivered, a value seen twice (not a cycle) included')
   }
 
   testEmitStampsScopedIdentityAndTime()
@@ -158,7 +139,6 @@ test('module-events', async () => {
   testTopicIsTrimmedNotRewritten()
   testNothingIsBufferedForLateWindows()
   testEmitIsNotFloodBounded()
-  testEventChannelNameIsReservedAgainstModules()
   const suiteRun = testEmitFlowsThroughALoadedModule()
     .then(() => console.log('module-events tests passed'))
     .catch((error) => {

@@ -3,8 +3,17 @@ import { afterEach, test } from 'vitest'
 
 import type { StudioParsedServerFrame } from '../../../packages/studio-protocol/src/public'
 import {
+  CONVERSATION_WIRE_EVENT_BYTES,
+  CONVERSATION_WIRE_PAGE_BYTES,
+  CONVERSATION_WIRE_PREVIEW_CHARS,
+} from '../conversation-stream-shaping'
+import type { ConversationSessionFrame } from '../../shared/conversation-runtime'
+import type { StudioUpdates } from '../update/studio-updates'
+import { studioCommandFingerprint } from './studio-rpc-router'
+import {
   OWNER_TOKEN,
   connectLineClient,
+  createFakeBackend,
   hello,
   pairFakeClient,
   startTestServer,
@@ -58,13 +67,11 @@ test('a hello is welcomed with the grant, the Studio capabilities and the conver
     ceiling: 'auto',
   })
   assert.ok(welcome.t === 'welcome' && welcome.capabilities.includes('conversation-create'))
-  // The conversation lane's own answer, without the capabilities that
-  // describe the tailnet's transport.
+  // The conversation contract's capabilities, those the backend's host serves.
   assert.ok(welcome.t === 'welcome' && welcome.conversation.capabilities.includes('conversation-plans'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-images'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-message-images'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-message-files'))
-  assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-image-downscale'))
   // A send's mentions ride its validator here too; the folder reads are routes beside the tailnet's socket.
   assert.ok(welcome.t === 'welcome' && welcome.conversation.capabilities.includes('conversation-send-mentions'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-file-search'))
@@ -83,15 +90,160 @@ test('the welcome says where this Studio runs: local unless its server was start
   }
 })
 
-test('a client outside the version window is refused with both numbers named', async () => {
+test("a client outside the version window is refused with both numbers named, and this Studio's window", async () => {
   const { path, auth } = await serve()
   const token = pairFakeClient(auth, 'future', ['conversation:read'])
   const c = await client(path)
   c.send(hello({ token }, { protocolVersion: 5, minProtocolVersion: 4 }))
   const bye = await c.next(isT('bye'))
   assert.equal(bye.t === 'bye' && bye.code, 'unsupported_protocol_version')
-  assert.match(bye.t === 'bye' ? bye.message : '', /4 or newer.*speaks 1/)
+  // In the client's words, as the incompatible frame says it: the Studio is the side behind.
+  assert.equal(
+    bye.t === 'bye' ? bye.message : '',
+    'This Studio speaks Studio protocol 1, and this app needs 4 or newer. Update the Studio.',
+  )
+  // Its window, for the client to judge which side is behind.
+  assert.deepEqual(bye.t === 'bye' && [bye.protocolVersion, bye.minProtocolVersion], [1, 1])
+  // Nothing about this Studio before it has authenticated: not its version.
+  assert.doesNotMatch(bye.t === 'bye' ? bye.message : '', /0\.0\.0-test/)
   await c.closed
+})
+
+// ── Updates, and a client whose protocol does not meet this Studio's ───────
+
+/** A desktop that updates itself, with 9.9.9 waiting; what `start` was asked. */
+function selfUpdates(): StudioUpdates & { started: Array<{ commandId: string; targetVersion?: string }> } {
+  const started: Array<{ commandId: string; targetVersion?: string }> = []
+  return {
+    started,
+    status: () => ({ method: 'self', state: 'available', available: { version: '9.9.9' } }),
+    start: async (input) => {
+      started.push(input)
+      return { ok: true, targetVersion: '9.9.9' }
+    },
+  }
+}
+const keptHello = (token: string, window: { protocolVersion: number; minProtocolVersion: number }) =>
+  hello({ token }, { ...window, client: { name: 'test-app', capabilities: ['update-session'] } })
+
+test('a newer client that asks to be kept is told who this Studio is and how it is updated, and served only that', async () => {
+  const updates = selfUpdates()
+  const { path, auth, backend } = await serve({ updates })
+  const token = pairFakeClient(auth, 'keeper', ['conversation:read', 'environment:maintain'])
+  const c = await client(path)
+  c.send(keptHello(token, { protocolVersion: 5, minProtocolVersion: 4 }))
+  const frame = await c.next(isT('incompatible'))
+  assert.ok(frame.t === 'incompatible')
+  assert.equal(frame.compatibility, 'server-outdated')
+  assert.deepEqual([frame.protocolVersion, frame.minProtocolVersion, frame.server.version], [1, 1, '0.0.0-test'])
+  assert.equal(frame.environment.id, 'env-test')
+  assert.match(frame.message, /Update the Studio\./)
+  assert.deepEqual(frame.update, {
+    serverVersion: '0.0.0-test',
+    protocolVersion: 1,
+    minProtocolVersion: 1,
+    method: 'self',
+    state: 'available',
+    available: { version: '9.9.9' },
+  })
+  // The update methods are served; nothing else is, and no stream opens.
+  const status = await request(c, 's1', 'update.status')
+  assert.equal(status.ok && (status.result as { method: string }).method, 'self')
+  const listed = await request(c, 'l1', 'conversation.list')
+  assert.equal(!listed.ok && listed.error.code, 'unsupported_protocol_version')
+  c.send({ t: 'sub', id: 'f1', topic: 'conversation.follow', params: { key } })
+  const failed = await c.next((f) => f.t === 'subFailed' && f.sub === 'f1')
+  assert.equal(failed.t === 'subFailed' && failed.code, 'unsupported_protocol_version')
+  assert.equal(failed.t === 'subFailed' && failed.retryable, false)
+  const started = await request(c, 'u1', 'update.start', { commandId: 'update-1' })
+  assert.deepEqual(started.ok && started.result, { accepted: true, method: 'self', targetVersion: '9.9.9' })
+  // The command id reaches the host, which answers a retry of it as it was.
+  assert.deepEqual(updates.started, [{ commandId: 'update-1' }])
+  assert.deepEqual([backend.commands, backend.creates, backend.followers('agent-1')], [[], [], 0])
+})
+
+test('an older client is told to update itself, against a Studio that has moved on', async () => {
+  const { path, auth } = await serve({
+    updates: selfUpdates(),
+    protocol: { protocolVersion: 3, minProtocolVersion: 2 },
+  })
+  const token = pairFakeClient(auth, 'old', ['conversation:read'])
+  const c = await client(path)
+  c.send(keptHello(token, { protocolVersion: 1, minProtocolVersion: 1 }))
+  const frame = await c.next(isT('incompatible'))
+  assert.equal(frame.t === 'incompatible' && frame.compatibility, 'client-outdated')
+  assert.match(
+    frame.t === 'incompatible' ? frame.message : '',
+    /needs Studio protocol 2 or newer, and this app speaks 1\. Update this app\./,
+  )
+})
+
+test('updating a Studio takes environment:maintain; any grant may ask how it stands', async () => {
+  const updates = selfUpdates()
+  const { path, auth } = await serve({ updates })
+  for (const [clientId, scopes, window] of [
+    ['reader', ['conversation:read'], { protocolVersion: 5, minProtocolVersion: 4 }],
+    ['current-reader', ['conversation:read'], { protocolVersion: 1, minProtocolVersion: 1 }],
+  ] as const) {
+    const token = pairFakeClient(auth, clientId, [...scopes])
+    const c = await client(path)
+    c.send(keptHello(token, window))
+    await c.next((frame) => frame.t === 'incompatible' || frame.t === 'welcome')
+    const status = await request(c, 's', 'update.status')
+    assert.equal(status.ok, true, clientId)
+    const started = await request(c, 'u', 'update.start', { commandId: 'update-1' })
+    assert.deepEqual([clientId, !started.ok && started.error.code], [clientId, 'scope_required'])
+  }
+  assert.deepEqual(updates.started, [])
+  // An owner holds every scope, this one included.
+  const owner = await open(path, OWNER_TOKEN)
+  const started = await request(owner, 'u', 'update.start', { commandId: 'update-2' })
+  assert.equal(started.ok, true)
+})
+
+test('a Studio that does not update itself refuses update.start with the words to do it by hand', async () => {
+  const { path } = await serve()
+  const c = await open(path, OWNER_TOKEN)
+  const status = await request(c, 's', 'update.status')
+  assert.equal(status.ok && (status.result as { method: string }).method, 'manual')
+  assert.match(status.ok ? ((status.result as { manual?: string }).manual ?? '') : '', /started by hand/)
+  const started = await request(c, 'u', 'update.start', { commandId: 'update-1' })
+  assert.equal(!started.ok && started.error.code, 'update_unavailable')
+  assert.match(!started.ok ? started.error.message : '', /started by hand/)
+})
+
+test('a kept connection is still refused a bad token, never spends a pairing code, and is closed on revoke', async () => {
+  const { path, auth } = await serve({ updates: selfUpdates() })
+  const window = { protocolVersion: 5, minProtocolVersion: 4 }
+  // A wrong token learns nothing about this Studio's versions.
+  const wrong = await client(path)
+  wrong.send(keptHello('sest_not_a_real_token_000', window))
+  const refused = await wrong.next(isT('bye'))
+  assert.equal(refused.t === 'bye' && refused.code, 'unauthorized')
+  // A pairing code is not spent on a client that could not use the token.
+  const code = 'sepair_update_0123456789'
+  auth.pairingCodes.set(code, {
+    clientId: 'pairing-app',
+    name: 'pairing-app',
+    owner: false,
+    scopes: ['conversation:read'],
+    ceiling: 'auto',
+  })
+  const pairing = await client(path)
+  pairing.send(
+    hello({ pairingCode: code }, { ...window, client: { name: 'test-app', capabilities: ['update-session'] } }),
+  )
+  const unpaired = await pairing.next(isT('bye'))
+  assert.equal(unpaired.t === 'bye' && unpaired.code, 'unsupported_protocol_version')
+  assert.equal(auth.pairingCodes.has(code), true)
+  // Revoked while kept: closed like any connection.
+  const token = pairFakeClient(auth, 'kept', ['conversation:read'])
+  const kept = await client(path)
+  kept.send(keptHello(token, window))
+  await kept.next(isT('incompatible'))
+  auth.revoke('kept')
+  const gone = await kept.next(isT('bye'))
+  assert.equal(gone.t === 'bye' && gone.code, 'revoked')
 })
 
 test('no credential, a wrong one, or a late or missing hello never reaches a request', async () => {
@@ -189,9 +341,9 @@ test('each method and stream is held to its scope, and a refused mutation is aud
   assert.deepEqual(failed.t === 'subFailed' && [failed.code, failed.retryable], ['scope_required', false])
   const unknown = await request(creator, 'u1', 'conversation.compact', { key })
   assert.equal(!unknown.ok && unknown.error.code, 'unknown_method')
-  // The chat surface is Studio's own, whatever a pairing holds.
-  const owned = await request(creator, 'o1', 'conversation.revert', { key, commandId: 'r1', turnSeq: 1 })
-  assert.equal(!owned.ok && owned.error.code, 'owner_required')
+  // A checkpoint's revert drives the chat: conversation:operate, which a creator lacks.
+  const reverted = await request(creator, 'o1', 'conversation.revert', { key, commandId: 'r1', turnSeq: 1 })
+  assert.equal(!reverted.ok && reverted.error.code, 'scope_required')
 })
 
 test('the ceiling lowers presets, pins a missing one, guards allowed tools and looser chats', async () => {
@@ -425,13 +577,52 @@ test('a reader that stops reading is told to resync with a delay, then closed', 
   c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
   await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
   c.socket.pause()
-  // Distinct tool outputs do not merge, so the backlog grows past the bound.
+  // Distinct agents' words do not merge, so the backlog grows past the bound.
   for (let index = 0; index < 64; index++)
-    backend.emit('agent-1', 'tool_output', { toolUseId: `t${index}`, output: 'x'.repeat(200_000), isError: false })
+    backend.emit('agent-1', 'subagent_message', { parentToolUseId: `t${index}`, text: 'x'.repeat(200_000) })
   c.socket.resume()
   const bye = await c.next(isT('bye'), 10_000)
   assert.deepEqual(bye.t === 'bye' && [bye.code, bye.retryAfterMs], ['resync_required', 1_500])
   await c.closed
+})
+
+test('a slow reader of large tool results is sent each as its preview, and keeps up', async () => {
+  const { path, auth, backend } = await serve()
+  const c = await open(path, pairFakeClient(auth, 'slow-tools', ['conversation:read']))
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  let wire = 0
+  c.socket.on('data', (chunk: string) => (wire += Buffer.byteLength(chunk)))
+  c.socket.pause()
+  // Thirteen megabytes of results, the bodies a reader fetches when it opens a step.
+  for (let index = 0; index < 64; index++)
+    backend.emit('agent-1', 'tool_output', { toolUseId: `t${index}`, output: 'x'.repeat(200_000), isError: false })
+  c.socket.resume()
+  const seen: Array<Record<string, unknown>> = []
+  while (seen.length < 64) {
+    const frame = await c.next((candidate) => candidate.t === 'frame' && candidate.frame.type === 'event', 10_000)
+    if (frame.t === 'frame' && frame.frame.type === 'event') seen.push(frame.frame.event.payload ?? {})
+  }
+  assert.ok(seen.every((payload) => String(payload.output).length === CONVERSATION_WIRE_PREVIEW_CHARS))
+  assert.ok(seen.every((payload) => payload.truncated === true))
+  assert.ok(wire < 1024 * 1024, `${wire} bytes for 64 results`)
+  assert.equal(c.frames.some(isT('bye')), false)
+})
+
+test('a long chat’s snapshot is its newest events within the page budget, older ones paging in', async () => {
+  const { path, auth, backend } = await serve()
+  for (let index = 0; index < 1200; index++)
+    backend.emit('agent-1', 'tool_output', { toolUseId: `t${index}`, output: 'r'.repeat(10_000), isError: false })
+  const c = await open(path, pairFakeClient(auth, 'joiner', ['conversation:read']))
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized', 10_000)
+  const parts = c.frames.flatMap((frame) =>
+    frame.t === 'frame' && frame.frame.type === 'snapshot' ? [frame.frame.page] : [],
+  )
+  const events = parts.flatMap((page) => page.events)
+  assert.ok(Buffer.byteLength(JSON.stringify(events)) <= CONVERSATION_WIRE_PAGE_BYTES)
+  assert.equal(events.at(-1)?.seq, 1200)
+  assert.ok(parts.every((page) => page.hasMore && page.beforeCursor === events[0].seq))
 })
 
 test('consecutive deltas behind a slow reader arrive merged, under the last sequence', async () => {
@@ -440,7 +631,7 @@ test('consecutive deltas behind a slow reader arrive merged, under the last sequ
   c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
   await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
   // A first frame large enough to hold the writer while the deltas queue.
-  backend.emit('agent-1', 'tool_output', { toolUseId: 'big', output: 'y'.repeat(2_000_000), isError: false })
+  backend.emit('agent-1', 'subagent_message', { parentToolUseId: 'big', text: 'y'.repeat(2_000_000) })
   for (const text of ['one ', 'two ', 'three']) backend.emit('agent-1', 'content_delta', { text, turnId: 't1' })
   const deltas: Array<{ seq: number; text: string }> = []
   while (deltas.map((delta) => delta.text).join('') !== 'one two three') {
@@ -450,6 +641,85 @@ test('consecutive deltas behind a slow reader arrive merged, under the last sequ
   }
   assert.equal(deltas.at(-1)?.seq, 4)
   assert.ok(deltas.length < 3, `merged into fewer frames, got ${deltas.length}`)
+})
+
+test('a reset snapshot after the join arrives bounded, in parts, before its fence, as a join’s does', async () => {
+  const backend = createFakeBackend()
+  let push!: (frame: ConversationSessionFrame) => void
+  backend.follow = (_key, _cursor, listener) => {
+    push = listener
+    const ready = Promise.resolve().then(() => {
+      listener({ type: 'snapshot', page: { events: [], hasMore: false, beforeCursor: null }, generation: 'log-1' })
+      listener({ type: 'synchronized', seq: 0, generation: 'log-1' })
+    })
+    return { ready, dispose: () => undefined }
+  }
+  const { path, auth } = await serve({ backend })
+  const c = await open(path, pairFakeClient(auth, 'rejoined', ['conversation:read']))
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  // The chat's server came back: the session catches up with a reset snapshot.
+  const events = Array.from({ length: 1200 }, (_, index) => ({
+    id: `e${index + 1}`,
+    seq: index + 1,
+    sessionId: 'session-1',
+    workspaceId: 'ws-1',
+    agentId: 'agent-1',
+    providerId: 'claude-agent',
+    modelId: 'default',
+    type: 'tool_output' as const,
+    createdAt: 1,
+    payload: { toolUseId: `t${index}`, preview: 'r'.repeat(4000), output: 'r'.repeat(4000), isError: false },
+  }))
+  push({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: 1 }, generation: 'log-2', reset: true })
+  push({ type: 'synchronized', seq: 1200, generation: 'log-2' })
+  const fence = await c.next(
+    (frame) => frame.t === 'frame' && frame.frame.type === 'synchronized' && frame.frame.seq === 1200,
+    10_000,
+  )
+  assert.ok(fence)
+  // The reset's frames only, not the join's empty snapshot: each one a part.
+  const parts = c.frames.flatMap((frame) =>
+    frame.t === 'frame' && frame.frame.type === 'snapshot' && frame.frame.generation === 'log-2' ? [frame.frame] : [],
+  )
+  assert.ok(parts.length > 1, 'in parts')
+  assert.ok(parts.every((part, index) => part.part?.index === index && part.part.total === parts.length))
+  const sent = parts.flatMap((part) => part.page.events)
+  assert.ok(Buffer.byteLength(JSON.stringify(sent)) <= CONVERSATION_WIRE_PAGE_BYTES)
+  assert.equal(sent.at(-1)?.seq, 1200)
+  assert.ok(sent.every((event) => event.payload?.output === undefined))
+})
+
+test('one oversized event crosses within a frame, live, in a snapshot and in a replay, and reads back whole', async () => {
+  const { path, auth, backend } = await serve()
+  const answer = `Here is the whole of it. ${'w'.repeat(3 * 1024 * 1024)}`
+  const before = backend.emit('agent-1', 'content_delta', { turnId: 't', text: answer })
+  const c = await open(path, pairFakeClient(auth, 'oversized', ['conversation:read']))
+  const cut = (event: { payload?: Record<string, unknown> } | undefined) =>
+    Buffer.byteLength(JSON.stringify(event)) <= CONVERSATION_WIRE_EVENT_BYTES && event?.payload?.wireClipped === true
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  const snapshot = await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'snapshot')
+  assert.ok(snapshot.t === 'frame' && snapshot.frame.type === 'snapshot')
+  assert.ok(cut(snapshot.frame.page.events.find((event) => event.seq === before.seq)))
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  const live = backend.emit('agent-1', 'content_delta', { turnId: 't', text: answer })
+  const sent = await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')
+  assert.ok(sent.t === 'frame' && sent.frame.type === 'event' && cut(sent.frame.event))
+  const whole = await request(c, 'whole', 'conversation.event', { key, seq: live.seq, id: live.id })
+  assert.equal(whole.ok && (whole.result as { event: { payload: { text: string } } }).event.payload.text, answer)
+  const missing = await request(c, 'missing', 'conversation.event', { key, seq: live.seq, id: 'another' })
+  assert.equal(!missing.ok && missing.error.code, 'not_found')
+  // A reconnect whose catch-up carries it.
+  const again = await open(path, pairFakeClient(auth, 'oversized-again', ['conversation:read']))
+  again.send({
+    t: 'sub',
+    id: 'chat',
+    topic: 'conversation.session',
+    params: { key },
+    cursor: { afterSeq: before.seq, generation: 'log-1' },
+  })
+  const replayed = await again.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')
+  assert.ok(replayed.t === 'frame' && replayed.frame.type === 'event' && cut(replayed.frame.event))
 })
 
 test('an answer over the frame cap arrives chunked and whole', async () => {
@@ -508,6 +778,38 @@ test('a command id reused for a different command is refused; the same command a
   assert.equal(backend.commands.length, 1)
   // A fingerprint rides with the command to the runtime's receipts.
   assert.match(backend.fingerprints[0] ?? '', /^[A-Za-z0-9_-]{32}$/)
+})
+
+test("a session command resent to the chat's new session under its id is the same command; anything else it says is not", () => {
+  const send = (sessionId: string, message: string) =>
+    studioCommandFingerprint('session.send', { sessionId, commandId: 'same', message })
+  // The server restarted and the chat's session was made again: the session is where it went.
+  assert.equal(send('conv_old', 'hello'), send('conv_new', 'hello'))
+  assert.notEqual(send('conv_old', 'hello'), send('conv_old', 'something else'))
+  // Its pictures are staged again for the resend, under other upload ids: where they were staged is not what it is.
+  const picture = (sessionId: string, uploadId: string) =>
+    studioCommandFingerprint('session.send', {
+      sessionId,
+      commandId: 'same',
+      message: 'look',
+      attachments: [{ id: 'img', uploadId, name: 'shot.png' }],
+    })
+  assert.equal(picture('conv_old', 'upload-1'), picture('conv_new', 'upload-2'))
+  assert.notEqual(picture('conv_old', 'upload-1'), send('conv_old', 'look'), 'a picture is still part of the send')
+  const queued = (uploadIds: string[]) =>
+    studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hi', uploadIds })
+  assert.equal(queued(['upload-1']), queued(['upload-2']))
+  assert.notEqual(queued(['upload-1']), queued(['upload-1', 'upload-2']))
+  // A file sent up from the client's disk is sent up again for a resend (the machine was away, and back).
+  const sentUp = (fileUploadIds: string[]) =>
+    studioCommandFingerprint('session.send', { sessionId: 's', commandId: 'same', message: 'read', fileUploadIds })
+  assert.equal(sentUp(['upload-1']), sentUp(['upload-2']))
+  assert.notEqual(sentUp(['upload-1']), sentUp(['upload-1', 'upload-2']))
+  // A chat's own address outlives a restart, so it stays part of what a conversation command is.
+  assert.notEqual(
+    studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'a' }, message: 'hello' }),
+    studioCommandFingerprint('conversation.send', { key: { workspaceId: 'w', agentId: 'b' }, message: 'hello' }),
+  )
 })
 
 test('a line over the client cap is refused under its id, and the connection stays open', async () => {

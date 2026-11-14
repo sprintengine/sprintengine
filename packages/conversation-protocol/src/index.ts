@@ -1,3 +1,6 @@
+import { CONVERSATION_REQUEST_DECISIONS, type ConversationRequestDecision } from './commands.js'
+import type { ConversationLaneSend } from './send.js'
+
 export * from './tool-types.js'
 export * from './presentation.js'
 export * from './toolKind.js'
@@ -162,28 +165,21 @@ export type ConversationWireErrorCode =
   // recorded; the same command confirmed (`confirmedStale`) goes.
   | 'stale'
 export type ConversationWireCommand =
-  | { kind: 'send'; message: string; uploadIds?: string[] }
+  // The first version's send: words and uploads. Every other part of a
+  // request rides on it behind its capability (`ConversationCommand`).
+  | ({ kind: 'send' } & Pick<ConversationLaneSend, 'message' | 'uploadIds'>)
   | { kind: 'interrupt' }
-  | { kind: 'resolveApproval'; requestId: string; decision: 'once' | 'conversation' | 'deny' }
+  | { kind: 'resolveApproval'; requestId: string; decision: ConversationRequestDecision }
   | { kind: 'answerQuestion'; requestId: string; answers: Record<string, string> }
   | { kind: 'setPermissionPreset'; preset: ConversationWirePermissionPreset }
   // Needs `conversation-models`. `modelId` is one of the chat's `models.options`
   // or `CONVERSATION_DEFAULT_MODEL_ID`; the CLI never changes.
   | { kind: 'setModel'; modelId: string }
 /**
- * `afterSeq` with the `generation` of an earlier `snapshot` or `synchronized`
- * asks for only the events after that sequence: one `event` per missed event,
- * then `synchronized`, then live events, with no snapshot. A cursor the
- * desktop cannot vouch for — another generation, no generation, ahead of the
- * log, or too far behind — is answered with `snapshot` (`reset: true`) instead.
+ * A command to a chat, under the client's own id: what a Studio's command
+ * methods carry (`conversation.send`, `.interrupt`, …), read here.
  */
-export type ConversationClientFrame =
-  | { type: 'subscribe'; key: ConversationWireKey; afterSeq?: number; generation?: string; turnLimit?: number }
-  | { type: 'list'; requestId: string }
-  | { type: 'loadEarlier'; requestId: string; beforeCursor: number; turnLimit?: number }
-  | { type: 'getToolDetail'; requestId: string; toolUseId: string }
-  | { type: 'getTurnDiff'; requestId: string; turnSeq: number; path?: string }
-  | { type: 'command'; commandId: string; command: ConversationWireCommand }
+export type ConversationClientFrame = { type: 'command'; commandId: string; command: ConversationWireCommand }
 
 export type ConversationServerFrame =
   | { type: 'sessions'; requestId: string; sessions: ConversationWireThread[] }
@@ -249,9 +245,6 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 function id(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200
-}
-function integer(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 function answers(value: unknown): value is Record<string, string> {
   if (!record(value)) return false
@@ -327,48 +320,6 @@ export function isConversationWirePermissionPreset(value: unknown): value is Con
 export function parseConversationClientFrame(value: unknown): ConversationClientFrame | null {
   if (!record(value) || typeof value.type !== 'string') return null
   switch (value.type) {
-    case 'subscribe': {
-      const key = value.key
-      if (!record(key) || !id(key.workspaceId) || !id(key.agentId)) return null
-      if (value.afterSeq !== undefined && !integer(value.afterSeq)) return null
-      if (value.generation !== undefined && !id(value.generation)) return null
-      if (value.turnLimit !== undefined && (!integer(value.turnLimit) || value.turnLimit > 100)) return null
-      return {
-        type: 'subscribe',
-        key: { workspaceId: key.workspaceId, agentId: key.agentId },
-        ...(value.afterSeq === undefined ? {} : { afterSeq: value.afterSeq as number }),
-        ...(value.generation === undefined ? {} : { generation: value.generation as string }),
-        ...(value.turnLimit === undefined ? {} : { turnLimit: value.turnLimit as number }),
-      }
-    }
-    case 'list':
-      return id(value.requestId) ? { type: 'list', requestId: value.requestId } : null
-    case 'loadEarlier':
-      return id(value.requestId) &&
-        integer(value.beforeCursor) &&
-        (value.turnLimit === undefined || (integer(value.turnLimit) && value.turnLimit <= 100))
-        ? {
-            type: 'loadEarlier',
-            requestId: value.requestId,
-            beforeCursor: value.beforeCursor,
-            ...(value.turnLimit === undefined ? {} : { turnLimit: value.turnLimit as number }),
-          }
-        : null
-    case 'getToolDetail':
-      return id(value.requestId) && id(value.toolUseId)
-        ? { type: 'getToolDetail', requestId: value.requestId, toolUseId: value.toolUseId }
-        : null
-    case 'getTurnDiff':
-      return id(value.requestId) &&
-        integer(value.turnSeq) &&
-        (value.path === undefined || (typeof value.path === 'string' && value.path.length <= 4096))
-        ? {
-            type: 'getTurnDiff',
-            requestId: value.requestId,
-            turnSeq: value.turnSeq,
-            ...(value.path === undefined ? {} : { path: value.path as string }),
-          }
-        : null
     case 'command': {
       if (!id(value.commandId) || !record(value.command)) return null
       const command = value.command
@@ -393,14 +344,15 @@ export function parseConversationClientFrame(value: unknown): ConversationClient
         case 'interrupt':
           return { type: 'command', commandId: value.commandId, command: { kind: 'interrupt' } }
         case 'resolveApproval':
-          return id(command.requestId) && ['once', 'conversation', 'deny'].includes(String(command.decision))
+          return id(command.requestId) &&
+            CONVERSATION_REQUEST_DECISIONS.includes(command.decision as ConversationRequestDecision)
             ? {
                 type: 'command',
                 commandId: value.commandId,
                 command: {
                   kind: 'resolveApproval',
                   requestId: command.requestId,
-                  decision: command.decision as 'once' | 'conversation' | 'deny',
+                  decision: command.decision as ConversationRequestDecision,
                 },
               }
             : null

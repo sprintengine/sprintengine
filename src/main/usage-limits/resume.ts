@@ -154,8 +154,18 @@ export type UsageLimitResumer = {
   prune(): void
   state(): UsageLimitResumeState
   update(update: UsageLimitResumeUpdate): UsageLimitResumeState
+  /**
+   * Keep a resume another Studio kept for a chat this one holds now (a
+   * hand-over, `environment.adopt`): its notice as that one stored it, with
+   * when it goes. Kept only for a chat here, and written to the file only
+   * once the file has been read, so it is never lost to the read or written
+   * over it. A later hit here for the same chat wins.
+   */
+  adopt(stored: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
   onChanged(listener: (state: UsageLimitResumeState) => void): () => void
   /** Stop the timer and the listeners, and let the last write land. */
+  /** Settles once every change made so far is written to the file. */
+  flush(): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -187,6 +197,8 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
   // hit heard during the read, and writing it would replace the file's
   // setting, schedules and remembered hits with an empty start's.
   let loaded = false
+  let markLoaded: () => void = () => undefined
+  const whenLoaded = new Promise<void>((resolve) => (markLoaded = resolve))
   // No resume goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
@@ -486,13 +498,31 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
     }
     for (const entry of saved.pending) if (!pending.has(chatKey(entry))) pending.set(chatKey(entry), entry)
     if (dropStale(at) || heard) persist()
+    markLoaded()
     const next = state()
     for (const listener of [...listeners]) listener(next)
     arm()
   }
 
+  async function adopt(stored: unknown): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const [entry] = readPending(stored)
+    if (!entry) return { ok: false, reason: 'A resume names its chat, its provider and when its limit stopped it.' }
+    if (deps.chat(entry) === null) return { ok: false, reason: 'Its chat is not on this machine.' }
+    // Before the file is read, nothing is written: what the read brings back
+    // would otherwise be kept and this lost, or this written over the file.
+    await whenLoaded
+    const known = pending.get(chatKey(entry))
+    if (known && known.hitAt >= entry.hitAt) return { ok: true }
+    if (wasResumed(entry, entry.hitAt)) return { ok: true }
+    const { dueSince: _dueSince, ...kept } = entry
+    pending.set(chatKey(entry), kept)
+    changed()
+    return { ok: true }
+  }
+
   return {
     start,
+    adopt,
     wake() {
       if (!running) return
       if (timer !== null) clearTimer(timer)
@@ -512,6 +542,7 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    flush: () => writing,
     async dispose() {
       running = false
       if (timer !== null) clearTimer(timer)

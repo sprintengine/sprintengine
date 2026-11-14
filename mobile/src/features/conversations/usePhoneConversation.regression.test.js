@@ -7,7 +7,7 @@ const { createRequire } = require("node:module");
 const { test } = require("node:test");
 const compiled = path.resolve(
   __dirname,
-  "../../../.mobile-test-build/src/features/conversations/usePhoneConversation.js",
+  "../../../.mobile-test-build/mobile/src/features/conversations/usePhoneConversation.js",
 );
 const localRequire = createRequire(compiled);
 const { createConversationCacheStore } = localRequire(
@@ -27,6 +27,8 @@ const event = (seq, type, payload = {}) => ({
   sessionId: "s",
   workspaceId: "w",
   agentId: "a",
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload,
 });
@@ -119,8 +121,9 @@ function fixture(options = {}) {
         retry() {
           connection.retried++;
         },
-        request() {
-          return "request";
+        // A read, answered by the test's own `reads`, else refused.
+        read(input) {
+          return connection.reads ? connection.reads(input) : Promise.reject(new Error("No answer."));
         },
       };
       connections.push(connection);
@@ -141,6 +144,22 @@ function fixture(options = {}) {
       return store.update(key.agentId, updater);
     },
   };
+  const { phoneChatOffers } = localRequire("../../api/chatOffers.js");
+  const offers = phoneChatOffers({
+    capabilities: ["conversations", "conversation-sessions", "session-controls", "chat-lifecycle"],
+    conversation: {
+      protocolVersion: 1,
+      minProtocolVersion: 1,
+      capabilities: options.capabilities ?? [],
+    },
+    grant: {
+      clientId: "tailnet:device",
+      name: "android-phone",
+      owner: false,
+      scopes: options.scopes ?? ["conversation:read", "conversation:operate"],
+      ceiling: "bypass",
+    },
+  });
   const module = { exports: {} };
   vm.runInNewContext(
     fs.readFileSync(compiled, "utf8"),
@@ -164,8 +183,11 @@ function fixture(options = {}) {
           };
         if (name === "expo-crypto")
           return { randomUUID: () => `send-${++serial}` };
-        if (name.endsWith("/tailnetConversations"))
-          return { createTailnetConversationsApi: () => api };
+        if (name.endsWith("/desktopConversations"))
+          return { createDesktopConversationsApi: () => api };
+        // What the desktop's welcome says, from the case's capabilities and scopes.
+        if (name.endsWith("/chatOffers"))
+          return { useChatOffers: () => offers };
         if (name.endsWith("/conversationCache")) return cache;
         // Each fixture is its own app run: no transcript remembered by another.
         if (name.endsWith("/transcriptMemory")) {
@@ -181,7 +203,6 @@ function fixture(options = {}) {
     deviceId: "device",
     baseUrl: "https://example.ts.net",
     deviceToken: "test-token",
-    ...(options.capabilities ? { tailnetCapabilities: options.capabilities } : {}),
     ...(options.scopes ? { tailnetScopes: options.scopes } : {}),
   };
   const render = (next = selected) => {
@@ -593,16 +614,15 @@ test("a refused request says the desktop's words, or what its code means", async
   const h = fixture();
   const chat = h.render();
   await settle();
-  const frames = h.connections[0].handlers;
-  const said = chat.request({ type: "getTurnDiff", turnSeq: 4 });
-  frames.onFrame({ type: "result", requestId: "request", ok: false, code: "unavailable", message: "That turn has no checkpoint." });
-  await assert.rejects(said, { message: "That turn has no checkpoint." });
-  const bare = chat.request({ type: "getTurnDiff", turnSeq: 4 });
-  frames.onFrame({ type: "result", requestId: "request", ok: false, code: "busy" });
-  await assert.rejects(bare, { message: "The desktop is busy. Try again in a moment." });
-  const unknown = chat.request({ type: "getTurnDiff", turnSeq: 4 });
-  frames.onFrame({ type: "result", requestId: "request", ok: false, code: "unavailable" });
-  await assert.rejects(unknown, { message: "The desktop could not answer that. Try again." });
+  const connection = h.connections[0];
+  // The client refuses a read as a `StudioError`: a code, and the desktop's words where it gave some.
+  const refused = (code, message = "") => Object.assign(new Error(message), { code });
+  connection.reads = () => Promise.reject(refused("unavailable", "That turn has no checkpoint."));
+  await assert.rejects(chat.request({ type: "getTurnDiff", turnSeq: 4 }), { message: "That turn has no checkpoint." });
+  connection.reads = () => Promise.reject(refused("busy"));
+  await assert.rejects(chat.request({ type: "getTurnDiff", turnSeq: 4 }), { message: "The desktop is busy. Try again in a moment." });
+  connection.reads = () => Promise.reject(refused("unavailable"));
+  await assert.rejects(chat.request({ type: "getTurnDiff", turnSeq: 4 }), { message: "The desktop could not answer that. Try again." });
   h.unmount();
 });
 test("a message with line or paragraph separators goes as one send with plain line breaks", async () => {
@@ -703,7 +723,6 @@ test("behind a running turn, a desktop that holds messages is handed the message
   const h = holding();
   h.render();
   await settle();
-  assert.equal(h.connections[0].options.queuedSends, true, "the stream watches what the desktop holds");
   const frames = await runTurn(h);
   const id = await h.render().queueSend("draft the phone side");
   assert.deepEqual(words(h.commands.at(-1).command), { kind: "send", message: "draft the phone side", queue: true });
@@ -748,7 +767,8 @@ test("a desktop without the capability keeps the phone-held queue exactly as bef
   const h = fixture();
   h.render();
   await settle();
-  assert.equal(h.connections[0].options.queuedSends, false);
+  // The stream reads what the desktop holds from its welcome; the screen offers no hand-over.
+  assert.equal(h.render().holdsQueued, false);
   await runTurn(h);
   await h.render().queueSend("phone held");
   assert.deepEqual(words(h.commands.at(-1).command), { kind: "send", message: "phone held", uploadIds: [] });
@@ -966,7 +986,6 @@ test("an unanswered hand-over cached when the chat closed is carried as one, and
   h.render(thread("b"));
   await settle();
   const [, carried] = streamsFor(h, "a");
-  assert.equal(carried.options.queuedSends, true);
   assert.deepEqual(
     plain(carried.options.pendingSends.map((item) => [item.commandId, item.command.queue, item.heldAfter])),
     [[id, true, 2]],
@@ -1132,26 +1151,19 @@ test("an older page from the desktop is held to what a frame's events are before
   });
   await settle();
   const connection = h.connections[0];
-  connection.request = () => "page";
-  const loading = h.render().loadEarlier();
-  await settle();
-  frames.onFrame({
-    type: "result",
-    requestId: "page",
+  connection.reads = async () => ({
     ok: true,
-    data: {
-      ok: true,
-      page: {
-        events: [event(1, "user_message", { text: "earlier" }), { ...event(2, "content_delta"), createdAt: 1.5 }, { id: "", type: "x" }],
-        hasMore: false,
-        beforeCursor: null,
-      },
+    page: {
+      events: [event(1, "user_message", { text: "earlier" }), { ...event(2, "content_delta"), createdAt: 1.5 }, { id: "", type: "x" }],
+      hasMore: false,
+      beforeCursor: null,
     },
   });
-  await loading;
+  await h.render().loadEarlier();
   for (let i = 0; i < 5; i++) await settle();
   const cached = await h.store.load("a");
-  assert.deepEqual(cached.events.map((item) => item.id), ["e1", "e5"]);
+  // A clock is any instant at or after the epoch; an event with no id is no event.
+  assert.deepEqual(cached.events.map((item) => item.id), ["e1", "e2", "e5"]);
   assert.equal(h.render().notice, "");
   h.unmount();
 });

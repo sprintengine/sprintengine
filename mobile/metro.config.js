@@ -1,23 +1,28 @@
+const path = require("node:path");
 const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
 
-// The portable protocol is mirrored byte-for-byte from its Node16 package.
-// Its relative .js specifiers point at TypeScript source in Metro's build.
+// The phone imports the desktop's protocol packages from the repository's
+// `packages/` folder, as source: Metro watches it, and the packages' NodeNext
+// `.js` specifiers name TypeScript files there.
+const packages = path.resolve(__dirname, "../packages");
+config.watchFolders = [...(config.watchFolders ?? []), packages];
 const resolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const resolveNext = resolve ?? context.resolveRequest;
   if (
-    context.originModulePath.includes("/src/api/conversation-protocol/") &&
-    moduleName.startsWith("./") &&
+    context.originModulePath.startsWith(packages + path.sep) &&
+    (moduleName.startsWith("./") || moduleName.startsWith("../")) &&
     moduleName.endsWith(".js")
   ) {
-    return (resolve ?? context.resolveRequest)(
-      context,
-      moduleName.slice(0, -3) + ".ts",
-      platform,
-    );
+    try {
+      return resolveNext(context, moduleName.slice(0, -3) + ".ts", platform);
+    } catch {
+      // A real `.js` file, if a package ever reaches one, resolves as named.
+    }
   }
-  return (resolve ?? context.resolveRequest)(context, moduleName, platform);
+  return resolveNext(context, moduleName, platform);
 };
 
 // Inline requires: a module runs the first time something uses it, not when

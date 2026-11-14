@@ -12,6 +12,12 @@ import {
 import { remoteNodePackage, type RemoteNodeTarget } from '../../hosts/wsl-node-runtime'
 import { parseSemver } from '../../../shared/semver'
 import { parseGhVersion, type HostGhStatus } from '../../../shared/host-gh'
+import { FAILED_UPDATE_FILENAME, type FailedUpdateRecord } from '../../../server/bootstrap/server-record'
+import {
+  STUDIO_PROTOCOL_WINDOW,
+  studioCompatibility,
+  type StudioProtocolWindow,
+} from '../../../../packages/studio-protocol/src/public'
 
 // The one script every SSH session runs (phase 8 spec, 5.2): a probe of what
 // the machine is, then `@@SPRINTENGINE_SEND`, then one decision line from the
@@ -96,12 +102,14 @@ export function buildConnectScript(input: ConnectScriptInput): string {
     appVersion: input.appVersion,
     serverDigest: input.serverDigest,
     nodeDigest: { shellVar: 'sum' },
+    keepServer: '$keep_server',
   })
   const installFetch = streamInstallLines({
     stageId: input.stageId,
     appVersion: input.appVersion,
     serverDigest: input.serverDigest,
     nodeDigest: { shellVar: 'sum' },
+    keepServer: '$keep_server',
     beforeUnpack: fetchLines(),
   })
   const indent = (lines: readonly string[]) => lines.map((line) => `    ${line}`)
@@ -114,6 +122,10 @@ export function buildConnectScript(input: ConnectScriptInput): string {
     `data="$HOME/${REMOTE_DATA_REL}/${dataName}"`,
     `rt="$base/${NODE_RUNTIME_REL}"`,
     `app="$base/${tree}"`,
+    // The tree a failed update fell back to stays while that record does.
+    "keep_server=''",
+    `failed_from="$(sed -n 's/.*"from":"\\([A-Za-z0-9._+-]*\\)".*/\\1/p' "$data/run/${FAILED_UPDATE_FILENAME}" 2>/dev/null)"`,
+    '[ -n "$failed_from" ] && keep_server="$base/server-$failed_from"',
     ...posixInstallFunctions(),
     ...targetLines(),
     'probe() { printf \'%sPROBE %s=%s\\n\' "$P" "$1" "$2"; }',
@@ -172,6 +184,7 @@ export function buildConnectScript(input: ConnectScriptInput): string {
     'probe node_ready "$(cat "$rt/.ready" 2>/dev/null)"',
     'probe server_ready "$(cat "$app/.ready" 2>/dev/null)"',
     '[ -f "$data/run/server.json" ] && probe server_json "$(head -c 4096 "$data/run/server.json" | tr -d \'\\n\')"',
+    `[ -f "$data/run/${FAILED_UPDATE_FILENAME}" ] && probe update_failed "$(head -c 4096 "$data/run/${FAILED_UPDATE_FILENAME}" | tr -d '\\n')"`,
     'lock="$(head -c 1024 "$data/run/studio.lock" 2>/dev/null | tr -d \'\\n\')"',
     'pid="$(printf \'%s\' "$lock" | sed -n \'s/.*"pid":\\([0-9][0-9]*\\).*/\\1/p\')"',
     'probe lock_host "$(printf \'%s\' "$lock" | sed -n \'s/.*"hostname":"\\([^"]*\\)".*/\\1/p\')"',
@@ -246,6 +259,8 @@ export type Probe = {
   nodeReady: string
   serverReady: string
   serverRecord: Record<string, unknown> | null
+  /** `run/update-failed.json`: the last update of this server that did not start, or null. */
+  updateFailed: FailedUpdateRecord | null
   lock: { pid: number | null; alive: boolean; host: string | null }
   proxy: boolean
 }
@@ -275,6 +290,7 @@ export function parseProbe(lines: readonly string[]): Probe | null {
   } catch {
     serverRecord = null
   }
+  const updateFailed = parseFailedUpdate(fields.get('update_failed'))
   const free = Number(text('free_kb'))
   const pid = Number(text('lock_pid'))
   return {
@@ -306,12 +322,31 @@ export function parseProbe(lines: readonly string[]): Probe | null {
     nodeReady: text('node_ready'),
     serverReady: text('server_ready'),
     serverRecord,
+    updateFailed,
     lock: {
       pid: text('lock_pid') && Number.isInteger(pid) ? pid : null,
       alive: text('lock_alive') === '1',
       host: fields.get('lock_host') || null,
     },
     proxy: text('proxy') === '1',
+  }
+}
+
+/** A failed update's record as the probe printed it; null when it is not one. */
+export function parseFailedUpdate(text: string | undefined): FailedUpdateRecord | null {
+  if (!text) return null
+  try {
+    const value = JSON.parse(text) as Record<string, unknown>
+    const { from, to, at, reason } = value
+    if (typeof from !== 'string' || typeof to !== 'string' || !from || !to) return null
+    return {
+      from: from.slice(0, 64),
+      to: to.slice(0, 64),
+      at: typeof at === 'number' && Number.isFinite(at) ? at : 0,
+      reason: typeof reason === 'string' ? reason.slice(0, 2_000) : '',
+    }
+  } catch {
+    return null
   }
 }
 
@@ -422,7 +457,14 @@ export type Located =
   | { action: 'start' }
   | { action: 'attach'; note?: string }
   | { action: 'upgrade'; from: string }
-  | { action: 'blocked'; reason: string; offerUpgrade: boolean }
+  | {
+      action: 'blocked'
+      reason: string
+      /** The person may have it replaced: an external server's update, or a failed update's Retry. */
+      offerUpgrade: boolean
+      /** The update to this app's version that did not start before, when that is why. */
+      failedUpdate?: FailedUpdateRecord
+    }
 
 /**
  * Which of two app versions is newer: numbers first, then a prerelease
@@ -466,19 +508,56 @@ export function otherHostHolding(probe: Probe): string | null {
   return recordHost && recordHost.endsWith(probe.hostname) ? null : probe.lock.host
 }
 
+/** A server record's protocol window, or null for one written before records carried it. */
+export function recordWindow(record: Record<string, unknown> | null): StudioProtocolWindow | null {
+  const { protocolVersion, minProtocolVersion } = record ?? {}
+  return Number.isSafeInteger(protocolVersion) &&
+    Number.isSafeInteger(minProtocolVersion) &&
+    (protocolVersion as number) >= 1 &&
+    (minProtocolVersion as number) >= 1
+    ? { protocolVersion: protocolVersion as number, minProtocolVersion: minProtocolVersion as number }
+    : null
+}
+
+/** What the row says about an update that did not start, and what runs now. */
+function failedUpdateWords(failed: FailedUpdateRecord, label: string, running: string | null): string {
+  const outcome =
+    running === null
+      ? `and ${failed.from} did not start again either`
+      : running === failed.from
+        ? `so ${failed.from} runs again`
+        : `and ${running} runs now`
+  return `Updating the Studio server on ${label} to ${failed.to} failed, ${outcome}: ${failed.reason}`
+}
+
 /**
- * Attach, start, upgrade or refuse, from what the probe found. A newer server
- * is never replaced or stopped, so two desktops on different versions never
- * replace each other's server in turn; an external one is never replaced
- * without the person asking (decision R31).
+ * Attach, start, upgrade or refuse, from what the probe found. Compatibility
+ * is the protocol window's (`studioCompatibility`), not the build's: a server
+ * whose window meets this app's is attached whatever its version, except an
+ * older one a desktop started, which this desktop keeps current. A newer
+ * server is never replaced or stopped, so two desktops on different versions
+ * never replace each other's server in turn; an external one is never
+ * replaced without the person asking (decision R31). An update to this app's
+ * version that failed before is not tried again on its own: the person
+ * retries it.
+ *
+ * The private backend wire is no input: a machine's chats are its own
+ * Studio's, reached over the protocol whose window decides.
  */
 export function locateServer(
   probe: Probe,
-  app: { version: string; backendWire: number; hostId?: string | null },
+  app: { version: string; window?: StudioProtocolWindow },
   label: string,
 ): Located {
   const record = probe.serverRecord
-  if (!probe.lock.alive) return { action: 'start' }
+  const failed = probe.updateFailed?.to === app.version ? probe.updateFailed : null
+  const retry = (running: string | null): Located => ({
+    action: 'blocked',
+    reason: failedUpdateWords(failed!, label, running),
+    offerUpgrade: true,
+    failedUpdate: failed!,
+  })
+  if (!probe.lock.alive) return failed ? retry(null) : { action: 'start' }
   const otherHost = otherHostHolding(probe)
   if (otherHost)
     return {
@@ -494,9 +573,20 @@ export function locateServer(
     }
   const version = typeof record.version === 'string' ? record.version : '?'
   const origin = typeof record.origin === 'string' ? record.origin : 'bootstrap'
-  const wire = typeof record.backendWire === 'number' ? record.backendWire : null
-  if (version === app.version && wire === app.backendWire) return { action: 'attach' }
+  const compatibility = studioCompatibility(recordWindow(record), app.window ?? STUDIO_PROTOCOL_WINDOW)
   const order = compareVersions(version, app.version)
+  const upgrade = (): Located => (failed ? retry(version) : { action: 'upgrade', from: version })
+  if (compatibility === 'compatible')
+    return origin === 'bootstrap' && order !== null && order < 0 ? upgrade() : { action: 'attach' }
+  // A record with no window from this very build (one this app's server
+  // wrote, read by a relay older than the window): the same server as ours.
+  if (compatibility === 'unknown' && order === 0) return { action: 'attach' }
+  if (compatibility === 'client-outdated')
+    return {
+      action: 'blocked',
+      reason: `${label} runs Studio server ${version}, which needs a newer Studio than this app (${app.version}). Update this app to use it.`,
+      offerUpgrade: false,
+    }
   // A version this app cannot place is never replaced: it may be the newer one.
   if (order === null)
     return {
@@ -504,16 +594,16 @@ export function locateServer(
       reason: `${label} runs a Studio server whose version (${version}) this app (${app.version}) cannot compare with its own, so Studio left it alone.`,
       offerUpgrade: false,
     }
-  if (order > 0 || (order === 0 && wire !== app.backendWire && (wire ?? 0) > app.backendWire))
+  if (order > 0)
     return {
       action: 'blocked',
       reason: `${label} runs Studio server ${version}; this app is ${app.version}. Update this app to use it.`,
       offerUpgrade: false,
     }
-  if (origin === 'bootstrap') return { action: 'upgrade', from: version }
+  if (origin === 'bootstrap') return upgrade()
   return {
     action: 'blocked',
-    reason: `${label} runs Studio server ${version}, started outside this app; this app speaks ${app.version}. Update it to connect.`,
+    reason: `${label} runs Studio server ${version}, started outside this app, which this app (${app.version}) cannot use. Update it to connect.`,
     offerUpgrade: true,
   }
 }

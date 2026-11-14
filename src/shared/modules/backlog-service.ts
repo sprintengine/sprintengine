@@ -5,51 +5,32 @@
 // pins the two together. Node-free and type-only, so both tsconfig projects
 // can import it.
 
+import type {
+  StudioModuleBacklogAnswer,
+  StudioModuleBacklogCreated,
+  StudioModuleBacklogCreateInput,
+  StudioModuleBacklogErrorCode,
+  StudioModuleBacklogLinkInput,
+  StudioModuleBacklogLocation,
+  StudioModuleBacklogTriageInput,
+} from '../../../packages/studio-protocol/src/public'
 import type { BacklogItem, BacklogItemLink, BacklogItemStatus } from '../backlog/scan'
 
-export type ModuleBacklogErrorCode =
-  | 'permission_missing'
-  | 'invalid_input'
-  | 'unknown_workspace'
-  | 'workspace_folder_missing'
-  | 'not_found'
-  | 'backlog_unavailable'
-
-export type ModuleBacklogResult<T extends object = object> =
-  ({ ok: true } & T) | { ok: false; code: ModuleBacklogErrorCode; message: string }
-
-export type ModuleBacklogLocation = {
-  root: string
-  isDefault: boolean
-  exists: boolean
-}
-
-export type ModuleBacklogTriageInput = {
-  difficulty?: string | null
-  criticality?: string | null
-  risk?: string | null
-}
-
-export type ModuleBacklogCreateInput = {
-  title: string
-  body?: string
-  status?: BacklogItemStatus
-  type?: string
-  epic?: string
-  difficulty?: string
-  criticality?: string
-  risk?: string
-}
-
-export type ModuleBacklogCreated = {
-  id: string
-  relativePath: string
-  path: string
-  numericId?: number
-  displayId?: string
-}
-
+// The wire shapes are the Studio protocol's (`module-services.ts`): a module's
+// window half sends these calls to its server, so they are defined there once.
+export type ModuleBacklogErrorCode = StudioModuleBacklogErrorCode
+export type ModuleBacklogResult<T extends object = object> = StudioModuleBacklogAnswer<T>
+export type ModuleBacklogLocation = StudioModuleBacklogLocation
+export type ModuleBacklogTriageInput = StudioModuleBacklogTriageInput
+export type ModuleBacklogCreateInput = StudioModuleBacklogCreateInput
+export type ModuleBacklogCreated = StudioModuleBacklogCreated
+// A link is the scan's link the caller owns, in the form the SDK mirrors
+// exactly; the protocol carries the same shape written out, and the two may
+// not drift apart.
 export type ModuleBacklogLinkInput = Omit<BacklogItemLink, 'moduleId'> & { moduleId?: string }
+type SameShape<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+const linkShape: SameShape<ModuleBacklogLinkInput, StudioModuleBacklogLinkInput> = true
+void linkShape
 
 // `list` hands out the scan's own items, which carry more than the SDK's
 // published `BacklogItemView` (the drift guard checks the one satisfies the

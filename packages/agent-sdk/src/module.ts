@@ -1,4 +1,5 @@
 import {
+  StudioError,
   agentConversations,
   createFrameQueue,
   type AgentConversations,
@@ -9,8 +10,7 @@ import {
   type ConversationRef,
   type ConversationResult,
   type ConversationService,
-} from './conversations.js'
-import { StudioError } from './errors.js'
+} from './runtime.js'
 import type {
   ConversationPlanDecision,
   ConversationQuestionAnswers,

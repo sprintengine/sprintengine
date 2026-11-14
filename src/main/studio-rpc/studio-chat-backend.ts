@@ -1,12 +1,21 @@
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
 import type { ConversationCommandsRequest } from '../../shared/ipc/conversation-commands'
-import type { FileSearchResult, FileSystemStat } from '../../shared/ipc/filesystem'
 import type { StudioChatBackend } from '../../server/rpc/studio-rpc-types'
-import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
+import type { StudioListChange } from '../../../packages/studio-protocol/src/public'
+import type {
+  ConversationCliRuntimeOverrides,
+  ConversationCommandReceiptState,
+} from '../../shared/conversation-runtime'
 import { onConversationCommandsChanged } from '../conversation-commands/registry'
 import { readConversationCommandsRequest } from '../conversation-commands/request'
 import {
+  parseCancelSideQuestionInput,
+  parseMcpServerActionInput,
+  parseMessageSubagentInput,
   parseProviderInput,
+  parseSecretSetInput,
+  parseSideQuestionInput,
+  parseStopSubagentInput,
   parseRespondToRequestInput,
   parseSendTurnInput,
   parseSessionIdInput,
@@ -14,64 +23,42 @@ import {
   parseSetPermissionInput,
   parseStartSessionInput,
 } from '../conversation-ipc-inputs'
-import type { ConversationIpcHandlers } from '../ipc/conversation-ipc'
+import type { ConversationService } from '../conversation-service'
 import { confineToRoots } from './studio-file-confinement'
-import { expandHomePath } from '../home-path'
 
-// The Studio RPC's chat surface in main: the very handlers the conversation
-// IPC serves Studio's windows with, behind the same input checks
-// (conversation-ipc-inputs.ts) and the same fallbacks, so a chat view reaching
-// them over a port is answered exactly as one reaching them over IPC. Nothing
-// here is new behaviour; where an IPC handler wraps a throw into
-// `{ ok: false, message }`, so does this.
+// The Studio RPC's chat surface in main: the conversation service behind the
+// input checks every client meets (conversation-ipc-inputs.ts, named for the
+// window IPC they were first written for), with a throw answered as
+// `{ ok: false, message }`. It is the only way any client, the app's own
+// windows included, reaches a chat's session.
 //
 // One difference is the command id. A window's IPC sends none; the RPC's
 // session commands carry the client's, namespaced (`owner:<id>`), and it is
 // passed to the runtime, whose receipts answer a command repeated after a
 // dropped connection with its first result.
 
-type ChatHandlers = Pick<
-  ConversationIpcHandlers,
-  | 'startSession'
-  | 'sendTurn'
-  | 'interrupt'
-  | 'respondToRequest'
-  | 'setPermission'
-  | 'setModel'
-  | 'revertToTurn'
-  | 'rewindToTurn'
-  | 'handoffConversation'
-  | 'forkAtTurn'
-  | 'readAttachment'
-  | 'planDocument'
-  | 'listProviders'
-  | 'listProviderModels'
-  | 'getSecretStatus'
->
-
 export type StudioChatBackendDeps = {
-  conversation: ChatHandlers
-  /** File search and reads, as the filesystem IPC serves them; a slot stands where a window's id would. */
-  files: {
-    searchFiles(senderId: number, input: Parameters<StudioChatBackend['searchFiles']>[1]): Promise<FileSearchResult>
-    cancelActiveFileSearch(senderId: number, channel?: string): void
-    cancelAllFileSearches(senderId: number): void
-    statPath(path: string): Promise<FileSystemStat>
-    readImageDataUrl(path: string): Promise<string>
-  }
-  repoRoot(folderPath: string, hostId?: string): Promise<string | null>
+  conversation: ConversationService
   /**
-   * The folders a chat's files may be stat'd or read from: workspaces' and
-   * live chats' folders, and the app's stores of sent pictures and plans.
+   * The folders a chat can be about, for the router's known-folder check:
+   * workspaces' folders, and the app's stores of sent pictures and plans.
    */
   readableRoots(): string[] | Promise<string[]>
-  /** Whether the runtime holds a receipt for a session's command id. */
-  hasReceipt(sessionId: string, commandId: string): Promise<boolean>
+  /** What the runtime holds of a session's command id: a receipt, none, or no such session. */
+  commandReceipt(sessionId: string, commandId: string): Promise<ConversationCommandReceiptState>
   /** The (CLI, folder) list main holds, probing when it is missing or old. */
   commands(input: ConversationCommandsRequest): Promise<ConversationCommandCatalog>
   onCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
-  workspaces(): ReturnType<StudioChatBackend['workspaces']>
+  /** The chat or workspace list may read differently now (`conversations.changed`). */
+  onListChanged?: (listener: (change: StudioListChange) => void) => () => void
+  /** A chat's export, read where it is kept; absent, exports are not served. */
+  exportSource?: StudioChatBackend['exportSource']
 }
+
+const unavailable = (what: string): { ok: false; message: string } => ({
+  ok: false,
+  message: `${what} is unavailable here.`,
+})
 
 const failed = (error: unknown): { ok: false; message: string } => ({
   ok: false,
@@ -103,13 +90,10 @@ function checked<I>(
 
 export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChatBackend {
   const handlers = deps.conversation
-  // A file the chat surface reads is one inside a folder a chat can be about.
-  const confined = async (path: string): Promise<string> => {
-    const checked = await confineToRoots(path, await deps.readableRoots())
-    if (!checked.ok) throw new Error(checked.message)
-    return checked.path
-  }
   const onCommandsChanged = deps.onCommandsChanged ?? onConversationCommandsChanged
+  // A connection's history searches, by its slot and request id.
+  const historySearches = new Map<string, AbortController>()
+  let searchCount = 0
   return {
     async startSession(input) {
       const parsed = parseStartSessionInput(input)
@@ -166,11 +150,11 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return failed(error)
       }
     },
-    async hasReceipt(input) {
+    async commandReceipt(input) {
       try {
-        return await deps.hasReceipt(input.sessionId, input.commandId)
+        return await deps.commandReceipt(input.sessionId, input.commandId)
       } catch {
-        return false
+        return 'none'
       }
     },
     // Each of these answers its own `ok`, so a throw below is that answer
@@ -196,13 +180,6 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return (
           (await handlers.handoffConversation?.(input)) ?? { ok: false, message: 'Handing a chat off is unavailable.' }
         )
-      } catch (error) {
-        return failed(error)
-      }
-    },
-    async fork(input) {
-      try {
-        return (await handlers.forkAtTurn?.(input)) ?? { ok: false, message: 'Forking a conversation is unavailable.' }
       } catch (error) {
         return failed(error)
       }
@@ -255,14 +232,194 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return failed(error)
       }
     },
-    searchFiles: (slot, input) => deps.files.searchFiles(slot, input),
-    cancelFileSearch: (slot, channel) => deps.files.cancelActiveFileSearch(slot, channel),
-    releaseFileSearches: (slot) => deps.files.cancelAllFileSearches(slot),
-    // Expanded before the roots are checked, so a `~/` path is held to them as the file it names.
-    stat: async (path) => deps.files.statPath(await confined(expandHomePath(path))),
-    readImage: async (path) => deps.files.readImageDataUrl(await confined(expandHomePath(path))),
-    repoRoot: (folderPath, hostId) => deps.repoRoot(folderPath, hostId),
     isKnownFolder: async (path) => (await confineToRoots(path, await deps.readableRoots())).ok,
-    workspaces: () => deps.workspaces(),
+    async listSessions(input) {
+      try {
+        return handlers.listSessions(input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async stopSession(input) {
+      const parsed = checked(input, parseSessionIdInput)
+      if (!parsed.ok) return parsed
+      try {
+        return await handlers.stopSession(parsed.input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async suspendSession(input) {
+      const parsed = parseSessionIdInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.suspendSession?.(parsed.input)) ?? unavailable('Suspending a chat')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async mcpServerAction(input) {
+      const parsed = parseMcpServerActionInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.mcpServerAction?.(parsed.input)) ?? unavailable('Acting on a chat’s MCP servers')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async stopSubagent(input) {
+      const parsed = parseStopSubagentInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.stopSubagent?.(parsed.input)) ?? unavailable('Stopping an agent a chat spawned')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async messageSubagent(input) {
+      const parsed = parseMessageSubagentInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.messageSubagent?.(parsed.input)) ?? unavailable('Messaging an agent a chat spawned')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async askSideQuestion(input) {
+      const parsed = parseSideQuestionInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.askSideQuestion?.(parsed.input)) ?? unavailable('Asking a side question')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async cancelSideQuestion(input) {
+      const parsed = parseCancelSideQuestionInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.cancelSideQuestion?.(parsed.input)) ?? unavailable('Asking a side question')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async contextBreakdown(input) {
+      const parsed = parseSessionIdInput(input)
+      if (!parsed.ok) return { ok: false, reason: 'failed', message: parsed.message }
+      try {
+        return (
+          (await handlers.readContextBreakdown?.({ sessionId: parsed.input.sessionId })) ?? {
+            ok: false,
+            reason: 'unsupported',
+            message: 'Reading what fills a chat’s context window is unavailable.',
+          }
+        )
+      } catch (error) {
+        return { ok: false, reason: 'failed', message: failed(error).message }
+      }
+    },
+    ...(deps.exportSource
+      ? {
+          async exportSource(chat: { workspaceId: string; agentId: string }) {
+            try {
+              return await deps.exportSource!(chat)
+            } catch (error) {
+              return failed(error)
+            }
+          },
+        }
+      : {}),
+    ...(handlers.terminalHandoff
+      ? {
+          async terminalHandoff(input: Parameters<NonNullable<StudioChatBackend['terminalHandoff']>>[0]) {
+            try {
+              return await handlers.terminalHandoff!(input)
+            } catch (error) {
+              return failed(error)
+            }
+          },
+        }
+      : {}),
+    async threads(input) {
+      try {
+        return (await handlers.listThreads?.(input)) ?? unavailable('Conversation history')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async searchHistory(slot, input) {
+      // As the IPC keys a window's searches: by who asked and the request id.
+      const key = `${slot}:${input.requestId ?? `search-${++searchCount}`}`
+      historySearches.get(key)?.abort()
+      const controller = new AbortController()
+      historySearches.set(key, controller)
+      try {
+        return (
+          (await handlers.searchThreads?.(input, { signal: controller.signal })) ?? unavailable('Conversation search')
+        )
+      } catch (error) {
+        return failed(error)
+      } finally {
+        if (historySearches.get(key) === controller) historySearches.delete(key)
+      }
+    },
+    cancelHistorySearch(slot, requestId) {
+      historySearches.get(`${slot}:${requestId}`)?.abort()
+    },
+    releaseHistorySearches(slot) {
+      for (const [key, controller] of historySearches)
+        if (key.startsWith(`${slot}:`)) {
+          controller.abort()
+          historySearches.delete(key)
+        }
+    },
+    async approvalRules() {
+      try {
+        return (await handlers.listApprovalRules?.()) ?? unavailable('Permission rules')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async revokeApprovalRule(ruleId) {
+      try {
+        return (await handlers.revokeApprovalRule?.(ruleId)) ?? unavailable('Permission rules')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async signIn(input) {
+      const parsed = parseProviderInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (
+          (await handlers.resolveSignIn?.({
+            providerId: parsed.input.providerId,
+            ...(input.cliRuntimes ? { cliRuntimes: input.cliRuntimes as ConversationCliRuntimeOverrides } : {}),
+          })) ?? unavailable('Signing a provider in')
+        )
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async setSecret(input) {
+      const parsed = parseSecretSetInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return await handlers.setSecret(parsed.input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async clearSecret(input) {
+      const parsed = parseProviderInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return await handlers.clearSecret(parsed.input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    onLifecycleEvent: (listener) => handlers.onLifecycleEvent(listener),
+    ...(deps.onListChanged ? { onListChanged: deps.onListChanged } : {}),
   }
 }

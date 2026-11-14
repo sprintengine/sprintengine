@@ -13,7 +13,6 @@ import {
   type ConversationPullRequestToolsDeps,
 } from './conversation-pull-request-tools'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
-import { TAILNET_CAPABILITIES } from './tailnet/tailnet-routes'
 import { requiredScopeForTool } from './tailnet/tailnet-scopes'
 
 // A paired desktop's Create PR on a chat here: the call names the chat, and
@@ -225,7 +224,6 @@ test('reading whether the button may show is a read; every other step needs the 
     'conversation.pull_request_push': 'conversation:operate',
     'conversation.pull_request_create': 'conversation:operate',
   })
-  assert.ok((TAILNET_CAPABILITIES as readonly string[]).includes('chat-create-pull-request'))
 })
 
 test("an agent on this machine works on its own chat's pull request only", async () => {

@@ -29,6 +29,10 @@ import type {
 } from '../../../shared/conversation-runtime'
 import { conversationPhaseWorking, conversationSummaryPhase } from '../../../shared/conversation/phase'
 import { onWindowVisibilityChange, windowActivity, type WindowActivity } from '../utils/windowActivity'
+import { windowChatServices } from '../components/panels/agentChat/windowChat'
+import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
+import { followedEnvironmentChats, onFollowedEnvironmentChats } from '../studio/environmentChats'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 /**
  * A summary as the renderer holds it: main's fields, plus when the work now
@@ -43,11 +47,81 @@ export type ConversationSessionEntry = ConversationSessionSummary & {
   turnStartedAt?: number
 }
 
+/** Where the store reads the sessions: the window's Studio; absent where the window has none (a test). */
 export type ConversationSessionsApi = {
-  conversationSessionsList?: () => Promise<
-    { ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message?: string }
-  >
-  onConversationEvent?: (listener: (event: ConversationEvent) => void) => () => void
+  list?: () => Promise<{ ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message?: string }>
+  onLifecycleEvent?: (listener: (event: ConversationEvent) => void, onReconnected?: () => void) => () => void
+}
+
+/** Whether this window holds a chat's record on that route: a workspace here whose environment it reaches it by. */
+function heldOnRoute(route: string, workspaceId: string): boolean {
+  return useWorkspaceStore
+    .getState()
+    .workspaces.some(
+      (workspace) => workspace.id === workspaceId && environmentTargetOf(workspace.environment)?.route === route,
+    )
+}
+
+const windowSessions = (): ConversationSessionsApi =>
+  typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
+    ? withEnvironmentSessions(windowChatServices().sessions, heldOnRoute)
+    : {}
+
+/**
+ * The window's own Studio's sessions, joined by those of every environment
+ * the window follows chats on (`environmentChats.ts`) whose chats it holds a
+ * record of (`holds`, by the route and the chat's workspace): one list, so a
+ * row, the chat view's session and its subagents read a chat's session the
+ * same way wherever it runs. An environment's list is its last one read, kept
+ * while that machine is away; a new list from any of them is read as a change.
+ *
+ * Only held chats join. Everything that reads this list keys it by workspace
+ * and may act on it: the sessions menu lists a session no workspace here
+ * claims as one to stop, and stops it on this window's own Studio. A paired
+ * desktop's chats are that machine's, under its own workspace ids, and are
+ * read from its source by the views that show them, never from here.
+ */
+export function withEnvironmentSessions(
+  local: Required<ConversationSessionsApi>,
+  holds: (route: string, workspaceId: string) => boolean,
+): ConversationSessionsApi {
+  return {
+    list: async () => {
+      const here = await local.list()
+      if (!here.ok) return here
+      const there = followedEnvironmentChats().flatMap((source) =>
+        source.snapshot().sessions.filter((session) => holds(source.route, session.workspaceId)),
+      )
+      return there.length === 0 ? here : { ok: true, sessions: [...here.sessions, ...there] }
+    },
+    onLifecycleEvent: (listener, onReconnected) => {
+      const stopLocal = local.onLifecycleEvent(listener, onReconnected)
+      const following = new Map<string, () => void>()
+      const sync = () => {
+        const sources = followedEnvironmentChats()
+        const routes = new Set(sources.map((source) => source.route))
+        for (const [route, stop] of following)
+          if (!routes.has(route)) {
+            stop()
+            following.delete(route)
+          }
+        for (const source of sources)
+          if (!following.has(source.route)) following.set(source.route, source.onLifecycleEvent(listener))
+      }
+      sync()
+      // A followed environment added or dropped, or one of them listed again.
+      const stopFollowed = onFollowedEnvironmentChats(() => {
+        sync()
+        onReconnected?.()
+      })
+      return () => {
+        stopFollowed()
+        for (const stop of following.values()) stop()
+        following.clear()
+        stopLocal()
+      }
+    },
+  }
 }
 
 // Lifecycle events only. The all-conversations broadcast is not guaranteed to
@@ -124,7 +198,7 @@ export type ConversationSessionsStore = {
 }
 
 export function createConversationSessionsStore({
-  api = () => window.api as ConversationSessionsApi,
+  api = windowSessions,
   activity = windowActivity,
   refreshMs = CONVERSATION_SESSIONS_REFRESH_MS,
 }: {
@@ -231,7 +305,7 @@ export function createConversationSessionsStore({
   const visible = (): boolean => activity().get().visible
 
   const fetchNow = (): void => {
-    const list = api().conversationSessionsList
+    const list = api().list
     if (typeof list !== 'function') return
     if (inFlight) {
       pending = true
@@ -280,7 +354,7 @@ export function createConversationSessionsStore({
   const connect = (): void => {
     connected = true
     const source = api()
-    if (typeof source.conversationSessionsList !== 'function') {
+    if (typeof source.list !== 'function') {
       // Nothing to ask: an empty list is the answer, not a wait.
       if (!loaded) {
         loaded = true
@@ -288,7 +362,10 @@ export function createConversationSessionsStore({
       }
       return
     }
-    unsubscribeEvents = typeof source.onConversationEvent === 'function' ? source.onConversationEvent(onEvent) : null
+    // Back from a dropped connection, the list is read again: what changed
+    // while it was down was never heard.
+    unsubscribeEvents =
+      typeof source.onLifecycleEvent === 'function' ? source.onLifecycleEvent(onEvent, () => schedule()) : null
     unsubscribeVisibility = onWindowVisibilityChange((isVisible) => {
       if (!isVisible) {
         if (timer !== null) {
@@ -338,6 +415,11 @@ let sharedStore: ConversationSessionsStore | null = null
 export function conversationSessionsStore(): ConversationSessionsStore {
   sharedStore ??= createConversationSessionsStore()
   return sharedStore
+}
+
+/** Forget the window's store, so a test's sessions do not reach the next test's window. */
+export function resetConversationSessionsStore(): void {
+  sharedStore = null
 }
 
 /** Every conversation session main knows of; the same array until one moves. */

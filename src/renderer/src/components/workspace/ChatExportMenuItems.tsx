@@ -20,8 +20,8 @@ export function ChatExportMenuItems({
   onDone: () => void
   /**
    * The export itself, where the chat's view carries it out: a paired
-   * machine's chat, whose transcript its view reads from there. Absent, main
-   * reads the chat's transcript here.
+   * machine's chat, whose transcript its view reads from there. Absent, the
+   * chat is read from this window's Studio.
    */
   run?: (action: ChatExportAction) => void
 }) {

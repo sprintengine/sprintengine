@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type { HostsListResult } from '../../../shared/execution-host'
+import { hostsApi } from '../studio/hosts'
 
 /**
- * The machines this computer offers, as main lists them: this one first, then
+ * The machines this computer offers, as the window's Studio lists them
+ * (`hosts.list`): this one first, then
  * (on Windows) its WSL distributions — every one with `all` (Settings ▸
  * Machines), the enabled ones otherwise (the New chat machine dropdown).
  *
- * Read once on mount and again whenever main says the list may read
- * differently (a setting moved, a refresh landed). Never on window focus:
+ * Read once on mount and again whenever the Studio says the list may read
+ * differently (`hosts.changed`: a setting moved, a refresh landed, a
+ * distribution's server changed state). Never on window focus:
  * listing WSL starts a process on Windows. `refresh()` asks WSL again, for
  * Settings' own Refresh.
  *
- * Null until the first answer; a window whose preload predates the API (a
- * test harness) stays null, which every caller reads as "this machine only".
+ * Null until the first answer; a window whose Studio does not list them
+ * stays null, which every caller reads as "this machine only".
  */
 export function useExecutionHosts(options: { all?: boolean; refreshOnMount?: boolean; enabled?: boolean } = {}): {
   listing: HostsListResult | null
@@ -27,9 +30,8 @@ export function useExecutionHosts(options: { all?: boolean; refreshOnMount?: boo
   const [listing, setListing] = useState<HostsListResult | null>(null)
   const load = useCallback(
     async (refresh: boolean): Promise<void> => {
-      if (typeof window.api?.hostsList !== 'function') return
       try {
-        setListing(await window.api.hostsList({ all, refresh }))
+        setListing(await hostsApi.hostsList({ all, refresh }))
       } catch {
         // Keep what was there: a failed read is not "no machines".
       }
@@ -39,9 +41,8 @@ export function useExecutionHosts(options: { all?: boolean; refreshOnMount?: boo
   useEffect(() => {
     if (!enabled) return
     void load(refreshOnMount)
-    const unsubscribe =
-      typeof window.api?.onHostsChanged === 'function' ? window.api.onHostsChanged(() => void load(false)) : null
-    return () => unsubscribe?.()
+    const unsubscribe = hostsApi.onHostsChanged(() => void load(false))
+    return () => unsubscribe()
   }, [enabled, load, refreshOnMount])
   const refresh = useCallback(() => load(true), [load])
   return { listing, refresh }

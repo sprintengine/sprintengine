@@ -2,9 +2,9 @@
 // 8): `ssh://<saved id>/home/dev/repo`. A workspace on such a machine keeps
 // its folder in this spelling, so nothing on this computer can mistake it for
 // one of its own paths: a local file API handed one finds nothing, and the
-// desktop's file and git channels send it to that machine's server instead
-// (shared/machine-channels.ts). The machine's server is handed the plain
-// path, `/home/dev/repo`.
+// window's files and git ask that machine's own Studio instead
+// (renderer/src/studio/paneStudio.ts). The machine's server is handed the
+// plain path, `/home/dev/repo`.
 
 const PREFIX = 'ssh://'
 const ID = /^[A-Za-z0-9_-]{1,64}$/u

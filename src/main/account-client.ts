@@ -104,6 +104,10 @@ export class SprintEngineAccountClient {
   // reuse as replay, so two overlapping refreshes would revoke the session.
   private refreshInFlight: { provider: IdentityProviderKind; promise: Promise<TokenSet> } | null = null
   private resumeInFlight: Promise<TokenSet> | null = null
+  // The last failed resume this process logged. A signed-out profile fails the
+  // same way on every caller's ask (each window load, each token request), so
+  // the log says it once and again only when the reason changes.
+  private loggedResumeFailure: string | null = null
   // Bumped by every sign-out and every sign-in. A token round trip that
   // started under an earlier generation must not install its result: a
   // sign-out during a refresh would otherwise be undone by the refresh
@@ -275,13 +279,18 @@ export class SprintEngineAccountClient {
         try {
           const tokenSet = await this.refresh(identity)
           this.log('identity-resumed', { provider, pinned: override !== null })
+          this.loggedResumeFailure = null
           return tokenSet
         } catch (error) {
           failures[provider] = getErrorMessage(error)
         }
       }
 
-      this.log('identity-resume-failed', failures)
+      const failure = JSON.stringify(failures)
+      if (failure !== this.loggedResumeFailure) {
+        this.loggedResumeFailure = failure
+        this.log('identity-resume-failed', failures)
+      }
       throw new Error(
         Object.entries(failures)
           .map(([provider, reason]) => `${provider}: ${reason}`)

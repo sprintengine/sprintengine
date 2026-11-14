@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.scheduled', async () => {
   // Scheduled agents have a section of their own at the foot of the list
@@ -68,13 +71,13 @@ test('WorkspaceSidebar.scheduled', async () => {
     nextRunAt: createdAt + 60 * 60 * 1000,
   })
   let publishScheduledAgents: (agents: unknown) => void = () => {}
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
+  terminalsDouble.closeTerminal = async () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
-    terminalKill: async () => {},
     listScheduledAgents: async () => [
       scheduledAgent('sa-1', 'Triage new issues', '/projA', 'w2'),
       // A project with no chat open here: its schedule gives it no header.

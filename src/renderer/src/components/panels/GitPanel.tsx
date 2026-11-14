@@ -80,6 +80,12 @@ import {
 import { DEFAULT_CHANGELIST_ID, normalizeChangelistPath } from '../../../../shared/git/changelists'
 import { GitGraphView, type GitCommitActions, type GitGraphState, type GitMergeTarget } from './GitGraphView'
 import type { GitPanelView } from '../../types/workspace'
+import { openTerminal, writeTerminal } from '../../studio/terminals'
+import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
+
+/** How long a success line stays under the panel before it clears. */
+const SUCCESS_MESSAGE_MS = 6000
 
 type GitPanelMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -277,6 +283,9 @@ function resultMessage(result: GitCommandResult, fallback: string): GitPanelMess
     return { tone: 'success', text: fallback }
   }
 
+  // Stopping on conflicts is what a conflicting merge does; the conflict state
+  // below it carries Continue and Abort, so this is news, not an alarm.
+  if (result.stoppedOnConflicts && result.message) return { tone: 'neutral', text: result.message }
   return { tone: 'error', text: result.message || result.stderr.trim() || 'Git command failed.' }
 }
 
@@ -371,6 +380,18 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const [graph, setGraph] = useState<GitGraphState>({ status: 'loading' })
   const [loadingMoreGraph, setLoadingMoreGraph] = useState(false)
   const [message, setMessage] = useState<GitPanelMessage | null>(null)
+  // A success is news for a moment, not the panel's state: left up, "Created
+  // and switched to feature-x" still read as current long after the branch
+  // had moved on. Errors, and anything said while an action runs, stay until
+  // the next action replaces them.
+  useEffect(() => {
+    if (message?.tone !== 'success') return
+    const timer = window.setTimeout(
+      () => setMessage((current) => (current === message ? null : current)),
+      SUCCESS_MESSAGE_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [message])
   // Held outside the panel's state: only the composer reads it while it is
   // typed, so a keystroke re-renders the composer and not the change list.
   const [commitMessage] = useState(() =>
@@ -388,7 +409,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const graphLimitRef = useRef(GIT_GRAPH_PAGE_SIZE)
 
   const refreshWorktreeScopes = useCallback(async () => {
-    if (!mainRepoRoot || typeof window.api.listGitWorktrees !== 'function') {
+    if (!mainRepoRoot || typeof gitApi.listGitWorktrees !== 'function') {
       setScopeOptions([])
       return
     }
@@ -406,7 +427,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     }
 
     try {
-      const result = await window.api.listGitWorktrees(mainRepoRoot)
+      const result = await gitApi.listGitWorktrees(mainRepoRoot)
       if (!result.ok) {
         setScopeOptions([fallbackMainScope])
         return
@@ -423,7 +444,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
       const worktreeScopes = await Promise.all(
         linked.map(async (worktree): Promise<GitScopeOption> => {
-          const missing = !(await window.api.pathExists(worktree.path).catch(() => false))
+          const missing = !(await filesApi.pathExists(worktree.path).catch(() => false))
           const scope: GitScopeOption = {
             id: scopeId('worktree', worktree.path),
             kind: 'worktree',
@@ -549,13 +570,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   }, [commitMessage, workspaceId, setGitCommitDraft])
 
   const refreshBranches = useCallback(async () => {
-    if (!repoRoot || typeof window.api.getGitBranches !== 'function') {
+    if (!repoRoot || typeof gitApi.getGitBranches !== 'function') {
       setBranches(null)
       return
     }
 
     try {
-      const next = await window.api.getGitBranches(repoRoot)
+      const next = await gitApi.getGitBranches(repoRoot)
       setBranches(next)
       gitBranchCache.set(gitRepoCacheKey(repoRoot), next)
     } catch {
@@ -564,13 +585,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   }, [repoRoot])
 
   const refreshStashes = useCallback(async () => {
-    if (!repoRoot || typeof window.api.listGitStashes !== 'function') {
+    if (!repoRoot || typeof gitApi.listGitStashes !== 'function') {
       setStashes([])
       return
     }
 
     try {
-      const snapshot = await window.api.listGitStashes(repoRoot)
+      const snapshot = await gitApi.listGitStashes(repoRoot)
       setStashes(snapshot.stashes)
     } catch {
       setStashes([])
@@ -579,7 +600,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
   const refreshGraph = useCallback(
     async (showLoading = true) => {
-      if (!repoRoot || typeof window.api.getGitCommitGraph !== 'function') {
+      if (!repoRoot || typeof gitApi.getGitCommitGraph !== 'function') {
         setGraph({
           status: 'error',
           message: 'Restart the app to enable the commit graph.',
@@ -589,7 +610,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
       if (showLoading) setGraph({ status: 'loading' })
       try {
-        const snapshot = await window.api.getGitCommitGraph(repoRoot, { limit: graphLimitRef.current })
+        const snapshot = await gitApi.getGitCommitGraph(repoRoot, { limit: graphLimitRef.current })
         const nextGraph: GitGraphState = { status: 'ready', snapshot }
         setGraph(nextGraph)
         gitGraphCache.set(gitRepoCacheKey(repoRoot), { state: nextGraph, limit: graphLimitRef.current })
@@ -679,8 +700,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     void Promise.all([refreshBranches(), refreshStashes(), refreshGraph(false), refreshWorktreeScopes()])
   }
   useEffect(() => {
-    if (!repoRoot || typeof window.api.watchGitCheckout !== 'function') return
-    return window.api.watchGitCheckout(repoRoot, (change) => {
+    if (!repoRoot || typeof gitApi.watchGitCheckout !== 'function') return
+    return gitApi.watchGitCheckout(repoRoot, (change) => {
       if (change.kinds.includes('refs')) refreshRefsRef.current()
     })
   }, [repoRoot])
@@ -805,13 +826,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const stagePaths = (paths: string[]) =>
     runAction(
       'Staging files',
-      () => window.api.stageGitPaths(repoRoot!, paths),
+      () => gitApi.stageGitPaths(repoRoot!, paths),
       paths.length > 1 ? `Staged ${paths.length} files.` : 'Staged file.',
     )
   const unstagePaths = (paths: string[]) =>
     runAction(
       'Unstaging files',
-      () => window.api.unstageGitPaths(repoRoot!, paths),
+      () => gitApi.unstageGitPaths(repoRoot!, paths),
       paths.length > 1 ? `Unstaged ${paths.length} files.` : 'Unstaged file.',
     )
   /**
@@ -840,8 +861,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
         if (paths.length > 0) {
           const staged =
             intent === 'stage'
-              ? await window.api.stageGitPaths(repoRoot!, paths)
-              : await window.api.unstageGitPaths(repoRoot!, paths)
+              ? await gitApi.stageGitPaths(repoRoot!, paths)
+              : await gitApi.unstageGitPaths(repoRoot!, paths)
           // The whole files first, and a failure there stops the hunks: the
           // person asked for one thing, and half of it having worked is a
           // message, not a success.
@@ -853,7 +874,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           changelists,
           targets,
           intent,
-          api: window.api,
+          api: gitApi,
         })
         hunks = outcome.applied
         return { ok: outcome.ok, stdout: '', stderr: '', message: outcome.message }
@@ -917,7 +938,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     return runAction(
       'Discarding changes',
       () =>
-        window.api.revertGitPaths(
+        gitApi.revertGitPaths(
           repoRoot!,
           unique.map((entry) => entry.path),
         ),
@@ -1408,7 +1429,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     // Same rule as discard, and a stronger reason: this removes the FILE, and a
     // guest row's list owns some of its lines rather than the file.
     const { actionable: rows } = revertableRows(candidates)
-    if (rows.length === 0 || typeof window.api.deletePath !== 'function') return
+    if (rows.length === 0 || typeof filesApi.deletePath !== 'function') return
     const many = rows.length > 1
     const confirmed = await dialog.confirm({
       title: many ? `Delete ${rows.length} files?` : `Delete ${rows[0].relativePath}?`,
@@ -1429,7 +1450,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
         const failures: string[] = []
         for (const row of rows) {
           try {
-            await window.api.deletePath(row.path)
+            await filesApi.deletePath(row.path)
           } catch (error) {
             failures.push(`${row.relativePath}: ${error instanceof Error ? error.message : String(error)}`)
           }
@@ -1447,13 +1468,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   // `git diff`. Assembling one from the rows would produce something no
   // `git apply` would take.
   const buildPatchFor = async (rows: GitChangeRow[]): Promise<string | null> => {
-    if (!repoRoot || rows.length === 0 || typeof window.api.createGitPatch !== 'function') return null
+    if (!repoRoot || rows.length === 0 || typeof gitApi.createGitPatch !== 'function') return null
     // Wholly staged rows have nothing outside the index, so their patch is the
     // cached one; the mixed and unstaged rows are the worktree side. Asking for
     // the side the rows are actually on is what keeps "create patch" from
     // handing back an empty file for a fully staged selection.
     const cached = rows.every((row) => row.checked === true)
-    const result = await window.api.createGitPatch(
+    const result = await gitApi.createGitPatch(
       repoRoot,
       rows.map((row) => row.path),
       cached,
@@ -1515,7 +1536,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot) return false
     const result = await runAction(
       'Committing',
-      () => window.api.commitGitChanges(repoRoot, commitMessage.get()),
+      () => gitApi.commitGitChanges(repoRoot, commitMessage.get()),
       'Committed changes.',
     )
     if (!result?.ok) return false
@@ -1535,28 +1556,28 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
   const handlePush = async () => {
     if (!repoRoot) return
-    const result = await runAction('Pushing', () => window.api.pushGitBranch(repoRoot), 'Pushing branch…')
+    const result = await runAction('Pushing', () => gitApi.pushGitBranch(repoRoot), 'Pushing branch…')
     if (result?.ok) setMessage({ tone: 'success', text: pushedCommitMessage(result) })
   }
 
   const handleFetch = async () => {
     if (!repoRoot) return
-    if (typeof window.api.fetchGitRemotes !== 'function') {
+    if (typeof gitApi.fetchGitRemotes !== 'function') {
       setMessage({ tone: 'error', text: 'Restart the app to enable Git fetch.' })
       return
     }
-    await runAction('Fetching', () => window.api.fetchGitRemotes(repoRoot), 'Fetched remotes.')
+    await runAction('Fetching', () => gitApi.fetchGitRemotes(repoRoot), 'Fetched remotes.')
   }
 
   const handlePull = async () => {
     if (!repoRoot) return
-    if (typeof window.api.pullGitBranchWithStash !== 'function') {
+    if (typeof gitApi.pullGitBranchWithStash !== 'function') {
       setMessage({ tone: 'error', text: 'Restart the app to enable Git pull.' })
       return
     }
     await runAction(
       'Pulling',
-      () => window.api.pullGitBranchWithStash(repoRoot),
+      () => gitApi.pullGitBranchWithStash(repoRoot),
       'Pulled branch and reapplied local changes.',
     )
   }
@@ -1667,14 +1688,14 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     }
     await runAction(
       'Switching branch',
-      () => window.api.switchGitBranch(repoRoot, branchName),
+      () => gitApi.switchGitBranch(repoRoot, branchName),
       `Switched to ${branchName}.`,
     )
   }
 
   const handleMergeTarget = async (target: GitMergeTarget) => {
     if (!repoRoot) return
-    if (typeof window.api.mergeGitRef !== 'function') {
+    if (typeof gitApi.mergeGitRef !== 'function') {
       setMessage({ tone: 'error', text: 'Restart the app to enable Git merge.' })
       return
     }
@@ -1709,7 +1730,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Merging',
-      () => window.api.mergeGitRef(repoRoot, target.ref),
+      () => gitApi.mergeGitRef(repoRoot, target.ref),
       target.kind === 'commit'
         ? `Merged ${target.commit.shortHash} into ${currentBranch}.`
         : `Merged ${target.label} into ${currentBranch}.`,
@@ -1725,7 +1746,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   const handleRebaseTarget = async (target: GitMergeTarget) => {
-    if (!repoRoot || !requireApi(window.api.rebaseGitBranch, 'Git rebase')) return
+    if (!repoRoot || !requireApi(gitApi.rebaseGitBranch, 'Git rebase')) return
     const currentBranch = branches?.current
     if (!currentBranch) {
       setMessage({ tone: 'error', text: 'Check out a branch before rebasing.' })
@@ -1749,13 +1770,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Rebasing',
-      () => window.api.rebaseGitBranch(repoRoot, target.ref),
+      () => gitApi.rebaseGitBranch(repoRoot, target.ref),
       `Rebased ${currentBranch} onto ${subjectLabel}.`,
     )
   }
 
   const handleCherryPick = async (commit: GitGraphCommit) => {
-    if (!repoRoot || !requireApi(window.api.cherryPickGitCommit, 'Git cherry-pick')) return
+    if (!repoRoot || !requireApi(gitApi.cherryPickGitCommit, 'Git cherry-pick')) return
     const currentBranch = branches?.current
     if (!currentBranch) {
       setMessage({ tone: 'error', text: 'Check out a branch before cherry-picking.' })
@@ -1776,13 +1797,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Cherry-picking',
-      () => window.api.cherryPickGitCommit(repoRoot, commit.hash),
+      () => gitApi.cherryPickGitCommit(repoRoot, commit.hash),
       `Cherry-picked ${commit.shortHash} into ${currentBranch}.`,
     )
   }
 
   const handleRevertCommit = async (commit: GitGraphCommit) => {
-    if (!repoRoot || !requireApi(window.api.revertGitCommit, 'Git revert')) return
+    if (!repoRoot || !requireApi(gitApi.revertGitCommit, 'Git revert')) return
     const confirmed = await dialog.confirm({
       title: `Revert ${commit.shortHash}?`,
       body: <>This creates a new commit that undoes “{commit.subject}”. History is kept; nothing is rewritten.</>,
@@ -1792,13 +1813,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Reverting commit',
-      () => window.api.revertGitCommit(repoRoot, commit.hash),
+      () => gitApi.revertGitCommit(repoRoot, commit.hash),
       `Reverted ${commit.shortHash}.`,
     )
   }
 
   const handleResetToCommit = async (commit: GitGraphCommit, mode: GitResetMode) => {
-    if (!repoRoot || !requireApi(window.api.resetGitBranchToCommit, 'Git reset')) return
+    if (!repoRoot || !requireApi(gitApi.resetGitBranchToCommit, 'Git reset')) return
     const currentBranch = branches?.current
     if (!currentBranch) {
       setMessage({ tone: 'error', text: 'Check out a branch before resetting.' })
@@ -1827,13 +1848,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Resetting branch',
-      () => window.api.resetGitBranchToCommit(repoRoot, commit.hash, mode),
+      () => gitApi.resetGitBranchToCommit(repoRoot, commit.hash, mode),
       `Reset ${currentBranch} to ${commit.shortHash} (${mode}).`,
     )
   }
 
   const handleDeleteBranch = async (branchName: string) => {
-    if (!repoRoot || !requireApi(window.api.deleteGitBranch, 'Git branch deletion')) return
+    if (!repoRoot || !requireApi(gitApi.deleteGitBranch, 'Git branch deletion')) return
     const confirmed = await dialog.confirm({
       title: `Delete branch ${branchName}?`,
       body: (
@@ -1849,7 +1870,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     const result = await runAction(
       'Deleting branch',
-      () => window.api.deleteGitBranch(repoRoot, branchName),
+      () => gitApi.deleteGitBranch(repoRoot, branchName),
       `Deleted ${branchName}.`,
     )
     if (!result || result.ok) return
@@ -1874,13 +1895,13 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Force-deleting branch',
-      () => window.api.deleteGitBranch(repoRoot, branchName, true),
+      () => gitApi.deleteGitBranch(repoRoot, branchName, true),
       `Deleted ${branchName}.`,
     )
   }
 
   const handleRenameBranch = async (branchName: string) => {
-    if (!repoRoot || !requireApi(window.api.renameGitBranch, 'Git branch renaming')) return
+    if (!repoRoot || !requireApi(gitApi.renameGitBranch, 'Git branch renaming')) return
     const newName = await dialog.prompt({
       title: `Rename ${branchName}`,
       inputLabel: 'New branch name',
@@ -1892,7 +1913,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     await runAction(
       'Renaming branch',
-      () => window.api.renameGitBranch(repoRoot, branchName, newName),
+      () => gitApi.renameGitBranch(repoRoot, branchName, newName),
       `Renamed ${branchName} to ${newName.trim()}.`,
     )
   }
@@ -1900,16 +1921,16 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const operationInProgress = status?.operation ?? null
 
   const handleContinueOperation = async () => {
-    if (!repoRoot || !operationInProgress || !requireApi(window.api.continueGitOperation, 'Git continue')) return
+    if (!repoRoot || !operationInProgress || !requireApi(gitApi.continueGitOperation, 'Git continue')) return
     await runAction(
       'Continuing',
-      () => window.api.continueGitOperation(repoRoot, operationInProgress),
+      () => gitApi.continueGitOperation(repoRoot, operationInProgress),
       `Continued the ${operationInProgress.replace('-', ' ')}.`,
     )
   }
 
   const handleAbortOperation = async () => {
-    if (!repoRoot || !operationInProgress || !requireApi(window.api.abortGitOperation, 'Git abort')) return
+    if (!repoRoot || !operationInProgress || !requireApi(gitApi.abortGitOperation, 'Git abort')) return
     const label = operationInProgress.replace('-', ' ')
     const confirmed = await dialog.confirm({
       title: `Abort the ${label}?`,
@@ -1918,15 +1939,11 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       tone: 'danger',
     })
     if (!confirmed) return
-    await runAction(
-      'Aborting',
-      () => window.api.abortGitOperation(repoRoot, operationInProgress),
-      `Aborted the ${label}.`,
-    )
+    await runAction('Aborting', () => gitApi.abortGitOperation(repoRoot, operationInProgress), `Aborted the ${label}.`)
   }
 
   const handleStashPush = async () => {
-    if (!repoRoot || !requireApi(window.api.pushGitStash, 'Git stash')) return
+    if (!repoRoot || !requireApi(gitApi.pushGitStash, 'Git stash')) return
     const stashMessage = await dialog.prompt({
       title: 'Stash changes',
       body: <>Sets every local change aside (staged, unstaged, and untracked files) and cleans the working tree.</>,
@@ -1936,20 +1953,20 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     })
     if (stashMessage === null) return
 
-    await runAction('Stashing changes', () => window.api.pushGitStash(repoRoot, stashMessage, true), 'Stashed changes.')
+    await runAction('Stashing changes', () => gitApi.pushGitStash(repoRoot, stashMessage, true), 'Stashed changes.')
   }
 
   const handleStashApply = async (entry: GitStashEntry, pop: boolean) => {
-    if (!repoRoot || !requireApi(window.api.applyGitStash, 'Git stash apply')) return
+    if (!repoRoot || !requireApi(gitApi.applyGitStash, 'Git stash apply')) return
     await runAction(
       pop ? 'Popping stash' : 'Applying stash',
-      () => window.api.applyGitStash(repoRoot, entry.index, entry.hash, pop),
+      () => gitApi.applyGitStash(repoRoot, entry.index, entry.hash, pop),
       pop ? `Popped ${entry.ref}.` : `Applied ${entry.ref}.`,
     )
   }
 
   const handleStashDrop = async (entry: GitStashEntry) => {
-    if (!repoRoot || !requireApi(window.api.dropGitStash, 'Git stash drop')) return
+    if (!repoRoot || !requireApi(gitApi.dropGitStash, 'Git stash drop')) return
     const confirmed = await dialog.confirm({
       title: `Drop ${entry.ref}?`,
       body: <>This deletes the stash entry “{entry.message}”. The action cannot be undone from here.</>,
@@ -1959,7 +1976,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!confirmed) return
     await runAction(
       'Dropping stash',
-      () => window.api.dropGitStash(repoRoot, entry.index, entry.hash),
+      () => gitApi.dropGitStash(repoRoot, entry.index, entry.hash),
       `Dropped ${entry.ref}.`,
     )
   }
@@ -1979,7 +1996,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!confirmed) return
     await runAction(
       'Checking out commit',
-      () => window.api.checkoutGitCommit(repoRoot, commit.hash),
+      () => gitApi.checkoutGitCommit(repoRoot, commit.hash),
       `Checked out ${commit.shortHash} (detached HEAD).`,
     )
   }
@@ -1997,7 +2014,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!name) return
     await runAction(
       'Creating branch',
-      () => window.api.checkoutGitCommitAsBranch(repoRoot, name, commit.hash),
+      () => gitApi.checkoutGitCommitAsBranch(repoRoot, name, commit.hash),
       `Created and switched to ${name.trim()}.`,
     )
   }
@@ -2015,7 +2032,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!name) return
     await runAction(
       'Creating tag',
-      () => window.api.createGitTagFromCommit(repoRoot, name, commit.hash),
+      () => gitApi.createGitTagFromCommit(repoRoot, name, commit.hash),
       `Tagged ${commit.shortHash} as ${name.trim()}.`,
     )
   }
@@ -2066,7 +2083,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       '',
     ].join('\n')
 
-    const result = await window.api.terminalSpawn(
+    const result = await openTerminal(
       `terminal-${terminalId}`,
       100,
       30,
@@ -2088,7 +2105,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       return
     }
 
-    await window.api.terminalWrite(`terminal-${terminalId}`, command)
+    await writeTerminal(`terminal-${terminalId}`, command)
     focusOrAddTerminalTab(workspaceId, terminalId, `Diff ${branchOrHeadLabel(activeScope.branch, activeScope.head)}`)
     setMessage({ tone: 'neutral', text: `Opened review diff: ${range} (${reviewDiffTarget.reason}).` })
   }
@@ -2151,10 +2168,10 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     if (!isImageFile(entry.path || name)) {
       try {
-        content = await window.api.readfile(entry.path)
+        content = await filesApi.readfile(entry.path)
       } catch {
-        if (repoRoot && typeof window.api.getGitFileBase === 'function') {
-          const result = await window.api.getGitFileBase(repoRoot, entry.path)
+        if (repoRoot && typeof gitApi.getGitFileBase === 'function') {
+          const result = await gitApi.getGitFileBase(repoRoot, entry.path)
           content = result.ok ? result.content : ''
         }
       }

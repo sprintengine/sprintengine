@@ -7,13 +7,17 @@ import {
   STUDIO_MAX_FRAME_BYTES,
   STUDIO_METHODS,
   STUDIO_TOPICS,
-  checkStudioProtocolVersion,
+  STUDIO_UPDATE_SESSION_CAPABILITY,
+  STUDIO_UPDATE_SESSION_METHODS,
+  studioIncompatibility,
   isStudioMethod,
   isStudioTopic,
   parseStudioClientFrame,
   parseStudioTopicParams,
   studioClientFrameIds,
   authorizeStudioTopic,
+  studioGrantAllows,
+  projectTerminalSession,
   studioGrantPrincipal,
   studioRefusedGrantName,
   studioWireFrames,
@@ -21,7 +25,9 @@ import {
   type StudioByeCode,
   type StudioClientInfo,
   type StudioErrorBody,
+  type StudioFollowedTopic,
   type StudioGrant,
+  type StudioModuleNotification,
   type StudioRequestFrame,
   type StudioServerFrame,
   type StudioPushTopic,
@@ -31,10 +37,21 @@ import {
   type StudioTopicPayload,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
+import {
+  BROWSER_NO_TERMINALS,
+  browserCapabilities,
+  refusedOutsideWindow,
+  refusedToBrowser,
+  WINDOW_ONLY,
+} from './studio-browser-reach'
+import type { StudioAccessDomain } from './studio-access'
+import { currentMesh, currentTailnet, type StudioTailnetDomain } from './studio-tailnet'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
+  CONVERSATION_WIRE_EVENT_BYTES,
   conversationDeltaKey,
   conversationSnapshotParts,
+  projectConversationEvent,
   type ConversationSnapshotFrame,
 } from '../conversation-stream-shaping'
 import { studioErrorId, type StudioRpcAnswer, type StudioRpcRouter } from './studio-rpc-router'
@@ -42,12 +59,27 @@ import type { ClientToolConnection, ClientToolRegistry } from '../tools/client-t
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioExtensions } from '../extensions/extensions-domain'
+import type { StudioArtifacts } from '../artifacts/artifacts-domain'
+import type { StudioWebDevicesDomain } from './studio-web-devices'
+import type { StudioModules } from './studio-modules'
+import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
+import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import type { StudioCanvasDomain } from '../canvas/canvas-domain'
+import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
+import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
   StudioChatBackend,
+  StudioChatRef,
   StudioConversationBackend,
   StudioRequestContext,
+  StudioWorkBudget,
 } from './studio-rpc-types'
 
 // One client's connection to the Studio RPC: newline-delimited JSON on a
@@ -66,10 +98,12 @@ import type {
 // resumes from its cursors. Writes wait for the socket to drain, so what is
 // waiting is in the queue the bound measures and not in the socket's buffer.
 //
-// The stream need not be a socket. Studio's own windows each reach the RPC
-// over a port main hands them (`studio-frame-port.ts`), one frame per message.
-// Those connections are the app's own chat view (`ownWindow`): what they are
-// sent is not redacted, and what they do is not audited, as over IPC.
+// The stream need not be the owner socket. Studio's own windows each reach
+// the RPC over a WebSocket to the window listener (`studio-window-listener.ts`),
+// admitted by a ticket main asked for; the shell's own session comes over a
+// port main holds (`studio-frame-port.ts`). A window's connections are the
+// app's own chat view (`ownWindow`): what they are sent is not redacted, and
+// what they do is not audited, as over IPC.
 //
 // A connection whose grant may offer tools is also one end of the client
 // tools registry: Studio sends it `call` and `cancel` frames for the tools it
@@ -96,6 +130,10 @@ const MAX_SUBSCRIPTIONS = 32
 // shows. Its bounds are there to stop a runaway, not to pace a view.
 const OWN_WINDOW_MAX_IN_FLIGHT = 512
 const OWN_WINDOW_MAX_SUBSCRIPTIONS = 512
+// A terminal's output queued behind a slow reader past this is dropped and the
+// pane is sent its screen again instead: the connection is not given up for one
+// terminal that printed faster than it could be read.
+const MAX_TERMINAL_QUEUED_BYTES = 1024 * 1024
 const BUSY_RETRY_MS = 250
 const SUBSCRIBE_RETRY_MS = 2_000
 // How long a closing connection waits for the client to read its `bye`.
@@ -121,7 +159,7 @@ export type StudioRpcConnectionOptions = {
   backend: StudioConversationBackend
   /** The chat surface: its push streams, and the file searches a closed connection leaves behind. */
   chat?: () => StudioChatBackend | null
-  /** One of Studio's own windows, over the port main handed it. Default false. */
+  /** One of Studio's own windows, admitted by a ticket main minted for it. Default false. */
   ownWindow?: boolean
   /** The desktop's own shell, over a port main holds: it may offer the built-in toolsets. Default false. */
   shell?: boolean
@@ -129,6 +167,10 @@ export type StudioRpcConnectionOptions = {
   audited?: boolean
   /** Hold the folders it names to the ones Studio knows: a browser on the tailnet. */
   knownFoldersOnly?: boolean
+  /** A browser's connection, an owner's tab included: never the terminals. */
+  browser?: boolean
+  /** Shared with the client's other connections: a paired device's, across its sockets and tool streams. */
+  workBudget?: StudioWorkBudget
   /** The client tools registry, when this Studio serves client tools. */
   tools?: ClientToolRegistry
   /** Files under a workspace's roots: the `files.watch` stream. */
@@ -137,6 +179,37 @@ export type StudioRpcConnectionOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started: the `localServers.changed` stream. */
   localServers?: StudioLocalServers
+  /** What this Studio's modules say: the `module.events` and `module.notifications` streams. */
+  modules?: StudioModules
+  /** The terminals on this machine: the `terminal.*` streams. */
+  terminals?: StudioTerminals
+  /** The marketplace and the feeds: the `cardFeed.changed` stream. */
+  extensions?: StudioExtensions
+  /** Where the Studio publishes its agents' pages: the `artifacts.setupQuestions` stream. */
+  artifacts?: StudioArtifacts
+  /** Who may reach the agents from this machine: the `localApps.changed` stream. */
+  access?: StudioAccessDomain
+  /** The web listener's paired browsers: the `webDevices.changed` stream. */
+  webDevices?: () => StudioWebDevicesDomain | null
+  /** The tailnet listener and the machines this one drives: the `tailnet.changed` and `mesh.changed` streams. */
+  tailnet?: StudioTailnetDomain
+  /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
+  runtimes?: CliRuntimes
+  /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
+  agentSettings?: StudioAgentSettings
+  /** What the agents are set up with: the `memoryActivity.*` and `areaSkills.changed` streams. */
+  agentSetup?: StudioAgentSetup
+  /** What the Studio keeps beside its chats: the `usageLimits.changed` and `usageLimitResumes.changed` streams. */
+  chatStores?: StudioChatStores
+  /** The projects' backlogs: the `backlog.changed` stream. */
+  phoneReads?: StudioPhoneReads
+  agentSkills?: StudioAgentSkills
+  /** The scheduled agents: the `schedules.changed` stream. */
+  schedules?: StudioSchedulesDomain
+  /** The machine's boards: the `canvas.board` and `canvas.openRequests` streams. */
+  canvas?: StudioCanvasDomain
+  /** The window this connection is one of Studio's own for, as main names it. */
+  windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
   welcome: () => Omit<StudioWelcomeFrame, 't' | 'grant' | 'pairing'>
   /** The delay a client that fell behind is told to wait; it should grow with repeated resyncs. */
@@ -158,8 +231,18 @@ type LiveEntry = {
   sub?: string
   delta?: { key: string; event: ConversationEvent }
   partialToolUseId?: string
+  /** A terminal's `data` push: the next one for the same subscription joins it while it waits. */
+  terminalData?: { data: string }
 }
-type BulkEntry = { kind: 'bulk'; lines: Iterator<string>; bytes: number; started: boolean; sub?: string }
+// `end`: a replay's, called once when its fence goes out or it is done or dropped.
+type BulkEntry = {
+  kind: 'bulk'
+  lines: Iterator<string>
+  bytes: number
+  started: boolean
+  sub?: string
+  end?: () => void
+}
 
 type Subscription = {
   id: string
@@ -185,8 +268,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     ownWindow,
     ...(options.audited === undefined ? {} : { audited: options.audited }),
     ...(options.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
+    ...(options.browser ? { browser: true } : {}),
+    ...(options.windowKey === undefined ? {} : { windowKey: options.windowKey }),
+    ...(options.shell === true ? { shell: true } : {}),
   }
-  let state: 'hello' | 'open' | 'closed' = 'hello'
+  // `incompatible`: authenticated, but the client's protocol window does not
+  // meet this Studio's; only the update methods are served (`update.ts`).
+  let state: 'hello' | 'open' | 'incompatible' | 'closed' = 'hello'
   let clientId: string | null = null
   let clientName = ''
   let frameSequence = 0
@@ -200,7 +288,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   let commandsInFlight = 0
   const subscriptions = new Map<string, Subscription>()
   // Subscriptions whose replay is still queued or being written.
-  const replaying = new Set<string>()
+  // Replays in flight per subscription: a reset snapshot after the join can
+  // queue a second behind the first, and the first ending must not end both.
+  const replaying = new Map<string, number>()
   const releases: Array<() => void> = []
   let helloTimer: ReturnType<typeof setTimeout> | undefined
   // Whether this connection is one end of the client tools registry.
@@ -232,22 +322,28 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     replaying.clear()
     for (const release of releases.splice(0)) release()
     try {
-      options.chat?.()?.releaseFileSearches(context.slot)
+      const chat = options.chat?.()
+      chat?.releaseHistorySearches(context.slot)
     } catch {
       // Nothing of this connection's is left to end.
     }
-    options.router.connectionClosed(options.connectionId)
+    options.router.connectionClosed(options.connectionId, context.slot)
     options.onClosed(connection)
   }
 
-  function bye(code: StudioByeCode, message: string, retryAfterMs?: number): void {
+  function bye(
+    code: StudioByeCode,
+    message: string,
+    retryAfterMs?: number,
+    window?: { protocolVersion: number; minProtocolVersion: number },
+  ): void {
     if (state === 'closed') return
     // Written ahead of anything still queued: what is queued is exactly what
     // a revoked or fallen-behind client should no longer be sent.
     if (!socket.destroyed) {
       try {
         socket.write(
-          `${JSON.stringify({ t: 'bye', code, message, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) })}\n`,
+          `${JSON.stringify({ t: 'bye', code, message, ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...window })}\n`,
         )
         socket.end()
       } catch {
@@ -317,7 +413,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         if (next.done) {
           pending.shift()
           bulkBytes -= entry.bytes
-          if (entry.sub !== undefined) replaying.delete(entry.sub)
+          entry.end?.()
           releaseBulkWaiters()
           continue
         }
@@ -355,12 +451,20 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const event = frame.t === 'frame' && frame.frame.type === 'event' ? (frame.frame.event as ConversationEvent) : null
     const key = event ? conversationDeltaKey(event) : null
     const tail = pending.at(-1)
-    const behindReplay = sub !== undefined && replaying.has(sub)
+    const behindReplay = sub !== undefined && (replaying.get(sub) ?? 0) > 0
     const byteBound = behindReplay ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES
-    if (key && event && tail?.kind === 'live' && tail.delta?.key === key && tail.sub === sub) {
+    if (
+      key &&
+      event &&
+      tail?.kind === 'live' &&
+      tail.delta?.key === key &&
+      tail.sub === sub &&
+      tail.bytes + Buffer.byteLength(String(event.payload!.text)) <= CONVERSATION_WIRE_EVENT_BYTES
+    ) {
       // Only an unsent frame is ever in the queue, so this merges only while
       // the reader is behind. The merged delta keeps its first id and takes
-      // the last sequence, which is how a stored run reads back too.
+      // the last sequence, which is how a stored run reads back too; it stops
+      // growing at one event's bound, and the next delta starts another.
       extend(tail as LiveEntry & { delta: object }, event)
       if (liveBytes > byteBound) resync()
       return
@@ -396,9 +500,16 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     void drain()
   }
 
-  function enqueueBulk(lines: Iterator<string>, bytes: number, sub?: string): void {
+  function enqueueBulk(lines: Iterator<string>, bytes: number, sub?: string, end?: () => void): void {
     if (state === 'closed') return
-    pending.push({ kind: 'bulk', lines, bytes, started: false, ...(sub === undefined ? {} : { sub }) })
+    pending.push({
+      kind: 'bulk',
+      lines,
+      bytes,
+      started: false,
+      ...(sub === undefined ? {} : { sub }),
+      ...(end ? { end } : {}),
+    })
     bulkBytes += bytes
     void drain()
   }
@@ -477,13 +588,25 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         producers.push(() => parts.frames(wire, current))
       } else {
         const json = JSON.stringify(
-          source.type === 'event' ? { ...source, event: redact(source.event as ConversationEvent) } : source,
+          source.type === 'event'
+            ? { ...source, event: redact(projectConversationEvent(source.event as ConversationEvent)) }
+            : source,
         )
         bytes += Buffer.byteLength(json)
         producers.push(() => wire(json))
       }
     }
-    replaying.add(sub)
+    replaying.set(sub, (replaying.get(sub) ?? 0) + 1)
+    let ended = false
+    const end = () => {
+      if (ended) return
+      ended = true
+      // A dropped subscription's count went with it; its id may be another's now.
+      if (subscriptions.get(sub) !== subscription) return
+      const left = (replaying.get(sub) ?? 1) - 1
+      if (left > 0) replaying.set(sub, left)
+      else replaying.delete(sub)
+    }
     enqueueBulk(
       (function* () {
         for (const [index, produce] of producers.entries()) {
@@ -491,12 +614,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           // The fence is the replay's last frame. Once it is on its way the
           // client holds a newer cursor, so live frames behind it count against
           // the usual bound again.
-          if (index === producers.length - 1) replaying.delete(sub)
+          if (index === producers.length - 1) end()
           yield* produce()
         }
       })(),
       bytes,
       sub,
+      end,
     )
   }
 
@@ -555,6 +679,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const key = { workspaceId: subscription.key.workspaceId, agentId: subscription.key.agentId }
     const frame: ConversationServerFrame =
       source.type === 'snapshot' || source.type === 'synchronized' ? { ...source, key } : source
+    // A reset snapshot after the join (the runtime catching up once the
+    // chat's server is back) is a join again: collected with its fence and
+    // sent as a paced replay, in parts, as the first one was.
+    if (!subscription.replay && frame.type === 'snapshot') subscription.replay = []
     if (subscription.replay) {
       subscription.replay.push(frame)
       if (frame.type === 'synchronized') {
@@ -565,10 +693,12 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       return
     }
     if (frame.type === 'event') {
-      const event = redact(frame.event as ConversationEvent)
-      // A copy the queue may extend in place without touching the runtime's own.
+      const projected = projectConversationEvent(frame.event as ConversationEvent)
+      const event = redact(projected)
+      // A copy the queue may extend in place without touching the runtime's
+      // own, or the projection every subscriber shares.
       const owned =
-        event === frame.event ? { ...event, ...(event.payload ? { payload: { ...event.payload } } : {}) } : event
+        event === projected ? { ...event, ...(event.payload ? { payload: { ...event.payload } } : {}) } : event
       enqueueLive({ t: 'frame', sub: subscription.id, frame: { type: 'event', event: owned } }, subscription.id)
       return
     }
@@ -590,6 +720,14 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     }
     const spec = STUDIO_TOPICS[frame.topic]
     const decision = authorizeStudioTopic(grant, frame.topic)
+    if (decision.ok && refusedToBrowser(spec, options.browser)) {
+      subscriptionFailed(frame.id, 'owner_required', BROWSER_NO_TERMINALS)
+      return
+    }
+    if (decision.ok && refusedOutsideWindow(spec, options)) {
+      subscriptionFailed(frame.id, 'owner_required', WINDOW_ONLY)
+      return
+    }
     if (!decision.ok) {
       if (decision.reason === 'permission_required')
         subscriptionFailed(
@@ -687,6 +825,125 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /**
+   * One chat's held, scheduled, usage, sub-agent or changes state, as the
+   * tailnet lane's watches tell it: what stands now, then each change, each
+   * push the lane's own frame of that kind, whole. The chat is named by its
+   * key and resolved as a follow resolves it; a folder only by an owner.
+   */
+  function subscribeFollowed<T extends StudioFollowedTopic>(
+    id: string,
+    topic: T,
+    params: StudioTopicParams<T>,
+    watch: ((chat: StudioChatRef, push: (payload: StudioTopicPayload<T>) => void) => () => void) | undefined,
+  ): void {
+    if (!watch) {
+      subscriptionFailed(id, 'unavailable', `This Studio does not serve ${topic}.`)
+      return
+    }
+    const grant = liveGrant()
+    if (!grant) return
+    const wireKey = params.key
+    if (wireKey.workspaceRoot !== undefined && !grant.owner) {
+      subscriptionFailed(id, 'owner_required', 'Only Studio’s own connections may name a conversation by its folder.')
+      return
+    }
+    const known =
+      wireKey.workspaceRoot === undefined
+        ? backend.resolveKey(wireKey.workspaceId, wireKey.agentId)
+        : { workspaceRoot: wireKey.workspaceRoot, workspaceId: wireKey.workspaceId, agentId: wireKey.agentId }
+    if (!known) {
+      subscriptionFailed(
+        id,
+        'not_found',
+        `No conversation "${wireKey.agentId}" in workspace "${wireKey.workspaceId}" here.`,
+      )
+      return
+    }
+    const subscription: Subscription = { id, topic, key: known, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = watch({ workspaceId: known.workspaceId, agentId: known.agentId }, (payload) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      // The grant is read again before anything goes out, as for a conversation.
+      if (!stillGranted(topic)) return
+      push(topic as StudioPushTopic, id, redact(payload) as never)
+    })
+    // Told at once, inside `watch`, and then dropped: nothing to keep.
+    if (subscriptions.get(id) !== subscription) stop()
+    else subscription.handle = { dispose: stop }
+  }
+
+  /** What each per-chat topic pushes: the lane's frame of its kind, under the chat's own key. */
+  const followed = backend.followed ?? {}
+  const chatOf = (chat: StudioChatRef) => ({ workspaceId: chat.workspaceId, agentId: chat.agentId })
+  const subscribeQueued = (id: string, params: StudioTopicParams<'conversation.queued'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.queued',
+      params,
+      followed.watchQueued &&
+        ((chat, send) =>
+          followed.watchQueued!(chat, (messages) => send({ type: 'queued', key: chatOf(chat), messages }))),
+    )
+  const subscribeScheduled = (id: string, params: StudioTopicParams<'conversation.scheduled'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.scheduled',
+      params,
+      followed.watchScheduled &&
+        ((chat, send) =>
+          followed.watchScheduled!(chat, (messages) => send({ type: 'scheduled', key: chatOf(chat), messages }))),
+    )
+  const subscribeUsageLimits = (id: string, params: StudioTopicParams<'conversation.usageLimits'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.usageLimits',
+      params,
+      followed.watchUsageLimits &&
+        ((chat, send) =>
+          followed.watchUsageLimits!(chat, (limits) => send({ type: 'usageLimits', key: chatOf(chat), ...limits }))),
+    )
+  const subscribeSubagents = (id: string, params: StudioTopicParams<'conversation.subagents'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.subagents',
+      params,
+      followed.watchSubagents &&
+        ((chat, send) =>
+          followed.watchSubagents!(chat, (subagents) => send({ type: 'subagents', key: chatOf(chat), subagents }))),
+    )
+  const subscribeChanges = (id: string, params: StudioTopicParams<'conversation.changes'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.changes',
+      params,
+      followed.watchChanges &&
+        ((chat, send) => followed.watchChanges!(chat, (said) => send({ type: 'changes', key: chatOf(chat), ...said }))),
+    )
+
+  /** Every chat's lifecycle, as it happens, each event without its payload. */
+  function subscribeEvents(id: string): void {
+    const chat = options.chat?.() ?? null
+    if (!chat) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve conversation.events.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'conversation.events', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = chat.onLifecycleEvent((event) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      // The grant is read again before anything goes out, as for a conversation.
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, 'conversation.events').ok) {
+        refreshGrant()
+        return
+      }
+      push('conversation.events', id, redact(event))
+    })
+    subscription.handle = { dispose: stop }
+  }
+
   /** One directory's changed names, as they happen, until the client unsubscribes or the folder goes. */
   function subscribeWatch(id: string, params: StudioTopicParams<'files.watch'>): void {
     const files = options.files
@@ -738,6 +995,72 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       )
   }
 
+  /**
+   * Changes under one folder on this machine, until the client unsubscribes:
+   * the folder is held to what the grant may name when the stream opens, and
+   * each burst goes out while the grant still reaches the topic.
+   */
+  function subscribeWatchPath(id: string, params: StudioTopicParams<'files.watchPath'>): void {
+    const grant = liveGrant()
+    if (!grant) return
+    const subscription: Subscription = { id, topic: 'files.watchPath', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    void options.router
+      .watchPath(params, { grant, context }, (event) => {
+        if (current() && stillGranted('files.watchPath')) push('files.watchPath', id, event)
+      })
+      .then(
+        (watched) => {
+          if (!watched.ok) {
+            if (current()) {
+              subscriptions.delete(id)
+              subscriptionFailed(id, 'code' in watched ? watched.code : 'not_found', watched.message)
+            }
+            return
+          }
+          if (current()) subscription.handle = { dispose: () => watched.dispose() }
+          else watched.dispose()
+        },
+        () => {
+          if (!current()) return
+          subscriptions.delete(id)
+          subscriptionFailed(id, 'unavailable', 'Studio could not watch that folder.', SUBSCRIBE_RETRY_MS)
+        },
+      )
+  }
+
+  /** A checkout's changes, while the client follows it: retained here, released when the stream ends. */
+  function subscribeCheckout(id: string, params: StudioTopicParams<'git.checkoutChanged'>): void {
+    const grant = liveGrant()
+    if (!grant) return
+    const subscription: Subscription = { id, topic: 'git.checkoutChanged', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    void options.router
+      .followCheckout(params.checkoutPath, { grant, context }, (change) => {
+        if (current() && stillGranted('git.checkoutChanged')) push('git.checkoutChanged', id, change)
+      })
+      .then(
+        (followed) => {
+          if (!followed.ok) {
+            if (current()) {
+              subscriptions.delete(id)
+              subscriptionFailed(id, followed.code, followed.message)
+            }
+            return
+          }
+          if (current()) subscription.handle = { dispose: () => followed.dispose() }
+          else followed.dispose()
+        },
+        () => {
+          if (!current()) return
+          subscriptions.delete(id)
+          subscriptionFailed(id, 'unavailable', 'Studio could not follow that checkout.', SUBSCRIBE_RETRY_MS)
+        },
+      )
+  }
+
   /** What moved in the pull request record, as it moves: the client asks for the lists it shows. */
   function subscribePullRequests(id: string): void {
     const pullRequests = options.pullRequests
@@ -782,6 +1105,328 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /** A module's events, or every module's, as the kernel delivers them: in each module's order, never replayed. */
+  function subscribeModuleEvents(id: string, params: StudioTopicParams<'module.events'>): void {
+    const modules = options.modules
+    if (!modules) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.events.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'module.events', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = modules.onEvent((event) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (params.moduleId !== undefined && event.sourceModuleId !== params.moduleId) return
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, 'module.events').ok) {
+        refreshGrant()
+        return
+      }
+      push('module.events', id, event)
+    })
+    subscription.handle = { dispose: stop }
+  }
+
+  /**
+   * A push topic fed by a domain's listener: each payload goes out while the
+   * grant as it stands still reaches the topic, and a narrowed or revoked
+   * grant ends it. Never replayed: a client asks for what it shows after it
+   * subscribes.
+   */
+  function subscribeFeed<T extends StudioPushTopic>(
+    id: string,
+    topic: T,
+    listen: ((deliver: (payload: StudioTopicPayload<T>) => void) => () => void) | null,
+    /**
+     * What this client is shown of a payload, decided with its grant at the
+     * moment it goes out. Payloads still go out in the order they came.
+     */
+    shownTo?: (
+      payload: StudioTopicPayload<T>,
+      asking: { grant: StudioGrant; context: StudioRequestContext },
+    ) => Promise<StudioTopicPayload<T>>,
+  ): void {
+    if (!listen) {
+      subscriptionFailed(id, 'unavailable', `This Studio does not serve ${topic}.`)
+      return
+    }
+    const subscription: Subscription = { id, topic, key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    let queue: Promise<void> = Promise.resolve()
+    const stop = listen((payload) => {
+      if (!current()) return
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, topic).ok) {
+        refreshGrant()
+        return
+      }
+      if (!shownTo) {
+        push(topic, id, payload)
+        return
+      }
+      queue = queue
+        .then(() => shownTo(payload, { grant, context }))
+        .then(
+          (shown) => {
+            if (current() && stillGranted(topic)) push(topic, id, shown)
+          },
+          // A payload this client could not be shown safely is not shown at all.
+          () => undefined,
+        )
+    })
+    subscription.handle = { dispose: stop }
+  }
+
+  /**
+   * One board, held open on the machine's canvas service while subscribed:
+   * notices only (opened, a revision, a presence), never the scene, which the
+   * client reads by request. Whether the grant may change the board is read
+   * at each open, a resubscribe after a drop included.
+   */
+  function subscribeCanvasBoard(id: string, params: StudioTopicParams<'canvas.board'>): void {
+    const canvas = options.canvas
+    if (!canvas) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve canvas.board.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'canvas.board', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const grant = liveGrant()
+    const canEdit = grant !== null && studioGrantAllows(grant, 'canvas.commit')
+    void canvas
+      .open(options.connectionId, params, canEdit, (notice) => {
+        if (state === 'closed' || subscriptions.get(id) !== subscription) return
+        if (stillGranted('canvas.board')) push('canvas.board', id, notice)
+      })
+      .then(
+        (opened) => {
+          if (!opened.ok) {
+            if (subscriptions.get(id) === subscription) {
+              subscriptions.delete(id)
+              subscriptionFailed(id, opened.code, opened.message)
+            }
+            return
+          }
+          if (state === 'closed' || subscriptions.get(id) !== subscription) opened.value.close()
+          else subscription.handle = { dispose: () => opened.value.close() }
+        },
+        () => {
+          if (subscriptions.get(id) !== subscription) return
+          subscriptions.delete(id)
+          subscriptionFailed(id, 'unavailable', 'Studio could not open that board.', SUBSCRIBE_RETRY_MS)
+        },
+      )
+  }
+
+  /** An agent's `canvas.open` in the workspaces the client follows: the board it wants shown. */
+  function subscribeCanvasOpenRequests(id: string, params: StudioTopicParams<'canvas.openRequests'>): void {
+    const canvas = options.canvas
+    const workspaces = new Set(params.workspaceIds)
+    subscribeFeed(
+      id,
+      'canvas.openRequests',
+      canvas
+        ? (deliver) =>
+            canvas.onOpenRequest((ref) => {
+              if (workspaces.has(ref.workspaceId)) deliver(ref)
+            })
+        : null,
+    )
+  }
+
+  /** Whether the grant as it stands still reaches a topic; a revoked or narrowed one ends what it no longer reaches. */
+  function stillGranted(topic: StudioTopic): boolean {
+    const grant = liveGrant()
+    if (!grant) return false
+    if (authorizeStudioTopic(grant, topic).ok) return true
+    refreshGrant()
+    return false
+  }
+
+  /**
+   * One session's output for the pane that subscribed. A replay (a screen in
+   * full: up to a couple of megabytes, and an escape-heavy one grows six-fold
+   * in JSON) is queued as a paced unit, as a conversation's join is, so a
+   * window showing several terminals at once is never taken for a reader that
+   * stopped. What was queued for the pane before it is dropped: the replay
+   * holds it. Output waiting behind a slow reader joins the push before it,
+   * and past `MAX_TERMINAL_QUEUED_BYTES` it is dropped and the pane repainted.
+   */
+  function subscribeTerminalOutput(id: string, params: StudioTopicParams<'terminal.output'>): void {
+    const terminals = options.terminals
+    if (!terminals) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve terminal.output.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'terminal.output', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    let follow: StudioTerminalFollow | null = null
+    let repainting = false
+    follow = terminals.follow(options.connectionId, params.sessionId, (event) => {
+      if (!current() || !stillGranted('terminal.output')) return
+      if (event.type === 'replay') {
+        repainting = false
+        dropQueued(id)
+        const json = JSON.stringify({ t: 'push', sub: id, payload: event })
+        replaying.set(id, (replaying.get(id) ?? 0) + 1)
+        let ended = false
+        const end = () => {
+          if (ended) return
+          ended = true
+          if (subscriptions.get(id) !== subscription) return
+          const left = (replaying.get(id) ?? 1) - 1
+          if (left > 0) replaying.set(id, left)
+          else replaying.delete(id)
+        }
+        enqueueBulk(
+          (function* () {
+            for (const line of studioWireFrames(json, nextFrameId())) {
+              if (!current()) return
+              yield line
+            }
+            end()
+          })(),
+          Buffer.byteLength(json),
+          id,
+          end,
+        )
+        return
+      }
+      if (repainting) return
+      if (event.type === 'data') {
+        const tail = pending.at(-1)
+        if (tail?.kind === 'live' && tail.sub === id && tail.terminalData) {
+          const grown = Buffer.byteLength(JSON.stringify(event.data)) - 2
+          if (queuedBytes(id) + grown > MAX_TERMINAL_QUEUED_BYTES) return repaint()
+          tail.terminalData.data += event.data
+          tail.json = undefined
+          tail.bytes += grown
+          liveBytes += grown
+          if (liveBytes > ((replaying.get(id) ?? 0) > 0 ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES)) resync()
+          return
+        }
+        const payload = { type: 'data' as const, data: event.data }
+        const json = JSON.stringify({ t: 'push', sub: id, payload })
+        if (queuedBytes(id) + Buffer.byteLength(json) > MAX_TERMINAL_QUEUED_BYTES) return repaint()
+        enqueueLive({ t: 'push', sub: id, payload }, id, json)
+        const queued = pending.at(-1)
+        if (queued?.kind === 'live' && queued.sub === id && queued.json === json) queued.terminalData = payload
+        return
+      }
+      push('terminal.output', id, event)
+    })
+    function repaint(): void {
+      repainting = true
+      dropQueued(id)
+      // Asked once the current frame is handled: the replay it answers with comes back through this follow.
+      queueMicrotask(() => {
+        if (current()) follow?.repaint()
+        else repainting = false
+      })
+    }
+    subscription.handle = { dispose: () => follow?.dispose() }
+  }
+
+  /** The bytes of live frames still waiting for one subscription. */
+  function queuedBytes(sub: string): number {
+    let bytes = 0
+    for (const entry of pending) if (entry.kind === 'live' && entry.sub === sub) bytes += entry.bytes
+    return bytes
+  }
+
+  /**
+   * Drop the output and replays waiting for one terminal subscription that have
+   * not started out: a replay behind them holds the screen they would paint.
+   * An exit or an error is kept, since no replay says either.
+   */
+  function dropQueued(sub: string): void {
+    for (const entry of [...pending]) {
+      if (entry.sub !== sub) continue
+      if (entry.kind === 'live') {
+        if (entry.terminalData) removeLive(entry)
+      } else if (!entry.started) {
+        pending.splice(pending.indexOf(entry), 1)
+        bulkBytes -= entry.bytes
+        entry.end?.()
+      }
+    }
+    releaseBulkWaiters()
+  }
+
+  /** What changed among the terminals, each session as this client may see it. */
+  function subscribeTerminalSessions(id: string): void {
+    const terminals = options.terminals
+    if (!terminals) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve terminal.sessions.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'terminal.sessions', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = terminals.onSessionsDelta((delta) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (!stillGranted('terminal.sessions')) return
+      if (ownWindow) {
+        push('terminal.sessions', id, delta)
+        return
+      }
+      push('terminal.sessions', id, {
+        upserts: delta.upserts.map((session) => projectTerminalSession(session)),
+        removed: delta.removed,
+      })
+    })
+    subscription.handle = { dispose: stop }
+  }
+
+  /** The bell: the rows the kernel still keeps, oldest first, then each new one. */
+  function subscribeModuleNotifications(id: string): void {
+    const modules = options.modules
+    if (!modules) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.notifications.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'module.notifications', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const send = (notification: StudioModuleNotification): void => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, 'module.notifications').ok) {
+        refreshGrant()
+        return
+      }
+      push('module.notifications', id, notification)
+    }
+    // The backlog and the listener in one turn: nothing raised between them is lost or heard twice.
+    for (const notification of modules.recentNotifications()) send(notification)
+    subscription.handle = { dispose: modules.onNotification(send) }
+  }
+
+  /** A first message could not be typed into its agent: the client takes it with `terminal.takeUndeliveredPrompts`. */
+  function subscribePromptUndelivered(id: string): void {
+    const terminals = options.terminals
+    if (!terminals) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve terminal.promptUndelivered.')
+      return
+    }
+    const subscription: Subscription = {
+      id,
+      topic: 'terminal.promptUndelivered',
+      key: null,
+      replay: null,
+      handle: null,
+    }
+    subscriptions.set(id, subscription)
+    const stop = terminals.onPromptUndelivered(() => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (stillGranted('terminal.promptUndelivered')) push('terminal.promptUndelivered', id, {})
+    })
+    subscription.handle = { dispose: stop }
+  }
+
   /** The client toolsets this client may see, whole, after each change; a burst of changes is one push. */
   function subscribeCatalog(id: string): void {
     const tools = options.tools
@@ -814,10 +1459,171 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   type PushSubscribers = { readonly [T in StudioPushTopic]: (id: string, params: StudioTopicParams<T>) => void }
   const pushSubscribers: PushSubscribers = {
     'conversation.commands': subscribeCommands,
+    'conversation.events': subscribeEvents,
+    'conversations.changed': (id) => {
+      const chat = options.chat?.() ?? null
+      subscribeFeed(id, 'conversations.changed', chat?.onListChanged ? (deliver) => chat.onListChanged!(deliver) : null)
+    },
+    'conversation.queued': subscribeQueued,
+    'conversation.scheduled': subscribeScheduled,
+    'conversation.usageLimits': subscribeUsageLimits,
+    'conversation.subagents': subscribeSubagents,
+    'conversation.changes': subscribeChanges,
     'tools.catalog': subscribeCatalog,
     'files.watch': subscribeWatch,
+    'files.watchPath': subscribeWatchPath,
+    'git.checkoutChanged': subscribeCheckout,
+    'git.changelistsChanged': (id) =>
+      subscribeFeed(id, 'git.changelistsChanged', options.router.git?.onChangelistsChanged ?? null),
+    'github.cloneProgress': (id) =>
+      subscribeFeed(id, 'github.cloneProgress', options.router.git?.onCloneProgress ?? null),
+    'worktrees.poolChanged': (id) =>
+      subscribeFeed(id, 'worktrees.poolChanged', options.router.worktrees?.onPoolChanged ?? null),
+    'worktrees.installChanged': (id) =>
+      subscribeFeed(id, 'worktrees.installChanged', options.router.worktrees?.onInstallChanged ?? null),
+    'workspaceSync.events': (id) =>
+      subscribeFeed(id, 'workspaceSync.events', options.router.workspaceSync?.onEvent ?? null),
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
+    // Carries nothing: the client lists again.
+    'hosts.changed': (id) => {
+      const hosts = options.router.hosts
+      subscribeFeed(id, 'hosts.changed', hosts ? (deliver) => hosts.subscribe(() => deliver({})) : null)
+    },
+    'environment.cliPathsChanged': (id) => {
+      const listen = options.router.onCliPathsChanged
+      subscribeFeed(id, 'environment.cliPathsChanged', listen ? (deliver) => listen(() => deliver({})) : null)
+    },
+    'module.events': subscribeModuleEvents,
+    'module.notifications': subscribeModuleNotifications,
+    'module.changed': (id) => {
+      const modules = options.modules
+      subscribeFeed(id, 'module.changed', modules ? (deliver) => modules.onChanged(() => deliver({})) : null)
+    },
+    'cardFeed.changed': (id) =>
+      subscribeFeed(id, 'cardFeed.changed', options.extensions?.feeds.onCardFeedChanged ?? null),
+    // The questions open now, then the whole list again on each change: a
+    // window that connects or reconnects mid-question is shown it.
+    'artifacts.setupQuestions': (id) => {
+      const artifacts = options.artifacts
+      subscribeFeed(
+        id,
+        'artifacts.setupQuestions',
+        artifacts ? (deliver) => artifacts.onSetupQuestions((questions) => deliver({ questions })) : null,
+      )
+    },
+    // The paired apps whole, then again on every change: a window that
+    // reconnects is shown them as they stand.
+    'localApps.changed': (id) => {
+      const access = options.access
+      subscribeFeed(
+        id,
+        'localApps.changed',
+        access
+          ? (deliver) => {
+              deliver(access.localApps.status())
+              return access.localApps.onChanged(deliver)
+            }
+          : null,
+      )
+    },
+    // The status whole, then again on every change, as this client is shown
+    // it (its own browser marked current).
+    'webDevices.changed': (id) => {
+      const domain = options.webDevices?.() ?? null
+      subscribeFeed(
+        id,
+        'webDevices.changed',
+        domain
+          ? (deliver) => {
+              const shown = () => {
+                const clientId = liveGrant()?.clientId
+                if (clientId) deliver(domain.status(clientId))
+              }
+              shown()
+              return domain.onChanged(shown)
+            }
+          : null,
+      )
+    },
+    // The listener and the mesh as they stand (`current`), then every
+    // change: a window that reconnects is shown them as they are now.
+    'tailnet.changed': (id) => {
+      const tailnet = options.tailnet
+      subscribeFeed(
+        id,
+        'tailnet.changed',
+        tailnet
+          ? (deliver) => {
+              deliver(currentTailnet(tailnet))
+              return tailnet.onChanged(deliver)
+            }
+          : null,
+      )
+    },
+    'mesh.changed': (id) => {
+      const tailnet = options.tailnet
+      subscribeFeed(
+        id,
+        'mesh.changed',
+        tailnet
+          ? (deliver) => {
+              deliver(currentMesh(tailnet))
+              return tailnet.mesh.onChanged(deliver)
+            }
+          : null,
+      )
+    },
+    'terminal.output': subscribeTerminalOutput,
+    'terminal.sessions': subscribeTerminalSessions,
+    'terminal.promptUndelivered': subscribePromptUndelivered,
+    'cliRuntimes.output': (id, { cli, hostId }) => {
+      const runtimes = options.runtimes
+      subscribeFeed(
+        id,
+        'cliRuntimes.output',
+        runtimes
+          ? (deliver) =>
+              runtimes.onOutput((ran, on, chunk) => {
+                if (ran === cli && on === (hostId ?? 'local')) deliver({ chunk })
+              })
+          : null,
+      )
+    },
+    'cliRuntimes.updateAllProgress': (id) => {
+      const runtimes = options.runtimes
+      subscribeFeed(
+        id,
+        'cliRuntimes.updateAllProgress',
+        runtimes ? (deliver) => runtimes.onUpdateAllProgress((items) => deliver({ items })) : null,
+      )
+    },
+    'cliVersions.changed': (id) =>
+      subscribeFeed(id, 'cliVersions.changed', options.runtimes?.onAdvisoriesChanged ?? null),
+    'cliModels.changed': (id) => subscribeFeed(id, 'cliModels.changed', options.agentSettings?.onModelsChanged ?? null),
+    'launchSettings.changed': (id) =>
+      subscribeFeed(id, 'launchSettings.changed', options.agentSettings?.onLaunchSettingsChanged ?? null),
+    'memoryActivity.events': (id) =>
+      subscribeFeed(id, 'memoryActivity.events', options.agentSetup?.onMemoryActivityEvent ?? null),
+    'memoryActivity.statusChanged': (id) =>
+      subscribeFeed(id, 'memoryActivity.statusChanged', options.agentSetup?.onMemoryActivityStatus ?? null),
+    'memoryActivity.synapsesChanged': (id) =>
+      subscribeFeed(id, 'memoryActivity.synapsesChanged', options.agentSetup?.onMemoryActivitySynapses ?? null),
+    'areaSkills.changed': (id) =>
+      subscribeFeed(id, 'areaSkills.changed', options.agentSetup?.onAreaSkillsChanged ?? null),
+    'usageLimits.changed': (id) =>
+      subscribeFeed(id, 'usageLimits.changed', options.chatStores?.onUsageLimitsChanged ?? null),
+    'usageLimitResumes.changed': (id) =>
+      subscribeFeed(id, 'usageLimitResumes.changed', options.chatStores?.onUsageLimitResumesChanged ?? null),
+    'backlog.changed': (id) => subscribeFeed(id, 'backlog.changed', options.phoneReads?.backlog.onChanged ?? null),
+    'skillSources.updated': (id) =>
+      // Held to the local sources this client could name, as `skillSources.checkUpdates` is.
+      subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null, (check, asking) =>
+        options.router.skillSourceUpdatesFor(check, asking),
+      ),
+    'schedules.changed': (id) => subscribeFeed(id, 'schedules.changed', options.schedules?.onChanged ?? null),
+    'canvas.board': subscribeCanvasBoard,
+    'canvas.openRequests': subscribeCanvasOpenRequests,
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────
@@ -840,6 +1646,18 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       })
       return
     }
+    // And bounded across the client's connections: a request still running
+    // after its connection closed counts until it ends, so closing and
+    // reopening sockets does not pile up work.
+    const release = options.workBudget ? options.workBudget.acquire() : () => undefined
+    if (!release) {
+      refuseRequest(frame.id, {
+        code: 'busy',
+        message: 'Too many requests from this device are waiting or running.',
+        retryAfterMs: BUSY_RETRY_MS,
+      })
+      return
+    }
     if (mutation) commandsInFlight++
     else readsInFlight++
     void router
@@ -851,6 +1669,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       .finally(() => {
         if (mutation) commandsInFlight--
         else readsInFlight--
+        release()
       })
   }
 
@@ -861,9 +1680,32 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       bye('hello_required', 'The first frame must be a hello carrying a token or a pairing code.')
       return
     }
-    const version = checkStudioProtocolVersion(frame.protocolVersion, frame.minProtocolVersion ?? frame.protocolVersion)
-    if (!version.ok) {
-      bye('unsupported_protocol_version', version.message)
+    const info = options.welcome()
+    const incompatible = studioIncompatibility(
+      {
+        version: info.server.version,
+        protocolVersion: info.protocolVersion,
+        minProtocolVersion: info.minProtocolVersion,
+      },
+      { protocolVersion: frame.protocolVersion, minProtocolVersion: frame.minProtocolVersion ?? frame.protocolVersion },
+    )
+    // A client that cannot speak this Studio's protocol is closed, unless it
+    // asked to keep a connection for the update methods and authenticates
+    // with a token: a pairing code is never spent on a client that could not
+    // use what it pairs.
+    // Before authentication, the refusal names the protocol numbers and not
+    // this Studio's version: in the client's words, with this Studio's window
+    // for the client to judge which side is behind.
+    if (
+      incompatible &&
+      !(frame.client.capabilities?.includes(STUDIO_UPDATE_SESSION_CAPABILITY) && 'token' in frame.auth)
+    ) {
+      const window = { protocolVersion: info.protocolVersion, minProtocolVersion: info.minProtocolVersion }
+      const refused = studioIncompatibility(window, {
+        protocolVersion: frame.protocolVersion,
+        minProtocolVersion: frame.minProtocolVersion ?? frame.protocolVersion,
+      })
+      bye('unsupported_protocol_version', refused?.message ?? incompatible.message, undefined, window)
       return
     }
     const outcome = authenticator.authenticate(frame.auth, frame.client)
@@ -884,7 +1726,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       bye('too_many_connections', 'This app has as many connections open as Studio allows one app.', 1_000)
       return
     }
-    state = 'open'
+    state = incompatible ? 'incompatible' : 'open'
     clientId = outcome.grant.clientId
     clientName = outcome.grant.name
     if (outcome.pairingToken) options.audit?.({ clientId, clientName, tool: 'studio.paired', ok: true, durationMs: 0 })
@@ -899,9 +1741,24 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       }),
     )
     authenticator.recordSeen?.(clientId)
+    if (incompatible) {
+      // In place of the welcome: who this Studio is, which side is behind,
+      // and how it is updated. No tools are attached and no stream opens.
+      enqueueLive({
+        t: 'incompatible',
+        protocolVersion: info.protocolVersion,
+        minProtocolVersion: info.minProtocolVersion,
+        server: info.server,
+        environment: info.environment,
+        ...incompatible,
+        update: router.updateStatus(),
+      })
+      return
+    }
     enqueueLive({
       t: 'welcome',
-      ...options.welcome(),
+      ...info,
+      ...(options.browser ? { capabilities: browserCapabilities(info.capabilities) } : {}),
       grant: outcome.grant,
       ...(outcome.pairingToken ? { pairing: { token: outcome.pairingToken } } : {}),
     })
@@ -963,7 +1820,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       const scope =
         decision.reason === 'permission_required'
           ? studioRefusedGrantName(STUDIO_TOPICS[subscription.topic], decision.permission)
-          : STUDIO_TOPICS[subscription.topic].scope
+          : (STUDIO_TOPICS[subscription.topic].scope ?? 'an owner’s grant')
       dropSubscription(subscription)
       subscriptionFailed(subscription.id, 'scope_required', `This app's grant no longer includes "${scope}".`)
     }
@@ -1017,6 +1874,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       else options.tools.progress(options.connectionId, frame)
       return
     }
+    if (state === 'incompatible') {
+      outOfWindow(frame, grant)
+      return
+    }
     if (frame.t === 'req') request(frame, grant)
     else if (frame.t === 'sub') subscribe(frame, grant)
     else {
@@ -1025,14 +1886,27 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     }
   }
 
+  /** On a connection kept for the update methods: those are served, and nothing else. */
+  function outOfWindow(
+    frame: StudioRequestFrame | StudioSubscribeFrame | { t: 'unsub'; id: string },
+    grant: StudioGrant,
+  ) {
+    const message =
+      'This connection serves only the update methods, until this app or this Studio is updated to a protocol both speak.'
+    if (frame.t === 'req') {
+      if ((STUDIO_UPDATE_SESSION_METHODS as readonly string[]).includes(frame.method)) request(frame, grant)
+      else refuseRequest(frame.id, { code: 'unsupported_protocol_version', message })
+    } else if (frame.t === 'sub') subscriptionFailed(frame.id, 'unsupported_protocol_version', message)
+  }
+
   /** A line over the cap, refused under the id at its start: a client puts ids ahead of a long message. */
   function refuseOversized(prefix: string): void {
     const field = (name: string) => new RegExp(`"${name}"\\s*:\\s*"([^"\\\\]{1,200})"`).exec(prefix)?.[1]
     const message = `A frame may be at most ${STUDIO_MAX_CLIENT_FRAME_BYTES} bytes.`
     const id = field('id')
     const type = field('t')
-    if (state === 'open' && id && type === 'req') refuseRequest(id, { code: 'too_large', message })
-    else if (state === 'open' && id && type === 'sub') subscriptionFailed(id, 'too_large', message)
+    if (state !== 'hello' && id && type === 'req') refuseRequest(id, { code: 'too_large', message })
+    else if (state !== 'hello' && id && type === 'sub') subscriptionFailed(id, 'too_large', message)
     else bye('invalid_frame', message)
   }
 

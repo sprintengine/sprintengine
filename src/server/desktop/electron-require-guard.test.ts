@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
 
-import { createFakeIpcMain } from '../../main/module-host/ipc-main-fake.test-helper'
 import { loadMainModules } from '../../main/module-host/load-modules'
 import { computeModuleFileDigestsSync } from '../../main/modules/module-signature'
 import {
@@ -38,7 +37,7 @@ function trustedModule(id: string, source: string, manifest: Partial<CapabilityM
       version: 1,
       defaultEnabled: true,
       source: 'third-party',
-      engines: { hostApi: 1 },
+      engines: { hostApi: 2 },
       entry: { main: 'main.cjs' },
       ...manifest,
     },
@@ -79,14 +78,12 @@ test('a module that declares it needs electron-main loads manifest-only where th
 test('an undeclared require during registerMain is reported as needing electron-main, not as a crash', () => {
   const undeclared = trustedModule(
     'reaches-for-electron',
-    "module.exports = { registerMain(host) { host.registerIpc('x:y', () => 1); require('electron') } }\n",
+    "module.exports = { registerMain(host) { host.onStartup(() => undefined); require('electron') } }\n",
   )
   const plan = planThirdPartyMainModules({ modules: [undeclared], rejected: [] }, { electronMain: false })
   const undo = installElectronRequireGuard(() => Object.values(plan.moduleRoots))
   try {
-    const fake = createFakeIpcMain()
     const loaded = loadMainModules({
-      ipcMain: fake.ipcMain,
       modules: plan.modules,
       moduleRoots: plan.moduleRoots,
       electronMain: false,
@@ -107,7 +104,6 @@ test("the server's host says it cannot provide electron-main; the desktop's says
   ] as const) {
     let answer: boolean | null = null
     loadMainModules({
-      ipcMain: createFakeIpcMain().ipcMain,
       modules: [
         {
           manifest: { id: 'probe', displayName: 'Probe', version: 1, defaultEnabled: true },

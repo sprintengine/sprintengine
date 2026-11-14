@@ -244,11 +244,10 @@ export function setLaunchPluginDirsResolver(resolver: (() => string[]) | null): 
  * This launch's plugin directories, in the path style the launched shell reads.
  *
  * On this machine they are the copy app-services materialised under userData.
- * A WSL launch gets the copy its helper wrote inside the distribution, with
- * Linux paths substituted into it (the pinned Node, the helper's bridge and
- * socket): converting this machine's directory would not convert the paths
+ * A WSL launch gets the copy the distribution's Studio server built inside it,
+ * with its Linux paths substituted into it (its Node, its bridge and socket): converting this machine's directory would not convert the paths
  * inside its files, and a Linux `claude` would run `node "C:/…"` for every
- * hook. Until the helper has written it, a WSL launch passes none, and the
+ * hook. Until that server has written it, a WSL launch passes none, and the
  * workspace installer (which asks the same host) carries agent state instead.
  *
  * A native Windows launch takes this machine's copy, as macOS and Linux do;
@@ -1058,12 +1057,12 @@ function createTerminalStartupScript(sessionId: string, extension: 'sh' | 'ps1',
 }
 
 /**
- * A WSL launch's startup script, as a file for the helper to write into its
- * private launch directory inside the distribution, and the Linux path it is
- * run from. Never a Windows file read through `/mnt/<drive>`: a distribution
- * that mounts its drives elsewhere (`[automount] root = /`), or not at all,
- * would not find it. Throws when the helper is not up, which is the one
- * reason there is no directory to name.
+ * A WSL launch's startup script, as a file for the distribution's Studio server
+ * to write into its private launch directory, and the Linux path it is run
+ * from. Never a Windows file read through `/mnt/<drive>`: a distribution that
+ * mounts its drives elsewhere (`[automount] root = /`), or not at all, would
+ * not find it. Throws when that server is not up, which is the one reason
+ * there is no directory to name.
  */
 function wslStartupScript(
   sessionId: string,
@@ -1079,14 +1078,14 @@ function wslStartupScript(
 function requireWslSessionDir(host: WslLaunchTarget): string {
   if (host.sessionDir) return host.sessionDir
   throw new Error(
-    `The WSL helper for ${host.distro ?? 'this distribution'} is not running, so nothing can be started there. ` +
+    `The Studio server in ${host.distro ?? 'this distribution'} is not running, so nothing can be started there. ` +
       'Try again in a moment; if it keeps failing, Settings ▸ Machines says why.',
   )
 }
 
 /**
  * The WSL startup script's first commands: record this shell's Linux pid in
- * the helper's private directory, then delete the script. The script is one
+ * the private directory of the distribution's Studio server, then delete the script. The script is one
  * line, which bash has read whole before running any of it, and it holds the
  * launch's secrets (a provider key, the MCP channel token); once read it is
  * not left on disk for anything else running as this user to find.
@@ -1164,7 +1163,7 @@ export type HostContextDelivery = {
  * than to an empty flag: `--append-system-prompt-file ""` is worse than silence.
  *
  * `onHost` is a WSL launch's: the document is not written here but added to
- * `files` under the helper's launch directory `dir` (with its paths as Linux
+ * `files` under the server's launch directory `dir` (with its paths as Linux
  * names them), and `filePath` is its Linux path.
  */
 export function resolveHostContextDelivery(input: {
@@ -1506,12 +1505,12 @@ function wslHostEnvExports(host: WslLaunchTarget): string {
 
 /**
  * The agent's identity as `export` lines: which workspace and agent this is,
- * the CLI, and the helper's socket in this distribution, which the hooks, the
- * status line and OpenCode's plugin report to. The socket is always the
- * helper's (the identity handed in names this machine's own, which Linux
- * cannot open), and is left out when the helper is not up. Last, the launch's
- * MCP channel token, which the app's MCP bridge under this CLI opens its
- * channel with; nothing else in the distribution has it.
+ * the CLI, and the socket in this distribution the hooks, the status line and
+ * OpenCode's plugin report to. The socket is always the distribution's Studio
+ * server's (the identity handed in names this machine's own, which Linux
+ * cannot open), and is left out before that server is up. Last, the launch's
+ * token, which the app's MCP bridge under this CLI presents to that server's
+ * gateway; nothing else in the distribution is given it.
  */
 function wslIdentityExports(host: WslLaunchTarget): string {
   const identity: Record<string, string> = { ...host.identity }
@@ -1575,7 +1574,7 @@ export function getShellLaunchConfig(
      * `-c` overrides), its environment (OpenCode's `OPENCODE_CONFIG_CONTENT`),
      * settings for the one `--settings` document and plugin directories beside
      * the app's own (`integrations/launch-integration.ts`). This machine only:
-     * a WSL launch is built from what its helper wrote inside the distribution.
+     * a WSL launch is built from what its Studio server wrote inside the distribution.
      */
     integration?: LaunchIntegrationRender
   } = {},
@@ -1722,7 +1721,7 @@ export function getShellLaunchConfig(
     return {
       command: 'wsl.exe',
       args: wslStartupArgs(cwd, startup.path, launchHost.distro),
-      // The agent's identity and the helper's socket travel in the startup
+      // The agent's identity and its agent-state socket travel in the startup
       // script as `export` lines (see `wslIdentityExports`), not through this
       // env: a Windows variable reaches Linux only when `WSLENV` names it.
       env: getTerminalEnv(),

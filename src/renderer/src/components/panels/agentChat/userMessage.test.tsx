@@ -56,7 +56,10 @@ test('Edit from here is offered only where the provider and the transport can go
       />,
     ),
   ).not.toContain('Edit from here')
-  const remote = { kind: 'remote', capabilities: {} } as unknown as ConversationTransport
+  const remote = {
+    environment: { id: null, label: 'mac-mini', lane: null },
+    capabilities: {},
+  } as unknown as ConversationTransport
   expect(
     renderToStaticMarkup(
       <ConversationTransportProvider value={remote}>
@@ -89,7 +92,10 @@ test('Fork from here is offered on a message and a reply only where the provider
     renderToStaticMarkup(<UserTimelineRow entry={user('hi', { seq: undefined })} chrome={{ ...chrome, onFork }} />),
   ).not.toContain('Fork from here')
   // A paired machine's chat would fork into a chat over there no tab here opens.
-  const remote = { kind: 'remote', capabilities: {} } as unknown as ConversationTransport
+  const remote = {
+    environment: { id: null, label: 'mac-mini', lane: null },
+    capabilities: {},
+  } as unknown as ConversationTransport
   const overRemote = (node: React.ReactElement) =>
     renderToStaticMarkup(<ConversationTransportProvider value={remote}>{node}</ConversationTransportProvider>)
   expect(overRemote(<UserTimelineRow entry={user('hi')} chrome={{ ...chrome, onFork }} />)).not.toContain(

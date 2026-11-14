@@ -1,5 +1,5 @@
-// Module notifications — the shared payload contract for the main-process
-// module host's notification buffer.
+// Module notifications — the shared payload contract for the module kernel's
+// bell rows.
 //
 // A notification is a small, typed, status payload emitted by a capability
 // module through its scoped host (`host.notify(...)`). The source module id is
@@ -9,26 +9,23 @@
 // ── Delivery ────────────────────────────────────────────────────────────────
 //
 // A notification that passes the kernel's flood bound is a bell row. The kernel
-// stamps an id and the module's display name onto it and publishes it on
-// `MODULE_NOTIFICATIONS_CHANNEL` to every attached client — every window in
-// the desktop, every connection of a standalone server, through the same client
-// bus module events ride. The renderer files it into its notification store.
+// stamps an id and the module's display name onto it and delivers it on the
+// Studio's `module.notifications` stream (packages/studio-protocol/src/modules.ts)
+// to every client following it. The renderer files it into its notification store.
 //
-// Unlike module events, the kernel also keeps the recent ones
-// (`MODULE_NOTIFICATIONS_RECENT_CHANNEL`): a module's launch failure or an
-// `onStartup` notify lands before any window has subscribed, and a window
-// reads that backlog once as it boots. The id is what keeps the backlog from
-// filing a row twice.
+// Unlike module events, the kernel also keeps the recent ones: a module's
+// launch failure or an `onStartup` notify lands before any window has
+// subscribed, so the stream sends the kept rows first to each new subscriber.
+// The id is what keeps a row heard twice (after a reconnect) from being filed twice.
 
+import type {
+  StudioModuleNotification,
+  StudioModuleNotificationSeverity,
+  StudioModuleNotificationTarget,
+} from '../../../packages/studio-protocol/src/public'
 import { sliceWhole } from '../slice-whole'
 
-/** The host-owned push channel every module's bell rows ride. */
-export const MODULE_NOTIFICATIONS_CHANNEL = 'modules:notifications'
-
-/** Invoke: the kernel's recent deliveries, oldest first, for a window that just booted. */
-export const MODULE_NOTIFICATIONS_RECENT_CHANNEL = 'modules:notifications:recent'
-
-export type ModuleNotificationSeverity = 'info' | 'warning' | 'error'
+export type ModuleNotificationSeverity = StudioModuleNotificationSeverity
 
 const SEVERITIES: readonly ModuleNotificationSeverity[] = ['info', 'warning', 'error']
 
@@ -37,22 +34,10 @@ const SEVERITIES: readonly ModuleNotificationSeverity[] = ['info', 'warning', 'e
  * and optionally the view to land it on. The renderer refuses a surface another
  * module registered, so a row can only ever open its own module's door.
  */
-export type ModuleNotificationTarget = {
-  surfaceId: string
-  viewId?: string
-}
+export type ModuleNotificationTarget = StudioModuleNotificationTarget
 
-export type ModuleNotification = {
-  /** Stamped by the host kernel from the emitting module's scope. */
-  sourceModuleId: string
-  severity: ModuleNotificationSeverity
-  title: string
-  body?: string
-  /** The module door the bell row opens, when the module named one. */
-  target?: ModuleNotificationTarget
-  /** Epoch ms at emission, assigned by the kernel. */
-  emittedAt: number
-}
+/** A bell row as a module raised it, before the kernel stamps its delivery id and the module's name. */
+export type ModuleNotification = Omit<StudioModuleNotification, 'id' | 'sourceModuleName'>
 
 /** What a module passes to `host.notify(...)`; identity and time are stamped by the kernel. */
 export type ModuleNotifyInput = {
@@ -73,11 +58,7 @@ export type ModuleNotifyInput = {
  * carries `ModuleNotification`); `id` is unique per kernel, so a window that
  * reads the recent backlog after hearing a live delivery files it once.
  */
-export type ModuleNotificationDelivery = ModuleNotification & {
-  id: string
-  /** The module's manifest display name, or its id when the manifest is not resolvable. */
-  sourceModuleName: string
-}
+export type ModuleNotificationDelivery = StudioModuleNotification
 
 const MAX_TITLE_LENGTH = 200
 const MAX_BODY_LENGTH = 2000

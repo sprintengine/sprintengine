@@ -13,6 +13,7 @@
  * Pure: no I/O. The main process gathers the inputs; tests drive the rest.
  */
 
+import type { CommitMessageText } from '../../../packages/studio-protocol/src/public'
 import { sliceWhole } from '../slice-whole'
 import { limitSection, namesSomething } from './chat-title'
 import {
@@ -22,6 +23,9 @@ import {
   writingStyleRule,
   type TextGenerationWritingStyle,
 } from './writing-style'
+
+/** A drafted commit message, as the Studio protocol carries it (`commitMessage.draft`). */
+export type { CommitMessageText }
 
 /** How much of each input the model sees. The summary says what changed; the patch says how. */
 export const MAX_COMMIT_DIFF_STAT_CHARS = 8_000
@@ -67,9 +71,6 @@ export type CommitMessageInput = {
   conventionalCommits: boolean
   style: TextGenerationWritingStyle
 }
-
-/** The drafted message: `subject`, a blank line and `body`, or the subject alone when there is no body. */
-export type CommitMessageText = { subject: string; body: string; message: string }
 
 /** Whether this draft must be a Conventional Commit: what the prompt asks for and what the reader holds it to. */
 export function commitMessageIsConventional(input: Pick<CommitMessageInput, 'conventionalCommits' | 'style'>): boolean {

@@ -11,6 +11,7 @@ import { REMOVE_INTEGRATIONS_FLAG } from '../shared/integration-removal'
 import { buildStamp } from 'virtual:sprintengine-build-stamp'
 import { COMPILE_CACHE_PRUNE_DELAY_MS, compileCacheBuildKey, enableMainCompileCache } from './compile-cache'
 import { guardIpcSenders } from './ipc/ipc-sender-guard'
+import { mayRegisterIpcChannel } from '../shared/ipc-inventory'
 import { isAppWindowSender } from './ipc/ipc-sender'
 
 // The entry, kept deliberately small. Everything it imports is evaluated before
@@ -28,18 +29,26 @@ import { isAppWindowSender } from './ipc/ipc-sender'
 // Before anything registers an IPC handler: every one of them answers the
 // app's own windows and nothing else — not a webview guest, not a subframe,
 // not a window that has left the app's documents (ipc/ipc-sender-guard.ts).
+// And none registers on a channel the IPC inventory does not list
+// (shared/ipc-inventory.ts): the shell's own, or one named as moving to the
+// Studio protocol.
 // A refusal is noted once per channel and document, so a foreign page that
 // keeps knocking does not fill the log.
 const refusedIpc = new Set<string>()
-guardIpcSenders(ipcMain, isAppWindowSender, (channel, event) => {
-  // The document, not its query or fragment, which may carry a page's data.
-  const url = event.senderFrame?.url
-  const from = url ? url.split(/[?#]/u, 1)[0] : 'a frame that is gone'
-  const key = `${channel}\0${from}`
-  if (refusedIpc.has(key)) return
-  refusedIpc.add(key)
-  console.warn('[ipc] refused a message from outside the app', { channel, from })
-})
+guardIpcSenders(
+  ipcMain,
+  isAppWindowSender,
+  (channel, event) => {
+    // The document, not its query or fragment, which may carry a page's data.
+    const url = event.senderFrame?.url
+    const from = url ? url.split(/[?#]/u, 1)[0] : 'a frame that is gone'
+    const key = `${channel}\0${from}`
+    if (refusedIpc.has(key)) return
+    refusedIpc.add(key)
+    console.warn('[ipc] refused a message from outside the app', { channel, from })
+  },
+  mayRegisterIpcChannel,
+)
 
 // Boot measurement, off unless SPRINTENGINE_STARTUP_TIMELINE=1 or the
 // diagnostics flag is set. Attached before anything else registers so the

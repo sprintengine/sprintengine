@@ -49,12 +49,32 @@ export type {
 // Who a `user_message` came from when it was not the person (`origin`).
 export { readConversationMessageOrigin } from '../../packages/conversation-protocol/src/public'
 import type {
-  ConversationSessionSummary,
+  ConversationApprovalDecision,
   ConversationMcpServerAction,
   ConversationCapabilities,
+  ConversationSendRequest,
+} from '../../packages/conversation-protocol/src/public'
+// One message a person sends a chat, and the answer to a permission request:
+// the contract's, every way they travel.
+export type {
+  ConversationApprovalDecision,
+  ConversationSendRequest,
+  ConversationSkillRef,
 } from '../../packages/conversation-protocol/src/public'
 // A live session's summary and its methods' results are the contract's too.
 export type {
+  ConversationApprovalRuleRevokeResult,
+  ConversationApprovalRulesResult,
+  ConversationContextBreakdown,
+  ConversationContextBreakdownResult,
+  ConversationContextCategory,
+  ConversationContextItem,
+  ConversationContextMcpServer,
+  ConversationListSessionsResult,
+  ConversationMcpServerActionResult,
+  ConversationProviderSignInResult,
+  ConversationSideQuestionResult,
+  ConversationTerminalHandoffResult,
   ConversationFileActivity,
   ConversationSessionSummary,
   ConversationAttachmentResult,
@@ -64,6 +84,7 @@ export type {
   ConversationSessionActionResult,
   ConversationToolDetail,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationCapabilities,
   ConversationCheckpointFile,
   ConversationCheckpointDiff,
@@ -149,17 +170,6 @@ export type ConversationProviderSignInInput = {
   cliRuntimes?: ConversationCliRuntimeOverrides
 }
 
-export type ConversationProviderSignInResult =
-  | {
-      ok: true
-      commandLine: string
-      cwd: string
-      platform: string
-      /** The machine the sign-in terminal opens on; absent is this one. */
-      hostId?: import('./execution-host').ExecutionHostId
-    }
-  | { ok: false; message: string }
-
 export type ConversationTranscriptInput = {
   workspaceRoot: string
   workspaceId: string
@@ -187,53 +197,36 @@ export type ConversationPlanDocumentInput = ConversationKey & {
   planFilePath?: string
 }
 
-export type ConversationSendTurnInput = {
-  // What the person wrote to one of the chat's agents, for a message asking the
-  // chat to pass it on: recorded on the `user_message`, for the agent's lane.
-  subagentMessage?: ConversationSubagentMessage
+/**
+ * A send as the runtime takes it: the conversation contract's request
+ * (`ConversationSendRequest`), its pictures as their bytes, addressed to the
+ * session, with what only Studio's own senders in main set. Never `queue`:
+ * the runtime sends what it is given, and a message held for a turn's end is
+ * held by whoever holds it (the view, or the lane's host).
+ */
+/**
+ * What a runtime holds of a session's command id: a receipt (or the command
+ * running now), none, or no such session to ask of (its server restarted, or
+ * the chat started another).
+ */
+export type ConversationCommandReceiptState = 'kept' | 'none' | 'no_session'
+
+export type ConversationSendTurnInput = Omit<ConversationSendRequest<ConversationImageAttachment>, 'queue'> & {
+  sessionId: string
+  commandId?: string
   // What the command was, hashed by whoever named its id: a receipt keeps it,
   // and the same id coming back for a different command is refused rather
   // than answered with the first one's result. Never sent by a window's IPC.
   commandFingerprint?: string
-  mentions?: import('./conversation/mentions').ConversationMentionRef[]
-  // Files attached by path from this computer: the agent is told where each
-  // is, after the words, and the `user_message` keeps them beside the text
-  // so the bubble draws them as cards. The text stays the person's words.
-  files?: import('./conversation/attachedFiles').ConversationAttachedFile[]
-  reasoningEffort?: string
-  mode?: 'default' | 'plan' | 'ask'
-  commandId?: string
-  skills?: ConversationSkillRef[]
-  sessionId: string
-  message: string
-  // Renderer-generated id of the optimistic user bubble for this send; echoed
-  // back on the persisted `user_message` event so the projection can replace
-  // the optimistic entry with the authoritative one deterministically.
-  localTurnId?: string
-  // Images attached to this turn. Honored only by vision-capable providers
-  // (currently the claude-agent provider); other providers ignore them, so no
-  // image block is ever sent to them. Main keeps a copy in the attachment store
-  // so the replayed bubble can show them; the model sees them on this turn only.
-  attachments?: ConversationImageAttachment[]
-  // Deliver into the turn that is running instead of waiting for it to end.
-  // Honored where the provider declares `capabilities.steer`; the running
-  // turn closes where the message lands, and the reply carries on as this
-  // one's.
-  steer?: boolean
   // Studio sent this message itself (a launched agent's notice, a resume after
   // a usage limit), not the person: recorded on the `user_message` so the chat
   // draws it as Studio's and nothing counts it as the person writing. Set only
   // by Studio's own senders in main; neither a window's IPC nor the Studio
   // protocol's `session.send` passes one through.
   origin?: ConversationMessageOrigin
-  // When the person wrote the message, on the sending device's clock (epoch
-  // ms): a paired device's `send` says so. Recorded on the `user_message`,
-  // and a send under a command id written longer ago than the lane's limit is
-  // refused `stale` unless `confirmedStale` says the person asked for it to go
-  // now (`isStaleConversationSend`). A message held on a device while it slept
-  // is not one the person still means hours later.
-  composedAt?: number
-  confirmedStale?: boolean
+  // What the person wrote to one of the chat's agents, for a message asking the
+  // chat to pass it on: recorded on the `user_message`, for the agent's lane.
+  subagentMessage?: ConversationSubagentMessage
 }
 
 export type ConversationInterruptInput = {
@@ -251,7 +244,7 @@ export type ConversationRespondToRequestInput = {
   // than answered with the first one's result. Never sent by a window's IPC.
   commandFingerprint?: string
   commandId?: string
-  decision?: import('./conversation/approvalRules').ConversationApprovalDecision
+  decision?: ConversationApprovalDecision
   sessionId: string
   requestId: string
   approved: boolean
@@ -300,12 +293,6 @@ export type ConversationMcpServerActionInput = {
   action: ConversationMcpServerAction
 }
 
-/**
- * `authUrl` is where a sign-in is finished, in the person's browser; the CLI
- * waits on its own callback and reconnects the server once it arrives.
- */
-export type ConversationMcpServerActionResult = { ok: true; authUrl?: string } | { ok: false; message: string }
-
 /** One agent a chat spawned, named by the call that spawned it (its lane), to stop on its own. */
 export type ConversationStopSubagentInput = {
   sessionId: string
@@ -337,11 +324,7 @@ export type ConversationSideQuestionInput = {
   history?: ConversationSideQuestionExchange[]
 }
 export type ConversationSideQuestionExchange = { question: string; answer: string }
-/** `cancelled`: called off before it was answered, which says nothing to the person. */
-export type ConversationSideQuestionResult =
-  { ok: true; answer: string } | { ok: false; message: string; cancelled?: true; code?: string }
 export type ConversationCancelSideQuestionInput = { sessionId: string; requestId: string }
-
 /**
  * What fills a chat's context window, item by item, as its agent measured it
  * (Claude Code's own `/context` reading). Asked for when a person opens the
@@ -349,54 +332,6 @@ export type ConversationCancelSideQuestionInput = { sessionId: string; requestId
  * the conversation it holds, so there is nothing to keep fresh in between.
  */
 export type ConversationContextBreakdownInput = { sessionId: string }
-
-/**
- * One row of the window's breakdown. `used` fills the window, `free` is what
- * is left of it, `buffer` is held back for compaction, and `deferred` is
- * listed for awareness but not in the window (tool schemas loaded on demand).
- */
-export type ConversationContextCategory = {
-  name: string
-  tokens: number
-  kind: 'used' | 'free' | 'buffer' | 'deferred'
-}
-
-/** A skill, memory file or custom agent and what it costs; `detail` is where it comes from. */
-export type ConversationContextItem = { name: string; tokens: number; detail?: string }
-
-/** An MCP server, the tokens its loaded tools' schemas take, and each tool. */
-export type ConversationContextMcpServer = {
-  name: string
-  /** Its loaded tools' tokens: a deferred tool is not in the window until it is used. */
-  tokens: number
-  tools: Array<{ name: string; tokens: number; loaded: boolean }>
-}
-
-export type ConversationContextBreakdown = {
-  model: string
-  usedTokens: number
-  /** The window the agent measures against: the model's, or a smaller one it compacts at. */
-  windowTokens: number
-  categories: ConversationContextCategory[]
-  mcpServers: ConversationContextMcpServer[]
-  skills: ConversationContextItem[]
-  memoryFiles: ConversationContextItem[]
-  agents: ConversationContextItem[]
-  /** Where the agent compacts on its own; null when it does not. */
-  autoCompactAt: number | null
-  /** The agent estimated the rows rather than counting each one with the API. */
-  estimated: boolean
-  measuredAt: number
-}
-
-/**
- * `stale`: the agent is not running now, and this is the last reading it gave.
- * `not-running`: nothing to ask and nothing read before. `unsupported`: the
- * chat's agent, or its version, gives no breakdown.
- */
-export type ConversationContextBreakdownResult =
-  | { ok: true; breakdown: ConversationContextBreakdown; stale?: true }
-  | { ok: false; reason: 'unsupported' | 'not-running' | 'failed'; message: string }
 
 export type ConversationStopSessionInput = {
   // What the command was, hashed by whoever named its id: a receipt keeps it,
@@ -426,19 +361,14 @@ export type ConversationTerminalHandoffInput =
   // restart, when nothing has been sent to the chat yet.
   | { workspaceId: string; agentId: string }
 
-export type ConversationTerminalHandoffResult =
-  // The terminal agent now carrying the conversation on, in the chat's workspace.
-  { ok: true; workspaceId: string; agentId: string } | { ok: false; message: string }
-
 export type ConversationListSessionsInput = {
   workspaceId?: string
   agentId?: string
 }
 
-export type ConversationListSessionsResult =
-  { ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message: string }
-
 export type ConversationToolDetailInput = ConversationTranscriptInput & { toolUseId: string }
+/** An event by the sequence and id a wire sent it under (`ConversationEventReadResult`). */
+export type ConversationEventReadInput = ConversationTranscriptInput & { seq: number; id: string }
 export type ConversationToolEvent =
   | (Omit<ConversationEvent, 'type' | 'payload'> & {
       type: 'tool_started'
@@ -512,11 +442,6 @@ export type ConversationImportTranscriptInput = {
   events: Array<{ type: ConversationEvent['type']; createdAt: number; payload: Record<string, unknown> }>
 }
 export type ConversationImportTranscriptResult = { ok: true } | { ok: false; message: string }
-export type ConversationSkillRef = { id: string; sourcePath?: string }
-export type ConversationApprovalRulesResult =
-  | { ok: true; rules: import('./conversation/approvalRules').ConversationApprovalRule[] }
-  | { ok: false; message: string }
-export type ConversationApprovalRuleRevokeResult = { ok: true } | { ok: false; message: string }
 
 export type ConversationKey = ConversationTranscriptInput
 // `afterSeq` with the `generation` from an earlier snapshot or synchronized

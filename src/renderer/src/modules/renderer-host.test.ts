@@ -1033,63 +1033,45 @@ test('renderer-host', async () => {
 
   console.log('renderer host notification action provider tests passed')
 
-  // ── Renderer→module-main bridge invoke ───────────────────────────────────────
-  // invoke validates the module-id prefix before any IPC and unwraps the
-  // structured bridge result from window.api.moduleBridgeInvoke.
+  // ── A module's own declared methods ──────────────────────────────────────────
+  // `methods()` calls the module's own methods through the wired caller, typed
+  // by its contract, never naming another module, and answers every refusal.
 
-  async function testBridgeInvoke(): Promise<void> {
-    const bridgeCalls: Array<{ channel: string; payload: unknown }> = []
-    let bridgeOutcome: { ok: true; result: unknown } | { ok: false; code: string; message: string } = {
-      ok: true,
-      result: { summary: 'clear' },
+  async function testModuleMethods(): Promise<void> {
+    const kernel = createRendererHost()
+    const host = kernel.hostFor('weather-deck')
+    type Deck = {
+      forecast: { access: 'read'; params: { city: string }; result: { summary: string } }
+      save: { access: 'operate'; params: { city: string }; result: null; errors: 'full' }
     }
-    ;(globalThis as { window?: unknown }).window = {
-      api: {
-        moduleBridgeInvoke: async (channel: string, payload?: unknown) => {
-          bridgeCalls.push({ channel, payload })
-          return bridgeOutcome
-        },
-      },
-    }
+    const unwired = await host.methods<Deck>().read('forecast', { city: 'Dublin' })
+    assert.equal(!unwired.ok && unwired.code, 'unavailable', 'no Studio connection is an answer, not a throw')
 
-    try {
-      const invokeHost = createRendererHost().hostFor('weather-deck')
-
-      await assert.rejects(
-        () => invokeHost.invoke('automations:list'),
-        /Module "weather-deck" may only invoke its own channels \("weather-deck:\*"\); got "automations:list"\./,
-        'invoking outside the module namespace throws before IPC',
-      )
-      assert.equal(bridgeCalls.length, 0, 'prefix validation happens before any bridge call')
-
-      const result = await invokeHost.invoke('weather-deck:forecast', 'Dublin')
-      assert.deepEqual(result, { summary: 'clear' }, 'a successful bridge result is unwrapped')
-      assert.deepEqual(
-        bridgeCalls,
-        [{ channel: 'weather-deck:forecast', payload: 'Dublin' }],
-        'invoke forwards channel and payload to the preload bridge',
-      )
-
-      bridgeOutcome = {
-        ok: false,
-        code: 'permission_missing',
-        message: 'Module "weather-deck" does not declare "module:bridge".',
-      }
-      await assert.rejects(
-        () => invokeHost.invoke('weather-deck:forecast'),
-        (error: unknown) =>
-          error instanceof Error &&
-          /does not declare "module:bridge"/.test(error.message) &&
-          (error as Error & { code?: string }).code === 'permission_missing',
-        'a refusal surfaces as a thrown Error carrying the message and the structured code',
-      )
-    } finally {
-      delete (globalThis as { window?: unknown }).window
-    }
-    console.log('renderer host bridge invoke tests passed')
+    const calls: unknown[] = []
+    kernel.setModuleMethodCaller(async (call) => {
+      calls.push(call)
+      return call.access === 'read'
+        ? { ok: true, result: { summary: 'clear' } }
+        : { ok: false, code: 'full', message: 'No room.' }
+    })
+    const methods = host.methods<Deck>()
+    assert.deepEqual(await methods.read('forecast', { city: 'Dublin' }), { ok: true, result: { summary: 'clear' } })
+    assert.deepEqual(await methods.operate('save', { city: 'Oslo' }, { commandId: 'c1' }), {
+      ok: false,
+      code: 'full',
+      message: 'No room.',
+    })
+    assert.deepEqual(calls, [
+      { moduleId: 'weather-deck', method: 'forecast', access: 'read', params: { city: 'Dublin' } },
+      { moduleId: 'weather-deck', method: 'save', access: 'operate', params: { city: 'Oslo' }, commandId: 'c1' },
+    ])
+    // @ts-expect-error a method declared operate is not offered to read
+    void methods.read('save', { city: 'Oslo' })
+    assert.equal('invoke' in host, false, 'the IPC bridge is gone')
+    console.log('renderer host module method tests passed')
   }
 
-  const suiteRun3 = testBridgeInvoke().catch((err) => {
+  const suiteRun3 = testModuleMethods().catch((err) => {
     console.error(err)
     process.exitCode = 1
   })

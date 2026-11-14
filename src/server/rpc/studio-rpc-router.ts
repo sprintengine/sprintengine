@@ -2,37 +2,114 @@ import {
   STUDIO_METHODS,
   parseStudioMethodParams,
   authorizeStudioMethod,
+  studioGrantAllows,
+  studioGrantPrincipal,
+  projectTerminalSession,
   studioRefusedGrantName,
   type ConversationCommand,
+  type StudioChatMethod,
   type StudioCommandAnswer,
   type StudioCommonErrorCode,
   type StudioConversationKey,
   type StudioCreatedConversation,
   type StudioErrorBody,
+  type StudioModuleBacklogAnswer,
   type StudioErrorCode,
+  type FileWatchEvent,
+  type SkillSourceUpdateCheck,
+  type HostsListResult,
   type StudioGrant,
   type StudioHandlers,
   type StudioMethod,
   type StudioMethodAnswer,
   type StudioMethodParams,
+  type StudioMethodResult,
   type StudioRuntimeRefusalCode,
   type StudioServerInfo,
+  type StudioUpdateStatus,
+  type ThirdPartyModuleListResult,
+  studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
+import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
+import type {
+  StudioEnvironmentWork,
+  StudioLaunchTokenChange,
+} from '../../../packages/studio-protocol/src/environment-access'
+import type { SignIns } from '../machine/machine-sign-in'
+import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
+import type { DistributionMachine } from '../wsl/distribution-machine'
+import { cliForConversationProvider } from '../../shared/conversation-harness'
+import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
+import { sanitizeEntryMessage } from '../../shared/modules/entry-messages'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
-import type { ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
+import type { ConversationEvent, ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
+import { BROWSER_NO_TERMINALS, refusedOutsideWindow, refusedToBrowser, WINDOW_ONLY } from './studio-browser-reach'
+import { boundConversationPage } from '../conversation-stream-shaping'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
+import {
+  isChatPullRequestRefusal,
+  type ChatPullRequestRefusal,
+  type ConversationPullRequests,
+} from '../../main/automation/conversation-pull-request-tools'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioAgentSkills } from '../core/studio-agent-skills'
+import { createStudioAgentSkillsHandlers, skillSourceUpdatesShown } from './studio-agent-skills'
+import { createStudioAgentSetupHandlers } from './studio-agent-setup'
+import type { ModuleHostServices } from '../../main/module-host/main-host'
+import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
+import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-file-system'
+import { createStudioFileSystemHandlers } from './studio-file-system'
+import type { StudioGit } from '../git/studio-git-types'
+import { createStudioGitHandlers } from './studio-git'
+import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
+import { createStudioWorktreesHandlers } from './studio-worktrees'
+import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
+import { createStudioWorkspaceSyncHandlers } from './studio-workspace-sync'
+import type { StudioExtensions } from '../extensions/extensions-domain'
+import { createStudioExtensionsHandlers } from './studio-extensions'
+import type { StudioArtifacts } from '../artifacts/artifacts-domain'
+import { createStudioArtifactsHandlers } from './studio-artifacts'
+import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
+import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
+import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
+import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
+import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
+import { createStudioChatStoresHandlers } from './studio-chat-stores'
+import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
+import { createStudioSchedulesHandlers } from './studio-schedules'
+import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import { createStudioPhoneReadsHandlers } from './studio-phone-reads'
+import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
+import { createStudioChatLifecycleHandlers } from './studio-chat-lifecycle'
+import type { StudioCanvasDomain } from '../canvas/canvas-domain'
+import { createStudioCanvasHandlers } from './studio-canvas'
+import {
+  externalStudioUpdates,
+  MANUAL_UPDATE_WORDS,
+  studioUpdateStatus,
+  type StudioUpdates,
+} from '../update/studio-updates'
 import type {
   StudioAuditEntry,
+  StudioDiscovery,
+  StudioDiscoveryAnswer,
   StudioChatBackend,
+  StudioComposerRead,
   StudioConversationBackend,
   StudioRequestContext,
+  StudioChatExportRead,
+  StudioEnvironmentAccess,
 } from './studio-rpc-types'
 
 // The Studio RPC's methods, transport-free: given the grant a client holds at
@@ -63,8 +140,12 @@ import type {
 //   a module's are (`module:<id>:<commandId>`), so one client can neither
 //   collide with nor be answered from another's receipts.
 //
-// The chat surface (`chat.ts` in the protocol) is served only to owners, and
-// only where main hands the router a chat backend. Its session commands reach
+// The chat surface (`chat.ts` in the protocol) is served where main hands the
+// router a chat backend, to any client its scopes reach. What a client that
+// is not an owner names on this disk is held here, by its params: never a
+// conversation's or a workspace's folder, never a CLI's own command, and a
+// file only inside the folders Studio knows (a search's root, a stat, a
+// picture, a file attached to a send). Its session commands reach
 // the runtime's durable receipts by the same namespaced ids. Its other
 // mutations (starting a session, a revert, a rewind, a fork) address a
 // conversation rather than a session, which the runtime keeps no receipts
@@ -86,10 +167,42 @@ export type StudioRpcRouter = {
     params: unknown,
     context?: StudioRequestContext,
   ): Promise<StudioRpcAnswer>
+  /** How this Studio is updated and where an update stands: what `update.status` answers. */
+  updateStatus(): StudioUpdateStatus
   /** A connection closed: what it staged and did not send waits a little for its reconnect. */
-  connectionClosed(connectionId: string): void
+  connectionClosed(connectionId: string, slot?: number): void
+  /** Follow a folder for `files.watchPath`, held to what the asker may name. */
+  watchPath(
+    params: { path: string; includeIgnored?: boolean },
+    asking: { grant: StudioGrant; context: StudioRequestContext },
+    listener: (event: FileWatchEvent) => void,
+  ): Promise<StudioFileSystemWatch | { ok: false; code: 'not_found' | 'unavailable'; message: string }>
+  /** Follow a checkout for `git.checkoutChanged`, held to what the asker may name. */
+  followCheckout: ReturnType<typeof createStudioGitHandlers>['followCheckout']
+  /** A `skillSources.updated` push as this asker is shown it: the local sources it could name, as `checkUpdates` answers. */
+  skillSourceUpdatesFor(
+    check: SkillSourceUpdateCheck,
+    asking: { grant: StudioGrant; context: StudioRequestContext },
+  ): Promise<SkillSourceUpdateCheck>
+  /** Git's other streams, where this Studio serves git. */
+  readonly git: StudioGit | null
+  /** The worktree pool's streams, where this Studio serves its worktrees. */
+  readonly worktrees: StudioWorktrees | null
+  /** The workspace registry's change stream, where this Studio serves its windows' registry. */
+  readonly workspaceSync: StudioWorkspaceSync | null
+  /** The `hosts.changed` stream, where this Studio lists its computer's machines. */
+  readonly hosts: StudioHosts | null
+  /** A WSL distribution's: what it says when a CLI may have come or gone on its PATH. */
+  readonly onCliPathsChanged: ((listener: () => void) => () => void) | null
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
+}
+
+/** The machines a desktop's computer offers (`hosts.*`): the core's host registry. */
+export type StudioHosts = {
+  list(options: { refresh?: boolean; all?: boolean }): Promise<HostsListResult>
+  /** Every time the list may read differently. */
+  subscribe(listener: () => void): () => void
 }
 
 export type StudioRpcRouterOptions = {
@@ -105,11 +218,78 @@ export type StudioRpcRouterOptions = {
   tools?: ClientToolRegistry
   /** Files under a workspace's roots; without it, `files.*` by root is answered `unavailable`. */
   files?: StudioFiles
+  /** The files on this machine by path; without it, `files.*` by path is answered `unavailable`. */
+  fileSystem?: StudioFileSystem
+  /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
+  git?: StudioGit
+  /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
+  worktrees?: StudioWorktrees
+  /** The desktop's own windows' workspace registry; without it, `workspaceSync.*` and its neighbours are answered `unavailable`. */
+  workspaceSync?: StudioWorkspaceSync
+  /** The marketplace, the CLI catalogue, the scaffold and the feeds; without it, `extensions` is answered `unavailable`. */
+  extensions?: StudioExtensions
+  /** Where the Studio publishes its agents' pages; without it, `artifacts.*` is answered `unavailable`. */
+  artifacts?: StudioArtifacts
+  /** Who may reach the agents from this machine; without it, `gateway.status`, `mcpHttp.*` and `localApps.*` are answered `unavailable`. */
+  access?: StudioAccessDomain
+  /** The web listener's paired browsers, once its front door gave them; until then `webDevices.*` is answered `unavailable`. */
+  webDevices?: () => StudioWebDevicesDomain | null
+  /** The tailnet listener and the machines this one drives; without it, `tailnet.*` and `mesh.*` are answered `unavailable`. */
+  tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
+  /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
+  pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
+  /** The machines this desktop's computer offers; without it, `hosts.*` is answered `unavailable`. */
+  hosts?: StudioHosts
+  /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
+  discovery?: StudioDiscovery
+  /** What this machine has and lacks for its background work; without it, `environment.readiness` is answered `unavailable`. */
+  readiness?: () => Promise<StudioEnvironmentReadiness>
+  /**
+   * A ticket for one connection of a window of the desktop that holds this
+   * Studio (`environment.windowTicket`); without it, that method is answered
+   * `unavailable`. Asked only by the desktop's own shell connection.
+   */
+  environmentAccess?: StudioEnvironmentAccess
+  /** Records the desktop that holds this Studio hands over (`environment.adopt`); without it, that method is answered `unavailable`. */
+  adoption?: EnvironmentAdoption
+  /** What stopping this Studio would end (`environment.work`); without it, that method is answered `unavailable`. */
+  work?: () => StudioEnvironmentWork
+  /** What a WSL distribution does for the desktop's WSL terminals (`environment.launchFiles`, `.terminalProcesses`, `.pluginCopy`). */
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
+  /** What a WSL distribution does on its machine for the desktop (`environment.git`, `.home`). */
+  machine?: Pick<DistributionMachine, 'git' | 'home' | 'detectClis' | 'run' | 'onPathsChanged'>
+  /** The desktop's WSL terminal agents' launch tokens (`environment.launchTokens`); without it, answered `unavailable`. */
+  launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
+  /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
+  signIns?: () => Promise<SignIns>
+  /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
+  terminals?: StudioTerminals
+  /** The CLIs on this machine; without them, `cliRuntimes.*` and `cliVersions.*` are answered `unavailable`. */
+  runtimes?: CliRuntimes
+  /** The launch settings and the CLIs' texts; without them, `launchSettings.*`, `cliModels.*`, `textGeneration.*` and `commitMessage.*` are. */
+  agentSettings?: StudioAgentSettings
+  /** What the agents are set up with beyond their CLIs; without it, `memory.*`, `mcp.sync` and the rest are answered `unavailable`. */
+  agentSetup?: StudioAgentSetup
+  agentSkills?: StudioAgentSkills
+  /** The modules beside this Studio; without it, `module.read` and `module.operate` are answered `unavailable`. */
+  modules?: StudioModules
+  /** What the Studio keeps beside its chats; without it, `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report` and `conversationImport.*` are answered `unavailable`. */
+  chatStores?: StudioChatStores
+  /** The scheduled agents this Studio runs; without them, `schedules.*` is answered `unavailable`. */
+  schedules?: StudioSchedulesDomain
+  /** The projects' backlogs, the machine's shares and the pull request reads; without them, `backlog.*`, `shares.list` and `pullRequests.detail`/`.diff` are answered `unavailable`. */
+  phoneReads?: StudioPhoneReads
+  /** The chats' records beyond their rest; without them, `chat-lifecycle`'s methods are answered `unavailable`. */
+  chatLifecycle?: StudioChatLifecycleDomain
+  /** The machine's boards, for another device; without them, `canvas.*` is answered `unavailable`. */
+  canvas?: StudioCanvasDomain
   uploads?: StudioUploads
+  /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
+  updates?: StudioUpdates
   now?: () => number
 }
 
@@ -117,7 +297,9 @@ export type StudioRpcRouterOptions = {
 const MAX_KEPT_ANSWERS = 256
 
 const OWNER_ONLY = 'This is served to Studio’s own connections only.'
+const SHELL_ONLY = 'This is served only to the desktop that holds this Studio.'
 const FOLDER_OWNER_ONLY = 'Only Studio’s own connections may name a conversation by its folder.'
+const COMMAND_OWNER_ONLY = 'Only Studio’s own connections may name the program a CLI runs.'
 const NO_CONTEXT: StudioRequestContext = { connectionId: '', slot: 0, ownWindow: false }
 
 /** The codes a failure below the router is told in: each has one stable sentence. */
@@ -159,6 +341,8 @@ const STABLE_MESSAGES: Readonly<Record<StableCode, string>> = {
   cli_not_conversational: 'That agent CLI does not run as a chat here.',
   unknown_skill: 'A skill the request names is not installed here.',
   conversation_start_failed: 'The conversation could not be started.',
+  worktree_unavailable: 'No worktree could be made or found for the chat here, so nothing was started.',
+  unsupported_effort: "That effort is not one this chat's agent CLI offers here.",
   command_id_conflict: 'That command id was already used for a different command. Send this one under a new id.',
   // Another send to the chat is being prepared: the client tries again after
   // `retryAfterMs` (the SDK does so by itself), rather than failing for good.
@@ -192,7 +376,25 @@ function canonicalJson(value: unknown): string {
  * the first one's result.
  */
 export function studioCommandFingerprint(method: string, params: unknown): string {
-  const { commandId: _id, ...rest } = (params ?? {}) as Record<string, unknown>
+  const { commandId: _id, ...named } = (params ?? {}) as Record<string, unknown>
+  // A session command's session is where it went, not what it was: a chat's
+  // session is made again when its server restarts, and a command resent to
+  // the new one under its id is the same command, answered from the receipt
+  // it left in the chat's log.
+  const { sessionId: _session, ...unaddressed } = named
+  const addressed = method.startsWith('session.') ? unaddressed : named
+  // Nor is where its pictures and files were staged: a send whose server
+  // restarted is sent again with them staged again, under other upload ids,
+  // and is still the same send. How many it carries still says what it is.
+  const { uploadIds: staged, fileUploadIds: sentUp, ...rest } = addressed
+  if (Array.isArray(staged)) rest.uploadCount = staged.length
+  if (Array.isArray(sentUp)) rest.fileUploadCount = sentUp.length
+  if (Array.isArray(rest.attachments))
+    rest.attachments = rest.attachments.map((attachment: unknown) => {
+      if (attachment === null || typeof attachment !== 'object') return attachment
+      const { uploadId: _upload, ...named } = attachment as Record<string, unknown>
+      return named
+    })
   return createHash('sha256')
     .update(`${method}\n${canonicalJson(rest)}`)
     .digest('base64url')
@@ -215,9 +417,59 @@ export function studioRuntimeCommandId(grant: StudioGrant, commandId: string): s
 /** The strictest ceiling under which an app may answer a request for the rest of a conversation. */
 const CONVERSATION_RULE_FLOOR = 'auto' as const
 const MAX_REMEMBERED_STOPS = 1024
+/** How long a keyed send's staged uploads are named by its command id: as long as the host keeps an upload. */
+const STAGED_SEND_TTL_MS = 60 * 60_000
+
+/**
+ * The always-allow rules as a client that is not an owner reads them: each
+ * rule's folder named by the project's name, never by its path, wherever the
+ * rule spells it (its folder, a file rule's prefix, its label).
+ */
+function approvalRulesByProject(
+  listed: Extract<StudioMethodResult<'conversation.approvalRules'>, { ok: true }>,
+): Extract<StudioMethodResult<'conversation.approvalRules'>, { ok: true }> {
+  return {
+    ...listed,
+    rules: listed.rules.map((rule) => {
+      const project = rule.workspaceRoot.split(/[\\/]/u).filter(Boolean).at(-1) ?? ''
+      const spellings = [rule.workspaceRoot, ...(rule.matcher.type === 'path' ? [rule.matcher.prefix] : [])]
+        .filter((spelling) => spelling.length > 0)
+        .sort((left, right) => right.length - left.length)
+      const label = spellings.reduce((text, spelling) => text.split(spelling).join(project), rule.label)
+      return {
+        ...rule,
+        workspaceRoot: project,
+        matcher: rule.matcher.type === 'path' ? { type: 'path' as const, prefix: project } : rule.matcher,
+        label,
+      }
+    }),
+  }
+}
+
+/** How long a chat's export read for its first page is held for the pages after it, from its last read. */
+const EXPORT_HELD_MS = 5 * 60_000
+/**
+ * How long an export is still held once the connection that last read it
+ * closed: a client sends every unanswered request again on the connection it
+ * reconnects with, so a dropped export's next page is asked for there. Past
+ * this, nobody is coming back for it.
+ */
+const EXPORT_HELD_AFTER_CLOSE_MS = 60_000
+/** The exports one client may have held at once; a newer one lets go of the oldest. */
+const EXPORTS_HELD_PER_CLIENT = 2
+/** About as much of an export as one page carries, measured as its JSON. */
+const EXPORT_PAGE_CHARS = 4 * 1024 * 1024
 
 function refuse<C extends StudioErrorCode>(code: C, message: string): Refused<C> {
   return { ok: false, error: { code, message } }
+}
+
+/** A discovery read's answer as the method's: its value, or its refusal in the protocol's words. */
+function discovered<T>(
+  answer: StudioDiscoveryAnswer<T>,
+  voice: { redact<V>(value: V): V },
+): { ok: true; result: T } | Refused<'not_found' | 'unavailable'> {
+  return answer.ok ? { ok: true, result: voice.redact(answer.value) } : refuse(answer.code, answer.message)
 }
 
 /** A refusal from below whose code the protocol already names, carried as it is. */
@@ -318,6 +570,50 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // restart, and this covers the rest (a create, a revert, a fork, a stop).
   const fingerprints = new Map<string, string>()
   const stopsDone = new Set<string>()
+  // A chat's export, read once for its first page and cut into the rest: by
+  // client and export id, each with the time it was last read and the
+  // connection that last read it; once that one closes, when it closed.
+  const exportsHeld = new Map<
+    string,
+    { read: Extract<StudioChatExportRead, { ok: true }>; at: number; connectionId: string; closedAt?: number }
+  >()
+  const letGoOfStaleExports = (clock: number) => {
+    for (const [id, kept] of exportsHeld)
+      if (
+        clock - kept.at > EXPORT_HELD_MS ||
+        (kept.closedAt !== undefined && clock - kept.closedAt >= EXPORT_HELD_AFTER_CLOSE_MS)
+      )
+        exportsHeld.delete(id)
+  }
+  // The one sweep a close arms, so a dropped export is let go of though no
+  // other export is asked for.
+  let exportSweep: ReturnType<typeof setTimeout> | null = null
+  const exportPage = (
+    read: Extract<StudioChatExportRead, { ok: true }>,
+    offset: number,
+  ): StudioMethodResult<'conversation.exportPage'> => {
+    // The events, then the pictures, as one run of items a page is cut from.
+    const pictures = Object.entries(read.attachments)
+    const total = read.events.length + pictures.length
+    const events: ConversationEvent[] = []
+    const attachments: Record<string, { mediaType: string; dataBase64: string }> = {}
+    let at = offset
+    let size = 0
+    while (at < total) {
+      const item = at < read.events.length ? read.events[at]! : pictures[at - read.events.length]!
+      const itemSize = JSON.stringify(item).length
+      // Every page carries at least one item, however big.
+      if (at > offset && size + itemSize > EXPORT_PAGE_CHARS) break
+      if (at < read.events.length) events.push(item as ConversationEvent)
+      else {
+        const [ref, picture] = item as [string, { mediaType: string; dataBase64: string }]
+        attachments[ref] = picture
+      }
+      size += itemSize
+      at++
+    }
+    return { chat: read.chat, events, attachments, nextOffset: at < total ? at : null }
+  }
   // Creates still starting, by namespaced id: a retry that arrives while the
   // first attempt is launching shares it, so one id makes one chat.
   const creating = new Map<
@@ -333,6 +629,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       return { workspaceRoot: key.workspaceRoot, workspaceId: key.workspaceId, agentId: key.agentId }
     return backend.resolveKey(key.workspaceId, key.agentId)
   }
+  const noChat = (workspaceId: string) => refuse('not_found', `No chat in workspace "${workspaceId}" here.`)
   const notFound = (key: { workspaceId: string; agentId: string }) =>
     refuse('not_found', `No conversation "${key.agentId}" in workspace "${key.workspaceId}" here.`)
 
@@ -345,6 +642,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       commandId?: string
       workspaceId?: string
       toolset?: string
+      moduleId?: string
+      moduleMethod?: string
     },
     answer: StudioRpcAnswer,
     created?: { workspaceId: string; agentId: string },
@@ -358,6 +657,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ...(!target && params.workspaceId ? { workspaceId: params.workspaceId } : {}),
       ...(params.commandId ? { commandId: params.commandId } : {}),
       ...(params.toolset ? { toolset: params.toolset } : {}),
+      ...(params.moduleId ? { moduleId: params.moduleId } : {}),
+      ...(params.moduleMethod ? { moduleMethod: params.moduleMethod } : {}),
       ok: answer.ok,
       ...(answer.ok ? {} : { code: answer.error.code }),
       durationMs: now() - started,
@@ -390,12 +691,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       }
     } else if (
       command.kind === 'resolveApproval' &&
-      command.decision === 'conversation' &&
+      (command.decision === 'conversation' || command.decision === 'always') &&
       isLooserCliPermissionPreset(CONVERSATION_RULE_FLOOR, grant.ceiling)
     ) {
       // Allowing a kind of request for the rest of the chat is an allow rule,
-      // as loose for that kind as `auto` lets edits be: an app held below
-      // `auto` answers one request at a time.
+      // as loose for that kind as `auto` lets edits be, and one that outlives
+      // the chat (`always`) is that and more: an app held below `auto`
+      // answers one request at a time.
       return refuse(
         'ceiling_exceeded',
         `Allowing a request for the rest of the conversation needs a ceiling of "${CONVERSATION_RULE_FLOOR}" or looser; this app's is "${grant.ceiling}". Answer it "once" instead.`,
@@ -485,6 +787,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     work: () => Promise<A>,
     voice: Voice,
     method: string,
+    /** Whether a settled answer may be tried again under its id: by default, work that could not be carried out at all. */
+    retryable: (settled: A | Refused<'unavailable'>) => boolean = (settled) =>
+      !settled.ok && settled.error?.code === 'unavailable',
   ): Promise<A | Refused<'unavailable'>> {
     const known = kept.get(id) as Promise<A | Refused<'unavailable'>> | undefined
     if (known) {
@@ -499,12 +804,142 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     while (kept.size > MAX_KEPT_ANSWERS) kept.delete(kept.keys().next().value!)
     // Work that could not be carried out at all may be tried again under its id.
     void answer.then((settled) => {
-      if (!settled.ok && settled.error?.code === 'unavailable' && kept.get(id) === answer) kept.delete(id)
+      if (retryable(settled) && kept.get(id) === answer) kept.delete(id)
     })
     return answer
   }
 
+  const updates = options.updates ?? externalStudioUpdates('manual', MANUAL_UPDATE_WORDS)
+  const updateStatus = () => {
+    const info = options.info()
+    return studioUpdateStatus(updates, {
+      version: info.server.version,
+      protocolVersion: info.protocolVersion,
+      minProtocolVersion: info.minProtocolVersion,
+    })
+  }
   const unserved = (method: StudioMethod) => refuse('unavailable', `This Studio does not serve ${method}.`)
+  /** Whether a request may name a folder: any, for an owner's own connection; otherwise one Studio knows. */
+  const mayName = async (path: string, asking: PathAsker): Promise<boolean> => {
+    if (namesAnyPath(asking)) return true
+    const chat = options.chat?.()
+    return chat ? folderAllowed(chat, asking, path) : false
+  }
+  const caller = (context: StudioRequestContext): StudioTerminalCaller => ({
+    connectionId: context.connectionId,
+    ...(context.windowKey === undefined ? {} : { windowKey: context.windowKey }),
+  })
+  // A terminal call: answered `unavailable` where this Studio holds no terminal runtime.
+  function terminal<M extends StudioMethod, R>(
+    method: M,
+    work: (terminals: StudioTerminals) => R | Promise<R>,
+  ): Promise<{ ok: true; result: R } | Refused<'unavailable'>> | Refused<'unavailable'> {
+    const terminals = options.terminals
+    if (!terminals) return unserved(method)
+    return Promise.resolve(work(terminals)).then((result) => ({ ok: true as const, result }))
+  }
+  /**
+   * A module method's call, as the hub answers it. A refusal before the module
+   * heard the call (not running here, no such method, params it refused) is
+   * the protocol's; the module's own answer is the result, its refusals included.
+   */
+  async function moduleCall(
+    method: 'module.read' | 'module.operate',
+    params: { moduleId: string; method: string; params?: unknown },
+    grant: StudioGrant,
+    commandId: string | undefined,
+  ): Promise<StudioRpcAnswer<'module.read'> | Refused<'unavailable'>> {
+    const modules = options.modules
+    if (!modules) return unserved(method)
+    const outcome: StudioModuleCallOutcome = await modules.call({
+      moduleId: params.moduleId,
+      method: params.method,
+      access: method === 'module.operate' ? 'operate' : 'read',
+      params: params.params,
+      clientId: grant.clientId,
+      ...(commandId === undefined ? {} : { commandId }),
+    })
+    return outcome.ok ? { ok: true, result: outcome.answer } : refuse(outcome.code, outcome.message)
+  }
+  // An operate that never reached the module's handler may be tried again under its id.
+  const moduleRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
+    !settled.ok &&
+    ['unavailable', 'module_unavailable', 'module_method_unknown', 'invalid_params'].includes(settled.error?.code ?? '')
+  // As `moduleRefusedBefore`, for a module's own method: `unavailable` there is
+  // a handler that threw (or answered what no client can read), after it may
+  // have sent to a chat, so only a Studio with no modules at all is tried again.
+  const operateRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
+    moduleRefusedBefore(settled) && (settled.error?.code !== 'unavailable' || !options.modules)
+  /**
+   * A call into one of the host's services a module's window half reaches,
+   * under the calling module's id: `module_unavailable` for a module not
+   * running here; the service's own answer otherwise, a service this Studio
+   * does not provide answered in its own vocabulary.
+   */
+  function moduleService<K extends keyof ModuleHostServices, A extends { ok: boolean }>(
+    method: StudioMethod,
+    moduleId: string,
+    service: K,
+    missing: A,
+    work: (served: NonNullable<ModuleHostServices[K]>) => Promise<A>,
+  ): Promise<{ ok: true; result: A } | Refused<'unavailable' | 'module_unavailable'>> | Refused<'unavailable'> {
+    const modules = options.modules
+    if (!modules) return unserved(method)
+    const found = modules.hostServices(moduleId)
+    if (!found.ok) return Promise.resolve(refuse(found.code, found.message))
+    const served = found.services[service]
+    if (!served) return Promise.resolve({ ok: true as const, result: missing })
+    return work(served as NonNullable<ModuleHostServices[K]>).then((result) => ({ ok: true as const, result }))
+  }
+  const BACKLOG_MISSING = {
+    ok: false,
+    code: 'backlog_unavailable',
+    message: 'This Studio has no Backlog service for modules.',
+  } as const
+  const USAGE_MISSING = {
+    ok: false,
+    code: 'unavailable',
+    message: 'This Studio has no usage service for modules.',
+  } as const
+  /** A Backlog write, carried out once under its id: a retry is answered with the first answer. */
+  function backlogWrite<M extends StudioMethod, T extends object>(
+    method: M,
+    params: { moduleId: string; commandId: string },
+    context: Asking,
+    work: (backlog: NonNullable<ModuleHostServices['backlog']>) => Promise<StudioModuleBacklogAnswer<T>>,
+  ) {
+    return once(
+      keptId(method, context.grant, params.commandId),
+      () => Promise.resolve(moduleService(method, params.moduleId, 'backlog', BACKLOG_MISSING, work)),
+      context.voice,
+      method,
+      moduleRefusedBefore,
+    )
+  }
+  /** A change to what runs here, carried out once under its id by the modules' lifecycle. */
+  function lifecycleCommand<
+    M extends
+      | 'module.setEnabled'
+      | 'module.install'
+      | 'module.setTrust'
+      | 'module.uninstall'
+      | 'module.setAppState'
+      | 'module.reportRegistry',
+    R,
+  >(method: M, context: Asking, commandId: string, work: (lifecycle: ModuleLifecycle) => Promise<R>) {
+    const modules = options.modules
+    if (!modules) return unserved(method)
+    return once(
+      keptId(method, context.grant, commandId),
+      async (): Promise<{ ok: true; result: R } | Refused<'unavailable'>> => {
+        const lifecycle = modules.lifecycle()
+        if (!lifecycle) return refuse('unavailable', 'This Studio’s modules have not loaded yet.')
+        return { ok: true, result: await work(lifecycle) }
+      },
+      context.voice,
+      method,
+    )
+  }
   const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 
   /** The chat surface, or why this Studio does not serve one now. */
@@ -514,16 +949,239 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   const isRefusal = (value: StudioChatBackend | Refused<'unavailable'>): value is Refused<'unavailable'> =>
     'ok' in value && value.ok === false
 
+  /**
+   * A chat-surface mutation the runtime keeps no receipt for, carried out
+   * once under its id: a repeat is answered with the first answer.
+   */
+  function sessionOnce<M extends StudioChatMethod, R>(
+    method: M,
+    grant: StudioGrant,
+    commandId: string,
+    voice: Voice,
+    work: (chat: StudioChatBackend) => Promise<R>,
+  ): Promise<{ ok: true; result: R } | Refused<'unavailable'>> | Refused<'unavailable'> {
+    const chat = chatOr(method)
+    if (isRefusal(chat)) return chat
+    return once(
+      keptId(method, grant, commandId),
+      async () => ({ ok: true as const, result: voice.redact(await work(chat)) }),
+      voice,
+      method,
+    )
+  }
+
+  /**
+   * The folder of a workspace's history: the one an owner names, else the
+   * workspace's own, as this Studio resolves a chat's key by its workspace.
+   */
+  function historyRoot(workspaceId: string, workspaceRoot: string | undefined, grant: StudioGrant): string | null {
+    if (workspaceRoot !== undefined && grant.owner) return workspaceRoot
+    return backend.resolveKey(workspaceId, 'history')?.workspaceRoot ?? null
+  }
+
   /** A runtime id under the client's namespace, and the kept-answer id of one method's mutation. */
   const runtimeId = (grant: StudioGrant, id: string) => studioRuntimeCommandId(grant, id)
+  // The files on this machine by path, every server's: the router's one rule
+  // for them is who may name which path (`studio-file-system.ts`).
+  const fileSystem = createStudioFileSystemHandlers({
+    ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const gitRouting = createStudioGitHandlers({
+    ...(options.git ? { git: options.git } : {}),
+    ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const worktreesHandlers = createStudioWorktreesHandlers({
+    ...(options.worktrees ? { worktrees: options.worktrees } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
   const keptId = (method: StudioMethod, grant: StudioGrant, id: string) => `${method}:${runtimeId(grant, id)}`
+  /** A step of a sign-in, answered once per command id: a retried start is the same login, not a second. */
+  const signInOnce = <R>(
+    method: 'providers.signInStart' | 'providers.signInPaste' | 'providers.signInWait' | 'providers.signInCancel',
+    grant: StudioGrant,
+    commandId: string,
+    voice: Voice,
+    step: (table: SignIns) => Promise<R>,
+  ) => {
+    const signIns = options.signIns
+    if (!signIns) return unserved(method)
+    return once(
+      keptId(method, grant, commandId),
+      async () => ({ ok: true as const, result: await step(await signIns()) }),
+      voice,
+      method,
+    )
+  }
+  const extensionsRouting = createStudioExtensionsHandlers({
+    ...(options.extensions ? { extensions: options.extensions } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+    mayName,
+  })
+  const artifactsRouting = createStudioArtifactsHandlers({
+    ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const accessRouting = createStudioAccessHandlers({
+    ...(options.access ? { access: options.access } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const webDevicesRouting = createStudioWebDevicesHandlers({
+    webDevices: () => options.webDevices?.() ?? null,
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const tailnetRouting = createStudioTailnetHandlers({
+    ...(options.tailnet ? { tailnet: options.tailnet } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
   // A session command's receipt keeps what it was, across a restart too.
   const stamp = (fingerprint: string | undefined) => (fingerprint ? { commandFingerprint: fingerprint } : {})
   // An upload is the client's; its budget is this connection's. Staging needs
   // no chat: a board too large for one frame is staged the same way.
   const holder = ({ grant, context }: Asking) => ({ client: grant.clientId, connection: context.connectionId })
 
+  // A chat the core does not know is not found; any other refusal (no
+  // checkout of it here) is the caller's to say.
+  const refusedChat = (refusal: ChatPullRequestRefusal, voice: Voice, method: StudioMethod) =>
+    refusal.refused.code === 'unknown_workspace' || refusal.refused.code === 'unknown_conversation'
+      ? voice.failed('not_found', refusal.refused.message, method)
+      : null
+
   // ── Every method's handler ──────────────────────────────────────────────
+
+  const followed = backend.followed ?? {}
+
+  /**
+   * A key for what reads or runs in the chat's folder, resolved as `resolve`
+   * does, and a folder an owner names held to the ones Studio knows on a
+   * connection that is (a browser on the tailnet): a search or a command
+   * list there must not reach a folder by naming it.
+   */
+  async function resolveInFolder(wire: StudioConversationKey, asking: Asking): Promise<ConversationKey | null> {
+    if (wire.workspaceRoot !== undefined && !namesAnyPath(asking)) {
+      const chat = options.chat?.() ?? null
+      if (!chat || !(await folderAllowed(chat, asking, wire.workspaceRoot))) return null
+    }
+    return resolve(wire, asking.grant)
+  }
+  const ids = (key: ConversationKey) => ({ workspaceId: key.workspaceId, agentId: key.agentId })
+
+  /** A composer read as an answer: the chat gone is `not_found`, anything else `unavailable`. */
+  function composerAnswer<T>(
+    read: StudioComposerRead<T>,
+    wire: StudioConversationKey,
+    voice: Voice,
+    method: StudioMethod,
+  ): { ok: true; result: T } | Refused<'not_found' | 'unavailable'> {
+    if (read.ok) return { ok: true, result: voice.redact(read.answer) }
+    return read.code === 'unknown_conversation' ? notFound(wire) : voice.failed('unavailable', read.message, method)
+  }
+
+  /** A changes read refused: a step or file the chat's changes do not hold is `not_found`, in its own words. */
+  function changesRefusal(
+    read: { code?: 'not_found'; message: string },
+    voice: Voice,
+    method: StudioMethod,
+  ): Refused<'not_found' | 'unavailable'> {
+    return read.code === 'not_found'
+      ? refuse('not_found', read.message)
+      : voice.failed('unavailable', read.message, method)
+  }
+
+  /**
+   * A settle refused: no such chat is `not_found`; an agent at work in it is
+   * `conflict`, in the record's own words, which name nothing on this disk;
+   * anything else `unavailable`.
+   */
+  function settleRefusal(
+    done: { code: string; message: string },
+    workspaceId: string,
+    voice: Voice,
+    method: StudioMethod,
+  ): Refused<'not_found' | 'conflict' | 'unavailable'> {
+    if (done.code === 'unknown_workspace') return noChat(workspaceId)
+    if (done.code === 'working') return refuse('conflict', done.message)
+    return voice.failed('unavailable', done.message, method)
+  }
+
+  // A keyed send's pictures and files, made the chat's once per command:
+  // spent from this client's uploads and handed to the conversation host,
+  // whose ids the send then names. A retry of the send under the same id
+  // (after a dropped connection, or a `busy` it waited out) names the same
+  // ids again, so the host answers it as the same send, and the uploads it
+  // spent are not asked for twice. Kept as long as an upload is.
+  const stagedSends = new Map<string, { ids: string[]; at: number }>()
+  // A retry that arrives while the first is still staging (a phone that sent
+  // again after its socket dropped, mid-upload) waits for that staging rather
+  // than staging the same uploads a second time under other host ids.
+  const stagingSends = new Map<string, Promise<StagedSend>>()
+  type StagedSend =
+    { ok: true; ids: string[] } | Refused<'not_found' | 'invalid_params' | 'too_large' | 'busy' | 'unavailable'>
+  async function stagedFor(
+    params: { key: StudioConversationKey; commandId: string },
+    uploadIds: string[],
+    asking: Asking,
+  ): Promise<StagedSend> {
+    const stage = followed.stageUploads
+    if (!stage) return refuse('unavailable', 'This Studio does not take pictures or files on a send.')
+    const { grant } = asking
+    const at = now()
+    for (const [id, kept] of stagedSends) if (at - kept.at > STAGED_SEND_TTL_MS) stagedSends.delete(id)
+    const sendId = `${grant.clientId}\n${params.commandId}`
+    const kept = stagedSends.get(sendId)
+    if (kept) return { ok: true, ids: kept.ids }
+    const staging = stagingSends.get(sendId)
+    if (staging) return staging
+    const made = stageSend(stage, params, uploadIds, grant, sendId, at)
+    stagingSends.set(sendId, made)
+    try {
+      return await made
+    } finally {
+      if (stagingSends.get(sendId) === made) stagingSends.delete(sendId)
+    }
+  }
+  async function stageSend(
+    stage: NonNullable<typeof followed.stageUploads>,
+    params: { key: StudioConversationKey; commandId: string },
+    uploadIds: string[],
+    grant: StudioGrant,
+    sendId: string,
+    at: number,
+  ): Promise<StagedSend> {
+    const key = resolve(params.key, grant)
+    if (!key) return notFound(params.key)
+    const spent = uploads.spend(grant.clientId, uploadIds, sendId, ['picture', 'attachment'])
+    if (!spent.ok) return refused(spent)
+    const made = await stage(
+      key,
+      grant.clientId,
+      spent.pictures.map((upload) => ({
+        purpose: upload.purpose === 'attachment' ? 'attachment' : 'picture',
+        mediaType: upload.mediaType,
+        ...(upload.name === undefined ? {} : { name: upload.name }),
+        bytes: upload.bytes,
+      })),
+    ).catch((error: unknown) => ({
+      ok: false as const,
+      code: 'invalid_params' as const,
+      message: error instanceof Error ? error.message : String(error),
+    }))
+    // The host holds the bytes now, or nothing was made of them and the
+    // uploads are this client's to send again.
+    uploads.settle(grant.clientId, sendId, made.ok)
+    if (!made.ok) return made.code === 'not_found' ? notFound(params.key) : refuse('invalid_params', made.message)
+    stagedSends.set(sendId, { ids: made.ids, at })
+    return { ok: true, ids: made.ids }
+  }
 
   const handlers: StudioHandlers<Asking> = {
     'server.info': (_params, { grant }) => ({ ok: true, result: { ...options.info(), grant } }),
@@ -532,7 +1190,26 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'conversation.create': create,
 
     // The conversation lane's commands, each carried as its own kind.
-    'conversation.send': (p, asking) => plainCommand(asking, p, { kind: 'send', ...members(p) }),
+    'conversation.send': async (p, asking) => {
+      const { uploadIds, ...words } = members(p)
+      if (!uploadIds?.length) return plainCommand(asking, p, { kind: 'send', ...words })
+      // A repeat of a send carried out before (held, or in the chat's log) is
+      // answered from that, and needs none of the uploads its first attempt
+      // spent, which a restart since has let go of: asked first, or the
+      // repeat is refused for them and the client sends the message again
+      // under a new id, running its turn twice.
+      const key = resolve(p.key, asking.grant)
+      if (
+        key &&
+        (await followed.sentBefore?.(key, asking.grant.clientId, studioRuntimeCommandId(asking.grant, p.commandId)))
+      ) {
+        uploads.discard(asking.grant.clientId, uploadIds)
+        return plainCommand(asking, p, { kind: 'send', ...words })
+      }
+      const staged = await stagedFor(p, uploadIds, asking)
+      if (!staged.ok) return staged
+      return plainCommand(asking, p, { kind: 'send', ...words, uploadIds: staged.ids })
+    },
     'conversation.interrupt': (p, asking) => plainCommand(asking, p, { kind: 'interrupt' }),
     'conversation.resolveApproval': (p, asking) => plainCommand(asking, p, { kind: 'resolveApproval', ...members(p) }),
     'conversation.answerQuestion': (p, asking) => plainCommand(asking, p, { kind: 'answerQuestion', ...members(p) }),
@@ -599,9 +1276,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
       const read = await backend.loadEarlier(key, beforeCursor, turnLimit)
-      return read.ok
-        ? { ok: true, result: { page: { ...read.page, events: read.page.events.map((event) => voice.redact(event)) } } }
-        : voice.failed('unavailable', read.message, 'conversation.loadEarlier')
+      if (!read.ok) return voice.failed('unavailable', read.message, 'conversation.loadEarlier')
+      const { page } = boundConversationPage(read.page)
+      return { ok: true, result: { page: { ...page, events: page.events.map((event) => voice.redact(event)) } } }
     },
     'conversation.toolDetail': async ({ key: wire, toolUseId }, { grant, voice }) => {
       const key = resolve(wire, grant)
@@ -614,6 +1291,17 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'conversation.toolDetail',
       )
     },
+    'conversation.event': async ({ key: wire, seq, id }, { grant, voice }) => {
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const read = await backend.event(key, seq, id)
+      if (read.ok) return { ok: true, result: { event: voice.redact(read.event) } }
+      return voice.failed(
+        read.code === 'not_found' ? 'not_found' : read.code === 'invalid_input' ? 'invalid_params' : 'unavailable',
+        read.message,
+        'conversation.event',
+      )
+    },
     'conversation.turnDiff': async ({ key: wire, turnSeq, path }, { grant, voice }) => {
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
@@ -621,6 +1309,118 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!read.ok) return voice.failed('unavailable', read.message, 'conversation.turnDiff')
       const { ok: _ok, ...diff } = read
       return { ok: true, result: voice.redact(diff) }
+    },
+
+    // ── Beside a followed chat, by its key (`followed.ts`) ─────────────────
+    // The conversation host's own, as the tailnet lane serves them.
+
+    'conversation.askSideQuestion': async ({ key: wire, commandId, questionId, question, history }, asking) => {
+      const { grant, voice } = asking
+      const ask = followed.askSideQuestion
+      if (!ask) return unserved('conversation.askSideQuestion')
+      const key = await resolveInFolder(wire, asking)
+      if (!key) return notFound(wire)
+      return once(
+        keptId('conversation.askSideQuestion', grant, commandId),
+        async () => ({
+          ok: true as const,
+          result: voice.redact(await ask(key, grant.clientId, questionId, question, history ?? [])),
+        }),
+        voice,
+        'conversation.askSideQuestion',
+      )
+    },
+    'conversation.cancelSideQuestion': async ({ questionId }, { grant, voice }) => {
+      const cancel = followed.cancelSideQuestion
+      if (!cancel) return unserved('conversation.cancelSideQuestion')
+      // Under this client's own id: another client's question is passed over.
+      return { ok: true, result: voice.redact(await cancel(grant.clientId, questionId)) }
+    },
+    'conversation.picture': async ({ key: wire, ...which }, asking) => {
+      const read = followed.picture
+      if (!read) return unserved('conversation.picture')
+      const key = resolve(wire, asking.grant)
+      if (!key) return notFound(wire)
+      const picture = await read(
+        key,
+        which.toolUseId !== undefined ? { toolUseId: which.toolUseId } : { attachment: which.attachment! },
+      )
+      if (!picture.ok) return refuse(picture.code, picture.message)
+      return { ok: true, result: { mediaType: picture.mediaType, dataBase64: picture.bytes.toString('base64') } }
+    },
+    'conversation.contextBreakdown': async ({ key: wire }, asking) => {
+      const read = followed.contextBreakdown
+      if (!read) return unserved('conversation.contextBreakdown')
+      const key = await resolveInFolder(wire, asking)
+      if (!key) return notFound(wire)
+      return { ok: true, result: asking.voice.redact(await read(key)) }
+    },
+    'conversation.searchFiles': async ({ key: wire, query, limit }, asking) => {
+      const { grant, voice } = asking
+      const search = followed.searchFiles
+      if (!search) return unserved('conversation.searchFiles')
+      const key = await resolveInFolder(wire, asking)
+      if (!key) return notFound(wire)
+      // An empty query matches nothing, as the composer's own picker asks none.
+      if (!query) return { ok: true, result: { entries: [], truncated: false } }
+      return composerAnswer(await search(key, grant.clientId, query, limit), wire, voice, 'conversation.searchFiles')
+    },
+    'conversation.listCommands': async ({ key: wire, refresh }, asking) => {
+      const { grant, voice } = asking
+      const list = followed.listCommands
+      if (!list) return unserved('conversation.listCommands')
+      // Asking the CLI again starts it: for a client that may operate the
+      // chat, as the lane's refresh was.
+      if (refresh && !studioGrantPrincipal(grant).permissions.has('conversation:operate'))
+        return refuse('scope_required', 'This app\'s grant does not include "conversation:operate".')
+      const key = await resolveInFolder(wire, asking)
+      if (!key) return notFound(wire)
+      return composerAnswer(await list(key, refresh === true), wire, voice, 'conversation.listCommands')
+    },
+    'conversation.settle': async ({ workspaceId, commandId, settled }, { grant, voice }) => {
+      const settle = followed.settle
+      if (!settle) return unserved('conversation.settle')
+      // A retry under its command id is answered with the first answer, not
+      // written again over an un-settle that came in between.
+      return once(
+        keptId('conversation.settle', grant, commandId),
+        async () => {
+          const done = settle(workspaceId, settled !== false, grant.owner)
+          if (done.ok) return { ok: true as const, result: { settledAt: done.settledAt } }
+          return settleRefusal(done, workspaceId, voice, 'conversation.settle')
+        },
+        voice,
+        'conversation.settle',
+      )
+    },
+    'conversation.visit': async ({ workspaceId, visitedAt }, { grant, voice }) => {
+      const visit = followed.visit
+      if (!visit) return unserved('conversation.visit')
+      const done = visit(workspaceId, visitedAt, grant.owner)
+      if (done.ok) return { ok: true, result: { lastVisitedAt: done.lastVisitedAt } }
+      return done.code === 'unknown_workspace'
+        ? noChat(workspaceId)
+        : voice.failed('unavailable', done.message, 'conversation.visit')
+    },
+    'conversation.changesDiff': async ({ key: wire, selection }, { grant, voice }) => {
+      const read = followed.changesDiff
+      if (!read) return unserved('conversation.changesDiff')
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const answer = await read(ids(key), selection)
+      if (!answer.ok) return changesRefusal(answer, voice, 'conversation.changesDiff')
+      const { ok: _ok, ...diff } = answer
+      return { ok: true, result: voice.redact(diff) }
+    },
+    'conversation.changedFile': async ({ key: wire, selection, path }, { grant, voice }) => {
+      const read = followed.changedFile
+      if (!read) return unserved('conversation.changedFile')
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const answer = await read(ids(key), selection, path)
+      if (!answer.ok) return changesRefusal(answer, voice, 'conversation.changedFile')
+      const { ok: _ok, ...sides } = answer
+      return { ok: true, result: voice.redact(sides) }
     },
 
     // ── The chat surface ───────────────────────────────────────────────────
@@ -642,21 +1442,69 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const chat = chatOr('session.send')
       if (isRefusal(chat)) return chat
       const { grant, voice, fingerprint } = asking
-      const { commandId, attachments, ...input } = params
+      const { commandId, attachments, fileUploadIds, ...input } = params
+      // A file attached or mentioned by path is read by the agent: a client
+      // that is not an owner names only what is inside the folders Studio
+      // knows (a mention relative to the chat's folder stays inside it).
+      for (const path of [
+        ...(input.files ?? []).map((file) => file.path),
+        ...(input.mentions ?? []).map((mention) => mention.path),
+      ])
+        if (!(await pathAllowed(chat, asking, path))) return refuse('not_found', UNKNOWN_FOLDER)
       const id = runtimeId(grant, commandId)
       let pictures: ConversationImageAttachment[] | undefined
       // A repeat of a send the runtime holds a receipt for is answered from
       // it, so it needs none of the pictures the first attempt carried,
       // which may be long gone: it must not be refused for them, or the
-      // client sends the message again under a new id.
-      const answered = attachments?.length && (await chat.hasReceipt({ sessionId: input.sessionId, commandId: id }))
-      if (attachments?.length && !answered) {
+      // client sends the message again under a new id and the turn runs
+      // twice. Nor is a send to a session the runtime no longer holds (its
+      // server restarted since the first attempt, and the pictures went with
+      // it): the runtime answers it "session not found", and the client
+      // starts the chat again and sends once more under the same id, on a
+      // session whose chat log has the receipt.
+      const carries = Boolean(attachments?.length || fileUploadIds?.length)
+      const receipt = carries ? await chat.commandReceipt({ sessionId: input.sessionId, commandId: id }) : 'none'
+      // The ones this attempt staged, given back: nothing is made of them.
+      if (receipt !== 'none' && carries)
+        uploads.discard(grant.clientId, [
+          ...(attachments ?? []).map((attachment) => attachment.uploadId),
+          ...(fileUploadIds ?? []),
+        ])
+      // Files from the client's own disk, sent up beside the message: kept
+      // here, where the chat's agent reads them, and attached by their path
+      // here, never by the client's.
+      const kept: Array<{ path: string; discard: () => void }> = []
+      const unkeep = () => {
+        for (const file of kept.splice(0)) file.discard()
+      }
+      if (fileUploadIds?.length && receipt === 'none') {
+        const keepFile = followed.keepFile
+        if (!keepFile) return refuse('unavailable', 'This Studio cannot keep files sent with a message.')
+        const spent = uploads.spend(grant.clientId, fileUploadIds, id, 'attachment')
+        if (!spent.ok) return refused(spent)
+        try {
+          for (const file of spent.pictures)
+            kept.push(await keepFile(grant.clientId, { name: file.name ?? 'file', bytes: file.bytes }))
+        } catch (error) {
+          unkeep()
+          uploads.settle(grant.clientId, id, false)
+          return refuse(
+            'unavailable',
+            `A file sent with this message could not be kept: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+      if (attachments?.length && receipt === 'none') {
         const spent = uploads.spend(
           grant.clientId,
           attachments.map((attachment) => attachment.uploadId),
           id,
         )
-        if (!spent.ok) return refused(spent)
+        if (!spent.ok) {
+          unkeep()
+          uploads.settle(grant.clientId, id, false)
+          return refused(spent)
+        }
         pictures = attachments.map((attachment, index) => {
           const picture = spent.pictures[index]
           const name = attachment.name ?? picture.name
@@ -672,6 +1520,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const sent = await chat
         .sendTurn({
           ...input,
+          ...(kept.length ? { files: [...(input.files ?? []), ...kept.map(({ path }) => ({ path }))] } : {}),
           // What each mention names is checked by the backend, by the rules its IPC applies.
           ...(pictures ? { attachments: pictures } : {}),
           commandId: id,
@@ -680,9 +1529,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         .finally(async () => {
           // Recorded, its receipt answers every repeat and the bytes can go;
           // not recorded, nothing ran, and a retry may carry them again.
-          if (!pictures) return
-          const recorded = await chat.hasReceipt({ sessionId: input.sessionId, commandId: id }).catch(() => false)
+          if (!pictures && !kept.length) return
+          const recorded =
+            (await chat.commandReceipt({ sessionId: input.sessionId, commandId: id }).catch(() => 'none')) === 'kept'
           uploads.settle(grant.clientId, id, recorded)
+          if (!recorded) unkeep()
         })
       return { ok: true, result: voice.redact(sent) }
     },
@@ -711,9 +1562,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       return { ok: true, result: voice.redact(sent) }
     },
     'uploads.begin': (input, asking) => {
-      // A file's bytes are only ever spent by `files.write`, which is an owner's.
-      if (input.purpose === 'file' && !asking.grant.owner)
-        return refuse('owner_required', 'Only Studio itself may stage a file’s bytes.')
+      // A file's bytes are only ever spent by `files.write`: staged only by a
+      // client that may write one.
+      if (input.purpose === 'file' && !studioGrantAllows(asking.grant, 'files.write'))
+        return refuse('scope_required', 'This app’s grant does not include "files:write".')
       const begun = uploads.begin(holder(asking), input)
       return begun.ok
         ? { ok: true, result: { uploadId: begun.uploadId, chunkBytes: begun.chunkBytes } }
@@ -760,33 +1612,89 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'conversation.handoff',
       )
     },
-    'conversation.fork': ({ commandId, key: wire, ...input }, { grant, voice }) => {
-      const chat = chatOr('conversation.fork')
-      if (isRefusal(chat)) return chat
+    // The fork is the conversation host's, as the tailnet lane's is: written
+    // beside the chat, joined to its workspace's records under the name the
+    // host gives it, and held under the client's command id. The answer is
+    // where it is, so any client opens it as it opens any chat.
+    'conversation.fork': async ({ commandId, key: wire, ...point }, { grant, voice, fingerprint }) => {
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      return once(
-        keptId('conversation.fork', grant, commandId),
-        async () => ({ ok: true as const, result: voice.redact(await chat.fork({ ...input, key })) }),
-        voice,
-        'conversation.fork',
+      const done = await backend.command(
+        key,
+        grant.clientId,
+        studioRuntimeCommandId(grant, commandId),
+        { kind: 'fork', ...point },
+        fingerprint,
       )
+      if (!done.ok) return voice.failedFrom(done.code, done.message, 'conversation.fork', done.retryAfterMs)
+      const name = done.data?.name
+      if (typeof name !== 'string' || !name)
+        return voice.failed('unavailable', 'The fork was made but not named.', 'conversation.fork')
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          address: { environmentId: options.info().environment.id, chatId: key.workspaceId, agentId: point.newAgentId },
+          name,
+        },
+      }
     },
     'conversation.attachment': async ({ ref }, { voice }) => {
       const chat = chatOr('conversation.attachment')
       if (isRefusal(chat)) return chat
       return { ok: true, result: voice.redact(await chat.attachment(ref)) }
     },
-    'conversation.planDocument': async ({ key: wire, ...input }, { grant, voice }) => {
+    'conversation.planDocument': async ({ key: wire, planFilePath, ...input }, { context, grant, voice }) => {
       const chat = chatOr('conversation.planDocument')
       if (isRefusal(chat)) return chat
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input })) }
+      // The agent's own plan file is read to see whether it still holds the
+      // plan: for a client that is not an owner, only inside the folders
+      // Studio knows. Elsewhere, Studio keeps a copy of its own instead.
+      const own =
+        planFilePath !== undefined && (await folderAllowed(chat, { context, grant }, planFilePath))
+          ? { planFilePath }
+          : {}
+      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input, ...own })) }
     },
-    'conversation.commands': async (input, { voice }) => {
+    'conversation.exportPage': async ({ key: wire, exportId, offset }, { grant, voice, context }) => {
+      const chat = chatOr('conversation.exportPage')
+      if (isRefusal(chat)) return chat
+      if (!chat.exportSource) return unserved('conversation.exportPage')
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      // Held for this client and this chat: an export id names nothing of another's.
+      const held = [grant.clientId, key.workspaceId, key.agentId, exportId].join('\u0000')
+      const clock = now()
+      letGoOfStaleExports(clock)
+      let kept = exportsHeld.get(held)
+      if (offset === 0) {
+        const read = await chat.exportSource({ workspaceId: key.workspaceId, agentId: key.agentId })
+        if (!read.ok)
+          return read.code === 'not_found'
+            ? notFound(wire)
+            : voice.failed('unavailable', read.message, 'conversation.exportPage')
+        kept = { read: voice.redact(read), at: clock, connectionId: context.connectionId }
+        exportsHeld.delete(held)
+        exportsHeld.set(held, kept)
+        const own = [...exportsHeld.keys()].filter((id) => id.startsWith(`${grant.clientId}\u0000`))
+        for (const id of own.slice(0, Math.max(0, own.length - EXPORTS_HELD_PER_CLIENT))) exportsHeld.delete(id)
+      }
+      if (!kept) return refuse('not_found', 'That export is no longer held. Start it again.')
+      kept.at = clock
+      kept.connectionId = context.connectionId
+      delete kept.closedAt
+      const page = exportPage(kept.read, offset)
+      if (page.nextOffset === null) exportsHeld.delete(held)
+      return { ok: true, result: page }
+    },
+    'conversation.commands': async (input, { context, grant, voice }) => {
       const chat = chatOr('conversation.commands')
       if (isRefusal(chat)) return chat
+      // Asking for a folder's list may run its CLI there (a probe): a client
+      // that is not an owner names only a folder Studio knows.
+      if (!(await folderAllowed(chat, { context, grant }, input.cwd))) return refuse('not_found', UNKNOWN_FOLDER)
       return { ok: true, result: { catalog: voice.redact(await chat.commands(input)) } }
     },
     'providers.list': async (input, { voice }) => {
@@ -804,45 +1712,106 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       return { ok: true, result: voice.redact(await chat.secretStatus(input)) }
     },
-    'files.search': async (search, { context, voice }) => {
-      const chat = chatOr('files.search')
-      if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, context, search.rootPath))) return refuse('not_found', UNKNOWN_FOLDER)
-      return { ok: true, result: voice.redact(await chat.searchFiles(context.slot, search)) }
-    },
-    'files.cancelSearch': ({ channel }, { context }) => {
-      const chat = chatOr('files.cancelSearch')
-      if (isRefusal(chat)) return chat
-      chat.cancelFileSearch(context.slot, channel)
-      return { ok: true, result: {} }
-    },
-    'files.stat': async ({ path, root }, { voice }) => {
-      // By root it is the files family's, served with or without a chat surface.
+    'files.search': (search, asking) => fileSystem.byPath.search(search, asking),
+    'files.cancelSearch': ({ channel }, { context }) => fileSystem.byPath.cancelSearch(channel, context),
+    'files.stat': async ({ path, root }, asking) => {
+      // By root it is the board files' family, served with or without a chat surface.
       if (root !== undefined) {
         if (!options.files) return refuse('unavailable', 'This Studio does not serve files by root.')
         const found = await options.files.stat(root, path)
         return found.ok ? { ok: true, result: { stat: found.stat } } : refused(found)
       }
-      const chat = chatOr('files.stat')
-      if (isRefusal(chat)) return chat
-      return { ok: true, result: { stat: voice.redact(await chat.stat(path)) } }
+      const read = await fileSystem.byPath.stat(path, asking)
+      return read.ok ? { ok: true, result: { stat: read.result } } : read
     },
-    'files.readImage': async ({ path }) => {
-      const chat = chatOr('files.readImage')
-      if (isRefusal(chat)) return chat
-      return { ok: true, result: { dataUrl: await chat.readImage(path) } }
+    'files.readImage': async ({ path }, asking) => {
+      const read = await fileSystem.byPath.readImage(path, asking)
+      return read.ok ? { ok: true, result: { dataUrl: read.result } } : read
     },
-    'files.repoRoot': async ({ folderPath, hostId }, { context, voice }) => {
-      const chat = chatOr('files.repoRoot')
-      if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, context, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
-      return { ok: true, result: { repoRoot: voice.redact(await chat.repoRoot(folderPath, hostId)) } }
+    'files.repoRoot': async ({ folderPath, hostId }, asking) => {
+      const read = await fileSystem.byPath.repoRoot(folderPath, hostId, asking)
+      return read.ok ? { ok: true, result: { repoRoot: read.result } } : read
     },
-    'workspaces.list': (_params, { voice }) => {
-      const chat = chatOr('workspaces.list')
+    'session.list': async (input, { voice }) => {
+      const chat = chatOr('session.list')
       if (isRefusal(chat)) return chat
-      return { ok: true, result: { workspaces: voice.redact(chat.workspaces()) } }
+      return { ok: true, result: voice.redact(await chat.listSessions(input)) }
     },
+    'session.stop': async ({ commandId, ...input }, { grant, voice, fingerprint }) => {
+      const chat = chatOr('session.stop')
+      if (isRefusal(chat)) return chat
+      const sent = await chat.stopSession({ ...input, commandId: runtimeId(grant, commandId), ...stamp(fingerprint) })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    // The runtime keeps no receipt for these, so a repeat under the same id
+    // is answered here with the first answer, as a checkpoint's is.
+    'session.suspend': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.suspend', grant, commandId, voice, (chat) => chat.suspendSession(input)),
+    'session.mcpServerAction': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.mcpServerAction', grant, commandId, voice, (chat) => chat.mcpServerAction(input)),
+    'session.stopSubagent': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.stopSubagent', grant, commandId, voice, (chat) => chat.stopSubagent(input)),
+    'session.messageSubagent': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.messageSubagent', grant, commandId, voice, (chat) => chat.messageSubagent(input)),
+    'session.askSideQuestion': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.askSideQuestion', grant, commandId, voice, (chat) => chat.askSideQuestion(input)),
+    'session.cancelSideQuestion': async (input, { voice }) => {
+      const chat = chatOr('session.cancelSideQuestion')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.cancelSideQuestion(input)) }
+    },
+    'session.contextBreakdown': async (input, { voice }) => {
+      const chat = chatOr('session.contextBreakdown')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.contextBreakdown(input)) }
+    },
+    'session.terminalHandoff': ({ commandId, ...input }, { grant, voice }) => {
+      const chat = chatOr('session.terminalHandoff')
+      if (isRefusal(chat)) return chat
+      const handoff = chat.terminalHandoff
+      if (!handoff) return unserved('session.terminalHandoff')
+      return sessionOnce('session.terminalHandoff', grant, commandId, voice, () => handoff(input))
+    },
+    'conversation.threads': async ({ workspaceId, workspaceRoot }, { grant, voice }) => {
+      const chat = chatOr('conversation.threads')
+      if (isRefusal(chat)) return chat
+      const root = historyRoot(workspaceId, workspaceRoot, grant)
+      if (!root) return refuse('not_found', `No workspace "${workspaceId}" here.`)
+      return { ok: true, result: voice.redact(await chat.threads({ workspaceId, workspaceRoot: root })) }
+    },
+    'conversation.search': async ({ workspaceId, workspaceRoot, ...search }, { grant, context, voice }) => {
+      const chat = chatOr('conversation.search')
+      if (isRefusal(chat)) return chat
+      const root = historyRoot(workspaceId, workspaceRoot, grant)
+      if (!root) return refuse('not_found', `No workspace "${workspaceId}" here.`)
+      const found = await chat.searchHistory(context.slot, { ...search, workspaceId, workspaceRoot: root })
+      return { ok: true, result: voice.redact(found) }
+    },
+    'conversation.cancelSearch': ({ requestId }, { context }) => {
+      const chat = chatOr('conversation.cancelSearch')
+      if (isRefusal(chat)) return chat
+      chat.cancelHistorySearch(context.slot, requestId)
+      return { ok: true, result: { ok: true } }
+    },
+    'conversation.approvalRules': async (_params, { grant, voice }) => {
+      const chat = chatOr('conversation.approvalRules')
+      if (isRefusal(chat)) return chat
+      const listed = voice.redact(await chat.approvalRules())
+      return { ok: true, result: grant.owner || !listed.ok ? listed : approvalRulesByProject(listed) }
+    },
+    'conversation.revokeApprovalRule': ({ commandId, ruleId }, { grant, voice }) =>
+      sessionOnce('conversation.revokeApprovalRule', grant, commandId, voice, (chat) =>
+        chat.revokeApprovalRule(ruleId),
+      ),
+    'providers.signIn': async (input, { voice }) => {
+      const chat = chatOr('providers.signIn')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.signIn(input)) }
+    },
+    'providers.setSecret': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('providers.setSecret', grant, commandId, voice, (chat) => chat.setSecret(input)),
+    'providers.clearSecret': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('providers.clearSecret', grant, commandId, voice, (chat) => chat.clearSecret(input)),
 
     // ── Client tools ───────────────────────────────────────────────────────
 
@@ -976,6 +1945,71 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!options.pullRequests?.unwatch) return unserved('pullRequests.unwatch')
       return { ok: true, result: await options.pullRequests.unwatch(unwatch) }
     },
+    // A chat's "Create PR", every step in its checkout here, for a client that
+    // may drive the chat (a paired desktop's window among them). A chat with
+    // no checkout here has no state to show; a step asked of one anyway is
+    // refused in the core's words. Only an owner is told where the checkout
+    // is on this disk.
+    'pullRequests.createState': async ({ conversation }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.createState')
+      const read = await creation.state(conversation)
+      if (!isChatPullRequestRefusal(read))
+        return {
+          ok: true,
+          result: { state: read.state && !grant.owner ? { ...read.state, gitRoot: null } : read.state },
+        }
+      return refusedChat(read, voice, 'pullRequests.createState') ?? { ok: true, result: { state: null } }
+    },
+    'pullRequests.draft': async ({ conversation, draftId }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.draft')
+      const drafted = await creation.draft(conversation, `client:${grant.clientId}`, draftId)
+      if (!isChatPullRequestRefusal(drafted)) return { ok: true, result: drafted }
+      return (
+        refusedChat(drafted, voice, 'pullRequests.draft') ??
+        voice.failed('unavailable', drafted.refused.message, 'pullRequests.draft')
+      )
+    },
+    'pullRequests.draftCancel': ({ conversation, draftId }, { grant }) => {
+      if (!options.pullRequestCreation) return unserved('pullRequests.draftCancel')
+      options.pullRequestCreation.cancelDraft(conversation, `client:${grant.clientId}`, draftId)
+      return { ok: true, result: {} }
+    },
+    'pullRequests.push': ({ conversation, commandId, pin }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.push')
+      return once(
+        keptId('pullRequests.push', grant, commandId),
+        async () => {
+          const pushed = await creation.push(conversation, pin)
+          if (!isChatPullRequestRefusal(pushed)) return { ok: true as const, result: pushed }
+          return (
+            refusedChat(pushed, voice, 'pullRequests.push') ??
+            voice.failed('unavailable', pushed.refused.message, 'pullRequests.push')
+          )
+        },
+        voice,
+        'pullRequests.push',
+      )
+    },
+    'pullRequests.create': ({ conversation, commandId, title, body, pin }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.create')
+      return once(
+        keptId('pullRequests.create', grant, commandId),
+        async () => {
+          const created = await creation.create(conversation, { title, body }, pin)
+          if (!isChatPullRequestRefusal(created)) return { ok: true as const, result: created }
+          return (
+            refusedChat(created, voice, 'pullRequests.create') ??
+            voice.failed('unavailable', created.refused.message, 'pullRequests.create')
+          )
+        },
+        voice,
+        'pullRequests.create',
+      )
+    },
     'pullRequests.noteToolCall': (call) => {
       if (!options.pullRequests) return unserved('pullRequests.noteToolCall')
       // Answered at once, like a note: what it records reports through
@@ -990,6 +2024,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     // ── Local servers ──────────────────────────────────────────────────────
 
+    'workspaces.list': async (_params, { voice }) =>
+      options.discovery
+        ? { ok: true, result: { workspaces: voice.redact(await options.discovery.workspaces()) } }
+        : unserved('workspaces.list'),
+    'cliRuntimes.list': async ({ cli }, { voice }) =>
+      options.discovery ? discovered(await options.discovery.runtimes(cli), voice) : unserved('cliRuntimes.list'),
+    'workspaces.checkout': async ({ workspaceId }, { voice }) =>
+      options.discovery
+        ? discovered(await options.discovery.checkout(workspaceId), voice)
+        : unserved('workspaces.checkout'),
+    'workspaces.extensions': async ({ workspaceId, cli }, { voice }) =>
+      options.discovery
+        ? discovered(await options.discovery.extensions(workspaceId, cli), voice)
+        : unserved('workspaces.extensions'),
+    'hosts.list': async (asked) =>
+      options.hosts ? { ok: true, result: await options.hosts.list(asked) } : unserved('hosts.list'),
     'localServers.list': async (target) =>
       options.localServers
         ? { ok: true, result: await options.localServers.list(target) }
@@ -1010,6 +2060,398 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.localServers
         ? { ok: true, result: await options.localServers.remove(server) }
         : unserved('localServers.remove'),
+
+    // ── Terminals ──────────────────────────────────────────────────────────
+    // An owner's only, and never a browser's. An owner's connection other
+    // than the app's own window is sent sessions projected: never a prompt a
+    // person typed or a launch's MCP secrets.
+
+    'terminal.list': (_params, { context }) =>
+      terminal('terminal.list', (terminals) => ({
+        sessions: context.ownWindow
+          ? terminals.list()
+          : terminals.list().map((session) => projectTerminalSession(session)),
+      })),
+    'terminal.status': ({ sessionId }, { context }) =>
+      terminal('terminal.status', (terminals) => terminals.status(sessionId, caller(context))),
+    'terminal.open': ({ commandId: _id, ...params }, { context }) =>
+      terminal('terminal.open', (terminals) => terminals.open(params, caller(context))),
+    'terminal.resume': ({ commandId: _id, ...params }, { context }) =>
+      terminal('terminal.resume', (terminals) => terminals.resume(params, caller(context))),
+    'terminal.write': (params, { grant }) =>
+      terminal('terminal.write', (terminals) => ({ written: terminals.write(params, grant.clientId) })),
+    'terminal.ack': ({ sessionId, units }, { context }) =>
+      terminal('terminal.ack', (terminals) => {
+        terminals.ack(sessionId, units, caller(context))
+        return {}
+      }),
+    'terminal.resize': ({ sessionId, cols, rows }) =>
+      terminal('terminal.resize', (terminals) => {
+        terminals.resize(sessionId, cols, rows)
+        return {}
+      }),
+    'terminal.setVisible': ({ sessionId, visible, freshPane }, { context }) =>
+      terminal('terminal.setVisible', (terminals) => {
+        terminals.setVisible(sessionId, visible, freshPane === true, caller(context))
+        return {}
+      }),
+    'terminal.suspend': ({ sessionId }) =>
+      terminal('terminal.suspend', (terminals) => {
+        terminals.suspend(sessionId)
+        return {}
+      }),
+    'terminal.close': ({ sessionId }) =>
+      terminal('terminal.close', (terminals) => {
+        terminals.close(sessionId)
+        return {}
+      }),
+    'terminal.setReapExempt': ({ sessionId, exempt }) =>
+      terminal('terminal.setReapExempt', (terminals) => {
+        terminals.setReapExempt(sessionId, exempt)
+        return {}
+      }),
+    'terminal.takeUndeliveredPrompts': () =>
+      terminal('terminal.takeUndeliveredPrompts', (terminals) => ({ prompts: terminals.takeUndeliveredPrompts() })),
+    'terminal.configure': (policy) =>
+      terminal('terminal.configure', (terminals) => {
+        terminals.configure(policy)
+        return {}
+      }),
+
+    // ── Agent CLIs and launch settings ─────────────────────────────────────
+
+    ...createStudioAgentSettingsHandlers({
+      ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+      ...(options.agentSettings ? { settings: options.agentSettings } : {}),
+      mayName,
+    }),
+    ...createStudioAgentSetupHandlers({ ...(options.agentSetup ? { setup: options.agentSetup } : {}), mayName }),
+
+    // ── Files on this machine, by path ─────────────────────────────────────
+
+    ...fileSystem.handlers,
+
+    // ── Git on this machine ────────────────────────────────────────────────
+
+    ...gitRouting.handlers,
+
+    // ── The worktrees its agents run in, and settled chats ─────────────────
+
+    ...worktreesHandlers,
+
+    // ── The desktop's own windows' workspace registry ──────────────────────
+
+    ...createStudioWorkspaceSyncHandlers({
+      ...(options.workspaceSync ? { sync: options.workspaceSync } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+      mayName: (folder, asking) => mayName(folder, asking),
+    }),
+
+    // ── What the Studio is extended with ───────────────────────────────────
+
+    ...extensionsRouting,
+
+    // ── Where the Studio publishes its agents' pages ───────────────────────
+
+    ...artifactsRouting,
+
+    // ── Who may reach the agents from this machine ─────────────────────────
+
+    ...accessRouting,
+    // ── The browsers paired with the web listener ──────────────────────────
+
+    ...webDevicesRouting,
+
+    // ── Who reaches this machine over the tailnet, and the machines it drives ──
+
+    ...tailnetRouting,
+    // ── Readiness ──────────────────────────────────────────────────────────
+
+    // What the machine has is a providers read; what waits names schedules
+    // (from their prompts) and watched pull requests, which are the chats'
+    // business, so a grant that cannot read chats is told none of it.
+    'environment.readiness': async (_params, { grant, voice }) => {
+      if (!options.readiness) return unserved('environment.readiness')
+      const read = await options.readiness()
+      const waiting = grant.owner || studioScopesGrant(grant.scopes, 'conversation:read') ? read.waiting : []
+      return { ok: true, result: voice.redact({ ...read, waiting }) }
+    },
+
+    // ── For the desktop that holds this Studio ─────────────────────────────
+
+    // Only the shell's own connection reaches here (the dispatch refuses
+    // every other with `shell` in the table).
+    'environment.windowTicket': async (params) => {
+      if (!options.environmentAccess) return unserved('environment.windowTicket')
+      try {
+        return { ok: true, result: await options.environmentAccess.windowTicket(params) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.work': () => {
+      if (!options.work) return unserved('environment.work')
+      return { ok: true, result: options.work() }
+    },
+    'environment.launchFiles': (params) => {
+      if (!options.terminalHost) return unserved('environment.launchFiles')
+      try {
+        return { ok: true, result: options.terminalHost.launchFiles(params) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.terminalProcesses': async (params) => {
+      if (!options.terminalHost) return unserved('environment.terminalProcesses')
+      return { ok: true, result: await options.terminalHost.processes(params) }
+    },
+    'environment.pluginCopy': async (params) => {
+      if (!options.terminalHost) return unserved('environment.pluginCopy')
+      try {
+        return { ok: true, result: await options.terminalHost.pluginCopy(params.enabledSkills) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.git': async (params) => {
+      if (!options.machine) return unserved('environment.git')
+      try {
+        return { ok: true, result: await options.machine.git(params) }
+      } catch (error) {
+        return refuse('invalid_params', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.home': () => {
+      if (!options.machine) return unserved('environment.home')
+      return { ok: true, result: options.machine.home() }
+    },
+    'environment.detectClis': async (params) => {
+      if (!options.machine) return unserved('environment.detectClis')
+      return {
+        ok: true,
+        result: { results: await options.machine.detectClis(params.requests, { force: params.force === true }) },
+      }
+    },
+    'environment.run': async (params) => {
+      if (!options.machine) return unserved('environment.run')
+      try {
+        return { ok: true, result: await options.machine.run(params) }
+      } catch (error) {
+        return refuse('invalid_params', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.launchTokens': (params) => {
+      if (!options.launchTokens) return unserved('environment.launchTokens')
+      return { ok: true, result: { held: options.launchTokens(params) } }
+    },
+    'environment.revokeWindow': async ({ windowKey }) => {
+      if (!options.environmentAccess) return unserved('environment.revokeWindow')
+      options.environmentAccess.revokeWindow(windowKey)
+      return { ok: true, result: { revoked: true } }
+    },
+    // Answered once per command id: a hand-over sent again is the same one.
+    'environment.adopt': ({ commandId, migrationId, records, files }, { grant, voice }) => {
+      const adoption = options.adoption
+      if (!adoption) return unserved('environment.adopt')
+      const id = keptId('environment.adopt', grant, commandId)
+      return once(
+        id,
+        async () => {
+          // The pictures and files the held messages carry, staged by this
+          // connection, by the digest each record names them by.
+          const staged = new Map<string, { bytes: Buffer; mediaType: string; name?: string }>()
+          if (files?.length) {
+            const spent = uploads.spend(
+              grant.clientId,
+              files.map((file) => file.uploadId),
+              id,
+              ['picture', 'attachment'],
+            )
+            // A file that did not arrive is the hand-over's to send again.
+            if (!spent.ok) return refuse('invalid_params', spent.message)
+            files.forEach((file, index) => {
+              const upload = spent.pictures[index]
+              staged.set(file.digest, {
+                bytes: upload.bytes,
+                mediaType: upload.mediaType,
+                ...(upload.name === undefined ? {} : { name: upload.name }),
+              })
+            })
+          }
+          try {
+            return { ok: true as const, result: await adoption.adopt({ migrationId, records, files: staged }) }
+          } finally {
+            // Kept or not, their bytes are the held messages' copies now, or
+            // sent again with the next attempt.
+            if (files?.length) uploads.settle(grant.clientId, id, true)
+          }
+        },
+        voice,
+        'environment.adopt',
+      )
+    },
+    // A CLI's login here: the provider names a flow this server knows, never a command line.
+    'providers.signInStart': ({ commandId, providerId }, { grant, voice }) =>
+      signInOnce('providers.signInStart', grant, commandId, voice, async (table) => {
+        const cli = cliForConversationProvider(providerId)
+        return cli ? table.start(cli) : { ok: false as const, message: 'This chat has no CLI to sign in.' }
+      }),
+    'providers.signInPaste': ({ commandId, id, code }, { grant, voice }) =>
+      signInOnce('providers.signInPaste', grant, commandId, voice, async (table) => table.paste(id, code)),
+    'providers.signInWait': ({ commandId, id }, { grant, voice }) =>
+      signInOnce('providers.signInWait', grant, commandId, voice, (table) => table.wait(id)),
+    'providers.signInCancel': ({ commandId, id }, { grant, voice }) =>
+      signInOnce('providers.signInCancel', grant, commandId, voice, async (table) => {
+        table.cancel(id)
+        return { ok: true }
+      }),
+    ...createStudioAgentSkillsHandlers({ ...(options.agentSkills ? { skills: options.agentSkills } : {}), mayName }),
+
+    // ── Modules ────────────────────────────────────────────────────────────
+    // A module's declared methods. A read is answered each time; an operate
+    // once per command id, its handler told the id under the client's
+    // namespace, so a handler that sends to a chat is answered from the
+    // chat's receipt on a retry rather than sending twice.
+
+    'module.read': (params, { grant }) => moduleCall('module.read', params, grant, undefined),
+    'module.operate': ({ commandId, ...params }, { grant, voice }) =>
+      once(
+        keptId('module.operate', grant, commandId),
+        () => moduleCall('module.operate', params, grant, runtimeId(grant, commandId)),
+        voice,
+        'module.operate',
+        operateRefusedBefore,
+      ),
+
+    // ── What the Studio keeps beside its chats ───────────────────────────────
+
+    ...createStudioChatStoresHandlers({
+      ...(options.chatStores ? { stores: options.chatStores } : {}),
+      commandIdOf: runtimeId,
+      kept: (method, { grant, voice }, commandId, work) =>
+        once(
+          keptId(method, grant, commandId),
+          async () => ({ ok: true as const, result: await work() }),
+          voice,
+          method,
+        ),
+    }),
+
+    // What runs here: listed to any client with modules:read, changed only by
+    // an owner, each change once per command id.
+    'module.list': () => {
+      const modules = options.modules
+      if (!modules) return unserved('module.list')
+      return { ok: true, result: { modules: modules.lifecycle()?.list() ?? [] } }
+    },
+    'module.setEnabled': ({ moduleId, enabled, commandId }, context) =>
+      lifecycleCommand('module.setEnabled', context, commandId, (lifecycle) => lifecycle.setEnabled(moduleId, enabled)),
+    'module.install': ({ path, commandId }, context) =>
+      lifecycleCommand('module.install', context, commandId, (lifecycle) => lifecycle.install(path)),
+    'module.setTrust': ({ moduleId, trusted, commandId }, context) =>
+      lifecycleCommand('module.setTrust', context, commandId, (lifecycle) => lifecycle.setTrust(moduleId, trusted)),
+    'module.uninstall': ({ moduleId, commandId }, context) =>
+      lifecycleCommand('module.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
+    // The installed extensions and their window halves, read now; what a
+    // window sets for them and the registry it resolved, kept here.
+    'module.installed': async (_params, asking) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('module.installed')
+      const installed = await lifecycle.installed()
+      // Where a folder is on this disk is told only to a connection that may
+      // name any path; anyone else is told the folder by its name.
+      return { ok: true, result: namesAnyPath(asking) ? installed : withFolderNamesOnly(installed) }
+    },
+    'module.rendererEntries': async () => {
+      const lifecycle = options.modules?.lifecycle()
+      return lifecycle ? { ok: true, result: await lifecycle.rendererEntries() } : unserved('module.rendererEntries')
+    },
+    'module.setAppState': ({ state, commandId }, context) =>
+      lifecycleCommand('module.setAppState', context, commandId, async (lifecycle) => {
+        lifecycle.setAppState(state)
+        return {}
+      }),
+    'module.reportRegistry': ({ snapshot, commandId }, context) =>
+      lifecycleCommand('module.reportRegistry', context, commandId, async (lifecycle) =>
+        lifecycle.reportRegistry(snapshot),
+      ),
+
+    // The host's services a module's window half calls, under its own id;
+    // the service checks the module's permission. A write is carried out
+    // once per command id.
+    'moduleBacklog.location': ({ moduleId, workspaceId }) =>
+      moduleService('moduleBacklog.location', moduleId, 'backlog', BACKLOG_MISSING, (backlog) =>
+        backlog.getLocation(moduleId, workspaceId),
+      ),
+    'moduleBacklog.create': (params, context) =>
+      backlogWrite('moduleBacklog.create', params, context, (backlog) =>
+        backlog.create(params.moduleId, params.workspaceId, params.input),
+      ),
+    'moduleBacklog.updateStatus': (params, context) =>
+      backlogWrite('moduleBacklog.updateStatus', params, context, (backlog) =>
+        backlog.updateStatus(params.moduleId, params.workspaceId, params.itemId, params.status),
+      ),
+    'moduleBacklog.updateTriage': (params, context) =>
+      backlogWrite('moduleBacklog.updateTriage', params, context, (backlog) =>
+        backlog.updateTriage(params.moduleId, params.workspaceId, params.itemId, params.triage),
+      ),
+    'moduleBacklog.addLink': (params, context) =>
+      backlogWrite('moduleBacklog.addLink', params, context, (backlog) =>
+        backlog.addLink(params.moduleId, params.workspaceId, params.itemId, params.link),
+      ),
+    'moduleBacklog.updateModuleMetadata': (params, context) =>
+      backlogWrite('moduleBacklog.updateModuleMetadata', params, context, (backlog) =>
+        backlog.updateModuleMetadata(params.moduleId, params.workspaceId, params.itemId, params.value),
+      ),
+    'moduleUsage.query': ({ moduleId, query }) =>
+      moduleService('moduleUsage.query', moduleId, 'usage', USAGE_MISSING, (usage) => usage.query(moduleId, query)),
+    // ── Scheduled agents ───────────────────────────────────────────────────
+
+    ...createStudioSchedulesHandlers({
+      ...(options.schedules ? { schedules: options.schedules } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+      mayName: (folder, asking) => mayName(folder, asking),
+    }),
+
+    // ── Backlogs, shares, pull request reads ───────────────────────────────
+
+    ...createStudioPhoneReadsHandlers({
+      ...(options.phoneReads ? { reads: options.phoneReads } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+      mayName: (folder, asking) => mayName(folder, asking),
+    }),
+
+    // ── A chat's record beyond its rest ────────────────────────────────────
+    // By its workspace, as a settle; each change once per command id.
+
+    ...createStudioChatLifecycleHandlers({
+      ...(options.chatLifecycle ? { lifecycle: options.chatLifecycle } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
+
+    // ── Canvas boards ──────────────────────────────────────────────────────
+
+    ...createStudioCanvasHandlers({
+      ...(options.canvas ? { canvas: options.canvas } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
+
+    // ── Updates ────────────────────────────────────────────────────────────
+    // Served on every connection, and on one kept open only for them (an
+    // incompatible client's), so their shapes never change.
+
+    'update.status': () => ({ ok: true, result: updateStatus() }),
+    'update.start': async (params) => {
+      const status = updates.status()
+      if (status.method !== 'self') return refuse('update_unavailable', status.manual ?? MANUAL_UPDATE_WORDS)
+      const started = await updates.start({
+        commandId: params.commandId,
+        ...(params.targetVersion === undefined ? {} : { targetVersion: params.targetVersion }),
+      })
+      return started.ok
+        ? { ok: true, result: { accepted: true, method: 'self', targetVersion: started.targetVersion } }
+        : refuse('update_unavailable', started.message)
+    },
   }
 
   /** One method's handler, called with that method's params: the table pairs them, so no cast is needed. */
@@ -1023,8 +2465,43 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   }
 
   return {
-    connectionClosed: (connectionId) => uploads.release(connectionId),
-    close: () => uploads.close(),
+    updateStatus,
+    connectionClosed: (connectionId, slot) => {
+      uploads.release(connectionId)
+      // An export is read page by page on one connection. With it gone, its
+      // pages wait only for the reconnect that asks for the next one again.
+      let orphaned = false
+      for (const held of exportsHeld.values())
+        if (held.connectionId === connectionId && held.closedAt === undefined) {
+          held.closedAt = now()
+          orphaned = true
+        }
+      if (orphaned) {
+        if (exportSweep) clearTimeout(exportSweep)
+        exportSweep = setTimeout(() => {
+          exportSweep = null
+          letGoOfStaleExports(now())
+        }, EXPORT_HELD_AFTER_CLOSE_MS)
+        exportSweep.unref?.()
+      }
+      if (slot !== undefined) options.fileSystem?.releaseSlot(slot)
+      options.canvas?.connectionClosed(connectionId)
+    },
+    watchPath: (params, asking, listener) => fileSystem.watch(params, asking, listener),
+    followCheckout: (checkoutPath, asking, listener) => gitRouting.followCheckout(checkoutPath, asking, listener),
+    skillSourceUpdatesFor: (check, asking) => skillSourceUpdatesShown(check, (folder) => mayName(folder, asking)),
+    git: options.git ?? null,
+    worktrees: options.worktrees ?? null,
+    workspaceSync: options.workspaceSync ?? null,
+    hosts: options.hosts ?? null,
+    onCliPathsChanged: options.machine ? (listener) => options.machine!.onPathsChanged(listener) : null,
+    close: () => {
+      if (exportSweep) clearTimeout(exportSweep)
+      exportSweep = null
+      exportsHeld.clear()
+      uploads.close()
+      options.canvas?.close()
+    },
     async handle(grant, method, params, context = NO_CONTEXT) {
       const spec = STUDIO_METHODS[method]
       const voice = context.ownWindow ? windowVoice : clientVoice
@@ -1038,7 +2515,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // as the connection refuses it before it ever reaches this router.
       if (!decision.ok && decision.reason === 'unknown_method')
         return refuse('unknown_method', `No method "${method}".`)
-      if (!decision.ok) {
+      if (decision.ok && refusedToBrowser(spec, context.browser))
+        answer = refuse('owner_required', BROWSER_NO_TERMINALS)
+      // The shell's own: an owner's other clients are refused too.
+      else if (decision.ok && spec.shell && context.shell !== true) answer = refuse('owner_required', SHELL_ONLY)
+      // Studio's own desktop windows': an owner's web tab and app are refused too.
+      else if (decision.ok && refusedOutsideWindow(spec, context)) answer = refuse('owner_required', WINDOW_ONLY)
+      else if (!decision.ok) {
         answer =
           decision.reason === 'permission_required'
             ? refuse(
@@ -1057,6 +2540,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         const known = id === undefined ? undefined : fingerprints.get(id)
         if (!parsed.ok) answer = refuse(parsed.code, parsed.message)
         else if (!grant.owner && namesFolder(parsed.params)) answer = refuse('owner_required', FOLDER_OWNER_ONLY)
+        else if (!grant.owner && namesCliCommand(parsed.params)) answer = refuse('owner_required', COMMAND_OWNER_ONLY)
         else if (known !== undefined && known !== fingerprint)
           answer = refuse('command_id_conflict', STABLE_MESSAGES.command_id_conflict)
         else {
@@ -1087,25 +2571,85 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   }
 }
 
-/** Whether a connection may name this folder: any, unless it is held to the folders Studio knows. */
-async function folderAllowed(chat: StudioChatBackend, context: StudioRequestContext, path: string): Promise<boolean> {
-  if (!context.knownFoldersOnly) return true
+type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
+
+/**
+ * The installed extensions with each unreadable folder named, not placed: its
+ * `path` (the folder, or the `manifest.json` in it) becomes the folder's name,
+ * and an issue's words that still name a place on this disk (a read error's
+ * `open '/…/manifest.json'`) say the folder's name in its stead, or a plain
+ * sentence when some other path remains.
+ */
+function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyModuleListResult {
+  return {
+    ...installed,
+    rejected: installed.rejected.map((entry) => {
+      const segments = entry.path.split(/[\\/]/u).filter(Boolean)
+      if (segments.length > 1 && segments.at(-1) === 'manifest.json') segments.pop()
+      const name = segments.at(-1) ?? ''
+      const folder = name ? entry.path.slice(0, entry.path.lastIndexOf(name) + name.length) : ''
+      return {
+        path: name,
+        issues: entry.issues.map((issue) => ({
+          ...issue,
+          message: sanitizeEntryMessage(
+            folder ? issue.message.replaceAll(folder, name) : issue.message,
+            'Studio could not read this folder.',
+          ),
+        })),
+      }
+    }),
+  }
+}
+
+/** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */
+function namesAnyPath(asking: PathAsker): boolean {
+  return asking.grant.owner && !asking.context.knownFoldersOnly
+}
+
+/** Whether a connection may name this path: any, if `namesAnyPath`; otherwise only inside the folders Studio knows. */
+async function folderAllowed(chat: StudioChatBackend, asking: PathAsker, path: string): Promise<boolean> {
+  if (namesAnyPath(asking)) return true
   return chat.isKnownFolder ? chat.isKnownFolder(path).catch(() => false) : false
 }
 
-/** Whether parsed params name a conversation by its folder, which only an owner may. */
+/** As `folderAllowed`, for a path a send names: a relative one is the chat's own, unless it climbs out. */
+async function pathAllowed(chat: StudioChatBackend, asking: PathAsker, path: string): Promise<boolean> {
+  const absolute = path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/u.test(path)
+  if (absolute) return folderAllowed(chat, asking, path)
+  return namesAnyPath(asking) || !path.split(/[\\/]/u).includes('..')
+}
+
+/**
+ * Whether parsed params name a CLI's own program (`cliRuntimes[cli].command`,
+ * or a detection's or an install's `runtime.command`), which only an owner may.
+ */
+function namesCliCommand(params: unknown): boolean {
+  const runtime = (params as { runtime?: unknown } | null)?.runtime
+  if (runtime !== null && typeof runtime === 'object' && 'command' in runtime) return true
+  const runtimes = (params as { cliRuntimes?: unknown } | null)?.cliRuntimes
+  if (runtimes === null || typeof runtimes !== 'object') return false
+  return Object.values(runtimes as Record<string, unknown>).some(
+    (override) => override !== null && typeof override === 'object' && 'command' in override,
+  )
+}
+
+/** Whether parsed params name a conversation or a workspace by its folder, which only an owner may. */
 function namesFolder(params: unknown): boolean {
-  const key = (params as { key?: { workspaceRoot?: unknown } } | null)?.key
-  return key?.workspaceRoot !== undefined
+  const named = params as { key?: { workspaceRoot?: unknown }; workspaceRoot?: unknown } | null
+  return named?.key?.workspaceRoot !== undefined || named?.workspaceRoot !== undefined
 }
 
 // What a request names, for the audit: its conversation and command id when
-// they are where the protocol puts them. Never anything else it carries.
+// they are where the protocol puts them, and a module call's module and
+// method. Never anything else it carries.
 function auditTargets(value: unknown): {
   key?: { workspaceId: string; agentId: string }
   commandId?: string
   workspaceId?: string
   toolset?: string
+  moduleId?: string
+  moduleMethod?: string
 } {
   if (value === null || typeof value !== 'object') return {}
   const params = value as Record<string, unknown>
@@ -1116,10 +2660,14 @@ function auditTargets(value: unknown): {
   const commandId = text(params.commandId)
   const created = text(params.workspaceId)
   const toolset = text(params.toolset)
+  const moduleId = text(params.moduleId)
+  const moduleMethod = moduleId ? text(params.method) : undefined
   return {
     ...(workspaceId && agentId ? { key: { workspaceId, agentId } } : {}),
     ...(commandId ? { commandId } : {}),
     ...(created ? { workspaceId: created } : {}),
     ...(toolset ? { toolset } : {}),
+    ...(moduleId ? { moduleId } : {}),
+    ...(moduleMethod ? { moduleMethod } : {}),
   }
 }

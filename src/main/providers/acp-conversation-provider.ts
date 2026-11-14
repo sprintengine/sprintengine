@@ -10,19 +10,7 @@ import {
 import { terminateCliChild } from './cli-child-process'
 import { cliProbeEnv } from '../cli-probe-env'
 import { mergeJsonEnvValue } from '../json-env-value'
-import {
-  CONVERSATION_IDENTITY_ENV_KEYS,
-  cliHostSpawn,
-  hostMachineName,
-  localLaunchToken,
-  mcpServersOnWsl,
-  prepareWslCliTarget,
-  spawnCliHostChild,
-  wslTargetForHost,
-  type WslChannelToken,
-  type WslCliChild,
-  type WslCliTarget,
-} from './cli-host-child'
+import { cliHostSpawn, localLaunchToken, spawnCliHostChild, type CliChannelToken } from './cli-host-child'
 import {
   isStudioGatewayName,
   studioGatewayForChat,
@@ -30,9 +18,6 @@ import {
   type StudioMcpServerResolver,
 } from './studio-gateway-entry'
 import { inferConversationToolKind } from '../../shared/conversation/toolKind'
-import { isWslHostId, type ExecutionHostId } from '../../shared/execution-host'
-import { AGENT_IDENTITY_ENV_KEYS, MCP_CHANNEL_TOKEN_ENV } from '../../shared/studio-env'
-import { toWslPath, wslPathInRootSpelling } from '../../shared/host-paths'
 import { publishConversationCommands } from '../conversation-commands/registry'
 import { acpConversationCommands } from '../conversation-commands/acp'
 import { leadingCommandFor } from '../conversation-commands/leading-command'
@@ -738,9 +723,7 @@ type Options = {
   buildEnv?: (input: MockAdapterSessionInput) => Promise<NodeJS.ProcessEnv>
   startupTimeoutMs?: number
   cancelGraceMs?: number
-  // Readies a WSL machine for a chat whose CLI runs there; tests stand in.
-  prepareWslTarget?: (hostId: ExecutionHostId) => Promise<WslCliTarget>
-  // Starts the child; tests stand in to see what a WSL chat would run.
+  // Starts the child; tests stand in to see what a chat would run.
   spawnChild?: typeof spawn
   // The app's MCP gateway on the machine the chat's CLI runs on. Null leaves
   // it out; the chat runs without Studio's tools rather than not at all.
@@ -778,37 +761,9 @@ async function detectAcpCommand(profile: AcpProfile, cliRuntimes?: ConversationC
   const runtime = cliRuntimes?.[profile.cli]
   const found = await resolveCliExecutable(profile.cli, runtime)
   if (!found.path) {
-    if (isWslHostId(runtime?.hostId))
-      throw new Error(
-        `${profile.displayName} CLI was not found on ${hostMachineName(runtime.hostId)}. Install it in that distribution (or set its command for that machine in Settings) to chat there.` +
-          (found.error ? ` ${found.error}` : ''),
-      )
     throw new Error(`${profile.displayName} CLI was not found. Install it or configure its command in Settings.`)
   }
   return found.path
-}
-
-/**
- * What an agent in WSL is started with of the chat's environment: the
- * variables its permission preset sets, and nothing else of this PC's. Its
- * login, PATH and configuration are the distribution's own.
- */
-export function acpWslChild(
-  target: WslCliTarget,
-  profile: AcpProfile,
-  preset: ConversationPermissionPreset = 'none',
-  mode?: string,
-): WslCliChild {
-  return { ...target, forwardEnv: Object.keys(acpLaunchEnv(profile, preset, mode)) }
-}
-
-/**
- * A path an agent sent the client, as this machine opens it. An agent in WSL
- * names files the Linux way (`/home/dev/repo/a.ts`, `/mnt/c/…`); the
- * workspace is opened through its Windows spelling, which keeps its share name.
- */
-export function acpClientPath(path: string, root: string, wsl: WslCliTarget | null): string {
-  return wsl ? wslPathInRootSpelling(path, root, wsl.distro) : path
 }
 
 // The CLI could not be started from where it was found: look it up again on
@@ -821,19 +776,15 @@ function forgetAcpCommand(profile: AcpProfile): void {
  * The gateway token for one ACP child, bound to its chat. An ACP agent's
  * environment names no conversation (acpEnvironment), so the token is issued
  * here from the session rather than from that environment, and the gateway
- * entry the agent is told carries its value. On a WSL machine it is also the
- * channel token the helper opens the bridge's channel with, issued as before
- * to a child whose session names no chat.
+ * entry the agent is told carries its value.
  */
 function acpLaunchToken(
   input: Pick<MockAdapterSessionInput, 'workspaceId' | 'agentId'>,
   cli: string,
-  wsl: WslCliTarget | null,
-): WslChannelToken | null {
+): CliChannelToken | null {
   const workspaceId = input.workspaceId?.trim()
   const agentId = input.agentId?.trim()
   const identity = workspaceId && agentId ? { workspaceId, agentId, cliId: cli } : null
-  if (wsl) return wsl.issueChannelToken?.(identity) ?? null
   return localLaunchToken(identity)
 }
 
@@ -860,28 +811,15 @@ export async function probeAcpConversationCommands(
     detect?: () => Promise<string>
     buildEnv?: () => Promise<NodeJS.ProcessEnv>
     timeoutMs?: number
-    prepareWslTarget?: (hostId: ExecutionHostId) => Promise<WslCliTarget>
     spawnChild?: typeof spawn
   } = {},
 ): Promise<ConversationCommand[] | null> {
-  // On a WSL machine the handshake is the distribution's CLI's, asked there.
-  const wsl = await wslTargetForHost(
-    input.cliRuntimes?.[profile.cli]?.hostId,
-    options.prepareWslTarget ?? prepareWslCliTarget,
-  )
   const command = await (options.detect ?? (() => detectAcpCommand(profile, input.cliRuntimes)))()
   // Nobody asked for this start, so it runs as a check does (cli-probe-env.ts).
   const probeEnv = cliProbeEnv(profile.cli)
   const env = { ...(await (options.buildEnv ?? acpEnvironment)()), ...probeEnv }
   const sdk = await import('@agentclientprotocol/sdk/unstable')
-  const wslChild = wsl ? acpWslChild(wsl, profile) : null
-  const target = cliHostSpawn({
-    command,
-    args: profile.argv,
-    cwd: input.cwd,
-    env,
-    wsl: wslChild ? { ...wslChild, forwardEnv: [...wslChild.forwardEnv, ...Object.keys(probeEnv)] } : null,
-  })
+  const target = cliHostSpawn({ command, args: profile.argv, cwd: input.cwd, env })
   const child = (options.spawnChild ?? spawn)(target.file, target.args, target.options)
   child.stderr.on('data', () => undefined)
   child.stdin.on('error', () => undefined)
@@ -1186,15 +1124,17 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
   // reloaded in another mode, or switched from inside it, is put back.
   const applySessionMode = async (state: State, turnMode: MockAdapterTurnInput['mode']) => {
     const presetMode = acpPresetSessionMode(profile, state.input.permissionPreset, state.input.permissionMode)
-    if (!turnMode && !state.defaultMode && !presetMode) return
     const desired = !turnMode || turnMode === 'default' ? (presetMode ?? state.defaultMode) : turnMode
+    // No mode to ask for (an agent that offers no modes has no current one
+    // either): the turn runs in whatever mode the agent is in.
+    if (!desired) return
     // Worded as a refusal of the preset, so the runtime can start the chat
     // again with no preset rather than leave it unable to answer.
-    if (desired && desired === presetMode && !state.modes.includes(desired))
+    if (desired === presetMode && !state.modes.includes(desired))
       throw new Error(
         `The ${desired} session mode this permission preset runs in is not supported by this ${profile.displayName} build.`,
       )
-    if (!desired || !state.modes.includes(desired)) throw new Error('This mode is unavailable from the ACP agent.')
+    if (!state.modes.includes(desired)) throw new Error('This mode is unavailable from the ACP agent.')
     if (state.modeConfigId)
       await state.connection!.setSessionConfigOption({
         sessionId: state.nativeId!,
@@ -1209,39 +1149,28 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
     if (state.connection) return
     if (state.starting) return state.starting
     state.starting = (async () => {
-      // A chat on a WSL machine runs that machine's CLI, with the login and
-      // configuration under its Linux home; everything below is the same.
-      const wsl = await wslTargetForHost(
-        state.input.cliRuntimes?.[profile.cli]?.hostId,
-        options.prepareWslTarget ?? prepareWslCliTarget,
-      )
-      if (state.closed) throw new Error('Conversation was stopped during startup.')
       const command = await (options.detect ?? ((input) => detectAcpCommand(profile, input.cliRuntimes)))(state.input)
       const env = await environment(state.input)
       // A JSON document the preset sets (OpenCode's config content) joins the
-      // person's own rather than replacing it. In WSL the chat is handed the
-      // preset's variables alone, nothing of this PC's (acpWslChild).
+      // person's own rather than replacing it.
       for (const [key, value] of Object.entries(
         acpLaunchEnv(profile, state.input.permissionPreset, state.input.permissionMode),
       ))
-        env[key] = wsl ? value : mergeJsonEnvValue(env[key], value)
-      const hostId = state.input.cliRuntimes?.[profile.cli]?.hostId
-      const gateway = await options.resolveStudioMcpServer?.({ ...(hostId ? { hostId } : {}) }).catch(() => null)
+        env[key] = mergeJsonEnvValue(env[key], value)
+      const gateway = await options.resolveStudioMcpServer?.().catch(() => null)
       if (state.closed) throw new Error('Conversation was stopped during startup.')
       const sdk = await import('@agentclientprotocol/sdk/unstable')
       if (state.closed) throw new Error('Conversation was stopped during startup.')
-      // The child is issued its own gateway token, bound to this chat, and
-      // taken back when it ends: on stdin in WSL, where it is also the channel
-      // token, and in its environment here. The gateway entry the session is
-      // opened with carries the same value (openSession).
-      const launch = acpLaunchToken(state.input, profile.cli, wsl)
+      // The child is issued its own gateway token, bound to this chat, in its
+      // environment, and taken back when it ends. The gateway entry the
+      // session is opened with carries the same value (openSession).
+      const launch = acpLaunchToken(state.input, profile.cli)
       const child = spawnCliHostChild(
         {
           command,
           args: acpLaunchArgv(profile, state.input.permissionPreset, state.input.permissionMode),
           cwd: state.input.workspaceRoot ?? '',
           env,
-          wsl: wsl ? acpWslChild(wsl, profile, state.input.permissionPreset, state.input.permissionMode) : null,
           launch,
         },
         { spawn: options.spawnChild ?? spawn },
@@ -1312,10 +1241,7 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
           },
           readTextFile: async (params) => {
             if (!state.turn || params.sessionId !== state.nativeId) throw new Error('No active conversation turn.')
-            const path = await confinedAcpPath(
-              state.input.workspaceRoot!,
-              acpClientPath(params.path, state.input.workspaceRoot!, wsl),
-            )
+            const path = await confinedAcpPath(state.input.workspaceRoot!, params.path)
             const file = await openConfinedExistingFile(state.input.workspaceRoot!, path)
             try {
               if ((await file.stat()).size > 2 * 1024 * 1024)
@@ -1340,8 +1266,7 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
               throw new Error('This conversation mode is read-only.')
             if (Buffer.byteLength(params.content) > 2 * 1024 * 1024)
               throw new Error('File exceeds the conversation write limit.')
-            const requested = acpClientPath(params.path, state.input.workspaceRoot!, wsl)
-            const path = await confinedAcpPath(state.input.workspaceRoot!, requested, true)
+            const path = await confinedAcpPath(state.input.workspaceRoot!, params.path, true)
             // Creating through an unanchored parent path can escape after a
             // directory swap, even with O_NOFOLLOW. Native CLI tools may create
             // files under their own policy; this callback edits existing files.
@@ -1382,7 +1307,7 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
             })
             if (decision.outcome.outcome !== 'selected') throw new Error('File write was not approved.')
             await state.input.onBeforeTool?.('Write')
-            await confinedAcpPath(state.input.workspaceRoot!, requested, true)
+            await confinedAcpPath(state.input.workspaceRoot!, params.path, true)
             const file = await openExisting('write')
             try {
               await file.truncate(0)
@@ -1447,14 +1372,8 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
             : null,
           state.input.mcpServers ?? [],
         )
-        const mcpServers = acpMcpServers(
-          wsl ? mcpServersOnWsl(servers) : servers,
-          state.mcpCapabilities,
-          profile.displayName,
-          { wsl: wsl !== null },
-        )
-        // The folder as the agent names it: the Linux spelling in WSL.
-        const cwd = wsl ? toWslPath(state.input.workspaceRoot!) : state.input.workspaceRoot!
+        const mcpServers = acpMcpServers(servers, state.mcpCapabilities, profile.displayName)
+        const cwd = state.input.workspaceRoot!
         state.opened = { cwd, mcpServers }
         const fresh = () => connection.newSession({ cwd, mcpServers })
         let session: Awaited<ReturnType<typeof fresh>> | Awaited<ReturnType<AcpConnection['loadSession']>>
@@ -1544,7 +1463,6 @@ export function createAcpConversationProvider(profile: AcpProfile, options: Opti
   return {
     id: profile.id,
     displayName: profile.displayName,
-    executionHostCli: profile.cli,
     capabilities: baseCapabilities(profile),
     sessions: 'stateful',
     acceptsMcpServers: true,
@@ -1929,13 +1847,6 @@ function isMissingSessionError(error: unknown): boolean {
   )
 }
 
-// What an agent in WSL holds for itself and hands on to the servers it starts.
-const WSL_CHILD_OWNED_ENV: ReadonlySet<string> = new Set([
-  MCP_CHANNEL_TOKEN_ENV,
-  ...AGENT_IDENTITY_ENV_KEYS,
-  ...CONVERSATION_IDENTITY_ENV_KEYS,
-])
-
 /** An MCP server this agent cannot connect to; see acpMcpServers. */
 class AcpMcpServerUnsupportedError extends Error {}
 
@@ -1966,23 +1877,15 @@ async function selectModel(agent: string, modelId: string, write: () => Promise<
  * environment explicitly, so the variables a server's entry names
  * (`envVarNames`) are read from this app's own environment here, as is an
  * HTTP server's bearer token.
- *
- * Not for an agent in WSL, though, where the gateway's channel token and the
- * chat's identity are the child's own (issued to it at spawn, carried in by
- * `forwardEnv`) and inherited by what it starts: a value this app's process
- * happens to hold would only override them with a stale or foreign one.
  */
 export function acpMcpServers(
   servers: readonly ConversationMcpServer[],
   capabilities: McpCapabilities | undefined,
   agentName: string,
-  options: { wsl?: boolean } = {},
 ): McpServer[] {
-  const hostValue = (name: string): string | undefined =>
-    options.wsl && WSL_CHILD_OWNED_ENV.has(name) ? undefined : process.env[name]
   const fromEnv = (names: readonly string[] | undefined) =>
     (names ?? []).flatMap((name) => {
-      const value = hostValue(name)
+      const value = process.env[name]
       return value ? [{ name, value }] : []
     })
   return servers.map((server): McpServer => {
@@ -2003,7 +1906,7 @@ export function acpMcpServers(
       )
     }
     const headers = Object.entries(server.headers ?? {}).map(([name, value]) => ({ name, value }))
-    const token = server.envVarNames?.[0] ? hostValue(server.envVarNames[0]) : undefined
+    const token = server.envVarNames?.[0] ? process.env[server.envVarNames[0]] : undefined
     if (token && !headers.some((header) => header.name.toLowerCase() === 'authorization'))
       headers.push({ name: 'Authorization', value: `Bearer ${token}` })
     return { type: server.transport, name: server.id, url: server.url ?? '', headers }

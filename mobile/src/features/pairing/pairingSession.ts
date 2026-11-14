@@ -19,9 +19,7 @@ export function createMobileSessionFromTailnetPairing(input: {
     lastSeenAt: input.pairedAt,
     status: "online",
     tailnetScopes: [...input.completion.scopes],
-    // Only what the gateway said: a version-1 Studio declares nothing, and the
-    // absence must keep reading as "not declared", not as version 0.
+    // Only what the gateway said: an absence keeps reading as "not declared", not as version 0.
     ...(input.completion.transport.transportVersion !== null ? { tailnetTransportVersion: input.completion.transport.transportVersion } : {}),
-    ...(input.completion.transport.capabilities !== null ? { tailnetCapabilities: [...input.completion.transport.capabilities] } : {}),
   };
 }

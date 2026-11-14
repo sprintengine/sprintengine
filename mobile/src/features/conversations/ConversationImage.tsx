@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  conversationImageProblemText,
-  type ConversationImageProblem,
-  type ConversationImageSource,
-} from "../../api/conversationImages";
-import type { ConversationApi } from "../../api/tailnetConversations";
-import { declaresConversationImages, declaresMessageImages } from "../../api/tailnetTransport";
-import type { MobileSession } from "../../api/types";
+import type {
+  ConversationApi,
+  ConversationImageProblem,
+  ConversationPicture,
+} from "../../api/desktopConversations";
+import type { PhoneChatOffers } from "../../api/chatOffers";
 import { IconButton } from "../../components/IconButton";
 import { SkeletonBlock } from "../../components/Skeleton";
 import { CloseIcon, iconSize } from "../../components/glyphs";
@@ -18,69 +16,109 @@ import { useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, typography, type Theme } from "../../theme/tokens";
 import { fitPicture, type ToolPicture } from "./conversationImageLogic";
 
-// A chat's pictures as the transcript draws them: fetched from the paired
-// desktop, sized to their own proportions, and opened full screen on a tap.
+// A chat's pictures as the transcript draws them: read once from the paired
+// desktop into a file in the phone's cache (`conversation.picture`), sized to
+// their own proportions, and opened full screen on a tap.
+
+/** What React Native's `<Image source>` takes: a file in the phone's cache, or the phone's own copy. */
+export type PictureSource = { uri: string };
 
 /** One chat's pictures, by the tool call that made or read each. */
-export type ChatImages = {
-  source(toolUseId: string): ConversationImageSource;
-  problem(toolUseId: string): Promise<ConversationImageProblem>;
-};
+export type ChatImages = { load(toolUseId: string): Promise<ConversationPicture> };
 
 /**
- * The chat's pictures, or null when there are none to fetch: the desktop does
- * not declare `conversation-images` (an older Studio has no route for them),
- * or there is no desktop to ask. Null draws no picture and no placeholder —
- * the steps read as they did before.
+ * The chat's pictures, or null when there are none to read: its desktop's
+ * Studio does not serve them to this pairing (`stepPictures`), or there is no
+ * desktop to ask. Null draws no picture and no placeholder.
  */
 export function useChatImages(
-  session: MobileSession | undefined,
+  offers: Pick<PhoneChatOffers, "stepPictures">,
   api: ConversationApi | null | undefined,
   key: { workspaceId: string; agentId: string },
 ): ChatImages | null {
-  const declared = !!session && declaresConversationImages(session);
+  const served = offers.stepPictures;
   const { workspaceId, agentId } = key;
   return useMemo(
-    () =>
-      declared && api
-        ? {
-            source: (toolUseId) => api.imageSource({ workspaceId, agentId, toolUseId }),
-            problem: (toolUseId) => api.imageProblem({ workspaceId, agentId, toolUseId }),
-          }
-        : null,
-    [declared, api, workspaceId, agentId],
+    () => (served && api ? { load: (toolUseId) => api.picture({ workspaceId, agentId, toolUseId }) } : null),
+    [served, api, workspaceId, agentId],
   );
 }
 
 /** One chat's sent pictures on the desktop, by the `ref` each message recorded. */
-export type SentImages = { source(ref: string): ConversationImageSource };
+export type SentImages = { load(ref: string): Promise<ConversationPicture> };
 
 /**
  * The pictures the person sent in this chat, as the desktop serves them, or
- * null when it does not (`conversation-message-images`): the phone then draws
- * its own copies of what it sent, and names the rest.
+ * null when it does not (`sentPictures`): the phone then draws its own copies
+ * of what it sent, and names the rest.
  */
 export function useSentImages(
-  session: MobileSession | undefined,
+  offers: Pick<PhoneChatOffers, "sentPictures">,
   api: ConversationApi | null | undefined,
   key: { workspaceId: string; agentId: string },
 ): SentImages | null {
-  const declared = !!session && declaresMessageImages(session);
+  const served = offers.sentPictures;
   const { workspaceId, agentId } = key;
   return useMemo(
-    () =>
-      declared && api ? { source: (attachment) => api.imageSource({ workspaceId, agentId, attachment }) } : null,
-    [declared, api, workspaceId, agentId],
+    () => (served && api ? { load: (attachment) => api.picture({ workspaceId, agentId, attachment }) } : null),
+    [served, api, workspaceId, agentId],
   );
 }
 
-// A transcript's rows mount and unmount as it scrolls. What a picture's size
-// turned out to be, and a refusal that will not change, outlive the row: the
-// picture comes back at its size without a jump, and a picture the desktop no
-// longer has is not asked for again. A failure that might pass (no answer) is
-// held by the row alone, so it is tried again the next time the row is drawn.
+/** The one quiet line a picture that did not load leaves in its place. */
+export function conversationImageProblemText(problem: ConversationImageProblem): string {
+  switch (problem) {
+    case "gone":
+      return "This image is no longer on the desktop.";
+    case "too_large":
+      return "This image is too large to show.";
+    default:
+      return "This image could not be loaded.";
+  }
+}
+
+// A transcript's rows mount and unmount as it scrolls. Where a picture is on
+// the phone, what its size turned out to be, and a refusal that will not
+// change outlive the row: the picture comes back at its size without a jump
+// or a second read, and a picture the desktop no longer has is not asked for
+// again. A failure that might pass (no answer) is held by the row alone, so
+// it is tried again the next time the row is drawn.
+const knownFiles = new Map<string, string>();
 const knownSizes = new Map<string, { width: number; height: number }>();
 const knownProblems = new Map<string, ConversationImageProblem>();
+
+/**
+ * One picture's file, read when the row first draws it: the file's address
+ * once it is on the phone, or why it is not. `key` names the picture; a new
+ * key reads again.
+ */
+export function useLoadedPicture(
+  key: string | null,
+  load: (() => Promise<ConversationPicture>) | null,
+): { uri: string | null; problem: ConversationImageProblem | null } {
+  const [state, setState] = useState(() => ({
+    key,
+    uri: key ? (knownFiles.get(key) ?? null) : null,
+    problem: key ? (knownProblems.get(key) ?? null) : null,
+  }));
+  const current = state.key === key ? state : { key, uri: key ? (knownFiles.get(key) ?? null) : null, problem: key ? (knownProblems.get(key) ?? null) : null };
+  useEffect(() => {
+    if (!key || !load || current.uri || current.problem) return;
+    let live = true;
+    void load().then((read) => {
+      if (read.ok) knownFiles.set(key, read.uri);
+      else if (read.problem !== "unavailable") knownProblems.set(key, read.problem);
+      if (live)
+        setState({ key, uri: read.ok ? read.uri : null, problem: read.ok ? null : read.problem });
+    });
+    return () => {
+      live = false;
+    };
+    // `load` follows the picture's key; a new function for the same picture reads nothing again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, current.uri, current.problem]);
+  return { uri: current.uri, problem: current.problem };
+}
 
 const MAX_HEIGHT = 320;
 const PLACEHOLDER_HEIGHT = 180;
@@ -101,21 +139,14 @@ export function ConversationPicture({
   picture: ToolPicture;
 }) {
   const styles = useThemedStyles(createStyles);
-  const source = useMemo(() => images.source(toolUseId), [images, toolUseId]);
-  const key = source.uri;
+  const key = `step\n${toolUseId}`;
+  const loaded = useLoadedPicture(key, () => images.load(toolUseId));
+  const source = useMemo<PictureSource | null>(() => (loaded.uri ? { uri: loaded.uri } : null), [loaded.uri]);
   const [natural, setNatural] = useState(() => knownSizes.get(key) ?? null);
-  const [problem, setProblem] = useState<ConversationImageProblem | null>(() => knownProblems.get(key) ?? null);
+  const [broken, setBroken] = useState(false);
   const [width, setWidth] = useState(0);
   const [viewing, setViewing] = useState(false);
-  // One question to the desktop per failure, however often the image says so.
-  const asked = useRef(false);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const problem = loaded.problem ?? (broken ? "unavailable" : null);
   if (problem)
     return (
       <Text accessibilityRole="text" style={styles.problem}>
@@ -134,17 +165,12 @@ export function ConversationPicture({
         onPress={() => setViewing(true)}
         style={({ pressed }) => [styles.frame, size ?? styles.placeholder, pressed ? styles.pressed : null]}
       >
+        {source ? (
         <Image
           accessibilityIgnoresInvertColors
           accessibilityLabel={picture.label}
-          onError={() => {
-            if (asked.current) return;
-            asked.current = true;
-            void images.problem(toolUseId).then((found) => {
-              if (found !== "unavailable") knownProblems.set(key, found);
-              if (mounted.current) setProblem(found);
-            });
-          }}
+          // The file on the phone would not open: said, and read again next time.
+          onError={() => setBroken(true)}
           onLoad={(event) => {
             const { width: naturalWidth, height: naturalHeight } = event.nativeEvent.source;
             const next = { width: naturalWidth, height: naturalHeight };
@@ -155,6 +181,7 @@ export function ConversationPicture({
           source={source}
           style={[StyleSheet.absoluteFill, natural ? null : styles.hidden]}
         />
+        ) : null}
         {natural ? null : <SkeletonBlock label="Loading image" style={StyleSheet.absoluteFill} />}
       </Pressable>
       {picture.caption ? (
@@ -162,13 +189,15 @@ export function ConversationPicture({
           {picture.caption}
         </Text>
       ) : null}
-      <PictureViewer
-        caption={picture.caption}
-        label={picture.label}
-        onClose={() => setViewing(false)}
-        source={source}
-        visible={viewing}
-      />
+      {source ? (
+        <PictureViewer
+          caption={picture.caption}
+          label={picture.label}
+          onClose={() => setViewing(false)}
+          source={source}
+          visible={viewing}
+        />
+      ) : null}
     </View>
   );
 }
@@ -182,7 +211,7 @@ export function PictureViewer({
   onClose,
 }: {
   visible: boolean;
-  source: ConversationImageSource;
+  source: PictureSource;
   label: string;
   caption?: string;
   onClose: () => void;

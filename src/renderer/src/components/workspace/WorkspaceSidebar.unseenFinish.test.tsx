@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import type { StudioPullRequest } from '../../../../../packages/studio-protocol/src/public'
 import type { StudioPullRequests } from '../../../../server/pull-requests/pull-request-domain'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.unseenFinish', async () => {
   // "Finished while you were away" (the green row) is read off the visit
@@ -51,11 +54,11 @@ test('WorkspaceSidebar.unseenFinish', async () => {
   anyGlobal.ResizeObserver = NoopResizeObserver
   dom.window.ResizeObserver = NoopResizeObserver as unknown as typeof dom.window.ResizeObserver
 
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
   }
   const HOUR = 60 * 60_000

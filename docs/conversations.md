@@ -22,7 +22,13 @@ picker also lists the MCP servers the chat's CLI is configured with, with the
 connection each last reported. A file dropped, picked or pasted from the computer into a chat that runs
 on it is a card: the send carries it beside the words (`files` on the send and
 on its `user_message`), the agent is told where it is, and the bubble draws the
-card from that list, never from the text. Failed sends keep the draft. Pending approvals and questions appear above
+card from that list, never from the text. Failed sends keep the draft. A send
+is kept in the window's storage until Studio answers it, under its command id:
+a reload, or a Studio that stopped, before the answer finds it when the chat
+opens again, and lets it go if the chat's log shows the message, or puts it
+back in the composer with a notice if not. Sent again unchanged, it goes under
+the same command id, so a copy Studio took late is answered from its receipt,
+never run twice. Pending approvals and questions appear above
 the composer, with a counter and keyboard navigation when several are waiting.
 
 Remembered tool permissions are scoped to the conversation or workspace.
@@ -332,40 +338,23 @@ sandbox against a malicious process repeatedly replacing directory ancestors.
 
 On Windows, every chat runtime runs on a WSL machine as well as on This PC
 (owner ruling 2026-10-01): Claude Code, Codex, Cursor, Grok, Kimi Code and OpenCode alike.
-A chat in a workspace on a WSL machine runs each CLI from that distribution,
-with the command set for it there (or the one its PATH finds), the way a
-terminal agent there does (`conversationCliRuntimesForHost`).
-
-Every runtime starts its child the same way (`cli-host-child.ts`): one
-`wsl.exe -d <distro>` whose stdio is the CLI's, running the person's login
-shell so the CLI sees their PATH, login and configuration under the Linux home.
-Nothing of the Windows environment goes in except what the runtime names: the
-chat's identity variables, the SDK's own marks for Claude, and the variables an
-ACP preset is told through (OpenCode's rule set). Codex additionally has the
-OpenAI API variables removed from the login environment, so a key the profile
-exports cannot take the chat off the person's Codex login.
-
-Paths cross the boundary in both directions:
-
-- **Out.** The workspace folder is sent as Linux names it (`/home/dev/repo`,
-  `/mnt/c/Users/dev/repo`): Codex's `thread/start` and `skills/list`, ACP's
-  `session/new` and `session/load`. A stdio MCP server's `C:\…` and
-  `\\wsl.localhost\…` paths become the distribution's.
-- **Back.** An ACP agent's file reads and writes, and a picture Codex saved, are
-  opened through the workspace as Windows names it. Approval checks respell the
-  agent's Linux paths against the workspace root
-  (`ConversationRuntime.approvalCheckInput`), so Auto and "always allow" place
-  files in the workspace for every runtime.
-
-Claude Code's `/` menu is not yet listed for a folder before a chat on a WSL
-machine has started; a running chat lists it.
+A chat in a workspace on a WSL machine is that distribution's own Studio's
+(design-wsl-ssh-direct): its Studio starts the CLI there as a local child
+(`cli-host-child.ts`), the same way this PC's Studio starts one here, and the
+window reaches it on the Studio protocol. The chat is handed the command set
+for that machine in Settings (or the one its PATH finds), and no host id
+(`conversationCliRuntimesForHost`): a chat's CLI always runs where the Studio
+that runs the chat runs, so no path is respelled between the CLI and its
+runtime. Paths are respelled once, between the window and the distribution's
+Studio (`shared/machine-spelling.ts`).
 
 ## Remote connection over the tailnet
 
 Another machine follows and drives a conversation over Tailscale, and only over
 Tailscale: there is no hosted relay in the path, for transcripts, commands,
-images or phase changes. The phone companion and another Studio desktop use the
-same socket and the same frames; nothing in the wire is specific to a phone.
+images or phase changes. The phone companion and another Studio desktop speak
+the same Studio protocol, at `/tailnet/v1/studio` on the tailnet listener, as
+this machine's own windows do; nothing in it is specific to a phone.
 
 ### Trust boundaries
 
@@ -373,8 +362,9 @@ same socket and the same frames; nothing in the wire is specific to a phone.
   (loopback in tests). Tailscale authenticates the peer machine; the gateway
   records the peer node it resolved, but does not treat it as authorization.
 - **Device.** Authorization is the paired device's bearer token and its scopes.
-  A WebSocket is opened with a short-lived single-use ticket, never the token in
-  a URL. Browser-originated requests are refused.
+  The Studio socket is opened with a short-lived single-use ticket, never the
+  token in a URL. Browser-originated requests are refused; a paired desktop's
+  own window is the one exception, on a ticket that names its origin.
 - **Scopes.** `conversation:read` lists, follows and pages conversations and
   fetches tool details and diffs. `conversation:operate` sends, stops, answers
   approvals and questions, attaches images, changes the permission preset and
@@ -382,8 +372,8 @@ same socket and the same frames; nothing in the wire is specific to a phone.
   list them as their own rows. There is no terminal scope: terminals do not
   cross the tailnet (see "Terminals stay on the machine" below).
   Grants are read live: narrowing a device in Settings refuses its next
-  command, removing read closes its socket (4403), and revoking it closes every
-  stream it holds (4401).
+  command, removing read ends the chats it follows, and revoking it closes
+  every socket it holds.
 - **What a remote command can do.** A device with `conversation:operate` drives
   a chat exactly as the host can, preset included: it can send to a chat in
   Bypass, and switch a chat between any of the modes the host runs (all four on
@@ -404,7 +394,7 @@ same socket and the same frames; nothing in the wire is specific to a phone.
 - **A new chat as New chat here starts one.** A desktop that advertises
   `new-chat-worktree` takes `worktree: true` beside `newChat: true` and starts
   the chat in a worktree of its own, cut exactly as New chat here cuts one with
-  Worktree on: from the worktree pool where this process keeps one, on the
+  Worktree on: from the worktree pool the Studio core keeps, on the
   project's default branch, as `<prefix>/chat-<id>` (the branch prefix from
   Settings ▸ Worktrees, `agent` unless changed) under the project's worktree
   container, and filed under the project it was cut from, so the chat lists here
@@ -452,70 +442,40 @@ same socket and the same frames; nothing in the wire is specific to a phone.
 - **Audit.** Every remote command — refused ones included — is written to the
   gateway audit with the device, the conversation, the command kind, the command
   id and the outcome. Message text and answers are never written there.
-- **What leaves the machine.** Frames carry transcripts, tool output previews,
-  tool details and diffs, with secret-looking keys redacted. Paths in the
-  followed conversation's workspace are sent workspace-relative; other paths in
-  the home directory start `[home]`.
-- **Images.** Uploads are staged in a private temporary directory, never in the
-  workspace, and referenced by an opaque id bound to the device and session.
-  At most 16 images of 5 MB each per turn, as JPEG, PNG, GIF or WebP, on a live
-  image-capable session. An accepted send removes its staged files; unused ones
-  expire after an hour.
-- **Pictures sized for the model.** A desktop that advertises
-  `conversation-image-downscale` shrinks each uploaded picture on receipt by
-  the rules its own composer uses (`src/shared/conversation-attachments.ts`):
-  to a 1568px long edge, kept a JPEG if it was one and a PNG otherwise, a JPEG
-  only when the PNG is still over 5 MB, and byte for byte when it already
-  fits. So the route takes an upload of up to 20 MB as it arrives, and what is
-  kept is still at most 5 MB (`413 too_large` either way, saying which). A
-  picture its codec cannot read (Electron's `nativeImage` reads PNG and JPEG)
-  is kept as it came, under the same 5 MB. Without the shrinking a phone's
-  photo reached Claude full size, and Claude refuses an image over 2000px a
-  side once a thread holds more than 20. Only a desktop has the codec: a
-  standalone Studio server does not advertise the capability, and keeps the
-  5 MB upload ceiling. A client that does not see it keeps its own 5 MB check.
-- **Pictures a step shows.** A desktop that advertises the `conversation-images`
-  capability serves the picture a step made (Codex's `GenerateImage`) or looked
-  at (a file read of a picture) at `GET /tailnet/v1/conversation-image`, named
-  by `workspaceId`, `agentId` and the step's `toolUseId`, to a device with
-  `conversation:read`. The file is the one the conversation's own record of
-  that step names — the request carries no path — followed through links to a
-  regular file, and served only when its first bytes are a PNG, JPEG, WebP or
-  GIF (`415 not_an_image` otherwise, whatever its name) and it is at most 8 MB,
-  the ceiling this machine's own previews use (`413 image_too_large`). A chat
-  this machine does not have is `404 unknown_conversation`; a step that is not
-  there, shows no picture, or whose file is gone is `404 unknown_image`. The
-  bytes are cached privately for a day, since a step's picture never changes.
-  A paired desktop shows these under a remote chat's steps the same way; for a
-  machine without the capability it still says the picture is on the other
-  machine.
-- **Pictures a message carried.** A desktop that also advertises
-  `conversation-message-images` serves the pictures a person sent with a
-  message on the same route, named by `attachment`, the `ref` its
-  `user_message` recorded for each (`attachments`), in place of `toolUseId`.
-  The bytes come from this machine's attachment store, never from a path, and
-  only from the folder the store keeps for that chat (or for its live
-  session's folder), so a ref another chat recorded is `404 unknown_image`, as
-  one that is gone is. What is served is at most the 5 MB a sent picture may
-  be, under the type its first bytes say (PNG, JPEG, WebP or GIF), and cached
-  privately for a day. The phone draws them as thumbnails on the person's
-  message; it shows its own just-sent photos from the phone itself, and names
-  a picture it cannot fetch.
-- **Files a message carries.** A desktop that advertises
-  `conversation-message-files` takes a file of any type on the upload route
-  with `kind=file`, from a device with `conversation:operate`, for a chat it
-  lists: at most 25 MB (`413 too_large`, naming the limit), under its own name
-  made one safe path segment. It is written into Studio's data folder,
-  `tailnet-uploads/<device>/<upload>/<name>`, never into the project, and
-  answered `{ uploadId, bytes, name }`. A `send` naming that id in
-  `uploadIds` attaches the file to the message by that path, as a file
-  dropped into the desktop's composer is: the agent is told where it is, and
-  the `user_message` records it in `files`, which every view draws as a card.
-  Pictures and files go in the same `uploadIds`, each spent as what it was
-  uploaded as. The id is the uploading device's alone and goes with the send;
-  the file stays, for the agent to read in a later turn, and is removed a
-  week on, or with the device when it is removed. One never sent goes when its
-  id expires, after an hour.
+- **What leaves the machine.** A followed chat carries its transcript, tool
+  output previews, tool details and diffs, with secret-looking keys redacted.
+  Paths are sent as they are on this machine; a quote in a message is sent as
+  the token the chat keeps, and every current client draws it.
+- **Pictures and files on a send.** A client stages each on its own socket
+  (`uploads.begin`, then `uploads.append` a piece at a time), under an id only
+  that client can spend, and the keyed `conversation.send` names them in
+  `uploadIds`, spent once per command id: a send retried under its id names the
+  same pictures again without staging them twice. A picture is PNG, JPEG, WebP
+  or GIF, at most 5 MB as it came (the Studio keeps it as sent; a phone sizes
+  its own photos), and goes with the turn as a picture a person attached here
+  does. A file (`purpose: 'attachment'`) is any type, named, at most 25 MB: it
+  is written into Studio's data folder, `tailnet-uploads/<client>/<upload>/<name>`
+  under its name made one safe path segment, never into the project, and
+  attached to the message by that path, as a file dropped into the composer
+  is; the `user_message` records it in `files`. The file stays for the agent to
+  read in a later turn, and goes a week on, or with the device when it is
+  removed. A staged upload no send spends expires. `session.send` takes such
+  files too, as `fileUploadIds` (`session-file-uploads`): the desktop's window
+  sends a file attached to an SSH machine's or a WSL distribution's chat this
+  way, read off this computer's disk as the send goes (a message held while
+  the machine is away included), so the agent there reads it by its path
+  there and never by a path of this computer's.
+- **Pictures a chat shows.** `conversation.picture` (`conversation:read`)
+  answers one picture's bytes: a step's, by its `toolUseId` (the picture
+  Codex's `GenerateImage` made, or a file read of a picture), or one a person
+  sent with a message, by the `ref` its `user_message` recorded. The chat's own
+  record names the file, never the request: a step's file is followed through
+  links to a regular file inside the chat's folders or Studio's picture folders,
+  and a sent picture comes only from the folder the attachment store keeps for
+  that chat. Either is served only when its first bytes are a PNG, JPEG, WebP or
+  GIF, under the type they say, at most 8 MB (`too_large`); anything else, a
+  chat this machine does not have, or a step that shows no picture is
+  `not_found`.
 
 ### Sync
 
@@ -529,6 +489,30 @@ Sequence numbers increase but have gaps, because a run of text deltas can be
 merged into one delta numbered with its last sequence. Older turns page in
 through `loadEarlier`. Command ids stay stable across retries, so a send
 acknowledged before a disconnect is not accepted twice.
+
+What crosses is a projection of the log, the same on every wire (the window's
+IPC, the Studio protocol), made in one place
+(`src/server/conversation-stream-shaping.ts`); the stored events stay whole. A
+tool's result crosses once, as its preview of at most 4,000 characters; a
+tool's input crosses with its file-change bodies cut to their heads, marked
+`inputTruncated` (a command, a plan, a todo list cross whole: the closed row
+draws them); a step's pictures as at most eight paths. A reader opening such
+a step reads the whole of it with `toolDetail`, and draws a cut change only
+from that. A snapshot, and each earlier page, is the newest of those
+projected events within 2 MiB, cut where a turn begins unless the newest
+turn alone is larger; older ones are one `loadEarlier` away. A reconnect
+further behind than 2 MiB of the log gets a snapshot rather than its
+catch-up, so a replay is bounded the same way, and a snapshot a session sends
+after its join (once a chat's server is back) is paced and split like a
+join's. The module SDK's conversation stream is not a reader's wire: a
+module reads events whole.
+No event takes more than one frame (`CONVERSATION_WIRE_EVENT_BYTES`): one
+larger as stored (a long answer, a pasted log, a large approval) crosses with
+its longest text cut to fit and `wireClipped: true`, and a reader reads it
+whole by the `seq` and `id` it came under (`conversation.event` on the Studio
+protocol, `conversation:event:read` over IPC). The chat
+view and the phone say when part of a chat came cut short and offer it in
+full.
 
 A reader that falls behind gets consecutive deltas merged instead of queued;
 a large snapshot is sent in parts and never counts against live events. A
@@ -544,11 +528,131 @@ follows. Live events that arrive while a replay is still going out wait behind
 it, bounded by size rather than count, so a busy turn during a large catch-up
 does not force a resync before the fence.
 
+### Commands and the chat's log
+
+A send, an answer to a request, a permission or model change, Stop and ending
+a session reach the same runtime method from any client (this window, the
+Studio protocol, a paired device or the phone, an agent's MCP tool, a module, a
+schedule, a pull-request wake), which runs each as a command under the
+caller's `commandId`, or one made for a caller that gave none
+(`ConversationRuntime.runCommand`). Revert, rewind, fork, handoff, stopping
+one sub-agent and side questions are not commands of this kind yet: the hosts
+that take them remember their ids in memory. The chat's transcript is its one
+log: beside the events it holds each command's receipt, a line with no `type`
+that every reader passes over (`conversation-command-receipts.ts`).
+
+- **A turn command** (a send, a steer, a message to one sub-agent) is
+  _accepted_ when its `user_message` and its receipt are committed in one
+  write. The provider turn is what it then does. The send is _answered_ when
+  that turn ends, as the protocol promises, and the answer is written to the
+  log too. The turn is the command's effect, and the chat is listed in the
+  data directory's `conversation-outbox.json` before its message commits; if
+  Studio stops before the turn ends, the next start closes every listed chat's
+  open turn as interrupted, in its log, without anyone opening the chat
+  (`recoverInterruptedTurns`; on a WSL or SSH machine, the next start of that
+  machine's server, which keeps its own list). The list is an aid: one that
+  cannot be written leaves the turn to be closed when its chat is next opened. A retry under the same id is answered as sent:
+  the message is in the chat, so it is never sent twice.
+- **A control command** (an answer to a request, a permission or model
+  change, Stop, ending the session) acts on the live agent process and is
+  answered with what that did, once the answer's receipt is written. If Studio
+  stops first, what it did went with the process; a retry acts again on the
+  chat as it is then.
+- **A scheduled agent's run** is written down before it makes anything: an
+  entry of `scheduled-agents.json`'s `runs`, keyed by the command id its first
+  message goes under, with that message, and the chat once it is made. The
+  chat is stamped with the same id (`launchCommandId`). The entry goes once
+  the first message is answered. A start that finds one left by a stop
+  finishes it: a run with a chat sends its first message again under its id
+  (the chat's receipt answers one that already went, so nothing runs twice);
+  a run that made no chat sent nothing, so a one-time schedule runs once now
+  and a repeating one is recorded as cut off and waits for its next time
+  (`scheduled-agents/run-recovery.ts`).
+- **Where background work runs.** Every Studio server runs its own schedules
+  and pull request watches, with its scheduled messages and usage-limit
+  resumes: the desktop's (in process or out), a standalone server, a WSL
+  distribution's and an SSH machine's (`server/core/studio-scheduled-agents.ts`,
+  composed by `createStudioCore`). A schedule runs on the server whose store
+  holds it, in its chats, from its worktree pool. New chat makes a schedule
+  for a project on an SSH machine on that machine's own server
+  (`schedules.create` by its folder there, `pairedSchedules.ts`), so it is
+  never in the desktop's store. A change to a machine's schedules goes only
+  while the machine is connected: with it away the change is refused, never
+  held for its return, and each try of one draft is the same command there
+  (one command id), so a lost answer makes nothing twice. One another caller saves on the desktop for a
+  machine's folder never runs there: the scheduler reads it as waiting, and
+  Run now is refused (`scheduleWaitsForHandOver`), until it is handed over
+  (`environment-migration-stores.ts`, `handOverSchedulesWhenSaved`). The
+  desktop's Scheduled section lists each machine's schedules from that
+  machine's own server, on the route the window follows its chats on
+  (`sidebar/useRemoteScheduledAgents.ts`), and opens one in New chat's
+  editor, which saves, pauses and runs it on that machine by its route.
+  Pause all and Resume all cover this device and each machine it owns whose
+  schedules the section lists, and say which machine they could not reach.
+  Where a module kernel runs,
+  the person's Scheduled agents switch turns the scheduler on and off
+  (`modules/scheduled-agents-switch.ts`). Whoever starts the scheduler, it
+  waits for the hand-over's first plan; while that cannot finish (its journal
+  unreadable) the Scheduled section says the schedules are paused and why
+  (`schedules.list`'s `held`). A watch an agent asks for is kept by
+  the server its gateway belongs to; where that server holds no record of the
+  chat (a WSL or SSH server, whose chat records the desktop keeps), the folder
+  the chat works in is kept with the watch (`pull-requests/chat-folders.json`),
+  so its wake reaches the chat after a restart.
+- **Nothing stops silently.** Each server answers `environment.readiness`:
+  its CLIs (installed, signed in where it can tell), `gh`, MCP servers,
+  extensions, and every schedule or watch waiting on something it lacks. A
+  schedule whose CLI is not installed or signed in there, whose MCP server is
+  not set up or switched off, whose skill is unknown, or whose extension is
+  not loaded, waits: its times pass without a run or a failure, its row says
+  "Waiting: …", and Run now says why. A watch whose read fails for want of
+  `gh` (not installed, or not signed in) holds, says so, and does not count
+  toward the eight-failures stop. Keys and sign-ins are never copied between
+  machines on their own: the person signs in there. A detached server (an SSH
+  machine's) does not stop for being idle while it has such work, nor does
+  the desktop stop a WSL server for it; the desktop's quit question names the
+  schedules and watches its quit stops, its WSL servers' included.
+- A send refused `busy` (a turn running, or the chat's folder held), or one
+  the log could not take, records nothing, so the same id may be sent again.
+  The same id for a different command (by its fingerprint, which counts what
+  a send carries but not the upload ids it was staged under) is refused
+  `command_id_conflict`.
+- **A resend never runs a turn twice.** A send's receipt is looked up in the
+  chat's log before its pictures and files are needed. A send to a session
+  its server no longer holds (it restarted) is answered "session not found"
+  and spends nothing; the client starts the chat again and resends under the
+  same id, which the receipt answers. A keyed send asks the conversation host
+  whether it was held or carried out before its uploads are staged.
+- A launched chat's first message is written down whole, its pictures in the
+  folder beside it (`conversation-first-messages.json`,
+  `conversation-first-messages/`), and flushed to the disk before the chat is
+  made, under an id derived from the launch's. One that cannot be written
+  refuses the launch. It is kept until the chat has answered it for good
+  (taken, or refused in an answer its log keeps). A refusal the log did not
+  keep, such as a busy chat or an agent that would not start, keeps it, and
+  the next start sends it again.
+- **A chat is on disk before anything of it starts.** A launched chat's record
+  is flushed to the workspace registry before its session starts, and a
+  window's New chat starts its chat's session only once Studio has answered its
+  create, which it does once the record is on disk. A stop never leaves a
+  conversation, or a first message its agent ran, that no chat lists. A create
+  whose answer a restart took is sent again by the window before it reads the
+  registry, so the chat stays on screen; one Studio refuses is shown with its
+  first message.
+- **Nothing is published before it is written.** A batch of the log is one
+  write, and a write that fails is cut back off, so a client only ever holds
+  sequence numbers that are on disk. A write that does not finish is waited
+  for, not given up on (the log warns after 30 seconds): what it holds may yet
+  land. An event of a turn the log cannot take stops the chat's session, its
+  agent with it, and the turn is closed as interrupted when the chat is next
+  resumed. A send whose message the log cannot take is answered "not sent" and
+  nothing else happens.
+
 ### The protocol
 
 `@sprintengine/conversation-protocol` (`packages/conversation-protocol`) is the
 one contract every follower of a conversation speaks (owner ruling
-2026-10-01): this socket, the module SDK's conversation service, and the
+2026-10-01): the Studio protocol, the module SDK's conversation service, and the
 desktop's own chat view, which imports its event types from it through
 `src/shared/conversation-runtime.ts`. Its README is the frame reference. It
 declares:
@@ -556,34 +660,33 @@ declares:
 - **Events, in two layers.** Each provider adapter reads its CLI's own stream
   and writes `ConversationEvent`s in a vocabulary no provider owns
   (`CONVERSATION_EVENT_TYPES`); the provider's shapes stay in the adapter.
-  Everything above, this socket included, carries only that second layer.
+  Everything above, the Studio protocol included, carries only that second layer.
 - **Commands and answers.** Every mutation carries the client's `commandId`,
-  which the runtime records as a durable receipt before any work starts, so a
-  retry is answered with the first attempt's result. A tool permission is
+  and the runtime keeps a receipt for it in the chat's log, so a retry is
+  answered from the first attempt and never runs twice (see "Commands and the
+  chat's log" below). A tool permission is
   answered `once`, `conversation` or `deny`, a question with its answers, a
   plan with `approve` or `reject`, and each answer can name the kind it is for.
   A tool permission may also be answered `always` where the host advertises
   `conversation-permanent-approvals`: the rule is saved here, for the chat's
   workspace, as this machine's own "Always allow" saves one.
-- **Capabilities and a version.** `hello` answers the conversation protocol
-  version (1), its minimum, and the conversation capabilities this machine
-  advertises (`conversation-hello`). Features are asked about by capability,
+- **Capabilities and a version.** The Studio welcome carries the conversation
+  protocol version (1), its minimum, and the conversation capabilities this
+  machine serves. Features are asked about by capability,
   never by version; the version exists to refuse a peer a change could not be
   made additive for, naming both numbers.
 - **Create requests.** `ConversationCreateRequest`, with `allowedTools` beside
-  the preset. This socket does not create conversations through it; the
-  module SDK does, and so does the Studio RPC on the owner socket
-  (`@sprintengine/studio-protocol`, `conversation.create`).
+  the preset, which the module SDK and the Studio protocol's
+  `conversation.create` take.
 
-The package entry is `public.ts`. The phone carries `index.ts` and the four
-files it re-exports byte for byte under a shared SHA-256 pin
-(`src/main/automation/tailnet/conversation-protocol.test.ts`), so those five
-files change only in a change made on both sides at once; everything added
-since lives in files of its own, re-exported from the entry, and leaves the
-pin as it is. Building this branch does not publish the package.
+The package entry is `public.ts`. The phone imports it from this repository's
+source, as the desktop does, so both build against the same files; a phone
+already installed keeps the contract it was built with, which is what the
+capabilities above are for. Building this branch does not publish the
+package.
 
-Phase changes reach a client while its socket is open, and every paired
-device's change feed says when the conversation list moved — a conversation
+Phase changes reach a client while its socket is open, and every client hears
+a `conversations.changed` push when the conversation list moved — a conversation
 started, finished, or began waiting on a person — so a list re-reads on the
 change rather than on a timer. Background push notifications are not provided. A conversation deep link is
 `sprintengine://conversation/<deviceId>/<workspaceId>/<agentId>` (each component
@@ -629,14 +732,14 @@ machine?: { kind: string; color: string }
   and an empty list when it holds none. It is read from the record only:
   listing never runs `gh`, so a phone refreshing its list costs no request to
   GitHub. The record is kept current when a chat's turn ends and on its slow
-  poll, and the change feed says when the list moved.
+  poll, and `conversations.changed` says when the list moved.
 - **`localServers`** (2026-10-25) is what the desktop's local server record
   holds for the chat (`localServers.list`): each server its agents linked
   (`id`, `url`, `title`, `port`, and `state`: `running`, `stopped` or
   `starting`, as the desktop's own checks last found it), at most
   `CONVERSATION_MAX_LOCAL_SERVERS` (20), and absent for a chat with none. The
   command and folder that start one stay on the desktop. A server starting or
-  stopping is pushed on the change feed. A second desktop following the chat
+  stopping is a `conversations.changed` push. A second desktop following the chat
   draws them on its strip as that machine's, read-only: one whose address
   reaches it (a tailnet name, the machine's own address) opens there, and one
   on that machine's loopback says it is on that machine, its link still to
@@ -687,10 +790,16 @@ the desktop's own sidebar — agrees with it. A desktop that advertises
   own creation as its visit.
 
 The first two are the capability's promise and hold only where it is
-advertised. The Studio RPC on the owner socket does not advertise it, and its
-`conversation.list` stays the list it always was: every chat, settled ones
-included, most recently moved first, with the five members as optional
-additions.
+advertised. The Studio RPC advertises it too, and its `conversation.list` is
+the same list. The phone and a paired desktop settle, visit, mark unread and
+snooze a chat through the Studio protocol, by the chat's workspace
+(`conversation.settle` `{ workspaceId, commandId, settled? }`,
+`conversation.visit` `{ workspaceId, visitedAt? }`, and `chat-lifecycle`
+below); the gateway tools of the same purpose, described here, are an
+agent's, and a device token asking for one is told to use the Studio's.
+Every change on the protocol carries a command id: a retry is answered with
+the first answer and written once, so a settle retried after an Undo does not
+settle the chat again.
 
 - **`conversation.settle`** `{ workspaceId, settled? }` (default `true`)
   writes the same patch as the row menu's Settle, or with `false` its
@@ -722,8 +831,8 @@ additions.
   desktop following a paired machine's chat draws the same "New" divider,
   read from that machine's `lastVisitedAt` as its list gave it before the
   opening's first visit.
-- **`conversation.mark_unread`** `{ workspaceId }` (2026-10-07, on a desktop
-  that advertises `chat-mark-unread`) moves the chat's `lastVisitedAt`
+- **`conversation.mark_unread`** `{ workspaceId }` (2026-10-07;
+  `conversation.markUnread` on the Studio protocol) moves the chat's `lastVisitedAt`
   **back**, to its latest finish less a millisecond, and answers
   `{ ok: true, workspaceId, lastVisitedAt }`. Its finish reads as unseen again
   on every device, and the next opening's "New" divider sits above its latest
@@ -736,10 +845,9 @@ additions.
   `lastVisitedAt` only with a newer stamp, so a lagging visit still cannot
   roll the clock back. The desktop's own row menu calls the same command; on
   the chat in front it takes effect as the person leaves the chat, since
-  looking at it is what reads it. A desktop without the capability answers
-  "Unknown tool".
+  looking at it is what reads it.
 
-The change feed says the conversation list moved when a chat is settled or
+A `conversations.changed` push says the conversation list moved when a chat is settled or
 brought back, renamed, or written to, marked unread, and for a visit when it
 is the first since the chat's agent finished (the visits stamped while a chat
 stays on screen are not a push each). A change to the record's clocks alone
@@ -751,7 +859,7 @@ client from before it reads it as it reads any visit clock: as of 2026-10-07
 the phone takes the later of the listed clock and its own opening of the chat
 (and of a visit it stamped itself this run), so it shows such a chat read
 until the list says otherwise, never anything wrong. A phone that offers Mark
-unread asks for `chat-mark-unread` first and drops its own later readings
+unread asks for `conversation-lifecycle` first and drops its own later readings
 once the list carries an earlier clock. Which readings to drop is what
 `visitRewoundAt` says: a reading taken before it is older than the Mark
 unread, so the listed `lastVisitedAt` wins over it, and a reading taken after
@@ -769,25 +877,28 @@ goes the way a local Settle takes a row. One that machine settles without
 asking here (on the phone, or on that machine) is followed once its browse says
 so, and the row here leaves the rail the same way.
 
-On a desktop that advertises `chat-row-menu` (2026-10-21), a paired
-desktop's row menu on one of its chats is the menu a local chat has, each
-item written there, to the record the desktop's own menu writes:
-**`conversation.highlight`** `{ workspaceId, starred?, color? }` is Star and
+A paired desktop's row menu on one of a desktop's chats (2026-10-21) is the
+menu a local chat has, each item written there, to the record the desktop's
+own menu writes, through that desktop's Studio (`chat-lifecycle`; the
+agents' gateway tools of the same names take the same arguments without a
+command id): **`conversation.highlight`** `{ workspaceId, commandId, starred?,
+color? }` is Star and
 Highlight color (one of `CONVERSATION_HIGHLIGHT_COLORS`, or `null` for none;
 a member left out stays as it is, and a chat left with neither has no
-highlight); **`conversation.snooze`** `{ workspaceId, until }` is Snooze, until
-a time still ahead, and with `until: null` Wake now (refused `working` while an
-agent there works and `settled` for a settled chat, and the desktop pauses the
-chat's processes as its own Snooze does); **`conversation.auto_settle`**
-`{ workspaceId, enabled }` is the Auto-settle switch. Each listed chat says
+highlight); **`conversation.snooze`** `{ workspaceId, commandId, until }` is Snooze, until
+a time still ahead, and with `until: null` Wake now (refused `conflict` while an
+agent there works and for a settled chat, and the desktop pauses the
+chat's processes as its own Snooze does); **`conversation.setAutoSettle`**
+`{ workspaceId, commandId, enabled }` is the Auto-settle switch. Each listed chat says
 what they wrote: `highlight` (`{ starred, color? }`) and `autoSettle: true`,
 beside the `snoozedUntil` it already carried, and a change to any of them
 moves the list. All three need `conversation:operate` and are audited. The
 paired desktop draws the chat as that machine does: starred in its Starred
 section, tinted with its colour, asleep in its project's Snoozed shelf until
-it wakes. Mark unread is `conversation.mark_unread` above, offered where the
-machine advertises `chat-mark-unread`. Copy link to chat links the chat by its
-id on that machine, which opens it there and on any desktop that follows it;
+it wakes. Mark unread is `conversation.markUnread` above. Copy link to chat links the chat by its
+address on that machine (`sprintengine://chat/<environmentId>/<chatId>`), which
+opens it there and on any device that follows it, and is offered once that
+machine has said its environment id;
 Move to New Window opens it in a window of its own. New chat in project, on
 a chat whether a window there has it open or not and on the project's own
 header, opens that desktop's New chat on this machine and the project the
@@ -795,8 +906,9 @@ chat stands in, where the pairing may start a chat here
 (`conversation:operate`); the chat is started with `conversation.create` as
 any New chat on a paired machine is. Reveal folder and Close workspace are
 about a workspace on the desktop doing the asking, and are not offered for a
-chat no window there has open. A machine without the capability answers the tools "Unknown tool", and
-its chats offer none of the four.
+chat no window there has open. A machine whose Studio does not serve
+`chat-lifecycle` (an older build) offers none of the four, and is asked to
+update.
 
 **`conversation.change_project`** `{ folder, workspaceId? }` (2026-11-08)
 moves a chat to another folder on its machine, and so to the project that
@@ -818,71 +930,68 @@ is audited. Nothing new crosses the wire: a paired device lists the chat under
 its new project from `workspace.list`, which the folder change moves, and its
 next message to the chat starts the session in the new folder there.
 
-Beyond its marks, a paired desktop manages a chat here as it manages one of
-its own, each part on a capability of its own (2026-10-25). Each is a gateway
-tool listed to paired devices only, on `conversation:operate` and audited; a
-client offers the item for a machine's chats only where it is advertised, and
-an older machine answers the tool "Unknown tool":
+Beyond its marks, a paired desktop or the phone manages a chat here as it
+manages one of its own, each part a method of this desktop's Studio
+(`chat-lifecycle`, 2026-10-25, on the protocol since 2026-11-13), by the
+chat's workspace, every change under a command id and answered once:
 
-- **`conversation.rename`** `{ workspaceId, name }` (`chat-rename`) names the
-  chat as the desktop's own Rename does: locked against the titler, so its
+- **`conversation.rename`** `{ workspaceId, commandId, name }` names the chat
+  as the desktop's own Rename does: locked against the titler, so its
   messages never rename it again, and stamped now. Every device lists it by
   the new name (`chatTitle`), and a paired desktop's row opened from the chat
   takes it too. A name of 1 to 500 characters; the name it already has
   changes nothing. Offered on a chat no window there has open as well as on
-  one it does; without the capability a row opened there is renamed on that
-  computer alone.
-- **`conversation.auto_compact`** `{ workspaceId, enabled }`
-  (`chat-auto-compact`) is the chat's Auto compact switch, as the desktop's
-  own menu sets it: the chat's choice from then on, whatever the desktop's
-  default says. The desktop compacts its own chats, so the rule is the one of
-  the machine the chat runs on, and each listed chat says how it stands as
-  `autoCompact` (its own switch, or the desktop's default where it left that
-  unset), read beside its `providerId`: only a Claude chat compacts by itself
-  yet. A switch moves the list. It compacts nothing at once.
-- **`conversation.pull_request_unwatch`** `{ workspaceId, agentId, url? }`
-  (`chat-unwatch-pull-request`) is Stop watching: the desktop stops watching
-  the chat's pull request at `url`, or every one the chat's agent has it
-  watching without one, and the chat is not woken for it again. The pull
-  request stays the chat's. It answers `{ stopped, pullRequests }`, the
-  addresses it stopped; one not watched changes nothing. Each listed pull
-  request says while it is watched as `watch` (what it waits on, as the
-  desktop's own strip says it), so a paired desktop's strip and menus say it
-  too and offer Stop watching where the desktop's own do.
-- **`conversation.delete_plan`** `{ workspaceId }` and
-  **`conversation.delete`** `{ workspaceId }` (`chat-delete`) are Delete on a
+  one it does.
+- **`conversation.setAutoCompact`** `{ workspaceId, commandId, enabled }` is
+  the chat's Auto compact switch, as the desktop's own menu sets it: the
+  chat's choice from then on, whatever the desktop's default says. The desktop
+  compacts its own chats, so the rule is the one of the machine the chat runs
+  on, and each listed chat says how it stands as `autoCompact` (its own
+  switch, or the desktop's default where it left that unset), read beside its
+  `providerId`: only a Claude chat compacts by itself yet. A switch moves the
+  list. It compacts nothing at once.
+- **`pullRequests.unwatch`** `{ conversation: { workspaceId, agentId }, url }`
+  (`pull-request-watch`, on `conversation:operate`) is Stop watching: the
+  desktop stops watching the chat's pull request at `url`, and the chat is not
+  woken for it again. The pull request stays the chat's. It answers
+  `{ watched }`, false for one that was not watched. Each listed pull request says while it is watched
+  as `watch` (what it waits on, as the desktop's own strip says it), so a
+  paired desktop's strip and menus say it too and offer Stop watching where
+  the desktop's own do.
+- **`conversation.deletePlan`** `{ workspaceId }` and
+  **`conversation.delete`** `{ workspaceId, commandId }` are Delete on a
   settled chat, as the desktop's own Delete runs it: the plan says what would
   go, each worktree the chat owns by its name and branch (never a path), with
   `refused` while the chat is not settled or an agent in it works; the delete
   takes its history, its record and the worktree it owns, never one with
-  uncommitted changes, and keeps the branch. There is no undo. A chat already
-  gone answers `gone: true` to both, so a delete sent twice does no harm. The
-  plan is a read on `conversation:read`; the delete needs
-  `conversation:operate` and is audited. A paired desktop offers Delete on a
-  settled chat it opened from here, asks the plan, says it in its
-  confirmation, and once this desktop has deleted the chat removes its own
-  record of it. A desktop whose Studio server runs in a process of its own
-  refuses both as `unavailable`.
-- **`conversation.search`** `{ query }` (`chat-search`) finds what was said in
-  the desktop's chats as its own palette does: the chats its sidebar lists,
-  most recently spoken in first, each through the runtime's transcript search.
-  It answers `{ chats: [{ workspaceId, chatTitle, hits, count }], truncated }`,
+  uncommitted changes, and keeps the branch, and is refused `conflict` where
+  the plan says why not. There is no undo. A chat already gone answers
+  `gone: true` to both, so a delete sent twice does no harm. The plan is a
+  read on `conversation:read`; the delete needs `conversation:operate` and is
+  audited. A paired desktop offers Delete on a settled chat it opened from
+  here, asks the plan, says it in its confirmation, and once this desktop has
+  deleted the chat removes its own record of it.
+- **`conversation.searchChats`** `{ query }` finds what was said in the
+  desktop's chats as its own palette does: the chats its sidebar lists, most
+  recently spoken in first, each through the runtime's transcript search. It
+  answers `{ chats: [{ workspaceId, chatTitle, hits, count }], truncated }`,
   each hit an `agentId`, the `seq` of its message, a `snippet` and who said it
   (`from`), at most 50 chats and 20 hits each, and `truncated` once it stopped
   early, at that limit or after eight seconds. A query is 2 to 200
   characters. It is a read, on `conversation:read`. A paired desktop's palette
-  asks each machine that advertises it beside its own search, lists one row
-  per chat with the machine's name, and opens a row as the chat's sidebar row
+  asks each machine that serves it beside its own search, lists one row per
+  chat with the machine's name, and opens a row as the chat's sidebar row
   opens it, landing on the matching message as a match in one of its own
   chats does.
-- **`conversation.approval_rules`** `{}` and
-  **`conversation.approval_rule_revoke`** `{ ruleId }` (`approval-rules`) are
-  the "always allow" rules the desktop's chats run with, as its Settings ▸
-  Chats lists and revokes them: each rule by its `id`, `label`, `toolName`
-  and `toolKind`, the project it holds in by its folder's name (`project`,
-  never a path), and `createdAt`. A rule already gone changes nothing when
-  revoked. The list is a read on `conversation:read`; a revoke needs
-  `conversation:operate` and is audited. A paired desktop's Settings lists each
+- **`conversation.approvalRules`** `{}` and
+  **`conversation.revokeApprovalRule`** `{ commandId, ruleId }`
+  (`approval-rules`) are the "always allow" rules the desktop's chats run
+  with, as its Settings ▸ Chats lists and revokes them: each rule by its
+  `id`, `label`, `toolName`, `toolKind`, the folder it holds in and
+  `createdAt`. A paired desktop shows the folder by its name. A rule already
+  gone changes nothing when revoked. The list is a read on
+  `conversation:read`; a revoke needs `conversation:operate` (it only makes
+  the chats ask again) and is audited. A paired desktop's Settings lists each
   machine's rules under its name, beside its own, since a chat followed from
   there asks that machine's rules, and says so for a machine that does not
   share them.
@@ -913,31 +1022,36 @@ over the tailnet, with the machine on the tab and above the transcript.
 New chat starts one there too: with Chat agent picked, the machine dropdown
 offers the paired machines, and launching on one asks it to start the chat in
 the chosen project and opens that same pane on it. Attached images go with
-the first message: the chat is started without its words, each image goes up
-that machine's upload route under the new chat's session, and the words are
-sent naming them, as a message to a followed chat is. That chat reads them
-exactly as one started there would. A chat that cannot take them (a machine
-without uploads, a CLI whose chat reads no images) is refused with the reason,
-and an empty chat it left behind is settled. Skills and attached files are this
+the first message: the chat is started without its words, and the words are
+then sent with the images, which go up on the same connection first
+(`uploads.*`), as a message to a followed chat's do. That chat reads them
+exactly as one started there would. A first message that does not go (a CLI
+whose chat reads no images, say) is refused with the reason, and the empty
+chat it left behind is settled. Skills and attached files are this
 machine's and do not travel yet; the launcher says so rather than dropping
-them. A WSL distribution is still not offered for a chat, which runs
-in the app's own process.
+them. A paired machine's WSL distributions and SSH machines are not offered:
+each is reached only from the desktop that holds it.
 
-- **The copy is kept.** Main follows over one socket per conversation, shared
-  by every window showing it, and keeps the transcript tail with its cursor
-  (log generation and last sequence) in the app profile. A dropped link or an
-  app restart shows the conversation at once and asks only for what came after
-  the cursor; another generation, or a cursor too far behind, gets a reset
-  snapshot that replaces the copy. Forgetting the machine deletes its copies.
-- **Every frame is validated** against the protocol before it touches the copy.
-  A frame of a known type in the wrong shape ends the follow with a sentence
-  rather than being skipped, since skipping an event and moving the cursor past
-  it would lose it.
-- **The link follows the host's advice.** A resync close waits the delay it
-  names, a wake does not cut that short, `busy` is retried after its delay under
-  the same id, a revoked device or a lost read grant ends the follow without
-  retrying, and a socket silent past two of the host's pings is re-dialled.
-- **What the view offers is what the grant and the lane allow.** A pairing
+- **The window follows on its own connection** (2026-11-14). The pane reads
+  and drives the chat over this window's own client of that machine's Studio
+  (`pairedChat.ts`, on the route `tailnet:<pairing>`), the client the Remote
+  band reads that machine's list on. Main follows nothing and keeps no copy.
+  The view holds the transcript with its cursor (log generation and last
+  sequence), and after a dropped link the client resumes the stream from that
+  cursor; another generation, or a cursor too far behind, comes back as a
+  reset snapshot that replaces what the view held. A window lets its
+  connection go after five idle minutes, and forgetting the machine closes it.
+- **Every frame is read against the protocol** before the view sees it. A
+  frame of a known type in the wrong shape drops the connection, which then
+  resumes from the cursor, since skipping an event and moving the cursor past
+  it would lose it. A frame type the client does not know is a newer Studio's,
+  and is skipped.
+- **The link follows the client runtime's rules**, the ones every Studio
+  client keeps: a retry backs off and never comes sooner than the delay the
+  machine names, `busy` is retried after its delay under the same command id,
+  a wake pings a live connection instead of closing it, and a revoked pairing
+  parks the connection rather than retrying.
+- **What the view offers is what the grant and the machine's welcome allow.** A pairing
   without `conversation:operate` sees the conversation with the composer,
   approvals and stop closed. A remote view offers a permanent approval rule
   only where the machine saves one (`conversation-permanent-approvals`), the
@@ -945,8 +1059,9 @@ in the app's own process.
   workspace; and never a checkpoint revert, or this machine's skills and files: what its
   composer offers of skills, mentions and commands is that machine's (below).
   Images it
-  does offer, where the machine lists the chat as taking them: main puts each
-  in that machine's upload store, as the phone does, and the send names them. It
+  does offer, where the machine lists the chat as taking them: each goes up on
+  the window's connection first (`uploads.*`), as the phone's do, and the send
+  names them. It
   offers the same two-preset switcher a local chat does, reading the preset the
   machine's list names; a desktop built before the list carried the preset
   leaves the switcher hidden rather than guessing. Its engine chip is the same
@@ -963,7 +1078,7 @@ in the app's own process.
   `conversation-queued-sends`: that machine holds it among its scheduled
   messages, shows it in the chat's own tray, and sends it when the turn ends,
   whether or not this machine is still awake. The pane draws the rows from
-  what that machine says it holds (`watchQueued`, `queued` frames); Edit takes
+  what that machine says it holds (the `conversation.queued` topic); Edit takes
   it back from there. Where that machine takes a steer, the row's Send now
   (and Primary+Enter with nothing typed) takes the message back and steers it
   into the running turn (2026-10-24); elsewhere it is Stop and send, which
@@ -1049,13 +1164,13 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   by its path in that folder (`mentions`), which that machine resolves as its
   own composer's chips are, refusing one outside the folder, behind a link, or
   gone. Where it advertises `conversation-commands`, the `/` menu lists what
-  the chat's CLI runs in that folder (`GET conversation-commands`), asked when
+  the chat's CLI runs in that folder (`conversation.listCommands`), asked when
   the menu opens rather than as the chat does, since each ask may start the
   CLI over there; asking again (`refresh`) needs `conversation:operate`. A `$`
   lists that machine's skills, as the "+" does. Where it advertises
   `conversation-message-files`, a file attached here by its path is a card, as
-  in a local chat: main reads it (25 MB at most), puts it in that machine's
-  store with `upload?kind=file` under the chat's live session, and the send
+  in a local chat: the window reads it (25 MB at most, `readAttachedFile`),
+  sends it up on its connection (`uploads.*`, as an attachment), and the send
   names it, so the agent reads it there by that path. A chat at rest there
   takes files once a message has woken it, as it takes pictures. A machine
   without one of these leaves that part of the composer as before: no @, the
@@ -1101,7 +1216,7 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   (`scheduleSend`): it keeps it among its own scheduled messages, shows it in
   the chat's own tray there, and sends it at its time whether or not this
   machine is awake. The tray here draws what that machine says it keeps
-  (`watchScheduled`, `scheduled` frames), and its Send now, Retry, Delete and
+  (the `conversation.scheduled` topic), and its Send now, Retry, Delete and
   Edit ask that machine; Edit deletes it there and puts it back in this
   composer, still set for its time. A machine without the capability, and a
   pairing that may only follow, offer no Schedule.
@@ -1111,15 +1226,15 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   every plan there, named as that machine's; the tray draws the notice a usage
   limit left on the chat's turn there, with Resume at reset, Always resume at
   reset, Cancel, Retry and Dismiss asking that machine, which sends the
-  resume (`watchUsageLimits`, `usageLimits` frames, `usageLimitResume`). A
+  resume (the `conversation.usageLimits` topic, `conversation.usageLimitResume`). A
   pairing that may only follow sees the notice without its buttons; a machine
   without the capability draws neither, as before.
 - **Its sub-agents are the other machine's** (2026-11-07). Where the machine
   advertises `conversation-subagents`, the right-hand panel's Subagents section
   lists a chat's sub-agents as that machine's own panel does, each with its
-  harness's logo and how it stands, live (`watchSubagents`, `subagents` frames).
+  harness's logo and how it stands, live (the `conversation.subagents` topic).
   The row in the transcript opens the same one. Opened, a sub-agent is followed
-  as a chat of its own, over a socket of its own, in the main pane, so its steps,
+  as a chat of its own, on the window's same connection, in the main pane, so its steps,
   its report and what it asks are read from it and answered there, and a message
   in its box goes straight to it, resuming it if it is at rest. What it asks is
   also answered above its parent's box. A pairing that may only follow sees a

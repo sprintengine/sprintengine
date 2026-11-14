@@ -25,6 +25,8 @@ import { StarGlyph } from './StarGlyph'
 import { TruncatedText } from './TruncatedText'
 import { isImeKey } from '../../utils/imeKey'
 import { ScrollArea } from './ScrollArea'
+import { agentSetupApi } from '../../studio/agentSetup'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 // One inventory, every door: the searchable skill list behind the composer
 // Skills chip, the `/` and `$` type-aheads, the terminal panel-header action
@@ -89,11 +91,11 @@ function reachableRow(skill: AgentSkillRow, harnessId: string): WorkspaceSkill {
 // is the honest answer.
 async function loadInventory(workspaceRoot: string | null, pluginId: string | null): Promise<LoadedInventory> {
   if (!pluginId) {
-    const result = await window.api.workspaceSkillsList({ workspaceRoot, includeGlobal: true })
+    const result = await agentSkillsApi.workspaceSkillsList({ workspaceRoot, includeGlobal: true })
     return result.ok ? { skills: result.skills, error: null } : { skills: [], error: result.message }
   }
 
-  const capabilities = await window.api.agentCapabilities({ workspaceRoot, pluginId, includeGlobal: true })
+  const capabilities = await agentSkillsApi.agentCapabilities({ workspaceRoot, pluginId, includeGlobal: true })
   if (!capabilities.ok) return { skills: [], error: capabilities.message }
   if (capabilities.support === 'unsupported') {
     return { skills: [], error: 'This agent does not read workspace skills.' }
@@ -106,7 +108,7 @@ async function loadInventory(workspaceRoot: string | null, pluginId: string | nu
 
   const reachable = capabilities.skills.map((skill) => reachableRow(skill, capabilities.harnessId))
   const reachableIds = new Set(reachable.map((skill) => skill.id))
-  const bundled = await window.api.builtinSkillsList()
+  const bundled = await agentSetupApi.builtinSkillsList()
   const available = bundled
     .filter((skill) => !reachableIds.has(skill.id) && builtinInstallsIntoHarness(skill, capabilities.harnessId))
     .map((skill): WorkspaceSkill => ({
@@ -129,13 +131,14 @@ async function loadInventory(workspaceRoot: string | null, pluginId: string | nu
  * network read and stays in Extensions, where reading it is asked for.
  */
 async function loadSourceSkills(): Promise<PickerSkill[]> {
-  if (typeof window.api.skillsListSources !== 'function' || typeof window.api.skillsGetScan !== 'function') return []
-  const listed = await window.api.skillsListSources()
+  if (typeof agentSkillsApi.skillsListSources !== 'function' || typeof agentSkillsApi.skillsGetScan !== 'function')
+    return []
+  const listed = await agentSkillsApi.skillsListSources()
   if (!listed.ok) return []
   const readable = listed.sources.filter((source) => source.kind !== 'github' || source.scannedAt !== '')
   const scans = await Promise.all(
     readable.map((source) =>
-      window.api
+      agentSkillsApi
         .skillsGetScan({ sourceId: source.id })
         .then((result) => (result.ok ? { sourceId: source.id, skills: result.scan.skills } : null))
         .catch(() => null),
@@ -448,7 +451,11 @@ async function installFromSource(from: {
   skillId: string
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   try {
-    const result = await window.api.skillsInstall({ sourceId: from.sourceId, skillId: from.skillId, scope: 'global' })
+    const result = await agentSkillsApi.skillsInstall({
+      sourceId: from.sourceId,
+      skillId: from.skillId,
+      scope: 'global',
+    })
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : 'Unable to install the skill.' }

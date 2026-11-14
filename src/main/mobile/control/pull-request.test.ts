@@ -2,13 +2,12 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { parseFilesView } from '../../github/pull-request-detail-read'
 import type { PullRequestWatchRead } from '../../github/pull-request-watch-read'
-import { MobileControlCommandService, mobileControlProtocolVersion, type MobileControlCommand } from './command'
-import { validateMobileControlCommand } from './command-validation'
+import { STUDIO_PULL_REQUEST_READS_METHODS } from '../../../../packages/studio-protocol/src/public'
+import { createStudioPhoneReads } from '../../../server/backlog/backlog-domain'
 import { buildPullRequestDetail, fileDiffSection, pageFileDiff, type MobileControlPullRequestReader } from './pull-request'
-import { mobilePullRequestLimits } from './protocol'
+import { STUDIO_PULL_REQUEST_READ_LIMITS } from '../../../../packages/studio-protocol/src/public'
 
 const URL = 'https://github.com/acme/app/pull/42'
-const now = new Date('2026-10-30T12:00:00.000Z')
 
 function summary(overrides: Partial<Extract<PullRequestWatchRead, { settled: true }>> = {}) {
   return {
@@ -60,18 +59,6 @@ const DIFF = [
   '',
 ].join('\n')
 
-function command(type: MobileControlCommand['type'], payload: Record<string, unknown>): MobileControlCommand {
-  return {
-    protocolVersion: mobileControlProtocolVersion,
-    commandId: `cmd-${Math.random()}`,
-    type,
-    issuedAt: now.toISOString(),
-    deviceId: 'android-phone',
-    idempotencyKey: 'same-key',
-    payload,
-  } as MobileControlCommand
-}
-
 function fakeReader(): MobileControlPullRequestReader & { calls: string[] } {
   const calls: string[] = []
   return {
@@ -107,7 +94,7 @@ test('a pull request detail counts every check and remark, and lists the failing
     [3000, 2000, 1000],
     'newest first',
   )
-  assert.ok(detail.remarks.latest[1].excerpt.length <= mobilePullRequestLimits.remarkChars)
+  assert.ok(detail.remarks.latest[1].excerpt.length <= STUDIO_PULL_REQUEST_READ_LIMITS.remarkChars)
   assert.ok(detail.remarks.latest[1].excerpt.endsWith('…'))
 })
 
@@ -124,9 +111,9 @@ test('a pull request detail holds its lists to their bounds, and says when the f
     changedFiles: 400,
   })
   const detail = buildPullRequestDetail(URL, summary({ checks }), files)
-  assert.equal(detail.checks.items.length, mobilePullRequestLimits.checks)
+  assert.equal(detail.checks.items.length, STUDIO_PULL_REQUEST_READ_LIMITS.checks)
   assert.equal(detail.checks.passed, 80)
-  assert.equal(detail.files?.items.length, mobilePullRequestLimits.files)
+  assert.equal(detail.files?.items.length, STUDIO_PULL_REQUEST_READ_LIMITS.files)
   assert.equal(detail.files?.total, 400)
   assert.equal(buildPullRequestDetail(URL, summary(), { settled: false, reason: 'timeout' }).files, null)
 })
@@ -139,7 +126,7 @@ test("a file's section is cut from the whole diff, by either name of a renamed f
 })
 
 test('a diff is paged between hunks, a long hunk is cut at the page, and a long line is held to its bound', () => {
-  const pageLines = mobilePullRequestLimits.diffPageLines
+  const pageLines = STUDIO_PULL_REQUEST_READ_LIMITS.diffPageLines
   const hunk = (n: number) => ['@@ -1 +1 @@', ...Array.from({ length: n }, (_, i) => `+line ${i}`)]
   const section = ['diff --git a/f b/f', '--- a/f', '+++ b/f', ...hunk(10), ...hunk(pageLines)]
   const first = pageFileDiff(URL, 'f', section, 0)
@@ -152,48 +139,38 @@ test('a diff is paged between hunks, a long hunk is cut at the page, and a long 
   assert.equal(last.totalLines, section.length)
 
   const long = pageFileDiff(URL, 'f', ['+' + 'y'.repeat(5000)], 0)
-  assert.equal(long.patch.length, mobilePullRequestLimits.diffLineChars)
+  assert.equal(long.patch.length, STUDIO_PULL_REQUEST_READ_LIMITS.diffLineChars)
 })
 
-test('pull request reads are validated, answered afresh each time, and kept out of the audit log', async () => {
-  assert.equal(validateMobileControlCommand(command('pullRequest.read', {})).ok, false)
-  assert.equal(validateMobileControlCommand(command('pullRequest.diff', { url: URL })).ok, false)
-  assert.equal(validateMobileControlCommand(command('pullRequest.diff', { url: URL, path: 'f', offset: -1 })).ok, false)
-  assert.equal(validateMobileControlCommand(command('pullRequest.read', { url: 'x'.repeat(600) })).ok, false)
-  assert.equal(validateMobileControlCommand(command('pullRequest.diff', { url: URL, path: 'f', offset: 3 })).ok, true)
+test('pull request reads are validated, and answered afresh each time', async () => {
+  const detail = STUDIO_PULL_REQUEST_READS_METHODS['pullRequests.detail'].params
+  const diff = STUDIO_PULL_REQUEST_READS_METHODS['pullRequests.diff'].params
+  assert.equal(detail({}).ok, false)
+  assert.equal(diff({ url: URL }).ok, false)
+  assert.equal(diff({ url: URL, path: 'f', offset: -1 }).ok, false)
+  assert.equal(detail({ url: 'x'.repeat(600) }).ok, false)
+  assert.equal(diff({ url: URL, path: 'f', offset: 3 }).ok, true)
 
   const reader = fakeReader()
-  const service = new MobileControlCommandService({ now: () => now, pullRequests: reader })
-  const first = await service.dispatch(command('pullRequest.read', { url: URL }))
-  assert.equal(first.ok, true)
-  assert.equal(first.ok ? (first.data as { number: number }).number : null, 42)
-  // The same key again is read again, not replayed.
-  await service.dispatch(command('pullRequest.read', { url: URL }))
+  const reads = createStudioPhoneReads({ roots: () => [], pullRequests: reader })
+  const first = await reads.pullRequest(URL)
+  assert.equal(first.ok ? first.value.number : null, 42)
+  // Asked again, it is read again: nothing is kept.
+  await reads.pullRequest(URL)
   assert.deepEqual(reader.calls, ['summary', 'files', 'summary', 'files'])
 
-  const page = await service.dispatch(command('pullRequest.diff', { url: URL, path: 'src/a.ts' }))
-  assert.equal(page.ok, true)
-  assert.match(page.ok ? (page.data as { patch: string }).patch : '', /\+new$/)
-  const missing = await service.dispatch(command('pullRequest.diff', { url: URL, path: 'nope.ts' }))
-  assert.equal(missing.ok ? null : missing.error.code, 'invalid_payload')
-  assert.deepEqual(
-    service.getAuditLog().map((entry) => entry.status),
-    ['rejected'],
-    'only the refusal is audited; a read changes nothing',
-  )
+  const page = await reads.pullRequestDiff(URL, 'src/a.ts', 0)
+  assert.match(page.ok ? page.value.patch : '', /\+new$/)
+  const missing = await reads.pullRequestDiff(URL, 'nope.ts', 0)
+  assert.equal(missing.ok ? null : missing.code, 'invalid_params')
 })
 
-test('a pull request read that could not be made is refused in words, retryable where waiting helps', async () => {
+test('a pull request read that could not be made is refused in words', async () => {
   const reader: MobileControlPullRequestReader = {
     ...fakeReader(),
     summary: async () => ({ settled: false, reason: 'rate-limited' }),
   }
-  const service = new MobileControlCommandService({ now: () => now, pullRequests: reader })
-  const result = await service.dispatch(command('pullRequest.read', { url: URL }))
-  assert.equal(result.ok, false)
-  if (!result.ok) {
-    assert.equal(result.error.code, 'internal_error')
-    assert.equal(result.error.retryable, true)
-    assert.match(result.error.message, /rate limit/)
-  }
+  const result = await createStudioPhoneReads({ roots: () => [], pullRequests: reader }).pullRequest(URL)
+  assert.equal(result.ok ? null : result.code, 'unavailable')
+  assert.match(result.ok ? '' : result.message, /rate limit/)
 })

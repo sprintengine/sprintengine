@@ -10,51 +10,29 @@
  * bridge) and the renderer (the settings row and the title requester).
  */
 
-import type { CommitMessageInput, CommitMessageText } from './commit-message'
+import type { CommitMessageInput } from './commit-message'
 import type { PullRequestText, PullRequestTextInput } from './pull-request-text'
-import { normalizeWritingStyle, type TextGenerationWritingStyle } from './writing-style'
+import { normalizeWritingStyle } from './writing-style'
+import type {
+  ChatTitleRequest,
+  CommitMessageResult,
+  TextGenerationCliRuntimeOverrides,
+  TextGenerationEngine,
+  TextGenerationFailure,
+  TextGenerationResult,
+  TextGenerationSettings,
+} from '../../../packages/studio-protocol/src/public'
 
-/** Which CLI runs the job, on which model, at which effort. */
-export type TextGenerationEngine = {
-  cli: string
-  model: string
-  /** Absent means the backend's own cheap default, not the CLI's default. */
-  reasoning?: string
-}
-
-/**
- * What a generation call can fail with. Every code is a reason to keep what
- * the caller already had, never a reason to show an error: a title that does
- * not arrive is the heuristic title, silently (rule of record).
- */
-type TextGenerationFailureCode =
-  | 'unsupported' // no backend for this CLI
-  | 'unavailable' // the CLI is not installed, or could not be probed
-  | 'timeout'
-  | 'transport' // spawn failed, non-zero exit, or unparseable output
-  | 'guardrail' // the model answered, but not with a usable title
-  | 'cancelled' // the person called it off, and the CLI was stopped
-
-export type TextGenerationResult =
-  { ok: true; value: string; ms: number } | { ok: false; code: TextGenerationFailureCode; message: string }
-
-/**
- * Per-CLI command override, the same shape the launch path forwards. `hostId`
- * names the machine the command belongs to (a WSL distribution); absent is
- * this machine.
- */
-export type TextGenerationCliRuntimeOverrides = Record<
-  string,
-  { command?: string; hostId?: import('../execution-host').ExecutionHostId } | undefined
->
-
-export type ChatTitleRequest = {
-  /** The first prompt the person sent. Truncated by the prompt builder. */
-  prompt: string
-  engine: TextGenerationEngine
-  cliRuntimes?: TextGenerationCliRuntimeOverrides
-  /** Caller-owned deadline. Defaults to DEFAULT_TEXT_GENERATION_TIMEOUT_MS. */
-  timeoutMs?: number
+// What a caller asks for and what comes back, as the Studio protocol carries
+// them (`textGeneration.*`, `commitMessage.*`): every failure code is a reason
+// to keep what the caller already had, never a reason to show an error.
+export type {
+  ChatTitleRequest,
+  CommitMessageResult,
+  TextGenerationCliRuntimeOverrides,
+  TextGenerationEngine,
+  TextGenerationResult,
+  TextGenerationSettings,
 }
 
 /** The title and description of a pull request, drafted for the person to edit before anything is sent. */
@@ -67,8 +45,7 @@ export type PullRequestTextRequest = {
   signal?: AbortSignal
 }
 
-export type PullRequestTextResult =
-  { ok: true; value: PullRequestText; ms: number } | Extract<TextGenerationResult, { ok: false }>
+export type PullRequestTextResult = { ok: true; value: PullRequestText; ms: number } | TextGenerationFailure
 
 /** A commit message for what is staged, drafted into the Git panel's box for the person to edit before committing. */
 export type CommitMessageRequest = {
@@ -79,9 +56,6 @@ export type CommitMessageRequest = {
   /** The person stopped the draft: the CLI is stopped. Main-side only; it does not cross IPC. */
   signal?: AbortSignal
 }
-
-export type CommitMessageResult =
-  { ok: true; value: CommitMessageText; ms: number } | Extract<TextGenerationResult, { ok: false }>
 
 /**
  * A title is a background job with nothing waiting on it, so the budget is
@@ -116,18 +90,6 @@ const TEXT_GENERATION_BACKENDS: Readonly<
 
 export function supportsTextGeneration(cli: string | null | undefined): boolean {
   return typeof cli === 'string' && Object.prototype.hasOwnProperty.call(TEXT_GENERATION_BACKENDS, cli)
-}
-
-/**
- * The person's setting, as persisted. `engine` null means "whichever supported
- * CLI is installed, at its default"; a stored engine with an empty model means
- * that CLI at its default model. `writingStyle` is how a drafted commit
- * message or pull request is written (`writing-style.ts`).
- */
-export type TextGenerationSettings = {
-  enabled: boolean
-  engine: TextGenerationEngine | null
-  writingStyle: TextGenerationWritingStyle
 }
 
 /** The part of the setting that decides whether a call is made, and on which engine. */

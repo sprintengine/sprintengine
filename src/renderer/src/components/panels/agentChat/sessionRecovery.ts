@@ -34,16 +34,23 @@ export function sessionWasLost(result: { ok: boolean; code?: unknown; message?: 
  * session again (`restart`) and send once more on that one. A restart that
  * fails answers with its own words, which say more than the lost session's;
  * where the view cannot start a session (`null`), the refusal stands.
+ *
+ * Both attempts carry one command id. The first may have reached a server
+ * that took the message and then restarted (the session it named goes with
+ * it); sent again under its id, it is answered from the receipt the first
+ * left in the chat's log instead of running its turn a second time.
  */
 export async function sendRecoveringSession<R extends ActionResult>(input: {
   sessionId: string
-  send(sessionId: string): Promise<R>
+  send(sessionId: string, commandId: string): Promise<R>
   restart(): Promise<{ ok: true; sessionId: string } | { ok: false; message: string } | null>
+  newCommandId?: () => string
 }): Promise<R | { ok: false; message: string }> {
-  const first = await input.send(input.sessionId)
+  const commandId = (input.newCommandId ?? (() => crypto.randomUUID()))()
+  const first = await input.send(input.sessionId, commandId)
   if (!sessionWasLost(first)) return first
   const restarted = await input.restart()
   if (!restarted) return first
   if (!restarted.ok) return { ok: false, message: restarted.message }
-  return input.send(restarted.sessionId)
+  return input.send(restarted.sessionId, commandId)
 }

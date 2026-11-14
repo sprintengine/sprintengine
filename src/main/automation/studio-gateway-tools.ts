@@ -2,9 +2,8 @@ import { BROWSER_MUTATION_TOOL_NAMES } from './browser-tools'
 import { CANVAS_MUTATION_TOOL_NAMES } from './canvas-tools'
 import { EDITOR_MUTATION_TOOL_NAMES } from './editor-tools'
 import type { McpToolContribution } from '../module-host/main-host'
-import { CHAT_MANAGE_MUTATION_TOOL_NAMES, CONVERSATION_MUTATION_TOOL_NAMES } from './conversation-tools'
+import { CONVERSATION_MUTATION_TOOL_NAMES } from './conversation-tools'
 import { CONVERSATION_PULL_REQUEST_MUTATION_TOOL_NAMES } from './conversation-pull-request-tools'
-import { CONVERSATION_COMMAND_TOOL_NAMES } from './tailnet/tailnet-conversation-stream'
 import { TAILNET_MUTATION_TOOL_NAMES } from './tailnet/tailnet-tools'
 import { TOUR_MUTATION_TOOL_NAMES } from './tour-tools'
 import { ARTIFACTS_MUTATION_TOOL_NAMES } from '../artifacts/artifacts-tools'
@@ -45,17 +44,12 @@ const APP_MUTATION_TOOLS = new Set([
   'backlog.repair',
   'backlog.update',
   'backlog.work',
-  // A paired device's commands on a conversation socket: send, stop, answer,
-  // approve, change the permission preset or the model. They are not MCP tools, but they
-  // act on this machine for a remote device exactly as one does, so each
-  // attempt lands in the same audit with the device that made it.
-  ...CONVERSATION_COMMAND_TOOL_NAMES,
+  // An agent's message to another chat, and stopping its turn.
+  'conversation.send',
+  'conversation.interrupt',
   // Starting a chat on this machine, on the same `conversation:operate` grant
   // as the commands above, and audited with the device that asked.
   ...CONVERSATION_MUTATION_TOOL_NAMES,
-  // A paired desktop's chat management on a chat here: its name and the rest
-  // of what its menus write beyond the marks, on the same grant.
-  ...CHAT_MANAGE_MUTATION_TOOL_NAMES,
   // A paired desktop's Create PR on a chat here: drafting runs a CLI, and the
   // push and the creation reach the forge. Reading whether it may show is not
   // among them.
@@ -85,12 +79,6 @@ const APP_MUTATION_TOOLS = new Set([
   // path the caller names. Served on the local socket only
   // (`localOnlyGatewayToolReason`); reading the guide stays a read.
   ...EXTENSION_MUTATION_TOOL_NAMES,
-  // The mobile companion's command envelope over the gateway. A mutation for both of its consequences: a
-  // paired phone needs `workspace:operate` to drive it, and every dispatch —
-  // including a refused one — lands in the audit with the device identity.
-  // `workspace.snapshot` deliberately is NOT here: it is the phone's read
-  // model and maps to `workspace:read` like every other read.
-  'workspace.mobile_command',
 ])
 
 // Builds the gateway's per-request tool resolver. The app tools are merged once,

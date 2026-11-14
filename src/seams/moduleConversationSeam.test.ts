@@ -17,7 +17,6 @@ import { launchPermissionCeiling } from '../main/automation/launch-permission-ca
 import { createStudioGatewayTools } from '../main/automation/studio-gateway-tools'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
 import { ConversationRuntime } from '../main/conversation-runtime'
-import { createFakeIpcMain } from '../main/module-host/ipc-main-fake.test-helper'
 import { loadMainModules } from '../main/module-host/load-modules'
 import { createAgentRuntimeModule } from '../main/modules/agent-runtime-module'
 import { createWorkspaceRegistryService } from '../main/workspace-registry-service'
@@ -143,7 +142,7 @@ test('moduleConversationSeam', async () => {
     version: 1,
     defaultEnabled: true,
     source: 'third-party',
-    engines: { hostApi: 1 },
+    engines: { hostApi: 2 },
     // As the SDK's docs tell a module that uses a chat service: the agent
     // runtime provides it, so it loads first.
     dependsOn: ['agent-runtime'],
@@ -164,7 +163,6 @@ test('moduleConversationSeam', async () => {
     },
   })
   const load = loadMainModules({
-    ipcMain: createFakeIpcMain().ipcMain,
     modules: [
       agentRuntime,
       {

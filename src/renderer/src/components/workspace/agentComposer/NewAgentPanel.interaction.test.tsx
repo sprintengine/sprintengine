@@ -4,6 +4,12 @@ import { JSDOM } from 'jsdom'
 import { standInImageDecoding } from '../../../../../../tests/image-decoding'
 import { composerDisabled, composerField, composerText, typeIntoComposer } from '../../../../../../tests/composer-field'
 import { test, vi } from 'vitest'
+import { adoptExtensionsDouble } from '../../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../../studio/extensions', () => import('../../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 // The "+" menu as the panel renders it, counted: a pass-through behind the
 // same memo, so a count that moves is a prop that changed identity.
@@ -85,7 +91,7 @@ test('NewAgentPanel interaction', async () => {
   // The mesh the remote-machine tests drive (remote-sessions-ux /
   // new-chat-on-a-remote-machine). Reassigned per check.
   let meshConnections: Array<Record<string, unknown>> = []
-  let meshBrowseAnswer: (connectionId: string) => Record<string, unknown> = () => ({
+  let machineBrowse: (connectionId: string) => Record<string, unknown> = () => ({
     connectionId: 'c',
     reachable: true,
     unreachableReason: null,
@@ -98,10 +104,7 @@ test('NewAgentPanel interaction', async () => {
   // Which repository a local folder is (one-project-across-machines); null = no remote.
   let localIdentityAnswer: (folderPath: string) => Record<string, unknown> | null = () => null
   // The picked remote project's checkout facts (checkout-and-branch-on-remote-create).
-  let meshCheckoutAnswer: (connectionId: string, workspaceId: string) => Record<string, unknown> = (
-    _c,
-    workspaceId,
-  ) => ({
+  let machineCheckout: (connectionId: string, workspaceId: string) => Record<string, unknown> = (_c, workspaceId) => ({
     ok: true,
     checkout: {
       workspaceId,
@@ -133,9 +136,6 @@ test('NewAgentPanel interaction', async () => {
     },
     getGitRepoRoot: async () => '/proj',
     meshListConnections: async () => meshConnections,
-    meshBrowse: async (connectionId: string) => meshBrowseAnswer(connectionId),
-    meshWorkspaceCheckout: async (connectionId: string, workspaceId: string) =>
-      meshCheckoutAnswer(connectionId, workspaceId),
     getGitRepositoryIdentity: async (folderPath: string) => localIdentityAnswer(folderPath),
     onMeshEvent: () => () => {},
     defaultWorkspaceParentDir: async () => '/w',
@@ -197,6 +197,31 @@ test('NewAgentPanel interaction', async () => {
         issues: [],
       }
     },
+  }
+  // Each paired machine's Studio, as this window's own client of it reaches
+  // it: its projects as `machineBrowse` says them, and a project's checkout as
+  // `machineCheckout` does.
+  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
+  const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const pairedStudio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
+    'workspaces.list': (_params, connectionId) => {
+      const browse = machineBrowse(connectionId)
+      const gap = (browse.gaps as Array<{ code: string; message: string }> | undefined)?.[0]
+      if (gap) throw new StudioError(gap.code, gap.message)
+      return { workspaces: browse.workspaces }
+    },
+    'workspaces.checkout': (params, connectionId) => {
+      const answer = machineCheckout(connectionId, params.workspaceId as string)
+      if (answer.ok !== true) throw new StudioError(String(answer.code), String(answer.message))
+      return answer.checkout
+    },
+  })
+  // A machine that refuses the pairing, or is away, does not connect at all.
+  pairedStudio.refuse = (connectionId) => {
+    const browse = machineBrowse(connectionId)
+    if (browse.unauthorized === true) return new StudioError('unauthorized', 'That machine refused this pairing.')
+    if (browse.reachable === false) return new StudioError('unavailable', String(browse.unreachableReason))
+    return null
   }
   // The MCP server these checks pick. It is INSTALLED — since the third-party
   // retirement (2026-09-08) there is no catalogue to offer one from, so
@@ -604,7 +629,9 @@ test('NewAgentPanel interaction', async () => {
       await act(async () => {
         input.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
       })
-      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      // Staging reads the file first; waited for by its outcome, not a fixed delay a loaded machine outruns.
+      for (let waited = 0; waited < 5_000 && !view.container.querySelector('img[src^="data:image/png"]'); waited += 20)
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
       assert.ok(view.container.querySelector('img[src^="data:image/png"]'), 'the image is staged on the box')
       const field = await typeInto(view, 'look')
       await act(async () => {

@@ -5,6 +5,7 @@ import { fileMentionCandidates } from './composerContextPicker'
 import type { ComposerKeyEvent } from './ComposerField'
 import { rememberFileVisit } from '../../../utils/recentFileVisits'
 import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 const file = (path: string): FileSearchEntry => ({
   path,

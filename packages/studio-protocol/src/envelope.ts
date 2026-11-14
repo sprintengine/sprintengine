@@ -23,6 +23,8 @@ import {
   type StudioProgressFrame,
   type StudioReplyFrame,
 } from './tools.js'
+import { STUDIO_PROTOCOL_WINDOW } from './handshake.js'
+import { parseStudioIncompatibleFrame, type StudioIncompatibleFrame } from './update.js'
 
 // The connection envelope: one connection per client, carrying every
 // namespace. A request is answered under its id; a stream is keyed by the
@@ -140,6 +142,13 @@ export type StudioEnvironment = {
   hostKind: 'local' | 'wsl' | 'ssh' | 'tailnet'
   os: string
   arch: string
+  /**
+   * A WSL distribution's Studio: where it mounts the Windows drives (`/mnt/`
+   * unless its wsl.conf says otherwise), or null when it mounts none. A
+   * client on Windows spells a drive path for it by this (`C:\code` is
+   * `/mnt/c/code` there). Absent elsewhere, and from a Studio before it.
+   */
+  driveMountRoot?: string | null
 }
 
 export type StudioServerIdentity = { name: string; version: string }
@@ -149,6 +158,14 @@ export type StudioWelcomeFrame = {
   protocolVersion: number
   minProtocolVersion: number
   server: StudioServerIdentity
+  /**
+   * This run of the server, minted each time it starts: the receipts a
+   * mutation keeps in memory are this boot's alone. A client sends such a
+   * mutation again after a reconnect only to the same boot
+   * (`studioResendableAfterRestart`). Absent from a server before it, which a
+   * client takes as a boot it cannot recognise.
+   */
+  bootId?: string
   environment: StudioEnvironment
   /** The Studio capabilities this server serves (`STUDIO_CAPABILITIES`). */
   capabilities: string[]
@@ -203,11 +220,25 @@ export type StudioSubscriptionFailedFrame = {
 /** A logical frame over `STUDIO_MAX_FRAME_BYTES`: its `json` strings, in `index` order, concatenate to it. */
 export type StudioChunkFrame = { t: 'chunk'; frameId: string; index: number; total: number; json: string }
 
-/** Studio is closing the connection, and why. With `retryAfterMs`, reconnect after that long. */
-export type StudioByeFrame = { t: 'bye'; code: string; message: string; retryAfterMs?: number }
+/**
+ * Studio is closing the connection, and why. With `retryAfterMs`, reconnect
+ * after that long. An `unsupported_protocol_version` names Studio's own
+ * protocol window (`protocolVersion`, `minProtocolVersion`), so the client
+ * can judge which side is behind (`studioCompatibility`); a Studio before
+ * they were added names neither.
+ */
+export type StudioByeFrame = {
+  t: 'bye'
+  code: string
+  message: string
+  retryAfterMs?: number
+  protocolVersion?: number
+  minProtocolVersion?: number
+}
 
 export type StudioServerFrame =
   | StudioWelcomeFrame
+  | StudioIncompatibleFrame
   | StudioResponseFrame
   | StudioStreamFrame
   | StudioPushFrame
@@ -277,6 +308,18 @@ export const STUDIO_ERROR_CODES = [
   'cli_not_conversational',
   'unknown_skill',
   'conversation_start_failed',
+  // New chat's: no worktree could be cut or found for the chat, or its CLI has no such effort.
+  'worktree_unavailable',
+  'unsupported_effort',
+  // Asked on a connection kept for the update methods only (an `incompatible` one).
+  'unsupported_protocol_version',
+  // `update.start` on a Studio that does not update itself; the words say how to.
+  'update_unavailable',
+  // A module method called on a Studio where the module does not run (not
+  // installed, switched off, refused or failed to load), or one it does not
+  // declare under the entry it was called through.
+  'module_unavailable',
+  'module_method_unknown',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]
@@ -440,7 +483,18 @@ export function studioClientFrameIds(value: unknown): { requestId?: string; subs
   return {}
 }
 
-const SERVER_FRAME_TYPES = new Set(['welcome', 'res', 'frame', 'push', 'subFailed', 'chunk', 'bye', 'call', 'cancel'])
+const SERVER_FRAME_TYPES = new Set([
+  'welcome',
+  'incompatible',
+  'res',
+  'frame',
+  'push',
+  'subFailed',
+  'chunk',
+  'bye',
+  'call',
+  'cancel',
+])
 
 /**
  * Whether a frame's `t` is one this version of the envelope defines. A client
@@ -466,7 +520,16 @@ function grant(value: unknown): StudioGrant | null {
 function environment(value: unknown): StudioEnvironment | null {
   if (!record(value) || !id(value.id) || !text(value.os, 64) || !text(value.arch, 64)) return null
   if (!['local', 'wsl', 'ssh', 'tailnet'].includes(value.hostKind as string)) return null
-  return { id: value.id, hostKind: value.hostKind as StudioEnvironment['hostKind'], os: value.os, arch: value.arch }
+  const mount = value.driveMountRoot
+  return {
+    id: value.id,
+    hostKind: value.hostKind as StudioEnvironment['hostKind'],
+    os: value.os,
+    arch: value.arch,
+    ...(mount === null || (typeof mount === 'string' && mount.startsWith('/') && mount.length <= 256)
+      ? { driveMountRoot: mount }
+      : {}),
+  }
 }
 
 /**
@@ -490,11 +553,15 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
       if (!conversation || !granted || !where || !Array.isArray(frame.capabilities)) return null
       const pairing = frame.pairing
       if (pairing !== undefined && !(record(pairing) && secret(pairing.token))) return null
+      // One in the wrong shape is dropped, not refused: a boot not recognised
+      // only means nothing is sent again that could run twice.
+      const bootId = id(frame.bootId) ? frame.bootId : undefined
       return {
         t: 'welcome',
         protocolVersion: frame.protocolVersion,
         minProtocolVersion: frame.minProtocolVersion,
         server: { name: server.name, version: server.version },
+        ...(bootId === undefined ? {} : { bootId }),
         environment: where,
         capabilities: capabilities(frame.capabilities),
         conversation,
@@ -502,6 +569,10 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
         ...(pairing === undefined ? {} : { pairing: { token: (pairing as { token: string }).token } }),
       }
     }
+    case 'incompatible':
+      // Read leniently (`update.ts`): this frame is what a client from any
+      // release reads from a Studio of any later one.
+      return parseStudioIncompatibleFrame(frame, STUDIO_PROTOCOL_WINDOW)
     case 'res': {
       if (!id(frame.id) || typeof frame.ok !== 'boolean') return null
       if (frame.ok) return { t: 'res', id: frame.id, ok: true, result: frame.result }
@@ -547,7 +618,16 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
         : null
     case 'bye':
       return code(frame.code) && text(frame.message)
-        ? { t: 'bye', code: frame.code, message: frame.message, ...retry(frame) }
+        ? {
+            t: 'bye',
+            code: frame.code,
+            message: frame.message,
+            ...retry(frame),
+            // Both or neither: half a window judges nothing.
+            ...(version(frame.protocolVersion) && version(frame.minProtocolVersion)
+              ? { protocolVersion: frame.protocolVersion, minProtocolVersion: frame.minProtocolVersion }
+              : {}),
+          }
         : null
     case 'call':
       return parseStudioCallFrame(frame)

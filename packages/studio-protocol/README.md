@@ -8,9 +8,9 @@ unchanged and re-exports all of it, so a client depends on this one package.
 [`@sprintengine/agent-sdk`](../agent-sdk/README.md) is the client library
 built on it.
 
-The conversation package stays what it is: the conversation lane on its own,
-which Studio also serves to paired devices over the tailnet. This package adds
-the connection around it. No Electron, Node or React dependencies; it runs in
+The conversation package is the contract alone, with no transport of its own.
+This package adds the connection around it, and is how every client, a paired
+phone or desktop on the tailnet included, reaches Studio's chats. No Electron, Node or React dependencies; it runs in
 Node and in a browser.
 
 ## Where it is served
@@ -37,13 +37,13 @@ client → Studio
   { t: 'unsub', id }
 
 Studio → client
-  { t: 'welcome', protocolVersion, minProtocolVersion, server, environment, capabilities, conversation, grant, pairing? }
+  { t: 'welcome', protocolVersion, minProtocolVersion, server, bootId?, environment, capabilities, conversation, grant, pairing? }
   { t: 'res', id, ok: true, result } | { t: 'res', id, ok: false, error: { code, message, retryAfterMs? } }
   { t: 'frame', sub, frame }                       // a conversation server frame: snapshot, event, synchronized
   { t: 'push', sub, payload }                      // one message of a stream with no cursor
   { t: 'subFailed', sub, code, message, retryable, retryAfterMs?, errorId? }
   { t: 'chunk', frameId, index, total, json }      // a frame over STUDIO_MAX_FRAME_BYTES
-  { t: 'bye', code, message, retryAfterMs? }       // Studio is closing the connection
+  { t: 'bye', code, message, retryAfterMs?, protocolVersion?, minProtocolVersion? } // Studio is closing the connection
 ```
 
 A refusal Studio tells in stable words, in place of a cause that could name
@@ -52,8 +52,10 @@ cause, for someone looking into it to quote.
 
 `hello` is the first frame, within `STUDIO_HELLO_TIMEOUT_MS`. It is answered by
 `welcome`, or by `bye` and a close: `unauthorized` for a credential Studio does
-not hold, `unsupported_protocol_version` with both numbers named
-(`checkStudioProtocolVersion`). Validate what a Studio sends with
+not hold, `unsupported_protocol_version` with both numbers named, in the
+client's words (`studioIncompatibility`), and Studio's own window
+(`protocolVersion`, `minProtocolVersion`), from which the client judges which
+side is behind (`studioCompatibility`) rather than reading the words. Validate what a Studio sends with
 `parseStudioServerFrame`; a Studio validates what a client sends with
 `parseStudioClientFrame` and `parseStudioMethodParams`.
 
@@ -88,9 +90,112 @@ The `welcome`'s `grant` is what the connection may do:
   `bypass` ceiling, since a tool allowed unasked is as loose as bypass for it,
   and answering a request `conversation` (an allow rule for its kind) needs a
   ceiling of at least `auto`.
+- `environment:maintain` — update this Studio (`update.start`): download a
+  new version, drain and restart into it; install or update an agent CLI on
+  its machine (`cliRuntimes.install`, `.update`, `.updateAll`, and their
+  `cliRuntimes.output` and `cliRuntimes.updateAllProgress` streams).
+- `settings:write` — change this Studio's settings: set or clear a provider's
+  key (`providers.setSecret`, `.clearSecret`), revoke an approval rule, turn
+  the CLI version check on or off (`cliVersions.setEnabled`), set the
+  model-written titles setting (`textGeneration.setSettings`), switch the
+  resume after a usage limit for every chat (`usageLimitResumes.setAuto`),
+  and, with `conversation:operate`, open a chat to an app's toolset or close
+  it (`tools.grant`).
+- `providers:read` also reads the agent CLIs: detect one, its install methods
+  and version advisories (`cliRuntimes.detect`, `.installMethods`,
+  `cliVersions.advisories` and its `cliVersions.changed` stream, under
+  `agent-runtimes`), and the models each reports (`cliModels.discover`,
+  `cliModels.changed`, under `agent-settings`). Having the person's CLI write
+  a chat's title or a commit message (`textGeneration.chatTitle`,
+  `commitMessage.draft` and `.cancel`) is an owner's: it runs a CLI on the
+  Studio's machine outside any chat.
+- The skills, design systems and cards a Studio's agents are given are under
+  `agent-skills`: what can be installed and what a workspace's agents have is
+  `providers:read`, reading a design bundle `files:read`, the skill sources and
+  the design library `settings:write`, installing or removing a skill
+  `environment:maintain`, and seeding, attaching or detaching a bundle
+  `files:write`. A plugin's install and uninstall, a bundle's lint and a card's
+  Go (`cards.run`) are an owner's.
+- `modules:read` — hear what this Studio's modules say: the `module.events`
+  and `module.notifications` streams, and call the methods they declare
+  `read` (`module.read`), under the `modules` capability. It also reads the
+  host's services as a module's window half does, naming the module
+  (`moduleBacklog.location`, `moduleUsage.query`). Not an owner's only; a
+  pairing holds it when it was given it.
+- `modules:operate` — call the methods modules declare `operate`
+  (`module.operate`, once per `commandId`), and write the Backlog as a module
+  (`moduleBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink`,
+  `.updateModuleMetadata`); carries `modules:read`. The module's own manifest
+  permissions (`backlog.write`, `usage:read`) are checked on every call. A
+  browser session never holds it.
+- No scope changes what runs: `module.setEnabled`, `module.install`,
+  `module.setTrust` and `module.uninstall` are an owner's
+  (`STUDIO_MODULES_OWNER`), because each installs, trusts, starts or stops an
+  extension's code on that machine. `module.list`, what runs there, needs
+  `modules:read`, as do `module.installed` (every installed extension, with
+  its trust and origin), `module.rendererEntries` (their window halves) and
+  the `module.changed` stream. `module.setAppState` (the modules' Settings
+  values) needs `settings:write`. `module.reportRegistry` (the registry a
+  window resolved) is an owner's: it is the report of the Studio's own window.
+- No scope installs code either: the marketplace's reviews, installs, updates
+  and uninstalls, a GitHub repository's review and install
+  (`marketplace.verify`, `.install`, `.update`, `.uninstall`,
+  `.resolveGithub`, `.installGithub`, `STUDIO_MARKETPLACE_OWNER`) and a new
+  extension project (`extensionScaffold.*`, `STUDIO_SCAFFOLD_OWNER`) are an
+  owner's. What could be installed and what can run (`marketplace.read`,
+  `.updateStates`, `cliPlugins.*`, `cardFeed.get`, `sourcesFeed.get`) is
+  `providers:read`; Studio's plugin in a workspace (`studioPlugin.status`),
+  `files:read`.
+- Nor does any scope reach where the machine publishes its agents' pages:
+  reading Settings ▸ Artifacts (`artifacts.settings`), setting the host up
+  (`artifacts.setUp`) and hearing or answering an agent's set-up question
+  (`artifacts.setupQuestions`, `artifacts.answerSetupQuestion`) are an
+  owner's, each with its reason in `artifacts.ts`. The setting says which host
+  and account publish and whether a token is held; a set-up signs in with the
+  machine's credentials and keeps the token it is given sealed there; a yes is
+  the person's at that machine to give.
+- `workspaces:operate` — change this Studio's scheduled agents: make,
+  change, run now, pause, resume and close one (`schedules.create`,
+  `.update`, `.runNow`, `.pause`, `.resume`, `.delete`, under the `schedules`
+  capability, each once per `commandId`); carries `workspaces:read`, which
+  lists them (`schedules.list` and the `schedules.changed` stream) and reads
+  this machine's usage rows for a paired desktop's dashboard (`usage.rows`).
+  It also draws on this machine's Canvas boards (`canvas.commit` under a
+  `commandId`, `canvas.stage`, `canvas.takePen`, under the `canvas-boards`
+  capability); `workspaces:read` lists, pictures, opens and reads them
+  (`canvas.list`, `canvas.picture`, `canvas.read`, `canvas.files`, and the
+  `canvas.board` and `canvas.openRequests` streams). No file scope is
+  involved: these name boards only.
+  A paired device holds it with its `workspace:operate` pairing.
+- No scope reaches the terminals (`terminal.*`, under the `terminals`
+  capability). A terminal is a shell on this machine, so every terminal
+  method and stream is an owner's: the app's own windows and the owner's
+  credential only. A paired device, a local app or a browser, an owner's tab
+  included, is refused them whatever it holds, and a browser is not offered
+  `terminals` or `session-terminal-handoff`. An owner's connection other than
+  the app's own window is sent sessions without the prompts a person wrote or
+  a launch's MCP settings.
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
-  Some methods are an owner's only (`STUDIO_METHODS[m].owner`), whatever
-  scopes another grant holds, and are refused `owner_required`.
+  A few methods and topics are an owner's only, whatever scopes another grant
+  holds, and are refused `owner_required`; each says why in its table entry's
+  `owner`: `session.terminalHandoff` and `providers.signIn` (a terminal on
+  Studio's own screen), `pullRequests.noteWork`, `.noteToolCall` and `.link`
+  (what Studio's own agents report), `terminal.takeUndeliveredPrompts` and the
+  `terminal.promptUndelivered` topic (words a person wrote for an agent), and
+  `terminal.configure` (the machine's idle policy), and the launch settings
+  (`launchSettings.get`, `.update`, `.migrate` and the `launchSettings.changed`
+  topic: they name the program each CLI and MCP server runs on the machine and
+  hold the MCP servers' keys), and what writes the programs and hooks the
+  agent CLIs run (`mcp.sync`, `agentConfig.adopt`, `memoryActivity.install`
+  and `.uninstall`). Everything else reaches a client by its scope.
+  A client that is not an owner never names a conversation's folder or a
+  CLI's `command` (in `cliRuntimes` or a detection's or install's `runtime`),
+  and names files and folders (a stat, a picture, a search, a file attached to
+  a send, a `/` list's folder, an agent's plan file, a commit message's
+  checkout) only inside the folders Studio knows. A
+  client asks whether its grant reaches a method with
+  `studioGrantAllows(grant, method)` (`STUDIO_METHOD_ACCESS` holds the table)
+  rather than reading `grant.owner`.
 
 ## Methods
 
@@ -107,46 +212,68 @@ contract, so a missing handler, a wrong result or an undeclared refusal does
 not compile either. A client calls through `StudioRequest`, or the call per
 method `createStudioRpcClient` builds from the same table.
 
-| Method                             | Scope          | Takes                                           | Answers                                          |
-| ---------------------------------- | -------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `server.info`                      | any            | —                                               | the welcome, without its pairing                 |
-| `server.ping`                      | any            | —                                               | `{ at }`, at once: the line is alive             |
-| `conversation.list`                | read           | —                                               | `{ conversations: ConversationThread[] }`        |
-| `conversation.create`              | create         | `ConversationCreateRequest` + `commandId`       | `{ conversation }`                               |
-| `conversation.send`                | operate        | `key`, `commandId`, the lane's `send` members   | `{ notice? }`, when the turn ends                |
-| `conversation.interrupt`           | operate        | `key`, `commandId`                              | `{}`                                             |
-| `conversation.resolveApproval`     | operate        | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
-| `conversation.answerQuestion`      | operate        | `key`, `commandId`, `requestId`, `answers`      | `{}`                                             |
-| `conversation.resolvePlan`         | operate        | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
-| `conversation.setPermissionPreset` | operate        | `key`, `commandId`, `preset`, `permissionMode?` | `{ permissionPreset, permissionMode?, notice? }` |
-| `conversation.setModel`            | operate        | `key`, `commandId`, `modelId`                   | `{ modelId, notice? }`                           |
-| `conversation.cancelQueued`        | operate, owner | `key`, `commandId`, `queuedId`                  | `{}`                                             |
-| `conversation.stopSubagent`        | operate, owner | `key`, `commandId`, `toolUseId`                 | `{}`                                             |
-| `conversation.messageSubagent`     | operate, owner | `key`, `commandId`, `toolUseId`, `message`      | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
-| `conversation.setReasoningEffort`  | operate, owner | `key`, `commandId`, `effort?`                   | `{ notice? }`                                    |
-| `conversation.mcpServerAction`     | operate, owner | `key`, `commandId`, `serverId`, `action`        | `{}`                                             |
-| `conversation.restartSession`      | operate, owner | `key`, `commandId`                              | `{ notice? }`                                    |
-| `conversation.scheduleSend`        | operate, owner | `key`, `commandId`, `message`, `sendAt`         | `{}`, once it is kept                            |
-| `conversation.sendScheduledNow`    | operate, owner | `key`, `commandId`, `scheduledId`               | `{}`                                             |
-| `conversation.cancelScheduled`     | operate, owner | `key`, `commandId`, `scheduledId`               | `{}`                                             |
-| `conversation.usageLimitResume`    | operate, owner | `key`, `commandId`, `action`, `always?`         | `{}`                                             |
-| `conversation.stop`                | operate        | `key`, `commandId`                              | `{}`                                             |
-| `conversation.loadEarlier`         | read           | `key`, `beforeCursor`, `turnLimit?`             | `{ page }`                                       |
-| `conversation.toolDetail`          | read           | `key`, `toolUseId`                              | `{ detail }`                                     |
-| `conversation.turnDiff`            | read           | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
+| Method                             | Scope    | Takes                                             | Answers                                          |
+| ---------------------------------- | -------- | ------------------------------------------------- | ------------------------------------------------ |
+| `server.info`                      | any      | —                                                 | the welcome, without its pairing                 |
+| `server.ping`                      | any      | —                                                 | `{ at }`, at once: the line is alive             |
+| `conversation.list`                | read     | —                                                 | `{ conversations: ConversationThread[] }`        |
+| `conversation.create`              | create   | `ConversationCreateRequest` + `commandId`         | `{ conversation }`                               |
+| `conversation.send`                | operate  | `key`, `commandId`, the contract's `send` members | `{ notice? }`, when the turn ends                |
+| `conversation.interrupt`           | operate  | `key`, `commandId`                                | `{}`                                             |
+| `conversation.resolveApproval`     | operate  | `key`, `commandId`, `requestId`, `decision`       | `{}`                                             |
+| `conversation.answerQuestion`      | operate  | `key`, `commandId`, `requestId`, `answers`        | `{}`                                             |
+| `conversation.resolvePlan`         | operate  | `key`, `commandId`, `requestId`, `decision`       | `{}`                                             |
+| `conversation.setPermissionPreset` | operate  | `key`, `commandId`, `preset`, `permissionMode?`   | `{ permissionPreset, permissionMode?, notice? }` |
+| `conversation.setModel`            | operate  | `key`, `commandId`, `modelId`                     | `{ modelId, notice? }`                           |
+| `conversation.cancelQueued`        | operate  | `key`, `commandId`, `queuedId`                    | `{}`                                             |
+| `conversation.stopSubagent`        | operate  | `key`, `commandId`, `toolUseId`                   | `{}`                                             |
+| `conversation.messageSubagent`     | operate  | `key`, `commandId`, `toolUseId`, `message`        | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
+| `conversation.setReasoningEffort`  | operate  | `key`, `commandId`, `effort?`                     | `{ notice? }`                                    |
+| `conversation.mcpServerAction`     | operate  | `key`, `commandId`, `serverId`, `action`          | `{}`                                             |
+| `conversation.restartSession`      | operate  | `key`, `commandId`                                | `{ notice? }`                                    |
+| `conversation.scheduleSend`        | operate  | `key`, `commandId`, `message`, `sendAt`           | `{}`, once it is kept                            |
+| `conversation.sendScheduledNow`    | operate  | `key`, `commandId`, `scheduledId`                 | `{}`                                             |
+| `conversation.cancelScheduled`     | operate  | `key`, `commandId`, `scheduledId`                 | `{}`                                             |
+| `conversation.usageLimitResume`    | operate  | `key`, `commandId`, `action`, `always?`           | `{}`                                             |
+| `conversation.stop`                | operate  | `key`, `commandId`                                | `{}`                                             |
+| `conversation.fork`                | create   | `key`, `commandId`, `newAgentId`, the point       | `{ ok: true, address, name }`                    |
+| `conversation.loadEarlier`         | read     | `key`, `beforeCursor`, `turnLimit?`               | `{ page }`                                       |
+| `conversation.toolDetail`          | read     | `key`, `toolUseId`                                | `{ detail }`                                     |
+| `conversation.event`               | read     | `key`, `seq`, `id`                                | `{ event }`                                      |
+| `conversation.turnDiff`            | read     | `key`, `turnSeq`, `path?`                         | `{ diff, patch?, … }`                            |
+| `update.status`                    | any      | —                                                 | `StudioUpdateStatus`: how it is updated          |
+| `update.start`                     | maintain | `commandId`, `targetVersion?`                     | `{ accepted, method: 'self', targetVersion }`    |
+
+`conversation.fork` (`conversation-fork`) forks a chat at a reply
+(`side: 'assistant'`, `turnId`) or before one of the person's messages
+(`side: 'user'`, `turnSeq`), as the conversation contract's `fork` does: the fork joins
+the chat's workspace as its twin, named by the Studio beside the workspace's
+other chats, and is answered with where it is (`address`, a
+`ConversationAddress`: this Studio's environment id, the chat, `newAgentId`)
+and its `name`. A client opens it by that address. A Studio that withholds
+`conversation-fork` is one from before the answer said where; a client does
+not ask it to fork.
 
 A key is `{ workspaceId, agentId }`. An owner may add `workspaceRoot`, the
 folder the conversation is kept in when that is not its workspace's (a chat
 started in a run worktree), where the Studio serves `conversation-folders`.
 
-A command's params are the conversation lane's command plus its `key` and
-`commandId`, read by the lane's own validator (`parseStudioCommand`), so a
-command means the same thing on this socket as on the tailnet. Every mutation
-carries a `commandId`, recorded as a durable receipt before the work starts: a
-retry with the same id, on the same connection or after a reconnect or a
-restart of the app, is answered with the first attempt's result and never
-carried out twice. A create's `commandId` is kept on the chat it made, so a
-retried create finds that chat. Command ids are namespaced per client by
+A command's params are the conversation contract's command plus its `key` and
+`commandId`, read by that contract's validator (`parseStudioCommand`), so a
+command means the same thing on every connection. Every mutation
+carries a `commandId`, and a retry with the same id is answered with the first
+attempt's result and never carried out twice, for as long as its receipt is
+kept. Where that is is the method's own (`receipts` in `STUDIO_METHODS`). A
+`durable` method's receipt outlives the server: the runtime's chat commands
+(send, interrupt, answering a request, a preset or model switch, a scheduled
+send, a session's stop) write theirs to the chat's own log with the command,
+and a create's `commandId` is kept on the chat it made, so a retried create
+finds that chat. Every other mutation's receipt is kept in the running
+server's memory, and goes with it. The welcome's `bootId` names that run, so a
+client sends an unanswered mutation again after a reconnect only to the same
+boot, or anywhere for a durable one (`studioResendableAfterRestart`); one sent
+to a server that has since restarted is refused to its caller
+`unknown_outcome`, for the person to check. Command ids are namespaced per client by
 Studio, so one client can neither collide with nor answer from another's. An
 id names one command: sent again with different params, or for another method,
 it is refused `command_id_conflict` rather than answered with the first
@@ -154,20 +281,22 @@ command's result.
 
 ## The chat surface
 
-What a chat view needs beside the conversation lane, so any client can show
-and drive a chat as Studio's own windows do (`chat.ts`). Every one of these is
-an owner's only for now; each still names the scope it would need.
+What a chat view needs beside the conversation contract, so any client can show
+and drive a chat as Studio's own windows do (`chat.ts`). Each reaches a client
+by its scope; `session.terminalHandoff` and `providers.signIn` are an owner's.
 
-| Method                                                                  | Scope                  | What                                                                                    |
-| ----------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
-| `session.start`                                                         | operate                | start a provider session for a chat                                                     |
-| `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel` | operate                | drive a live session by its id, with all a composer sends; answered with its outcome    |
-| `uploads.begin`, `.append`, `.discard`                                  | operate                | stage a picture in pieces of `STUDIO_UPLOAD_CHUNK_BYTES`; a send names it by `uploadId` |
-| `conversation.revert`, `.rewind`, `.fork`                               | operate (fork: create) | a turn's files from its checkpoint; back to an earlier message; a new chat from one     |
-| `conversation.attachment`, `.planDocument`, `.commands`                 | read                   | a sent picture; a proposed plan as a file; the `/` command list a CLI reports           |
-| `providers.list`, `.models`, `.secretStatus`                            | `providers:read`       | the providers a chat can run, their models, whether each has its key                    |
-| `files.search`, `.cancelSearch`, `.stat`, `.readImage`, `.repoRoot`     | `files:read`           | @-mention search and the file facts a chat's links and pictures need                    |
-| `workspaces.list`                                                       | `workspaces:read`      | the workspaces this Studio holds                                                        |
+| Method                                                                   | Scope             | What                                                                                    |
+| ------------------------------------------------------------------------ | ----------------- | --------------------------------------------------------------------------------------- |
+| `session.start`                                                          | operate           | start a provider session for a chat                                                     |
+| `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel`  | operate           | drive a live session by its id, with all a composer sends; answered with its outcome    |
+| `uploads.begin`, `.append`, `.discard`                                   | operate           | stage a picture in pieces of `STUDIO_UPLOAD_CHUNK_BYTES`; a send names it by `uploadId` |
+| `conversation.revert`, `.rewind`                                         | operate           | a turn's files from its checkpoint; back to an earlier message                          |
+| `conversation.attachment`, `.planDocument`, `.commands`                  | read              | a sent picture; a proposed plan as a file; the `/` command list a CLI reports           |
+| `conversation.exportPage`                                                | read              | a chat's whole export, its pictures and what its record says, in pages                  |
+| `providers.list`, `.models`, `.secretStatus`                             | `providers:read`  | the providers a chat can run, their models, whether each has its key                    |
+| `files.search`, `.cancelSearch`, `.stat`, `.readImage`, `.repoRoot`      | `files:read`      | @-mention search and the file facts a chat's links and pictures need                    |
+| `pullRequests.createState`, `.draft`, `.draftCancel`, `.push`, `.create` | owner             | a chat's Create PR in its checkout on this Studio, each step an owner's                 |
+| `workspaces.list`                                                        | `workspaces:read` | the workspaces this Studio holds                                                        |
 
 A session method's result is the runtime's own outcome, a refusal by the
 runtime included: `{ ok: true, session, notice? } | { ok: false, message,
@@ -178,9 +307,11 @@ of its own.
 Staged pictures are the client's, counted against the connection that staged
 them, and expire unsent after ten minutes (a minute once that connection has
 closed and no other has taken them up); `uploads.discard` gives back what will
-not be sent. `files.stat` and `files.readImage` read only inside a workspace's
-folder or Studio's own stores of sent pictures and plans, and refuse a path
-that is not the plain spelling of where it really is.
+not be sent. `files.stat` and `files.readImage`, and the rest of the files by
+path (`file-system`), read only inside a workspace's folder or Studio's own
+stores of sent pictures and plans, and refuse a path that is not the plain
+spelling of where it really is; an owner's connection not held to known
+folders (Studio's own window) reads any path, as the window always could.
 
 `{ t: 'sub', id, topic: 'conversation.commands' }` hears every command list a
 CLI reports from then on, one `push` frame each, nothing replayed.
@@ -188,7 +319,7 @@ CLI reports from then on, one `push` frame each, nothing replayed.
 ## Following a conversation
 
 `{ t: 'sub', id, topic: 'conversation.session', params: { key, turnLimit? }, cursor? }`
-follows one conversation exactly as the conversation lane does: a `snapshot`
+follows one conversation as the conversation contract describes: a `snapshot`
 (or, for a `cursor` the log can vouch for, only the events after it), one
 `synchronized` fence, then live `event`s, each wrapped as `{ t: 'frame', sub,
 frame }`. Keep the fence's `seq` and `generation` and the `seq` of every event
@@ -204,15 +335,28 @@ connection stays open.
 
 ## Versioning
 
-`STUDIO_PROTOCOL_VERSION` is 1, with one version of slack
-(`STUDIO_PROTOCOL_MIN_SUPPORTED`), refused at the handshake by an error naming
-both numbers. Features are asked about by capability (`studioPeerSupports`),
+`STUDIO_PROTOCOL_VERSION` is 1, and so is the oldest version a Studio still
+serves (`STUDIO_PROTOCOL_MIN_SUPPORTED`): a peer outside that window is
+refused at the handshake by an error naming both numbers. Features are asked about by capability (`studioPeerSupports`),
 never by version: `conversations`, `conversation-create`, `local-pairing`,
 and with the chat surface `conversation-folders`, `conversation-sessions`,
 `conversation-files`, `conversation-checkpoints`, `conversation-commands`,
-`providers`, `files-mention`, `workspaces` and `session-files`
-(`STUDIO_CHAT_CAPABILITIES`; the last lets `session.send` attach files by
-path). The
+`providers`, `session-files` (it lets
+`session.send` attach files by path), `conversation-handoff`,
+`session-controls`, `session-terminal-handoff`, `conversation-history`,
+`approval-rules`, `provider-settings` and `conversation-export`
+(`STUDIO_CHAT_CAPABILITIES`); `workspaces` with the reads before a chat
+starts; `files-mention`, `file-system`, `git` and `worktrees` from every Studio's core,
+and `extensions` and `artifacts` from a desktop's. The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.
+
+A client outside the window is closed with `bye unsupported_protocol_version`,
+unless its hello lists `update-session` and it authenticates with a token: then
+it is sent an `incompatible` frame in place of the welcome (who the Studio is,
+which side is behind, and its `update.status`), and the connection serves the
+two update methods only. `studioCompatibility` reads `compatible`,
+`client-outdated`, `server-outdated` or `unknown` from any window a client has
+heard. The frame, the update methods and the hello never change shape: members
+are only added, optional (`update.ts`).

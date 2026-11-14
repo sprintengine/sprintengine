@@ -44,6 +44,8 @@ test('tailnet-mesh', async () => {
     close(): Promise<void>
   }
 
+  const REMOTE_ENVIRONMENT_ID = '3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a'
+
   async function startHarness(): Promise<Harness> {
     const remoteDir = mkdtempSync(join(tmpdir(), 'sprintengine-mesh-remote-'))
     const localDir = mkdtempSync(join(tmpdir(), 'sprintengine-mesh-local-'))
@@ -54,6 +56,7 @@ test('tailnet-mesh', async () => {
       port: 0,
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
+      environmentId: REMOTE_ENVIRONMENT_ID,
       resolveTools: () => remoteTools(),
       isMutation: () => false,
       devices,
@@ -222,157 +225,6 @@ test('tailnet-mesh', async () => {
     }
   })
 
-  // The browse is the Mesh's read of another machine's workspaces, over the
-  // real tool surface, behind the real scopes.
-  test('browsing a machine reads its workspaces', async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['workspace:read', 'backlog:read'])
-      const browse = await harness.mesh.browse(connectionId)
-      assert.equal(browse.reachable, true)
-      assert.equal(browse.unauthorized, false)
-      assert.deepEqual(browse.scopes, ['workspace:read', 'backlog:read'])
-      assert.deepEqual(
-        browse.workspaces.map((workspace) => workspace.name),
-        ['Atlas', 'Scratch'],
-      )
-      assert.deepEqual(browse.gaps, [])
-
-      // one-project-across-machines: the identity the remote served is kept,
-      // and its absence is kept as null rather than invented.
-      assert.equal(
-        browse.workspaces.find((entry) => entry.id === 'ws-1')?.repository?.canonicalKey,
-        'github.com/acme/atlas',
-      )
-      assert.equal(browse.workspaces.find((entry) => entry.id === 'ws-2')?.repository, null)
-    } finally {
-      await harness.close()
-    }
-  })
-
-  // The change feed (2026-09-05): pairing opens a watch on the machine, and the
-  // machine saying "workspaces changed" or "conversations changed" lands here as
-  // a mesh event a surface re-reads on — no timer, no browse in between.
-  // Forgetting the machine closes the watch, so a forgotten machine cannot keep
-  // pushing.
-  test("a paired machine's change feed lands as remote-changed events, and forgetting closes it", async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['workspace:read', 'conversation:read'])
-      for (let i = 0; i < 100 && harness.server.eventStreamCount() === 0; i += 1) await delay(20)
-      assert.equal(harness.server.eventStreamCount(), 1, 'pairing opened one watch on the machine')
-
-      const changes = () => harness.events.flatMap((event) => (event.kind === 'remote-changed' ? [event] : []))
-      harness.server.notifyWorkspacesChanged()
-      harness.server.notifyConversationsChanged()
-      for (let i = 0; i < 100 && changes().length < 2; i += 1) await delay(20)
-      assert.deepEqual(
-        changes().map((event) => [event.connectionId, event.what]),
-        [
-          [connectionId, 'workspaces'],
-          [connectionId, 'conversations'],
-        ],
-        'each push became a mesh event',
-      )
-
-      harness.mesh.forget(connectionId)
-      for (let i = 0; i < 100 && harness.server.eventStreamCount() > 0; i += 1) await delay(20)
-      assert.equal(harness.server.eventStreamCount(), 0, 'forgetting the machine closed its watch')
-    } finally {
-      await harness.close()
-    }
-  })
-
-  // A pairing granted no workspace scope is TOLD why there are no workspaces.
-  // An empty list would state something false about the other machine.
-  test('a part this pairing may not read is reported as a gap, not an empty list', async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['conversation:read'])
-      const browse = await harness.mesh.browse(connectionId)
-      assert.equal(browse.reachable, true)
-      assert.equal(browse.workspaces.length, 0)
-      assert.equal(browse.gaps.length, 1)
-      assert.equal(browse.gaps[0].part, 'workspaces')
-      assert.match(browse.gaps[0].message, /may not read/u)
-    } finally {
-      await harness.close()
-    }
-  })
-
-  // Revocation at the other end is the one failure re-pairing fixes, so it is
-  // reported as itself rather than as "unreachable".
-  test('a revoked pairing is reported as revoked, not as an unreachable machine', async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['workspace:read'])
-      harness.devices.revokeDevice(harness.devices.listDevices()[0].id)
-      const browse = await harness.mesh.browse(connectionId)
-      assert.equal(browse.reachable, false)
-      assert.equal(browse.unauthorized, true)
-      assert.match(browse.unreachableReason ?? '', /no longer accepts/u)
-    } finally {
-      await harness.close()
-    }
-  })
-
-  // checkout-and-branch-on-remote-create: the checkout facts behind the launch
-  // panel's checkout · branch segments, read over the wire and parsed as the
-  // panel consumes them; a pairing without workspace:read gets the refusal.
-  test("a remote workspace's checkout is read over workspace.checkout, and refused without workspace:read", async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['workspace:read'])
-      const read = await harness.mesh.workspaceCheckout(connectionId, 'ws-1')
-      assert.ok(read.ok, read.ok ? '' : read.message)
-      assert.equal(read.checkout.branch, 'main')
-      assert.equal(read.checkout.defaultBranch, 'main')
-      assert.deepEqual(
-        read.checkout.branches.map((entry) => entry.name),
-        ['feat/x', 'main'],
-      )
-      assert.equal(read.checkout.worktrees[0]?.isMain, true)
-
-      const conversationsOnly = await harness.pair(['conversation:operate'])
-      const refused = await harness.mesh.workspaceCheckout(conversationsOnly, 'ws-1')
-      assert.equal(refused.ok, false)
-      assert.equal(refused.ok ? '' : refused.code, 'tailnet_scope_required')
-      assert.match(
-        refused.ok ? '' : refused.message,
-        /workspace:read/u,
-        'the gateway names the missing scope, verbatim',
-      )
-
-      const nameless = await harness.mesh.workspaceCheckout(connectionId, '')
-      assert.equal(nameless.ok, false)
-    } finally {
-      await harness.close()
-    }
-  })
-
-  // The picker names a project by one of the workspaces in its folder; the
-  // chat started there is a new one, not one added to that workspace's chat.
-  test('a remote New chat asks for a chat of its own, and asks the old way of a machine that refuses that', async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['conversation:operate'])
-      conversationCreates.length = 0
-      const created = await harness.mesh.createConversation({ connectionId, workspaceId: 'ws-1', prompt: 'hi' })
-      assert.ok(created.ok, created.ok ? '' : created.message)
-      assert.equal(created.workspaceId, 'ws-9')
-      assert.deepEqual(conversationCreates, [{ workspaceId: 'ws-1', prompt: 'hi', newChat: true }])
-
-      refuseNewChat = true
-      conversationCreates.length = 0
-      const fallback = await harness.mesh.createConversation({ connectionId, workspaceId: 'ws-1' })
-      assert.ok(fallback.ok, fallback.ok ? '' : fallback.message)
-      assert.deepEqual(conversationCreates, [{ workspaceId: 'ws-1', newChat: true }, { workspaceId: 'ws-1' }])
-    } finally {
-      refuseNewChat = false
-      await harness.close()
-    }
-  })
-
   // The endpoint parser is the boundary where a stored string becomes an address
   // this machine dials, so what it will and will not read is worth pinning.
   test('endpoints are read exactly, or refused', async () => {
@@ -385,10 +237,6 @@ test('tailnet-mesh', async () => {
     assert.equal(parseTailnetEndpoint('100.64.0.5:notaport'), null)
     assert.equal(parseTailnetEndpoint('100.64.0.5:70000'), null)
   })
-
-  function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
 
   // The whole-app broadcast (remote-sessions-ux / tailnet-live-state-push):
   // machine paired and forgotten, and a snapshot read that agrees with the

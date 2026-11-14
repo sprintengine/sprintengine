@@ -752,11 +752,11 @@ test('useTerminalSessions', async () => {
       ((delta: TerminalSessionsDelta) => void) | null
     const ledger = [{ path: '/Users/dev/app/src/a.ts', additions: 3, deletions: 1, edits: 1, lastEditedAt: 5 }]
     const store = createTerminalSessionsStore(() => ({
-      terminalList: async () => [
+      list: async () => [
         session({ sessionId: 'session_a', workspaceId: 'ws_1', fileChanges: ledger }),
         session({ sessionId: 'session_b', workspaceId: 'ws_2' }),
       ],
-      onTerminalSessionsDelta: (listener) => {
+      onDelta: (listener) => {
         ipcListener = listener
         return () => {
           ipcListener = null
@@ -835,12 +835,12 @@ test('useTerminalSessions', async () => {
     let ipcListener: ((delta: TerminalSessionsDelta) => void) | null = null as
       ((delta: TerminalSessionsDelta) => void) | null
     const store = createTerminalSessionsStore(() => ({
-      terminalList: async () => [
+      list: async () => [
         session({ sessionId: 'session_1', workspaceId: 'ws_1' }),
         session({ sessionId: 'session_2', workspaceId: 'ws_2' }),
         { ...session({ sessionId: 'session_loose' }), workspaceId: undefined },
       ],
-      onTerminalSessionsDelta: (listener) => {
+      onDelta: (listener) => {
         ipcListener = listener
         return () => {
           ipcListener = null
@@ -872,14 +872,14 @@ test('useTerminalSessions', async () => {
 
   async function assertSharedStoreUsesOneUnderlyingSubscription(): Promise<void> {
     const ipcListeners = new Set<(delta: TerminalSessionsDelta) => void>()
-    let terminalListCalls = 0
+    let listCalls = 0
     let unsubscribeCalls = 0
     const store = createTerminalSessionsStore(() => ({
-      terminalList: async () => {
-        terminalListCalls += 1
+      list: async () => {
+        listCalls += 1
         return [session({ sessionId: 'session_initial' })]
       },
-      onTerminalSessionsDelta: (listener) => {
+      onDelta: (listener) => {
         ipcListeners.add(listener)
         return () => {
           unsubscribeCalls += 1
@@ -891,7 +891,7 @@ test('useTerminalSessions', async () => {
     const unsubscribers = Array.from({ length: 12 }, () => store.subscribeSemantic(() => undefined))
     assert.equal(ipcListeners.size, 1, 'many semantic subscribers must share one IPC listener')
     await flushPromises()
-    assert.equal(terminalListCalls, 1, 'shared store performs one initial terminalList refresh')
+    assert.equal(listCalls, 1, 'shared store performs one initial list refresh')
     assert.deepEqual(
       store.getSemanticSnapshot().map((item) => item.sessionId),
       ['session_initial'],
@@ -909,10 +909,8 @@ test('useTerminalSessions', async () => {
     let ipcListener: ((delta: TerminalSessionsDelta) => void) | null = null as
       ((delta: TerminalSessionsDelta) => void) | null
     const store = createTerminalSessionsStore(() => ({
-      terminalList: async () => [
-        session({ sessionId: 'session_a', activity: { kind: 'idle', since: 1 }, lastOutputAt: 100 }),
-      ],
-      onTerminalSessionsDelta: (listener) => {
+      list: async () => [session({ sessionId: 'session_a', activity: { kind: 'idle', since: 1 }, lastOutputAt: 100 })],
+      onDelta: (listener) => {
         ipcListener = listener
         return () => {
           ipcListener = null
@@ -992,8 +990,8 @@ test('useTerminalSessions', async () => {
       ((delta: TerminalSessionsDelta) => void) | null
     let unsubscribeCalls = 0
     const store = createTerminalSessionsStore(() => ({
-      terminalList: async () => [],
-      onTerminalSessionsDelta: (listener) => {
+      list: async () => [],
+      onDelta: (listener) => {
         ipcListener = listener
         return () => {
           unsubscribeCalls += 1
@@ -1024,11 +1022,11 @@ test('useTerminalSessions', async () => {
   async function assertSharedStoreIgnoresDisconnectedInitialRefresh(): Promise<void> {
     const pendingTerminalLists: Array<(sessions: TerminalSessionSnapshot[]) => void> = []
     const store = createTerminalSessionsStore(() => ({
-      terminalList: () =>
+      list: () =>
         new Promise<TerminalSessionSnapshot[]>((resolve) => {
           pendingTerminalLists.push(resolve)
         }),
-      onTerminalSessionsDelta: () => () => undefined,
+      onDelta: () => () => undefined,
     }))
 
     const unsubscribeFirst = store.subscribeSemantic(() => undefined)

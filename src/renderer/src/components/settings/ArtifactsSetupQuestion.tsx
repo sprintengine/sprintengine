@@ -1,19 +1,17 @@
 import React, { useCallback, useEffect, useId, useState } from 'react'
 
 import type { ArtifactsSetupQuestionView } from '../../../../shared/artifacts'
+import { artifactsApi, type ArtifactsApi } from '../../studio/artifacts'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 
 // An agent asked to set up where artifacts are published (`artifacts.setup`),
-// and that is the person's setting, so main asks them here first
-// (artifacts-setup-consent-broker.ts), the way it asks what ssh asks. One
+// and that is the person's setting, so its Studio asks them here first
+// (artifacts-setup-consent-broker.ts), the way the app asks what ssh asks. One
 // question at a time. "Don't allow" is the focused default, and closing the
 // dialog, Escape or the question expiring are all a no: setting a host up
 // takes a click on the button that names it.
 
-type Api = Pick<
-  Window['api'],
-  'onArtifactsSetupQuestion' | 'onArtifactsSetupQuestionClosed' | 'answerArtifactsSetupQuestion'
->
+type Api = Pick<ArtifactsApi, 'onArtifactsSetupQuestions' | 'answerArtifactsSetupQuestion'>
 
 const TEXT = 'text-body leading-5 text-[color:var(--text-default)]'
 
@@ -48,24 +46,17 @@ export function ArtifactsSetupQuestionBody({
   )
 }
 
-/** Mounted once per workspace window: shows main's set-up questions as they come, one at a time. */
-export function ArtifactsSetupQuestionHost({ api = window.api }: { api?: Api }) {
+/** Mounted once per workspace window: shows its Studio's open set-up questions, one at a time. */
+export function ArtifactsSetupQuestionHost({ api = artifactsApi }: { api?: Api }) {
   const [queue, setQueue] = useState<ArtifactsSetupQuestionView[]>([])
-  useEffect(() => {
-    if (!api?.onArtifactsSetupQuestion || !api.onArtifactsSetupQuestionClosed) return undefined
-    const offQuestion = api.onArtifactsSetupQuestion((question) => setQueue((current) => [...current, question]))
-    const offClosed = api.onArtifactsSetupQuestionClosed((id) =>
-      setQueue((current) => current.filter((entry) => entry.id !== id)),
-    )
-    return () => {
-      offQuestion()
-      offClosed()
-    }
-  }, [api])
+  // The Studio says every open question each time one opens or closes: what
+  // it lists is what is shown, so a window that reconnects mid-question shows
+  // it, and one another window answered goes.
+  useEffect(() => api.onArtifactsSetupQuestions((questions) => setQueue(questions)), [api])
   const current = queue[0] ?? null
   useEffect(() => {
     if (!current) return undefined
-    // Main gives up at the same moment; the dialog does not outstay it.
+    // The Studio gives up at the same moment; the dialog does not outstay it.
     const timer = setTimeout(
       () => setQueue((entries) => entries.filter((entry) => entry.id !== current.id)),
       Math.max(0, current.expiresAt - Date.now()),
@@ -75,7 +66,7 @@ export function ArtifactsSetupQuestionHost({ api = window.api }: { api?: Api }) 
   const answer = useCallback(
     (confirmed: boolean) => {
       if (!current) return
-      api.answerArtifactsSetupQuestion?.(current.id, confirmed)
+      void api.answerArtifactsSetupQuestion(current.id, confirmed).catch(() => undefined)
       setQueue((entries) => entries.filter((entry) => entry.id !== current.id))
     },
     [api, current],

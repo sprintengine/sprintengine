@@ -11,47 +11,58 @@ a private data structure, and changing one is not a local edit.**
 
 ## What is versioned
 
-| Wire                                                                                  | Version                                  | Window                                               | Declared in                                     |
-| ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
-| Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)    | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts` |
-| Mobile control — the phone reading and driving a desktop over the tailnet gateway     | `mobileControlProtocolVersion` (integer) | `mobileControlSupportedProtocolVersions`             | `src/main/mobile/control/protocol.ts`           |
-| MCP                                                                                   | dated strings, newest first              | every entry in the list                              | `src/shared/mcp/protocol.ts`                    |
-| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)             | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                |
-| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)      | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`     |
-| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`)  | current only (one version of slack when 2 ships)     | `src/renderer/src/web/embed/embedProtocol.ts`   |
+| Wire                                                                                  | Version                                 | Window                                           | Declared in                                     |
+| ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
+| Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts` |
+| MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                    |
+| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)            | `HOST_API_MIN_SUPPORTED` .. current              | `src/shared/modules/host-api.ts`                |
+| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`     |
+| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`   |
 
 One more version number is near these and is **not** a wire window: the
 backlog item schema version is a file format, and is not negotiated with a peer.
 (`mobileControlWorkspaceSnapshotVersion` was a second; it versioned the mobile
-snapshot's `workspaces` detail body and left the wire with it in v4.)
+snapshot's `workspaces` detail body and left the wire with it in v4. The
+mobile-control wire itself, with `mobileControlProtocolVersion`, went on
+2026-11-12: see "The phone's reads are Studio protocol methods" below.)
 
-Alongside the tailnet version is `TAILNET_CAPABILITIES` — a list of named,
-additive features. It is not a version and does not follow one; see
-"Capabilities, not version arithmetic" below.
+The tailnet transport carried a capability list beside its version until
+transport 3 (2026-11-14). What a paired device may ask of a Studio is now the
+Studio protocol's to say, on its welcome; see "Capabilities, not version
+arithmetic" below.
 
 Three wires between this app and the Studio server trees it installs on a WSL
 distribution or an SSH machine are private and are not in this table: the
 bootstrap envelope, the front door's proof preamble (`FRONT_DOOR_PROOF_VERSION`)
-and the conversation backend wire (`BACKEND_WIRE_VERSION`), and the SSH
-relay's multiplexer (`MUX_VERSION` in `resources/wsl-server/relay-mux.mjs`).
-Both ends are this app's own build: the tree is installed per app version and
-checked by digest. An SSH machine can run another version's server (a newer
-desktop installed it); the desktop then speaks to it only when it is this
-version, upgrades an older managed one, and otherwise refuses in words
-(`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`). Bump
-`BACKEND_WIRE_VERSION` whenever a forwarded member's arguments or answer
-change, and `MUX_VERSION` whenever a frame does. A number once on `main` is
-spent, even before a release, since a nightly may already carry it: two changes
-made side by side take one each. The backend wire went from 2 to 3 when
-`sendTurn` took `origin` (a message Studio sends a chat itself), and to 4 when
-it took `files` (a message's files attached by path), both on 2026-10-07. It
-went to 5 when `sendTurn` took `composedAt` and `confirmedStale` and could
-answer `stale` (2026-10-20), and to 6 when it gained `handoffConversation`, a
-chat handed off to a fresh session, and `sendTurn`'s `origin` the reason
-`auto-compact` (2026-10-21), and to 7 when it gained `messageSubagent`, and
-`sendTurn` `subagentMessage` and the `origin` reason `agent-message` (2026-11-07).
+and the SSH relay's multiplexer (`MUX_VERSION` in
+`resources/wsl-server/relay-mux.mjs`). Both ends are this app's own build: the
+tree is installed per app version and checked by digest. An SSH machine can run
+another version's server (a newer desktop installed it); its `run/server.json`
+says the Studio protocol window it speaks, and the desktop attaches it when that
+window meets its own, upgrades an older managed one, and otherwise refuses in
+words (`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`). An
+upgrade that does not start falls back to the previous server and is not
+retried on its own (`run/update-failed.json`). Bump `MUX_VERSION` whenever a
+frame does. A number once on `main` is spent, even before a release, since a
+nightly may already carry it: two changes made side by side take one each.
 
-A session's summary, which that wire pushes with every chat event, carries
+There was a fourth, the conversation backend wire (`BACKEND_WIRE_VERSION`, last
+9), which carried a WSL distribution's chats to the desktop's router while a
+per-distribution switch sent them there. It went on 2026-11-13 with the router
+and the switch (design-wsl-ssh-direct PR 3c): every WSL chat is the
+distribution's own Studio's, reached on the Studio protocol like an SSH
+machine's. The front door's purposes are now `studio` (the desktop's owner
+connection), `ws` (2026-11-13): a window's socket, which the desktop's
+loopback route for that machine carries to the server's own window listener,
+and `agent-state` (2026-11-14): a WSL distribution's terminal agents' phase
+reports, which its Studio relays to the desktop that holds it as lines, and
+which any other server ends at once (`FrontDoorPurpose` in
+`src/server/wsl/front-door-proof.ts`). The proof says only that the stream
+came through the front door; the listener admits a window's socket by the
+ticket it minted, as it admits a local window. A server tree refuses an
+unknown purpose in words, and the desktop updates it.
+
+A session's summary, which every Studio pushes with every chat event, carries
 three optional clocks a reader must not count on: `lastTurnEndedAt` (when
 the agent last finished a turn), `turnStartedAt` (when the turn now running
 began) and `waitingSince` (when the chat began waiting on the person, by the
@@ -97,19 +108,23 @@ straight after, is read by the desktop's own runtime and by nothing else.
 
 ## The support window
 
-Both integer wires accept **one version of slack**: the current version and the
-one before it. Anything outside is refused at the handshake, by a named error
-that says both what was seen and what is supported.
+The tailnet transport has **no slack** since transport 3 (2026-11-14), which
+took away every route a build on 2 drove its chats with: the conversation
+lane, the change feed and the canvas lane. Anything else is refused at the
+handshake, by a named error that says both what was seen and what is supported.
 
 - Tailnet: `checkTailnetTransportVersion` in `tailnet-routes.ts`, applied in
   `readRemoteIdentity` (`tailnet-remote-client.ts`). A machine outside the window
   is reported unreachable with the reason, and shown as such in the Remote panel.
-- Mobile: `isSupportedMobileControlProtocolVersion`, and the
-  `unsupported_protocol_version` error code. Enforced on inbound commands
-  (`command-validation.ts`, behind `workspace.mobile_command`). The snapshot the
-  desktop sends is stamped with the current version, and the phone reads it at
-  that version only. The phone pairs through the tailnet gateway's own pairing,
-  which is versioned by the tailnet transport, not by this integer.
+- A phone or desktop from before transport 3 that still asks for a retired route
+  (`/tailnet/v1/conversation`, `/events`, `/canvas`, `/upload`,
+  `/conversation-image`, `/conversation-files`, `/conversation-commands`) is
+  answered `426 client_update_required` with a sentence telling it to update
+  (`TAILNET_RETIRED_PATHS`). An older phone's own reading of `health` already
+  says "Update the app".
+- Skew between current builds is met inside the Studio protocol's handshake
+  (`checkStudioProtocolVersion`, below), which is where every paired client's
+  chats, boards and reads now travel.
 
 One version, and not more, because the second version back is one this tree no
 longer has to be able to produce, and a window wider than the shapes anyone
@@ -127,101 +142,62 @@ version is a proxy for it that goes stale in three ways — a feature can be
 back-ported to an older version, withdrawn by a build that keeps the version, or
 shipped behind a setting.
 
-The tailnet transport advertises `capabilities` on `health`, on the pairing
-response and on `identity`; `tailnetPeerSupports` is the accessor. A peer that
-advertises no list has no capabilities, not all of them — but note that a peer
-which published **no list** (null) is a different fact from one that published an
-**empty list**, and only the second is a denial. The capability list shipped a
-day after the first feature it describes, so silence there means "unknown".
+A Studio says what it serves on its protocol's welcome: the Studio
+capabilities (`STUDIO_CAPABILITIES`) and, for chats, the conversation
+capabilities `@sprintengine/conversation-protocol` names. A client asks the
+welcome (`client.supports`), never the version. A capability a Studio does not
+list is one it does not serve, and a client offers nothing that needs it.
 
 This is what lets the version window stay narrow while the wire keeps growing: a
 **purely additive** feature ships as a capability with no version bump at all, so
 no peer is refused over it.
 
-A capability can name an addition to a gateway tool as well as to a route or a
-frame. The phone's New chat calls `conversation.create` and `cli.runtime.list`,
-and three capabilities (2026-10-05) say what those take and answer:
-`new-chat-worktree` (`conversation.create` takes `worktree`), `new-chat-effort`
-(it takes `effort`) and `cli-runtime-catalog` (`cli.runtime.list` answers each
-CLI with a `catalog`, the model picker's own rows). An argument needs its
-capability more than a route does: a handler skips an argument it does not
-know rather than refusing it, so a `worktree` sent to a desktop without the
-capability starts the chat in the checkout and says nothing. The answer to a
-`worktree` create may carry `dependencyInstall` (2026-10-07): the new
-worktree's project installs its dependencies first, the chat and its session
-already exist, and the first message goes once the install ends. It is an
-optional member with no capability: a client that does not read it sees the
-chat start a little later, and an older desktop never sends it. A paired
-desktop's New chat added two more (2026-10-09): `new-chat-worktree-name`
-(`conversation.create` takes `worktreeName`, what a `worktree` and its
-branch are named from) and `new-chat-in-worktree` (it takes `inWorktree`, a worktree the
-project already has, by the path `workspace.checkout` lists). Its answer then
-names the `worktree` the chat runs in, an optional member like
-`dependencyInstall`. The desktop asking refuses a worktree a machine does not
-advertise rather than sending it, for the reason above. These names carry
-no `conversation-` prefix, which is kept for the conversation lane's own
-vocabulary: every `conversation-` capability this machine advertises must be
-one `@sprintengine/conversation-protocol` names
-(`conversation-protocol.test.ts`).
+The tailnet transport's own list (`TAILNET_CAPABILITIES`, on `health`, the
+pairing answer and `identity`) went with transport 3 (2026-11-14), and so did
+the names it carried for New chat on another machine (`new-chat-worktree`,
+`new-chat-effort`, `cli-runtime-catalog`, `new-chat-worktree-name`,
+`new-chat-in-worktree`, `new-chat-no-project`, `workspace-extensions`,
+`new-chat-skills`, `chat-create-pull-request`): a Studio that serves
+`conversation-create` takes `worktree`, `worktreeName`, `inWorktree`, `effort`,
+`skills` and `noProject` on `conversation.create`, and `cliRuntimes.list`
+answers each CLI's catalog. Every `conversation-` capability a Studio advertises
+is one `@sprintengine/conversation-protocol` names, since its welcome lists
+them from the package (`studioRpcConversationCapabilities`).
 
-A desktop's New chat offers "No project" on a machine advertising
-`new-chat-no-project`: `conversation.create` then takes `noProject` in place of
-`workspaceId`, and the chat runs in a folder of its own there. It takes no worktree,
-as there is no checkout to cut one from. An older machine refuses a call with no
-workspace, so a desktop leaves the row off and refuses the launch in words.
-
-`usage-report` (2026-10-21) names a gateway tool of its own: `usage.report`
-answers a window of this machine's token usage for a paired desktop's Usage
-dashboard, on `workspace:read`, and is listed only to paired devices. Its
-structured answer carries a `version` of its own (1), which moves only for a
-change an older reader would misread, beside rows of
-`[hour, agent, sessionIndex, model, input, output, cacheRead, cacheWrite,
-requests, reportedCostUsd, speed?]` and the hashed session ids they point
-into; a member added later is optional, and a reader skips a row it cannot
-read rather than the answer. A window too large for one answer ends on an
-hour and names `nextFrom`, where the next call starts, so no answer runs into
-the client's 4 MB. A desktop that does not see the capability asks nothing
-and says that machine's Studio needs updating; one that sees an answer of
+A paired machine's usage, for a desktop's Usage dashboard, is that machine's
+Studio's `usage.rows` (2026-11-12, `chat-stores`, `workspaces:read`) on its
+`/tailnet/v1/studio`; the `usage.report` gateway tool and the `usage-report`
+tailnet capability it replaced are gone. The answer carries a `version` of
+its own (1), which moves only for a change an older reader would misread,
+beside rows of `[hour, agent, sessionIndex, model, input, output, cacheRead,
+cacheWrite, requests, reportedCostUsd, speed?]` and the hashed session ids
+they point into; a member added later is optional, and a reader skips a row
+it cannot read rather than the answer. A window too large for one answer ends
+on an hour and names `nextFrom`, where the next call starts. A machine whose
+Studio does not serve it is one to update; one that sends an answer of
 another `version` counts nothing from it and says the same. The desktop
 asking prices the rows itself, so two machines on different price lists
 still agree.
 
-`canvas-machine-boards` (2026-11-07) lets a paired desktop's Canvas pane see this
-machine's boards. `canvas.list` takes `scope: machine` and answers every board
-here with its `project` (null for a removed project), `here`, `workspaceId` and
-`id`, and `board` on the other canvas tools takes that `id`. A desktop that sees
-the capability asks for all of them. On a machine that lacks it, it calls
-`canvas.list` for the one workspace, with no `scope`, which an older machine has
-always answered, and the pane says in words that the list is that project's
-alone. Such a row has no `id`, so its picture and its new chat name the board by
-path, from that project. Neither end needs a version bump: every new member is
-optional. A machine offering no canvas tools (a server with no desktop open)
-answers "Unknown tool", and the desktop says to open Studio there. Every board
-name on a machine, removed projects included, is now readable on
-`workspace:read`: there is no per-project scope. The phone reads the same
-tools on the same grant and by the same rule: every board on a machine with the
-capability, one project at a time on one without, said in words, and a
-picture of a board by its `id`, or by path from its project
-(`mobile/src/api/canvasBoards.ts`). Its Continue in a new chat starts a removed
-project's board under no project only where the machine advertises
-`new-chat-no-project`.
-
-`canvas-live-boards` (2026-11-07) lets a paired desktop's Canvas pane edit this
-machine's boards in its own editor. It names a new WebSocket, `canvas`, upgraded
-with a ticket as the conversation socket is, on `workspace:read`; a scene, a
-picture sent for one, taking the pen and making a board need `workspace:operate`,
-and the grant is read again on every message. A board is the ref this machine's
-own pane uses (a store board, or a `.excalidraw` file inside a project, under the
-same path rules), opened as a subscriber of this machine's canvas service, so
-every write goes through its one merge. Pictures travel as their own messages,
-once each way, and any message over the 1 MiB cap goes in `part` messages put
-back together at the other end, up to 32 MB. A desktop that does not see the
-capability shows a board as a picture through `canvas.screenshot`, as it did, and
-says why; a machine without it answers the socket 404, and one that runs no
-canvas service (a server with no desktop, or a Studio running its server out of
-process) does not advertise it and answers 503. An older desktop never opens the
-socket and loses nothing. No version bump: the route and the capability are new,
-and nothing that was there changed.
+A machine's Canvas boards reach another device on the Studio protocol
+(`canvas.*`, capability `canvas-boards`, 2026-11-13); the `canvas` socket and the
+`canvas-machine-boards` and `canvas-live-boards` tailnet capabilities it replaced
+are gone, and the agents' `canvas.*` tools are no longer served to a device token.
+`canvas.list` answers every board on the machine with its project, `here`,
+`workspaceId` and `id`; `canvas.picture` draws one by its id or path. A board is
+opened by following `canvas.board`, which opens it as a subscriber of the
+machine's one canvas service and pushes only notices (opened, a revision, who
+holds the pen); the scene is read with `canvas.read` and its pictures by id with
+`canvas.files`, so each picture crosses once. A change goes inline up to 768 KB
+and otherwise in `canvas.stage` parts first, then `canvas.commit` under a command
+id. `canvas.openRequests` tells a device an agent's `canvas.open` in the
+workspaces it follows. Looking needs `workspaces:read` (a device's
+`workspace:read`); `canvas.commit`, `canvas.stage` and `canvas.takePen` need
+`workspaces:operate` (`workspace:operate`). Only a Studio given the machine's
+canvas service advertises `canvas-boards` (today the desktop with its server in
+process); a client of one that does not says to update or open Studio there.
+There is no fallback to the old socket or tools: a machine on an older build
+shows its boards to a current desktop or phone once it is updated.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
@@ -236,7 +212,12 @@ and `RendererHost` members, the services behind the SDK's `get*Service`
 helpers, the manifest fields — is a wire in the sense of this file, even though
 nothing crosses a network.
 
-- **The version.** `HOST_API_VERSION = 1`, `HOST_API_MIN_SUPPORTED = 1`. Both
+- **The version.** `HOST_API_VERSION = 2`, `HOST_API_MIN_SUPPORTED = 2`. Host
+  API 2 (2026-11-12) replaced host API 1's IPC channels (`MainHost.registerIpc`,
+  `RendererHost.invoke`) with declared methods served over the Studio protocol
+  (`registerMethods`, `methods()`, `module.read` / `module.operate`), with no
+  shim, so a module built for host API 1 is refused: Settings and the bell say
+  to rebuild it against `@sprintengine/module-sdk` 2 and what changes. Both
   are declared once, in `packages/module-sdk/src/host-api.ts`, and re-exported
   for app code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
   `sprintengine-module` CLI cannot disagree about them. The drift guard
@@ -283,660 +264,138 @@ HOST_API_VERSION`. `checkHostApiCompatibility` is the one check; it is
   `scripts/release/sdk-release-check.mjs` (run by `npm run test:release`) checks
   that the version quoted here matches the source.
 
-## The mobile wire lives in this tree
+## The phone's reads are Studio protocol methods
 
-The mobile-control shapes — the snapshot the phone reads and the commands it
-sends — are declared in `src/main/mobile/control/protocol.ts`, next to the
-snapshot builder and command service that are their only producers here. They
-used to ship as the `@sprintengine/mobile-control-protocol` package, when the
-same wire also ran through a hosted relay; the relay was removed on 2026-09-27
-(owner ruling) and the package with it. Its published `4.x` versions stay on
-npm, and wire version 4 is what this tree still speaks, unchanged.
+What the phone reads of a desktop beside its chats, and the little it changes
+there, are Studio protocol methods on the desktop's `/tailnet/v1/studio`
+(2026-11-12), defined once in `packages/studio-protocol/src/backlog.ts` and
+`pull-request-reads.ts`, which the desktop serves and the phone imports:
 
-The phone app keeps its own copy of these types, in
-`mobile/src/shared/mobile-control/protocol.ts`. Nothing compares the two
-automatically any more, so a change that crosses the wire is made on both sides
-in the same coordinated change, and the version integer is still the only thing
-a peer sees.
+- `backlog.list` and the `backlog.changed` stream (`backlog` capability,
+  `backlog:read`): each project's items and epics, the project named by a token
+  (`backlog:<token>`) and never by its folder. `backlog.update`
+  (`backlog:operate`, a mutation under its `commandId`) changes one item's
+  status or triage. Both scopes are new; a paired device holds them with its
+  pairing's `backlog:read` and `backlog:operate`.
+- `shares.list` (`shares`, `workspaces:read`): the pages the machine publishes
+  on the tailnet.
+- `pullRequests.detail` and `pullRequests.diff` (`pull-request-reads`,
+  `workspaces:operate`): one pull request read in full, and one file's diff a
+  page at a time, read afresh each time.
 
-Two commands that only read joined the wire on 2026-10-30, without a bump:
-`pullRequest.read` (a pull request's state, checks, reviews, latest comments
-and changed files, each list capped) and `pullRequest.diff` (one changed
-file's diff, a few hundred lines a page, cut between hunks). A desktop that
-serves them lists them in the snapshot's `commands` and in
-`workspace.mobile_command`'s allowlist; one from before them refuses either,
-as `invalid_payload` from its validator or `command_not_supported` from its
-gateway, and the phone then opens the pull request in the browser, as it did
-before. They are answered afresh each time and kept out of the idempotency
-cache and the audit log, since a read changes nothing.
+They replace the mobile-control wire: the `workspace.snapshot` and
+`workspace.mobile_command` gateway tools, `mobileControlProtocolVersion` and
+its window, and `packages/studio-protocol/src/mobile-control.ts` with its
+command validator are gone. The phone hears a backlog move rather than polling
+the snapshot. A phone from before this change is refused by the gateway
+(`Unknown tool`) and says the desktop could not answer; a current phone meeting
+an older desktop is told to update it, by the Studio handshake.
 
-### Direct conversation lane
+The desktop's own Backlog panel reaches a project's backlog by its folder on the
+same capability (2026-11-13): `backlog.location`, and under a `commandId`
+`backlog.setRoot`, `.ensureRecords`, `.ensureIds`, `.edit` (one item's change,
+named by its `edit.kind`) and `.createEpic`. Each is an owner's, with its reason
+in the table: it names a folder on that machine and writes its files. A browser
+on the tailnet is held to the folders Studio knows, and a folder on an SSH
+machine is refused in words. Same build on both ends: the window's 17 `backlog:*`
+IPC channels are gone.
 
-`@sprintengine/conversation-protocol` is a separate portable package for the
-additive `conversations` tailnet capability. It owns the direct conversation
-WebSocket frames, their client validator and pure tool-presentation helpers,
-and since `0.2.0` the whole conversation contract: the event layer, the
-command vocabulary, create requests, the `hello` handshake and the capability
-names. It does not change the mobile-control wire or its version number.
+### The conversation contract package
 
-The lane has its own `CONVERSATION_PROTOCOL_VERSION`, answered by `hello` on a
-desktop that advertises `conversation-hello`, with the same one-version window
-rule as the integer wires above (`checkConversationProtocolVersion` names both
-numbers). It is 1, and like them it moves only for a change a capability
-cannot describe. `0.2.0` added three capabilities and no version:
-`conversation-hello`, `conversation-plans` (`resolvePlan`) and
-`conversation-cli-permission-modes` (a `permissionMode` beside the preset).
-Each degrades on a desktop without it to something that desktop already does:
-`hello` and `resolvePlan` are refused under their ids, and an unknown
-`permissionMode` member is dropped, so the preset's own mode runs. A desktop
-following another machine's chat reads the listed `permissionMode` and
-`capabilities.permissionModes`, and sends a `permissionMode`, only where that
-machine advertises the capability (2026-10-25); it refuses one in words for a
-machine that does not, rather than let it be dropped there and the person be
-told one mode while the agent ran on another.
+`@sprintengine/conversation-protocol` is the portable package for the
+conversation contract: the event layer, the command vocabulary, create
+requests, the frames a chat's stream carries, the conversation capability names
+and their validators, and pure tool-presentation helpers. The Studio protocol
+carries it: its `conversation.*` methods take the package's commands, and a
+followed chat streams the package's frames. Its `CONVERSATION_PROTOCOL_VERSION`
+(1) rides in the Studio welcome's conversation hello answer
+(`parseConversationHelloAnswer`), and moves only for a change a capability
+cannot describe.
 
-An `answerQuestion`'s answers are keyed by each question's whole text, which
-is how the CLI reads them back. The first version capped a key at 200
-characters, so a long question's answer was refused as `invalid_frame`. Since
-2026-10-16 a desktop accepts a key as long as an answer (20,000 characters),
-with the frame's total still the message limit. Only the validator widened:
-a client sends the same frame to either desktop, and an older one goes on
-refusing a long question as it always did. The first version's reader in
-`index.ts` is unchanged, since the phone carries it byte for byte; the wider
-rule is in `clientFrames.ts`, the server half.
+Until transport 3 (2026-11-14) the package also described a socket of its own
+on the tailnet, the direct conversation lane (`/tailnet/v1/conversation`), with
+routes beside it for pictures, uploads and the composer's reads, and a change
+feed (`/tailnet/v1/events`). Every client moved to the Studio protocol (the
+phone's chats, then a paired desktop's) and they are gone; each answers `426
+client_update_required` (see "The support window"). A conversation capability
+now says what a Studio's protocol serves for chats, on its welcome; the methods
+and topics each one gates are in `packages/studio-protocol/src/followed.ts`
+(`FOLLOWED_NEEDS` in `studio-rpc-server.ts` says which a Studio leaves out).
 
-The initial `0.1.0` contract requires the `conversations` capability. Additive
-optional fields preserve that contract. Model switching is one such addition: its own
-`conversation-models` capability, a `models` catalog on a listed thread, the
-`setModel` command, the `unsupported_model` code and a `notice` on an accepted
-command. A client hides its model control for a desktop that does not
-advertise it, and such a desktop refuses the command as `unsupported_command`.
-The pictures a chat's steps show are another: the `conversation-images`
-capability names a plain `GET /tailnet/v1/conversation-image` beside the socket
-rather than a frame, so it changes neither the frame contract nor this package.
-A client that does not see it says the picture is on the other machine, and an
-older desktop answers the route 404. The pictures a person sent with a message
-are the `conversation-message-images` capability (2026-10-16), on the same
-route: `attachment`, the `ref` an entry of a `user_message`'s `attachments`
-records, in place of `toolUseId`. Those entries (`{ id, mediaType, name?,
-byteLength, ref }`) were on the wire before it, an optional member with no
-capability; the capability only says the bytes can be fetched. A client that
-does not see it names the picture, and an older desktop answers the request
-400, since it names no `toolUseId`. Files of any type with a message are the
-`conversation-message-files` capability (2026-10-17): the upload route takes
-`kind=file`, and the `uploadIds` a `send` already carried name that upload as
-they name a picture's, so neither the route's path nor any frame changed. The
-message records it in `files` (`{ path }`), a member `user_message` carried
-before for files dropped on the desktop. A client that does not see it offers
-pictures only; an older desktop refuses a file `415 invalid_media_type`, as it
-always did. A file is kept as it came: `conversation-image-downscale`
-applies to pictures only. A desktop that shrinks an uploaded picture for the
-model on receipt advertises `conversation-image-downscale`
-(2026-10-17): its `POST /tailnet/v1/upload` takes up to 20 MB as the bytes
-arrive, where it took 5 MB, and keeps at most 5 MB, sized to its composer's
-1568px long edge. Nothing in the request or the answer changed shape. A client
-that does not see it holds its upload to 5 MB, as before, and an older desktop
-refuses a larger one `413 too_large`, as it always did. Only a desktop has the
-image codec, so a standalone Studio server leaves it out, and the Studio RPC,
-whose own uploads are kept as they came, never lists it. The machine each chat runs on (`host`),
-its pull requests (`pullRequests`) and the desktop's own kind and colour
-(`machine` on `identity`) are optional members with no capability: an older
-phone ignores them, and a phone reads their absence as a desktop that does not
-send them (`docs/conversations.md`, "Machines and pull requests in the list").
-A listed chat's `localServers` (2026-10-25: `{ id, url, title, port, state }`,
-the servers its agents linked, as the desktop last checked them, never the
-command or folder that starts one) is another, listed only for a chat that has
-some; a server starting or stopping is a change-feed push of its own. A
-desktop following another machine's chat draws them read-only, and opens one
-only where its address reaches it.
-A listed chat's `backgroundWork` (2026-10-17: `{ agents, monitors }`, the
-background agents still running and the monitors that will wake its agent) is
-another, beside a `phase` left as the turn's own: the desktop's sidebar counts
-such a chat as working, but a phone of that date holds a plain send while the
-listed phase says `running`, so the phase could not carry it. An older phone
-ignores the member and shows the chat as finished, as before; a phone that
-reads it shows the chat working without holding sends.
-`workingSince` (2026-10-20) is another, beside `turnStartedAt`: when the
-chat's stretch of work began, the person's message that began it, held
-through the turns the chat opens by itself while its `backgroundWork` goes on,
-which is the number the desktop's own sidebar counts "working for" from. It
-is listed whenever the desktop counts the chat as working, background work
-included. A client that does not read it counts from `turnStartedAt`, as
-before, and restarts with each turn the chat opens by itself; a client that
-reads it falls back to `turnStartedAt` for a desktop that does not send it.
-So are `scheduledAgentId` (the schedule whose run started the chat, which
-the desktop marks with the schedule's clock) and `snoozedUntil` (when a chat
-the person snoozed on the desktop wakes, listed only while that is ahead): a
-client that reads them draws the clock, and leaves a sleeping chat unmarked
-by "finished, unseen" until it wakes, as the desktop's own row does; an older
-client ignores both.
-The context a chat has spent (`contextWindow` and `contextUsed` on a
-`usage_updated` event) is the same kind of member: a phone that does not read
-them shows no context ring, and one that does draws none for a desktop that
-does not send them. The files a message attached by path (`files` on a
-`user_message`, each `{ path }`, a path on the desktop's disk) are the same
-kind of member: the message's `text` is the person's words alone, an older
-phone shows those and nothing more, and a phone that reads the member can
-name the files (it cannot open them). The phone's commands do not send
-`files`, so nothing it sends changed. The pictures a step returned
-(`images` on a `tool_output`, 2026-10-09: paths on the desktop that ran it, at
-most eight, a browser screenshot most often) are the same kind of member: the
-bytes were never on the wire and still are not, an older phone shows the
-step's words as before, and a reader that knows the member can say the step
-returned pictures but cannot fetch them, since `conversation-image` serves a
-step's picture by the step's input and not by this list. An MCP step's own
-title and its server's name (`displayTitle` and `serverName` on a
-`tool_started`, 2026-10-13: plain text, at most 120 characters each) are the
-same kind of member: a reader that does not know them titles the step from
-its wire name, as every reader did before. So is `origin` on a `user_message`
-payload (`ConversationMessageOrigin`, 2026-10-07), which marks a message the
-desktop sent a chat itself — a launched agent's notice, a resume after a usage limit —
-as Studio's: a reader that does not know it shows the message as the person's,
-as every reader did before, and a message without one is the person's. Its
-`reason` gained `pull-request-watch` (2026-10-11), a wake about a pull request
-the chat's agent asked the desktop to watch; a reader that does not know a
-reason still reads the message as Studio's, without one.
-A quote of an earlier reply (2026-11-02) rides inside a `user_message`'s
-`text` on the desktop, as a Markdown link with a scheme of its own
-(`src/shared/chat-quotes.ts`). By default it does not cross the wire: the
-conversation stream turns each one into its words — the passage as a
-blockquote, then `Comment: …` — before it rewrites host paths (`quotesForWire`
-in `tailnet-conversation-stream.ts`), so `text` means the person's words alone
-and a phone or a paired Studio of any release shows the quote as words. A held
-or scheduled message's `text`, in `queued` and `scheduled` frames, reads the
-same way.
-A quote crosses as its token only under the `conversation-quote-tokens`
-capability (2026-11-07), which has to be said from both ends, because each
-end's mistake is a different one. The desktop advertises it, saying that it
-expands a token in a message it is sent into what its agent reads
-(`expandQuotesForAgent`, on every path a send takes), so a client makes one
-only where it is listed; a machine that does not list it would hand its agent
-the address. The client names it in `clientCapabilities` on its `hello` (a new
-optional member, read for that socket alone), so a desktop keeps the token only
-for a client that will draw it; a client that said nothing would show the
-address. The `hello` goes ahead of the `subscribe`, whose replay it shapes, and
-nobody waits on its answer: a desktop without the member drops it, and one from
-before `conversation-hello` refuses the frame. Tokens that do leave have the
-words they carry rewritten as the frame around them is (`mapQuoteWords`),
-because a path percent-encoded inside an address is out of the rewrite's reach.
-A paired Studio asks by capability at both ends: it writes a blockquote for a
-machine without it, and turns any token that still reaches its send (a paste, a
-stashed prompt) into words there. The phone asks the same way: it names the
-capability in a `hello` ahead of each subscription only where the desktop lists
-both it and `conversation-hello`, writes tokens only there, and writes the
-blockquote and comment everywhere else. A paired Studio's copy of a
-chat keeps the words it was first sent, so a quote from before this reads as a
-blockquote. No version moves.
-A chat's rest and read state are the `conversation-lifecycle` capability: a
-desktop that advertises it leaves the chats it has settled out of the list, sends it in its sidebar's order, names
-each chat's `chatTitle`, `lastUserMessageAt`, `lastTurnEndedAt` and
-`lastVisitedAt`, and serves the `conversation.settle` and `conversation.visit`
-gateway tools; `workspace.list` items carry `settledAt` beside it, with no
-capability of their own. The members are optional and the tools new, so no
-peer is refused over any of it: a client offers no Settle for a desktop that
-does not advertise it, and an older one answers either tool "Unknown tool"
-(`docs/conversations.md`, "Rest, order and read state in the list").
-The leaving out and the order are the capability's promise, so they hold only
-where it is advertised: the Studio RPC does not advertise it, and its
-`conversation.list` is the list it always was, every chat (settled ones
-included) most recently moved first. The members ride along there too, as
-optional additions a client that does not read them never sees.
-Mark unread (2026-10-07) is a gateway tool beside them,
-`conversation.mark_unread`, advertised as `chat-mark-unread` (no
-`conversation-` prefix: it names a tool, not the conversation lane). It
-deliberately amends one rule: `lastVisitedAt` had only ever moved forward, and
-this tool moves it back, to just before the chat's latest finish. That is not
-a bump, because nothing a peer parses changed: the member keeps its type, may
-be absent exactly as before, and still means the clock every device reads
-"finished, unseen" against. A client from before the tool sees an earlier
-visit time and nothing else; the phone of that date takes the later of the
-listed clock and its own readings, so at worst it keeps showing the chat as
-read. On the desktop the rewind travels as `lastVisitedAt` with a newer
-`visitRewoundAt`, the only patch that may lower the clock, so a lagging
-window's visit still cannot. A phone that adds Mark unread checks for
-`chat-mark-unread`, and must stop keeping its own later visit readings over
-an earlier listed one. Each listed chat names that stamp as `visitRewoundAt`
-beside `lastVisitedAt`, an optional member with no capability of its own: a
-phone drops only the readings it took before the stamp, so a chat marked
-unread while the phone was closed reads unread there, and an older phone
-ignores the member. The Studio
-RPC does not advertise it, having no method for either tool.
-A queued message is the `conversation-queued-sends` capability (2026-10-08):
-a `send` that says `queue` is held by the desktop and sent when the chat's
-turn ends, `cancelQueued` takes one back, and a client that asks with a
-`watchQueued` request is sent `queued` frames saying what is held for the
-chat it follows. All of it is additive: a desktop without the capability
-drops `queue` and refuses a send made mid-turn `busy`, as it always did, and
-answers the new command and request under their ids; a desktop sends `queued`
-frames only to a client that asked, so a phone that never asks never sees
-one. A client asks whenever the desktop has not said it lacks the
-capability, since an older desktop's refusal is harmless. The Studio RPC does
-not advertise it: its conversation topic carries no `queued` frames, and its
-`conversation.cancelQueued` method is an owner's only.
-A steered message is the `conversation-steer-sends` capability (2026-10-14):
-a `send` that says `steer: true` goes into the turn the chat is running, where
-its provider takes one, and each listed chat says whether it does as
-`capabilities.steer`, an optional boolean. With no turn running the send is an
-ordinary one; a turn that cannot take it has the desktop hold the message as a
-`queue` send is held, answered at once with a `notice`, or, for a message with
-`uploadIds`, `skills` or `mentions` on a desktop without
-`conversation-queued-attachments`, refused `busy` as a mid-turn send always was, and run as the next turn when sent again once the
-turn is over. One that reached the chat is answered as taken, its turn's end
-in the `notice`, even when that turn then fails. `steer` is never beside `queue`. All of it is
-additive: a desktop without the capability drops `steer`, so the send is
-refused `busy` mid-turn as before, and a client sends it only where it is
-advertised. The Studio RPC advertises it too: its `conversation.send` reads
-the lane's own validator and reaches the same host.
-One agent stopped by itself is the `conversation-stop-subagent` capability
-(2026-10-24): a `stopSubagent` command names an agent a chat spawned by the
-call that spawned it (`toolUseId`, as its `subagent_status` events carry it),
-and stops that agent alone, leaving the chat, its turn and its other agents
-running, between turns too. Each listed chat says whether its provider can as
-`capabilities.stopSubagent`, an optional boolean. It matters more than its
-size: the same release has a chat's turn Stop spare the agents a Claude chat
-runs, so a client that offers no agent's Stop leaves a runaway agent no way to
-be stopped short of settling the chat. All of it is additive: a desktop
-without the capability refuses the kind as `unsupported_command`, and a client
-sends it only where it is advertised (a desktop following another machine's
-chat refuses it there in words first). The Studio RPC advertises it too: its
-`conversation.stopSubagent` method, an owner's for now, reads the lane's own
-validator and reaches the same host.
-The person's words for one agent are the `conversation-agent-message`
-capability (2026-11-07): a `messageSubagent` command names an agent as
-`stopSubagent` does and carries `message`. No harness delivers to an agent
-directly, and a user message aimed at one reaches its parent, so the desktop
-asks the chat's own model to use its messaging tool, addressed by the agent's
-task id: steered into a running turn, or as a turn of its own. It costs that
-model a turn. The `user_message` it records has the `origin` reason
-`agent-message` and a `subagentMessage` (`toolUseId`, `text`), which is what a
-lane shows; a reader that knows neither draws Studio's notice, as it would any.
-Each listed chat says whether its provider can as `capabilities.messageSubagent`,
-an optional boolean, and a `subagent_status` may say `canContinue: false`. All of
-it is additive: a desktop without the capability refuses the kind as
-`unsupported_command`, and a client sends it only where it is advertised (a
-desktop following another machine's chat refuses it there in words first). A
-client draws an agent's box only with both, and otherwise no box at all, only a
-way to the parent (owner ruling 2026-11-07). The Studio RPC advertises it too:
-its `conversation.messageSubagent` method, an owner's for now, reads the lane's
-own validator and reaches the same host. `BACKEND_WIRE_VERSION` went to 7 for it.
-A chat handed off from a paired device is the `conversation-handoff`
-capability (2026-10-25): a `handoff` command, carrying nothing but its command
-id, hands the chat off to a fresh session as the desktop's own Handoff does,
-the file of its messages written on the desktop and its path kept there. Each
-listed chat says whether its provider can as `capabilities.handoff`, an
-optional boolean. The desktop answers a repeat of the same command id with
-the first answer, and keeps no refusal, so a press refused mid-turn may go
-once the turn is over. All of it is additive: a desktop without the
-capability refuses the kind as `unsupported_command`, and a desktop following
-another machine's chat refuses it there in words first. The Studio RPC
-advertises it too, through the `conversation.handoff` method it already had.
-Edit from here and Revert from a paired device are the `conversation-rewind`
-and `conversation-checkpoint-revert` capabilities (2026-10-25). A `rewind`
-command takes a chat back to before the user message at `turnSeq`, as the
-desktop's own Edit from here does, and each listed chat says whether its
-provider can as `capabilities.rewind`, an optional boolean. A `revert`
-command puts a turn's files back from its checkpoint in the desktop's own
-checkout (`undo` for the last revert's undo): without `confirmed` it only
-lists the files, and `confirmed` it acts on exactly the `files` that list
-named, refusing when they moved. Its answer rides on the `commandResult` as
-`data`, a new optional member under the full contract that an older client
-drops: the files (paths relative to the desktop's checkout), whether they
-were reverted, the ignored new files it `kept`, or `changed`. The desktop
-answers a repeat of a rewind or a confirmed revert under the same command id
-with the first answer, and keeps no refusal. All of it is additive: a
-desktop without either capability refuses the kind as
-`unsupported_command`, and a desktop following another machine's chat
-refuses it there in words first. The Studio RPC advertises both too: its
-`conversation.rewind` and `conversation.revert` methods, an owner's, reach
-the same runtime.
-A chat forked, asked a side question, or asked what fills its window from a
-paired device is three capabilities (2026-10-25), each additive.
-`conversation-fork`: a `fork` command names the new chat's id (`newAgentId`,
-the client's, so it can follow the fork once answered) and the point
-(`side: 'assistant'` with `turnId`, or `side: 'user'` with `turnSeq`), and the
-desktop forks the chat as its own Fork from here does, writing the fork's
-agent record into the chat's workspace; the same command id sent again is
-answered as the first was, a refusal is not kept, and an id the workspace
-holds is refused. `conversation-side-questions`: `askSideQuestion` (`requestId`,
-the client's `questionId`, `question`, optional `history`) is answered by a
-`result` whose `data` is `{ answer }`, needs `conversation:operate`, and
-`cancelSideQuestion` (`requestId`, `questionId`) calls one off; one still out
-when the socket closes is called off. `conversation-context-breakdown`:
-`getContextBreakdown` (`requestId`) is answered by a `result` whose `data` is
-`{ breakdown, stale? }`, read from the chat's live session only. Each listed
-chat says whether its provider can as `capabilities.fork`,
-`capabilities.sideQuestion` and `capabilities.contextBreakdown`, optional
-booleans. A desktop without them refuses `fork` as `unsupported_command` and
-the three frames as `invalid_frame` under their request ids, and a desktop
-following another machine's chat refuses each there in words first. The
-Studio RPC advertises none of them: it forks by its own `conversation.fork`,
-whose new chat's record is the asking window's to write, and has no method for
-the other two.
-An answered side question is kept in the chat's transcript as a
-`side_question` event (2026-11-11; `ConversationSideQuestionPayload`:
-`question`, `answer`, `requestId`, and `truncated` where the answer was cut at
-`CONVERSATION_SIDE_QUESTION_MAX_ANSWER` characters), between turns and with no
-`turnId`. A new event type needs no capability to cross the wire: a client
-that does not know one skips it, as it skips `turn_retrying` and
-`context_handed_off`, and draws the chat without the marker. What
-`conversation-side-question-records` adds is the desktop's word that it keeps
-them, which a paired desktop reads to say, in its side question drawer, that a
-machine without it keeps nothing. No frame changed, and `askSideQuestion`
-answers as before. The Studio RPC does not advertise it, having no side
-questions to ask, though its conversation topic carries the event. The
-module SDK's `ModuleConversationEventType` and the phone read the event too.
-A paired desktop's composer reaches a chat's folder through three
-capabilities (2026-10-25). `conversation-send-mentions`: a `send` may name
-`mentions`, files and folders of the chat's folder by their paths relative to
-it (`{ path, kind: 'file' | 'folder', line?, endLine? }`, at most 50), which
-the desktop resolves as its own composer's chips are; an absolute path, a
-drive or a `..` segment is a bad frame, and `mentions` is never beside
-`queue`. `conversation-file-search`: `GET /tailnet/v1/conversation-files`
-with `workspaceId`, `agentId` and `query` (200 characters at most) answers
-`{ entries: [{ path, kind }], truncated }`, at most 50 matches, each relative
-to the chat's folder, on `conversation:read`. `conversation-commands`: `GET
-/tailnet/v1/conversation-commands` with `workspaceId` and `agentId` answers
-`{ cli, commands, fetchedAt, error? }`, the chat CLI's own commands without
-Studio's, on `conversation:read`; `refresh=1` asks the CLI again and needs
-`conversation:operate`. The two reads search and list only a folder on that
-computer (an SSH workspace's list is the one its sessions published, never a
-probe). All of it is additive: a desktop without them drops `mentions` and
-answers the routes 404, and a client sends or asks only where they are
-advertised (a desktop following another machine's chat refuses each there in
-words first). A paired desktop's files attached by path ride the existing
-`conversation-message-files` upload, which a desktop now sends as well as the
-phone. The Studio RPC advertises `conversation-send-mentions`, its
-`conversation.send` reading the lane's own validator, and not the two reads,
-which it has no method for.
-The mode a turn runs in is the `conversation-send-mode` capability
-(2026-10-25): a `send` may say `mode`, `ask`, or `plan` where the listed chat's
-`capabilities.planMode` says its provider plans, and the desktop runs the turn
-in it as its own chat sends one; `default` is read as none. `mode` is never
-beside `queue`, and a steer in a mode of its own that the running turn cannot
-take is refused `busy` rather than held, since a held message goes in the
-default mode. All of it is additive, but a desktop without the capability
-drops the member and runs the turn in the default mode, where an `ask` may
-change files, so a client sends one only where it is advertised (a desktop
-following another machine's chat refuses one there in words first, and lists
-`planMode` from that machine only where it is). The Studio RPC advertises it
-too: its `conversation.send` reads the lane's own validator and reaches the
-same host.
-A chat's reasoning effort is the `conversation-reasoning-effort` capability
-(2026-10-25): each listed chat names the levels its provider runs as
-`capabilities.reasoningEfforts` (an optional string array, empty for a
-provider that runs none) and the level its record keeps as `reasoningEffort`
-(absent for the provider's own default), and a `setReasoningEffort` command
-(`effort`, or none for the default) writes the chat's record, as the
-desktop's own effort control does, for every turn after to run at whichever
-device sends it. It is answered with a `notice` while a session is live, and
-needs none. All of it is additive: a desktop without the capability refuses
-the kind as `unsupported_command` and lists neither member, and a client
-sends it only where it is advertised (a desktop following another machine's
-chat refuses it there in words first, and offers no effort control). The
-Studio RPC advertises it too: its `conversation.setReasoningEffort` method, an
-owner's for now, reads the lane's own validator and reaches the same host.
-A live chat's MCP servers are the `conversation-mcp-server-actions` capability
-(2026-10-25): an `mcpServerAction` command names a server as the chat's CLI
-does (`serverId`) and an `action`, `reconnect`, `enable` or `disable`, and the
-desktop carries it out as the chat's own server rows do, through its runtime.
-Each listed chat names the actions its provider takes as
-`capabilities.mcpServerActions`, an optional array. It never resumes a chat at
-rest. A sign-in is not among the actions: the CLI waits for the sign-in's
-callback on the desktop itself, so one begun from another device could not be
-finished there, and the validator refuses it. All of it is additive: a
-desktop without the capability refuses the kind as `unsupported_command`, and
-a client sends it only where it is advertised (a desktop following another
-machine's chat refuses it there in words first). The Studio RPC advertises
-it too: its `conversation.mcpServerAction` method, an owner's for now, reads
-the lane's own validator and reaches the same host.
-Restarting a chat's agent is the `conversation-restart-session` capability
-(2026-10-25): a `restartSession` command has the desktop end the agent's
-process as its own Restart agent session does, suspending the session so it
-keeps its resume cursor and the next message starts the agent again on the
-same conversation. It is refused while the agent works (a turn, a request it
-waits on, a background agent or monitor), and a chat with no agent running is
-answered with a `notice` and left as it is, never resumed for it. The desktop
-keeps the answer under the device's command id, so one sent again after a
-dropped link is answered as the first was rather than ending the session a
-message has started since. All of it is additive: a desktop without the
-capability refuses the kind as `unsupported_command`, and a desktop following
-another machine's chat refuses it there in words first, saying to restart it
-on that machine. The Studio RPC advertises it too: its
-`conversation.restartSession` method, an owner's for now, reads the lane's own
-validator and reaches the same host.
-A message scheduled for a time is the `conversation-scheduled-sends`
-capability (2026-10-25): `scheduleSend` (`message`, `sendAt` in epoch ms on the
-desktop's clock) has the desktop keep it among its own scheduled messages and
-send it then, as one scheduled in its own composer, answered once it is kept;
-`sendScheduledNow` and `cancelScheduled` (`scheduledId`) send one at once (a
-refused one again) or delete it; and `{ type: 'watchScheduled', requestId }`
-has the desktop send a `scheduled` frame (`ConversationScheduledFrame`: the
-chat's `key` and its scheduled `messages`, soonest first, whole each time) now
-and whenever they change. A message held for a turn's end is in its `queued`
-frame, never in this one. The same `scheduleSend` offered again under its id
-is kept once, across a restart too (its command joins the `sources` the held
-messages keep), and a repeated Send now or Delete is answered as the first
-was. All of it is additive: a desktop without the capability refuses the
-three kinds as `unsupported_command` and `watchScheduled` as `invalid_frame`,
-and a client sends them only where it is advertised (a desktop following
-another machine's chat refuses them there in words first). The Studio RPC
-carries the three as owners' methods (`conversation.scheduleSend`,
-`conversation.sendScheduledNow`, `conversation.cancelScheduled`), as it carries
-`conversation.cancelQueued`, but does not advertise the capability: its
-conversation topic carries no `scheduled` frames.
-A desktop's usage limits are the `conversation-usage-limits` capability
-(2026-10-25): `{ type: 'watchUsageLimits', requestId }` has it send a
-`usageLimits` frame (`ConversationUsageLimitsFrame`: the chat's `key`, the
-`notice` a usage limit left on that chat's turn or null, `autoResume`, and
-`limits`, each plan's windows as its agents reported them, without billing)
-now and whenever any of it changes; and `usageLimitResume` (`action`:
-`schedule`, `cancel`, `dismiss` or `retry`; `always` beside `schedule`
-switches the desktop's resume on for every chat a limit stops) acts on the
-notice as the desktop's own tray row does. A repeat under the same id is
-answered as the first was. All of it is additive: a desktop without the
-capability refuses the kind as `unsupported_command` and the request as
-`invalid_frame`, and a client asks only where it is advertised. A provider
-or a plan name a client does not know passes the validator, for a newer
-desktop to add one; the desktop client leaves such a plan out. The Studio
-RPC carries the command as an owner's method, `conversation.usageLimitResume`,
-but does not advertise the capability: its conversation topic carries no
-`usageLimits` frames. The phone asks with `watchUsageLimits` after each fence
-where the capability is listed, and reads `limits` alone for its chat page's
-Usage row; it sends no `usageLimitResume`.
-A held message that carries more than words is the
-`conversation-queued-attachments` capability (2026-10-25): a `send` with
-`queue` may carry `uploadIds` (pictures and files), `skills` and `mentions`,
-and a steer the running turn cannot take is held with them rather than
-refused `busy`. The desktop makes them its own when it holds the message: a
-picture is copied under its data folder (`held-message-pictures`), since an
-upload's staged copy goes within the hour, and a file stays where its upload
-put it, its folder kept through the week's pruning while the message waits.
-The scheduled messages' file keeps them with the message (`carried`, an
-optional member a build before it does not write; its records still load),
-and they are let go once the message has gone: the pictures' copies always,
-the files only when it was deleted rather than sent. A repeat of the same
-command is the same message, held once, without its spent uploads. Each
-`queued` frame's message may name what it carries (`images` and `files` by
-name, `skills`, `mentions`), optional members an older client ignores. `mode`
-and `steer` beside `queue` are still refused. All of it is additive: a
-desktop without the capability refuses a queued send carrying any of the
-three as `invalid_frame`, so a client hands such a message over only where
-the capability is advertised (a desktop following another machine's chat
-keeps it in its own pane otherwise, as before). The phone's pinned files are
-unchanged. The Studio RPC does not advertise it, as it does not advertise
-queued sends.
-An approval answered with a rule that outlives the conversation is the
-`conversation-permanent-approvals` capability (2026-10-25): `resolveApproval`
-takes `decision: 'always'` from a device with `conversation:operate`, and the
-desktop saves the rule for the chat's workspace among its own, as its own
-"Always allow … in this workspace" does, where its Settings (and a paired
-desktop's, through `approval-rules`) list and revoke it. It is additive: the
-first version's validator, and so every desktop without the capability and
-the phone's pinned copy, refuses the decision as `unsafe_remote_decision`, as
-it always did, and a client offers the rule only where it is advertised. The
-Studio RPC does not advertise it: `conversation.resolveApproval` there still
-refuses the decision.
-A chat's sub-agents are the `conversation-subagents` capability (2026-11-07):
-`{ type: 'watchSubagents', requestId }` has the desktop send a `subagents`
-frame (`ConversationSubagentsFrame`: the followed chat's `key` and its
-`subagents`, oldest first, the newest `CONVERSATION_MAX_SUBAGENTS` of them,
-whole each time) now and whenever one starts, moves or ends. A row
-(`ConversationSubagent`) names the chat a sub-agent is (`workspaceId`,
-`agentId`, `title`, `providerId`, `modelId`, `sessionId`, its preset and
-`capabilities`), as a listed chat names itself, beside what is its own:
-`readOnly`, `status`, `task`, `startedAt`, `endedAt` and `error`. The status
-is the desktop's own reading (`subagentStatusOf`), so a client does not work it
-out again. A sub-agent is a chat like any other on the wire: `subscribe` follows
-it by those ids on a socket of its own, and `resolveApproval` and
-`answerQuestion` there answer what it asks. That was always so, since
-`subscribe` never read the list; what a device lacked was the ids. The `list`
-still leaves sub-agents out, on purpose: it is what a paired sidebar and a phone
-draw as chats, and neither should draw one. That is why the rows are a request
-of their own and not a member of the list, and why they are no part of
-`ConversationThread`. The watch is `conversation:read`, and an answer
-`conversation:operate`, as for any chat. All of it is additive: a desktop without
-the capability answers the request `invalid_frame` under its id, which nobody
-waits on, and a client asks only where it is advertised, or where the machine
-has not said; its chat then shows the agents its CLI spawned, as before. A
-desktop sends `subagents` frames only to a client that asked. The phone asks
-after each fence where the capability is listed, and opens each row as a chat
-on a socket of its own; elsewhere it lists the agents the CLI spawned, as it
-always did. One row a client cannot read is dropped
-alone. The Studio RPC does not advertise it: its conversation topic carries no
-`subagents` frames, and a window on it reads the records themselves.
-A chat's changes are the `conversation-changes` capability (2026-11-07): what
-the desktop's own Diff tab shows when its Changes row is pressed, read in the
-chat's checkout there. `{ type: 'watchChanges', requestId }` has the desktop
-send a `changes` frame (`ConversationChangesFrame`: the chat's `key`, its
-checkout as `changes` — branch, base, scope, its commits ahead of the default
-branch oldest first, at most `CONVERSATION_MAX_CHANGES_STEPS`, and whether
-anything is uncommitted — or null where it has no repository, and a
-`revision`) now and whenever the checkout reads differently, an edit to a file
-already changed included, until `{ type: 'watchChanges', requestId, stop: true }`,
-another `subscribe`, or the socket closing. The desktop reads the checkout every
-couple of seconds while a watch stands, and not at all otherwise.
-`getChangesDiff` names a step (`span`, `uncommitted`, or a `commit` by its
-hash) and is answered with its files and line counts; `getChangedFile` names a
-step and a path and is answered with the file's two sides
-(`ConversationChangedFileSides`: each its text, `absent`, or `too-large` past
-`CONVERSATION_MAX_CHANGED_FILE_BYTES`). Nothing else of the checkout is
-readable through it, which is why a client names no revision or folder: the
-path must be one the step lists as the desktop reads it then, the revisions are
-worked out there from the step, a commit must be one of the branch's own, a
-path is relative with no `..`, and a link in the working tree reads as what it
-points at, never as the file it names. All of it is `conversation:read`, as the
-transcript is; it writes nothing, so nothing here needs `conversation:operate`.
-It is additive: a desktop without it refuses each request `invalid_frame` under
-its id, and a client asks only where it is advertised, so a paired Changes row
-stays the read-only count it was. A desktop sends `changes` frames only to a
-client that asked, so a phone, which does not, sees exactly what it saw. The
-Studio RPC does not advertise it: its conversation topic carries no `changes`
-frames.
-A `send` may say when it was written, `composedAt` (epoch ms, the client's
-clock), and that the person confirmed one written long ago, `confirmedStale`
-(2026-10-20). A desktop that reads them records `composedAt` on the
-`user_message` and refuses a send written more than
-`CONVERSATION_STALE_SEND_MS` (30 minutes) ago with the new `stale` code,
-recording nothing and keeping no receipt, unless `confirmedStale` is set; a
-`queue` send it would hold is refused the same way, since a held message goes
-the moment the chat is free. A repeat of a send that already went is still
-answered from its receipt, however old. No capability: a desktop built before
-the members drops both (the first version's validator strips unknown members)
-and sends as it always did, so a client sends `composedAt` with every message
-and keeps its own rule for what it no longer sends without asking (the phone
-stops at ten minutes after an absence, `mobile/src/features/conversations/queuedSends.ts`).
-An older client never sends either, and its sends are never stale. `stale` is
-an error code a client from before it reads as any refusal with a message;
-the code joined the pinned `ConversationWireErrorCode` union, so both copies
-and both pins moved with it.
-A desktop also remembers, across a restart, the commands its held messages
-came in on, while each is held and for the 500 most recent after it has gone,
-so the same `queue` command offered again (its answer lost, or the desktop
-restarted) is answered as held and never held or sent a second time
-(`scheduled-messages.json` keeps `sources` on a message and a top-level
-`heldSources`; a file without them reads as before).
-Create PR on a paired machine's chat is `chat-create-pull-request`
-(2026-10-18), gateway tools beside `conversation.mark_unread` and, like it,
-without the `conversation-` prefix: `conversation.pull_request_state`
-(`conversation:read`) and `conversation.pull_request_draft`, `_draft_cancel`,
-`_push` and `_create` (`conversation:operate`). Each names the chat by
-`workspaceId` and `agentId`, never a folder; the machine reads the chat's
-checkout from its own record, drafts with its own text generation settings,
-and records a pull request it creates as the chat's, so its next list carries
-it. All of it is additive: a client offers Create PR under a machine's chats
-only where it is advertised, and an older machine answers the tools "Unknown
-tool". The Studio RPC does not advertise it, having no method for them.
-A paired desktop's row menu on a machine's chat is `chat-row-menu`
-(2026-10-21), gateway tools beside `conversation.mark_unread` and, like it,
-without the `conversation-` prefix: `conversation.highlight` (Star and
-Highlight color), `conversation.snooze` (Snooze, and Wake now with `until:
-null`) and `conversation.auto_settle`, each on `conversation:operate` and
-audited. Each listed chat names what they write as two new optional members
-of `ConversationThread`, `highlight` (`{ starred, color? }`, the colour one
-of `CONVERSATION_HIGHLIGHT_COLORS`) and `autoSettle: true`, with no
-capability of their own; `parseConversationServerFrame` keeps a `highlight`
-it can read, a known colour and a boolean star, and `autoSettle` only when it
-is `true`. All of it is additive: a client offers Star, Highlight color,
-Snooze and Auto-settle for a machine's chats only where it is advertised, an
-older machine answers the tools "Unknown tool", and an older client ignores
-the members. The pinned phone files are unchanged. The Studio RPC does not
-advertise it, having no method for them.
-A paired desktop's chat management beyond the marks (2026-10-25) is a
-capability per part, each naming gateway tools listed to paired devices only,
-without the `conversation-` prefix: `chat-rename` (`conversation.rename`),
-`chat-auto-compact` (`conversation.auto_compact`),
-`chat-unwatch-pull-request` (`conversation.pull_request_unwatch`) and
-`chat-delete` (`conversation.delete_plan`, a read, and `conversation.delete`)
-`chat-search` (`conversation.search`, a read) and `approval-rules`
-(`conversation.approval_rules`, a read, and
-`conversation.approval_rule_revoke`), each on `conversation:operate` but the
-reads. A listed chat says whether it compacts by itself as
-`autoCompact`, an optional boolean of `ConversationThread` that
-`parseConversationServerFrame` keeps when it is one, and a listed pull
-request says while it is watched as `watch`, an optional member of
-`ConversationWirePullRequest` kept when it can be read. The list result a
-desktop's window reads names which a machine takes as `manage`
-(`{ rename, autoCompact, unwatchPullRequest, deleteSettled, search }`), an optional member a window
-from before it ignores. All of it is additive: a client offers each item for a
-machine's chats only where it is advertised, and an older machine answers the
-tools "Unknown tool". The Studio RPC does not advertise them.
-A paired device's Scheduled section (2026-10-29) is `scheduled-agents`. The
-`schedule.*` gateway tools were already served on `workspace:read` and
-`workspace:operate`; the capability names `schedule.create` taking `name`,
-`once` (an ISO 8601 instant for a one-time schedule) and `worktreeName`. A
-client lists a machine's schedules and runs, pauses, resumes and closes them
-wherever `schedule.list` answers, and schedules a new one there only where
-the capability is advertised: the gateway refuses arguments a tool does not
-declare, so an older machine refuses the create rather than making a
-different schedule. It is additive, and the Studio RPC does not advertise it.
-A paired device's schedule editor (2026-11-02) is `scheduled-agents-edit`:
-`schedule.update` (`workspace:operate`) changes one of the machine's schedules
-in place, taking its `id` and any of `schedule.create`'s fields, plus
-`workspaceId` to move it to another project there; anything left out stays as
-it was, and `cron` without `once` makes a one-time schedule repeat. A client
-opens a machine's schedule in its own editor and saves it there only where the
-capability is advertised; an older machine answers "Unknown tool". It is
-additive, and the Studio RPC does not advertise it.
-Breaking frame changes require a new
-negotiated capability or the tailnet version-window process above, not merely
-a package version change. Presentation-only fixes use a package patch.
-Both ESM and CommonJS tarball consumers and Node16 declarations are checked by
-`npm run test:conversation-protocol:pack` as part of `verify:app`.
+A member a listed chat or an event gained after `0.1.0` (a chat's `host`,
+`pullRequests`, `localServers`, `backgroundWork`, `workingSince`, `highlight`,
+`autoSettle`, `autoCompact`, a step's pictures, a message's `attachments` and
+`files`) is optional: a client skips one it does not read, and reads its
+absence as a Studio that does not send it. `environmentId` on the tailnet's
+`identity` (2026-11-11) is the answering Studio's environment id, the
+`welcome.environment.id` its Studio protocol gives, which a paired desktop and
+the phone keep on the pairing; a value that cannot be an id (`isEnvironmentId`)
+is read as none.
 
-Until a published version is adopted, the phone carries the same portable source
-files with a shared SHA-256 pin. A wire or presentation edit must update both
-copies and both pins in companion changes; passing one repo's local hash check
-alone does not prove the two peers agree. The pin covers `index.ts` and the four
-files it re-exports; the package's entry is `public.ts`, which re-exports those
-and the files added since, so an addition goes in a file of its own and leaves
-the pin alone. Publishing is a separate release step.
+Chat links are data that outlives a build: they sit in transcripts, notes and
+clipboards. Since 2026-11-12 a client writes
+`sprintengine://chat/<environmentId>/<chatId>[?agent=<agentId>]`, one grammar in
+`packages/studio-protocol/src/chat-link.ts` that the desktop and the phone both
+read, with ids of `[A-Za-z0-9_-]{1,128}`, the environment id and chat address
+alphabet (the package's test pins the two together). A link an older build
+wrote, `sprintengine://chat/<chatId>`, is still read, as a chat in no named
+environment, which the client looks for among every environment it lists: one
+opens, several are named (the phone offers them), none is said. Nothing writes
+that form any more. An older build reading a new link refuses it as a path it
+does not know, and opens nothing.
+
+Breaking frame changes require a new negotiated capability or a Studio
+protocol version, not merely a package version change. Presentation-only fixes
+use a package patch. Both ESM and CommonJS tarball consumers and Node16
+declarations are checked by `npm run test:conversation-protocol:pack` as part
+of `verify:app`.
+
+The phone app imports this package from the repository's source, as the desktop
+does, so the two build against the same files and nothing is copied or pinned.
+What stays is the version skew between a phone and a desktop that update
+separately: a wire change still follows the capability rules above, since an
+installed phone keeps the contract it was built with. Publishing is a separate
+release step.
 
 ### The Studio protocol
 
 `@sprintengine/studio-protocol` is what Studio serves on its owner socket (a
 Unix socket in `<userData>/run/`, or a named pipe on Windows) to the
 applications on this machine a person has paired with it, and is the protocol
-`@sprintengine/agent-sdk` speaks. It is a connection envelope — `hello` /
+`@sprintengine/agent-sdk` speaks. The tailnet listener serves the same
+protocol to a paired device at `/tailnet/v1/studio`: a WebSocket opened with a
+ticket from `POST /tailnet/v1/ws-ticket` (good once, for thirty seconds, for
+the device whose token bought it), whose `hello` presents that ticket. The
+device's grant is its pairing's scopes as they stand at each request
+(`conversation:operate` carries `conversation:create`, either `workspace`
+scope carries `workspaces:read`), never an owner's; a removed pairing closes
+the connection. One device may hold at most 32 sockets at once, these and its
+tool streams at `/tailnet/v1/stream` counted together
+(`MAX_SOCKETS_PER_DEVICE` in `tailnet-gateway-server.ts`): a paired desktop
+holds one per window that reads this machine and its server one more, and a
+window lets its socket go after five idle minutes. A 33rd socket of either
+kind closes the device's oldest, which covers a client that leaks them or a
+phone's half-open socket. A device holds at most 32 unspent tickets, and a
+tool stream closes when 64 of its requests are waiting for an answer or 8 MiB
+of answers wait for a client that is not reading. A device's requests share
+one budget of 128 waiting or running, over its Studio sockets, tool
+streams and MCP endpoint POSTs together (`MAX_DEVICE_OUTSTANDING_REQUESTS`);
+past it a request is answered busy (`busy` on the Studio protocol, JSON-RPC
+error `-32000` on a tool stream, the same with HTTP 429 on the MCP endpoint)
+and not run. A tool's answer over 8 MiB (`MAX_DEVICE_ANSWER_BYTES`) is
+replaced by a JSON-RPC error under its id. A tool stream that closes drops what it had
+waiting and cancels the tool call it was running; that call, like a Studio
+request still running when its socket closes, counts against the budget
+until it has stopped. The socket carries no `Origin`, except a desktop window's,
+which names its origin when it asks for the ticket and carries exactly that
+one. A ticket answer from a Studio that serves the endpoint says so with
+`studioPath`; a device that finds it missing is talking to an older Studio.
+A paired device reaches only that desktop's own Studio: an SSH machine or a
+WSL distribution the desktop holds is reached from that desktop alone. The
+path that carried a device's socket on to such a machine
+(`/tailnet/v1/environments/<environmentId>/studio`, 2026-11-13) was removed
+on 2026-11-14: it is not found, and `ws-ticket` ignores an `environmentId`
+and answers a ticket for this desktop's own path. It is a connection envelope — `hello` /
 `welcome`, requests answered by id, subscriptions keyed by id — around the
 conversation contract, which it depends on and re-exports rather than copies:
 a stream's frames are the conversation lane's own server frames, and a
@@ -946,11 +405,17 @@ files are not touched by it.
 `STUDIO_PROTOCOL_VERSION` is 1, with the same one-version window as the
 integer wires above; `checkStudioProtocolVersion` refuses a peer outside it at
 the handshake, naming both numbers, and the server answers that refusal as
-`bye { code: 'unsupported_protocol_version' }`. Features are capabilities
+`bye { code: 'unsupported_protocol_version' }`, or, to a client that asked to
+be kept, with an `incompatible` frame and the update methods (below). Features are capabilities
 (`conversations`, `conversation-create`, `local-pairing`, and the chat
 surface's in `STUDIO_CHAT_CAPABILITIES`) advertised in the `welcome`, a Studio
 leaving out any it does not serve; the conversation contract's own `protocolVersion` and capabilities
-travel inside it, in `welcome.conversation`, unchanged. A new method or topic
+travel inside it, in `welcome.conversation`, unchanged. A client reads what a
+chat may offer off the welcome alone (`negotiateChatCapabilities` in
+`@sprintengine/client-runtime`): a control is offered where the Studio serves
+the method behind it and the grant reaches that method, never by
+`grant.owner`, and a chat on the client's own machine is read the same way as
+any other. A new method or topic
 is a capability, not a bump; so is a new server frame type (`push` was one),
 since a client skips a frame type it does not know. Client tools are one such
 capability within version 1: `client-tools` adds the `tools.*` methods and
@@ -958,6 +423,36 @@ stream, the server frames `call` and `cancel`, and the client frames `reply`
 and `progress`. A Studio sends `call` only to a connection that offered a
 toolset, and the SDK sends `reply` only to a Studio that advertised the
 capability, so neither end is handed a frame type it does not know.
+`welcome.bootId`, the run of the server, is an optional member with no
+capability: a client meeting a server before it reads every reconnect as a
+new boot, so it sends again only a mutation whose receipts are durable
+(`receipts` in `STUDIO_METHODS`), refusing the others `unknown_outcome`; a
+client before it ignores it and resends as it always did.
+The chat surface's first capabilities name what a client may ask of it
+beside the conversation contract: `conversation-folders`, a chat addressed by
+its folder as well as its workspace (`key.workspaceRoot`, which only an owner
+names); `conversation-sessions`, a chat's live session driven by its id
+(`session.*`) and the pieces a message's pictures and files go up in first
+(`uploads.*`); `conversation-files`, a sent picture read back
+(`conversation.attachment`) and a proposed plan opened as a file
+(`conversation.planDocument`); `conversation-checkpoints`, a turn's files
+reverted from its checkpoint, or a chat taken back to an earlier message
+(`conversation.revert`, `conversation.rewind`); `conversation-commands`, the
+`/` list a chat's CLI reports for a folder (`conversation.commands`, a method
+and a stream); and `providers`, the conversation providers, their models and
+whether each has its key (`providers.*`). A Studio advertises them only with
+its chat surface (`STUDIO_CHAT_CAPABILITIES`), and a client asks for none its
+Studio leaves out.
+`workspaces` is what a client reads before it starts a chat:
+`workspaces.list`, `cliRuntimes.list`, `workspaces.checkout` and
+`workspaces.extensions`, answered by the gateway tools of the same purpose
+(`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
+`workspace.extensions`), so the two read one thing; it is served beside the
+conversation contract, not only with the chat surface. `conversation.create`
+takes New chat's own options beside the contract's request (`newChat`,
+`worktree`, `worktreeName`, `inWorktree`, `effort`, and `noProject` in place of
+`workspaceId`), held to the same rules the gateway's tool holds them to; a
+Studio from before them refuses them as `invalid_params`.
 `conversation-handoff` (2026-10-21) adds the owner-only
 `conversation.handoff`, a chat handed off to a fresh session instead of
 compacted, answered with the path of the file its messages were saved to.
@@ -981,7 +476,18 @@ requests, and says a listed pull request may carry `watch` (what a watched one
 waits on, an optional member): a client that does not read it shows the pull
 request as before, and a client offers Stop watching only to a Studio that
 advertises the capability. A `waitingOn` word a client does not know reads as
-plain watching. `local-servers` adds the owner-only
+plain watching. `pull-request-create` (2026-11-13) adds a chat's Create PR on
+the Studio that holds the chat, each step an owner's with its reason:
+`pullRequests.createState` (`conversation`; the checkout's readiness, `gitRoot`
+null, `state` null where the chat has no checkout there),
+`pullRequests.draft` and `.draftCancel` (`conversation`, the client's
+`draftId`; drafted with that Studio's own text generation settings,
+`text_generation_off` said as it is), `pullRequests.push` and
+`pullRequests.create` (`conversation`, `commandId`, an optional `pin`; each
+answered once per command id, and a created pull request recorded as the
+chat's there, `recorded` saying whether that landed). The desktop's window
+asks them only of a Studio that advertises the capability; a Studio from
+before answers no state, and the button stays hidden. `local-servers` adds the owner-only
 `localServers.*` methods and stream: the local servers a Studio's agents
 linked, as the Studio checks them, and running one's command again, stopping
 that run, or forgetting the link (`run` and `stop` refused as `conflict` when
@@ -991,9 +497,529 @@ without it reads `session.send` with a validator that keeps only the members
 it knows, so it would drop the files without a word and send the words as if
 nothing were attached — which is why a client sends `files` only to a Studio
 that advertises it, and the desktop's own window refuses such a send in words
-otherwise. A hello's `client.kind` and `client.instanceId` are
-optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
+otherwise. `session-file-uploads` adds `fileUploadIds` to `session.send`:
+files sent up from the client's disk first (`uploads.*`, `purpose:
+'attachment'`), kept by the Studio and attached by their path there. A client
+whose files are not on that Studio's disk (the desktop driving an SSH
+machine's chat) sends files only this way, and refuses the send in words to a
+Studio without it. `session.send` also takes `composedAt` and `confirmedStale`, the
+conversation contract's request as every transport carries it, with no
+capability of their own: a Studio from before reads the send without them and
+sends it as it always did, as a desktop does that never asks about a message
+written long ago; and it refuses `queue`, which no client sends it. `session-controls`, `session-terminal-handoff`,
+`conversation-history`, `approval-rules` and `provider-settings` (2026-11-12)
+add, owners only for now, the rest of what the window's conversation IPC did
+(that IPC is gone; the window reaches its chats only this way):
+`session.list`, `session.stop`, `session.suspend`, `session.mcpServerAction`,
+`session.stopSubagent`, `session.messageSubagent`, `session.askSideQuestion`,
+`session.cancelSideQuestion`, `session.contextBreakdown` and the
+`conversation.events` stream (every chat's lifecycle, each event without its
+payload); `session.terminalHandoff`, advertised only by a Studio that opens
+terminals; `conversation.threads`, `conversation.search` (every hit at once,
+no partial batches) and `conversation.cancelSearch`;
+`conversation.approvalRules` and `conversation.revokeApprovalRule`; and
+`providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
+client calls each only on a Studio that advertises its capability.
+`conversation-export` (2026-11-13) adds `conversation.exportPage` (`key`,
+`exportId`, `offset`; `conversation:read`): a chat's whole export, read where
+the chat is kept (what its record says of it, its transcript and the pictures
+its messages attached) and answered in pages of about 4 MB, the events and
+then the pictures, `nextOffset` null on the last. The first page reads the
+chat and holds it for that client and export id for five minutes from its
+last page; a later page of one no longer held is `not_found`. The desktop's
+window reads a chat this way and hands it to its shell to write
+(`chat-export:save`); a Studio from before does not advertise the capability,
+and a window does not ask it. What a
+follower of one chat reads and does beside its stream, by the chat's key, as
+the tailnet lane served it (2026-11-12, `followed.ts`): the per-chat push
+topics `conversation.queued`, `.scheduled`, `.usageLimits`, `.subagents` and
+`.changes`, each the lane's own frame of that kind, and the methods
+`conversation.askSideQuestion`, `.cancelSideQuestion`, `.contextBreakdown`,
+`.searchFiles`, `.listCommands`, `.settle`, `.visit`, `.changesDiff` and
+`.changedFile`, each under the `conversations` capability and offered by the
+conversation capability the lane names it by, which the welcome's
+`conversation.capabilities` lists. They are additive: an older Studio answers
+`unknown_method` and `unknown_topic`, and lists none of those conversation
+capabilities. `modules`
+adds the `module.events` and `module.notifications` streams, what a Studio's
+modules say to clients, under the `modules:read` scope a grant holds
+explicitly (a pairing made before it never gains it); a module event's payload
+is JSON. It also adds `module.read` and `module.operate`, a module's declared
+methods (host API 2), under `modules:read` and the new `modules:operate`
+(which carries it); an operate is a mutation with a `commandId`, and a
+module's answer, its own refusals included, is the result. A Studio without a module kernel leaves the capability out, and a
+client subscribes only where it is advertised. Explicit grants
+(2026-11-12) replace "owners only" on everything above and on the chat
+surface, the conversation commands, `files.*` by root, `tools.grant*` and
+`pullRequests.list/refresh/unwatch`: each reaches a client by its scope.
+`session.terminalHandoff`, `providers.signIn` and the three `pullRequests`
+reports of Studio's own agents stay an owner's, each with its reason in the
+method table. A paired device's reach (2026-11-12) is pinned whole by
+`tailnet-device-reach.test.ts`: `localServers.*` and its stream (they start
+and stop programs on the Studio's machine) and `textGeneration.chatTitle` and
+`commitMessage.*` (a CLI run outside any chat) are an owner's;
+`tools.catalog` and `tools.grants` need `tools:offer`, and `tools.grant` also
+`settings:write`, none of which a device holds. `settings:write` is a new scope, so an older Studio
+drops it from a grant it does not know, and keeps its owner-only rule on the
+methods that need it. A client asks `studioGrantAllows`, never `grant.owner`.
+`terminals` (2026-11-12) adds the terminals on the Studio's machine:
+`terminal.list`, `terminal.status`, `terminal.open`, `terminal.resume`,
+`terminal.write`, `terminal.ack`, `terminal.resize`, `terminal.setVisible`,
+`terminal.suspend`, `terminal.close`, `terminal.setReapExempt`, and the
+owner-only `terminal.takeUndeliveredPrompts` and `terminal.configure`; and the
+streams `terminal.output` (one session's `replay`, `data`, `exit` and
+`error`, for the pane that opened or showed it), `terminal.sessions` (deltas;
+ask `terminal.list` after subscribing) and the owner-only
+`terminal.promptUndelivered`. Every one is an owner's: the app's own windows
+and the owner's credential reach them, and no paired device, local app or
+browser does, an owner's tab included (a browser is not offered `terminals`
+or `session-terminal-handoff`). The scopes `terminal:read` and
+`terminal:operate` that first held them are gone; a stored grant that names
+them has the names dropped as unknown. `terminal.open`, `terminal.resume`
+and `terminal.close` are commands (`commandId`, no read timeout); a
+`terminal.write` carries its pane's `writer` and a `seq`, so one sent again
+after a reconnect is dropped, and at most `STUDIO_TERMINAL_MAX_WRITE_UNITS`
+units, a longer paste going in numbered pieces. An owner's connection other than
+the app's own window is never sent a session's `lastPrompt` or its launch
+record's MCP settings. The
+desktop's own window reaches its terminals only this way: the window IPC for
+them is gone. A hello's `client.kind` and `client.instanceId` are
+optional hints a Studio that does not know them ignores.
+`agent-runtimes` and `agent-settings` (2026-11-12) add the agent CLIs and the
+launch settings. `agent-runtimes` is `cliRuntimes.detect`, `.installMethods`,
+`.install`, `.update` and `.updateAll` with the streams `cliRuntimes.output`
+(one CLI on one machine) and `cliRuntimes.updateAllProgress`, and
+`cliVersions.advisories` and `.setEnabled` with `cliVersions.changed`. Every
+Studio advertises it: the desktop in process or in a process of its own, and a
+server on a WSL or SSH machine, about the CLIs on that machine. The first builds
+with it advertised it only in process, and a window that meets one says the
+Studio is older. `agent-settings` is
+`cliModels.discover` with `cliModels.changed`, `launchSettings.get`,
+`.update` and `.migrate` with `launchSettings.changed`, which are an owner's,
+`textGeneration.setSettings` and `.chatTitle`, and `commitMessage.draft` and
+`.cancel`. Installing or updating a CLI is `environment:maintain`; reading what
+can run is `providers:read`; a title or a commit message is
+`conversation:operate`. A client that is not an owner never names a CLI's
+`command` (in `cliRuntimes` or `runtime`), and names a commit message's
+checkout only inside the folders the Studio knows. The desktop's own windows,
+Settings included, reach all of them only this way: their window IPC is gone.
+`agent-setup` (2026-11-12) adds what a Studio's agents are set up with beyond
+their CLIs: `memory.*` and `memoryActivity.*` (the project knowledge graph and
+the activity agents leave in it, with the `memoryActivity.events`,
+`.statusChanged` and `.synapsesChanged` streams), `mcp.sync`,
+`agentConfig.detect` and `.adopt`, `builtinSkills.list` and `.status`, and
+`areaSkills.*` with `areaSkills.changed`. A workspace is named by its folder
+(`workspaceFolder`), held to the folders the Studio knows for any client that
+is not an owner, and one on an SSH machine is refused in words for now.
+`mcp.sync`, `agentConfig.adopt` and the activity hook's install and uninstall
+are an owner's: they write what the agent CLIs run. Every Studio advertises
+`agent-setup` too, about its own machine; the first builds with it did so only
+in process. `agent-skills` (2026-11-12) adds the skills, design systems and
+cards a Studio's agents are given: `skillSources.*` with
+`skillSources.updated`, `skills.*`, `skillPlugins.*`, `workspaceSkills.list`,
+`installedSkills.*`, `agentCapabilities.resolve`, `agentSkills.attach`,
+`designSystem.*` and `cards.run`. Every folder a client that is not an owner
+(or an owner's connection held to known folders) names, by its path or by an
+id that stands for it (a workspace, a local source, a bundle, a library
+entry's registered folder, a card's workspace), is held to the folders the
+Studio knows, on the path it resolves to, and the design library, the
+source list and an update check, asked or pushed, show such a client only
+those. A plugin's
+install and uninstall, a bundle's lint (it runs the bundle's own script) and a
+card's Go are an owner's. A Studio without the desktop's shell beside it (on a
+WSL or SSH machine) answers a card's `install.module` and an installed skill's
+removal to the Trash in words. A window that meets a Studio without
+`agent-skills` says the Studio is older. The desktop's own windows reach all
+of them only this way: their window IPC is gone.
+`environment-readiness` (2026-11-12) adds `environment.readiness`, under
+`providers:read`: what the Studio's machine has and lacks for the work it
+runs on its own (its CLIs, installed and signed in where it can tell, `gh`, MCP
+servers, extensions) and each schedule or pull request watch waiting on
+something it lacks, with the reason in words. A fact the machine cannot tell
+is `null`, and nothing waits on one. A pull request's `watch` gains an
+optional `waiting` (the words) while a read fails for want of `gh` there; an
+older client reads past it. Additive: an older Studio answers `unknown_method`
+and leaves the capability out.
+`window-tickets` (2026-11-13) adds `environment.windowTicket` (`{ windowKey, origin }`
+→ `{ token, path }`): a ticket for one connection of a window of the desktop that
+holds this Studio, minted by its window listener (good once, for thirty seconds,
+from that origin, to `Host: 127.0.0.1`). It is the first method held to the
+desktop's own shell connection (`shell` in the table, beside `owner`): an
+owner's web tab and a paired app are refused `owner_required`, and no device
+reaches it. Served by a WSL distribution's or an SSH machine's Studio, which a
+desktop reaches over its front door. `environment.revokeWindow` (`{ windowKey }`, also
+the shell's) ends a window document's connections there and voids its unspent
+tickets when the document goes; the desktop names each document afresh.
+`device-tickets` (`environment.deviceTicket`, the window listener's `/device` path) and
+`relayed-environments` (`environment.relayed`, the `relay:<pairing>.<environmentId>`
+route kind), both of 2026-11-13, were removed on 2026-11-14: a paired device no longer
+reaches an SSH machine or a WSL distribution through the desktop that holds it. A
+Studio no longer advertises either capability and answers both methods
+`unknown_method`; a client that checks the capability first, as every one did, lists
+no such machine. `parseEnvironmentRoute` reads a `relay:` string as no route.
+`environment-work` (2026-11-13) adds `environment.work` (`{}` → `{ working, schedules,
+watches, messages, resumes }`, the shell's): whether a chat works on this Studio and what it
+does on its own, which a desktop asks over its owner connection to a WSL distribution's
+server before stopping it for being idle and for its quit question. It replaced the backend
+wire's `backend.machine`, which went with `BACKEND_WIRE_VERSION` 9. A server without it is
+read as having nothing to say. Served by a WSL distribution's or an SSH machine's Studio.
+`environment-launch-tokens` (2026-11-14) adds `environment.launchTokens`
+(`{ tokens: [{ digest, identity | null }], replace? }` → `{ held }`, the shell's): the SHA-256
+of each launch token the desktop issued to a WSL terminal agent, with the workspace and agent
+it proves, or `null` once revoked. The gateway of that distribution's Studio then takes the
+agent's identity from the token its MCP bridge presents, and ends every connection a token
+proved once it is revoked. `replace` drops every token the desktop told before and did not
+name again (a reconnect); tokens that Studio issued to its own chats are not the desktop's to
+drop. The token itself never crosses. Served by a WSL distribution's
+Studio only; a desktop whose distribution lacks it launches terminal agents whose bridges
+prove nothing there.
+`environment-terminal-host` (2026-11-14) adds `environment.launchFiles` (`{ write?: [{ path,
+b64 }], remove?: [name] }` → `{ paths }`) and `environment.terminalProcesses` (`{ op:
+'snapshot', keys }` → `{ verdicts }`, `{ op: 'kill', cliSessionId, key }` → `{ killed }`,
+`{ op: 'endAll' }` → `{ killed }`), both the shell's: a WSL terminal's startup files written
+into a private launch directory inside the distribution, and the processes its sessions
+leave read and ended there. `environment.pluginCopy` (`{ enabledSkills: [id] }` →
+`{ pluginDirs, skillPluginDirs, statusLineScriptPath }`, the shell's) builds the app's Claude
+plugin copy a WSL terminal's agent loads from that Studio's own resources, under its data
+directory, and says where it is (all empty when its build shipped no plugin). Served by a WSL
+distribution's Studio only. The envelope's `wsl`
+gained `profile`, and the `ready` frame's `frontDoor` gained `sessionDir` and `pidDir`
+(private to the desktop and the server it starts, one build).
+`environment-machine` (2026-11-14) adds `environment.git` (`{ cwd, args, timeoutMs, env?,
+stdinB64? }` → `{ code, stdout, stderr, timedOut, spawnFailed?, truncated? }`) and
+`environment.home` (`{}` → `{ home, env }`), both the shell's: git in a folder of a WSL
+distribution, and its home and config-home variables, asked of its own Studio by the desktop
+that holds it. Served by a WSL distribution's Studio only. The desktop also follows a git
+directory there with the owner's `files.watchPath` (`includeIgnored`).
+The same capability also offers `environment.detectClis` (`{ requests: [{ binary, versionArgs? }],
+force? }` → `{ results }`, each found with what its version printed, not found, or an error) and
+`environment.run` (`{ argv, cwd?, timeoutMs, env? }` → the run's outcome), both the shell's, and
+the owner topic `environment.cliPathsChanged` (payload `{}`: a CLI may have come or gone on the
+distribution's PATH), which the desktop follows on its owner connection (2026-11-14).
+The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a
+WSL distribution's Studio says where it mounts the Windows drives (`/mnt/` unless
+its wsl.conf says otherwise, null when it mounts none), so a client on Windows
+spells a drive path for it (`C:\code` is `/mnt/c/code` there). Additive: a
+client that does not read it takes the default root, and a Studio before it
+leaves it out.
+`environment-adopt` (2026-11-13) adds `environment.adopt` (`{ commandId, migrationId,
+records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's): the records a
+desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are
+`workspace`, `schedule`, `scheduled-message`, `usage-limit-resume` and `pull-request`, each
+going into its own store through that store's own way in. `digest` is the sha-256 of the body
+as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger,
+`environment-adoptions.json` (0600), says what was kept under which digest. A record kept
+under the same digest is held again and nothing is written; one already here under another,
+or by another way in, is left as it is and reported in `conflicts`. The answer comes once the
+stores and the ledger are written. What a hand-over is about to keep goes in the ledger first,
+as pending, so one repeated after a crash between a store's write and the ledger's is held,
+not reported as already here. A held message that carries pictures or files is reported,
+not kept: those are not handed over yet. Served by a WSL distribution's or an SSH machine's
+Studio, which a desktop reaches over its front door.
+On 2026-11-13 the same capability gained two kinds, after `workspace`: `chat` (a chat the
+desktop ran itself in that machine's folders, a WSL distribution's through `wsl.exe`:
+`{ workspaceId, agentId, workspaceRoot, files }`, each file `{ place, path, sha256, bytes,
+parts }`, written where that Studio's runtime reads it, a file already there with other bytes
+kept as it is and reported) and `approval-rule` (a saved approval, kept as given). A chat's
+files go in parts of at most 4 MB (`MAX_ADOPTED_PART_BYTES`): a call may name no records when
+it stages parts, which are kept under `environment-adoptions/parts/<migrationId>/` for the
+records that follow. No capability was added: only a WSL distribution is handed chats, and its
+Studio is always the desktop's own build.
+On 2026-11-14 the answer gained an optional `refused` (`[{ kind, id, reason }]`): records the
+machine did not take (a picture that did not arrive whole, a workspace not there yet, a digest
+that does not match), apart from `conflicts`, which now holds only what the machine keeps its
+own copy of (already there by its id, a chat's file with other bytes, a pull request another
+chat opened). The desktop keeps a refused record planned and sends it again on the next
+connect, and tells the person; a conflict is done with. A Studio before it says both as
+`conflicts`, and its desktop treats them as before. A carried picture or file larger than one
+upload goes ahead in parts, as a chat's do, and its entry names them (`parts`, in order); a
+call stages at most `MAX_ADOPTED_FILES` files, and a hand-over carrying more goes in more calls.
+No capability was added.
+`provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,
+`.signInWait` and `.signInCancel`, each under a `commandId`: a CLI's own login on
+that machine with no terminal (decision R34), named by provider, never by a
+command line. They are an owner's (`settings:write`), and no device reaches them.
+Served where the desktop holds the machine's Studio over its front door. They
+replace the backend wire's `backend.sign-in`. Additive: an older Studio answers
+`unknown_method` and leaves both capabilities out.
+`chat-stores` (2026-11-12) is what a Studio keeps beside its chats, for every
+chat at once: `usageLimits.get` with `usageLimits.changed`,
+`usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the
+setting) with `usageLimitResumes.changed`, `usage.report`, `usage.rows` (a machine's own
+rows for a paired desktop's dashboard, `workspaces:read`), and
+`conversationImport.scan` and `.import`. Each stream pushes its store whole and replays nothing: a client
+reads the state when it subscribes and again when its connection returns. The
+limits are `providers:read`; reading the resumes is `conversation:read`,
+changing them `conversation:operate`, and the
+resume setting `settings:write`. The usage report and the import are an
+owner's (they read the agents' own logs and session files on the machine).
+`schedules` (2026-11-12) is a Studio's scheduled agents, which every server
+runs in its own store: `schedules.list` and the `schedules.changed` stream
+(the list whole, nothing replayed) on `workspaces:read`, and
+`schedules.create`, `.update`, `.pause`, `.resume`, `.runNow` and `.delete` on
+`workspaces:operate`, a new scope that carries `workspaces:read` and that a
+paired device holds with its `workspace:operate` pairing. Each change carries
+a `commandId` and is answered from its receipt on a retry. A row is the
+schedule's record with `nextRunAt`, `waiting` (why the machine cannot run it
+now, in words) and `scheduleWords`; a create takes `once` as epoch ms. The
+phone and a paired desktop reach a machine's schedules only this way: the
+`scheduled-agents` and `scheduled-agents-edit` tailnet capabilities, and the
+devices' use of the `schedule.*` gateway tools, are gone (agents keep the
+tools, which follow the same rules).
+`schedules.markSeen`, `.pauseAll` (`until`, or null for until resumed) and
+`.resumeAll` (2026-11-13) join them on `workspaces:operate`: a failed run looked
+at, and every schedule paused or resumed at once. A draft may name, in place of
+`workspaceId`, a folder (`workspaceRoot`) and its machine on that computer
+(`hostId`, `local` or `wsl:<distro>`), which only an owner may; and its `skills`
+and `mcpServers` may carry `{ id, name }`, the name kept for the editor's chips.
+The desktop's own windows reach their machine's schedules only this way: the
+13 `scheduled-agents:*` IPC channels are gone. Additive for a client: an older
+Studio answers the new methods `unknown_method`.
+`chat-lifecycle` (2026-11-13) is a chat's record beyond its rest, by the
+chat's `workspaceId`: `conversation.markUnread`, `.snooze` (`until`, or null
+to wake), `.highlight` (`starred`, `color`), `.setAutoSettle`,
+`.setAutoCompact`, `.rename` and `.delete` on `conversation:operate`, each
+with a `commandId` and answered once per id; `conversation.deletePlan` and
+`conversation.searchChats` (`{ query }`, 2 to 200 characters, the machine's
+palette search) on `conversation:read`. A chat at work, a settled chat
+snoozed, a chat with nothing finished marked unread and a delete the plan
+refuses are `conflict`; a chat the Studio has no record of is `not_found`.
+`conversation.revokeApprovalRule` moved from `settings:write` to
+`conversation:operate` the same day: revoking only makes the chats ask again.
+The phone and a paired desktop reach these only this way; a device token is
+refused the agents' `conversation.settle`, `.visit`, `.mark_unread`,
+`.snooze`, `.highlight` and `.auto_settle` gateway tools.
+A CLI's API key is a provider's key under the CLI's manifest id, read and set
+with `providers.secretStatus`, `.setSecret` and `.clearSecret`. The desktop's
+windows reach all of these only this way: their window IPC is gone.
+`file-system` (2026-11-12) is the files on a Studio's machine by path:
+`files.listDirectory`, `.readText`, `.exists`, `.checkWorkspaceFolder`,
+`.projectLogo`, `.projectIcon`, `.searchContent`, `.cancelContentSearch` and
+`.defaultWorkspaceParent` under `files:read`, the writes (`files.writeText`,
+`.saveDroppedImage`, `.createFile`, `.createDirectory`, `.rename`, `.copy`,
+`.move`, `.trash`) under `files:write`, and the `files.watchPath` stream. Every
+Studio's core serves it, with `files-mention` (`files.search`, `files.stat` by
+path, `files.readImage`, `files.repoRoot`), which no longer waits for the chat
+surface. A client that is not an owner names a path only where it really is
+inside the folders the Studio knows, and writes only inside its workspaces'
+folders. A Studio with no Trash on its machine refuses `files.trash` in words.
+Additive: an older Studio leaves the capability out, and the desktop's window
+says the Studio does not serve its files. The desktop's windows reach the
+files only this way: their window IPC is gone.
+`git` (2026-11-13) is git on a Studio's machine, by the repository's folder:
+the reads under `files:read` with the `git.checkoutChanged` and
+`git.changelistsChanged` streams; staging, commits, resolved conflicts,
+stashing and changelists under `files:write`. What moves a branch, rewrites
+history or discards work, reaches a remote, touches the agents' worktrees, or
+uses the GitHub account Studio holds (`github.*`) is an owner's as well. The
+machine's version-control CLIs are `versionControl.*` under `providers:read`.
+A client that is not an owner names a repository only inside the folders the
+Studio knows. Additive: an older Studio leaves `git` out. The desktop's windows
+reach git only this way, but for saving a patch through the system's save
+dialog, which stays the shell's.
+`worktrees` (2026-11-13) is the worktrees a Studio's agents run in: the
+worktree pool (`worktrees.poolSnapshot`, `.poolSettings`,
+`.setPoolSettings`, `.poolAction`), its dependency installs
+(`worktrees.installs`, `.cancelInstall`), Settings ▸ Worktrees' inventory
+(`worktrees.inventory`, `.removeOther`) and the agents' worktree steps
+(`worktrees.create`, `.restore`, `.remove`, `.cleanupAgents`), with the
+`worktrees.poolChanged` and `worktrees.installChanged` streams. All of them
+are an owner's, with the reason in the table. Deleting settled chats
+(`settledChats.planDelete` under `conversation:read`, `settledChats.delete`
+under `conversation:operate`) reaches what a paired device's Delete on a chat
+reaches. A folder on an SSH machine is refused in words. Additive: an older
+Studio leaves `worktrees` out. The desktop's windows reach the pool and
+settled-chat deletion only this way: their window IPC is gone.
+`workspace-sync` (2026-11-13) is the desktop's own windows' workspace
+registry: `workspaceSync.snapshot`, `.eventsAfter` and the
+`workspaceSync.events` stream (every recorded change, sequenced; the window
+that made it hears it too and takes it once by its sequence; a server that
+restarts numbers them from the start again, so a window reads the snapshot
+again each time its connection opens and takes its sequence as the baseline,
+whatever it held before), `.dispatch`
+(one change from a named window, answered only once it is on disk: a new
+workspace at once, any other change on the registry's own write delay; a
+window sends a new workspace or a stamped edit again when its answer was lost,
+before it reads the snapshot, and a new chat's window starts nothing of the
+chat before its create is answered), `.lifecycle` (Settle, Un-settle, Snooze or
+Wake on the reading the window made it on), `.setSettledChatsSettings` and
+`.setModuleRunStates` (what only a desktop window knows; a browser's is
+answered and not applied), the one-time hydration (`workspaceRegistry.*`),
+the window's backup of its own copy (`workspaceBackup.*`) and the folders of
+chats without a project (`projectlessChats.*`). Each is an owner's, with the
+reason in the table; a browser on the tailnet makes a workspace only inside
+the folders Studio knows. The registry's records cross as the desktop defines
+them (`src/shared/workspace-sync.ts`), checked by main's registry. Mark unread
+from a window is the chat's `conversation.markUnread`. The window's 14
+`workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
+`chats:projectless-*` IPC channels are gone; a desktop's window and its own
+Studio are one build.
+`extensions` (2026-11-13) is what a desktop's Studio is extended with beyond
+its modules: the marketplace's registry and each installed entry against it
+(`marketplace.read`, `.updateStates`), the agent CLIs' plugin catalogue
+(`cliPlugins.list`, `.availability`, `.launchPreview`) and the hosted feeds
+(`cardFeed.get` with the `cardFeed.changed` stream, `sourcesFeed.get`), all
+under `providers:read`; Studio's own plugin in a workspace
+(`studioPlugin.status`) under `files:read`, in a folder the Studio knows for a
+client that is not an owner. Reviewing an entry or a GitHub repository,
+installing, updating and removing it (`marketplace.verify`, `.install`,
+`.update`, `.uninstall`, `.resolveGithub`, `.installGithub`) and making an
+extension project (`extensionScaffold.*`) are an owner's, with the reason in
+the table: they fetch code to run on the machine, approve it, or write outside
+the folders the Studio knows. A review's one-time approval is spent by the
+install it approves, and checked by the Studio as strictly as before. The
+`modules` capability gains `module.installed` and `module.rendererEntries`
+(`modules:read`), `module.setAppState` (`settings:write`),
+`module.reportRegistry` (an owner's: the Studio's own window reports it) and the `module.changed` stream.
+Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
+`extensions` out. The desktop's windows reach all of these only this way:
+their window IPC is gone, but for showing an extension's folder in the file
+manager, which stays the shell's.
+`artifacts` (2026-11-13) is where a desktop's Studio publishes its agents'
+pages: Settings ▸ Artifacts (`artifacts.settings`), setting the host up
+(`artifacts.setUp`, a mutation under its `commandId`), and the question an
+agent's `artifacts.setup` tool puts to the person (the
+`artifacts.setupQuestions` stream, every open question whole at subscribing
+and on each change, answered with `artifacts.answerSetupQuestion`). Every one
+is an owner's, with its reason in the table: the setting names the host and
+account and whether a token is held, a set-up signs in with this machine's
+credentials and seals the token it is given with the Studio's own cipher, and
+a yes is the person's at this machine. The token is never in an answer.
+Additive: a WSL or SSH server leaves `artifacts` out. The desktop's windows
+reach these only this way: their window IPC is gone. The agents'
+`artifacts.*` tools are the server's own in both modes, over the same
+service; the shell is asked only for a page's picture and, with no window
+showing, a native question.
+
+`access` (2026-11-13) is who may reach a Studio's agents from its machine: the
+gateway's status (`gateway.status`), the tokens its loopback HTTP endpoint
+admits (`mcpHttp.status`, `.create`, `.revoke`), and the apps paired with its
+owner socket (`localApps.status`, `.offer`, `.cancelOffer`, `.revoke`,
+`.setReach`, and the `localApps.changed` stream, whole at subscribing and on
+each change). Every one is an owner's. A method or stream may now say `window`
+(its reason, always with `owner`): the server serves it only to a connection
+the window listener admitted with a ticket main minted for one of its windows,
+and refuses it `owner_required` to every other, an owner's web tab, a script
+holding the owner's credential and the shell included. Minting an HTTP token
+and all of local app pairing say it, so a stolen browser session or a paired
+app cannot mint the next way in. A web tab still lists and revokes the HTTP
+clients; before, its tunnel could also mint a token, and now Settings there
+says a new one is made in the desktop app, or on the server's machine with
+`studio-server mcp-token --name <client>` (which posts the run file's key to
+the web listener's `/mcp-http/mint`, as `studio-server pair` does to
+`/pair/mint`; same build on both ends). Same build on both ends: the
+window's 4 `automation:*` and 6 `studio-local-apps:*` IPC channels are gone.
+
+`web-devices` (2026-11-13) is the browsers paired with a Studio's web listener,
+offered only by a Studio that runs one, once its front door has started:
+`webDevices.status`, `.revoke`, `.approve` (with the six digits the asking
+browser shows), `.decline`, and the `webDevices.changed` stream, whole at
+subscribing and on each change, the asking browser's own row marked `current`.
+Each is an owner's, an owner's web tab included. Nothing answers a credential:
+there is no method for a pairing link, so a tab no longer makes one; another
+browser is paired by approval, or with `studio-server pair` on the machine.
+Same build on both ends: a web tab's 7 `web:devices:*` tunnel channels are gone,
+and so are its 3 `web:embeds:*` channels, which nothing called (embeds are made
+with `studio-server embed`).
+
+`tailnet` (2026-11-13) is who reaches a Studio over the tailnet, and the
+machines it drives: its listener (`tailnet.status`, `.liveState`,
+`.setEnabled`, `.setHttps`, `.offerPairing`, `.cancelPairing`,
+`.approvePairRequest`, `.denyPairRequest`, `.revokeDevice`,
+`.updateDeviceScopes`, `.forgetMachine`, `.resetMcpRegistrations`, `.peers`,
+`.shares`, `.share`, `.unshare`, and the `tailnet.changed` stream) and
+pairing with another machine (`mesh.connections`, `.liveState`, `.pair`,
+`.requestPairing`, `.cancelPairing`, `.forget`, and the `mesh.changed`
+stream). Every one is an owner's; the mutations carry a `commandId`. What
+lets someone in or answers a code says `window`: turning the listener or
+HTTPS on, offering or approving a pairing, widening a device, sharing a dev
+server, the peer sweep, and pairing with another machine, its live state and
+its stream (which carry the code read out to the person there). The rest, a
+web tab included, read or narrow: status, live connections and their stream,
+withdrawing an offer, declining, revoking, forgetting, MCP registrations, the
+shares and unsharing, the machines this one drives. Both streams deliver the
+state as it stands on subscribing (an event of kind `current`) and then each
+change, so a client that reconnects is current again. An approval from a
+window is the only one that may let an MCP client's OAuth sign-in in, as the
+IPC-only approval was. The agents' local-socket `tailnet.*` tools are
+unchanged. Same build on both ends: the window's 17 `tailnet:*` IPC channels,
+the 6 `mesh:*` pairing channels and the `mesh:event` push are gone;
+`remote:open-requested` stays, the shell's push that opens the Remote
+popover.
+
+`execution-hosts` (2026-11-14) is the machines a desktop's computer offers:
+itself and, on Windows, its WSL distributions, each with how its Studio
+server stands (`hosts.list`, with `refresh` and `all`, and the
+`hosts.changed` stream, which carries nothing: the client lists again).
+Offered by a desktop's Studio only; a WSL distribution's or an SSH machine's
+Studio is one of those machines and offers none. Both are an owner's, and no
+paired device reaches them, nor a distribution's chats, which are reached
+from the desktop alone. New chat's folder picker asks a
+distribution's own Studio where it keeps projects
+(`files.defaultWorkspaceParent`) instead. Same build on both ends: the
+window's `hosts:list`, `hosts:home` and `hosts:changed` channels are gone,
+and with them the last channel the window routed to its server.
+Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
+
+#### Reaching a Studio outside the window
+
+A paired desktop, a server inside WSL or on an SSH machine runs on its own
+and can outlive several releases of the client that reaches it, so a refusal
+at the handshake cannot be the end of the conversation. `update-session`
+(2026-11-12) keeps one: a client that lists it in its hello's
+`client.capabilities`, and authenticates with a token, is answered with an
+`incompatible` frame in place of the `welcome` when the two windows do not
+meet. The frame says who the Studio is (`server`, `environment`, its
+`protocolVersion` and `minProtocolVersion`), which side is behind
+(`compatibility`: `client-outdated` or `server-outdated`, from the client's
+side), why in words naming both numbers, and how the Studio is updated
+(`update`, the `update.status` answer). The connection then serves only
+`update.status` and `update.start`; anything else is refused
+`unsupported_protocol_version`, a subscription not retryable. A client that
+does not list the capability is closed with `bye` as before, naming the
+Studio's own `protocolVersion` and `minProtocolVersion` so it can still tell
+which side is behind (`presentStudioFailure` in the client runtime), and a
+pairing code is never spent on a client that could not use the token.
+`studioCompatibility` reads the same four states (`compatible`,
+`client-outdated`, `server-outdated`, `unknown`) from any window a client has
+heard: a welcome, this frame, a discovery file.
+
+`update.status` (no scope: any authenticated client may learn how to recover)
+answers `method`: `self` for a desktop, which updates itself through its app
+updater; `bootstrap` for a server a desktop installed (inside WSL, or over
+SSH), which that desktop replaces when it next connects; `manual` for one
+started by hand. `manual` carries the words for the last two. `update.start`
+(a mutation with a `commandId`, scope `environment:maintain`; the same
+`commandId` asked again, even after the restart, is answered as it was) asks a `self`
+Studio to check, download, drain its running turns and restart into the new
+version; it is answered before the restart, and the client reads the outcome
+from the next welcome's version or `lastFailure`. A desktop installs what its
+update channel offers, so a `targetVersion` it does not offer is refused, and
+so is an installation that needs an administrator, which Windows asks for at
+that PC. A Studio that does not update itself refuses it `update_unavailable`
+with its words. Owners hold
+`environment:maintain`; a paired app only when Settings gave it; a browser on
+the tailnet never.
+
+A server's data directory says the format its files are in
+(`<data>/format.json`, `{ format, writtenBy }`; `src/server/environment/
+data-format.ts`). A server refuses to start on data in a newer format than it
+reads ("this data was written by Studio X; update this server"), so a server
+rolled back to an older tree never rewrites what a newer one wrote. A format
+changes only through a step in that file, which copies the files it touches
+aside first and is undone if it fails or is interrupted. Format 1 is the
+layout every build before the marker wrote; the first store change an older
+server cannot read adds format 2.
+
+**The `incompatible` frame, `update.status`, `update.start`, their params,
+results and codes never change shape**, since they are what two ends that
+disagree on everything else still speak; and neither does the `hello`. Members
+are only ever added, optional; a client reads an update `method` it does not
+know as `manual`, a `state` as `idle` and an environment's `hostKind` as
+`other`, and cuts words and versions to their bounds instead of refusing the
+frame. `packages/studio-protocol/test/update.test.ts`
+pins them. The SDK's `openStudioUpdateSession` is the client side.
 
 The pack check (`npm run test:studio-packages:pack`) installs the packed
 tarball beside the conversation protocol's and checks both module systems and
@@ -1023,9 +1049,9 @@ at, the page by whoever wrote it. Every message carries an integer `v`, now 1.
 
 If your change alters anything that crosses either wire, do all of this:
 
-1. **Decide which it is.** Additive → a new entry in `TAILNET_CAPABILITIES` (or,
-   for the phone, a new command in the snapshot's advertised `commands`, which
-   the phone reads as plain strings), no version bump. Otherwise → a version bump.
+1. **Decide which it is.** Additive → a new capability on the Studio welcome
+   (`STUDIO_CAPABILITIES`, or a conversation capability the package names), no
+   version bump. Otherwise → a version bump.
 2. **If you bump**, move the current version and the minimum together so the
    window stays one version wide, and leave the code that reads the previous
    shape in place for that one release. A bump that also drops the old reader
@@ -1040,18 +1066,38 @@ If your change alters anything that crosses either wire, do all of this:
    bump, silently, on the first restart after it.
 4. **Test the edge, not the middle.** A peer inside the window is accepted, one
    outside it is refused, and the refusal names both versions. The existing
-   examples are in `src/main/automation/tailnet-peers.test.ts`,
-   `src/main/automation/tailnet-mesh-reachability.test.ts`,
-   `src/main/mobile/control/command-validation.test.ts` and
-   `src/main/mobile/control/protocol.test.ts`.
-5. **Make the same edit on the phone.** The phone carries its own copy of the
-   mobile-control types (see "The mobile wire lives in this tree" above), so a
-   desktop-only change to a shape the phone parses is half a change. The window
-   is the grace period a bump needs, not permission to skip the other side.
+   examples are in `src/main/automation/tailnet-transport-version.test.ts`,
+   `src/main/automation/tailnet/tailnet-retired-routes.test.ts` and
+   `src/server/rpc/studio-rpc.test.ts` (the Studio protocol's window).
+5. **Update the phone's use of it in the same change.** The phone imports the
+   protocol package itself (see "The phone's reads are Studio protocol
+   methods" above), so a shape change reaches its typecheck; what it does with a new
+   member is still yours to write. The window is the grace period a bump needs,
+   not permission to skip the other side.
 6. **Update this file**, if what you changed is the policy rather than an
    instance of it.
 
 ## Bumps that have happened
+
+### Tailnet transport 3 — the lanes leave the tailnet (2026-11-14)
+
+**Breaking, deliberately, with no window.** Every client follows and drives
+chats, boards and its reads on the Studio protocol at `/tailnet/v1/studio`: the
+phone's chats (2026-11-13), its boards, and a paired desktop's chats. What a
+build on transport 2 used instead went: the conversation lane
+(`/tailnet/v1/conversation`), the change feed (`/tailnet/v1/events`), the canvas
+lane (`/tailnet/v1/canvas`), and the `upload`, `conversation-image`,
+`conversation-files` and `conversation-commands` routes, with the capability
+list `health`, `identity` and `pair` carried. A window would have kept routes
+nothing current reads, so the minimum moved with the version:
+
+- An older phone reads `transportVersion: 3` on `health` and says "Update the
+  app" on the desktop's row, and a route it still asks for answers `426
+client_update_required` with the sentence.
+- An older paired desktop's identity read refuses transport 3 by name; a
+  current desktop refuses one on 2 the same way, naming both versions.
+- The phone keeps no version window of its own: it shows the version, and
+  meets skew in the Studio handshake.
 
 ### 4 — the members nothing produces leave the wire (2026-09-16)
 

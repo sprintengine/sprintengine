@@ -59,6 +59,30 @@ test('listeners hear a change, and only a change', async () => {
   assert.deepEqual(heard, [['studio-scheduled-agents', 'studio-ship'], ['studio-ship']])
 })
 
+test("a copy adopts another store's choice without writing it, and its listeners hear only a change", async () => {
+  const dir = await userData()
+  const server = createStudioAreaSkillStore({ resolveUserDataDir: () => dir })
+  const shell = createStudioAreaSkillStore({ resolveUserDataDir: () => dir })
+  assert.deepEqual(shell.enabledSkillDirs(), ['studio-ship'])
+  const heard: string[][] = []
+  shell.onChange((choices) => heard.push([...choices.enabled]))
+  server.onChange((choices) => shell.adopt(choices))
+
+  await server.setEnabled('studio-canvas', true)
+  assert.deepEqual(shell.enabledSkillDirs(), ['studio-canvas', 'studio-ship'])
+  // The same choice again, and one that is not a record, change nothing.
+  shell.adopt({ enabled: ['studio-canvas', 'studio-ship'], dismissed: [] })
+  shell.adopt('not a record')
+  assert.deepEqual(heard, [['studio-canvas', 'studio-ship']])
+  assert.deepEqual(shell.enabledSkillDirs(), ['studio-canvas', 'studio-ship'])
+
+  // Adopting writes nothing: the file is the one store's that made the choice.
+  const before = await readFile(join(dir, 'studio-area-skills.json'), 'utf8')
+  shell.adopt({ enabled: [], dismissed: ['studio-ship'] })
+  assert.equal(await readFile(join(dir, 'studio-area-skills.json'), 'utf8'), before)
+  assert.deepEqual(shell.enabledSkillDirs(), [])
+})
+
 test('a record that cannot be trusted reads as nothing chosen, and unknown ids are dropped', async () => {
   const dir = await userData()
   const path = join(dir, 'studio-area-skills.json')

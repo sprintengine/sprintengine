@@ -11,7 +11,7 @@
 // reads it to decide what it may overwrite; without it, two sources shipping a
 // directory of the same name are indistinguishable on disk.
 
-import { cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 
@@ -26,6 +26,7 @@ import {
 import { listLocalTree } from './local-source'
 import { isPathStrictlyInside } from '../path-containment'
 import { skillDirStaysInRoot } from './skill-dir-containment'
+import { copyConfinedDirectory, realFolderPath } from '../confined-file'
 
 /** Reads one file's bytes from whichever source the skill came from. */
 type SkillFileReader = (file: SkillFileRef) => Promise<Buffer>
@@ -260,7 +261,11 @@ export async function installSkill(options: InstallSkillOptions): Promise<SkillI
     for (const target of plan.targets) {
       await rm(target.path, { recursive: true, force: true })
       await mkdir(dirname(target.path), { recursive: true })
-      await cp(stage, target.path, { recursive: true })
+      // Checked again now its folders exist, then copied into its real folder
+      // through no link put in the way since.
+      if (!(await skillDirStaysInRoot(options.workspaceRoot, target.path)))
+        throw new Error(`${target.path} is reached through a linked folder.`)
+      await copyConfinedDirectory(stage, await realFolderPath(target.path))
     }
 
     return {

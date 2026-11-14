@@ -1,18 +1,25 @@
 import { mkdtemp, rm } from 'node:fs/promises'
+import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
+import type { DistributionMachine } from '../wsl/distribution-machine'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 
 import {
   STUDIO_SCOPES,
   createStudioChunkAssembler,
   parseStudioServerFrame,
   type ConversationCommand,
-  type ConversationCreateRequest,
+  type StudioConversationCreate,
   type ConversationWirePermissionPreset,
   type StudioCreatedConversation,
+  type StudioEnvironmentReadiness,
+  type StudioEnvironmentWork,
+  type StudioLaunchTokenChange,
   type StudioGrant,
   type StudioParsedServerFrame,
+  type StudioProtocolWindow,
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import { redactConversationValue } from '../../main/conversation-tool-details'
@@ -20,13 +27,39 @@ import { createStudioRpcServer, type StudioRpcServer } from './studio-rpc-server
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioHosts } from './studio-rpc-router'
+import type { StudioModules } from './studio-modules'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
+import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
+import type { StudioCanvasDomain } from '../canvas/canvas-domain'
+import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioAgentSkills } from '../core/studio-agent-skills'
+import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
+import type { StudioFileSystem } from '../files/studio-file-system'
+import type { SignIns } from '../machine/machine-sign-in'
+import type { EnvironmentAdoption } from '../environment/environment-adoption'
+import type { StudioExtensions } from '../extensions/extensions-domain'
+import type { StudioAccessDomain } from './studio-access'
+import type { StudioWebDevicesDomain } from './studio-web-devices'
+import type { StudioTailnetDomain } from './studio-tailnet'
+import type { StudioArtifacts } from '../artifacts/artifacts-domain'
+import type { StudioGit } from '../git/studio-git-types'
+import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
+import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
+import type { StudioUpdates } from '../update/studio-updates'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
   StudioChatBackend,
   StudioCommandOutcome,
   StudioConversationBackend,
+  StudioDiscovery,
+  StudioEnvironmentAccess,
 } from './studio-rpc-types'
 
 // Test doubles for the Studio RPC: an in-memory conversation backend with the
@@ -41,7 +74,7 @@ export type FakeBackend = StudioConversationBackend & {
   commands: Array<{ clientId: string; commandId: string; command: ConversationCommand }>
   /** The fingerprint each command carried, in order. */
   fingerprints: Array<string | undefined>
-  creates: Array<{ request: ConversationCreateRequest; launchCommandId: string }>
+  creates: Array<{ request: StudioConversationCreate; launchCommandId: string }>
   /** Every stop carried out, by its namespaced command id. */
   stops: string[]
   presets: Map<string, ConversationWirePermissionPreset>
@@ -137,6 +170,10 @@ export function createFakeBackend(agentIds: string[] = ['agent-1']): FakeBackend
           }
         : { ok: false, code: 'not_found', message: 'No such tool call.' }
     },
+    async event(key, seq, id) {
+      const event = logs.get(key.agentId)?.events.find((item) => item.seq === seq && item.id === id)
+      return event ? { ok: true, event } : { ok: false, code: 'not_found', message: 'This chat has no such event.' }
+    },
     async turnDiff() {
       return { ok: false, message: 'No checkpoint.' }
     },
@@ -152,7 +189,9 @@ export function createFakeBackend(agentIds: string[] = ['agent-1']): FakeBackend
         return { ok: false, code: 'busy', message: 'A send to this chat is being prepared.', retryAfterMs: 400 }
       backend.commands.push({ clientId, commandId, command })
       if (command.kind === 'setPermissionPreset') backend.presets.set(key.agentId, command.preset)
-      const outcome: StudioCommandOutcome = { ok: true }
+      // A fork joins the chat's records under the name the host gives it.
+      const outcome: StudioCommandOutcome =
+        command.kind === 'fork' ? { ok: true, data: { name: 'Atlas (fork)' } } : { ok: true }
       receipts.set(commandId, outcome)
       return outcome
     },
@@ -346,8 +385,41 @@ export async function startTestServer(
     chat?: StudioChatBackend
     tools?: ClientToolRegistry
     files?: StudioFiles
+    fileSystem?: StudioFileSystem
+    git?: StudioGit
+    worktrees?: StudioWorktrees
+    workspaceSync?: StudioWorkspaceSync
+    extensions?: StudioExtensions
+    artifacts?: StudioArtifacts
+    access?: StudioAccessDomain
+    webDevices?: () => StudioWebDevicesDomain | null
+    tailnet?: StudioTailnetDomain
     pullRequests?: StudioPullRequests
+    pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
+    hosts?: StudioHosts
+    discovery?: StudioDiscovery
+    terminals?: StudioTerminals
+    runtimes?: CliRuntimes
+    agentSettings?: StudioAgentSettings
+    agentSetup?: StudioAgentSetup
+    chatStores?: StudioChatStores
+    phoneReads?: StudioPhoneReads
+    agentSkills?: StudioAgentSkills
+    schedules?: StudioSchedulesDomain
+    chatLifecycle?: StudioChatLifecycleDomain
+    canvas?: StudioCanvasDomain
+    updates?: StudioUpdates
+    protocol?: StudioProtocolWindow
+    modules?: StudioModules
+    readiness?: () => Promise<StudioEnvironmentReadiness>
+    environmentAccess?: StudioEnvironmentAccess
+    adoption?: EnvironmentAdoption
+    work?: () => StudioEnvironmentWork
+    launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
+    terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
+    machine?: Pick<DistributionMachine, 'git' | 'home' | 'detectClis' | 'run' | 'onPathsChanged'>
+    signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
 ): Promise<{
@@ -376,8 +448,41 @@ export async function startTestServer(
     ...(input.chat ? { chat: () => input.chat! } : {}),
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.files ? { files: input.files } : {}),
+    ...(input.fileSystem ? { fileSystem: input.fileSystem } : {}),
+    ...(input.git ? { git: input.git } : {}),
+    ...(input.worktrees ? { worktrees: input.worktrees } : {}),
+    ...(input.workspaceSync ? { workspaceSync: input.workspaceSync } : {}),
+    ...(input.extensions ? { extensions: input.extensions } : {}),
+    ...(input.artifacts ? { artifacts: input.artifacts } : {}),
+    ...(input.access ? { access: input.access } : {}),
+    ...(input.webDevices ? { webDevices: input.webDevices } : {}),
+    ...(input.tailnet ? { tailnet: input.tailnet } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
+    ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
+    ...(input.hosts ? { hosts: input.hosts } : {}),
+    ...(input.discovery ? { discovery: input.discovery } : {}),
+    ...(input.terminals ? { terminals: input.terminals } : {}),
+    ...(input.runtimes ? { runtimes: input.runtimes } : {}),
+    ...(input.agentSettings ? { agentSettings: input.agentSettings } : {}),
+    ...(input.agentSetup ? { agentSetup: input.agentSetup } : {}),
+    ...(input.chatStores ? { chatStores: input.chatStores } : {}),
+    ...(input.phoneReads ? { phoneReads: input.phoneReads } : {}),
+    ...(input.agentSkills ? { agentSkills: input.agentSkills } : {}),
+    ...(input.schedules ? { schedules: input.schedules } : {}),
+    ...(input.chatLifecycle ? { chatLifecycle: input.chatLifecycle } : {}),
+    ...(input.canvas ? { canvas: input.canvas } : {}),
+    ...(input.updates ? { updates: input.updates } : {}),
+    ...(input.protocol ? { protocol: input.protocol } : {}),
+    ...(input.modules ? { modules: input.modules } : {}),
+    ...(input.readiness ? { readiness: input.readiness } : {}),
+    ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
+    ...(input.adoption ? { adoption: input.adoption } : {}),
+    ...(input.work ? { work: input.work } : {}),
+    ...(input.launchTokens ? { launchTokens: input.launchTokens } : {}),
+    ...(input.terminalHost ? { terminalHost: input.terminalHost } : {}),
+    ...(input.machine ? { machine: input.machine } : {}),
+    ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),
     resyncRetryAfterMs: () => 1_500,

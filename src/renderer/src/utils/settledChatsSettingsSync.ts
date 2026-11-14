@@ -14,10 +14,11 @@
  */
 import { normalizeSettledChatsSettings } from '../../../shared/workspace-settlement'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { workspaceSyncApi, workspaceSyncReachable } from '../studio/workspaceSync'
 
 export function initSettledChatsSettingsSync(): () => void {
-  const api = typeof window !== 'undefined' ? window.api : undefined
-  if (!api?.setSettledChatsSettings) return () => undefined
+  if (typeof window === 'undefined' || !workspaceSyncReachable('setSettledChatsSettings')) return () => undefined
+  const api = workspaceSyncApi
 
   // `null` so the mount push always goes, even at the defaults, or a value
   // changed in another window would leave main holding the stale one.

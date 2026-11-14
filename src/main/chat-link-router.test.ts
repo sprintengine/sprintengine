@@ -64,7 +64,12 @@ function harness(options: { windows?: FakeWindow[]; holders?: Record<string, str
   }
 }
 
-const link = (chatId: string, agentId: string | null = null): ChatLink => ({ kind: 'chat', chatId, agentId })
+const link = (chatId: string, agentId: string | null = null): ChatLink => ({
+  kind: 'chat',
+  environmentId: 'env-here',
+  chatId,
+  agentId,
+})
 
 test('a link opens in the window that holds its chat, even when another is focused', () => {
   const primary = fakeWindow('primary', { focused: true })

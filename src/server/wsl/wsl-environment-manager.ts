@@ -14,8 +14,9 @@ import type { WslRunner } from '../../main/hosts/wsl-runner'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { ServerBootstrapEnvelope } from '../bootstrap/envelope'
 import { backoffDelayMs } from '../../shared/exponentialBackoff'
-import { chatsAreWorking } from '../core/chats-working'
-import { connectRemoteConversationBackend, type RemoteConversationBackend } from './backend-wire'
+import { connect as connectStudio, type StudioClient } from '../../../packages/client-runtime/src/public'
+import { hasBackgroundWork, parseBackgroundWork, type BackgroundWork } from '../core/background-work'
+import { lineTransport, readTicket } from './studio-door'
 import { connectLoopback, openBridge } from './front-door-client'
 import { enterFrontDoor, ownerTokenHash, type FrontDoorPurpose } from './front-door-proof'
 import {
@@ -44,12 +45,18 @@ import {
 //   stdin is the lease: a ping every fifteen seconds while it runs, each one
 //   a probe. A server that leaves three in a row unanswered is hung, and is
 //   stopped with what it runs; a PC waking from sleep gets a minute first.
-// - After `idleMs` (ten minutes) with no call and no chat working there, the
-//   server is drained and stopped, so the VM can idle (decision R36).
-// - A wire that closes is reconnected only once the server has answered a
-//   ping: a server that died closes its wire a moment before `wsl.exe` says
-//   it exited, and a reconnect meanwhile would read the dead server as a
-//   loopback door that does not work.
+// - After `idleMs` (ten minutes) with no call, no chat working there and no
+//   work of its own (a schedule to run, a pull request watch, a message kept
+//   to send: core/background-work.ts), the server is drained and stopped, so
+//   the VM can idle (decision R36).
+// - The desktop holds one owner connection to each server, on its `studio`
+//   door (design-wsl-ssh-direct PR 3), as it does to an SSH machine's: it
+//   pings the server every ten seconds and is lost after two unanswered. The
+//   idle check and the quit question ask it `environment.work`.
+// - An owner connection or a wire that closes is reconnected only once the
+//   server has answered a lease ping: a server that died closes them a moment
+//   before `wsl.exe` says it exited, and a reconnect meanwhile would read the
+//   dead server as a loopback door that does not work.
 // - A server that exits on its own is told apart by asking WSL: a
 //   distribution now `Stopped` was shut down on purpose (`wsl --shutdown`,
 //   `wsl --terminate`), and nothing starts it again until the person acts;
@@ -72,13 +79,36 @@ export type WslServerStatus = {
   environmentId?: string
 }
 
-/** One distribution's server as the router uses it. */
+/** One distribution's server as the desktop holds it: its owner connection and its doors. */
 export type WslServerConnection = {
   distro: string
-  backend: RemoteConversationBackend
+  /**
+   * The desktop's owner connection to the server's Studio, on its `studio`
+   * door. It does not reconnect: its end is the server lost, and the manager
+   * makes the next one.
+   */
+  owner: StudioClient
   /** Where the distribution mounts Windows drives; null when automount is off. */
   driveMountRoot: string | null
   environmentId: string
+  /**
+   * The Unix socket a WSL terminal agent's hooks report to in the
+   * distribution, relayed back on the `agent-state` purpose; null when it did
+   * not open there.
+   */
+  agentStateSocket: string | null
+  /**
+   * The server's data directory in the distribution, where its gateway writes
+   * the discovery file an agent's MCP bridge there reads.
+   */
+  dataDir: string
+  /**
+   * What a WSL terminal of this desktop's names inside the distribution: the
+   * server's Node, its resources (the hooks and the MCP bridge), the private
+   * directory launch files are written into and the one each shell records its
+   * pid in. The directories are null where the server could not make them.
+   */
+  terminals: { nodePath: string; resourcesDir: string; sessionDir: string | null; pidDir: string | null }
   /** A fresh, admitted connection for `purpose` (the shell role's Studio connection). */
   open(purpose: FrontDoorPurpose): Promise<Duplex>
 }
@@ -112,6 +142,8 @@ export type WslEnvironmentManagerDeps = {
   log?(message: string): void
   idleMs?: number
   pingMs?: number
+  /** How long the owner connection waits quiet before it pings, and for the answer (ten seconds each). */
+  ownerPingMs?: number
   now?: () => number
   /** Overrides for the start's deadlines (tests). */
   start?: Partial<Pick<WslServerStartDeps, 'bootTimeoutMs' | 'readyTimeoutMs' | 'maxAttempts' | 'sleep'>>
@@ -126,6 +158,21 @@ export type WslEnvironmentManager = {
   statuses(): WslServerStatus[]
   /** Something used this distribution's chats: the idle clock starts again. */
   touch(distro: string): void
+  /**
+   * A WSL terminal of this desktop's runs in the distribution: its agent
+   * reports, and reaches Studio's tools, through the server, so the server is
+   * started, never stopped for being idle while any hold stands, and started
+   * again after a crash. Keyed, so a second hold under one key is harmless.
+   */
+  hold(distro: string, key: string): void
+  /** That terminal ended: the idle clock runs again once the last hold goes. */
+  release(distro: string, key: string): void
+  /**
+   * What each running server does on its own (schedules, watches, messages
+   * kept to send), which stops with it: what the quit question names. A
+   * server that does not answer within `budgetMs` is left out.
+   */
+  backgroundWork(options?: { budgetMs?: number }): Promise<Array<{ distro: string; work: BackgroundWork }>>
   /** Drain and stop one server (a setting moved), or all of them (quit). */
   stop(distro: string, options?: { budgetMs?: number }): Promise<void>
   shutdown(options?: { budgetMs?: number }): Promise<void>
@@ -139,8 +186,8 @@ const CRASH_BACKOFF_MAX_MS = 30_000
 // A server that ran this long before it crashed was healthy: its crash starts
 // the backoff again from the bottom, rather than counting as one in a row.
 const HEALTHY_RUN_MS = 5 * 60_000
-// How long a server whose wire closed has to answer a ping before it is taken
-// for hung, and stopped with every chat it runs. A dead one is known sooner,
+// How long a server whose connection closed has for each lease ping before it
+// is taken for hung (`answersAgain`), and stopped with every chat it runs. A dead one is known sooner,
 // by its exit, so this is only ever waited out by a server that is alive but
 // slow: busy, or in a VM still waking from sleep. About what a reconnect had
 // before it was asked to ping first (the loopback deadline and the handshake's).
@@ -191,6 +238,48 @@ type Handle = {
    * other than it after the server exits is a distribution WSL stopped.
    */
   runningState: string | null
+  /** The WSL terminals holding this server up (`hold`), by key. */
+  holds: Set<string>
+  /** A restart after a crash while held, waiting out the backoff. */
+  restartTimer: ReturnType<typeof setTimeout> | null
+}
+
+/** How long a WSL server is given to say what it does on its own. */
+const BACKGROUND_WORK_ASK_MS = 2_000
+const OWNER_PING_MS = 10_000
+const OWNER_HELLO_MS = 15_000
+
+/** What stopping a server would end, as it says (`environment.work`). */
+type ServerWork = { working: boolean; work: BackgroundWork }
+
+/**
+ * What a WSL server is doing, asked over the owner connection
+ * (`environment.work`). One that fails to answer has nothing to say, and is
+ * read as idle (a server with no owner connection is reconnected or stopped
+ * by the lease); one that does not answer in time is `no-answer`, which the
+ * idle clock reads as busy: a slow server is not stopped under its
+ * schedules, and a hung one is the lease's pings to stop.
+ */
+function askWork(owner: Pick<StudioClient, 'request'>, budgetMs: number): Promise<ServerWork | null | 'no-answer'> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    Promise.resolve()
+      .then(() => owner.request('environment.work', {}))
+      .then((answer) => {
+        const work = parseBackgroundWork(answer)
+        return work ? { working: answer.working === true, work } : null
+      })
+      .catch(() => null),
+    new Promise<'no-answer'>((resolve) => {
+      timer = setTimeout(() => resolve('no-answer'), budgetMs)
+      timer.unref?.()
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
+
+/** A connection let go: its owner connection. */
+function closeConnection(connection: WslServerConnection | null | undefined): void {
+  connection?.owner.close()
 }
 
 export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): WslEnvironmentManager {
@@ -221,6 +310,8 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
         lastPid: null,
         stopping: false,
         runningState: null,
+        holds: new Set(),
+        restartTimer: null,
       }
       handles.set(distro, handle)
     }
@@ -243,25 +334,36 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     handle.pingTimer = null
   }
 
-  // A server whose wire is being reconnected, or that is still starting,
-  // cannot say what its chats are doing: it is taken as working, not idle.
-  const busy = (handle: Handle): boolean =>
-    !handle.connection || handle.starting !== null || chatsAreWorking(handle.connection.backend)
+  // A server whose connection is being reconnected, or that is still
+  // starting, cannot say what it is doing: it is taken as working, not idle.
+  // Otherwise a chat working holds the lease, and so does work it does on its
+  // own; a server that cannot say has none, and one too slow to say is busy.
+  const busy = async (handle: Handle): Promise<boolean> => {
+    if (handle.holds.size > 0) return true
+    const connection = handle.connection
+    if (!connection || handle.starting !== null) return true
+    const answer = await askWork(connection.owner, BACKGROUND_WORK_ASK_MS)
+    if (answer === 'no-answer') return true
+    return answer !== null && (answer.working || hasBackgroundWork(answer.work))
+  }
 
   const armIdle = (handle: Handle): void => {
     if (handle.idleTimer) clearTimeout(handle.idleTimer)
     handle.idleTimer = setTimeout(() => {
       handle.idleTimer = null
       if (!handle.server) return
-      // A chat still working holds the lease; look again later.
-      if (busy(handle)) {
-        armIdle(handle)
-        return
-      }
-      log(
-        `Stopping the Studio server in ${handle.distro}: nothing has used it for ${Math.round(idleMs / 60_000)} minutes.`,
-      )
-      void stopHandle(handle, { budgetMs: QUIT_DRAIN_MS, idle: true })
+      void busy(handle).then((working) => {
+        // Used meanwhile (the clock started again), or gone: nothing to do.
+        if (!handle.server || handle.idleTimer) return
+        if (working) {
+          armIdle(handle)
+          return
+        }
+        log(
+          `Stopping the Studio server in ${handle.distro}: nothing has used it for ${Math.round(idleMs / 60_000)} minutes.`,
+        )
+        void stopHandle(handle, { budgetMs: QUIT_DRAIN_MS, idle: true })
+      })
     }, idleMs)
     handle.idleTimer.unref?.()
   }
@@ -279,7 +381,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     handle.reconnecting = null
     const connection = handle.connection
     handle.connection = null
-    connection?.backend.close()
+    closeConnection(connection)
     setStatus(handle, { state: 'unavailable', reason })
     server.kill()
   }
@@ -401,7 +503,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       },
       secrets: { kind: 'key-file' },
       flags: {},
-      wsl: { distro: handle.distro },
+      wsl: { distro: handle.distro, profile: deps.profile.id },
     }
   }
 
@@ -445,41 +547,88 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     return { stream: await enterFrontDoor(bridged, { token, purpose }), transport: 'stdio', reason }
   }
 
-  async function connectBackend(handle: Handle): Promise<WslServerConnection> {
-    const server = handle.server!
-    const { stream, transport, reason } = await openDoor(handle, 'backend')
-    const backend = connectRemoteConversationBackend(stream, { log })
-    // A first read that fails leaves nobody holding the wire: closed here, or
-    // every later attempt would leave another stream open on the server.
-    await backend.refresh().catch((error: unknown) => {
-      backend.close()
-      throw error
+  /**
+   * Whether a server whose connection was lost still answers its lease: as
+   * many tries as the lease's own probes allow before it is taken for hung,
+   * and more while a PC that slept gives its VM time to wake. An owner
+   * connection's ten-second ping is quicker than either, so its end alone
+   * never stops a server that is only slow.
+   */
+  async function answersAgain(handle: Handle, server: RunningWslServer): Promise<boolean> {
+    for (let missed = 0; ;) {
+      if (await server.alive(ALIVE_PROBE_MS)) return true
+      if (server.exited() || handle.server !== server) return false
+      if (now() < handle.probe.graceUntil) continue
+      if (++missed >= MISSED_PROBES_TO_KILL) return false
+    }
+  }
+
+  /**
+   * The desktop's owner connection to the server's Studio, over its `studio`
+   * door: the front door hands the stream a one-use shell ticket, the client
+   * says hello with it. It pings the server when quiet and ends when an
+   * answer does not come; it never reconnects on its own.
+   */
+  async function openOwner(
+    handle: Handle,
+  ): Promise<{ owner: StudioClient; transport: WslServerTransport; reason: string }> {
+    let opened: { transport: WslServerTransport; reason: string } | null = null
+    const owner = await connectStudio({
+      transport: async () => {
+        const door = await openDoor(handle, 'studio')
+        opened = { transport: door.transport, reason: door.reason }
+        return lineTransport(door.stream, await readTicket(door.stream, OWNER_HELLO_MS))
+      },
+      client: { name: 'SprintEngine Studio', kind: 'desktop' },
+      reconnect: false,
+      // No read deadline of the client's own: a git write with hooks runs as
+      // long as it runs, and each caller here bounds what it waits for.
+      readTimeoutMs: 0,
+      helloTimeoutMs: OWNER_HELLO_MS,
+      heartbeat: { intervalMs: deps.ownerPingMs ?? OWNER_PING_MS, timeoutMs: deps.ownerPingMs ?? OWNER_PING_MS },
     })
+    const how = opened as { transport: WslServerTransport; reason: string } | null
+    return { owner, transport: how?.transport ?? 'stdio', reason: how?.reason ?? '' }
+  }
+
+  async function connectOwner(handle: Handle): Promise<WslServerConnection> {
+    const server = handle.server!
+    const { owner, transport, reason } = await openOwner(handle)
     const connection: WslServerConnection = {
       distro: handle.distro,
-      backend,
+      owner,
       driveMountRoot: server.ready.frontDoor?.driveMountRoot ?? null,
       environmentId: server.ready.environmentId,
+      agentStateSocket: server.ready.frontDoor?.agentStateSocket ?? null,
+      dataDir: wslServerPaths(server.boot.home, deps.profile).dataDir,
+      terminals: {
+        nodePath: server.boot.execPath,
+        resourcesDir: `${server.boot.appDir.replace(/\/+$/u, '')}/resources`,
+        sessionDir: server.ready.frontDoor?.sessionDir ?? null,
+        pidDir: server.ready.frontDoor?.pidDir ?? null,
+      },
       open: async (purpose) => (await openDoor(handle, purpose)).stream,
     }
-    backend.onClose((why) => {
+    // Lost when the owner connection ends: closed, or a ping unanswered.
+    const lost = (why: string) => {
       if (handle.connection !== connection) return
       handle.connection = null
+      closeConnection(connection)
       if (handle.stopping || !handle.server || handle.killedFor !== null) return
-      // The wire went. If the server is still there, one reconnect, then the
-      // server is stopped and the next call starts it afresh. If it died, its
-      // exit (a moment behind the wire) says so, and nothing is reconnected.
+      // If the server is still there, one reconnect, then the server is
+      // stopped and the next call starts it afresh. If it died, its exit (a
+      // moment behind the connection) says so, and nothing is reconnected.
       log(`The connection to the Studio server in ${handle.distro} closed (${why}).`)
       const reconnect = async (): Promise<WslServerConnection> => {
-        const alive = await server.alive(ALIVE_PROBE_MS)
+        const alive = await answersAgain(handle, server)
         if (server.exited() || handle.server !== server)
           throw new Error(`The Studio server in ${handle.distro} stopped.`)
         if (!alive) throw new Error('the server did not answer a ping.')
         log(`The Studio server in ${handle.distro} is still running; reconnecting.`)
-        return connectBackend(handle)
+        return connectOwner(handle)
       }
       // Held as the start in progress, so a call meanwhile waits for this
-      // reconnect instead of opening a second wire beside it.
+      // reconnect instead of opening a second connection beside it.
       const reconnecting = (handle.starting ??= reconnect().finally(() => {
         if (handle.starting === reconnecting) handle.starting = null
         if (handle.reconnecting === reconnecting) handle.reconnecting = null
@@ -497,7 +646,12 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
           )
         },
       )
-    })
+    }
+    void owner.closed.then(
+      () => lost('its Studio connection ended'),
+      (error: unknown) =>
+        lost(`its Studio connection ended: ${error instanceof Error ? error.message : String(error)}`),
+    )
     handle.connection = connection
     setStatus(handle, {
       state: 'ready',
@@ -524,7 +678,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     const connection = handle.connection
     handle.connection = null
     clearTimers(handle)
-    connection?.backend.close()
+    closeConnection(connection)
     const killedFor = handle.killedFor
     handle.killedFor = null
     // Stopped here for not answering: that is what is said, not "stopped".
@@ -566,6 +720,29 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       reason: `The Studio server in ${handle.distro} stopped unexpectedly (${how}). It starts again with the next message.`,
     })
     log(`The Studio server in ${handle.distro} stopped unexpectedly (${how}).`)
+    restartIfHeld(handle, wait)
+  }
+
+  // A held server (a WSL terminal runs there) does not wait for the next
+  // message to start again: its agent's reports and tools go through it.
+  function restartIfHeld(handle: Handle, wait: number): void {
+    if (handle.holds.size === 0 || handle.restartTimer) return
+    handle.restartTimer = setTimeout(() => {
+      handle.restartTimer = null
+      if (handle.holds.size === 0 || handle.server || handle.starting) return
+      // The timer has waited the backoff out. `retryAt` is on the app's clock,
+      // which can read behind the timers' (a Node timer fires up to a
+      // millisecond before `Date.now()` reaches its end, and the wall clock
+      // can be set back): read against it, the start would be turned away as
+      // too soon, and nothing would try again.
+      handle.retryAt = Math.min(handle.retryAt, now())
+      void connect(handle.distro).catch((error: unknown) =>
+        log(
+          `The Studio server in ${handle.distro} did not start again for its WSL terminals: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+    }, wait)
+    handle.restartTimer.unref?.()
   }
 
   async function start(handle: Handle): Promise<WslServerConnection> {
@@ -594,8 +771,6 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
             appVersion: deps.app.version,
             nodeDigests: deps.nodeDigests(),
             appDigest: payload.digest,
-            profile: deps.profile.id,
-            entry: 'server',
           }),
         install: async (report) => {
           if (report.node) await deps.installNode(handle.distro, report)
@@ -638,7 +813,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       handle.probe = { inFlight: false, missed: 0, lastAt: 0, graceUntil: 0 }
       handle.pingTimer = setInterval(() => void probe(handle, server), pingMs)
       handle.pingTimer.unref?.()
-      const connection = await connectBackend(handle)
+      const connection = await connectOwner(handle)
       // Not a reset of the crash count: a server that crashes again soon after
       // starting is the next crash in a row, and waits longer.
       handle.startedAt = now()
@@ -679,7 +854,9 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     // server may have been used meanwhile, or a chat begun working there.
     if (options.idle) {
       if (handle.idleTimer) return
-      if (busy(handle)) {
+      const working = await busy(handle)
+      if (handle.idleTimer || handle.server !== server || handle.stopping) return
+      if (working) {
         armIdle(handle)
         return
       }
@@ -692,7 +869,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       handle.stopping = false
       if (handle.server === server) {
         handle.server = null
-        handle.connection?.backend.close()
+        closeConnection(handle.connection)
         handle.connection = null
         handle.token = null
         setStatus(handle, { state: 'stopped' })
@@ -700,44 +877,86 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     }
   }
 
-  return {
-    connect(distro) {
-      const handle = handleOf(distro)
-      // A server stopped for not answering is neither handed out nor
-      // reconnected to while it goes: the next server starts once it has.
-      const hung = handle.killedFor !== null ? handle.server : null
-      if (hung) {
-        handle.starting ??= exitOfHung(handle, hung)
-          .then(() => (handle.server ? connectBackend(handle) : start(handle)))
-          .finally(() => {
-            handle.starting = null
-          })
-        return handle.starting
-      }
-      if (handle.connection && handle.server) {
-        armIdle(handle)
-        return Promise.resolve(handle.connection)
-      }
-      handle.starting ??= (handle.server ? connectBackend(handle) : start(handle)).finally(() => {
-        handle.starting = null
-      })
+  function connect(distro: string): Promise<WslServerConnection> {
+    const handle = handleOf(distro)
+    // A server stopped for not answering is neither handed out nor
+    // reconnected to while it goes: the next server starts once it has.
+    const hung = handle.killedFor !== null ? handle.server : null
+    if (hung) {
+      handle.starting ??= exitOfHung(handle, hung)
+        .then(() => (handle.server ? connectOwner(handle) : start(handle)))
+        .finally(() => {
+          handle.starting = null
+        })
       return handle.starting
-    },
+    }
+    if (handle.connection && handle.server) {
+      // An owner connection that has just ended is not handed out: once its
+      // end is heard, the reconnect it starts is.
+      const owner = handle.connection.owner
+      if (owner.state === 'closed')
+        return owner.closed.then(
+          () => connect(distro),
+          () => connect(distro),
+        )
+      armIdle(handle)
+      return Promise.resolve(handle.connection)
+    }
+    handle.starting ??= (handle.server ? connectOwner(handle) : start(handle)).finally(() => {
+      handle.starting = null
+    })
+    return handle.starting
+  }
+
+  return {
+    connect,
     current: (distro) => {
       const handle = handles.get(distro)
       return handle?.server ? handle.connection : null
     },
     status: (distro) => handles.get(distro)?.status ?? { distro, state: 'stopped' },
+    async backgroundWork(options = {}) {
+      const budgetMs = options.budgetMs ?? BACKGROUND_WORK_ASK_MS
+      const asked = [...handles.entries()].flatMap(([distro, handle]) => {
+        const connection = handle.connection
+        if (!connection || !handle.server) return []
+        return [
+          askWork(connection.owner, budgetMs).then((answer) =>
+            answer && answer !== 'no-answer' ? [{ distro, work: answer.work }] : [],
+          ),
+        ]
+      })
+      return (await Promise.all(asked)).flat()
+    },
     statuses: () => [...handles.values()].map((handle) => handle.status),
     touch(distro) {
       const handle = handles.get(distro)
       if (handle?.server) armIdle(handle)
+    },
+    hold(distro, key) {
+      const handle = handleOf(distro)
+      handle.holds.add(key)
+      // Started now, so the terminal's agent finds the socket it reports to.
+      if (!handle.server && !handle.starting && handle.retryAt <= now()) void connect(distro).catch(() => undefined)
+      else if (!handle.server) restartIfHeld(handle, Math.max(0, handle.retryAt - now()))
+    },
+    release(distro, key) {
+      const handle = handles.get(distro)
+      if (!handle?.holds.delete(key) || handle.holds.size > 0) return
+      if (handle.restartTimer) clearTimeout(handle.restartTimer)
+      handle.restartTimer = null
+      if (handle.server) armIdle(handle)
     },
     stop: (distro, options) => {
       const handle = handles.get(distro)
       return handle ? stopHandle(handle, options) : Promise.resolve()
     },
     async shutdown(options = {}) {
+      for (const handle of handles.values()) {
+        if (handle.restartTimer) clearTimeout(handle.restartTimer)
+        handle.restartTimer = null
+        handle.holds.clear()
+      }
       await Promise.all([...handles.values()].map((handle) => stopHandle(handle, options).catch(() => undefined)))
     },
   }

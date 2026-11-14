@@ -1,5 +1,7 @@
 import { backlogAbsolutePath, defaultBacklogLocation, type BacklogLocation } from '../../../shared/backlog/scan'
 import { joinFilePath } from '../utils/paths'
+import { filesApi } from '../studio/files'
+import { backlogApi } from '../studio/backlog'
 
 /**
  * The renderer's view of where a workspace's backlog lives.
@@ -28,7 +30,7 @@ export async function backlogLocationOf(folderPath: string): Promise<BacklogLoca
 
   const pending = (async (): Promise<BacklogLocation> => {
     try {
-      const resolved = await window.api.resolveBacklogLocation(folderPath)
+      const resolved = await backlogApi.resolveBacklogLocation(folderPath)
       if (resolved.ok) {
         return { workspaceRoot: resolved.location.workspaceRoot, root: resolved.location.root }
       }
@@ -95,5 +97,5 @@ export async function ensureBacklogRoot(folderPath: string): Promise<string> {
   const normalized = root.replace(/\\/g, '/').replace(/\/+$/, '')
   const cut = normalized.lastIndexOf('/')
   if (cut <= 0) return root
-  return window.api.ensureDir(normalized.slice(0, cut), normalized.slice(cut + 1))
+  return filesApi.ensureDir(normalized.slice(0, cut), normalized.slice(cut + 1))
 }

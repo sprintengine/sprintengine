@@ -6,13 +6,8 @@ import {
   type McpToolRegistration,
 } from '../../shared/modules/mcp-tools'
 import type { WorkspaceRegistryActor } from '../../shared/workspace-registry'
-import { MAX_CHAT_NAME_LENGTH, type ConversationLifecycle } from './conversation-lifecycle'
+import type { ConversationLifecycle } from './conversation-lifecycle'
 import type { ConversationMove } from './conversation-move'
-import { CHAT_SEARCH_MAX_QUERY, type ChatSearchAnswer } from './conversation-search'
-import type {
-  ConversationApprovalRuleRevokeResult,
-  ConversationApprovalRulesResult,
-} from '../../shared/conversation-runtime'
 import { parseCliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { CliPermissionModeSpec } from '../../shared/cli-permission-mode'
 import { conversationPermissionModes } from '../../shared/conversation-harness'
@@ -22,11 +17,6 @@ import {
 } from '../../../packages/conversation-protocol/src/public'
 import type { ConversationLaunchService } from '../conversation-launch-service'
 import type { WorktreeDependencyInstallView } from '../../shared/ipc/worktree-pool'
-import type {
-  SettledChatDeletionOutcome,
-  SettledChatDeletionPlan,
-  SettledChatWorktreePlan,
-} from '../../shared/ipc/settled-chats'
 import {
   launchingAgentOf,
   NOT_TOLD_NOT_AN_AGENT,
@@ -61,19 +51,6 @@ export const CONVERSATION_MUTATION_TOOL_NAMES: readonly string[] = [
   'conversation.change_project',
 ]
 
-/**
- * A paired desktop's chat management on a chat here, beyond the row menu's
- * marks: each writes this machine's record of the chat, so each needs
- * `conversation:operate` and is audited with the device that asked.
- */
-export const CHAT_MANAGE_MUTATION_TOOL_NAMES: readonly string[] = [
-  'conversation.rename',
-  'conversation.auto_compact',
-  'conversation.pull_request_unwatch',
-  'conversation.delete',
-  'conversation.approval_rule_revoke',
-]
-
 const EFFORT_ID = /^[a-z0-9_-]{1,40}$/i
 // A skill's directory name, as the chat runtime accepts one (conversation-skills.ts).
 const SKILL_ID = /^[\w.-]{1,200}(?::[\w.-]{1,200})?$/
@@ -82,21 +59,33 @@ const MAX_CREATE_SKILLS = 32
 export type ConversationToolsDeps = {
   /** Makes the folder a chat with no project runs in. Absent, the one on this machine's disk. */
   makeProjectlessFolder?: (prompt: string | null) => Promise<string>
-  launch: ConversationLaunchService['launch']
+  /**
+   * Starts the chat. Handed the caller, so a launch that would leave this
+   * machine (a workspace another environment holds) can refuse a paired
+   * device (environment-chat-calls.ts).
+   */
+  launch: (
+    request: Parameters<ConversationLaunchService['launch']>[0],
+    caller?: McpConnectionContext,
+  ) => ReturnType<ConversationLaunchService['launch']>
   /** The calling agent's own preset, which a chat it starts may not exceed (launch-permission-cap.ts). */
   resolveAgentPermissionPreset: AgentPermissionResolver
   /** A CLI's permission modes as `cli.runtime.list` gives them, for a caller that names one. */
   permissionModesOf?: (cli: string) => readonly CliPermissionModeSpec[]
   /** A chat's rest and visit clock, written to the desktop's own record (conversation-lifecycle.ts). */
-  lifecycle: Pick<ConversationLifecycle, 'settle' | 'visit' | 'markUnread' | 'snooze' | 'highlight' | 'setAutoSettle'> &
-    // A paired desktop's chat management; absent where nothing can carry it out.
-    Partial<Pick<ConversationLifecycle, 'rename' | 'setAutoCompact'>>
+  lifecycle: Pick<ConversationLifecycle, 'settle' | 'visit' | 'markUnread' | 'snooze' | 'highlight' | 'setAutoSettle'>
   /**
    * Moving a chat to another folder, and the project it is in
    * (conversation-move.ts). Absent where this process cannot move a chat's
    * history (a Studio server out of process), and the tool says so.
    */
   moveChat?: ConversationMove['move']
+  /**
+   * Whether a paired device may name this folder: inside one of this
+   * machine's own workspaces' folders, as the Studio protocol holds a device
+   * to them. Absent, a device names none.
+   */
+  deviceMayName?: (folder: string) => Promise<boolean>
   /**
    * Remember that the calling agent started this chat, so the caller is told
    * when its turn ends or it waits on someone (agent-launch-notices.ts).
@@ -105,44 +94,6 @@ export type ConversationToolsDeps = {
    * so.
    */
   linkLaunchedAgent?: (link: LaunchedAgentLink) => LaunchLinkResult
-  /**
-   * The watches this machine keeps on chats' pull requests (pull-request-watch.ts),
-   * for a paired desktop's Stop watching. Absent where there is no record.
-   */
-  pullRequestWatches?: {
-    /** The pull requests a chat's agent has watched, by their addresses. */
-    watchedOf(key: { workspaceId: string; agentId: string }): string[] | Promise<string[]>
-    /** Stop one; whether a watch of this chat's was stopped. */
-    unwatch(key: { workspaceId: string; agentId: string }, url: string): boolean | Promise<boolean>
-  }
-  /**
-   * Deleting a settled chat as this machine's own Delete does
-   * (settled-chat-deletion-app.ts), for a paired desktop's Delete; null or
-   * absent where this process cannot (a Studio server out of process, which
-   * has no worktree pool of its own).
-   */
-  settledChatDeletion?: () => ChatDeletion | null
-  /** What was said in this machine's chats, for a paired desktop's palette (conversation-search.ts). */
-  searchChats?: (query: string) => Promise<ChatSearchAnswer>
-  /** This machine's "always allow" rules for its chats, for a paired desktop's Settings. */
-  approvalRules?: {
-    list(): Promise<ConversationApprovalRulesResult>
-    revoke(ruleId: string): Promise<ConversationApprovalRuleRevokeResult>
-  }
-}
-
-/** What `conversation.delete` and its plan ask of this machine's deletion. */
-export type ChatDeletion = {
-  plan(workspaceIds: readonly string[]): Promise<SettledChatDeletionPlan[]>
-  delete(workspaceIds: readonly string[]): Promise<SettledChatDeletionOutcome[]>
-  /** Whether this machine has a record of the chat at all. */
-  has(workspaceId: string): boolean
-}
-
-/** A worktree as a paired device is told of it: by its name and branch, with no path on this machine. */
-function worktreeProjection(worktree: SettledChatWorktreePlan): Omit<SettledChatWorktreePlan, 'path'> {
-  const { path: _path, repoRoot: _root, ...told } = worktree as SettledChatWorktreePlan & { repoRoot?: unknown }
-  return told
 }
 
 /**
@@ -390,27 +341,30 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             return toolError('launch_failed', `The chat's folder could not be made: ${message}`)
           }
         }
-        const launched = await deps.launch({
-          ...(projectlessFolder
-            ? { newChatIn: { folderPath: projectlessFolder } }
-            : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),
-          ...(args.worktree === true ? { newWorktree: true } : {}),
-          ...(typeof args.worktreeName === 'string' && args.worktreeName.trim()
-            ? { worktreeName: args.worktreeName.trim() }
-            : {}),
-          ...(typeof args.inWorktree === 'string' && args.inWorktree.trim()
-            ? { existingWorktreePath: args.inWorktree.trim() }
-            : {}),
-          ...(typeof args.effort === 'string' ? { reasoningEffort: args.effort.trim() } : {}),
-          ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
-          ...(typeof args.cliModel === 'string' ? { cliModel: args.cliModel } : {}),
-          ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
-          ...(Array.isArray(args.skills) && args.skills.length > 0 ? { skills: args.skills as string[] } : {}),
-          ...(typeof args.name === 'string' ? { name: args.name } : {}),
-          ...(capped.permissionPreset ? { permissionPreset: capped.permissionPreset } : {}),
-          ...(namedMode?.ok && namedMode.permissionMode ? { permissionMode: namedMode.permissionMode } : {}),
-          ...(args.mode === 'plan' || args.mode === 'ask' ? { mode: args.mode } : {}),
-        })
+        const launched = await deps.launch(
+          {
+            ...(projectlessFolder
+              ? { newChatIn: { folderPath: projectlessFolder } }
+              : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),
+            ...(args.worktree === true ? { newWorktree: true } : {}),
+            ...(typeof args.worktreeName === 'string' && args.worktreeName.trim()
+              ? { worktreeName: args.worktreeName.trim() }
+              : {}),
+            ...(typeof args.inWorktree === 'string' && args.inWorktree.trim()
+              ? { existingWorktreePath: args.inWorktree.trim() }
+              : {}),
+            ...(typeof args.effort === 'string' ? { reasoningEffort: args.effort.trim() } : {}),
+            ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
+            ...(typeof args.cliModel === 'string' ? { cliModel: args.cliModel } : {}),
+            ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
+            ...(Array.isArray(args.skills) && args.skills.length > 0 ? { skills: args.skills as string[] } : {}),
+            ...(typeof args.name === 'string' ? { name: args.name } : {}),
+            ...(capped.permissionPreset ? { permissionPreset: capped.permissionPreset } : {}),
+            ...(namedMode?.ok && namedMode.permissionMode ? { permissionMode: namedMode.permissionMode } : {}),
+            ...(args.mode === 'plan' || args.mode === 'ask' ? { mode: args.mode } : {}),
+          },
+          context,
+        )
         if (!launched.ok) return toolError(launched.code, launched.message)
         const parent = launchingAgentOf(context)
         const linked: LaunchLinkResult | null =
@@ -696,6 +650,11 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId.trim() : caller?.workspaceId
         if (!workspaceId) return toolError('invalid_arguments', 'Name the chat to move: "workspaceId".')
         if (!deps.moveChat) return toolError('unavailable', 'This machine cannot move its chats from here.')
+        if (context?.metadata.kind === 'remote-tailnet' && !(await deps.deviceMayName?.(args.folder)))
+          return toolError(
+            'folder_refused',
+            'A paired device moves a chat only to a folder inside the projects this machine has open.',
+          )
         const moved = await deps.moveChat(workspaceId, args.folder, lifecycleActor(context), caller)
         if (!moved.ok) return toolError(moved.code, moved.message)
         if (moved.movesWhenTurnEnds)
@@ -704,236 +663,6 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             note: 'This chat moves once your current turn completes, and your next turn starts in the new folder. Finish your reply as usual.',
           })
         return toolSuccess(moved)
-      },
-    },
-    // ── A paired desktop's chat management ──────────────────────────────
-    //
-    // What a paired desktop's menus ask of a chat here beyond its marks:
-    // served to paired devices only (`servedOnlyToPairedDevices`), since an
-    // agent here has its own ways to each.
-    {
-      name: 'conversation.rename',
-      description:
-        "Rename a chat on this machine, as its row menu's Rename does: every device lists it by the new name, " +
-        'and the name is kept, never replaced by one taken from its messages. Renaming a chat to the name it has ' +
-        'changes nothing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
-          name: { type: 'string', description: `The chat's new name, 1 to ${MAX_CHAT_NAME_LENGTH} characters.` },
-        },
-        required: ['workspaceId', 'name'],
-        additionalProperties: false,
-      },
-      handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
-        if (typeof args.name !== 'string') return toolError('invalid_arguments', '"name" must be a string.')
-        if (!deps.lifecycle.rename) return toolError('unavailable', 'This machine cannot rename its chats from here.')
-        const renamed = deps.lifecycle.rename(args.workspaceId.trim(), args.name, lifecycleActor(context))
-        if (!renamed.ok) return toolError(renamed.code, renamed.message)
-        return toolSuccess(renamed)
-      },
-    },
-    {
-      name: 'conversation.auto_compact',
-      description:
-        "Switch Auto compact on or off for a chat on this machine, as its row menu's Auto compact does: with it " +
-        'on, Studio compacts the chat by itself while it sits idle, just before its prompt cache expires (a ' +
-        "Claude chat holding at least 100k tokens). The chat keeps the choice whatever this machine's default " +
-        'says. Compacts nothing at once.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
-          enabled: { type: 'boolean', description: 'true switches it on, false off.' },
-        },
-        required: ['workspaceId', 'enabled'],
-        additionalProperties: false,
-      },
-      handler: async (args, context) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
-        if (typeof args.enabled !== 'boolean') return toolError('invalid_arguments', '"enabled" must be a boolean.')
-        if (!deps.lifecycle.setAutoCompact)
-          return toolError('unavailable', 'This machine cannot switch Auto compact from here.')
-        const set = deps.lifecycle.setAutoCompact(args.workspaceId.trim(), args.enabled, lifecycleActor(context))
-        if (!set.ok) return toolError(set.code, set.message)
-        return toolSuccess(set)
-      },
-    },
-    {
-      name: 'conversation.pull_request_unwatch',
-      description:
-        "Stop this machine watching a chat's pull request, as the chat's Stop watching does: the chat stops " +
-        "waiting on it and is not woken for it again. The pull request stays the chat's, and the chat stays " +
-        'as it is. Name the pull request by `url`, or leave it out to stop every watch the chat has; one not ' +
-        'watched changes nothing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId, from the conversation list." },
-          agentId: { type: 'string', description: "The chat's agentId, from the conversation list." },
-          url: { type: 'string', description: "The pull request's address, as the conversation list names it." },
-        },
-        required: ['workspaceId', 'agentId'],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
-        if (typeof args.agentId !== 'string' || !args.agentId.trim()) {
-          return toolError('invalid_arguments', '"agentId" is required.')
-        }
-        if (args.url !== undefined && (typeof args.url !== 'string' || !args.url.trim())) {
-          return toolError('invalid_arguments', '"url" must be a pull request address when provided.')
-        }
-        const watches = deps.pullRequestWatches
-        if (!watches) return toolError('unavailable', 'This machine keeps no pull request watches.')
-        const key = { workspaceId: args.workspaceId.trim(), agentId: args.agentId.trim() }
-        const urls = typeof args.url === 'string' ? [args.url.trim()] : await watches.watchedOf(key)
-        const stopped: string[] = []
-        for (const url of urls) if (await watches.unwatch(key, url)) stopped.push(url)
-        return toolSuccess({ ok: true, ...key, stopped: stopped.length, pullRequests: stopped })
-      },
-    },
-    {
-      name: 'conversation.delete_plan',
-      description:
-        'What deleting a settled chat on this machine would do, as its Delete asks before it deletes: whether it ' +
-        'can be deleted now (`refused` says why not: it is not settled, or an agent in it is working), and each ' +
-        'worktree the chat owns, by its name and branch, and whether it goes or is kept. Changes nothing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId on this machine." },
-        },
-        required: ['workspaceId'],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
-        const deletion = deps.settledChatDeletion?.()
-        if (!deletion) return toolError('unavailable', 'This machine cannot delete its chats from here.')
-        const workspaceId = args.workspaceId.trim()
-        if (!deletion.has(workspaceId)) return toolSuccess({ ok: true, workspaceId, gone: true, worktrees: [] })
-        const [plan] = await deletion.plan([workspaceId])
-        return toolSuccess({
-          ok: true,
-          workspaceId,
-          worktrees: (plan?.worktrees ?? []).map(worktreeProjection),
-          ...(plan?.refused ? { refused: plan.refused } : {}),
-        })
-      },
-    },
-    {
-      name: 'conversation.delete',
-      description:
-        'Delete a settled chat on this machine for good, as its Delete does: its history, its record, and the ' +
-        'worktree it owns (back to the pool, or removed, never one with uncommitted changes; its branch is kept). ' +
-        'Refused while the chat is not settled or an agent in it is working. A chat already gone answers ' +
-        'gone: true. There is no undo; ask conversation.delete_plan first and say what goes.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', description: "The chat's workspaceId on this machine." },
-        },
-        required: ['workspaceId'],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        if (typeof args.workspaceId !== 'string' || !args.workspaceId.trim()) {
-          return toolError('invalid_arguments', '"workspaceId" is required.')
-        }
-        const deletion = deps.settledChatDeletion?.()
-        if (!deletion) return toolError('unavailable', 'This machine cannot delete its chats from here.')
-        const workspaceId = args.workspaceId.trim()
-        // Asked again after it went through: it is gone, as was asked.
-        if (!deletion.has(workspaceId)) return toolSuccess({ ok: true, workspaceId, gone: true, worktrees: [] })
-        const [outcome] = await deletion.delete([workspaceId])
-        if (!outcome?.ok) return toolError('refused', outcome?.message ?? 'The chat was not deleted.')
-        return toolSuccess({
-          ok: true,
-          workspaceId,
-          worktrees: outcome.worktrees.map(({ path: _path, ...told }) => told),
-        })
-      },
-    },
-    {
-      name: 'conversation.search',
-      description:
-        "Search what was said in this machine's chats, as its own palette does: the chats its sidebar lists, most " +
-        'recently spoken in first, one entry per chat with a match, carrying its matching messages (`seq` names ' +
-        'each in its transcript, `from` who said it) and how many there were. At most 50 chats and 20 matches ' +
-        'each; `truncated` says the answer stopped early. Two characters at least.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: `What to find, 2 to ${CHAT_SEARCH_MAX_QUERY} characters.` },
-        },
-        required: ['query'],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        const query = typeof args.query === 'string' ? args.query.trim() : ''
-        if (query.length < 2 || query.length > CHAT_SEARCH_MAX_QUERY) {
-          return toolError('invalid_arguments', `"query" must be 2 to ${CHAT_SEARCH_MAX_QUERY} characters.`)
-        }
-        if (!deps.searchChats) return toolError('unavailable', 'This machine cannot search its chats from here.')
-        return toolSuccess({ ok: true, ...(await deps.searchChats(query)) })
-      },
-    },
-    {
-      name: 'conversation.approval_rules',
-      description:
-        'List the "always allow" rules this machine\'s chats run with, as its Settings ▸ Chats lists them: each ' +
-        "by its id, what it allows (`label`, `toolName`, `toolKind`), the project it holds in by its folder's " +
-        'name (`project`, never a path), and when it was made. Changes nothing.',
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-      handler: async () => {
-        if (!deps.approvalRules) return toolError('unavailable', 'This machine cannot list its permissions here.')
-        const listed = await deps.approvalRules.list()
-        if (!listed.ok) return toolError('unavailable', listed.message)
-        return toolSuccess({
-          ok: true,
-          rules: listed.rules.map((rule) => ({
-            id: rule.id,
-            label: rule.label,
-            toolName: rule.toolName,
-            toolKind: rule.toolKind,
-            project: rule.workspaceRoot.split(/[\\/]/u).filter(Boolean).at(-1) ?? rule.workspaceRoot,
-            createdAt: rule.createdAt,
-          })),
-        })
-      },
-    },
-    {
-      name: 'conversation.approval_rule_revoke',
-      description:
-        'Revoke one of this machine\'s "always allow" rules, as its Settings\' Revoke does: the next request it ' +
-        'covered asks again. A rule already gone changes nothing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          ruleId: { type: 'string', description: 'The rule, by its id from conversation.approval_rules.' },
-        },
-        required: ['ruleId'],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        if (typeof args.ruleId !== 'string' || !args.ruleId.trim() || args.ruleId.length > 200) {
-          return toolError('invalid_arguments', '"ruleId" is required.')
-        }
-        if (!deps.approvalRules) return toolError('unavailable', 'This machine cannot revoke its permissions here.')
-        const revoked = await deps.approvalRules.revoke(args.ruleId.trim())
-        if (!revoked.ok) return toolError('unavailable', revoked.message)
-        return toolSuccess({ ok: true, ruleId: args.ruleId.trim() })
       },
     },
   ]

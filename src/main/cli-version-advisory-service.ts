@@ -18,7 +18,6 @@
 // (`knownCliAvailability`) against the registry, so it starts no process, never
 // starts a stopped WSL distribution, and never asks about a CLI that is not
 // installed.
-import { app } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -36,12 +35,10 @@ import type {
 import { isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from '../shared/execution-host'
 import type { AgentLaunchSettings } from '../shared/launch-settings'
 import type { PluginManifest } from '../shared/plugin-manifest'
+import { studioPlatform } from '../server/platform/platform'
 import { detectAgentCliAvailability, knownCliAvailability, recordCliDetection } from './cli-availability'
 import { fetchNpmLatestVersion, outdatedClis, resolveCliVersionAdvisories } from './cli-version-advisory'
 import { getPluginManifest, listPluginRegistryEntries } from './plugin-registry-instance'
-import { broadcastToAllWindows } from './window-broadcast'
-
-const CLI_VERSION_ADVISORIES_CHANGED_CHANNEL = 'cli-version:advisories-changed'
 
 /** One machine whose CLIs are checked, with each CLI's command on it. */
 export type CliMachine = {
@@ -90,10 +87,21 @@ export type CliVersionServiceDeps = {
 
 // The (machine, cli, latestVersion) triples this install has already announced
 // with a toast, on disk so a restart does not repeat them.
-const CLI_UPDATE_NOTICES_FILENAME = 'cli-update-notices.json'
+export const CLI_UPDATE_NOTICES_FILENAME = 'cli-update-notices.json'
 
-const defaultBroadcast: CliVersionAdvisoryBroadcast = (result) =>
-  broadcastToAllWindows(CLI_VERSION_ADVISORIES_CHANGED_CHANNEL, result)
+// Whoever follows the advisories: the Studio protocol's `cliVersions.changed`,
+// so a Settings re-check, an update and the poller reach every client alike.
+const advisoryListeners = new Set<CliVersionAdvisoryBroadcast>()
+
+/** Hear the advisories each time they move. Returns the unsubscriber. */
+export function onCliVersionAdvisoriesChanged(listener: CliVersionAdvisoryBroadcast): () => void {
+  advisoryListeners.add(listener)
+  return () => void advisoryListeners.delete(listener)
+}
+
+const defaultBroadcast: CliVersionAdvisoryBroadcast = (result) => {
+  for (const listener of [...advisoryListeners]) listener(result)
+}
 
 function defaultDeps(): CliVersionServiceDeps {
   return {
@@ -103,7 +111,7 @@ function defaultDeps(): CliVersionServiceDeps {
     record: (runtime, detected) => recordCliDetection(runtime, detected),
     getManifest: (cli) => getPluginManifest(cli),
     fetchLatest: (pkg, force) => fetchNpmLatestVersion(pkg, { force }),
-    noticesPath: () => join(app.getPath('userData'), CLI_UPDATE_NOTICES_FILENAME),
+    noticesPath: () => join(studioPlatform().paths.dataDir(), CLI_UPDATE_NOTICES_FILENAME),
     broadcast: defaultBroadcast,
   }
 }
@@ -126,7 +134,7 @@ function current(): CliVersionServiceDeps {
 }
 
 /**
- * Installed once by app-services with the machines its launch settings name;
+ * Installed once by the core with the machines its launch settings name;
  * tests stand in for any part.
  */
 export function configureCliVersionService(overrides: Partial<CliVersionServiceDeps>): void {
@@ -144,7 +152,7 @@ export function resetCliVersionService(): void {
   scheduledRead = null
 }
 
-/** The machines from the running app's launch settings, for app-services. */
+/** The machines from the running Studio's launch settings, for the core. */
 export function launchSettingsCliMachines(settings: () => Pick<AgentLaunchSettings, 'cliRuntimes' | 'hosts'>) {
   return (): CliMachine[] =>
     cliMachinesFromLaunchSettings(

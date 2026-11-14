@@ -3,16 +3,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState, type AppStateStatus } from "react-native";
 
 import {
-  DesktopCommandError,
-  POLLED_SNAPSHOT_COLLECTIONS,
-  readSnapshotCommands,
-  tailnetClientForSession,
-  tailnetGrantAllows,
-  type SnapshotRead,
-} from "../api/tailnetControlClient";
-import type { ApiResult, DesktopSessionStatus, MobileControlSnapshot, MobileSession } from "../api/types";
-import type { MobileControlCommandType } from "../shared/mobile-control";
-import type { BacklogCreateInput, BacklogCreateResult } from "../features/backlog/BacklogCreateForm";
+  readDesktopSnapshot,
+  updateDesktopBacklogItem,
+  watchDesktopBacklog,
+  type DesktopSnapshot,
+} from "../api/desktopReads";
+import type { ApiResult, DesktopSessionStatus, MobileSession } from "../api/types";
 import type { BacklogCommandCapabilities, BacklogUpdateInput } from "../features/backlog/BacklogScreen";
 import { summarizeSnapshotForFleet, type FleetRowState } from "../features/fleet/fleetLogic";
 import {
@@ -40,7 +36,7 @@ interface SessionDataValue {
   starredProjectKeys: string[];
   toggleProjectStar: (key: string) => void;
 
-  snapshot: MobileControlSnapshot | null;
+  snapshot: DesktopSnapshot | null;
   snapshotState: SnapshotState;
   snapshotError: string | null;
   /** True only while a pull-to-refresh is in flight, so the spinner never self-starts. */
@@ -63,8 +59,6 @@ interface SessionDataValue {
 
   /** Null unless the paired desktop advertises the capability, so the control hides rather than lying. */
   sendBacklogUpdate: ((input: BacklogUpdateInput) => Promise<void>) | null;
-  sendBacklogCreate: ((input: BacklogCreateInput) => Promise<BacklogCreateResult>) | null;
-  revokeOnDesktop: (() => Promise<void>) | null;
 
   selectSession: (deviceId: string) => void;
   removeSession: (deviceId: string) => void;
@@ -132,7 +126,7 @@ export function SessionDataProvider({
 }: SessionDataProviderProps) {
   const toast = useToast();
   const [sessionStatusOverride, setSessionStatusOverride] = useState<DesktopSessionStatus | null>(null);
-  const [snapshot, setSnapshot] = useState<MobileControlSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
   const [snapshotState, setSnapshotState] = useState<SnapshotState>("idle");
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -141,7 +135,7 @@ export function SessionDataProvider({
   const [isFleetRefreshing, setIsFleetRefreshing] = useState(false);
   // Session-only, never persisted — see `resolveCurrentProject`.
   const [fallenBackProjectKey, setFallenBackProjectKey] = useState<string | null>(null);
-  // How many open screens draw from the snapshot. The read and the poll
+  // How many open screens draw from the snapshot. The read and the watch
   // below run only while one does.
   const [snapshotWatchers, setSnapshotWatchers] = useState(0);
   const snapshotWanted = snapshotWatchers > 0;
@@ -154,10 +148,6 @@ export function SessionDataProvider({
       setSnapshotWatchers((count) => count - 1);
     };
   }, []);
-
-  // The snapshot version currently on screen. A poll that returns the same
-  // version is a genuine no-op: freshness updates, but the tree is not re-rendered.
-  const snapshotVersionRef = useRef<string | null>(null);
 
   // The desktop a snapshot read must belong to. A read issued for desktop A can
   // resolve *after* the user has switched to B; without this identity check the
@@ -184,7 +174,6 @@ export function SessionDataProvider({
   // the first command.
   useEffect(() => {
     activeDeviceIdRef.current = session?.deviceId ?? null;
-    snapshotVersionRef.current = null;
     setSessionStatusOverride(null);
     setSnapshot(null);
     setSnapshotState("idle");
@@ -204,38 +193,21 @@ export function SessionDataProvider({
    * is the only refresh affordance and blanking the list would strand the user
    * with an empty panel and no way back to the rows they were reading.
    */
-  const applySnapshotResult = useCallback(
-    (result: ApiResult<SnapshotRead>, issuingDeviceId: string | null) => {
-      // Drop a read that belongs to a desktop the user has already left.
-      if (issuingDeviceId !== activeDeviceIdRef.current) {
-        return;
-      }
-
-      if (result.ok && result.data) {
-        setLastUpdatedAt(Date.now());
-        setSnapshotState("ready");
-        setSnapshotError(null);
-        // Item 1599: the desktop confirmed the version we already hold is current
-        // and shipped no payload. Freshness updated above; nothing to re-render.
-        if (result.data.unchanged) {
-          return;
-        }
-        const next = result.data.snapshot;
-        // Skip the re-render when the desktop's version has not advanced — a poll
-        // that finds nothing new must not thrash the list every interval.
-        if (next.snapshotVersion && next.snapshotVersion === snapshotVersionRef.current) {
-          return;
-        }
-        snapshotVersionRef.current = next.snapshotVersion ?? null;
-        setSnapshot(next);
-        return;
-      }
-
-      setSnapshotState("error");
-      setSnapshotError(result.message ?? "The desktop did not answer.");
-    },
-    [],
-  );
+  const applySnapshotResult = useCallback((result: ApiResult<DesktopSnapshot>, issuingDeviceId: string | null) => {
+    // Drop a read that belongs to a desktop the user has already left.
+    if (issuingDeviceId !== activeDeviceIdRef.current) {
+      return;
+    }
+    if (result.ok && result.data) {
+      setLastUpdatedAt(Date.now());
+      setSnapshotState("ready");
+      setSnapshotError(null);
+      setSnapshot(result.data);
+      return;
+    }
+    setSnapshotState("error");
+    setSnapshotError(result.message ?? "The desktop did not answer.");
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -254,10 +226,7 @@ export function SessionDataProvider({
       setSnapshotError(null);
 
       const issuingDeviceId = effectiveSession.deviceId;
-      const result = await tailnetClientForSession(effectiveSession).readSnapshot({
-        knownSnapshotVersion: snapshotVersionRef.current ?? undefined,
-        include: POLLED_SNAPSHOT_COLLECTIONS,
-      });
+      const result = await readDesktopSnapshot(effectiveSession);
       if (isMounted) {
         applySnapshotResult(result, issuingDeviceId);
       }
@@ -290,12 +259,7 @@ export function SessionDataProvider({
 
     const issuingDeviceId = effectiveSession.deviceId;
     setIsRefreshing(true);
-    void tailnetClientForSession(effectiveSession)
-      .readSnapshot({
-        knownSnapshotVersion: snapshotVersionRef.current ?? undefined,
-        include: POLLED_SNAPSHOT_COLLECTIONS,
-      })
-      .then((result) => {
+    void readDesktopSnapshot(effectiveSession).then((result) => {
         applySnapshotResult(result, issuingDeviceId);
         // Only the read that still owns the active desktop may clear the spinner;
         // a stale read landing after a switch must not touch the new desktop's state.
@@ -308,55 +272,25 @@ export function SessionDataProvider({
   /** Re-read after a command lands, without the pull-to-refresh spinner. */
   const reloadAfterCommand = useCallback(
     (activeSession: MobileSession) => {
-      void tailnetClientForSession(activeSession)
-        .readSnapshot({
-          knownSnapshotVersion: snapshotVersionRef.current ?? undefined,
-          include: POLLED_SNAPSHOT_COLLECTIONS,
-        })
-        .then((result) => applySnapshotResult(result, activeSession.deviceId));
+      void readDesktopSnapshot(activeSession).then((result) => applySnapshotResult(result, activeSession.deviceId));
     },
     [applySnapshotResult],
   );
 
-  // Foreground freshness: while the app is active and a desktop is live, poll the
-  // snapshot on an interval so a change on the desktop reaches an idle phone
-  // with no user action. The read is silent (no spinner) and the no-op
-  // version guard above skips the re-render when nothing advanced. Polling stops
-  // in the background and resumes — with an immediate read — on foreground.
+  // Foreground freshness: while a screen draws from the snapshot, the desktop
+  // says when a backlog moves (`backlog.changed`) and the phone reads it again.
+  // A backgrounded phone's socket drops, so coming back to the foreground reads
+  // once more for what moved while it was away.
   useEffect(() => {
     if (!effectiveSession || !shouldShowSignedInNavigation(effectiveSession) || !snapshotWanted) {
       return;
     }
-
-    const POLL_INTERVAL_MS = 20_000;
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const startPolling = () => {
-      if (!interval) {
-        interval = setInterval(() => reloadAfterCommand(effectiveSession), POLL_INTERVAL_MS);
-      }
-    };
-    const stopPolling = () => {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
-      }
-    };
-
-    const onAppStateChange = (state: AppStateStatus) => {
-      if (state === "active") {
-        reloadAfterCommand(effectiveSession);
-        startPolling();
-      } else {
-        stopPolling();
-      }
-    };
-
-    startPolling();
-    const subscription = AppState.addEventListener("change", onAppStateChange);
-
+    const stopWatching = watchDesktopBacklog(effectiveSession, () => reloadAfterCommand(effectiveSession));
+    const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active") reloadAfterCommand(effectiveSession);
+    });
     return () => {
-      stopPolling();
+      stopWatching();
       subscription.remove();
     };
   }, [effectiveSession, reloadAfterCommand, snapshotWanted]);
@@ -380,17 +314,12 @@ export function SessionDataProvider({
 
     void Promise.all(
       online.map(async (candidate) => {
-        // Fleet rows track no per-device version, so this always takes the full
-        // snapshot (no knownSnapshotVersion); it is still scoped to what the
-        // summary needs.
-        const result = await tailnetClientForSession(candidate).readSnapshot({
-          include: POLLED_SNAPSHOT_COLLECTIONS,
-        });
+        const result = await readDesktopSnapshot(candidate);
         setFleetRowStates((current) => ({
           ...current,
           [candidate.deviceId]:
-            result.ok && result.data && result.data.unchanged === false
-              ? { kind: "ready", summary: summarizeSnapshotForFleet(result.data.snapshot) }
+            result.ok && result.data
+              ? { kind: "ready", summary: summarizeSnapshotForFleet(result.data) }
               : { kind: "error", message: result.message ?? "The desktop did not answer." },
         }));
       }),
@@ -438,107 +367,36 @@ export function SessionDataProvider({
     [onStarredProjectKeysChange, starredProjectKeys],
   );
 
-  const snapshotCommands = useMemo(() => readSnapshotCommands(snapshot?.commands), [snapshot?.commands]);
-
-  // A grant is frozen at pair time: a device paired before a command's scope
-  // existed cannot send it even when the desktop advertises the command, and the
-  // gateway refuses it. `snapshotCommands` alone would draw those controls anyway,
-  // so a control is available only when the desktop offers it AND this pairing's
-  // grant covers it.
-  const tailnetScopes = effectiveSession?.tailnetScopes;
-  const availableCommands = useMemo(() => {
-    const available = new Set<MobileControlCommandType>();
-    for (const type of snapshotCommands) {
-      if (tailnetGrantAllows(tailnetScopes, type)) {
-        available.add(type);
-      }
-    }
-    return available;
-  }, [snapshotCommands, tailnetScopes]);
-
-  const ensureCommandAllowed = useCallback(
-    (type: MobileControlCommandType) => {
-      if (!effectiveSession) {
-        throw new Error("Reconnect to a desktop session before submitting commands.");
-      }
-      if (!snapshotCommands.has(type)) {
-        throw new Error(`${type} is not available from mobile in this release.`);
-      }
-      // Offered by the desktop but never granted to this device: re-pairing is the
-      // only way to widen a frozen scope, so name that rather than a bare refusal.
-      if (!tailnetGrantAllows(tailnetScopes, type)) {
-        throw new Error(REPAIR_REQUIRED_MESSAGE);
-      }
-      return effectiveSession;
-    },
-    [effectiveSession, snapshotCommands, tailnetScopes],
-  );
+  // What this pairing may change there is the desktop's answer, read with the
+  // snapshot: it serves the method, and the grant it holds now allows it.
+  const canUpdateBacklog = snapshot?.canUpdateBacklog === true;
 
   const sendBacklogUpdate = useCallback(
     async (input: BacklogUpdateInput) => {
-      const activeSession = ensureCommandAllowed("backlog.update");
+      const activeSession = effectiveSession;
+      if (!activeSession) throw new Error("Reconnect to a desktop session before submitting commands.");
+      if (!canUpdateBacklog) throw new Error(REPAIR_REQUIRED_MESSAGE);
 
       await withCommandHaptics({ toast, label: "Backlog update", successMessage: "Backlog item updated on desktop." }, async () => {
-        const result = await tailnetClientForSession(activeSession).sendCommand({
-          type: "backlog.update",
-          payload: {
-            workspacePath: input.workspacePath,
-            relativePath: input.relativePath,
-            // Every axis is optional on the wire, and an omitted one means "leave
-            // it alone" — so only the axis the user actually touched is sent. A
-            // literal `undefined` would serialize away anyway, but spreading keeps
-            // the payload honest about what this command is changing.
-            ...(input.status ? { status: input.status } : {}),
-            ...(input.type ? { type: input.type } : {}),
-            ...(input.difficulty ? { difficulty: input.difficulty } : {}),
-            ...(input.criticality ? { criticality: input.criticality } : {}),
-          },
+        const result = await updateDesktopBacklogItem(activeSession, {
+          // The rows carry the project's token; the desktop names the project by it, prefixed.
+          workspaceId: `backlog:${input.workspacePath}`,
+          relativePath: input.relativePath,
+          // Every axis is optional, and an omitted one means "leave it alone":
+          // only the axis the user touched is sent.
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.type ? { type: input.type } : {}),
+          ...(input.difficulty ? { difficulty: input.difficulty } : {}),
+          ...(input.criticality ? { criticality: input.criticality } : {}),
         });
-
         if (!result.ok) {
-          throw new DesktopCommandError(
-            formatCommandError(result.errorCode, result.message, "Desktop rejected the backlog update."),
-            result.errorCode,
-          );
+          throw new Error(formatCommandError(result.errorCode, result.message, "Desktop rejected the backlog update."));
         }
       });
 
       reloadAfterCommand(activeSession);
     },
-    [ensureCommandAllowed, reloadAfterCommand, toast],
-  );
-
-  const sendBacklogCreate = useCallback(
-    async (input: BacklogCreateInput): Promise<BacklogCreateResult> => {
-      const activeSession = ensureCommandAllowed("backlog.create");
-
-      const created = await withCommandHaptics({ toast, label: "Create item", successMessage: "Backlog item created on desktop." }, async () => {
-        const result = await tailnetClientForSession(activeSession).sendCommand<unknown>({
-          type: "backlog.create",
-          payload: {
-            workspacePath: input.workspacePath,
-            title: input.title,
-            ...(input.description ? { description: input.description } : {}),
-            ...(input.type ? { type: input.type } : {}),
-            ...(input.difficulty ? { difficulty: input.difficulty } : {}),
-            ...(input.criticality ? { criticality: input.criticality } : {}),
-          },
-        });
-
-        if (!result.ok) {
-          throw new DesktopCommandError(
-            formatCommandError(result.errorCode, result.message, "Desktop rejected the backlog item."),
-            result.errorCode,
-          );
-        }
-
-        return readBacklogCreateResult(result.data);
-      });
-
-      reloadAfterCommand(activeSession);
-      return created;
-    },
-    [ensureCommandAllowed, reloadAfterCommand, toast],
+    [canUpdateBacklog, effectiveSession, reloadAfterCommand, toast],
   );
 
   const markCurrentDeviceRevoked = useCallback(() => {
@@ -566,26 +424,6 @@ export function SessionDataProvider({
     [effectiveSession, markCurrentDeviceRevoked, onSessionRevoked, sessions],
   );
 
-  const revokeOnDesktop = useCallback(async () => {
-    const activeSession = ensureCommandAllowed("device.revoke");
-
-    await withCommandHaptics({ toast, label: "Revoke", successMessage: "Device revoked on desktop." }, async () => {
-      const result = await tailnetClientForSession(activeSession).sendCommand({
-        type: "device.revoke",
-        payload: { deviceId: activeSession.deviceId },
-      });
-
-      if (!result.ok) {
-        throw new DesktopCommandError(
-          formatCommandError(result.errorCode, result.message, "Desktop rejected the revoke command."),
-          result.errorCode,
-        );
-      }
-    });
-
-    markCurrentDeviceRevoked();
-  }, [ensureCommandAllowed, markCurrentDeviceRevoked, toast]);
-
   const connectSession = useCallback(
     (nextSession: MobileSession) => {
       setSessionStatusOverride(null);
@@ -599,9 +437,7 @@ export function SessionDataProvider({
   );
 
   const value = useMemo<SessionDataValue>(() => {
-    const backlogCapabilities: BacklogCommandCapabilities = {
-      canUpdate: availableCommands.has("backlog.update"),
-    };
+    const backlogCapabilities: BacklogCommandCapabilities = { canUpdate: canUpdateBacklog };
 
     return {
       session: effectiveSession,
@@ -624,8 +460,6 @@ export function SessionDataProvider({
       refreshFleet,
       backlogCapabilities,
       sendBacklogUpdate: backlogCapabilities.canUpdate ? sendBacklogUpdate : null,
-      sendBacklogCreate: availableCommands.has("backlog.create") ? sendBacklogCreate : null,
-      revokeOnDesktop: availableCommands.has("device.revoke") ? revokeOnDesktop : null,
       selectSession: (deviceId) => void onSelectSession(deviceId),
       removeSession: (deviceId) => void onRemoveSession(deviceId),
       renameSession: (deviceId, name) => void onRenameSession(deviceId, name),
@@ -652,13 +486,11 @@ export function SessionDataProvider({
     projects,
     refreshFleet,
     refreshSnapshot,
-    revokeOnDesktop,
     selectProject,
-    sendBacklogCreate,
+    canUpdateBacklog,
     sendBacklogUpdate,
     sessions,
     snapshot,
-    availableCommands,
     snapshotError,
     snapshotState,
     starredProjectKeys,
@@ -721,26 +553,16 @@ interface CommandFeedback {
   successMessage: string;
 }
 
-function readBacklogCreateResult(input: unknown): BacklogCreateResult {
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    const relativePath = (input as Record<string, unknown>).relativePath;
-    if (typeof relativePath === "string" && relativePath.trim()) {
-      return { relativePath: relativePath.trim() };
-    }
-  }
-  return {};
-}
-
-// Shown when this device holds no scope for an action the desktop offers. A frozen
-// grant only widens by re-pairing, so the copy points there instead of surfacing the
-// gateway's raw scope refusal (plain, per the mockup's Errors & copy view).
+// Shown when this device's grant does not reach an action the desktop offers. The
+// grant widens on the desktop (Settings) or by pairing again, so the copy points
+// there instead of surfacing the desktop's raw scope refusal.
 const REPAIR_REQUIRED_MESSAGE =
   "This device isn't paired for that action. Re-pair it with your desktop to enable it.";
 
 function formatCommandError(code: string | undefined, message: string | undefined, fallback: string): string {
-  // `unauthorized` means the device's pair-time grant does not cover this command.
-  // The gateway's own message names the missing scope — jargon to the user — so
-  // replace it with the re-pair guidance regardless of what the gateway said.
+  // `unauthorized` means the device's grant does not cover this change. The
+  // desktop's own message names the missing scope — jargon to the user — so
+  // replace it with the re-pair guidance regardless of what it said.
   if (code === "unauthorized") {
     return REPAIR_REQUIRED_MESSAGE;
   }

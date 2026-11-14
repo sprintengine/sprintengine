@@ -21,9 +21,11 @@ import {
   type LaunchedAgentLink,
   type LaunchLinkResult,
 } from '../agent-launch-notices'
-import { mobileSnapshotCollections, retiredMobileSnapshotCollections } from '../mobile/control/protocol'
 import { workspaceStoresRoot } from '../workspace-store'
 import { refuseWorkspaceFolder } from './workspace-folder-guard'
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import { isMachinePath } from '../../shared/machine-paths'
+import { confineToRoots } from '../studio-rpc/studio-file-confinement'
 import type { Workspace } from '../../renderer/src/types/workspace'
 import type {
   BacklogAddOrUpdateLinkInput,
@@ -46,6 +48,13 @@ import type {
   BacklogReadItemResult,
 } from '../backlog-service'
 import type { ScheduledAgentsService } from '../scheduled-agents/service'
+import {
+  scheduleChangeOf,
+  scheduleDraftOf,
+  type ScheduleRequestDeps,
+  type ScheduleRequestRefusal,
+} from '../scheduled-agents/schedule-requests'
+import type { StudioScheduleChange } from '../../../packages/studio-protocol/src/schedules'
 import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../shared/scheduled-agents'
 import type { LoadedPlugin } from '../../shared/plugin-manifest'
 import type { MarketplaceRegistryReadInput, MarketplaceRegistryReadResult } from '../../shared/electron-api'
@@ -76,7 +85,6 @@ import type { WorkspaceCreateRequest, WorkspaceCreateResult } from '../workspace
 import type { WorkspaceMutationActor } from '../workspace-sync-service'
 import { getWorkspaceChangeSummary } from '../workspace-change-summary'
 import {
-  capScheduledAgentPreset,
   capLaunchPermissionPreset,
   launchPermissionCeiling,
   refuseScheduledAgentRun,
@@ -89,6 +97,7 @@ import type { StartedDependencyInstall } from '../worktree-pool/dependency-insta
 import { installProjection } from './conversation-tools'
 import type { TerminalOutputTail } from '../terminal-output-tail'
 import { terminalPlainText } from './terminal-plain-text'
+import type { MachineSchedule, MachineScheduleAction, MachineSchedules } from '../../shared/machine-schedules'
 
 // The automation tool surface. v1: workspace.create / workspace.list /
 // workspace.status / agent.launch / agent.status; the read expansion adds
@@ -188,6 +197,14 @@ export type AutomationBackends = {
    * explicitly instead of buffering.
    */
   getScheduledAgents(): ScheduledAgentsService | null
+  /**
+   * The schedules of the machines this computer owns (an SSH machine's, a WSL
+   * distribution's), where a schedule made for a machine's folder is handed
+   * over and runs: `schedule.list` lists them beside this computer's, and
+   * `schedule.run`, `.pause`, `.resume` and `.delete` reach one by its id.
+   * Absent, only this computer's.
+   */
+  machineSchedules?: MachineSchedules
   /** The CLI a scheduled agent runs when its creator names none: the last one picked here. */
   defaultChatCli(): string | null
   /**
@@ -309,33 +326,11 @@ export type AutomationBackends = {
   listModuleContributedTools(): ReadonlyArray<{ moduleId: string; toolName: string }>
   /**
    * The marketplace registry index through the same client, cache, and
-   * bundled-first policy the Extensions storefront reads (`marketplace:registry:read`)
+   * bundled-first policy the Extensions storefront reads (`marketplace.read`)
    * — one source of truth, not a second fetch path.
    */
   readMarketplaceRegistry(input?: MarketplaceRegistryReadInput): Promise<MarketplaceRegistryReadResult>
-  /**
-   * The mobile companion's read model and command lane. The phone pairs with
-   * and talks to this desktop only over the tailnet gateway, so this is the
-   * whole of its connection: snapshots come back in path-token form — the
-   * phone round-trips `ws_` tokens, never local paths — and commands run
-   * through the MobileControlCommandService.
-   */
-  mobileControl: {
-    readSnapshot(input: {
-      include?: string[]
-      knownSnapshotVersion?: string
-    }): Promise<{ unchanged: true; snapshotVersion: string } | { unchanged: false; snapshot: Record<string, unknown> }>
-    dispatchCommand(input: {
-      type: string
-      payload: Record<string, unknown>
-      deviceId: string
-      idempotencyKey: string
-      expectedSnapshotVersion?: string
-    }): Promise<
-      | { ok: true; commandId: string; commandType: string; executedAt: string; data: unknown }
-      | { ok: false; code: string; message: string }
-    >
-  }
+
   now?: () => number
   sleep?: (ms: number) => Promise<void>
 }
@@ -431,11 +426,38 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     }
   }
 
-  function findWorkspace(workspaceId: string): Workspace | null {
-    return (
+  function findWorkspace(workspaceId: string, context?: McpConnectionContext): Workspace | null {
+    const workspace =
       backends.getWorkspaceSyncSnapshot().state.workspaces.find((candidate) => candidate.id === workspaceId) ?? null
-    )
+    return workspace && (!isPairedDevice(context) || isThisMachines(workspace)) ? workspace : null
   }
+
+  // A paired device reaches this machine's own workspaces and folders, as the
+  // Studio protocol holds it to them (studio-rpc-router.ts, `mayName`). Never
+  // this desktop's copies of the chats an SSH machine or a WSL distribution
+  // holds: what a call names there goes out on this desktop's own connection
+  // to that machine, which a device has no way onto. And never a folder no
+  // workspace here is in: a device names a project this machine already has.
+  function isPairedDevice(context: McpConnectionContext | undefined): boolean {
+    return context?.metadata?.kind === 'remote-tailnet'
+  }
+
+  function isThisMachines(workspace: Workspace): boolean {
+    return !environmentRouteOfRecord(workspace) && !isMachinePath(workspace.folderPath)
+  }
+
+  /** Whether a paired device may name this folder: inside one of this machine's own workspaces' folders, links resolved. */
+  async function deviceMayName(folder: string): Promise<boolean> {
+    const roots = backends
+      .getWorkspaceSyncSnapshot()
+      .state.workspaces.flatMap((workspace) =>
+        isThisMachines(workspace) && workspace.folderPath ? [workspace.folderPath] : [],
+      )
+    return (await confineToRoots(folder, roots)).ok
+  }
+
+  const DEVICE_FOLDER_REFUSED =
+    'A paired device names only folders inside the projects this machine has open. Open that project on this machine first.'
 
   // Backlog and Automations services speak absolute workspace roots; tools
   // speak workspace ids. Resolution goes through main's registry, so a tool can
@@ -443,8 +465,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // other workspace now: main persists the real record, so there is
   // no longer a half-known placeholder to refuse or to except a live terminal
   // from.
-  function resolveWorkspaceRoot(workspaceId: string): { root: string } | McpToolResult {
-    const workspace = findWorkspace(workspaceId)
+  function resolveWorkspaceRoot(workspaceId: string, context?: McpConnectionContext): { root: string } | McpToolResult {
+    const workspace = findWorkspace(workspaceId, context)
     if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
     if (!workspace.folderPath) {
       return failure(
@@ -459,16 +481,19 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // connection's advisory workspace identity resolves the folder for
   // Studio-launched agents, and callers outside the app pass an absolute
   // `projectRoot` instead. There is deliberately no open-workspace gate on the
-  // folder — the socket's trust boundary is the local OS user, and
-  // backlog-service validates the folder itself.
-  function resolveBacklogRoot(
+  // folder for the local socket — its trust boundary is the local OS user, and
+  // backlog-service validates the folder itself. A paired device is held to
+  // this machine's own projects (`deviceMayName`).
+  async function resolveBacklogRoot(
     args: Record<string, unknown>,
     context: McpConnectionContext | undefined,
-  ): { root: string } | McpToolResult {
+  ): Promise<{ root: string } | McpToolResult> {
     if (args.projectRoot !== undefined) {
       if (typeof args.projectRoot !== 'string' || !isAbsolute(args.projectRoot)) {
         return failure('invalid_arguments', '"projectRoot" must be an absolute path to the project folder.')
       }
+      if (isPairedDevice(context) && !(await deviceMayName(args.projectRoot)))
+        return failure('folder_refused', DEVICE_FOLDER_REFUSED)
       return { root: args.projectRoot }
     }
     const workspace = connectionWorkspace(context)
@@ -529,12 +554,12 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   // record (the agent registry and the renderer launch delegate), so they
   // resolve to the connection's own workspace, or to the open workspace whose
   // folder matches an explicit projectRoot.
-  function resolveBacklogWorkspace(
+  async function resolveBacklogWorkspace(
     args: Record<string, unknown>,
     context: McpConnectionContext | undefined,
-  ): { workspace: Workspace; root: string } | McpToolResult {
+  ): Promise<{ workspace: Workspace; root: string } | McpToolResult> {
     if (args.projectRoot !== undefined) {
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const workspace =
         backends
@@ -584,6 +609,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       name: workspace.name,
       mode: workspace.mode,
       folderPath: workspace.folderPath,
+      // The machine the folder is on, for a workspace on an SSH machine.
+      ...(workspace.hostId ? { hostId: workspace.hostId } : {}),
       windowId: workspaceWindowId(workspace.id),
       detail: 'full',
       agentIds: Object.keys(workspace.agents),
@@ -946,15 +973,16 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       'Workspaces that survived a restart are listed like any other: main owns the registry, so their name, ' +
       'folder, mode, and agents are real whether or not a window is open.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: async () => {
+    handler: async (_args, context) => {
       const { state } = backends.getWorkspaceSyncSnapshot()
       const usage = backends.projectUsage?.() ?? null
       const listedAt = now()
       // The repository each folder is a clone of rides the listing
       // (one-project-across-machines): it is how a paired Studio recognises
       // its own project on this machine. Read per folder, cached in main.
+      const listed = isPairedDevice(context) ? state.workspaces.filter(isThisMachines) : state.workspaces
       const workspaces = await Promise.all(
-        state.workspaces.map(async (workspace) => {
+        listed.map(async (workspace) => {
           const repository = workspace.folderPath ? await backends.readRepositoryIdentity(workspace.folderPath) : null
           const colorKey = projectColorKey({ folderPath: workspace.folderPath ?? null, repository })
           return {
@@ -975,125 +1003,6 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     },
   }
 
-  // ── Mobile companion over the gateway ────────────────────────────────────
-  // The phone's snapshot and command lane, and its only one: the companion
-  // pairs over the tailnet and reaches the desktop through these two tools. The
-  // command allowlist is deliberately narrow; widening it is a decision, not a
-  // default.
-  // The pull request reads only read (2026-10-30): the phone's viewer.
-  const MOBILE_GATEWAY_COMMAND_TYPES = ['backlog.update', 'pullRequest.read', 'pullRequest.diff'] as const
-
-  const workspaceSnapshot: McpToolRegistration = {
-    name: 'workspace.snapshot',
-    description:
-      'The mobile companion snapshot: backlog and the dev servers published on the tailnet as one ' +
-      'versioned document, in path-token form (ws_ tokens round-trip; local paths never leave ' +
-      'the desktop). Pass knownSnapshotVersion from the previous read to get an {unchanged: true} marker ' +
-      'instead of the full document when nothing moved.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        include: {
-          type: 'array',
-          items: { type: 'string', enum: [...mobileSnapshotCollections, ...retiredMobileSnapshotCollections] },
-          description:
-            `Collections to include (${mobileSnapshotCollections.join(', ')}). Defaults to all of them. ` +
-            `${retiredMobileSnapshotCollections.join(', ')} is retired: accepted, and answered with nothing.`,
-        },
-        knownSnapshotVersion: { type: 'string', description: 'The snapshotVersion returned by the previous read.' },
-      },
-      additionalProperties: false,
-    },
-    handler: async (args) => {
-      const invalidArray = firstInvalidStringArray(args, ['include'])
-      if (invalidArray) return invalidArray
-      // Checked here rather than left to the bridge, which drops unknown names:
-      // a caller that misspells a collection would otherwise get no hint that
-      // its scope was ignored. A retired name is not a misspelling — phones
-      // built before automations left the wire still ask for them on every
-      // read — so it is accepted and serves nothing.
-      const collections: readonly string[] = [...mobileSnapshotCollections, ...retiredMobileSnapshotCollections]
-      const unknownCollection = optionalStringArray(args.include)?.find((entry) => !collections.includes(entry))
-      if (unknownCollection !== undefined) {
-        return failure(
-          'invalid_arguments',
-          `"include" names "${unknownCollection}", which is not a snapshot collection. ` +
-            `Collections: ${mobileSnapshotCollections.join(', ')}.`,
-        )
-      }
-      const invalidString = firstInvalidOptionalString(args, ['knownSnapshotVersion'])
-      if (invalidString) return invalidString
-      const result = await backends.mobileControl.readSnapshot({
-        include: optionalStringArray(args.include),
-        knownSnapshotVersion: optionalString(args.knownSnapshotVersion),
-      })
-      return success(result)
-    },
-  }
-
-  const workspaceMobileCommand: McpToolRegistration = {
-    name: 'workspace.mobile_command',
-    description:
-      'Dispatch one mobile-control command envelope from a paired companion device. ' +
-      `Served types: ${MOBILE_GATEWAY_COMMAND_TYPES.join(', ')}. ` +
-      'The device identity comes from the transport, never from the arguments.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        type: { type: 'string', description: `One of: ${MOBILE_GATEWAY_COMMAND_TYPES.join(', ')}.` },
-        payload: {
-          type: 'object',
-          description: 'The command payload, exactly as the mobile-control protocol defines it.',
-        },
-        idempotencyKey: { type: 'string', description: 'Client-chosen key; replays return the recorded result.' },
-        expectedSnapshotVersion: { type: 'string' },
-      },
-      required: ['type', 'payload', 'idempotencyKey'],
-      additionalProperties: false,
-    },
-    handler: async (args, context) => {
-      const type = requireString(args, 'type')
-      if (typeof type !== 'string') return type
-      const idempotencyKey = requireString(args, 'idempotencyKey')
-      if (typeof idempotencyKey !== 'string') return idempotencyKey
-      const invalidString = firstInvalidOptionalString(args, ['expectedSnapshotVersion'])
-      if (invalidString) return invalidString
-      if (!(MOBILE_GATEWAY_COMMAND_TYPES as readonly string[]).includes(type)) {
-        return failure(
-          'command_not_supported',
-          `Mobile command "${type}" is not served over the gateway (served: ${MOBILE_GATEWAY_COMMAND_TYPES.join(', ')}).`,
-        )
-      }
-      const payload = args.payload
-      if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-        return failure('invalid_arguments', '"payload" must be an object.')
-      }
-      // The transport proved which paired device is calling (remote-tailnet
-      // metadata is set server-side); a local-socket caller is the owner's own
-      // machine and is labelled as such rather than trusted to name a device.
-      const metadata = context?.metadata
-      const deviceId =
-        metadata?.kind === 'remote-tailnet' && metadata.deviceId
-          ? metadata.deviceId
-          : `local:${metadata?.kind ?? 'unknown'}`
-      const result = await backends.mobileControl.dispatchCommand({
-        type,
-        payload: payload as Record<string, unknown>,
-        deviceId,
-        idempotencyKey,
-        expectedSnapshotVersion: optionalString(args.expectedSnapshotVersion),
-      })
-      if (!result.ok) return failure(result.code, result.message)
-      return success({
-        ok: true,
-        commandId: result.commandId,
-        commandType: result.commandType,
-        executedAt: result.executedAt,
-        data: (result.data ?? null) as Record<string, unknown> | null,
-      })
-    },
-  }
-
   const workspaceStatus: McpToolRegistration = {
     name: 'workspace.status',
     description: 'Read one workspace from the main process store, including its agents and their terminal liveness.',
@@ -1105,10 +1014,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const workspace = findWorkspace(workspaceId)
+      const workspace = findWorkspace(workspaceId, context)
       if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
       return success({
         workspace: workspaceProjection(workspace),
@@ -1134,10 +1043,12 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     handler: async (args, context) => {
       const invalid = firstInvalidOptionalString(args, ['name', 'folderPath', 'templateId'])
       if (invalid) return invalid
-      // A paired machine names a folder the person picked in its folder
-      // browser; anything on this machine's socket is held to project folders.
+      // Held to project folders, whoever asks; a paired device further to
+      // folders inside the projects this machine already has open.
       const folderPath = optionalString(args.folderPath)
-      if (folderPath && context?.metadata.kind !== 'remote-tailnet') {
+      if (folderPath && isPairedDevice(context) && !(await deviceMayName(folderPath)))
+        return failure('folder_refused', DEVICE_FOLDER_REFUSED)
+      if (folderPath) {
         const refused = await refuseWorkspaceFolder(folderPath, {
           platform: process.platform,
           homeDir: homedir(),
@@ -1365,10 +1276,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const resolved = resolveWorkspaceRoot(workspaceId)
+      const resolved = resolveWorkspaceRoot(workspaceId, context)
       if (!('root' in resolved)) return resolved
       const checkout = await backends.readWorkspaceCheckout(resolved.root)
       return success({ workspaceId, ...checkout })
@@ -1397,14 +1308,14 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
       const invalid = firstInvalidOptionalString(args, ['cli'])
       if (invalid) return invalid
       if (!backends.readWorkspaceExtensions)
         return failure('unavailable', 'This machine does not list its skills and MCP servers.')
-      const resolved = resolveWorkspaceRoot(workspaceId)
+      const resolved = resolveWorkspaceRoot(workspaceId, context)
       if (!('root' in resolved)) return resolved
       const extensions = await backends.readWorkspaceExtensions(resolved.root, optionalString(args.cli) ?? null)
       return success({ workspaceId, ...extensions })
@@ -1489,12 +1400,12 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       required: ['workspaceId', 'agentId'],
       additionalProperties: false,
     },
-    handler: async (args) => {
+    handler: async (args, context) => {
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
       const agentId = requireString(args, 'agentId')
       if (typeof agentId !== 'string') return agentId
-      const workspace = findWorkspace(workspaceId)
+      const workspace = findWorkspace(workspaceId, context)
       if (!workspace) return failure('unknown_workspace', `Workspace "${workspaceId}" is not known to the running app.`)
       // An agent is reportable if the bus knows it OR a terminal session exists
       // for it (sessions can register before the launch-state event lands),
@@ -1889,7 +1800,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       additionalProperties: false,
     },
     handler: async (args, context) => {
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const listed = await backends.listBacklogItems(resolved.root)
       if (!listed.ok) return failure('backlog_unavailable', listed.message)
@@ -1918,7 +1829,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     handler: async (args, context) => {
       const path = requireString(args, 'path')
       if (typeof path !== 'string') return path
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const read = await backends.readBacklogItem(resolved.root, path)
       if (!read.ok) return failure('backlog_read_failed', read.message)
@@ -2193,7 +2104,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         return failure('invalid_arguments', '"dependenciesPlanned" must be true or false.')
       }
       if (args.status === null) return failure('invalid_arguments', 'Status cannot be cleared, only changed.')
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
 
       // Apply in a fixed order, stopping at the first failure; the services
@@ -2269,7 +2180,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (issue !== 'embedded_nul' && issue !== 'duplicate_id') {
         return failure('invalid_arguments', '"issue" must be one of: embedded_nul, duplicate_id.')
       }
-      const resolved = resolveBacklogRoot(args, context)
+      const resolved = await resolveBacklogRoot(args, context)
       if (!('root' in resolved)) return resolved
       const repaired = await backends.backlogWrite.repairIntegrity({
         workspaceRoot: resolved.root,
@@ -2307,7 +2218,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof path !== 'string') return path
       const agentId = requireString(args, 'agentId')
       if (typeof agentId !== 'string') return agentId
-      const resolved = resolveBacklogWorkspace(args, context)
+      const resolved = await resolveBacklogWorkspace(args, context)
       if (!('workspace' in resolved)) return resolved
       const { workspace } = resolved
       const agent = workspace.agents[agentId]
@@ -2408,7 +2319,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (invalid) return invalid
       const options = resolveLaunchOptions(args, context)
       if ('content' in options) return options
-      const resolved = resolveBacklogWorkspace(args, context)
+      const resolved = await resolveBacklogWorkspace(args, context)
       if (!('workspace' in resolved)) return resolved
       const workspaceId = resolved.workspace.id
 
@@ -2560,21 +2471,114 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     pausedAt: isoOrNull(agent.pausedAt),
     nextRunAt: isoOrNull(agent.nextRunAt),
   })
+  // One a machine this computer owns runs, as the machine lists it, named by that machine.
+  const machineScheduleForCaller = ({ machine, schedule }: MachineSchedule) => ({
+    ...scheduledAgentForCaller(schedule),
+    machine,
+  })
+  /**
+   * A schedule not on this computer, looked for on the machines it owns, and
+   * acted on there: what `schedule.run`, `.pause`, `.resume` and `.delete`
+   * do with an id this computer does not hold. Null when no machine lists it.
+   */
+  async function onMachine(
+    id: string,
+    action: MachineScheduleAction,
+    context: McpConnectionContext | undefined,
+  ): Promise<McpToolResult | null> {
+    const found = await backends.machineSchedules?.find(id)
+    if (!found || !backends.machineSchedules) return null
+    // What starts runs there with nobody watching is held to the caller's ceiling, as here.
+    if (action === 'run' || action === 'resume') {
+      const refusal = refuseScheduledAgentRun(
+        found.schedule.permissionPreset,
+        launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
+      )
+      if (refusal) return failure(refusal.code, refusal.message)
+    }
+    const done = await backends.machineSchedules.act(found, action)
+    if (!done.ok)
+      return failure(action === 'run' ? 'scheduled_agent_run_failed' : 'scheduled_agent_invalid', done.message)
+    if (action === 'run') return success({ workspaceId: done.workspaceId, machine: found.machine })
+    if (action === 'delete') return success({ removed: id, machine: found.machine })
+    return success({
+      scheduledAgent: machineScheduleForCaller({ ...found, schedule: done.schedule ?? found.schedule }),
+    })
+  }
+
+  // A schedule's tool arguments as the request every way in shares
+  // (`schedule-requests.ts`): the instant from ISO, and each optional member
+  // only where it was sent as its type.
+  const scheduleRequestDeps: ScheduleRequestDeps = {
+    findWorkspace: (workspaceId) => findWorkspace(workspaceId),
+    defaultCli: () => backends.defaultChatCli(),
+  }
+  function scheduleRequestOfArgs(
+    args: Record<string, unknown>,
+  ): { ok: true; value: Omit<StudioScheduleChange, 'id'> } | { ok: false; refused: McpToolResult } {
+    const preset =
+      typeof args.permissionPreset === 'string' ? parseCliPermissionPreset(args.permissionPreset) : undefined
+    if (preset === null)
+      return {
+        ok: false,
+        refused: failure(
+          'invalid_arguments',
+          `"permissionPreset" must be one of: ${LAUNCH_PERMISSION_PRESETS.join(', ')}.`,
+        ),
+      }
+    const once = typeof args.once === 'string' && args.once.trim() ? Date.parse(args.once) : undefined
+    if (once !== undefined && !Number.isFinite(once))
+      return {
+        ok: false,
+        refused: failure('invalid_arguments', '"once" must be an ISO 8601 instant, such as 2026-10-07T15:30:00Z.'),
+      }
+    const strings = (value: unknown) =>
+      Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        : undefined
+    const skills = strings(args.skills)
+    const mcpServers = strings(args.mcpServers)
+    return {
+      ok: true,
+      value: {
+        ...(typeof args.name === 'string' ? { name: args.name } : {}),
+        ...(typeof args.timezone === 'string' ? { timezone: args.timezone } : {}),
+        ...(once !== undefined ? { once } : {}),
+        ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
+        ...(typeof args.model === 'string' ? { model: args.model } : {}),
+        ...(preset ? { permissionPreset: preset } : {}),
+        ...(typeof args.worktree === 'boolean' ? { worktree: args.worktree } : {}),
+        ...(typeof args.worktreeName === 'string' ? { worktreeName: args.worktreeName } : {}),
+        ...(skills ? { skills } : {}),
+        ...(mcpServers ? { mcpServers } : {}),
+      },
+    }
+  }
+  // The tools' own codes, as they have always answered.
+  const scheduleRequestFailure = (refusal: ScheduleRequestRefusal): McpToolResult =>
+    failure(refusal.code === 'workspace_folder_missing' ? 'workspace_without_folder' : refusal.code, refusal.message)
 
   const scheduledAgentList: McpToolRegistration = {
     name: 'schedule.list',
     description:
-      'List the scheduled agents on this computer: each is a prompt and a cron schedule, and each time the ' +
-      'schedule comes round a new chat starts in its project with that prompt. `paused` is true for one the ' +
-      'person paused; `pausedAll` says whether every scheduled agent is paused, and until when. Read-only.',
+      'List the scheduled agents on this computer and on the machines it owns (an SSH machine, a WSL ' +
+      'distribution): each is a prompt and a cron schedule, and each time the schedule comes round a new chat ' +
+      'starts in its project with that prompt. `machine` names the machine one runs on, absent for this ' +
+      "computer's. `paused` is true for one the person paused; `pausedAll` says whether every scheduled agent " +
+      'here is paused, and until when; `unreachableMachines` says which machines could not be read. Read-only.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async () => {
       const service = scheduledAgentsOrFailure()
       if (!('list' in service)) return service
       const pause = service.pausedAll()
+      const machines = await backends.machineSchedules?.list()
       return success({
-        scheduledAgents: service.list().map(scheduledAgentForCaller),
+        scheduledAgents: [
+          ...service.list().map(scheduledAgentForCaller),
+          ...(machines?.schedules ?? []).map(machineScheduleForCaller),
+        ],
         pausedAll: pause ? { since: isoOrNull(pause.since), until: isoOrNull(pause.until) } : null,
+        ...(machines?.unreachable.length ? { unreachableMachines: machines.unreachable } : {}),
       })
     },
   }
@@ -2636,60 +2640,23 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (dashed) return dashed
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const workspace = findWorkspace(workspaceId)
-      if (!workspace?.folderPath) return resolveWorkspaceRoot(workspaceId) as McpToolResult
+      // What is wrong with the request is said before whether this app runs schedules.
+      if (!findWorkspace(workspaceId)?.folderPath) return resolveWorkspaceRoot(workspaceId) as McpToolResult
       const service = scheduledAgentsOrFailure()
       if (!('create' in service)) return service
-      const requested =
-        typeof args.permissionPreset === 'string' ? parseCliPermissionPreset(args.permissionPreset) : null
-      if (typeof args.permissionPreset === 'string' && requested === null) {
-        return failure(
-          'invalid_arguments',
-          `"permissionPreset" must be one of: ${LAUNCH_PERMISSION_PRESETS.join(', ')}.`,
-        )
-      }
-      // A scheduled agent launches later with nobody watching, so one made by
-      // an agent of this app stores no looser a preset than the agent's own.
-      const capped = capScheduledAgentPreset(
-        requested,
+      const request = scheduleRequestOfArgs(args)
+      if (!request.ok) return request.refused
+      if (typeof args.prompt !== 'string' || typeof args.cron !== 'string')
+        return failure('invalid_arguments', '"prompt" and "cron" are strings.')
+      // A one-time schedule from an agent's "remind me at three": the
+      // instant, which the service holds to the future.
+      const draft = scheduleDraftOf(
+        { ...request.value, workspaceId, prompt: args.prompt, cron: args.cron },
+        scheduleRequestDeps,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
       )
-      if ('refused' in capped) return failure(capped.refused.code, capped.refused.message)
-      const cli = (typeof args.cli === 'string' && args.cli.trim()) || backends.defaultChatCli()
-      if (!cli) return failure('no_cli_selected', 'Name a "cli": no agent CLI has been picked on this computer yet.')
-      const strings = (value: unknown) =>
-        Array.isArray(value)
-          ? value.filter((id): id is string => typeof id === 'string').map((id) => ({ id, name: id }))
-          : []
-      // A one-time schedule from a paired device's New chat, or an agent's
-      // "remind me at three": the instant, which the service holds to the future.
-      const once = typeof args.once === 'string' && args.once.trim() ? Date.parse(args.once) : undefined
-      if (once !== undefined && !Number.isFinite(once)) {
-        return failure('invalid_arguments', '"once" must be an ISO 8601 instant, such as 2026-10-07T15:30:00Z.')
-      }
-      const worktreeName = typeof args.worktreeName === 'string' ? args.worktreeName.trim() : ''
-      const created = await service.create({
-        ...(typeof args.name === 'string' ? { name: args.name } : {}),
-        prompt: args.prompt,
-        schedule: {
-          cron: args.cron,
-          timezone:
-            typeof args.timezone === 'string' && args.timezone.trim()
-              ? args.timezone
-              : Intl.DateTimeFormat().resolvedOptions().timeZone,
-          ...(once !== undefined ? { once } : {}),
-        },
-        // A workspace on a worktree schedules into its project, not into that
-        // one worktree: each run makes its own.
-        folderPath: workspace.worktree?.repoRoot ?? workspace.folderPath,
-        hostId: workspace.hostId ?? null,
-        cli,
-        cliModel: typeof args.model === 'string' ? args.model : null,
-        permissionPreset: capped.permissionPreset,
-        skills: strings(args.skills),
-        mcpServers: strings(args.mcpServers),
-        worktree: args.worktree === true || worktreeName ? { name: worktreeName } : null,
-      })
+      if (!draft.ok) return scheduleRequestFailure(draft)
+      const created = await service.create(draft.value)
       if (!created.ok) return failure('scheduled_agent_invalid', created.message)
       return success({ scheduledAgent: scheduledAgentForCaller(created.agent) })
     },
@@ -2750,77 +2717,31 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('update' in service)) return service
       const existing = service.get(id)
-      if (!existing) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
-      if (args.prompt !== undefined) {
-        const dashed = refuseOptionLikePrompt(args.prompt)
-        if (dashed) return dashed
-      }
-      let folderPath = existing.folderPath
-      let hostId = existing.hostId
-      if (typeof args.workspaceId === 'string' && args.workspaceId) {
-        const workspace = findWorkspace(args.workspaceId)
-        if (!workspace?.folderPath) return resolveWorkspaceRoot(args.workspaceId) as McpToolResult
-        folderPath = workspace.worktree?.repoRoot ?? workspace.folderPath
-        hostId = workspace.hostId ?? null
-      }
-      const requested =
-        typeof args.permissionPreset === 'string' ? parseCliPermissionPreset(args.permissionPreset) : null
-      if (typeof args.permissionPreset === 'string' && requested === null) {
+      if (!existing) {
+        const there = await backends.machineSchedules?.find(id)
         return failure(
-          'invalid_arguments',
-          `"permissionPreset" must be one of: ${LAUNCH_PERMISSION_PRESETS.join(', ')}.`,
+          'unknown_scheduled_agent',
+          there
+            ? `Scheduled agent "${id}" runs on ${there.machine}: change it in its editor in the Scheduled section, or delete it and make it again.`
+            : `No scheduled agent "${id}".`,
         )
       }
-      // The preset it will run on, held to the caller's own ceiling whether it
-      // was named here or kept: a new prompt on a looser preset is a new launch.
-      const capped = capScheduledAgentPreset(
-        requested ?? existing.permissionPreset,
+      const request = scheduleRequestOfArgs(args)
+      if (!request.ok) return request.refused
+      const change = scheduleChangeOf(
+        existing,
+        {
+          ...request.value,
+          id,
+          ...(typeof args.workspaceId === 'string' && args.workspaceId ? { workspaceId: args.workspaceId } : {}),
+          ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
+          ...(typeof args.cron === 'string' ? { cron: args.cron } : {}),
+        },
+        scheduleRequestDeps,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
       )
-      if ('refused' in capped) return failure(capped.refused.code, capped.refused.message)
-      const once = typeof args.once === 'string' && args.once.trim() ? Date.parse(args.once) : undefined
-      if (once !== undefined && !Number.isFinite(once)) {
-        return failure('invalid_arguments', '"once" must be an ISO 8601 instant, such as 2026-10-07T15:30:00Z.')
-      }
-      const cron = typeof args.cron === 'string' ? args.cron : undefined
-      const timezone =
-        typeof args.timezone === 'string' && args.timezone.trim() ? args.timezone : existing.schedule.timezone
-      const schedule =
-        once !== undefined
-          ? { cron: cron ?? existing.schedule.cron, timezone, once }
-          : cron !== undefined
-            ? { cron, timezone }
-            : { ...existing.schedule, timezone }
-      // An attachment keeps the name it was saved with; a new one is named by its id.
-      const attachments = (value: unknown, kept: ScheduledAgentView['skills']) =>
-        Array.isArray(value)
-          ? value
-              .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
-              .map((entryId) => kept.find((attachment) => attachment.id === entryId) ?? { id: entryId, name: entryId })
-          : kept
-      const worktreeName = typeof args.worktreeName === 'string' ? args.worktreeName.trim() : ''
-      const worktree = worktreeName
-        ? { name: worktreeName }
-        : args.worktree === true
-          ? { name: '' }
-          : args.worktree === false
-            ? null
-            : existing.worktree
-      const name = typeof args.name === 'string' ? args.name.trim() : existing.name
-      const updated = await service.update(id, {
-        ...(name ? { name } : {}),
-        ...(existing.tag ? { tag: existing.tag } : {}),
-        prompt: typeof args.prompt === 'string' ? args.prompt : existing.prompt,
-        schedule,
-        folderPath,
-        hostId,
-        cli: (typeof args.cli === 'string' && args.cli.trim()) || existing.cli,
-        cliModel: typeof args.model === 'string' ? args.model.trim() || null : existing.cliModel,
-        permissionPreset: capped.permissionPreset,
-        skills: attachments(args.skills, existing.skills),
-        mcpServers: attachments(args.mcpServers, existing.mcpServers),
-        worktree,
-      })
+      if (!change.ok) return scheduleRequestFailure(change)
+      const updated = await service.update(id, change.value)
       if (!updated.ok) return failure('scheduled_agent_invalid', updated.message)
       return success({ scheduledAgent: scheduledAgentForCaller(updated.agent) })
     },
@@ -2844,6 +2765,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof id !== 'string') return id
       const service = scheduledAgentsOrFailure()
       if (!('remove' in service)) return service
+      if (!service.get(id)) {
+        const there = await onMachine(id, 'delete', context)
+        if (there) return there
+      }
       const removed = await service.remove(id)
       return removed.ok ? success({ removed: id }) : failure('unknown_scheduled_agent', removed.message)
     },
@@ -2870,7 +2795,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('runNow' in service)) return service
       const agent = service.get(id)
-      if (!agent) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!agent)
+        return (
+          (await onMachine(id, 'run', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        )
       const refusal = refuseScheduledAgentRun(
         agent.permissionPreset,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
@@ -2901,7 +2829,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof id !== 'string') return id
       const service = scheduledAgentsOrFailure()
       if (!('pause' in service)) return service
-      if (!service.get(id)) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!service.get(id))
+        return (
+          (await onMachine(id, 'pause', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        )
       const paused = await service.pause(id)
       if (!paused.ok) return failure('scheduled_agent_invalid', paused.message)
       return success({ scheduledAgent: scheduledAgentForCaller(paused.agent) })
@@ -2929,7 +2860,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('resume' in service)) return service
       const agent = service.get(id)
-      if (!agent) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!agent)
+        return (
+          (await onMachine(id, 'resume', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        )
       // Resumed, it starts runs on its own preset with nobody watching, as
       // schedule.run would start one now: held to the same ceiling.
       const refusal = refuseScheduledAgentRun(
@@ -2948,8 +2882,6 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     workspaceExtensions,
     workspaceCreate,
     workspaceList,
-    workspaceMobileCommand,
-    workspaceSnapshot,
     workspaceStatus,
     agentLaunch,
     agentStatus,
@@ -3320,21 +3252,6 @@ function requireString(args: Record<string, unknown>, key: string): string | Mcp
     return failure('invalid_arguments', `"${key}" must be a non-empty string.`)
   }
   return value.trim()
-}
-
-function firstInvalidStringArray(args: Record<string, unknown>, keys: string[]): McpToolResult | null {
-  for (const key of keys) {
-    const value = args[key]
-    if (value === undefined) continue
-    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim().length === 0)) {
-      return failure('invalid_arguments', `"${key}" must be an array of non-empty strings.`)
-    }
-  }
-  return null
-}
-
-function optionalStringArray(value: unknown): string[] | undefined {
-  return Array.isArray(value) ? (value as string[]) : undefined
 }
 
 function optionalString(value: unknown): string | undefined {

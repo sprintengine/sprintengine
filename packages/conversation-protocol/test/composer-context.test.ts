@@ -3,11 +3,7 @@ import { test } from 'vitest'
 
 import { parseConversationClientMessage } from '../src/clientFrames'
 import { CONVERSATION_MAX_SEND_MENTIONS } from '../src/commands'
-import {
-  CONVERSATION_MAX_FILE_SEARCH_RESULTS,
-  parseConversationCommandsAnswer,
-  parseConversationFileSearchAnswer,
-} from '../src/composerReads'
+import { parseConversationCommandsAnswer } from '../src/composerReads'
 import {
   CONVERSATION_CAPABILITIES,
   CONVERSATION_COMMANDS_CAPABILITY,
@@ -80,36 +76,6 @@ test('a send with no mentions is read as before', () => {
     assert.ok(frame && frame.type === 'command' && frame.command.kind === 'send')
     assert.equal('mentions' in frame.command, false)
   }
-})
-
-test('a file search answer keeps relative paths and drops anything else', () => {
-  const answer = parseConversationFileSearchAnswer({
-    entries: [
-      { path: 'src/app.ts', kind: 'file' },
-      { path: 'src', kind: 'folder' },
-      { path: '/Users/me/secret', kind: 'file' },
-      { path: '../up', kind: 'file' },
-      { path: 'x', kind: 'device' },
-      'nonsense',
-    ],
-    truncated: true,
-  })
-  assert.deepEqual(answer, {
-    entries: [
-      { path: 'src/app.ts', kind: 'file' },
-      { path: 'src', kind: 'folder' },
-    ],
-    truncated: true,
-  })
-  const many = parseConversationFileSearchAnswer({
-    entries: Array.from({ length: CONVERSATION_MAX_FILE_SEARCH_RESULTS + 5 }, (_, i) => ({
-      path: `f${i}`,
-      kind: 'file',
-    })),
-  })
-  assert.equal(many?.entries.length, CONVERSATION_MAX_FILE_SEARCH_RESULTS)
-  assert.equal(many?.truncated, false)
-  assert.equal(parseConversationFileSearchAnswer({}), null)
 })
 
 test('a command list keeps the CLI commands it can read, and never one of Studio its own', () => {

@@ -10,14 +10,14 @@ import {
 } from '../../../tests/fixtures/conversations/export-chat'
 import type { ChatExportAction } from '../../shared/chat-export'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
-import { chatExportChatOf } from './chat-export-electron'
 import { chatExportFileName, sanitizeExportTitle } from './chat-export-filename'
 import { runChatExport, type ChatExportDeps } from './chat-export-service'
-import { readChatExportSource } from './chat-export-source'
+import { readChatExport } from './chat-export-source'
 
-// Export chat from end to end, with the dialog, the disk, the clipboard and
-// the print window as stand-ins: which chat is read, what is asked, what is
-// written where, and what is answered.
+// Export chat from end to end: the chat read where it is kept (the Studio's
+// half, `readChatExport`), then written by the shell, with the dialog, the
+// disk, the clipboard and the print window as stand-ins: which chat is read,
+// what is asked, what is written where, and what is answered.
 
 type Recorded = {
   dialogs: { defaultPath: string; format: string }[]
@@ -28,47 +28,10 @@ type Recorded = {
   read: unknown[]
 }
 
-function harness(options: { savePath?: string | null; events?: ConversationEvent[]; region?: string } = {}): {
-  deps: ChatExportDeps
-  recorded: Recorded
-} {
+function harness(options: { savePath?: string | null; events?: ConversationEvent[]; region?: string } = {}) {
   const recorded: Recorded = { dialogs: [], files: new Map(), folders: [], clipboard: [], pdfHtml: [], read: [] }
   const events = options.events ?? exportChatEvents()
   const deps: ChatExportDeps = {
-    chat: (workspaceId, agentId) =>
-      chatExportChatOf(
-        [
-          {
-            id: 'workspace-1',
-            name: 'acme-app',
-            folderPath: EXPORT_CHAT_WORKSPACE_ROOT,
-            agents: {
-              'agent-1': {
-                name: 'Release: SprintEngine Studio?',
-                runtimeKind: 'conversation',
-                conversation: { providerId: 'claude-agent', modelId: 'default' },
-                execution: { mode: 'current_workspace', worktreeId: null, cwd: null },
-              },
-              'terminal-1': { name: 'zsh', runtimeKind: 'terminal' },
-            } as never,
-          },
-        ],
-        workspaceId,
-        agentId,
-      ),
-    readSource: async (key) => {
-      recorded.read.push(key)
-      return readChatExportSource(
-        {
-          readTranscript: async () => ({ ok: true, events }),
-          readAttachment: async (ref) =>
-            ref === EXPORT_CHAT_IMAGE_REF
-              ? { ok: true, mediaType: 'image/png', dataBase64: EXPORT_CHAT_PNG.toString('base64') }
-              : { ok: false, message: 'missing' },
-        },
-        key,
-      )
-    },
     engineName: (providerId) => (providerId === 'claude-agent' ? 'Claude Code' : null),
     pickSavePath: async (input) => {
       recorded.dialogs.push(input)
@@ -95,15 +58,52 @@ function harness(options: { savePath?: string | null; events?: ConversationEvent
     timeZone: () => 'UTC',
     region: () => options.region ?? 'GB',
   }
-  return { deps, recorded }
+  const read = (agentId = 'agent-1') =>
+    readChatExport(
+      {
+        readTranscript: async (key) => {
+          recorded.read.push(key)
+          return { ok: true, events }
+        },
+        readAttachment: async (ref) =>
+          ref === EXPORT_CHAT_IMAGE_REF
+            ? { ok: true, mediaType: 'image/png', dataBase64: EXPORT_CHAT_PNG.toString('base64') }
+            : { ok: false, message: 'missing' },
+      },
+      WORKSPACES,
+      { workspaceId: 'workspace-1', agentId },
+    )
+  return { deps, recorded, read }
 }
 
-const run = (action: ChatExportAction, deps: ChatExportDeps, agentId = 'agent-1') =>
-  runChatExport({ workspaceId: 'workspace-1', agentId, action }, deps)
+const WORKSPACES = [
+  {
+    id: 'workspace-1',
+    name: 'acme-app',
+    folderPath: EXPORT_CHAT_WORKSPACE_ROOT,
+    agents: {
+      'agent-1': {
+        name: 'Release: SprintEngine Studio?',
+        runtimeKind: 'conversation',
+        conversation: { providerId: 'claude-agent', modelId: 'default' },
+        execution: { mode: 'current_workspace', worktreeId: null, cwd: null },
+      },
+      'terminal-1': { name: 'zsh', runtimeKind: 'terminal' },
+    } as never,
+  },
+]
+
+/** Read where the chat is kept, then written by the shell, as a window carries an export. */
+async function exported(t: ReturnType<typeof harness>, action: ChatExportAction) {
+  const read = await t.read()
+  assert.ok(read.ok)
+  return runChatExport({ action, source: { ...read.chat, events: read.events, attachments: read.attachments } }, t.deps)
+}
 
 test('a PDF is offered under the chat’s name and the day, in Downloads, and printed from the page', async () => {
-  const { deps, recorded } = harness({ region: 'US' })
-  const result = await run('pdf', deps)
+  const t = harness({ region: 'US' })
+  const { recorded } = t
+  const result = await exported(t, 'pdf')
   const name = 'Release SprintEngine Studio – 2026-10-20.pdf'
   assert.deepEqual(recorded.dialogs, [{ defaultPath: `/Users/dev/Downloads/${name}`, format: 'pdf' }])
   assert.deepEqual(result, { ok: true, kind: 'saved', path: `/Users/dev/Downloads/${name}`, fileName: name })
@@ -116,16 +116,18 @@ test('a PDF is offered under the chat’s name and the day, in Downloads, and pr
 })
 
 test('a Word document is a zip written where the person chose', async () => {
-  const { deps, recorded } = harness({ savePath: '/Users/dev/Documents/notes.docx' })
-  const result = await run('docx', deps)
+  const t = harness({ savePath: '/Users/dev/Documents/notes.docx' })
+  const { recorded } = t
+  const result = await exported(t, 'docx')
   assert.deepEqual(result, { ok: true, kind: 'saved', path: '/Users/dev/Documents/notes.docx', fileName: 'notes.docx' })
   const data = recorded.files.get('/Users/dev/Documents/notes.docx') as Uint8Array
   assert.equal(Buffer.from(data).subarray(0, 2).toString('latin1'), 'PK')
 })
 
 test('Markdown is written with its pictures in a folder named after the file', async () => {
-  const { deps, recorded } = harness({ savePath: '/Users/dev/Documents/release.md' })
-  await run('markdown', deps)
+  const t = harness({ savePath: '/Users/dev/Documents/release.md' })
+  const { recorded } = t
+  await exported(t, 'markdown')
   assert.deepEqual(recorded.folders, ['/Users/dev/Documents/release-files'])
   assert.deepEqual(
     recorded.files.get('/Users/dev/Documents/release-files/image-1.png'),
@@ -138,15 +140,17 @@ test('Markdown is written with its pictures in a folder named after the file', a
 })
 
 test('dismissing the dialog writes nothing and says nothing', async () => {
-  const { deps, recorded } = harness({ savePath: null })
-  assert.deepEqual(await run('pdf', deps), { ok: true, kind: 'cancelled' })
+  const t = harness({ savePath: null })
+  const { recorded } = t
+  assert.deepEqual(await exported(t, 'pdf'), { ok: true, kind: 'cancelled' })
   assert.equal(recorded.files.size, 0)
   assert.equal(recorded.pdfHtml.length, 0)
 })
 
 test('Copy chat puts the Markdown and the HTML on the clipboard together', async () => {
-  const { deps, recorded } = harness()
-  assert.deepEqual(await run('copy', deps), { ok: true, kind: 'copied' })
+  const t = harness()
+  const { recorded } = t
+  assert.deepEqual(await exported(t, 'copy'), { ok: true, kind: 'copied' })
   assert.equal(recorded.clipboard.length, 1)
   const [copied] = recorded.clipboard
   assert.ok(copied!.text.startsWith('# Release: SprintEngine Studio?\n'))
@@ -159,8 +163,9 @@ test('Copy chat puts the Markdown and the HTML on the clipboard together', async
 })
 
 test('Copy chat as Markdown puts the text alone', async () => {
-  const { deps, recorded } = harness()
-  await run('copy-markdown', deps)
+  const t = harness()
+  const { recorded } = t
+  await exported(t, 'copy-markdown')
   assert.equal(recorded.clipboard.length, 1)
   assert.deepEqual(Object.keys(recorded.clipboard[0]!), ['text'])
   // The pictures are named, not linked to files that were never written.
@@ -169,21 +174,24 @@ test('Copy chat as Markdown puts the text alone', async () => {
 })
 
 test('a chat that is not a conversation, or has no messages, is refused in words', async () => {
-  const { deps } = harness()
-  assert.deepEqual(await run('pdf', deps, 'terminal-1'), { ok: false, message: 'This chat could not be found.' })
-  assert.deepEqual(await run('pdf', deps, 'missing'), { ok: false, message: 'This chat could not be found.' })
+  const t = harness()
+  const missing = { ok: false, code: 'not_found', message: 'This chat could not be found.' }
+  assert.deepEqual(await t.read('terminal-1'), missing)
+  assert.deepEqual(await t.read('missing'), missing)
+  assert.deepEqual(t.recorded.read, [], 'no transcript is read for a chat that is not one')
   const empty = harness({ events: exportChatEvents().filter((event) => event.type === 'session_started') })
-  assert.deepEqual(await run('copy', empty.deps), { ok: false, message: 'This chat has no messages to export yet.' })
+  assert.deepEqual(await exported(empty, 'copy'), { ok: false, message: 'This chat has no messages to export yet.' })
   assert.equal(empty.recorded.clipboard.length, 0)
   assert.equal(empty.recorded.dialogs.length, 0)
 })
 
 test('a disk that refuses the file is an error, not a success', async () => {
-  const { deps } = harness()
+  const t = harness()
+  const { deps } = t
   deps.writeFile = async () => {
     throw new Error('EACCES: permission denied')
   }
-  assert.deepEqual(await run('docx', deps), { ok: false, message: 'EACCES: permission denied' })
+  assert.deepEqual(await exported(t, 'docx'), { ok: false, message: 'EACCES: permission denied' })
 })
 
 test('the suggested name is the title made safe for every system, and the day', () => {
@@ -201,14 +209,13 @@ test('the suggested name is the title made safe for every system, and the day', 
 })
 
 test('a paired machine’s chat is exported from the transcript its window read from there', async () => {
-  const { deps, recorded } = harness()
+  const t = harness()
   const result = await runChatExport(
     {
-      workspaceId: 'w-followed',
-      agentId: 'agent-there',
       action: 'copy-markdown',
-      remote: {
+      source: {
         events: exportChatEvents(),
+        attachments: {},
         title: 'Parser review',
         project: 'parser',
         providerId: 'claude-agent',
@@ -216,11 +223,11 @@ test('a paired machine’s chat is exported from the transcript its window read 
         workspaceRoot: EXPORT_CHAT_WORKSPACE_ROOT,
       },
     },
-    deps,
+    t.deps,
   )
   assert.deepEqual(result, { ok: true, kind: 'copied' })
-  assert.deepEqual(recorded.read, [], 'nothing is read here: the transcript is on that machine')
-  const text = recorded.clipboard[0]!.text
+  assert.deepEqual(t.recorded.read, [], 'nothing is read here: the shell is handed the chat')
+  const text = t.recorded.clipboard[0]!.text
   assert.ok(text.startsWith('# Parser review\n'), text.slice(0, 80))
   // Its pictures stay on that machine, and are named.
   assert.ok(text.includes('[image: screenshot.png]'))

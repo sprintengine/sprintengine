@@ -24,7 +24,7 @@
 // MCP reader registry in src/main/mcp-config-readers/.
 
 import { existsSync } from 'fs'
-import { readFile, rm, stat, writeFile } from 'fs/promises'
+import { readFile, rm, stat } from 'fs/promises'
 import { homedir } from 'os'
 import { join, resolve } from 'path'
 
@@ -50,6 +50,7 @@ import { detectAgentCliAvailability } from './cli-availability'
 import { listPluginRegistryEntries } from './plugin-registry-instance'
 import { isPathStrictlyInside } from './path-containment'
 import { skillDirStaysInRoot } from './skills/skill-dir-containment'
+import { realFolderPath, writeConfinedFile } from './confined-file'
 
 /**
  * Marker source for a copy this installer made of a skill that carried no
@@ -145,8 +146,8 @@ export function createFsSkillCopyIo(): SkillCopyIo {
         return
       }
       if (marker?.kind === 'attached') {
-        await writeFile(
-          join(destinationDir, MANAGED_SKILL_MANIFEST_FILE),
+        await writeConfinedFile(
+          await realFolderPath(join(destinationDir, MANAGED_SKILL_MANIFEST_FILE)),
           `${JSON.stringify(
             {
               id: marker.skillId,
@@ -157,7 +158,6 @@ export function createFsSkillCopyIo(): SkillCopyIo {
             null,
             2,
           )}\n`,
-          'utf-8',
         )
       }
     },

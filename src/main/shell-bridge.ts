@@ -1,6 +1,6 @@
 import type { SafeStorage } from 'electron'
 
-import type { AgentLaunchRequest, AgentLaunchResult } from '../shared/agent-launch'
+import type { TerminalLaunchPreparation } from '../server/terminals/terminal-launch-preparation'
 import type { Notifier } from '../server/platform/notifier'
 import { safeStorageProtects } from './platform/safe-storage-protects'
 import { downscaleConversationImage, type ImageCodec } from './conversation-image-downscale'
@@ -25,10 +25,10 @@ export type InProcessShellBridgeDeps = {
   safeStorage: Pick<SafeStorage, 'isEncryptionAvailable' | 'encryptString' | 'decryptString'> &
     Partial<Pick<SafeStorage, 'getSelectedStorageBackend'>>
   /**
-   * The shell's composed agent launch, bound once the terminal runtime exists.
-   * Until then, and in a shell that has none, a launch answers that it cannot.
+   * The shell's part of a terminal agent's launch, bound once its services
+   * exist. Until then a launch is told its preparation is not ready.
    */
-  launchAgent: () => ((request: AgentLaunchRequest) => Promise<AgentLaunchResult>) | null
+  launches: () => TerminalLaunchPreparation | null
   /** Bring the target forward; false when no window could show it. */
   reveal: (target: ShellRevealTarget) => boolean
   /** The OS notification centre (the Electron platform's notifier). */
@@ -40,6 +40,8 @@ export type InProcessShellBridgeDeps = {
   imageCodec: ImageCodec
 }
 
+const LAUNCHES_NOT_READY = 'Studio is still starting, so this agent’s launch could not be prepared yet.'
+
 export function createInProcessShellBridge(deps: InProcessShellBridgeDeps): ShellBridge {
   return {
     cipher: {
@@ -47,18 +49,14 @@ export function createInProcessShellBridge(deps: InProcessShellBridgeDeps): Shel
       seal: async (plain) => new Uint8Array(deps.safeStorage.encryptString(utf8Text(plain))),
       open: async (sealed) => utf8Bytes(deps.safeStorage.decryptString(Buffer.from(sealed))),
     },
-    terminals: {
-      async launchAgent(request) {
-        const launch = deps.launchAgent()
-        if (!launch) {
-          return {
-            ok: false,
-            code: 'shell_unavailable',
-            message: 'Terminals are not ready yet, so no agent can start.',
-          }
-        }
-        return launch(request)
-      },
+    launches: {
+      prepareLaunchIntegration: async (input) =>
+        deps.launches()?.prepareLaunchIntegration(input) ?? { ok: false, message: LAUNCHES_NOT_READY },
+      syncMcpConfig: async (input) =>
+        deps.launches()?.syncMcpConfig(input) ?? { ok: false, message: LAUNCHES_NOT_READY },
+      ensureBuiltinSkillInstalled: async (...args) => deps.launches()?.ensureBuiltinSkillInstalled(...args),
+      excludeWorktreeMcpConfig: async (worktreePath) => deps.launches()?.excludeWorktreeMcpConfig(worktreePath),
+      prepareAgentStateHook: async (...args) => deps.launches()?.prepareAgentStateHook(...args),
     },
     reveal: {
       tab: async (target) => deps.reveal(target),

@@ -1,9 +1,11 @@
 # Conversation protocol
 
 The conversation contract Studio speaks to everything that follows or drives
-its chats: the tailnet lane below, the module SDK, and the desktop's own chat
-view. Events, commands, frames, capabilities and their validators are declared
-once, here.
+its chats: its windows, a paired phone or desktop, and the module SDK. Events,
+commands, frames, capabilities and their validators are declared once, here.
+The Studio protocol ([`@sprintengine/studio-protocol`](../studio-protocol/README.md))
+carries them on its connection, unchanged, and re-exports this package. This
+package has no transport of its own.
 
 Events come in two layers. Each provider adapter reads its CLI's own stream
 and writes `ConversationEvent`s in a vocabulary no provider owns
@@ -11,15 +13,14 @@ and writes `ConversationEvent`s in a vocabulary no provider owns
 Everything this package describes is the second, public layer. A client skips
 an event type or payload member it does not know.
 
-The additive `conversations` lane on Studio's tailnet gateway. A socket is
-scoped to one conversation and receives a bounded snapshot before `synchronized`, followed
-by live events. Every mutation has a stable `commandId`; reads have a
-`requestId`. This package contains portable frame types, input validation, tool
-classification and presentation, without Electron, Node, or React dependencies.
+Following a conversation (`conversation.session` on the Studio protocol)
+receives a bounded snapshot before `synchronized`, followed by live events.
+Every mutation has a stable `commandId`. This package contains portable frame
+types, input validation, tool classification and presentation, without
+Electron, Node, or React dependencies.
 
-Resume with `subscribe({ afterSeq, generation })`, using the last sequence you
-hold and the `generation` from the `snapshot` or `synchronized` frame it came
-from. When the desktop can vouch for that cursor it sends one `event` per
+Resume by following again with the cursor you hold: the last sequence and the
+`generation` from the `snapshot` or `synchronized` frame it came from. When the desktop can vouch for that cursor it sends one `event` per
 missed event, then `synchronized`, then live events, with no snapshot. When it
 cannot — another generation (the log was recreated), no generation, a cursor
 ahead of the log, or one too far behind — it sends a `snapshot` with
@@ -33,35 +34,25 @@ normal and never a reason to resubscribe. Pending command ids remain intact for
 idempotent retry.
 
 Every `snapshot` and `synchronized` frame names the conversation it belongs
-to in `key`. When a socket switches conversations, the old replay stops at the
-next whole frame and never sends its fence; ignore any snapshot, fence or event
-for a conversation you no longer follow, so a cursor is never stored against
-the wrong log.
+to in `key`. Ignore any snapshot, fence or event for a conversation you no
+longer follow, so a cursor is never stored against the wrong log.
 
-A frame larger than `CONVERSATION_MAX_FRAME_BYTES` arrives as `chunk` frames
-whose `json` strings concatenate, in `index` order, to the frame. A snapshot
-larger than one frame arrives as several `snapshot` frames carrying
+A snapshot larger than one frame arrives as several `snapshot` frames carrying
 `part: { index, total }`; concatenate their `page.events` and apply the result
 when the last part arrives.
 
 A client that reads too slowly gets consecutive text deltas merged while it
 catches up. Live events that arrive while a replay is still being sent wait
 behind it, bounded by size rather than count, so a busy turn during a large
-catch-up does not force a resync before the fence. One that stops reading is sent an `error` with code
-`resync_required` and `retryAfterMs`, then closed with
-`CONVERSATION_RESYNC_CLOSE_CODE`; the close reason carries the same delay
-(`conversationCloseRetryAfterMs`). Wait that long, then resubscribe with the
-last cursor. Requests beyond the per-socket bound are answered with code `busy`
-and `retryAfterMs`, and the socket stays open.
+catch-up does not force a resync before the fence. One that stops reading is
+told `resync_required` with a `retryAfterMs`: wait that long, then follow again
+from the last cursor. Requests beyond the per-connection bound are answered
+with code `busy` and `retryAfterMs`, and the connection stays open.
 
-Every refusal is correlated. A command is always settled by a `commandResult`
-under its `commandId` (an unsafe decision, a message over
-`CONVERSATION_MAX_MESSAGE_CHARS`, a missing grant), a read by a `result` under
-its `requestId` (including `too_large` for a response over 32 MB), and a
-subscription that cannot start by `subscribeFailed` with its `key`, a
-`retryable` flag and, when retryable, `retryAfterMs`. A client frame larger
-than `CONVERSATION_MAX_CLIENT_FRAME_BYTES` is skipped and refused the same way;
-put `type` and the id ahead of any long field so the refusal can name it.
+Every refusal is answered under the request that asked: a command under its
+`commandId` (an unsafe decision, a message over
+`CONVERSATION_MAX_MESSAGE_CHARS`, a missing grant), a read under its own
+request, and a follow that cannot start with whether and when to try again.
 
 A desktop that advertises `conversation-models` (`CONVERSATION_MODELS_CAPABILITY`)
 names each listed chat's CLI and the models it can switch between in the
@@ -97,24 +88,28 @@ the chat has none. Draw a `kind` or `color` you do not know as your fallback,
 since a newer desktop may add one. `parseConversationServerFrame` keeps both,
 and drops one it cannot read without dropping the row.
 
-Grants are read live. A device whose grant loses `conversation:operate` keeps
-its socket and has further commands refused with `conversation_operate_required`;
-one that loses `conversation:read` is sent that error and closed with
-`CONVERSATION_SCOPE_CLOSE_CODE`, and a revoked device is closed with 4401.
+Grants are read live: the Studio protocol judges every method and stream
+against the client's grant as it stands at that request. A client whose grant
+loses `conversation:operate` has further commands refused with
+`conversation_operate_required`, and a removed device's connection is closed.
 
-A desktop that advertises `conversation-hello` (`CONVERSATION_HELLO_CAPABILITY`)
-answers a `hello` frame — `{ type: 'hello', requestId, protocolVersion? }` —
-with a `result` whose `data` is its `protocolVersion`, `minProtocolVersion` and
-conversation `capabilities` (`parseConversationHelloAnswer`). One without it
-answers `invalid_frame` under the same `requestId`: read that as protocol 1 with
-the capabilities the transport's own handshake listed. Ask capabilities, not
-the version, whether a feature is there; `checkConversationProtocolVersion`
-refuses a peer outside the window and names both numbers.
+A client reads this contract's version and capabilities from the Studio
+protocol's welcome (`welcome.conversation`). Ask capabilities, not the
+version, whether a feature is there.
 
-A `hello` may also carry `clientCapabilities`, the capability names of what
-this client reads that a desktop must otherwise keep from it. It holds for the
-socket it was said on, so send it ahead of your `subscribe`; you need not wait
-for the answer. A desktop that does not know the member drops it.
+One message a person sends a chat is `ConversationSendRequest`, and an answer
+to a permission request `ConversationApprovalDecision`, whichever way either
+travels: the Studio protocol and a desktop's runtime both derive from them.
+`ConversationLaneSend` is the request as a client sends it, with its pictures
+and files by upload id, its skills by id and its flags `true` or absent;
+`LANE_CARRIAGE` in `send.ts` says how it carries each part.
+
+Where an entry below names a request frame (`watchSubagents`,
+`getChangesDiff`, `askSideQuestion` and the like), it describes the lane that
+first carried it; this package no longer reads those frames. The Studio
+protocol serves the same answer as a method or stream of its own
+(`conversation.subagents`, `conversation.changesDiff`,
+`conversation.askSideQuestion`, …), listed in its README.
 
 The full contract reads frames with `parseConversationClientMessage`, which
 takes every first-version frame exactly as `parseConversationClientFrame` does
@@ -185,7 +180,7 @@ and adds, each behind its capability:
 - `conversation-side-questions`: `{ type: 'askSideQuestion', requestId,
 questionId, question, history? }` asks the chat's agent about the chat and
   adds the exchange to nothing; the `result`'s `data` is
-  `{ answer }` (`parseConversationSideQuestionAnswer`). It needs
+  `{ answer }`. It needs
   `conversation:operate`. `{ type: 'cancelSideQuestion', requestId,
 questionId }` calls one off. A listed thread says which chats can
   (`capabilities.sideQuestion`).
@@ -196,8 +191,7 @@ questionId }` calls one off. A listed thread says which chats can
   it asks will be kept.
 - `conversation-context-breakdown`: `{ type: 'getContextBreakdown',
 requestId }` reads what fills the chat's context window from its live agent;
-  the `result`'s `data` is `{ breakdown, stale? }`
-  (`parseConversationContextBreakdownAnswer`). A listed thread says which
+  the `result`'s `data` is `{ breakdown, stale? }`. A listed thread says which
   chats can (`capabilities.contextBreakdown`).
 
 A desktop without either read capability answers its frames `invalid_frame`
@@ -274,10 +268,9 @@ under their `requestId`, as it answers `watchQueued`.
   as the token the desktop keeps it in, a Markdown link with a scheme of its
   own, and both ends must say so. The desktop advertises it, and expands a
   token in a message it is sent into what its agent reads, so write one only
-  where it is listed. A client names it in `clientCapabilities` on its `hello`,
-  and only then does the desktop leave tokens in the `text` of that socket's
-  `user_message` events and held and scheduled messages. Without that a quote
-  arrives as words: its passage as a blockquote, then `Comment: …`.
+  where it is listed. The Studio protocol sends every client a chat as it is
+  kept, tokens included, in the `text` of `user_message` events and held and
+  scheduled messages.
 - `conversation-agent-message`: `messageSubagent` passes the person's words to
   one agent a chat spawned, through that chat's model, where its provider can (a
   listed thread's `capabilities.messageSubagent`). The words are recorded on the
@@ -307,42 +300,29 @@ under their `requestId`, as it answers `watchQueued`.
 `conversation-message-images` (`CONVERSATION_MESSAGE_IMAGES_CAPABILITY`)
 names no frame. A `user_message`'s `attachments` record each picture the
 person sent as `{ id, mediaType, name?, byteLength, ref }`, and a desktop that
-advertises it serves one at `GET /tailnet/v1/conversation-image` by its `ref`
-(`attachment=<ref>` in place of `toolUseId`). A client without it names the
-picture rather than drawing it.
+advertises it serves one by its `ref` (`conversation.picture`). A client
+without it names the picture rather than drawing it.
 
 `conversation-message-files` (`CONVERSATION_MESSAGE_FILES_CAPABILITY`) names
-no frame either. The desktop's upload route takes `kind=file`, a file of any
-type, and a `send` names its `uploadId` in `uploadIds` beside any picture's.
+no frame either. A file of any type is staged with `uploads.*`, and a `send`
+names its `uploadId` in `uploadIds` beside any picture's.
 The desktop attaches it to the message by its path there, so the
 `user_message` lists it in `files` (`{ path }`). A client without it offers
 pictures only.
 
 `conversation-file-search` (`CONVERSATION_FILE_SEARCH_CAPABILITY`) and
 `conversation-commands` (`CONVERSATION_COMMANDS_CAPABILITY`) name no frame
-either: each is a GET beside the socket, under `conversation:read`, naming the
-chat by `workspaceId` and `agentId`. `GET /tailnet/v1/conversation-files`
-takes a `query` and answers the files and folders in the chat's folder whose
-names match, each by its path relative to that folder
-(`ConversationFileSearchAnswer`, read with `parseConversationFileSearchAnswer`);
-what a client picks goes back in a send's `mentions`. `GET
-/tailnet/v1/conversation-commands` answers the slash commands the chat's CLI
-runs there (`ConversationCommandsAnswer`, read with
-`parseConversationCommandsAnswer`), Studio's own never among them; `refresh=1`
-asks the CLI again and needs `conversation:operate`.
-
-`conversation-image-downscale` (`CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY`)
-names no frame either. A desktop that advertises it shrinks each picture
-uploaded for a chat to a 1568px long edge on receipt, so its upload route takes
-up to 20 MB as it arrives and keeps at most 5 MB. A client without it holds an
-upload to 5 MB itself.
+either. Each is a read under `conversation:read`, naming the chat by its key.
+The file search takes a `query` and answers the files and folders in the
+chat's folder whose names match, each by its path relative to that folder
+(`ConversationFileSearchAnswer`); what a client picks goes back in a send's
+`mentions`. The command list answers the slash commands the chat's CLI runs
+there (`ConversationCommandsAnswer`, read with
+`parseConversationCommandsAnswer`), Studio's own never among them; asking the
+CLI again needs `conversation:operate`.
 
 `ConversationCreateRequest` is what starting a conversation takes, with
 `allowedTools` — tools the chat may use without asking — beside the preset.
-Validate one with `parseConversationCreateRequest`. The tailnet lane does not
-create conversations; the module SDK does, and so does the Studio RPC on the
-desktop's owner socket, whose protocol (`@sprintengine/studio-protocol`)
-carries this contract and re-exports it. `@sprintengine/agent-sdk` is the
-client for it.
-
-Transcript frames travel directly over the tailnet between paired machines.
+Validate one with `parseConversationCreateRequest`. The Studio protocol's
+`conversation.create` takes it; `@sprintengine/agent-sdk` is the client for
+it.

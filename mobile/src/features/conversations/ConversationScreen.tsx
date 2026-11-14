@@ -11,18 +11,12 @@ import {
 import {
   CONVERSATION_MAX_IMAGES,
   type ConversationCommand,
-  type ConversationPermissionPreset,
+  type ConversationWirePermissionPreset as ConversationPermissionPreset,
   type ConversationSubagent,
-  type ConversationThread,
-} from "../../api/conversationWire";
-import {
-  declaresCliRuntimeCatalog,
-  declaresConversationPlans,
-  declaresImageDownscale,
-  declaresMessageFiles,
-  PEER_MISMATCH_SENTENCE,
-} from "../../api/tailnetTransport";
-import type { ConversationApi, ConversationConnectionState } from "../../api/tailnetConversations";
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
+import { PEER_MISMATCH_SENTENCE } from "../../api/tailnetTransport";
+import type { ConversationApi, ConversationConnectionState } from "../../api/desktopConversations";
 import { BottomSheet } from "../../components/BottomSheet";
 import { CircleButton } from "../../components/CircleButton";
 import { CopyButton } from "../../components/CopyButton";
@@ -56,7 +50,6 @@ import {
   type Theme,
 } from "../../theme/tokens";
 import type { WorkspaceCheckout } from "../../api/tailnetWorkspaces";
-import { backgroundWorkLabel, formatElapsed, workingLabel } from "./agentLogic";
 import { useChats } from "./ChatsContext";
 import { followUpAction, followUpSendLabel, steerOffered } from "./followUp";
 import { chatHostMark, stripPullRequest } from "./chatMarks";
@@ -65,7 +58,7 @@ import { ChatComposer } from "./ChatComposer";
 import { conversationChanges } from "./composerStripLogic";
 import { contextRingLabel, contextRingValue } from "./contextUsage";
 import {
-  chatImageMaxBytes,
+  CHAT_IMAGE_MAX_BYTES,
   composerOptions,
   PHONE_START_AS,
   type AttachSource,
@@ -90,7 +83,6 @@ import {
   compactionLabel,
   handoffLabel,
   composerActionKind,
-  conversationCanOperate,
   DEFAULT_MODEL_ID,
   modelControl,
   modelLabel,
@@ -106,10 +98,12 @@ import {
   stringValue,
   turnChangesLabel,
   turnMetaParts,
-  type ChangedTurn,
-  type ConversationRow,
-  type PendingRequest,
 } from "./conversationLogic";
+import type {
+  ChangedTurn,
+  ConversationRow,
+  PendingRequest,
+} from "../../../../packages/conversation-timeline/src/public";
 import {
   AgentLaneCard,
   SubagentStartRow,
@@ -148,12 +142,15 @@ import {
   type ChatQuoteToken,
 } from "../../shared/quotes/chat-quotes";
 import {
+  backgroundWorkLabel,
+  formatElapsed,
   harnessName,
   isSubagentStart,
   parentRelation,
   subagentCounts,
   subagentStartFacts,
   subagentThread,
+  workingLabel,
   type SubagentChatParent,
 } from "./subagentLogic";
 import {
@@ -168,10 +165,11 @@ import { useChatVisits } from "./useChatVisits";
 import { messageCopyText, replyCopyText } from "./copyText";
 import { jumpMark, jumpToLatest, newRepliesSince, transcriptScrollable, type JumpMark } from "./jumpToLatest";
 import { usePhoneConversation } from "./usePhoneConversation";
-import { pendingLine, queuedBubbles, queuedLine, type QueuedBubble } from "./queuedSends";
+import { pendingLine, queuedBubbles, queuedCarryLine, queuedLine, type QueuedBubble } from "./queuedSends";
 import { toolDetailChat } from "./toolOutput";
 import { chatThreadCli, type CliRuntime } from "./launchLogic";
 import { ModelPickerSheet } from "./ModelPickerSheet";
+import type { ConversationRequestDecision } from "../../../../packages/conversation-protocol/src/public";
 import { chatProvider, MODEL_SET_ONCE_NOTE, readOnlyProvider } from "./modelPickerLogic";
 
 /** No turn to open: one list, so what is worked out from it is not worked out again. */
@@ -250,6 +248,7 @@ export function ConversationScreen({
     apiFor,
     chats,
     conversationsApiOverride,
+    offersOverride,
     followUpBehavior,
     markUnreadChat,
     openedAt,
@@ -257,9 +256,9 @@ export function ConversationScreen({
     settleChat,
   } = useChats();
   const session = sessions.find((entry) => entry.deviceId === deviceId);
+  const chat = usePhoneConversation(session, thread, apiOverride ?? conversationsApiOverride ?? undefined, offersOverride);
   // Files of any type, beside photos, where the desktop takes them.
-  const filesOffered = !!session && declaresMessageFiles(session);
-  const chat = usePhoneConversation(session, thread, apiOverride ?? conversationsApiOverride ?? undefined);
+  const filesOffered = chat.offers.attachFiles;
   const activeThread = chat.effectiveThread;
   // What had been seen of the chat when it came on screen: its visit clock as
   // the thread it was opened with and the list's latest read have it, taken
@@ -283,9 +282,9 @@ export function ConversationScreen({
   // not news there.
   useChatVisits({ deviceId, workspaceId: thread.workspaceId }, chat.busy);
   // The chat's pictures, fetched from the desktop when it says it serves them.
-  const images = useChatImages(session, chat.api, thread);
+  const images = useChatImages(chat.offers, chat.api, thread);
   // The pictures the person sent, where the desktop serves them too.
-  const sentImages = useSentImages(session, chat.api, thread);
+  const sentImages = useSentImages(chat.offers, chat.api, thread);
   // The pushed agent, plan and changes screens read this chat's state from here
   // rather than opening a second socket (see liveConversation.ts).
   usePublishConversation(
@@ -519,7 +518,7 @@ export function ConversationScreen({
   // them: they name the chat's models' families, windows and New marks. The
   // chat's own list still decides what it can switch to.
   const [catalogRuntime, setCatalogRuntime] = useState<CliRuntime | null>(null);
-  const catalogCli = session && declaresCliRuntimeCatalog(session) ? (activeThread.models?.cli ?? null) : null;
+  const catalogCli = session ? (activeThread.models?.cli ?? null) : null;
   useEffect(() => {
     if (!catalogCli || !workspacesApi) return;
     let current = true;
@@ -552,15 +551,15 @@ export function ConversationScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landed, chat.state]);
   const canOperate =
-    !!session && conversationCanOperate(session) && chat.state !== "blocked";
+    chat.offers.operate && chat.state !== "blocked";
   const canAct = canOperate && chat.state === "live";
   // The chat's model, and the models of its CLI it can switch to. Hidden
   // unless the desktop lists them and this phone may operate the chat.
-  const model = session ? modelControl(session, activeThread) : null;
+  const model = modelControl(chat.offers, activeThread);
   // The permission preset is offered only where the desktop lists it: an
   // older one says nothing, and the chip would be guessing.
   const preset = canOperate ? activeThread.permissionPreset : undefined;
-  const presetChoices = session && preset ? permissionChoices(session, activeThread) : [];
+  const presetChoices = preset ? permissionChoices(chat.offers, activeThread) : [];
   const [sheet, setSheet] = useState<"model" | "permission" | "changes" | "more" | "sendAt" | null>(initialSheet ?? null);
   // The time the next message is scheduled for, while the "+"'s Schedule is
   // on (`conversation-scheduled-sends`): Send then hands it to the desktop to
@@ -814,7 +813,7 @@ export function ConversationScreen({
     }
     const picked = await pickChatImages(
       source === "camera",
-      chatImageMaxBytes(!!session && declaresImageDownscale(session)),
+      CHAT_IMAGE_MAX_BYTES,
       CONVERSATION_MAX_IMAGES - uploads.length,
     );
     if (!picked) return null;
@@ -826,7 +825,6 @@ export function ConversationScreen({
     if (!picked) return null;
     if (!chat.api || !activeThread.sessionId) throw new Error("Desktop unavailable.");
     const id = await chat.api.uploadFile({
-      sessionId: activeThread.sessionId,
       uri: picked.uri,
       name: picked.name,
       mediaType: picked.mediaType,
@@ -838,7 +836,6 @@ export function ConversationScreen({
   const uploadImage = async (image: PickedImage): Promise<{ id: string; name: string }> => {
     if (!chat.api || !activeThread.sessionId) throw new Error("Desktop unavailable.");
     const id = await chat.api.uploadImage({
-      sessionId: activeThread.sessionId,
       uri: image.uri,
       name: image.name,
       mediaType: image.mediaType,
@@ -1437,6 +1434,12 @@ export function ConversationScreen({
           renderItem={renderRow}
           ListFooterComponent={
             <>
+              {chat.clippedCount > 0 ? (
+                <View>
+                  <Text style={styles.meta}>Part of this chat was too long to send at once, so it is shown cut short.</Text>
+                  <PrimaryButton label="Show in full" variant="ghost" onPress={() => void chat.restoreClipped()} />
+                </View>
+              ) : null}
               {chat.optimistic
                 .filter((item) => !queuedIds.has(item.commandId))
                 .map((item) => {
@@ -1618,7 +1621,7 @@ export function ConversationScreen({
                   agentName={agentName}
                   error={chat.actionErrors[item.id]}
                   onOpenPlan={onOpenPlan ? () => onOpenPlan(item.id) : undefined}
-                  plans={!!session && declaresConversationPlans(session)}
+                  plans={chat.offers.plans}
                   onBypass={
                     preset && preset !== "bypass" && !changing && presetChoices.some((choice) => choice.id === "bypass")
                       ? () => allowAndBypass(item.id)
@@ -2279,13 +2282,20 @@ function QueuedEntry({
 }) {
   const styles = useThemedStyles(createStyles);
   const failed = bubble.where === "desktop" && bubble.failure !== undefined;
-  const text = bubble.text || (bubble.where === "phone" && bubble.uploads.length ? attachmentsOnlyText(bubble.uploads) : "");
+  const uploads = bubble.where === "desktop" ? [] : (bubble.uploads ?? []);
+  const carries = bubble.where === "desktop" ? queuedCarryLine(bubble.carries) : null;
+  const text = bubble.text || (uploads.length ? attachmentsOnlyText(uploads) : (carries ?? ""));
   return (
     <View pointerEvents="box-none" style={styles.queuedItem}>
       <View style={styles.queuedBubble}>
         <Text numberOfLines={6} style={styles.queuedText}>
           {messageInline(text)}
         </Text>
+        {carries && bubble.text ? (
+          <Text numberOfLines={1} style={[styles.meta, styles.queuedMeta]}>
+            {carries}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.queuedLine}>
         <Text
@@ -2449,7 +2459,8 @@ function PendingCard({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const p = pending.payload;
+  // The request as the shared projection read it off its event.
+  const p = pending.entry;
   const [picks, setPicks] = useState<Record<string, string[]>>({});
   const [freeText, setFreeText] = useState<Record<string, string>>({});
   // The part of a several-part question on show. The card is keyed by the
@@ -2470,7 +2481,7 @@ function PendingCard({
     setQuestionIndex(index);
     scroll.current?.scrollTo({ y: 0, animated: false });
   };
-  const resolve = (decision: "once" | "conversation" | "deny") =>
+  const resolve = (decision: ConversationRequestDecision) =>
     command({ kind: "resolveApproval", requestId: pending.id, decision });
   // A plan's own answer where the desktop takes one; an older desktop reads a
   // plan answered as an approval the same way (`once` carries it out).
@@ -2479,7 +2490,7 @@ function PendingCard({
       ? command({ kind: "resolvePlan", requestId: pending.id, decision: approve ? "approve" : "reject" })
       : resolve(approve ? "once" : "deny");
   // A plan is read on its own page; the dock only asks for the decision.
-  if (p.kind === "plan")
+  if (p.requestKind === "plan")
     return (
       <View style={styles.planDock}>
         <Text accessibilityRole="header" style={styles.planDockTitle}>
@@ -2512,11 +2523,11 @@ function PendingCard({
   return (
     <ScrollView ref={scroll} style={styles.pending} keyboardShouldPersistTaps="handled">
       <Text accessibilityRole="header" style={styles.text}>
-        {p.kind === "question" ? "Your input is needed" : "Permission needed"}
+        {p.requestKind === "question" ? "Your input is needed" : "Permission needed"}
       </Text>
       {/* A question's summary is one of its questions, which the part below
           already says; above a later part it named the first part instead. */}
-      {p.kind === "question" ? null : (
+      {p.requestKind === "question" ? null : (
         <Text style={styles.meta}>
           {stringValue(p.summary) || stringValue(p.action)}
         </Text>
@@ -2524,7 +2535,7 @@ function PendingCard({
       {p.originAgentId ? (
         <Text style={styles.meta}>Requested by a subagent</Text>
       ) : null}
-      {p.kind !== "question" && typeof recordValue(p.input).command === "string" ? (
+      {p.requestKind !== "question" && typeof recordValue(p.input).command === "string" ? (
         // A command is read as the command, wrapped: as JSON its one long
         // string ran off the card's edge with nothing to say it went on.
         <View style={styles.commandBox}>
@@ -2534,13 +2545,13 @@ function PendingCard({
             </Text>
           </View>
         </View>
-      ) : p.kind !== "question" && p.input ? (
+      ) : p.requestKind !== "question" && p.input ? (
         <SourceBlock
           content={JSON.stringify(p.input, null, 2)}
           language="json"
         />
       ) : null}
-      {p.kind === "question" ? (
+      {p.requestKind === "question" ? (
         <>
           {questions.slice(step.index, step.index + 1).map((question) => {
             const label = stringValue(question.question);

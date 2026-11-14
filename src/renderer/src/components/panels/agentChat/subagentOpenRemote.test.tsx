@@ -51,8 +51,8 @@ function Remote({ children }: { children: React.ReactNode }) {
   const local = useConversationTransport()
   const remote: ConversationTransport = {
     ...local,
-    kind: 'remote',
-    capabilities: { ...local.capabilities, localFiles: false },
+    // Another machine's chat: its environment is not the window's Studio.
+    environment: { id: 'another-machine', label: 'mac-mini', route: null },
   }
   return <ConversationTransportProvider value={remote}>{children}</ConversationTransportProvider>
 }

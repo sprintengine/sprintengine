@@ -157,6 +157,12 @@ export type CanvasFs = {
   stat(path: string): Promise<CanvasFileStat>
   readdir(path: string): Promise<CanvasDirEntry[]>
   unlink(path: string): Promise<void>
+  /**
+   * Where a path really leads, every link followed; for a path not there yet,
+   * its nearest existing folder's real path and the rest. Throws for a link
+   * that leads nowhere. Absent, `confineBoard` refuses every board.
+   */
+  realPath?(path: string): Promise<string>
 }
 
 export type CanvasDirectoryWatcher = { close(): void }
@@ -276,6 +282,14 @@ export type CanvasServiceInternal = CanvasService & {
   ): Promise<CanvasResult<{ directory: string; files: string[] }>>
   /** The board file's absolute path. Main-side only: it never reaches an agent. */
   boardLocation(ref: CanvasBoardRef): CanvasResult<string>
+  /**
+   * Whether the board's file really is inside the folder its ref is held to
+   * (the project, the board store, or the folder of its id), every link
+   * followed. `locate` judges a ref by its spelling, which is enough for this
+   * machine's windows and agents; a client on another device is held to where
+   * the file really is, so a link inside a project cannot carry it out.
+   */
+  confineBoard(ref: CanvasBoardRef): Promise<CanvasResult<void>>
   /** A window went away: it stops counting as a subscriber of every board it held. */
   dropSubscriber(subscriberId: number): void
 }
@@ -432,6 +446,8 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
     workspaceId: string
     path: string
     absolutePath: string
+    /** The folder the board must be inside: the project, the board store, or the folder of its id. */
+    base: string
     key: string
     /** The ref's own store, when it named one. */
     foreignStore: string | null
@@ -448,6 +464,8 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
    * still holds if the normalizer ever gains a case it does not cover. Symlinks
    * are deliberately not resolved, which is this tree's rule for containment
    * (see `path-containment.ts`): the question is the path the caller named.
+   * A client on another device is held to the real path as well, by
+   * `confineBoard`, before any call of its reaches here.
    */
   function locate(ref: CanvasBoardRef): CanvasResult<Located> {
     const workspaceId = typeof ref?.workspaceId === 'string' ? ref.workspaceId.trim() : ''
@@ -494,6 +512,7 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
       workspaceId,
       path: normalized.value,
       absolutePath,
+      base,
       key: boardKey(absolutePath),
       foreignStore: null,
       store: deps.storeCatalogue?.storeKeyOf(root) ?? null,
@@ -526,7 +545,15 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
     if (!strictlyInside(base, absolutePath)) {
       return canvasFail('forbidden', `A board must live inside the folder of its id: ${path}`)
     }
-    return canvasOk({ workspaceId, path, absolutePath, key: boardKey(absolutePath), foreignStore: store, store })
+    return canvasOk({
+      workspaceId,
+      path,
+      absolutePath,
+      base,
+      key: boardKey(absolutePath),
+      foreignStore: store,
+      store,
+    })
   }
 
   function entryFor(located: Located): BoardEntry {
@@ -1462,6 +1489,23 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
     return canvasOk(held?.loaded ? held.absolutePath : located.value.absolutePath)
   }
 
+  async function confineBoard(ref: CanvasBoardRef): Promise<CanvasResult<void>> {
+    const located = locate(ref)
+    if (!located.ok) return located
+    const outside = canvasFail<void>(
+      'not_found',
+      `There is no board at ${located.value.path} inside its folder. A link that leads out of the folder is not followed for another device.`,
+    )
+    const realPath = deps.fs.realPath
+    if (!realPath) return outside
+    try {
+      const [base, file] = await Promise.all([realPath(located.value.base), realPath(located.value.absolutePath)])
+      return strictlyInside(base, file) ? canvasOk(undefined) : outside
+    } catch {
+      return outside
+    }
+  }
+
   async function boardExists(ref: CanvasBoardRef): Promise<CanvasResult<boolean>> {
     const located = locate(ref)
     if (!located.ok) return located
@@ -1978,6 +2022,7 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
     dropSubscriber,
     exportBoard,
     boardLocation,
+    confineBoard,
   }
 }
 

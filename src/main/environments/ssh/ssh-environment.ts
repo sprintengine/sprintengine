@@ -1,18 +1,24 @@
 import { randomBytes } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 
-import type { MuxEndpoint } from '../../../../resources/wsl-server/relay-mux.mjs'
+import { FRONT_DOOR_TIMED_OUT, type MuxEndpoint } from '../../../../resources/wsl-server/relay-mux.mjs'
 import { commitFailure } from '../../hosts/remote-install'
 import { remoteNodeDigests, type RemoteNodeTarget } from '../../hosts/wsl-node-runtime'
-import { connectRemoteConversationBackend, type RemoteConversationBackend } from '../../../server/wsl/backend-wire'
-import type { FrontDoorPurpose } from '../../../server/wsl/front-door-proof'
-import type { SshEnvironmentSettings, SshEnvironmentState, SshMachineGh } from '../../../shared/ssh-environments'
+import { lineTransport, readTicket } from '../../../server/wsl/studio-door'
+import type {
+  SshEnvironmentSettings,
+  SshEnvironmentState,
+  SshEnvironmentSummary,
+  SshMachineGh,
+} from '../../../shared/ssh-environments'
+import type { StudioProtocolWindow } from '../../../../packages/studio-protocol/src/public'
 import type { RelayReady } from './relay-client'
 import { classifySshFailure, type SshFailure } from './ssh-command'
 import {
   assessProbe,
   buildConnectScript,
   locateServer,
+  recordWindow,
   otherHostHolding,
   parseProbe,
   spaceFor,
@@ -21,11 +27,13 @@ import {
 import { buildInstallArchive } from './ssh-install'
 import { RemoteSession, SessionClosedError, type SessionProcess } from './ssh-session'
 import {
+  connect,
   ConnectionSupervisor,
   ConnectTimeoutError,
   type ConnectionAttempt,
   type ConnectionState,
-} from '../../../../packages/connection-supervisor/src/connectionSupervisor'
+  type StudioClient,
+} from '../../../../packages/client-runtime/src/public'
 
 // One SSH machine's connection, in main (phase 8 spec, 5.6). Serialised: a
 // second `connect` while a bootstrap runs waits for it. The one exception is
@@ -43,7 +51,7 @@ import {
 //                          still tried every five minutes, and at once on a wake
 //
 // When to try, how long to wait and what a wake does are the connection
-// supervisor's (packages/connection-supervisor), the same rules every other
+// supervisor's (packages/client-runtime/src/connection), the same rules every other
 // reconnecting connection in the app follows; this class is the bootstrap it
 // runs for each attempt and the words the machine's row says.
 //
@@ -57,17 +65,32 @@ import {
 // instead of waiting out the keepalive on a dead socket: one that answers is
 // kept, one that does not is restarted. A wake also lets a machine shown
 // Disconnected try at once, since the network it was waiting for may be back.
+//
+// Liveness is the server's, not the session's: ssh's keepalive only says the
+// path to the machine is up, and a server that died (or hangs) under a live
+// session would read Connected over a dead connection. So main holds an owner
+// connection to the server itself (the `studio` door, the Studio protocol),
+// and the machine is lost when that connection or the chats' wire closes,
+// session up or not, or when the server leaves a `server.ping` unanswered:
+// one is asked after `pingMs` with nothing heard, and the connection is given
+// up when `pingMs` more pass in silence. A lost machine is reconnected the way
+// a dropped session is (a new session in BatchMode, probe, start or attach),
+// which starts a server that is gone.
 
 export type SshServerConnection = {
   /** The router's key for this machine: `ssh:<saved id>`. */
   key: string
   id: string
   label: string
-  backend: RemoteConversationBackend
+  /**
+   * Main's own connection to the machine's server, as its owner (the `studio`
+   * door): what says the server is alive, whatever the SSH session says.
+   */
+  owner: StudioClient
   environmentId: string | null
   serverVersion: string | null
   /** A fresh, admitted Studio-server connection for `purpose`, over the same session. */
-  open(purpose: FrontDoorPurpose): Promise<Duplex>
+  open(purpose: 'studio' | 'ws'): Promise<Duplex>
   /** A TCP connection made from the machine (the pane's traffic, spec 6.8). */
   openTcp(host: string, port: number): Promise<Duplex>
 }
@@ -78,7 +101,7 @@ export type SshEnvironmentDeps = {
   settings(): SshEnvironmentSettings
   /** Spawn `ssh … -- <destination> sh -s`; `interactive` gets an askpass token, a background one BatchMode. */
   spawn(options: { interactive: boolean }): SessionProcess
-  app: { version: string; channel: 'latest' | 'nightly'; backendWire: number }
+  app: { version: string; channel: 'latest' | 'nightly' }
   /** `data`, or `data-<profile>` for a desktop on another profile. */
   dataName: string
   /** "Studio on dev-macbook-air", for the remote's record. */
@@ -112,6 +135,12 @@ export const DEFAULT_TIMING = {
   disconnectedRetryMs: 5 * 60_000,
   /** How long a wake waits for a connected session to answer before calling it dead. */
   livenessMs: 10_000,
+  /**
+   * The server's own liveness: after this long with nothing heard on main's
+   * owner connection, a `server.ping`; this long again unanswered, the server is
+   * taken for lost even while the SSH session stays up.
+   */
+  pingMs: 10_000,
   /** The backstop on one whole bootstrap; every step inside it has a shorter deadline of its own. */
   bootstrapMs: 45 * 60_000,
 }
@@ -122,8 +151,10 @@ export type SshEnvironmentView = {
   state: SshEnvironmentState
   stateText: string
   working: boolean
-  action: 'connect' | 'upgrade' | null
+  action: SshEnvironmentSummary['action']
   server: { version: string; origin: string; startedBy: string | null } | null
+  /** The server's protocol window as its record last said, for the environment list's compatibility; null before one. */
+  protocol: StudioProtocolWindow | null
   notes: string[]
   /** The machine's GitHub CLI as the last probe found it, with the OS it runs; null before one. */
   gh: SshMachineGh | null
@@ -137,9 +168,29 @@ class StepError extends Error {
     message: string,
     readonly failure?: SshFailure,
     readonly offerUpgrade = false,
+    /** The update to this app's version failed before: what is offered is its Retry. */
+    readonly retryUpdate = false,
   ) {
     super(message)
   }
+}
+
+/** The handshake heard nothing back from the server it reached within its deadline. */
+class NoAnswerError extends StepError {}
+
+/**
+ * The server the probe found running (an attach) did not answer the
+ * handshake: alive, but hung or deadlocked. Reconnecting attaches to it again
+ * and cannot replace it, so the words say what will: stopping it there.
+ */
+class ServerNotAnsweringError extends StepError {
+  constructor(label: string) {
+    super('failed', serverNotAnsweringWords(label))
+  }
+}
+
+export function serverNotAnsweringWords(label: string): string {
+  return `The Studio server on ${label} is running but not answering. Stop it there, or restart ${label}.`
 }
 
 /** Any failure as a step's: what the bootstrap threw, or a loss's reason, in words. */
@@ -180,6 +231,8 @@ type LiveSession = {
   endpoint: MuxEndpoint
   session: RemoteSession
   server: NonNullable<RelayReady['server']>
+  /** Let go already: a loss heard after that is the same loss. */
+  released?: boolean
 }
 
 export class SshEnvironment {
@@ -189,6 +242,7 @@ export class SshEnvironment {
     working: false,
     action: 'connect',
     server: null,
+    protocol: null,
     notes: [],
     gh: null,
     diagnostics: { noise: '', stderr: '', steps: [], probe: null },
@@ -202,6 +256,12 @@ export class SshEnvironment {
   private lastReachedAt: number | null = null
   /** Whether the failure that put the machine on hold ended a reconnect (its words differ). */
   private heldWhileReconnecting = false
+  /**
+   * The words for a server the probe found running that did not answer, until
+   * it answers or a start replaces it: every try after says them, since each
+   * attaches to the same server.
+   */
+  private notAnswering: string | null = null
   /** Stop server, while it runs: a connect asked for meanwhile joins it rather than start the server under it. */
   private stopping: Promise<never> | null = null
   private upgradeAsked = false
@@ -227,8 +287,8 @@ export class SshEnvironment {
         live.endpoint.close(reason)
         this.release(live)
       },
-      // A backend snapshot is what a session that answers can always give.
-      ping: (live) => live.connection.backend.refresh(),
+      // The server's own answer, on main's owner connection to it.
+      ping: (live) => live.connection.owner.request('server.ping', {}),
       classify: (error, { reconnecting }) => {
         const step = this.stepOf(error)
         this.heldWhileReconnecting = reconnecting
@@ -396,7 +456,14 @@ export class SshEnvironment {
         this.set({
           state: step.state,
           stateText: step.message,
-          action: step.state === 'version-blocked' ? (step.offerUpgrade ? 'upgrade' : null) : 'connect',
+          action:
+            step.state === 'version-blocked'
+              ? step.offerUpgrade
+                ? step.retryUpdate
+                  ? 'retry-update'
+                  : 'upgrade'
+                : null
+              : 'connect',
         })
         return
       }
@@ -485,11 +552,8 @@ export class SshEnvironment {
           )
           continue
         }
-        const located = locateServer(
-          probe,
-          { version: this.deps.app.version, backendWire: this.deps.app.backendWire },
-          label,
-        )
+        this.view.protocol = recordWindow(probe.serverRecord) ?? this.view.protocol
+        const located = locateServer(probe, { version: this.deps.app.version }, label)
         let decision: string
         let deadline = this.timing.relayMs
         const idle = this.deps.settings().keepRunning ? 'keep' : String(IDLE_MS)
@@ -497,7 +561,13 @@ export class SshEnvironment {
         if (located.action === 'blocked') {
           if (!(located.offerUpgrade && this.upgradeAsked)) {
             current.kill()
-            throw new StepError('version-blocked', located.reason, undefined, located.offerUpgrade)
+            throw new StepError(
+              'version-blocked',
+              located.reason,
+              undefined,
+              located.offerUpgrade,
+              located.failedUpdate !== undefined,
+            )
           }
           this.upgradeAsked = false
           if (shows())
@@ -519,6 +589,8 @@ export class SshEnvironment {
           decision = `start ${idle} ${by}`
           deadline = this.timing.startMs
         } else decision = 'attach'
+        // A server started or upgraded is a new one: what the last said no longer holds.
+        if (decision !== 'attach') this.notAnswering = null
         // The probe's end and SEND can come in two reads: wait for SEND itself.
         await current.waitForSend(10_000)
         current.send(decision)
@@ -527,7 +599,17 @@ export class SshEnvironment {
             throw this.relayFailure(current, error, label, diagnostics)
           }),
         )
-        return await timed('handshake', () => this.handshake(current, relay.ready, relay.endpoint, label, attempt))
+        return await timed('handshake', () =>
+          this.handshake(current, relay.ready, relay.endpoint, label, attempt).catch((error: unknown) => {
+            // Running, by the probe, and silent: say what the person can do,
+            // here and on every try after, until it answers or is replaced.
+            if (decision !== 'attach' || !(error instanceof NoAnswerError)) throw error
+            const words = new ServerNotAnsweringError(label)
+            this.notAnswering = words.message
+            this.log(`${words.message} (attached; the handshake had no answer in ${this.timing.handshakeMs} ms)`)
+            throw words
+          }),
+        )
       }
     } catch (error) {
       session?.kill()
@@ -541,6 +623,7 @@ export class SshEnvironment {
   }
 
   private reconnectingText(label: string): string {
+    if (this.notAnswering) return `${this.notAnswering} Studio keeps trying.`
     return this.lastReachedAt !== null
       ? `Reconnecting to ${label} — last reached ${minutesAgo(this.now() - this.lastReachedAt)}`
       : `Reconnecting to ${label}…`
@@ -640,6 +723,16 @@ export class SshEnvironment {
         code === 'base-owner'
           ? `${words.join(' ')} on ${label} belongs to another user, so Studio will not run programs from it. Choose an install directory of your own.`
           : words.join(' ')
+      // An update that did not start fell back to the previous server (or
+      // could not): the row says so and offers Retry, as the next probe would.
+      if (code === 'update-failed')
+        return new StepError(
+          'version-blocked',
+          message || `Updating the Studio server on ${label} failed.`,
+          undefined,
+          true,
+          true,
+        )
       return new StepError(
         code === 'other-host' ? 'version-blocked' : 'failed',
         message || `The Studio server on ${label} did not start.`,
@@ -665,35 +758,53 @@ export class SshEnvironment {
     const server = ready.server
     if (!server)
       throw new StepError('failed', `No Studio server is running on ${label} after it was started; see its log there.`)
-    const stream = await endpoint.open({ kind: 'owner', purpose: 'backend' }).catch((error: Error) => {
-      throw new StepError('failed', `The Studio server on ${label} did not let Studio in: ${error.message}`)
-    })
-    const backend = connectRemoteConversationBackend(stream, { log: this.log })
-    await Promise.race([
-      backend.refresh(),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new StepError('failed', `The Studio server on ${label} did not answer.`)),
-          this.timing.handshakeMs,
-        ),
-      ),
-    ])
+    // Main's owner connection is the one connection the handshake makes: one
+    // opened for a handshake that then times out is closed when it arrives,
+    // not left open.
+    let timedOut = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const opening = this.openOwner(endpoint, label)
+    void opening.then(
+      (late) => timedOut && late.close(),
+      () => undefined,
+    )
+    const owner = await Promise.race([
+      opening,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true
+          reject(new NoAnswerError('failed', `The Studio server on ${label} did not answer.`))
+        }, this.timing.handshakeMs)
+      }),
+    ]).finally(() => clearTimeout(timer))
     const connection: SshServerConnection = {
       key: this.key,
       id: this.deps.id,
       label,
-      backend,
+      owner,
       environmentId: server.environmentId,
       serverVersion: server.version,
       open: (purpose) => endpoint.open({ kind: 'owner', purpose }),
       openTcp: (host, port) => endpoint.open({ kind: 'tcp', host, port }),
     }
     const live: LiveSession = { connection, endpoint, session, server }
-    endpoint.onClosed((reason) => {
+    // Lost when the session goes, and also when the server's own connections
+    // end or it stops answering while the session stays up: the server died,
+    // or was stopped, under a live SSH session.
+    const lose = (reason: string) => {
+      if (live.released) return
       this.release(live)
       if (attempt.current()) this.log(`The connection to ${label} was lost (${reason}); reconnecting.`)
       attempt.lost(new StepError('failed', reason))
-    })
+    }
+    endpoint.onClosed(lose)
+    void owner.closed.then(
+      () => lose(`The Studio server on ${label} closed its connection.`),
+      (error: unknown) =>
+        lose(
+          `The Studio server on ${label} went away${error instanceof Error && error.message ? ` (${error.message})` : ''}.`,
+        ),
+    )
     void session.closed().then(() => endpoint.close('The SSH session ended.'))
     // Up from here, not a turn of the event loop later: given up on meanwhile,
     // the supervisor closes it now.
@@ -701,9 +812,39 @@ export class SshEnvironment {
     return live
   }
 
-  /** A session that ended or was let go: its backend, its ssh, and the supervisor's hold on it. */
+  /**
+   * Main's owner connection to the server, over the `studio` door: the door's
+   * one-use ticket, then the Studio protocol. It does not reconnect: its end is
+   * the server's, and the supervisor makes the next one.
+   */
+  private openOwner(endpoint: MuxEndpoint, label: string): Promise<StudioClient> {
+    // A door that does not let Studio in fails the handshake in words; one
+    // that took the connection and never answered is a server not answering.
+    let refused: Error | null = null
+    return connect({
+      transport: async () => {
+        const stream = await endpoint.open({ kind: 'owner', purpose: 'studio' }).catch((error: Error) => {
+          const words = `The Studio server on ${label} did not let Studio in: ${error.message}`
+          refused =
+            error.message === FRONT_DOOR_TIMED_OUT ? new NoAnswerError('failed', words) : new StepError('failed', words)
+          throw refused
+        })
+        return lineTransport(stream, await readTicket(stream, this.timing.handshakeMs))
+      },
+      client: { name: 'SprintEngine Studio', kind: 'desktop' },
+      reconnect: false,
+      helloTimeoutMs: this.timing.handshakeMs,
+      heartbeat: { intervalMs: this.timing.pingMs, timeoutMs: this.timing.pingMs },
+    }).catch((error: unknown) => {
+      throw refused ?? error
+    })
+  }
+
+  /** A session that ended or was let go: its owner connection, its ssh, and the supervisor's hold on it. */
   private release(live: LiveSession): void {
-    live.connection.backend.close()
+    if (live.released) return
+    live.released = true
+    live.connection.owner.close()
     live.session.kill()
     if (this.announced === live) this.announced = null
   }
@@ -712,6 +853,7 @@ export class SshEnvironment {
   private announce(live: LiveSession): void {
     this.announced = live
     this.lastReachedAt = this.now()
+    this.notAnswering = null
     this.set({
       state: 'connected',
       stateText: 'Connected',
@@ -720,6 +862,8 @@ export class SshEnvironment {
         origin: live.server.origin ?? 'bootstrap',
         startedBy: live.server.startedBy,
       },
+      // The server reached, not the one probed before a start or an upgrade replaced it.
+      protocol: recordWindow(live.server) ?? this.view.protocol,
     })
     if (live.server.environmentId) this.deps.onEnvironmentId?.(live.server.environmentId)
     try {

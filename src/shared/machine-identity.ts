@@ -21,20 +21,20 @@
 // surface draws a glyph for it.
 
 import { isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from './execution-host'
+import {
+  MACHINE_COLOURS,
+  MACHINE_KINDS,
+  type MachineColour,
+  type MachineKind,
+  type MachineMarkSetting,
+  type MachineMarkSettings,
+} from '../../packages/studio-protocol/src/public'
 
-/** The kinds a machine is drawn as. Phones and tablets are not here: the server never runs on one. */
-export const MACHINE_KINDS = [
-  'laptop',
-  'desktop',
-  'mini',
-  'tower',
-  'server',
-  'cloud',
-  'container',
-  'board',
-  'wsl',
-] as const
-export type MachineKind = (typeof MACHINE_KINDS)[number]
+// The kinds and colours a machine is drawn in, and a person's overrides
+// (keyed by machine id, `machineIdOf`), as the Studio protocol carries them in
+// the launch settings.
+export { MACHINE_COLOURS, MACHINE_KINDS }
+export type { MachineColour, MachineKind, MachineMarkSetting, MachineMarkSettings }
 
 /** What each kind is called in a picker. */
 export const MACHINE_KIND_LABELS: Record<MachineKind, string> = {
@@ -49,14 +49,6 @@ export const MACHINE_KIND_LABELS: Record<MachineKind, string> = {
   wsl: 'WSL',
 }
 
-/**
- * The colours a machine can wear: the seven `color.mark.*` hues, then a
- * neutral. The order is the hash's — the default picks among the first seven —
- * so it is part of the contract: reordering it recolours every machine.
- */
-export const MACHINE_COLOURS = ['blue', 'teal', 'cyan', 'orange', 'yellow', 'violet', 'red', 'neutral'] as const
-export type MachineColour = (typeof MACHINE_COLOURS)[number]
-
 export const MACHINE_COLOUR_LABELS: Record<MachineColour, string> = {
   blue: 'Blue',
   teal: 'Teal',
@@ -70,12 +62,6 @@ export const MACHINE_COLOUR_LABELS: Record<MachineColour, string> = {
 
 /** How many of the colours a default may land on: the hues, not the neutral. */
 const DEFAULT_COLOUR_COUNT = 7
-
-/** A person's override for one machine. Absent fields read as the default. */
-export type MachineMarkSetting = { kind?: MachineKind; colour?: MachineColour }
-
-/** Overrides, keyed by machine id (`machineIdOf`). */
-export type MachineMarkSettings = Record<string, MachineMarkSetting>
 
 /**
  * A machine, as a surface knows it. Each carries only what every device that

@@ -50,6 +50,8 @@ import {
 } from './extensionsSurfaceTarget'
 import { publishSurfaceView } from '../../surfaceView'
 import { InstallFromGitHubDialog } from '../../../extensions/InstallFromGitHubDialog'
+import { agentSetupApi } from '../../../../studio/agentSetup'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
 
 export default function ExtensionsGlobalSurface(): JSX.Element {
   const activeWorkspaceRoot = useWorkspaceStore(
@@ -192,8 +194,8 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
       const servers = { ...settings.servers }
       for (const id of serverIds) delete servers[id]
       for (const id of serverIds) removeMcpServer(id)
-      if (!activeWorkspaceRoot || !settings.syncEnabled || typeof window.api.mcpSync !== 'function') return
-      void window.api
+      if (!activeWorkspaceRoot || !settings.syncEnabled) return
+      void agentSetupApi
         .mcpSync({
           workspaceRoot: activeWorkspaceRoot,
           settings: { ...settings, servers },
@@ -224,13 +226,13 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
    */
   const addFromFile = useCallback(async (): Promise<void> => {
     setAddError(null)
-    if (typeof window.api.skillsAddLocalSource !== 'function') {
+    if (typeof agentSkillsApi.skillsAddLocalSource !== 'function') {
       setAddError('Adding a folder needs a newer app build. Update and restart.')
       return
     }
     const defaultPath =
-      typeof window.api.ensureDefaultUserSkillsDir === 'function'
-        ? await window.api.ensureDefaultUserSkillsDir()
+      typeof agentSkillsApi.ensureDefaultUserSkillsDir === 'function'
+        ? await agentSkillsApi.ensureDefaultUserSkillsDir()
         : undefined
     const path = await window.api.openDir(defaultPath ? { defaultPath } : undefined)
     if (!path) return
@@ -238,7 +240,7 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
     // a tab to open — "you have this one, here it is" — and Sync on its head
     // line is what re-reads it. The id is the prefix plus the path, which is
     // the whole of a folder source's identity.
-    const result = await window.api.skillsAddLocalSource({ path })
+    const result = await agentSkillsApi.skillsAddLocalSource({ path })
     if (!result.ok) {
       const id = `${LOCAL_SKILL_SOURCE_ID_PREFIX}${path}`
       if (sources.sources.some((source) => source.id === id)) {

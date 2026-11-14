@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { openWorkspaceIds } from '../utils/agentWorktreeCleanup'
 import { ensureChatWorktree } from '../utils/chatWorktreeRestore'
+import { filesApi } from '../studio/files'
 
 type FolderCheckState = {
   path: string | null
@@ -42,7 +43,7 @@ async function checkAfterRestore(
       message: 'This chat’s worktree could not be brought back.',
     }
   }
-  return window.api.checkWorkspaceFolder(folderPath)
+  return filesApi.checkWorkspaceFolder(folderPath)
 }
 
 export function useWorkspaceFolderStatus(workspaceId: string): WorkspaceFolderStatus {

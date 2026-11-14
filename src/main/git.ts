@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from 'fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'path'
+import { dirname, isAbsolute, join } from 'path'
 import { agentWorktreeLockOwner, lockAgentWorktree, relockWorktree, unlockWorktree } from './agent-worktree-lock'
 import { excludeFromWorktree } from './integrations/worktree-exclude'
 import { cloneTree } from './clone-tree'
@@ -14,6 +14,7 @@ import {
   toAbsolutePath,
   toFilesystemPath,
   toPosixPath,
+  toRepoAbsolutePath,
 } from './git-utils'
 import { GIT_NETWORK_TIMEOUT_MS } from './git-run'
 import { listGitWorktrees } from './git-worktree-list'
@@ -173,6 +174,8 @@ export type GitCommandResult = {
   pushedCommitCount?: number
   /** Set when git was stopped at its deadline rather than failing on its own. */
   timedOut?: true
+  /** A merge-like operation stopped on conflicts (see the protocol's GitCommandResult). */
+  stoppedOnConflicts?: boolean
 }
 
 export type GitWorktreeEntry = {
@@ -620,8 +623,8 @@ async function finishAddedWorktree(
 }
 
 /**
- * An agent worktree on the default branch: a pool slot when this process keeps
- * a pool (worktree-pool/), else a fresh worktree forked from the same ref.
+ * An agent worktree on the default branch: a slot of the pool the Studio core
+ * keeps (worktree-pool/), else a fresh worktree forked from the same ref.
  *
  * The pool declining is never the caller's problem — another Studio holds it,
  * the repository is on a WSL machine, the pool is off or full — and the fresh
@@ -706,8 +709,8 @@ async function createAgentWorktreeFromPool(
  * opted in and the worktree's lockfile changed since it last installed: before
  * the agent starts, which it does whatever came of it. The choice is read from
  * the pool's settings, where Settings ▸ Worktrees keeps it, so a process
- * without a pool (a Studio server out of process) installs nothing, as it has
- * no installer either.
+ * without a pool (no Studio core in it) installs nothing, as it has no
+ * installer either.
  */
 async function withDependencyInstall(
   created: GitWorktreeCreated,
@@ -1074,7 +1077,7 @@ export async function unlockAgentGitWorktree(
 }
 
 export async function getGitFileBase(repoRoot: string, filePath: string): Promise<GitFileBaseResult> {
-  const absolutePath = isAbsolute(filePath) ? filePath : resolve(filePath)
+  const absolutePath = toRepoAbsolutePath(repoRoot, filePath)
   if (!isInsideRepo(repoRoot, absolutePath) && dirname(absolutePath) !== repoRoot) {
     return { ok: false, message: 'File is outside the Git repository.' }
   }
@@ -1103,7 +1106,7 @@ export async function getGitFileAtStage(
   filePath: string,
   stage: GitFileStage,
 ): Promise<GitFileStageResult> {
-  const absolutePath = isAbsolute(filePath) ? filePath : resolve(filePath)
+  const absolutePath = toRepoAbsolutePath(repoRoot, filePath)
   if (!isInsideRepo(repoRoot, absolutePath) && dirname(absolutePath) !== repoRoot) {
     return { ok: false, message: 'File is outside the Git repository.' }
   }

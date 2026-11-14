@@ -422,9 +422,10 @@ test('tailnet-mesh-reachability', async () => {
           mini.events.some((event) => event.kind === 'machine-paired'),
           'the mini announces it without anyone there pressing anything',
         )
-        const browse = await mini.mesh.browse(reverse.id)
-        assert.equal(browse.reachable, true, 'the mini can drive the laptop with the reverse token')
-        assert.equal(browse.unauthorized, false)
+        const checked = await mini.mesh.checkReachability(reverse.id)
+        const reach = checked.reachability.find((entry) => entry.connectionId === reverse.id)
+        assert.equal(reach?.reachable, true, 'the mini can drive the laptop with the reverse token')
+        assert.equal(reach?.unauthorized, false)
         assert.equal(
           laptop.devices.listDevices().length,
           1,
@@ -523,28 +524,6 @@ test('tailnet-mesh-reachability', async () => {
       }
     },
   )
-
-  check('waking re-dials a change-feed watch that was waiting out its backoff', async () => {
-    const laptop = await startMachine('laptop')
-    const mini = await startMachine('mini')
-    try {
-      const offer = mini.devices.offerPairing({ scopes: ['workspace:read'] })
-      const paired = await laptop.mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', mini.port, offer.token) })
-      assert.ok(paired.ok)
-      await waitFor(() => mini.server.eventStreamCount() === 1, 'pairing opens a watch on the mini')
-      // Long enough for the watch to fail a few dials against the dead port, so
-      // its next one is seconds away.
-      await mini.stop()
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      await mini.restart()
-      // Wake: the backoff timer is not waited out; a dial happens now.
-      laptop.mesh.onWake()
-      await waitFor(() => mini.server.eventStreamCount() === 1, 'an immediate re-dial', 800)
-    } finally {
-      await laptop.close()
-      await mini.close()
-    }
-  })
 
   const suiteRun = queue.then(() => {
     if (failures > 0) {

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.liveRows', async () => {
   // Owner ruling 2026-09-04 (the-diff-an-agent-made, decision 9): the sidebar
@@ -61,16 +64,16 @@ test('WorkspaceSidebar.liveRows', async () => {
   })
 
   const summaryRequests: string[] = []
+  terminalsDouble.listTerminals = async () => [
+    // Alpha's agent is alive; Bravo's has exited (a parked chat after a
+    // restart looks exactly like this); Charlie never had one.
+    session('s1', 'w1', true),
+    session('s2', 'w2', false),
+  ]
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [
-      // Alpha's agent is alive; Bravo's has exited (a parked chat after a
-      // restart looks exactly like this); Charlie never had one.
-      session('s1', 'w1', true),
-      session('s2', 'w2', false),
-    ],
-    onTerminalSessionsDelta: () => () => {},
     // This suite settles more microtask rounds than its siblings (the terminal
     // list, then the membership effect, then the sweep), which is long enough
     // for a lazily mounted nav entry to open its own subscription.

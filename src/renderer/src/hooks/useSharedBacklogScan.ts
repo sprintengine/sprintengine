@@ -13,6 +13,8 @@ import { collectDanglingMockups } from '../utils/backlogMockups'
 import { formatBacklogDisplayId } from '../../../shared/backlog/item-id'
 import { normalizeProjectRootKey } from '../utils/projectKnowledge'
 import type { BacklogItemRecordInput } from '../../../shared/electron-api'
+import { filesApi } from '../studio/files'
+import { backlogApi } from '../studio/backlog'
 
 // Project-folder-keyed shared Backlog scan, modeled on the shared-subscription
 // pattern in useGitStatus: workspaces are grouped by folder, so several
@@ -23,10 +25,10 @@ import type { BacklogItemRecordInput } from '../../../shared/electron-api'
 // view state (filter/sort/search/selection) stays local to the panel.
 
 const adapter: BacklogFilesystemAdapter = {
-  pathExists: (path) => window.api.pathExists(path),
-  readdir: (path) => window.api.readdir(path),
-  readfile: (path) => window.api.readfile(path),
-  statPath: (path) => window.api.statPath(path),
+  pathExists: (path) => filesApi.pathExists(path),
+  readdir: (path) => filesApi.readdir(path),
+  readfile: (path) => filesApi.readfile(path),
+  statPath: (path) => filesApi.statPath(path),
 }
 
 // The minimal record the object store needs to ensure a row exists for each
@@ -89,7 +91,7 @@ type BacklogScanRunner = (folderPath: string) => Promise<BacklogScanResult>
 async function defaultBacklogScanRunner(folderPath: string): Promise<BacklogScanResult> {
   const scanned = await scanBacklog(await backlogLocationOf(folderPath), adapter)
   let metadataError: string | null = null
-  const ensured = await window.api
+  const ensured = await backlogApi
     .ensureBacklogObjectRecords(folderPath, scanned.items.map(backlogRecordInput))
     .catch((error) => {
       metadataError = error instanceof Error ? error.message : String(error)
@@ -143,7 +145,7 @@ async function annotateBacklogDanglingMockups(
 // failure is non-fatal — the next scan retries — so the backlog stays usable.
 async function allocateBacklogItemIds(folderPath: string, result: BacklogScanResult): Promise<BacklogScanResult> {
   if (result.items.length === 0) return result
-  const allocated = await window.api
+  const allocated = await backlogApi
     .ensureBacklogItemIds({
       workspaceRoot: folderPath,
       items: result.items.map((item) => ({ relativePath: item.relativePath, numericId: item.numericId ?? null })),
@@ -231,7 +233,7 @@ function refreshSubscription(subscription: BacklogScanSubscription): Promise<Bac
 // non-fatal: mount + mutation refreshes keep the panel usable, matching Git.
 function startBacklogWatch(subscription: BacklogScanSubscription): void {
   if (subscription.watchStarting || subscription.stopWatching) return
-  if (typeof window === 'undefined' || typeof window.api?.watchPath !== 'function') return
+  if (typeof window === 'undefined' || typeof filesApi.watchPath !== 'function') return
 
   const key = subscriptionKey(subscription.folderPath)
   subscription.watchStarting = true
@@ -240,7 +242,7 @@ function startBacklogWatch(subscription: BacklogScanSubscription): void {
   // checkout that nothing will ever write to.
   backlogLocationOf(subscription.folderPath)
     .then((location) =>
-      window.api.watchPath(location.root, () => {
+      filesApi.watchPath(location.root, () => {
         if (subscription.watchTimer !== null) window.clearTimeout(subscription.watchTimer)
         subscription.watchTimer = window.setTimeout(() => {
           subscription.watchTimer = null

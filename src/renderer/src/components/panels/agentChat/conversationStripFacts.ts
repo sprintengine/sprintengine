@@ -5,7 +5,7 @@ import { displayBranchName } from '../../../utils/branchLabel'
 import type { MachineRef } from '../../../../../shared/machine-identity'
 import { isPathOrChild } from '../../../../../shared/paths'
 import { useGitBranch } from '../../../hooks/useGitBranch'
-import { useMachineIdentity, useWorkspaceMachineRef } from '../../../hooks/useMachineIdentity'
+import { otherMachineRef, useMachineIdentity, useWorkspaceMachineRef } from '../../../hooks/useMachineIdentity'
 import { selectModuleEnabled } from '../../../modules'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { Workspace } from '../../../types/workspace'
@@ -15,6 +15,7 @@ import { resolveWorkspaceWorktree } from '../../../utils/workspaceWorktree'
 import { useCheckoutChanges } from '../../workspace/checkoutChanges'
 import { changedFileMarks, changedFilesPhrase } from '../../workspace/terminalLines'
 import type { ConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 import type { ChatPanelBranch, ChatPanelChanges, ChatPanelMachine } from './chatPanelStore'
 
 // Where a conversation's agent works, read off the chat's binding and
@@ -51,7 +52,7 @@ export function useConversationStripFacts({
   agentId: string
   workspace: ChatWorkspace | null
   workspaceRoot: string | null
-  transport: Pick<ConversationTransport, 'kind' | 'machineName' | 'capabilities'>
+  transport: Pick<ConversationTransport, 'environment'>
   /** Where a remote chat works, as the machine running it lists it. */
   listed?: Pick<NonNullable<ChatBinding['listed']>, 'branch' | 'worktree' | 'files'> | null
 }): {
@@ -60,19 +61,22 @@ export function useConversationStripFacts({
   changes: ChatPanelChanges | null
 } {
   // ── The machine ───────────────────────────────────────────────────────────
-  // A chat on a paired machine is named by its link; a local chat by the
-  // machine its workspace runs on (an SSH machine, a WSL distribution, or the
-  // paired machine a workspace was born on). This computer is no machine to
-  // mark: the panel says nothing about it.
-  const workspaceRef = useWorkspaceMachineRef(transport.kind === 'remote' ? null : workspace)
-  const remoteName = transport.kind === 'remote' ? (transport.machineName ?? null) : null
-  const ref = useMemo<MachineRef | null>(
-    () => (remoteName ? { kind: 'paired', name: remoteName } : workspaceRef),
-    [remoteName, workspaceRef],
+  // A chat in an environment the person named (a paired machine) is named by
+  // its environment; one on the window's own Studio by the machine its
+  // workspace runs on (an SSH machine, a WSL distribution, or the paired
+  // machine a workspace was born on). This computer is no machine to mark:
+  // the panel says nothing about it.
+  const environmentLabel = transport.environment.label
+  // An SSH machine's chat is named by its environment and marked by the host
+  // every device keys it by (`sshMachineRef`); a paired machine's by its name.
+  const pairedName = environmentLabel && !workspace?.environment ? environmentLabel : null
+  const workspaceRef = useWorkspaceMachineRef(pairedName ? null : workspace)
+  const named = useMemo<MachineRef | null>(
+    () => (pairedName ? { kind: 'paired', name: pairedName } : otherMachineRef(workspaceRef)),
+    [pairedName, workspaceRef],
   )
-  const identity = useMachineIdentity(ref && ref.kind !== 'local' ? ref : null)
-  const machineName =
-    ref && ref.kind !== 'local' ? stripMachineName(ref, transport.kind === 'remote' ? null : workspace) : null
+  const identity = useMachineIdentity(named)
+  const machineName = named ? stripMachineName(named, pairedName ? null : workspace) : null
   // Held from render to render, as the chat renders on every token and the
   // panel it publishes these to redraws when one is a new object.
   const machine = useMemo(
@@ -84,7 +88,8 @@ export function useConversationStripFacts({
   // Only a folder this computer can read: the working root is the agent's
   // worktree when it runs in one (`conversationWorkingRoot`), else the
   // workspace's own checkout.
-  const checkout = transport.capabilities.localFiles ? workspaceRoot : null
+  // Only a folder the window's Studio reads: the chat's own environment's.
+  const checkout = useShellReach().openDocument ? workspaceRoot : null
   const gitBranch = useGitBranch(checkout)
   const workspaceWorktree = workspace ? resolveWorkspaceWorktree(workspace) : null
   // Its own field, not the agent record: an agent is rewritten on every turn.
@@ -112,10 +117,9 @@ export function useConversationStripFacts({
       dispatchFileReveal({ workspaceId, path: checkout })
   }, [checkout, folderPath, openPaneTab, workspaceId])
 
-  // A chat on a paired machine has no checkout here; its machine names the
-  // branch in its list, and there is no explorer here to open it in.
-  const shownBranch =
-    checkout && branchName ? branchName : transport.kind === 'remote' ? (listed?.branch ?? null) : null
+  // A chat whose checkout the window does not read (a paired machine's) has
+  // its branch named by its server's list, and no explorer here to open it in.
+  const shownBranch = checkout && branchName ? branchName : (listed?.branch ?? null)
   const shownWorktree = checkout && branchName ? inWorktree : (listed?.worktree ?? false)
   const onOpenBranch = checkout && branchName && filesEnabled && folderPath ? openFiles : null
   const branch = useMemo<ChatPanelBranch | null>(
@@ -125,8 +129,8 @@ export function useConversationStripFacts({
   )
 
   const counts = useCheckoutChanges(checkout, NO_PULL_REQUESTS, 'conversation-strip')
-  // A remote chat's counts are its machine's.
-  const remoteFiles = transport.kind === 'remote' ? (listed?.files ?? null) : null
+  // Counts its server lists (a paired machine's) where the window reads none itself.
+  const remoteFiles = listed?.files ?? null
   const remoteMarks = remoteFiles ? changedFileMarks(remoteFiles) : null
   const localChanges = counts.hasCounts && counts.marks && counts.files ? counts : null
   const remoteChanged = remoteFiles && remoteMarks && (remoteMarks.plus > 0 || remoteMarks.minus > 0)

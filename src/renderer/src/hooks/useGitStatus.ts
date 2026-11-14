@@ -4,6 +4,8 @@ import { isWindowVisible, onWindowVisibilityChange } from '../utils/windowActivi
 import { isWatchEventIgnored } from '../../../shared/file-watch-event'
 import type { FileWatchEvent } from '../../../shared/ipc/filesystem'
 import { hostPlatform } from '../clientCapabilities'
+import { filesApi } from '../studio/files'
+import { gitApi } from '../studio/git'
 
 type UseGitStatusResult = {
   repoRoot: string | null
@@ -213,7 +215,7 @@ async function refreshGitStatusSubscription(
   subscription.refreshPromise = (async () => {
     const startedAt = performance.now()
     try {
-      const normalized = normalizeStatusSnapshot(await window.api.getGitStatus(subscription.repoRoot))
+      const normalized = normalizeStatusSnapshot(await gitApi.getGitStatus(subscription.repoRoot))
       const nextSignature = getStatusSignature(normalized)
       const signatureChanged = nextSignature !== subscription.signature
       const hadError = Boolean(subscription.errorMessage)
@@ -325,7 +327,7 @@ export function gitStatusWatchRefreshDelay(now: number, lastWatchRefreshAt: numb
 }
 
 function startGitStatusWatch(subscription: GitStatusSubscription): void {
-  if (subscription.watchStarting || subscription.stopWatching || typeof window.api.watchPath !== 'function') return
+  if (subscription.watchStarting || subscription.stopWatching || typeof filesApi.watchPath !== 'function') return
   if (hostPlatform() === 'win32') {
     logPerfEvent('GitStatus', 'watch-disabled', {
       repoRoot: subscription.repoRoot,
@@ -337,7 +339,7 @@ function startGitStatusWatch(subscription: GitStatusSubscription): void {
   }
 
   subscription.watchStarting = true
-  window.api
+  filesApi
     .watchPath(subscription.repoRoot, (event) => {
       if (shouldIgnoreGitStatusWatchEvent(event)) {
         logPerfEvent('GitStatus', 'watch-ignored', {
@@ -406,8 +408,8 @@ function getGitStatusSubscription(repoRoot: string): GitStatusSubscription {
   // agent, or in a terminal — moves the index or HEAD, which main watches.
   // That is the one signal that reaches Windows too, where the working-tree
   // watch above is off.
-  if (typeof window.api.watchGitCheckout === 'function') {
-    subscription.stopGitdirWatch = window.api.watchGitCheckout(repoRoot, () => {
+  if (typeof gitApi.watchGitCheckout === 'function') {
+    subscription.stopGitdirWatch = gitApi.watchGitCheckout(repoRoot, () => {
       scheduleGitStatusRefresh(subscription, 'watch', GIT_STATUS_DEFAULT_REFRESH_DEBOUNCE_MS)
     })
   }
@@ -461,7 +463,7 @@ function subscribeGitStatusRevision(repoRoot: string, subscriber: GitStatusRevis
 }
 
 function refreshSharedGitStatus(repoRoot: string | null): Promise<void> {
-  if (!repoRoot || typeof window.api.getGitStatus !== 'function') return Promise.resolve()
+  if (!repoRoot || typeof gitApi.getGitStatus !== 'function') return Promise.resolve()
   return refreshGitStatusSubscription(getGitStatusSubscription(repoRoot), 'manual')
 }
 
@@ -470,7 +472,7 @@ function resolveSharedGitRepoRoot(rootPath: string): Promise<string | null> {
   const existing = gitRepoRootLookups.get(key)
   if (existing) return existing
 
-  const lookup = window.api
+  const lookup = gitApi
     .getGitRepoRoot(rootPath)
     .catch(() => null)
     .finally(() => {
@@ -528,7 +530,7 @@ export function useGitStatus(rootPath: string | null): UseGitStatusResult {
     setRepoState(rootPath ? 'loading' : 'idle')
 
     if (!rootPath) return
-    if (typeof window.api.getGitRepoRoot !== 'function' || typeof window.api.getGitStatus !== 'function') {
+    if (typeof gitApi.getGitRepoRoot !== 'function' || typeof gitApi.getGitStatus !== 'function') {
       setErrorMessage('Git integration is unavailable.')
       setRepoState('error')
       return

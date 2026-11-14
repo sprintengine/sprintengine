@@ -1,7 +1,8 @@
-import type { ConversationThread } from "../../api/conversationWire";
+import type { ConversationListedThread as ConversationThread } from "../../../../packages/conversation-protocol/src/public";
+import type { PhoneChatOffers } from "../../api/chatOffers";
 import type { MobileSession } from "../../api/types";
 import type { DesktopWorkspace } from "../../api/tailnetWorkspaces";
-import { conversationCanOperate, conversationEnabled, conversationOffered, DEFAULT_MODEL_ID, modelLabel } from "./conversationLogic";
+import { DEFAULT_MODEL_ID, modelLabel, type ChatLink } from "./conversationLogic";
 import { cliForChatProvider } from "./launchLogic";
 
 // Where it lived first; the launch rules need it too, without importing this file.
@@ -15,6 +16,8 @@ export { cliForChatProvider };
 export interface ChatListRow {
   deviceId: string;
   desktopName: string;
+  /** The desktop's Studio environment id, as its identity last said; absent until it has said one. */
+  environmentId?: string;
   /**
    * The project's name, when the desktop's workspace list could be read; the
    * pill is omitted otherwise. A chat in one of the project's worktrees wears
@@ -38,22 +41,18 @@ export interface ChatListRow {
   /** How many listed chats share this chat's workspace, itself included. */
   workspaceChats?: number;
   /**
-   * Whether the chat's desktop advertises `conversation-lifecycle`: its list
-   * carries the chat's clocks, and it takes Settle and visit stamps.
+   * Whether this phone may settle the chat: its desktop's Studio keeps its
+   * chats' rest and marks (`chat-lifecycle`), and this pairing's grant reaches them.
    */
-  lifecycle?: boolean;
-  /** Whether this phone may settle the chat: a lifecycle desktop, and a pairing that operates its chats. */
   settleable?: boolean;
   /**
-   * Whether this phone may mark the chat unread: a desktop that advertises
-   * `chat-mark-unread`, and a pairing that operates its chats. Where it is
+   * Whether this phone may mark the chat unread, as `settleable`. Where it is
    * offered is `markUnreadOffered`'s to say.
    */
   canMarkUnread?: boolean;
   /**
-   * Whether this phone may snooze the chat and wake it: a desktop that
-   * advertises `chat-row-menu`, and a pairing that operates its chats. Where
-   * Snooze is offered is `snoozeOffered`'s to say.
+   * Whether this phone may snooze the chat and wake it, as `settleable`.
+   * Where Snooze is offered is `snoozeOffered`'s to say.
    */
   snoozable?: boolean;
   thread: ConversationThread;
@@ -174,13 +173,12 @@ export function groupChatsByProject(rows: readonly ChatListRow[], now: number): 
  * the desktop's ordering key. A chat moves when someone says something in it
  * and never because an agent finished, a session restarted or a clock ticked.
  *
- * A lifecycle desktop's chat with no message yet counts from when it was
- * made, as the desktop counts it. An older desktop sends no message clock at
- * all, and there `updatedAt`, the only clock it lists, is the best there is.
+ * A chat with no message yet counts from when it was made, as the desktop
+ * counts it.
  */
-export function chatRecencyAt(row: Pick<ChatListRow, "thread" | "lifecycle">): number {
+export function chatRecencyAt(row: Pick<ChatListRow, "thread">): number {
   const { thread } = row;
-  return thread.lastUserMessageAt ?? (row.lifecycle ? thread.createdAt : thread.updatedAt);
+  return thread.lastUserMessageAt ?? thread.createdAt;
 }
 
 /**
@@ -194,22 +192,23 @@ export function chatRestingAt(thread: Pick<ConversationThread, "lastTurnEndedAt"
 
 /**
  * One desktop's chat list as rows: each thread with its workspace's project,
- * name and hue, less every chat that is settled. A lifecycle desktop already
- * leaves settled chats off its list; a workspace the workspace list marks
+ * name and hue, less every chat that is settled. The desktop already leaves
+ * settled chats off its list; a workspace the workspace list marks
  * settled is dropped here as well, so a chat settled between the two reads,
  * or by a desktop mid-update, never reaches the list or a project group.
  */
 export function buildChatRows(input: {
   deviceId: string;
   desktopName: string;
+  /** The desktop's environment id (`MobileSession.environmentId`), when known. */
+  environmentId?: string;
   threads: readonly ConversationThread[];
   workspaces: readonly DesktopWorkspace[] | null;
-  lifecycle: boolean;
-  canOperate: boolean;
-  /** Whether the desktop advertises `chat-mark-unread`. */
-  markUnread?: boolean;
-  /** Whether the desktop advertises `chat-row-menu`. */
-  rowMenu?: boolean;
+  /**
+   * The desktop's Studio keeps its chats' rest and marks and this pairing may
+   * change them (`chat-lifecycle`, read from its welcome and grant).
+   */
+  manage: boolean;
 }): ChatListRow[] {
   const byId = new Map((input.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace]));
   const listed: ChatListRow[] = [];
@@ -219,16 +218,16 @@ export function buildChatRows(input: {
     listed.push({
       deviceId: input.deviceId,
       desktopName: input.desktopName,
+      ...(input.environmentId ? { environmentId: input.environmentId } : {}),
       projectName: workspace?.projectName ?? null,
       worktree: workspace?.worktree ?? null,
       ...(workspace?.projectless ? { projectless: true } : {}),
       workspaceTitle: workspace?.name ?? null,
       projectKey: workspace?.projectKey ?? null,
       projectHue: workspace?.projectHue ?? null,
-      lifecycle: input.lifecycle,
-      settleable: input.lifecycle && input.canOperate,
-      canMarkUnread: !!input.markUnread && input.canOperate,
-      snoozable: !!input.rowMenu && input.lifecycle && input.canOperate,
+      settleable: input.manage,
+      canMarkUnread: input.manage,
+      snoozable: input.manage,
       thread,
     });
   }
@@ -457,22 +456,17 @@ export interface ChatAttentionInput {
   now: number;
   /** When this phone last opened the chat, by `chatOpenedKey`. */
   openedAt?: number | null;
-  /** Whether the chat's desktop advertises `conversation-lifecycle`; see `ChatListRow.lifecycle`. */
-  lifecycle?: boolean;
 }
 
 /**
  * When the chat's last turn ended, as far as the list can tell, or null when
  * no turn has.
  *
- * A lifecycle desktop lists the turn clock itself (`lastTurnEndedAt`), and a
- * chat it lists without one has never finished a turn. An older desktop lists
- * only `updatedAt`, which also moves on a rename, a session starting or
- * stopping, a usage report and a restart; there it is still the best there is.
+ * The desktop lists the turn clock itself (`lastTurnEndedAt`), and a chat it
+ * lists without one has never finished a turn.
  */
-export function chatTurnEndedAt(thread: ChatAttentionThread, lifecycle = false): number | null {
-  if (thread.lastTurnEndedAt !== undefined) return thread.lastTurnEndedAt;
-  return lifecycle ? null : thread.updatedAt;
+export function chatTurnEndedAt(thread: ChatAttentionThread): number | null {
+  return thread.lastTurnEndedAt ?? null;
 }
 
 /**
@@ -524,7 +518,7 @@ export function chatMarkedUnread(
 export function chatHasUnseenTurn(thread: ChatAttentionThread, input: ChatAttentionInput): boolean {
   // Not finished while it works in the background: its news is when that ends.
   if (thread.phase !== "completed" || chatWorksInBackground(thread)) return false;
-  const ended = chatTurnEndedAt(thread, input.lifecycle);
+  const ended = chatTurnEndedAt(thread);
   if (ended === null || ended <= chatSeenAt(thread, input.openedAt)) return false;
   return input.now - ended < CHAT_EARLIER_AFTER_MS || chatMarkedUnread(thread, input.openedAt);
 }
@@ -690,33 +684,39 @@ export function matchesChatSearch(row: ChatListRow, query: string): boolean {
 }
 
 /**
- * Where a desktop's chat link (`parseChatLink`) leads among the chats listed
- * from every paired desktop. The link names a workspace and no desktop, so
- * each desktop listing it is a candidate: one is opened, several are offered,
- * none is said. On a desktop, the link's agent's chat where the workspace has
- * it, else the workspace's chat last written in, as the desktop opens the chat
- * as it was left when the agent is not there.
+ * Where a chat link (`parseChatLink`) leads among the chats listed from every
+ * paired desktop. A link names the environment that holds its chat, so only
+ * that desktop's chat is a candidate; while no paired desktop has said that it
+ * is that environment, any desktop that has not said which it is may be it. A
+ * link from before links named one is looked for on every desktop. One
+ * candidate is opened, several are offered, none is said. A desktop reached by
+ * two pairings is one environment and one candidate. On a desktop, the link's
+ * agent's chat where the workspace has it, else the workspace's chat last
+ * written in, as the desktop opens the chat as it was left when the agent is
+ * not there.
  */
 export type ChatLinkTarget =
   | { kind: "none" }
   | { kind: "one"; row: ChatListRow }
   | { kind: "several"; rows: ChatListRow[] };
 
-export function resolveChatLink(
-  link: { workspaceId: string; agentId: string | null },
-  rows: readonly ChatListRow[],
-): ChatLinkTarget {
-  const byDesktop = new Map<string, ChatListRow>();
+export function resolveChatLink(link: ChatLink, rows: readonly ChatListRow[]): ChatLinkTarget {
+  const wanted = link.environmentId;
+  const known = wanted !== null && rows.some((row) => row.environmentId === wanted);
+  const candidate = (row: ChatListRow) =>
+    wanted === null || row.environmentId === wanted || (!known && row.environmentId === undefined);
+  const byEnvironment = new Map<string, ChatListRow>();
   for (const row of rows) {
-    if (row.thread.workspaceId !== link.workspaceId) continue;
-    const held = byDesktop.get(row.deviceId);
+    if (row.thread.workspaceId !== link.chatId || !candidate(row)) continue;
+    const key = row.environmentId ? `environment:${row.environmentId}` : `device:${row.deviceId}`;
+    const held = byEnvironment.get(key);
     const better =
       !held ||
       (link.agentId !== null && row.thread.agentId === link.agentId && held.thread.agentId !== link.agentId) ||
       ((link.agentId === null || held.thread.agentId !== link.agentId) && chatRecencyAt(row) > chatRecencyAt(held));
-    if (better) byDesktop.set(row.deviceId, row);
+    if (better) byEnvironment.set(key, row);
   }
-  const found = [...byDesktop.values()];
+  const found = [...byEnvironment.values()];
   if (found.length === 0) return { kind: "none" };
   if (found.length === 1) return { kind: "one", row: found[0] };
   return { kind: "several", rows: found };
@@ -753,33 +753,30 @@ export function canReadWorkspaces(session: Pick<MobileSession, "status" | "tailn
 }
 
 /**
- * Whether New may start a chat on this desktop: it streams chats, this phone
- * may operate them, and it may read the projects step one lists.
+ * Whether New may start a chat on this desktop: its Studio lets this pairing
+ * drive chats, and the pairing may read the projects step one lists.
  */
-export function canStartChats(session: MobileSession): boolean {
-  return conversationCanOperate(session) && canReadWorkspaces(session);
+export function canStartChats(session: MobileSession, offers: Pick<PhoneChatOffers, "operate">): boolean {
+  return offers.operate && canReadWorkspaces(session);
 }
 
 /**
  * Whether New may offer a chat on this desktop, and if not, the one line that
- * says why. The desktop has to stream chats at all, and this phone's grant has
- * to include operating them.
+ * says why, from what its Studio said in its welcome and the grant it holds
+ * there. Before the desktop has said anything, nothing is refused: the create
+ * itself says what went wrong.
  */
 export type ChatLaunchAvailability = { available: true } | { available: false; reason: string };
 
 export function chatLaunchAvailability(
-  session: MobileSession | null,
+  offers: Pick<PhoneChatOffers, "said" | "follow" | "operate"> | null,
   input: { machineName: string },
 ): ChatLaunchAvailability {
   const machine = input.machineName.trim() || "This desktop";
-  if (!session || !conversationOffered(session)) {
-    return { available: false, reason: `${machine} does not stream chats yet. Update SprintEngine Studio there to start one.` };
-  }
-  if (!conversationEnabled(session)) {
+  if (!offers?.said) return { available: true };
+  if (!offers.follow)
     return { available: false, reason: `This phone may not use chats on ${machine}. Pair again with chat control.` };
-  }
-  if (!conversationCanOperate(session)) {
+  if (!offers.operate)
     return { available: false, reason: `This phone may read chats on ${machine} but not start them. Pair again with chat control.` };
-  }
   return { available: true };
 }

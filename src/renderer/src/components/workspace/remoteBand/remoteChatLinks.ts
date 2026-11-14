@@ -1,29 +1,95 @@
+import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import { environmentRouteOfMeshConnection } from '../../../../../shared/environment-keys'
 import {
   conversationsOf,
+  openSpecOf,
   openSpecOfConversation,
+  type RemoteConversation,
   type RemoteMachineGroup,
   type RemoteSessionOpenSpec,
 } from './remoteSessionsModel'
 
-// A `sprintengine://chat/<id>` link to a chat on a paired machine names it by
-// its id on that machine (the row menu's Copy link to chat), so one link opens
-// the chat there, where it is a chat of that machine's own, and on every
-// machine that follows it. Only the sidebar reads the paired machines' lists,
-// so it says here which chats they hold, and the window a link is handed to
-// opens one from that (`chatLinkOpener.ts`'s `openRemote`).
+// A `sprintengine://chat/<environmentId>/<chatId>` link to a chat on a paired
+// machine names it by its address there (the row menu's Copy link to chat), so
+// one link opens the chat there, where it is a chat of that machine's own, and
+// on every device that follows it. Only the sidebar reads the paired machines'
+// lists, so it says here which chats they hold, under the environment each
+// machine is, and the window a link is handed to opens one from that
+// (`chatLinkOpener.ts`'s `remoteChats`).
 
-let targets: ReadonlyMap<string, RemoteSessionOpenSpec> = new Map()
-
-/** The chats the paired machines list now, by their id there. */
-export function publishRemoteChatLinkTargets(groups: readonly RemoteMachineGroup[]): void {
-  const next = new Map<string, RemoteSessionOpenSpec>()
-  for (const group of groups)
-    for (const conversation of conversationsOf(group))
-      if (!next.has(conversation.workspaceId)) next.set(conversation.workspaceId, openSpecOfConversation(conversation))
-  targets = next
+type Listed = {
+  /** The machine's environment id; null while it has not said one. */
+  environmentId: string | null
+  conversation: RemoteConversation
 }
 
-/** What opening a linked chat on a paired machine asks, or null for a chat none of them lists. */
-export function remoteChatLinkTarget(chatId: string): RemoteSessionOpenSpec | null {
-  return targets.get(chatId) ?? null
+let listed: readonly Listed[] = []
+
+/** The chats the paired machines list now, under the environment each machine is. */
+export function publishRemoteChatLinkTargets(
+  groups: readonly RemoteMachineGroup[],
+  environments: readonly EnvironmentEntry[],
+): void {
+  const next: Listed[] = []
+  for (const group of groups) {
+    const environmentId = group.connectionId
+      ? (environmentOfRoute(environments, environmentRouteOfMeshConnection(group.connectionId))?.environmentId ?? null)
+      : null
+    for (const conversation of conversationsOf(group)) next.push({ environmentId, conversation })
+  }
+  listed = next
+}
+
+/** A paired machine's chat a link can open. */
+export type RemoteChatLinkTarget = {
+  environmentId: string | null
+  machineName: string
+  /** What opening it asks: on the link's agent when it is listed and no window here follows the chat. */
+  spec: RemoteSessionOpenSpec
+}
+
+/**
+ * The paired machines' chats a link names: the one at its address, or, for a
+ * link that names no environment, each machine's chat of that id (one per
+ * environment, however many pairings reach it).
+ */
+export function remoteChatLinkTargets(link: {
+  environmentId: string | null
+  chatId: string
+  agentId: string | null
+}): RemoteChatLinkTarget[] {
+  const found: RemoteChatLinkTarget[] = []
+  const seen = new Set<string>()
+  for (const entry of listed) {
+    const { conversation } = entry
+    if (conversation.workspaceId !== link.chatId) continue
+    if (link.environmentId !== null && entry.environmentId !== link.environmentId) continue
+    const key = entry.environmentId ? `id:${entry.environmentId}` : `connection:${conversation.connectionId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    found.push({
+      environmentId: entry.environmentId,
+      machineName: conversation.machineName,
+      spec: specFor(conversation, link.agentId),
+    })
+  }
+  return found
+}
+
+/** What opening a chat a pairing lists asks, by the pairing and its id there; null for one it does not list. */
+export function remoteChatOnConnection(connectionId: string, workspaceId: string): RemoteSessionOpenSpec | null {
+  const entry = listed.find(
+    (candidate) =>
+      candidate.conversation.connectionId === connectionId && candidate.conversation.workspaceId === workspaceId,
+  )
+  return entry ? openSpecOfConversation(entry.conversation) : null
+}
+
+function specFor(conversation: RemoteConversation, agentId: string | null): RemoteSessionOpenSpec {
+  const lead = openSpecOfConversation(conversation)
+  // A chat a window here follows opens in that window, on the agent it
+  // follows; otherwise the link's agent comes forward when the machine lists it.
+  if (lead.attachedWorkspaceId || !agentId) return lead
+  const agent = conversation.agents.find((row) => row.remoteAgentId === agentId)
+  return agent ? openSpecOf(agent) : lead
 }

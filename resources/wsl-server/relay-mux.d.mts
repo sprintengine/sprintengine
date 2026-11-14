@@ -18,8 +18,7 @@ export class FrameDecoder {
   push(chunk: Buffer): MuxFrame[]
 }
 
-export type MuxOpenRequest =
-  { kind: 'owner'; purpose: 'backend' | 'studio' } | { kind: 'tcp'; host: string; port: number }
+export type MuxOpenRequest = { kind: 'owner'; purpose: 'studio' | 'ws' } | { kind: 'tcp'; host: string; port: number }
 
 /** Why the relay would not open a stream: `error.code` is one of these. */
 export type MuxRefusalCode = 'refused' | 'unreachable' | 'timeout' | 'limit' | 'no-server' | 'closed'
@@ -38,6 +37,9 @@ export class MuxEndpoint {
   onClosed(listener: (reason: string) => void): void
   close(reason?: string): void
 }
+
+/** What an owner stream is refused with when the server never answered its front door. */
+export const FRONT_DOOR_TIMED_OUT: string
 
 export function enterFrontDoorAsRelay(
   socket: Socket,

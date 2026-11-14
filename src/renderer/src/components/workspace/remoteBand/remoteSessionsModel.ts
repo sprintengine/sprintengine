@@ -24,7 +24,8 @@ import { workspaceLastUserMessageAt } from '../../../utils/workspaceRecency'
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import type { Tone } from '../../ui'
 import type { RowRecency } from '../stableRowSlices'
-import { meshMachinePhase, type MeshMachinePhase } from '../../remote/machineRowModel'
+import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import { environmentStatus, type EnvironmentStatusKind } from '../../../../../shared/environment-status'
 
 // The sidebar's Remote band (remote-sessions-in-the-sidebar): the sessions
 // that live on each paired machine, as rows a person can open here. DOM-free,
@@ -52,20 +53,14 @@ export type RemoteBrowseEntry = {
    */
   conversations?: MeshConversation[]
   /**
-   * The machine advertises `conversation-lifecycle`: it owns its chats' rest
-   * and read state. Absent before a list.
+   * The machine's Studio keeps its chats' records for this one
+   * (`chat-lifecycle`): their rest and read state, and the row menu's marks.
+   * Absent before a browse has reached its Studio.
    */
   lifecycle?: boolean
   /** What the pairing may do with the machine's chats, as its newest list said. Absent before a list. */
   access?: MeshConversationAccess
-  /**
-   * The machine advertises `chat-row-menu`: its chats' Star, Highlight color,
-   * Snooze and Auto-settle are written there. Absent before a list.
-   */
-  rowMenu?: boolean
-  /** The machine advertises `chat-mark-unread`. Absent before a list. */
-  markUnread?: boolean
-  /** What of its chats' management the machine takes from here, as its newest list said. Absent before a list. */
+  /** What of its chats' management the machine takes from here, as its Studio's welcome said. Absent before a browse. */
   manage?: MeshConversationManage
 }
 
@@ -78,23 +73,21 @@ export const NO_CHAT_MANAGE: MeshConversationManage = {
   search: false,
 }
 
+/** What of its chats' management a machine's Studio takes from here, from what its welcome serves. */
+export function chatManageOf(record: { lifecycle: boolean; unwatchPullRequest: boolean }): MeshConversationManage {
+  return {
+    rename: record.lifecycle,
+    autoCompact: record.lifecycle,
+    unwatchPullRequest: record.unwatchPullRequest,
+    deleteSettled: record.lifecycle,
+    search: record.lifecycle,
+  }
+}
+
 /** What of a machine's chats' management this pairing may ask for: what it takes, where the pairing may drive. */
 export function remoteManageWritable(entry: RemoteBrowseEntry | undefined): MeshConversationManage {
   if (!entry?.manage || entry.access !== 'operate') return NO_CHAT_MANAGE
   return { ...NO_CHAT_MANAGE, ...entry.manage }
-}
-
-/**
- * Whether this pairing may write a machine's chats' row menu marks: the
- * machine takes them (`chat-row-menu`), and the pairing may drive its chats.
- */
-export function remoteRowMenuWritable(entry: RemoteBrowseEntry | undefined): boolean {
-  return entry?.rowMenu === true && entry.access === 'operate'
-}
-
-/** Whether this pairing may mark a machine's chats unread there (`chat-mark-unread`). */
-export function remoteMarkUnreadWritable(entry: RemoteBrowseEntry | undefined): boolean {
-  return entry?.markUnread === true && remoteLifecycleWritable(entry)
 }
 
 /** What a machine's row menu may do from here, for each of its chats. */
@@ -193,10 +186,10 @@ export type RemoteSessionRow = {
   autoSettle: boolean
   /**
    * Its machine takes the row menu's Star, Highlight color, Snooze and
-   * Auto-settle from here (`remoteRowMenuWritable`).
+   * Auto-settle from here (`remoteLifecycleWritable`).
    */
   rowMenu: boolean
-  /** Its machine takes Mark unread from here (`remoteMarkUnreadWritable`). */
+  /** Its machine takes Mark unread from here (`remoteLifecycleWritable`). */
   markUnread: boolean
   /** What of the chat's management its machine takes from here (`remoteManageWritable`). */
   manage: MeshConversationManage
@@ -216,7 +209,8 @@ export type RemoteMachineGroup = {
   /** Null when the pairing is gone but rows born on it remain — they still need a home. */
   connectionId: string | null
   machineName: string
-  phase: MeshMachinePhase | null
+  /** How the machine stands, as the environment list says; null when the pairing is gone. */
+  status: EnvironmentStatusKind | null
   rows: RemoteSessionRow[]
   /**
    * Remote-born workspaces here whose session the machine did not list: the
@@ -536,7 +530,8 @@ export function openSpecOf(row: RemoteSessionRow): RemoteSessionOpenSpec {
   }
 }
 
-const QUIET_PHASES = new Set<MeshMachinePhase['phase']>(['unreachable', 'revoked'])
+// A machine in one of these is not answering: its rows are drawn from its last read.
+const QUIET_STATUSES = new Set<EnvironmentStatusKind>(['offline', 'signed-out', 'incompatible'])
 
 /**
  * The band: one group per paired machine, in name order, plus a group for
@@ -545,17 +540,19 @@ const QUIET_PHASES = new Set<MeshMachinePhase['phase']>(['unreachable', 'revoked
 export function buildRemoteBand(input: {
   connections: readonly MeshConnection[]
   browses: ReadonlyMap<string, RemoteBrowseEntry>
-  reachability: ReadonlyMap<string, MeshMachineReachability>
+  /** The machines this desktop knows (`useEnvironments`), for how each stands. */
+  environments: readonly EnvironmentEntry[]
   workspaces: readonly Workspace[]
 }): RemoteMachineGroup[] {
-  const { connections, browses, reachability, workspaces } = input
+  const { connections, browses, environments, workspaces } = input
   const paired = new Set(connections.map((connection) => connection.id))
   const groups: RemoteMachineGroup[] = [...connections]
     .sort((a, b) => a.machineName.localeCompare(b.machineName))
     .map((connection) => {
       const entry = browses.get(connection.id)
       const browse = entry?.browse ?? null
-      const phase = meshMachinePhase(connection.id, reachability)
+      const environment = environmentOfRoute(environments, { kind: 'tailnet', connection: connection.id })
+      const status = environment ? environmentStatus(environment).kind : null
       // A chat the machine has settled has no row, as it has none in that
       // machine's own sidebar. A machine that keeps rest leaves them out of
       // its list; one whose browse says a workspace is resting is believed
@@ -569,8 +566,8 @@ export function buildRemoteBand(input: {
       // order, which is kept; one from before that is ordered here.
       const writes: RemoteRowWrites = {
         lifecycle: remoteLifecycleWritable(entry),
-        rowMenu: remoteRowMenuWritable(entry),
-        markUnread: remoteMarkUnreadWritable(entry),
+        rowMenu: remoteLifecycleWritable(entry),
+        markUnread: remoteLifecycleWritable(entry),
         manage: remoteManageWritable(entry),
       }
       const listed = (entry?.conversations ?? [])
@@ -589,10 +586,10 @@ export function buildRemoteBand(input: {
         key: connection.id,
         connectionId: connection.id,
         machineName: connection.machineName,
-        phase,
+        status,
         rows,
         parked,
-        stale: rows.length > 0 && QUIET_PHASES.has(phase.phase),
+        stale: rows.length > 0 && status !== null && QUIET_STATUSES.has(status),
         loading: entry?.loading ?? false,
       }
     })
@@ -612,7 +609,7 @@ export function buildRemoteBand(input: {
       key: `gone:${connectionId}`,
       connectionId: null,
       machineName: parked[0]!.remoteOrigin!.machineName,
-      phase: null,
+      status: null,
       rows: [],
       parked,
       stale: false,
@@ -1071,14 +1068,14 @@ export function followedRemoteRestsToKeep(
 // ── A paired machine's chat's row menu marks ─────────────────────────────
 //
 // Its star, colour, sleep and Auto-settle are kept by the machine it runs on
-// (`chat-row-menu`), and read back off that machine's list. A change asked
+// (`chat-lifecycle`), and read back off that machine's list. A change asked
 // from here is drawn at once, as a local Star flips at once, and held until a
 // list read after the machine took it says the same thing for itself.
 
 /** The marks a chat's row wears from its machine's list. */
 export type RemoteChatMarks = Pick<RemoteSessionRow, 'highlight' | 'snoozedUntil' | 'autoSettle'>
 
-/** What a change asked of a paired machine draws at once: its marks, or its name (`chat-rename`). */
+/** What a change asked of a paired machine draws at once: its marks, or its name (`chat-lifecycle`). */
 export type RemoteChatPending = Partial<RemoteChatMarks & Pick<RemoteSessionRow, 'chatTitle' | 'autoCompact'>>
 
 /** A change asked of a paired machine and not yet read back off its list. */
@@ -1203,7 +1200,7 @@ export function withRemoteChatMarks(workspace: Workspace, conversation: RemoteCo
 /**
  * The pull request a paired machine watches for one of the chat's agents, and
  * that agent, where the machine takes Stop watching from here
- * (`chat-unwatch-pull-request`); null for none. An open one on GitHub, as a
+ * (`pull-request-watch`); null for none. An open one on GitHub, as a
  * local chat's watch is.
  */
 export function remoteWatchedPullRequest(
@@ -1220,7 +1217,7 @@ export function remoteWatchedPullRequest(
 /**
  * A row opened here from a paired machine's chat, named as that machine
  * names the chat, where the machine keeps the name for every device
- * (`chat-rename`): a rename from any of them is the row's name here too. A
+ * (`chat-lifecycle`): a rename from any of them is the row's name here too. A
  * row from a machine that does not keep it is named here, as before.
  */
 export function withRemoteChatName(workspace: Workspace, conversation: RemoteConversation): Workspace {

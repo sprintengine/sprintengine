@@ -887,7 +887,7 @@ export type WorkspaceRemoteOrigin = {
 }
 
 /** Another machine a workspace lives on: today an SSH machine, by its saved id. */
-export type WorkspaceEnvironmentRef = { kind: 'ssh'; id: string; label: string }
+export type WorkspaceEnvironmentRef = { kind: 'ssh' | 'wsl'; id: string; label: string }
 
 export type Workspace = {
   id: WorkspaceId

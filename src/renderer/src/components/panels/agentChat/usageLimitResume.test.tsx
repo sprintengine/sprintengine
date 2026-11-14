@@ -7,13 +7,8 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import type {
-  UsageLimitResumeNotice,
-  UsageLimitResumeState,
-  UsageLimitResumeUpdate,
-} from '../../../../../shared/usage-limit-resume'
-import { useUsageLimitResumeStore } from '../../../store/usageLimitResumeStore'
-import { formatResumeClock, UsageLimitResumeRow, usageLimitResumeWords } from './usageLimitResume'
+import type { UsageLimitResumeNotice } from '../../../../../shared/usage-limit-resume'
+import { formatResumeClock, UsageLimitNoticeRow, usageLimitResumeWords } from './usageLimitResume'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -42,19 +37,6 @@ const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numer
 
 let root: Root | null = null
 let host: HTMLElement | null = null
-let updates: UsageLimitResumeUpdate[] = []
-
-function installApi(state: UsageLimitResumeState) {
-  updates = []
-  ;(window as unknown as { api: unknown }).api = {
-    usageLimitResumes: async () => state,
-    updateUsageLimitResume: async (update: UsageLimitResumeUpdate) => {
-      updates.push(update)
-      return state
-    },
-    onUsageLimitResumesChanged: () => () => undefined,
-  }
-}
 
 beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -65,7 +47,6 @@ afterEach(async () => {
   host?.remove()
   root = null
   host = null
-  useUsageLimitResumeStore.setState({ state: null })
 })
 
 async function render(node: React.ReactNode): Promise<HTMLElement> {
@@ -102,60 +83,61 @@ test('a reset on another day names the day', () => {
   expect(formatResumeClock(NOW + 9 * 24 * HOUR, NOW)).toMatch(new RegExp(`, ${clock(NOW + 9 * 24 * HOUR)}$`))
 })
 
-test('a chat a limit stopped offers Resume at reset, Dismiss and the setting, and each asks main', async () => {
-  const state: UsageLimitResumeState = { autoResume: false, notices: [live()] }
-  installApi(state)
-  const row = await render(<UsageLimitResumeRow workspaceId="ws-1" agentId="agent-1" />)
+// The row as a chat draws it from what its server says of it (`usageLimits`):
+// each button asks the server, which sends the resume.
+async function renderRow(said: Partial<UsageLimitResumeNotice> | null, autoResume = false) {
+  const acts: Array<[string, boolean | undefined]> = []
+  const row = await render(
+    <UsageLimitNoticeRow
+      notice={said ? live(said) : null}
+      autoResume={autoResume}
+      onAct={(action, always) => acts.push([action, always])}
+    />,
+  )
+  return { row, acts }
+}
+
+test('a chat a limit stopped offers Resume at reset, Dismiss and the setting, and each asks its server', async () => {
+  const { row, acts } = await renderRow({})
   expect(row.textContent).toMatch(/^Claude's session limit is used up\. It resets at /)
   expect(buttons(row)).toEqual(['Always resume at reset', 'Resume at reset', 'Dismiss'])
   await click(row, 'Resume at reset')
   await click(row, 'Dismiss')
   await click(row, 'Always resume at reset')
-  expect(updates).toEqual([
-    { kind: 'schedule', workspaceId: 'ws-1', agentId: 'agent-1' },
-    { kind: 'dismiss', workspaceId: 'ws-1', agentId: 'agent-1' },
-    { kind: 'auto', enabled: true },
-    { kind: 'schedule', workspaceId: 'ws-1', agentId: 'agent-1' },
+  expect(acts).toEqual([
+    ['schedule', undefined],
+    ['dismiss', undefined],
+    ['schedule', true],
   ])
 })
 
 test('with the setting on the link is not offered; with no reset known nothing can be scheduled', async () => {
-  installApi({ autoResume: true, notices: [live({ resetsAt: null })] })
-  const row = await render(<UsageLimitResumeRow workspaceId="ws-1" agentId="agent-1" />)
+  const { row } = await renderRow({ resetsAt: null }, true)
   expect(buttons(row)).toEqual(['Dismiss'])
 })
 
 test('a scheduled resume says when it goes out, and Cancel takes it back', async () => {
-  installApi({ autoResume: true, notices: [live({ resumeAt: LIVE + 2 * HOUR + 2 * MINUTE })] })
-  const row = await render(<UsageLimitResumeRow workspaceId="ws-1" agentId="agent-1" />)
+  const { row, acts } = await renderRow({ resumeAt: LIVE + 2 * HOUR + 2 * MINUTE }, true)
   expect(row.textContent).toMatch(/ Resumes at /)
   expect(buttons(row)).toEqual(['Cancel'])
   await click(row, 'Cancel')
-  expect(updates).toEqual([{ kind: 'cancel', workspaceId: 'ws-1', agentId: 'agent-1' }])
+  expect(acts).toEqual([['cancel', undefined]])
 })
 
-test("another chat's notice, or one whose limit has reset with nothing scheduled, draws nothing", async () => {
-  installApi({
-    autoResume: false,
-    notices: [live({ agentId: 'agent-2' }), live({ workspaceId: 'ws-3', resetsAt: LIVE - MINUTE })],
-  })
-  const row = await render(
-    <>
-      <UsageLimitResumeRow workspaceId="ws-1" agentId="agent-1" />
-      <UsageLimitResumeRow workspaceId="ws-3" agentId="agent-1" />
-    </>,
-  )
-  expect(row.textContent).toBe('')
+test('no notice, or one whose limit has reset with nothing scheduled, draws nothing', async () => {
+  expect((await renderRow(null)).row.textContent).toBe('')
+  await act(async () => root?.unmount())
+  host?.remove()
+  expect((await renderRow({ resetsAt: LIVE - MINUTE })).row.textContent).toBe('')
 })
 
 test('a resume the chat refused says why, with Retry, even after the limit has reset', async () => {
-  installApi({
-    autoResume: true,
-    notices: [live({ resetsAt: LIVE - MINUTE, failure: 'The chat has no folder on this machine' })],
-  })
-  const row = await render(<UsageLimitResumeRow workspaceId="ws-1" agentId="agent-1" />)
+  const { row, acts } = await renderRow(
+    { resetsAt: LIVE - MINUTE, failure: 'The chat has no folder on this machine' },
+    true,
+  )
   expect(row.textContent).toMatch(/^Couldn't resume: the chat has no folder on this machine\./)
   expect(buttons(row)).toEqual(['Retry', 'Dismiss'])
   await click(row, 'Retry')
-  expect(updates).toEqual([{ kind: 'retry', workspaceId: 'ws-1', agentId: 'agent-1' }])
+  expect(acts).toEqual([['retry', undefined]])
 })

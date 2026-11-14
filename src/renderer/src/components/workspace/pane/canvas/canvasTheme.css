@@ -154,3 +154,29 @@
 [aria-hidden='true'] .se-canvas * {
   visibility: hidden !important;
 }
+
+/* The tool bar in a narrow pane (the side panel). Below its own breakpoint the
+ * library lays the tools out in one row whose width is its content, centred in
+ * a grid column that grows to fit it: about 445px in a side panel of about 410,
+ * so the selection tool at one end and the "more tools" button at the other
+ * were cut off. The bar is held to the pane's width and its tools wrap onto a
+ * second row. Not a sideways scroll: the "more tools" menu hangs inside the
+ * bar, and a scrolling box would clip it. */
+.se-canvas .excalidraw--mobile .App-top-bar > section {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.se-canvas .excalidraw--mobile .App-top-bar > section > .Stack_vertical,
+.se-canvas .excalidraw--mobile .App-toolbar-container {
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+}
+.se-canvas .excalidraw--mobile .App-toolbar--mobile {
+  max-width: 100%;
+}
+.se-canvas .excalidraw--mobile .App-toolbar--mobile > .Stack_horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}

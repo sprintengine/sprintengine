@@ -1,13 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { IpcMain } from 'electron'
 
 import { writeFileAtomicSync } from '../../../server/platform/atomic-file'
 
 import {
   parseSshPreview,
   SSH_PREVIEW_ARGUMENT,
+  SSH_PREVIEW_CHANNELS,
   SSH_PREVIEW_ENV,
   SSH_PREVIEW_FILENAME,
+  type SshPreviewStatus,
 } from '../../../shared/ssh-preview'
 
 // The SSH machines preview switch (shared/ssh-preview.ts), read at boot and
@@ -34,6 +37,21 @@ export function readSavedSshPreview(userDataDir: string): boolean {
 export function writeSshPreview(userDataDir: string, enabled: boolean): void {
   writeFileAtomicSync(join(userDataDir, SSH_PREVIEW_FILENAME), `${JSON.stringify({ enabled }, null, 2)}\n`, {
     mode: 0o600,
+  })
+}
+
+/** The SSH machines switch in Settings: answered whether or not this session has them. */
+export function registerSshPreviewIpc(ipcMain: IpcMain, choice: SshPreviewChoice, userDataDir: string): void {
+  const status = (): SshPreviewStatus => ({
+    enabled: choice.enabled,
+    saved: choice.fromEnvironment ? choice.enabled : readSavedSshPreview(userDataDir),
+    fromEnvironment: choice.fromEnvironment,
+  })
+  ipcMain.handle(SSH_PREVIEW_CHANNELS.get, () => status())
+  ipcMain.handle(SSH_PREVIEW_CHANNELS.set, (_event, payload: unknown) => {
+    const enabled = (payload as { enabled?: unknown } | null)?.enabled
+    if (typeof enabled === 'boolean' && !choice.fromEnvironment) writeSshPreview(userDataDir, enabled)
+    return status()
   })
 }
 

@@ -1,11 +1,13 @@
 # The Studio server in WSL: the manual checklist
 
-These checks need a real Windows PC with WSL 2. Run them before the WSL
-server's switch (`chatServer`) is turned on by default. The phase 7 spec asks
+These checks need a real Windows PC with WSL 2. Every WSL distribution's
+chats run on a Studio server inside it: there is no switch and no
+one-process-per-chat path (design-wsl-ssh-direct PR 3c). The phase 7 spec asks
 for this checklist (`docs/design/studio-server/phase-7-wsl-server.md`, section
 9.3); this file turns it into steps. Owner ruling 2026-10-02 (decision R72):
-the checklist is run by hand for the first release that ships the server, and
-a self-hosted Windows runner with WSL 2 runs it before the default flips.
+the checklist is run by hand, and a self-hosted Windows runner with WSL 2 runs
+it once one exists. Run it before the feature branch that made WSL
+distributions direct environments merges to `main`.
 
 None of it can run on the hosted CI runners, which have no nested
 virtualisation and so no WSL 2. Everything that can run without WSL already
@@ -49,46 +51,59 @@ Commands marked **PowerShell** run in a Windows terminal. Commands marked
 6. In the app, add a workspace inside the distribution:
    `\\wsl.localhost\Ubuntu-24.04\home\<you>\repo` (any git repository).
 
-## A. Default off, the switch, and a first chat
+## A. The hand-over from the last release, and a first chat
 
-1. Open Settings › Machines › WSL: Ubuntu-24.04 and expand it.
-   **Expect:** "Chats run in" reads "One process per chat". There is no
-   "Studio server" row.
-2. Start a chat in the workspace and send a message.
-   **Expect:** it replies as in the previous release.
-   **distro:** `ls ~/.local/share/sprintengine-studio/`.
-   **Expect:** no `server-<version>/` directory, and `ps -ef | grep server.cjs`
-   shows nothing. With the switch off, nothing is installed or started.
-3. Open New chat on a workspace in `C:\` bound to WSL: Ubuntu-24.04.
-   **Expect:** no line about the Linux file system under the scope line.
-4. Set "Chats run in" to "A Studio server in the distribution (preview)".
-   **Expect:** a "Studio server" row appears, reading "Starts with the first
-   chat here, and stops after ten minutes with nothing to do."
-5. Start a new chat in the workspace and send a message.
-   **Expect:** the Studio server row says "Starting WSL: Ubuntu-24.04…", then
-   the reply arrives.
-   **distro:** `ls ~/.local/share/sprintengine-studio/`.
-   **Expect:** `server-<version>/` and `data/` (or `data-<id>/`).
-   **distro:** `ps -ef | grep server.cjs`.
-   **Expect:** exactly one server process.
-6. Look at the Studio server row again.
-   **Expect:** "Running, reached over loopback."
-7. Go back to the chat from step 2, which started before the switch, and
-   send a message.
-   **Expect:** it keeps working until you stop it. A new chat in the same
-   workspace runs on the server (step 5's `ps` still shows one server).
-8. While the chat from step 5 is mid-reply, set the switch back to "One
-   process per chat", then send another message in that chat.
-   **Expect:** the chat finishes on the server and keeps working. A new chat
-   in that workspace now runs one process per chat. Turn the switch on
-   again for the rest of the checklist.
-9. In a server chat, attach an image to a message, open a tool's details,
-   revert a turn, and use "Edit from here" and "Fork from here".
+Before installing the build under test, with the last release (whose WSL
+chats ran one process per chat through `wsl.exe`), make three WSL chats and
+leave them: one in `\\wsl.localhost\Ubuntu-24.04\home\<you>\repo`, one in a
+`C:\` workspace bound to WSL: Ubuntu-24.04, and one in a folder outside your
+home (`\\wsl.localhost\Ubuntu-24.04\srv\repo`). In each: attach a picture,
+let a tool return a picture (a screenshot), accept a plan, and answer an
+approval with "Always allow". Schedule a message for tomorrow in one, and
+watch a pull request in another if you can.
+
+1. Install the build under test and start it.
+   **Expect:** **distro:** `ps -ef | grep server.cjs` shows one server
+   within a few seconds, with no chat opened: a distribution with chats is
+   started at the desktop's start. Windows' diagnostics log has no
+   "kept its own" line for these chats.
+   Repeat once with a fresh copy of the last release's data: quit the app
+   within a few seconds of its start, while the hand-over is running (the
+   distribution's server log shows `environment.adopt` calls), and start it
+   again. **Expect:** the same as above, and each chat listed once in step 2.
+2. Open each of the three chats.
+   **Expect:** the whole transcript, both pictures, the plan (open it), and
+   the folder as before. The sidebar places each where it was.
+3. Send a message in each.
+   **Expect:** a reply. **distro:** `ps -ef | grep -E 'claude|codex'`: the
+   agents run in the distribution, children of `server.cjs`, with the
+   Studio tools listed (ask the agent). **PowerShell:** no `claude`/`node`
+   process for them on Windows, and no `wsl.exe` per chat:
+   `Get-CimInstance Win32_Process -Filter "Name='wsl.exe'" | Select CommandLine`
+   shows none with `eval $(echo`.
+4. Repeat the approved action in each.
+   **Expect:** not asked again (the saved approval moved with the chat).
+   Settings › approvals on the desktop no longer lists it; it is the
+   distribution's now.
+5. **Expect:** the scheduled message is listed under the chat, and is sent
+   when due while the app runs.
+6. **distro:** `ls ~/.local/share/sprintengine-studio/data/environment-adoptions/parts/*/`.
+   **Expect:** empty or absent.
+7. Settings › Machines › WSL: Ubuntu-24.04: expand it.
+   **Expect:** no "Chats run in" control. A "Studio server" row reads
+   "Running, reached over loopback."
+8. Start a new chat in the workspace and send a message.
+   **Expect:** a reply; still exactly one server process.
+9. In a chat, attach an image to a message, open a tool's details, revert a
+   turn, and use "Edit from here" and "Fork from here".
    **Expect:** each works as it does for a chat on Windows.
 10. Quit the app.
     **Expect:** within ten seconds, **distro:** `ps -ef | grep server.cjs`
     shows nothing. Start the app and send in the same chat.
     **Expect:** the chat resumes.
+11. On the paired phone (or a paired desktop), open this desktop's chats.
+    **Expect:** the distribution's chats are not listed: a WSL
+    distribution is reached only from the desktop that runs it.
 
 ## B. Transports and the front door (spec V1, V3)
 
@@ -146,15 +161,14 @@ Commands marked **PowerShell** run in a Windows terminal. Commands marked
 
 ## D. Files, git and `C:\` (spec V4, V5)
 
-1. Open New chat on a workspace in `C:\` bound to WSL: Ubuntu-24.04, with
-   the switch on.
+1. Open New chat on a workspace in `C:\` bound to WSL: Ubuntu-24.04.
    **Expect:** "On C: — slow from Ubuntu-24.04. Run on This PC for full
    speed." under the scope line. The chat still starts.
    **distro:** `ps -ef | grep -E 'claude|codex'`.
    **Expect:** its working directory is under `/mnt/c/...`.
 2. V4: in a repository of about 50,000 files, time `git status` and a
    mention search three ways: on ext4 through the server, on `/mnt/c`
-   through the server, and natively on `C:\` with "One process per chat".
+   through the server, and natively on `C:\` on This PC.
    Write the three numbers down.
    Then run `git status` once from PowerShell in the `C:\` repository (so
    Git for Windows writes the index) and open the Git pane of its WSL
@@ -180,7 +194,12 @@ Commands marked **PowerShell** run in a Windows terminal. Commands marked
 5. In the same New chat, pick WSL: Ubuntu-24.04 again, then a second
    distribution if one is enabled.
    **Expect:** the second distribution is greyed out with "WSL: <name>
-   cannot open a folder inside Ubuntu-24.04."
+   cannot open a folder inside Ubuntu-24.04." With WSL: Ubuntu-24.04
+   picked, choose Browse… for the project.
+   **Expect:** the folder dialog opens at
+   `\\wsl.localhost\Ubuntu-24.04\home\<you>\Documents`, or at
+   `…\home\<you>` when there is no Documents folder (the distribution's own
+   Studio says where).
 6. **distro:** add `[automount]` and `root = /win/` to `/etc/wsl.conf`.
    **PowerShell:** `wsl --terminate Ubuntu-24.04`. Send in a `C:\`
    workspace's server chat.
@@ -193,9 +212,7 @@ Commands marked **PowerShell** run in a Windows terminal. Commands marked
 ## E. Agents, tools and sign-in (spec V7, V10)
 
 1. In a server chat, ask the agent to list Studio's tools.
-   **Expect:** the core's tools, plus `browser` and `canvas`. With the app's
-   server in its own process (section G), also `editor`, `tour`, `terminal`
-   and `agent`.
+   **Expect:** the core's tools, plus `browser` and `canvas`.
 2. Ask the agent to open a page in the browser pane.
    **Expect:** the Windows pane opens it.
 3. Out of process (section G), ask the agent to open
@@ -214,18 +231,22 @@ Commands marked **PowerShell** run in a Windows terminal. Commands marked
 
 ## F. Isolation, versions and data (spec 8.6–8.11, V8)
 
-1. Turn the switch on for Debian too, and run a chat in each distribution
-   at once.
+1. Run a chat in Ubuntu-24.04 and one in Debian at once.
    **Expect:** two servers and two data directories. **distro (Debian):**
    kill its server. **Expect:** the Ubuntu chat keeps working.
-2. On a spare distribution, **PowerShell:** `wsl --set-version <name> 1`.
-   **Expect:** its "Chats run in" control is greyed out. If its switch was
-   on before the conversion, a chat there is refused with "Convert it with
-   "wsl --set-version <name> 2"".
-3. **PowerShell:** `wsl --unregister` a spare distribution whose switch is
-   on, then send in a chat bound to it.
+2. On a spare distribution with a chat, **PowerShell:**
+   `wsl --set-version <name> 1`, then send in that chat.
+   **Expect:** refused with "Convert it with "wsl --set-version <name> 2""
+   (decision R70: WSL 1 chats are no longer run one process each).
+3. **PowerShell:** `wsl --unregister` a spare distribution with a chat, then
+   send in that chat.
    **Expect:** a readable message saying the distribution is not installed,
    with no stray characters between the letters.
+   Quit and start the app with that chat still in the sidebar (and again with
+   the WSL 1 distribution of step 2).
+   **Expect:** the chat says why. Windows' diagnostics log has one attempt
+   for each at the start, and later ones only as the open chat retries, ever
+   further apart; `wsl -l -v` never shows the WSL 1 distribution `Running`.
 4. V8: **PowerShell:** `wsl --manage <distro> --set-default-user <other>`,
    then send in a server chat.
    **Expect:** the server runs as the new user, in that user's home, with its
@@ -235,31 +256,123 @@ Commands marked **PowerShell** run in a Windows terminal. Commands marked
    **Expect:** `server-<new>/` appears beside the old tree. The old tree is
    pruned on a later install, once nothing runs from it. `data/` is
    untouched.
-6. Run the installed build and a nightly side by side, both with the switch
-   on, and send in each.
+6. Run the installed build and a nightly side by side, and send in a WSL
+   chat in each.
    **Expect:** two servers, one on `data/` and one on `data-<id>/`, and both
    reply.
 
 ## G. Out of process
 
 1. Settings: turn on "Run Studio server in its own process" and restart.
-2. With the switch off for Ubuntu-24.04 (turn it off in process first, then
-   restart), start a chat in the WSL workspace.
-   **Expect:** the chat does not start. The message says the WSL helper does
-   not run while Studio server is in its own process. **distro:** nothing is
-   installed or started (same check as A2). This is how phase 6 left it.
+2. Open a WSL chat and send a message.
+   **Expect:** it replies: the desktop's server process supervises the
+   distribution's server as the app does in process.
 3. Open Settings › Machines.
-   **Expect:** no "Chats run in" or "Studio server" rows out of process.
-4. Turn the server back in process, turn the switch on, then go out of
-   process again. Start a chat in the WSL 2 workspace.
-   **Expect:** it starts on the server and replies.
+   **Expect:** the "Studio server" row for each distribution, as in process.
 
-## H. Defender (spec V11)
+## H. Files, Git and terminals of a WSL workspace
 
-1. With real-time protection on, in a fresh distribution with the switch on,
-   time the first install and the first chat. The install is the Node
+1. In a `\\wsl.localhost\…` workspace, open the Files pane, open and save a
+   file, and open the Git pane: stage, commit, and look at a diff.
+   **Expect:** each works; **distro:** the commit is there. (The panes ask
+   the distribution's own Studio for a folder in its share.)
+2. Do the same in a `C:\` workspace bound to the distribution.
+   **Expect:** each works (this desktop reads the drive; its git runs in the
+   distribution, decision R89).
+3. Open a terminal in a WSL workspace, and start an agent in a terminal.
+   **Expect:** a Linux shell in the workspace's folder; the agent's state
+   (working, waiting) shows in the sidebar.
+4. Close the window that holds a WSL chat and reopen it.
+   **Expect:** the chat reconnects; in the distribution's server log, the
+   closed window's connection ended.
+
+## I. Defender (spec V11)
+
+1. With real-time protection on, in a fresh distribution, time the first
+   install and the first chat. The install is the Node
    download, then the server tree.
    **Expect:** both finish. Write the times down.
+
+## J. WSL terminal agents, without the helper
+
+The WSL helper is retired: each step below checks a job it did, now the
+distribution's own Studio server's. Run every step that is listed.
+
+1. Start an agent in a terminal of a WSL workspace and give it a task.
+   **Expect:** the sidebar shows it working, then waiting, as on this PC.
+   **distro:** `ls -l ~/.local/share/sprintengine-studio/data*/agent-state.sock`
+   (or the `agent-state-*.sock` under `$XDG_RUNTIME_DIR`): the socket is the
+   server's, mode `srw-------`.
+2. Leave that terminal open, with no chat, for more than ten minutes.
+   **Expect:** **distro:** `pgrep -af server.cjs` still lists the server: a
+   WSL terminal holds it up.
+3. **distro:** `kill -9 <pid of server.cjs>` while the agent works.
+   **Expect:** within half a minute the server runs again with no message
+   sent, and the agent's next state change shows in the sidebar.
+4. Close the terminal. Wait ten minutes with no chat.
+   **Expect:** the server has stopped.
+5. Start an agent in a WSL terminal and ask it to list Studio's tools, then
+   to list the chats in this workspace.
+   **Expect:** it lists them: its tools are the distribution's own Studio's
+   (its chats, files and git), plus the browser, canvas, editor and tour this
+   desktop offers that Studio. **distro:** read the agent's MCP config: its
+   `SPRINTENGINE_USER_DATA_DIR` is the server's data directory
+   (`~/.local/share/sprintengine-studio/data*`), and no token is in it.
+6. Ask that agent to open a page in the browser pane.
+   **Expect:** the page opens in this desktop's browser pane.
+7. Close that terminal, then in another terminal of the same distribution
+   (not started as an agent) run the app's MCP bridge by hand with
+   `SPRINTENGINE_USER_DATA_DIR` set to that data directory, and send it
+   `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`.
+   **Expect:** it answers, as any process of this user reaches the
+   distribution's gateway, but it is no agent: a plain shell carries no
+   launch token, and the closed terminal's token was revoked.
+8. Start an agent in a WSL terminal. **distro:**
+   `ls -l ~/.local/share/sprintengine-studio/sessions/*/`.
+   **Expect:** its startup script was there and deleted itself once read
+   (the directory is `drwx------`; a host-context file, if any, is
+   `-rw-------`).
+9. In that agent, start `python3 -m http.server 8765`, then leave the
+   terminal idle past the reaper's idle time.
+   **Expect:** the terminal is not suspended (a listening port holds it).
+   Stop the server and wait again: it is suspended.
+10. Start an agent, then close its terminal tab.
+    **Expect:** **distro:** `pgrep -af claude` (or the CLI used) no longer
+    lists it within a few seconds.
+11. Start an agent, then quit the app. **distro:** `pgrep -af claude`.
+    **Expect:** nothing the terminal started is left running. Start the app
+    again with a stray session left on purpose (`kill -9` the app instead of
+    quitting): the first WSL launch after the restart ends it.
+12. Turn on a Studio skill in Settings (for example the canvas one), then
+    start a Claude agent in a WSL terminal. **distro:**
+    `ls ~/.local/share/sprintengine-studio/data/terminal-plugin/sprintengine-studio/skills/`
+    and `cat ~/.sprintengine/bin/current`.
+    **Expect:** the copy holds that skill and its hooks name the server's own
+    Node; the launcher's `payload=` names the server tree's `resources`; in the
+    agent, `/backlog` is offered and its status line shows. Turn the skill off
+    and start another agent: the copy no longer holds it.
+13. Open a WSL terminal workspace's Git pane, and in that distribution's
+    terminal run `git -C <repo> commit --allow-empty -m probe`.
+    **Expect:** the pane shows the new commit within a few seconds, with no
+    reload. Stage one hunk from the pane: it is staged (`git diff --cached`).
+14. With no WSL chat or terminal open, open Settings › Skills for a CLI on the
+    WSL machine.
+    **Expect:** it lists what that CLI has installed in the distribution (its
+    `CLAUDE_CONFIG_DIR` or `CODEX_HOME` respected), and the distribution's
+    Studio server was started to answer.
+15. Quit the app, start it with "Run Studio server in its own process" on,
+    and repeat 13 and 14.
+    **Expect:** the same.
+16. In a WSL distribution's terminal, install or remove an agent CLI (for
+    example `npm i -g @openai/codex`), then open the agent picker for a WSL
+    workspace.
+    **Expect:** within a few seconds it shows the change, with no Re-check.
+    **distro:** `ls ~/.local/share/sprintengine-studio/` lists no
+    `<version>/` folder holding `wsl-helper/` once the server was installed
+    again, and `pgrep -af helper.mjs` lists nothing.
+17. Settings › Agents › Re-check, and the GitHub status of a WSL workspace.
+    **Expect:** both answer for the distribution, with "Run Studio server in
+    its own process" on and off.
 
 ## Throughput
 

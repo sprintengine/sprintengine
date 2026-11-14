@@ -2,10 +2,10 @@ import { requestConversationJump } from '../../../utils/conversationHistoryNavig
 
 // What the palette needs to find what was said in the paired machines' chats
 // and open a match where it was said. Only the sidebar reads those machines,
-// so it says which of them take a search from here (`chat-search`), and the
+// so it says which of them take a search from here (`chat-lifecycle`), and the
 // window's manager says how one of their chats is opened here, as its sidebar
 // row opens it (`registerRemoteChatOpener`). The palette asks each machine
-// itself (`meshConversationSearch`).
+// itself (`searchPairedChats`).
 
 export type RemoteSearchMachine = { connectionId: string; machineName: string }
 

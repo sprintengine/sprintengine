@@ -31,6 +31,8 @@ import {
   type DesignRailEntry,
   type DesignRailStatusFilter,
 } from './designRailState'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
+import { filesApi } from '../../../../studio/files'
 
 // The Design door (epic `design-door`, item 2002): design is a first-class
 // surface beside Extensions, Backlog and Automations. The
@@ -90,7 +92,7 @@ export default function DesignGlobalSurface(): JSX.Element {
     }
     let cancelled = false
     setStoredScopeExists(null)
-    void window.api
+    void filesApi
       .pathExists(storedScopePath)
       .then((exists) => {
         if (!cancelled) setStoredScopeExists(exists)
@@ -167,7 +169,7 @@ export default function DesignGlobalSurface(): JSX.Element {
     setLoadState((previous) => (previous === 'ready' ? 'ready' : 'loading'))
     setLoadError(null)
     try {
-      const result = await window.api.listDesignSystemLibrary()
+      const result = await agentSkillsApi.listDesignSystemLibrary()
       if (!mounted.current) return
       setRegistered(result.entries)
       setLoadState('ready')
@@ -198,7 +200,7 @@ export default function DesignGlobalSurface(): JSX.Element {
     let cancelled = false
     void (async () => {
       for (const path of knownPaths) {
-        const result = await window.api.readDesignSystemBundle(path)
+        const result = await agentSkillsApi.readDesignSystemBundle(path)
         if (cancelled || !mounted.current) return
         // Hand the dates to the shared store as well as this door's state: the
         // Extensions row counts the same arrivals, and while the door is open
@@ -361,7 +363,7 @@ export default function DesignGlobalSurface(): JSX.Element {
   const reloadBundle = useCallback(async (path: string) => {
     setReloadingPath(path)
     try {
-      const result = await window.api.readDesignSystemBundle(path)
+      const result = await agentSkillsApi.readDesignSystemBundle(path)
       if (!mounted.current) return
       if (result.ok) {
         reportDesignArrivals(designSystemRegistrationId(path), path, result.view.addedAt)
@@ -399,7 +401,7 @@ export default function DesignGlobalSurface(): JSX.Element {
     if (!picked || !mounted.current) return
     // Registering a REFERENCE: no copy is made anywhere, and the folder stays
     // exactly where the user's repo put it.
-    const result = await window.api.registerDesignSystemFolder(picked)
+    const result = await agentSkillsApi.registerDesignSystemFolder(picked)
     if (!mounted.current) return
     if (!result.ok) {
       // A folder that is not a design system is an explicit refusal naming the
@@ -410,7 +412,7 @@ export default function DesignGlobalSurface(): JSX.Element {
     // A folder just joined the library: the row's count is describing a library
     // that no longer exists until this lands.
     reloadDesignArrivals()
-    const read = await window.api.readDesignSystemBundle(result.entry.path)
+    const read = await agentSkillsApi.readDesignSystemBundle(result.entry.path)
     if (!mounted.current) return
     if (read.ok) {
       reportDesignArrivals(result.entry.id, result.entry.path, read.view.addedAt)
@@ -442,7 +444,7 @@ export default function DesignGlobalSurface(): JSX.Element {
       setCreatingFrom(source.name)
       try {
         const name = basenameOfPath(target)
-        const seeded = await window.api.seedDesignSystemBundle(
+        const seeded = await agentSkillsApi.seedDesignSystemBundle(
           source.path,
           target,
           name,
@@ -454,7 +456,7 @@ export default function DesignGlobalSurface(): JSX.Element {
           return
         }
         const bundleDir = seeded.bundleDir ?? target
-        const registered = await window.api.registerDesignSystemFolder(bundleDir)
+        const registered = await agentSkillsApi.registerDesignSystemFolder(bundleDir)
         if (!mounted.current) return
         if (!registered.ok) {
           setPointError(registered.message)
@@ -485,13 +487,13 @@ export default function DesignGlobalSurface(): JSX.Element {
     async (entry: DesignRailEntry) => {
       const picked = await window.api.openDir()
       if (!picked || !mounted.current) return
-      const result = await window.api.registerDesignSystemFolder(picked)
+      const result = await agentSkillsApi.registerDesignSystemFolder(picked)
       if (!mounted.current) return
       if (!result.ok) {
         setPointError(result.message)
         return
       }
-      if (entry.registrationId) await window.api.forgetDesignSystemFolder(entry.registrationId)
+      if (entry.registrationId) await agentSkillsApi.forgetDesignSystemFolder(entry.registrationId)
       reloadDesignArrivals()
       if (!mounted.current) return
       await loadLibrary()
@@ -507,7 +509,7 @@ export default function DesignGlobalSurface(): JSX.Element {
   const forgetEntry = useCallback(
     async (entry: DesignRailEntry) => {
       if (!entry.registrationId) return
-      await window.api.forgetDesignSystemFolder(entry.registrationId)
+      await agentSkillsApi.forgetDesignSystemFolder(entry.registrationId)
       // The forgotten system's entries must stop counting on the Design row too.
       reloadDesignArrivals()
       if (!mounted.current) return

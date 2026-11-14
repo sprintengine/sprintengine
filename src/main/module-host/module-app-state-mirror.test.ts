@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'vitest'
 
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
 import { createMainKernel } from './main-host'
 import { createModuleAppStateMirror, normalizeModuleAppStateBag } from './module-app-state-mirror'
 
@@ -99,7 +98,7 @@ test('a read with no watch running still sees a push another process wrote', () 
 })
 
 test('MainHost reads and watches its own namespace through the mirror', () => {
-  const kernel = createMainKernel(createFakeIpcMain().ipcMain)
+  const kernel = createMainKernel()
   assert.equal(kernel.hostFor('insights').getModuleAppState('time'), undefined, 'no mirror yet reads as unset')
   const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
   kernel.hostFor('agent-runtime').provideService({ key: 'core.module-app-state' }, () => mirror)
@@ -119,7 +118,7 @@ test('MainHost reads and watches its own namespace through the mirror', () => {
 })
 
 test('unloading a module drops its app-state watches', async () => {
-  const kernel = createMainKernel(createFakeIpcMain().ipcMain)
+  const kernel = createMainKernel()
   const mirror = createModuleAppStateMirror({ filePath, watchFile: false })
   kernel.hostFor('agent-runtime').provideService({ key: 'core.module-app-state' }, () => mirror)
   const heard: unknown[] = []

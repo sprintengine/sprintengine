@@ -17,9 +17,7 @@ import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { afterAll, beforeAll, test } from 'vitest'
 
-import type { ConversationEvent } from '../../../shared/conversation-runtime'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../../shared/ssh-environments'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { createAskpassBroker, type AskpassRequest } from './askpass'
 import {
   DOCKER_TESTS,
@@ -32,6 +30,22 @@ import { parseDestination, spawnSshSession } from './ssh-command'
 import { SshEnvironment } from './ssh-environment'
 import { ensureNodeBinary, serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
+import { createLoopbackRoute } from '../environment-route'
+import {
+  connect,
+  webSocketTransport,
+  type StudioWebSocketConstructor,
+} from '../../../../packages/client-runtime/src/public'
+
+/** Node's WebSocket, saying the origin a window's would. */
+function socketFrom(origin: string): StudioWebSocketConstructor {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
+  return class {
+    constructor(url: string) {
+      return new NodeWebSocket(url, { headers: { origin } }) as never
+    }
+  } as unknown as StudioWebSocketConstructor
+}
 
 const ROOT = join(__dirname, '..', '..', '..', '..')
 const VERSION = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version
@@ -69,19 +83,6 @@ const until = async (check: () => boolean, ms: number) => {
   return check()
 }
 
-function nextEvent(
-  backend: { onEvent(listener: (event: ConversationEvent) => void): () => void },
-  type: string,
-): Promise<ConversationEvent> {
-  return new Promise((resolve) => {
-    const stop = backend.onEvent((event) => {
-      if (event.type !== type) return
-      stop()
-      resolve(event)
-    })
-  })
-}
-
 test.skipIf(!DOCKER_TESTS)(
   'build-box for real: first connect asks, installs, starts; a chat survives a dropped session; the relay reaches its localhost',
   async () => {
@@ -117,7 +118,7 @@ test.skipIf(!DOCKER_TESTS)(
         spawned.push({ interactive, child })
         return child
       },
-      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version: VERSION, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),
@@ -154,59 +155,87 @@ test.skipIf(!DOCKER_TESTS)(
         'no TCP listener',
       )
 
-      // A chat on the mock provider: its turn waits on an approval.
-      fixture.exec('mkdir -p /home/dev/repo', 'dev')
-      const key = { workspaceRoot: '/home/dev/repo', workspaceId: 'w-docker', agentId: 'a1' }
-      const started = (await connection.backend.startSession({
-        ...key,
-        providerId: 'mock-provider',
-        modelId: 'mock-model',
-      } as never)) as { ok: boolean; session: { sessionId: string } }
-      assert.ok(started.ok)
-      const sessionId = started.session.sessionId
-      const asking = nextEvent(connection.backend, 'approval_requested')
-      const turn = connection.backend.sendTurn({
-        sessionId,
-        message: 'hello from the desktop',
-        commandId: 'c-1',
-      } as never)
-      const approval = await asking
+      // A window reaches the machine's Studio itself: a ticket its window
+      // listener minted, asked for over main's owner connection, spent on a
+      // socket main's loopback route carries through the front door (`ws`).
+      const route = createLoopbackRoute({ open: () => connection.open('ws') })
+      try {
+        const routePort = await route.port()
+        const ticketFor = async () => {
+          const minted = await connection.owner.request('environment.windowTicket', {
+            windowKey: 'window-1-1',
+            origin: 'file://',
+          })
+          return { url: `ws://127.0.0.1:${routePort}${minted.path}`, token: minted.token }
+        }
+        const spent = await ticketFor()
+        const window = await connect({
+          transport: webSocketTransport({ ticket: async () => spent, WebSocket: socketFrom('file://') }),
+          client: { name: 'Studio window' },
+          reconnect: false,
+        })
+        assert.equal(window.grant.owner, true)
+        assert.equal(window.welcome.environment.hostKind, 'ssh')
+        assert.equal(window.welcome.environment.id, connection.owner.welcome.environment.id)
+        assert.ok((await window.request('conversation.list', {})).conversations)
+        window.close()
+        // Good once, and only from the origin it was minted for.
+        await assert.rejects(
+          connect({
+            transport: webSocketTransport({ ticket: async () => spent, WebSocket: socketFrom('file://') }),
+            client: { name: 'Studio window' },
+            reconnect: false,
+          }),
+        )
+        const fresh = await ticketFor()
+        await assert.rejects(
+          connect({
+            transport: webSocketTransport({ ticket: async () => fresh, WebSocket: socketFrom('https://example.com') }),
+            client: { name: 'Studio window' },
+            reconnect: false,
+          }),
+        )
 
-      // The session drops mid-turn: the call in flight fails with the wire...
+        // A window that goes is revoked there: its connections end.
+        const kept = await ticketFor()
+        const doomed = await connect({
+          transport: webSocketTransport({ ticket: async () => kept, WebSocket: socketFrom('file://') }),
+          client: { name: 'Studio window' },
+          reconnect: false,
+        })
+        const ended = doomed.closed.then(
+          () => 'closed',
+          (error: unknown) => (error as { code?: string }).code ?? 'closed',
+        )
+        await connection.owner.request('environment.revokeWindow', { windowKey: 'window-1-1' })
+        assert.equal(await ended, 'revoked')
+      } finally {
+        await route.close()
+      }
+
+      // The session drops: main's owner connection ends with it, and the
+      // machine is reconnecting. A chat's turn kept across the drop is the
+      // cross-client gate's SSH leg (create, stream, approval, resume), on the
+      // window's client over the loopback route.
+      const ownerClosed = connection.owner.closed.then(
+        () => undefined,
+        () => undefined,
+      )
       spawned.at(-1)!.child.kill()
-      await assert.rejects(Promise.resolve(turn))
+      await ownerClosed
       assert.ok(await until(() => env.summary().state === 'reconnecting', 5_000))
-      // ...the server keeps the turn, and the background reconnect (BatchMode,
-      // no prompt possible) cannot unlock the key: it says so.
+      // The background reconnect (BatchMode, no prompt possible) cannot unlock
+      // the key: it says so, and the server keeps running.
       assert.ok(await until(() => env.summary().state !== 'reconnecting', 60_000), changes.join('\n'))
       assert.equal(env.summary().state, 'needs-sign-in', changes.join('\n'))
       assert.equal(env.summary().stateText, 'build-box needs you to sign in.')
       assert.equal(Number(fixture.exec(`kill -0 ${serverPid} && echo 1 || echo 0`)), 1, 'the server kept running')
 
-      // The person connects: the same server, the same chat, the turn still waiting.
+      // The person connects: the same server, answering on a new owner connection.
       const again = await env.connect({ interactive: true })
       assert.notEqual(again, connection)
-      const retried = again.backend.sendTurn({
-        sessionId,
-        message: 'hello from the desktop',
-        commandId: 'c-1',
-      } as never)
-      const done = nextEvent(again.backend, 'turn_completed')
-      const answered = (await again.backend.respondToRequest({
-        sessionId,
-        requestId: (approval.payload as { requestId: string }).requestId,
-        approved: true,
-      } as never)) as { ok: boolean }
-      assert.ok(answered.ok)
-      await done
-      assert.equal(((await retried) as { ok: boolean }).ok, true, 'the repeated command joined the one in flight')
-      const transcript = JSON.stringify(await again.backend.readTranscript({ ...key } as never))
-      assert.equal(transcript.split('hello from the desktop').length - 1 >= 1, true)
-      assert.equal(
-        (transcript.match(/Mock response for: hello from the desktop/gu) ?? []).length >= 1,
-        true,
-        'one turn, answered once',
-      )
+      assert.equal(again.environmentId, connection.environmentId)
+      assert.ok((await again.owner.request('conversation.list', {})).conversations)
 
       // The remote's own localhost, through the relay (the pane's path, spec 6.8).
       fixture.exec(
@@ -226,6 +255,68 @@ test.skipIf(!DOCKER_TESTS)(
     } finally {
       env.disconnect()
       broker.close()
+    }
+  },
+)
+
+test.skipIf(!DOCKER_TESTS)(
+  'a server that hangs on build-box is said in words, not replaced, and reached again once it answers',
+  async () => {
+    // A key with no passphrase, so the background reconnects (BatchMode) reach the server.
+    const machine = startSshd({ sshdOptions: ['AllowTcpForwarding no', 'AllowStreamLocalForwarding no'] })
+    const broker = await createAskpassBroker({ runAsNode: false, ask: async () => 'yes' })
+    const destination = parseDestination('build-box')
+    assert.ok(destination.ok)
+    const changes: string[] = []
+    const env: SshEnvironment = new SshEnvironment({
+      id: 'hung',
+      label: () => 'build-box',
+      settings: () => ({ ...DEFAULT_SSH_ENVIRONMENT_SETTINGS, keepRunning: true }),
+      spawn: ({ interactive }) =>
+        spawnSshSession({
+          ssh: 'ssh',
+          destination: destination.destination,
+          label: 'build-box',
+          interactive,
+          askpass: broker,
+          configFile: machine.configFile,
+          env: { PATH: process.env.PATH, HOME: process.env.HOME },
+        }) as unknown as SessionProcess,
+      app: { version: VERSION, channel: 'latest' },
+      dataName: 'data',
+      startedBy: 'Studio on dev-macbook-air',
+      serverTree: () => ({ dir: tree, digest }),
+      nodeBinary: (target) => ensureNodeBinary(target, { cacheDir: CACHE, subject: 'build-box' }),
+      onChange: () => changes.push(`${env.summary().state}: ${env.summary().stateText}`),
+      timing: { backoff: { baseMs: 200, maxMs: 1_000 }, livenessMs: 1_000, pingMs: 1_000 },
+    })
+    const serverPid = () =>
+      Number(
+        machine.exec(
+          'sed -n \'s/.*"pid":\\([0-9]*\\).*/\\1/p\' /home/dev/.local/share/sprintengine-studio/data/run/server.json',
+        ),
+      )
+    const words =
+      'The Studio server on build-box is running but not answering. Stop it there, or restart build-box. Studio keeps trying.'
+    try {
+      await env.connect({ interactive: true })
+      const pid = serverPid()
+      assert.ok(pid > 0)
+      machine.exec(`kill -STOP ${pid}`)
+      try {
+        assert.ok(await until(() => env.summary().stateText === words, 90_000), changes.join('\n'))
+        assert.equal(env.summary().state, 'reconnecting')
+        assert.equal(serverPid(), pid, 'no second server was started beside it')
+      } finally {
+        machine.exec(`kill -CONT ${pid}`)
+      }
+      assert.ok(await until(() => env.summary().state === 'connected', 90_000), changes.join('\n'))
+      assert.equal(env.summary().stateText, 'Connected')
+      assert.equal(serverPid(), pid, 'the same server, answering again')
+    } finally {
+      env.disconnect()
+      broker.close()
+      machine.stop()
     }
   },
 )
@@ -250,7 +341,7 @@ test.skipIf(!DOCKER_TESTS)('a key the remote refuses, and a home mounted noexec,
           configFile: noexec.configFile,
           env: { PATH: process.env.PATH, HOME: process.env.HOME },
         }) as unknown as SessionProcess,
-      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version: VERSION, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),

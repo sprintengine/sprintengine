@@ -4,8 +4,8 @@
 // only what the person wrote (the desktop's `attachedFiles.ts` in
 // conversation-timeline).
 //
-// `files` is an optional payload member the phone's pinned wire types do not
-// name, so it is read here off the payload, defensively. The paths are
+// `files` is an optional payload member the contract leaves open on the
+// event, so it is read here off the payload, defensively. The paths are
 // absolute paths on the desktop (POSIX, a Windows drive, or a Windows UNC
 // share), which the phone cannot open: a card names the file and its kind, and
 // a long press says the whole path.

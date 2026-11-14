@@ -6,7 +6,9 @@
  * them again. Once a later write does reach disk, the copy is released.
  */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+vi.mock('../studio/agentSettings', () => import('../studio/agentSettings.double'))
 import { createFakeLaunchSettingsMain, installFakeWindow, settleIpc } from './launchSettingsFakeMain.test-helper'
 import { LAUNCH_SETTINGS_KEYS } from './launchSettingsReadModel'
 

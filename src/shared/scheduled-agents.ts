@@ -15,96 +15,34 @@
 // This module is the pure half both processes share: the record, its draft,
 // validation, and the words and times every surface reads off the schedule.
 
-import type { CliPermissionPreset } from './cli-permission-preset'
 import { parseCliPermissionPreset } from './cli-permission-preset'
 import { describeCronSchedule, nextCronRun, nextCronRuns, parseCronSchedule } from './cron'
-import { normalizeExecutionHostId, type ExecutionHostId } from './execution-host'
+import { normalizeExecutionHostId } from './execution-host'
 import { isRecord } from './records'
 
-export type ScheduledAgentSchedule = {
-  /** Five-field cron; several expressions separated by `;`. */
-  cron: string
-  /** The IANA zone the cron's wall-clock is read in: the machine it runs on. */
-  timezone: string
-  /**
-   * One run, at this instant (epoch ms), instead of the cron's repeats: a
-   * message to start a chat with later, once. The cron then names the same
-   * minute (`cronForInstant`), so whatever reads the cron alone still reads
-   * a true schedule. A one-time schedule that has run is done: the scheduler
-   * closes it once its chat has started, and keeps one whose run failed, with
-   * no next run, so the failure is seen.
-   */
-  once?: number
-}
+// The record, its pause and its view are the Studio protocol's
+// (`packages/studio-protocol/src/schedules.ts`), defined there once so the
+// phone and a paired desktop read the same type; re-exported here under the
+// names the app has always used.
+import type {
+  ScheduledAgent,
+  ScheduledAgentAttachment,
+  ScheduledAgentSchedule,
+  ScheduledAgentsPause,
+  ScheduledAgentView,
+} from '../../packages/studio-protocol/src/schedules'
 
-/** A skill or an installed MCP server, by id, with the name its chip shows. */
-export type ScheduledAgentAttachment = { id: string; name: string }
-
-/**
- * Whether the last run started its chat, and where. `agentId` is the run's
- * chat agent in `workspaceId`; absent on a run recorded before it was kept.
- */
-export type ScheduledAgentLastRun =
-  { at: number; ok: true; workspaceId: string; agentId?: string } | { at: number; ok: false; message: string }
+export type {
+  ScheduledAgent,
+  ScheduledAgentAttachment,
+  ScheduledAgentLastRun,
+  ScheduledAgentSchedule,
+  ScheduledAgentsPause,
+  ScheduledAgentView,
+} from '../../packages/studio-protocol/src/schedules'
 
 /** A run whose chat started: when, and the chat it started (workspace and agent). */
 export type ScheduledAgentRun = { at: number; workspaceId: string; agentId: string }
-
-export type ScheduledAgent = {
-  id: string
-  /**
-   * The scheduled agent's title in the sidebar and its editor. Absent, the
-   * prompt's first line is.
-   */
-  name?: string
-  /**
-   * The creator's own label for it, carried onto each run's chat (the agent
-   * record's `scheduledAgentTag`) so whoever made it can tell which of its
-   * schedules a chat came from. Never shown to the person.
-   */
-  tag?: string
-  /** The first message each run's chat is sent. Its first line is the scheduled agent's title. */
-  prompt: string
-  schedule: ScheduledAgentSchedule
-  /** The project each run starts in. */
-  folderPath: string
-  /**
-   * The machine on this computer each run starts on. Null is this machine,
-   * or the distribution a folder inside one lives in; `local` is this machine
-   * for such a folder (owner ruling 2026-10-03).
-   */
-  hostId: ExecutionHostId | null
-  cli: string
-  cliModel: string | null
-  /** Absent, the preset chosen for that CLI at run time. */
-  permissionPreset: CliPermissionPreset | null
-  skills: ScheduledAgentAttachment[]
-  mcpServers: ScheduledAgentAttachment[]
-  /** A fresh worktree per run, named from this; null runs in the project's checkout. */
-  worktree: { name: string } | null
-  /** The extension that created it, when one did. */
-  ownerModuleId: string | null
-  createdAt: number
-  updatedAt: number
-  lastRun: ScheduledAgentLastRun | null
-  /** When a failed last run was last looked at; the card says "Failed" until then. */
-  lastFailureSeenAt: number | null
-  /**
-   * When the person paused it; absent while it runs on its schedule. A paused
-   * schedule starts nothing at its times, and the times that pass while it is
-   * paused are not made up when it resumes: it runs next at the first time
-   * after that. Run now still runs it, and pausing leaves a run already going
-   * alone.
-   */
-  pausedAt?: number
-}
-
-/**
- * Every scheduled agent paused at once, apart from each one's own pause:
- * since when, and until when (null until the person resumes them). Resuming
- * them all leaves a schedule paused on its own still paused.
- */
-export type ScheduledAgentsPause = { since: number; until: number | null }
 
 /**
  * What a person (or an extension, or an agent) writes: everything but the
@@ -128,28 +66,7 @@ export type ScheduledAgentDraft = Pick<
   | 'worktree'
 >
 
-/** A scheduled agent as the renderer lists it: the record plus when it runs next. */
-export type ScheduledAgentView = ScheduledAgent & { nextRunAt: number | null }
-
 export type ScheduledAgentWriteResult = { ok: true; agent: ScheduledAgentView } | { ok: false; message: string }
-
-export const SCHEDULED_AGENTS_CHANGED_CHANNEL = 'scheduled-agents:changed'
-/** Every scheduled agent paused, or not: the `ScheduledAgentsPause`, or null. */
-export const SCHEDULED_AGENTS_PAUSE_CHANGED_CHANNEL = 'scheduled-agents:pause-changed'
-
-export const SCHEDULED_AGENTS_IPC = {
-  list: 'scheduled-agents:list',
-  create: 'scheduled-agents:create',
-  update: 'scheduled-agents:update',
-  remove: 'scheduled-agents:remove',
-  runNow: 'scheduled-agents:run-now',
-  markSeen: 'scheduled-agents:mark-seen',
-  pause: 'scheduled-agents:pause',
-  resume: 'scheduled-agents:resume',
-  pauseState: 'scheduled-agents:pause-state',
-  pauseAll: 'scheduled-agents:pause-all',
-  resumeAll: 'scheduled-agents:resume-all',
-} as const
 
 /** Whether a pause of every scheduled agent holds at `now`: set, and its until not yet come. */
 export function scheduledAgentsPauseHolds(pause: ScheduledAgentsPause | null, now: number): boolean {

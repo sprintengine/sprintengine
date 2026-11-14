@@ -23,6 +23,9 @@ import {
   type SkillIntegrationLike,
 } from './skillInvocation'
 import { bracketedPaste } from './terminalDrop'
+import { listTerminals, writeTerminal } from '../studio/terminals'
+import { agentSetupApi } from '../studio/agentSetup'
+import { agentSkillsApi } from '../studio/agentSkills'
 
 /**
  * The little a CLI entry has to tell this flow: who it is, what to call it, and
@@ -55,7 +58,7 @@ export const AGENT_NO_LONGER_RUNNING_MESSAGE = 'That agent is no longer running.
  *
  * `snapshot` rides along because callers that render rows want the same session
  * facts the terminal list carries (activity, worktree, agent record) without a
- * second `terminalList()`; `label` and `cli` are the two every caller needs.
+ * second `listTerminals()`; `label` and `cli` are the two every caller needs.
  */
 export type LiveAgentSession = {
   sessionId: string
@@ -77,7 +80,7 @@ export type LiveAgentSession = {
  * find (the same rule the backlog file-drop path keeps).
  *
  * Conversation runtimes never appear here at all — they have no pty, so
- * `terminalList()` does not carry them, and they have no slash contract to
+ * `listTerminals()` does not carry them, and they have no slash contract to
  * render into (see `renderChatSkillPrefill` in skillInvocation.ts).
  */
 export function isUsableAgentSession(
@@ -112,7 +115,7 @@ export function selectLiveAgentSessions(
 
 /**
  * Every live agent a skill can be handed to, newest-spoken-to first is NOT
- * imposed here: the list keeps `terminalList()`'s own order so a menu reads the
+ * imposed here: the list keeps `listTerminals()`'s own order so a menu reads the
  * same as every other session list in the app.
  *
  * Scope is by `workspaceId` — the only workspace identity a session snapshot
@@ -123,7 +126,7 @@ export function selectLiveAgentSessions(
  */
 export async function listLiveAgentSessions(scope?: { workspaceId?: string | null }): Promise<LiveAgentSession[]> {
   try {
-    const all = await window.api.terminalList()
+    const all = await listTerminals()
     return selectLiveAgentSessions(all, scope)
   } catch {
     return []
@@ -223,7 +226,7 @@ export async function useSkillInAgent(input: UseSkillInAgentInput): Promise<UseS
     )
   }
   if (!nativeInstalled && integration && skill.source === 'builtin') {
-    const status = await window.api.builtinSkillStatus({ workspaceRoot, skillId: skill.id })
+    const status = await agentSetupApi.builtinSkillStatus({ workspaceRoot, skillId: skill.id })
     if (status.ok) {
       nativeInstalled = hasInstalledNativeSkillTarget(integration.harnessId, session.cli ?? '', status.targets)
     }
@@ -231,7 +234,7 @@ export async function useSkillInAgent(input: UseSkillInAgentInput): Promise<UseS
 
   const invocation = renderSkillInvocation({ skill, integration, nativeInstalled })
 
-  // The paste is a plain `terminalWrite`, and main's handler for it drops input
+  // The paste is a plain `writeTerminal`, and the Studio drops input
   // to a session that has exited instead of saying so (`writeTerminalInput`,
   // src/main/terminal-runtime.ts). The attach above took a moment; an agent
   // that died in it would otherwise be reported as used, with the menu closed
@@ -241,7 +244,7 @@ export async function useSkillInAgent(input: UseSkillInAgentInput): Promise<UseS
     return { ok: false, message: AGENT_NO_LONGER_RUNNING_MESSAGE }
   }
   try {
-    await window.api.terminalWrite(session.sessionId, bracketedPaste(`${invocation} `))
+    await writeTerminal(session.sessionId, bracketedPaste(`${invocation} `))
   } catch (error) {
     return {
       ok: false,
@@ -267,7 +270,7 @@ export async function useSkillInAgent(input: UseSkillInAgentInput): Promise<UseS
 async function sessionStillUsable(sessionId: string): Promise<boolean> {
   let sessions: readonly TerminalSessionSnapshot[]
   try {
-    sessions = await window.api.terminalList()
+    sessions = await listTerminals()
   } catch {
     return true
   }
@@ -344,7 +347,7 @@ export async function resolveWorkspaceSkill(input: {
   try {
     // A skill installed for every project is as usable here as the folder's
     // own — installs land there by default.
-    const result = await window.api.workspaceSkillsList({ workspaceRoot: input.workspaceRoot, includeGlobal: true })
+    const result = await agentSkillsApi.workspaceSkillsList({ workspaceRoot: input.workspaceRoot, includeGlobal: true })
     if (!result.ok) return { ok: false, message: result.message }
     const skill = result.skills.find((candidate) => candidate.id === input.skillId)
     if (!skill) return { ok: false, message: SKILL_NOT_IN_WORKSPACE_MESSAGE }

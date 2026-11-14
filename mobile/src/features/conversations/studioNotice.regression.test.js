@@ -4,14 +4,14 @@ const {
   STUDIO_NOTICE_PREFIX,
   readMessageOrigin,
   withoutStudioNoticePrefix,
-} = require("../../../.mobile-test-build/src/features/conversations/studioNotice.js");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/studioNotice.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const {
   chatOpenedSince,
   unreadDividerRowId,
   unreadDividerTurn,
-} = require("../../../.mobile-test-build/src/features/conversations/unreadDivider.js");
-const { chatSections } = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/unreadDivider.js");
+const { chatSections } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
 
 let sequence = 0;
 function event(type, createdAt, payload = {}) {
@@ -66,7 +66,7 @@ test("Studio's message is its own row, never the person's bubble", () => {
     }),
     ...exchange("t3", 300, 310, { text: RESUME.text, origin: { kind: "studio", reason: "later-reason" } }),
   ];
-  const { rows } = projectConversation(events);
+  const { rows } = projectPhoneConversation(events);
   const people = rows.filter((row) => row.kind === "message" && row.role === "user");
   assert.deepEqual(people.map((row) => row.text), ["Launch an agent to audit pairing."]);
   const studio = rows.filter((row) => row.kind === "studio");
@@ -79,13 +79,13 @@ test("Studio's message is its own row, never the person's bubble", () => {
   );
   assert.ok(studio.every((row) => !("files" in row) && !("role" in row)));
   // A malformed origin leaves the message the person's, with its words as written.
-  const odd = projectConversation(exchange("t4", 400, 410, { text: "mine", origin: "studio" })).rows;
+  const odd = projectPhoneConversation(exchange("t4", 400, 410, { text: "mine", origin: "studio" })).rows;
   assert.equal(odd[0].kind, "message");
   assert.equal(odd[0].role, "user");
 });
 
 test("Studio's message still opens a turn: the chat works, and a send it acknowledges leaves the queue", () => {
-  const projected = projectConversation([event("user_message", 100, { turnId: "t1", commandId: "cmd-1", ...RESUME })]);
+  const projected = projectPhoneConversation([event("user_message", 100, { turnId: "t1", commandId: "cmd-1", ...RESUME })]);
   assert.equal(projected.turnBusy, true);
   assert.ok(projected.acknowledged.has("cmd-1"));
 });
@@ -96,13 +96,13 @@ test("the New divider stands above Studio's message that opened the unseen turn,
     ...exchange("t2", 200, 210, RESUME),
   ];
   const opened = { openedAt: 1_000, seenAt: 150 };
-  const projected = projectConversation(studioTurn);
+  const projected = projectPhoneConversation(studioTurn);
   const id = unreadDividerRowId(projected.rows, unreadDividerTurn(projected.replies, opened));
   const studio = projected.rows.find((row) => row.kind === "studio");
   assert.equal(id, studio.id);
   // The same turn opened by the person: the divider stays at the reply, under their message.
   const personTurn = [...exchange("t1", 100, 110, { text: "ask t1" }), ...exchange("t2", 200, 210, { text: "ask t2" })];
-  const person = projectConversation(personTurn);
+  const person = projectPhoneConversation(personTurn);
   assert.equal(unreadDividerRowId(person.rows, unreadDividerTurn(person.replies, opened)), "fold:t2");
   // A Studio row of another turn just above a reply is not walked over.
   const rows = [
@@ -111,7 +111,7 @@ test("the New divider stands above Studio's message that opened the unseen turn,
   ];
   assert.equal(unreadDividerRowId(rows, "t2"), "t2:r");
   // Studio's message alone, with no reply yet, is not new on its own.
-  const pending = projectConversation([...exchange("t1", 100, 110, { text: "ask t1" }), event("user_message", 300, { turnId: "t2", ...RESUME })]);
+  const pending = projectPhoneConversation([...exchange("t1", 100, 110, { text: "ask t1" }), event("user_message", 300, { turnId: "t2", ...RESUME })]);
   assert.equal(unreadDividerTurn(pending.replies, chatOpenedSince([{ lastVisitedAt: 150 }], 1_000)), null);
 });
 

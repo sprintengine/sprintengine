@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, rm, writeFile, stat, symlink } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, readFile, rename, rm, writeFile, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -15,6 +15,7 @@ import type {
 } from '../shared/conversation-runtime'
 import { workspaceStorePath } from './workspace-store'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
+import { ConversationOutbox } from './conversation-outbox'
 
 function event(
   input: MockAdapterSessionInput,
@@ -279,7 +280,8 @@ test('concurrent duplicate commands and receipts after restart produce one user 
       const session = await restarted.startSession({ ...f.key, providerId: 'mock-provider', modelId: 'mock-model' })
       assert.equal(session.ok, true)
       if (!session.ok) return
-      assert.deepEqual(await restarted.sendTurn({ ...input, sessionId: session.session.sessionId }), first)
+      const again = await restarted.sendTurn({ ...input, sessionId: session.session.sessionId })
+      assert.equal(again.ok, true, 'answered from the receipt in the log')
       const replay = await restarted.readTranscript(f.key)
       assert.equal(replay.ok && replay.events.filter((e) => e.type === 'user_message').length, 1)
       assert.equal(replay.ok && replay.events.find((e) => e.type === 'user_message')?.payload?.commandId, commandId)
@@ -307,13 +309,19 @@ test('a command id named for a different command is refused, while the first run
       code: 'command_id_conflict',
       message: 'That command id was already used for a different command. Send this one under a new id.',
     }
-    assert.equal(await f.runtime.hasCommandReceipt(f.sessionId, commandId), false, 'nothing is held before it runs')
+    assert.equal(await f.runtime.commandReceipt(f.sessionId, commandId), 'none', 'nothing is held before it runs')
     const running = send('/tools', 'fp-tools')
-    assert.equal(await f.runtime.hasCommandReceipt(f.sessionId, commandId), true, 'held while it runs')
+    assert.equal(await f.runtime.commandReceipt(f.sessionId, commandId), 'kept', 'held while it runs')
     const [first, racing] = await Promise.all([running, send('/help', 'fp-help')])
     assert.equal(first.ok, true)
     assert.deepEqual(racing, conflict, 'while the first is still running')
-    assert.deepEqual(await send('/tools', 'fp-tools'), first, 'the same command again is answered from its receipt')
+    const repeated = await send('/tools', 'fp-tools')
+    assert.equal(repeated.ok, true, 'the same command again is answered from its receipt')
+    assert.equal(
+      repeated.ok && first.ok && repeated.session.sessionId,
+      first.ok && first.session.sessionId,
+      'with the session as it is now',
+    )
     assert.deepEqual(await send('/help', 'fp-help'), conflict, 'and another one under its id is refused')
     // A receipt's answer is its command's result: the fingerprint is the receipt's own.
     assert.equal('fingerprint' in (await send('/tools', 'fp-tools')), false)
@@ -333,14 +341,14 @@ test('a command id named for a different command is refused, while the first run
           ...(commandFingerprint ? { commandFingerprint } : {}),
         })
       assert.equal(
-        await restarted.hasCommandReceipt(session.session.sessionId, commandId),
-        true,
+        await restarted.commandReceipt(session.session.sessionId, commandId),
+        'kept',
         'a receipt on disk is held',
       )
       assert.deepEqual(await again('/help', 'fp-help'), conflict, 'the receipt on disk keeps what the command was')
-      assert.deepEqual(await again('/tools', 'fp-tools'), first)
+      assert.equal((await again('/tools', 'fp-tools')).ok, true)
       // A caller that names no fingerprint (the IPC never does) is answered as before.
-      assert.deepEqual(await again('/anything'), first)
+      assert.equal((await again('/anything')).ok, true)
       const replay = await restarted.readTranscript(f.key)
       assert.equal(replay.ok && replay.events.filter((e) => e.type === 'user_message').length, 1)
     } finally {
@@ -351,40 +359,143 @@ test('a command id named for a different command is refused, while the first run
   }
 })
 
-test('a crash after command intent persistence never replays its side effect', async () => {
-  let intent = ''
-  let receiptsPath = ''
+test('a crash after a send is committed, before it is answered, never sends it twice', async () => {
+  // The provider takes the message and never ends the turn: the process dies mid-turn.
   const adapter: ConversationProviderAdapter = {
     ...createMockConversationProvider(),
-    async sendTurn(input) {
-      intent = await readFile(receiptsPath, 'utf8')
-      return [event(input, 'turn_completed', { turnId: input.turnId })]
-    },
+    sendTurn: (input) =>
+      (async function* () {
+        yield event(input, 'turn_started', { turnId: input.turnId })
+        // Until its process is told to stop, which only the cleanup does.
+        await new Promise((resolve) => input.signal?.addEventListener('abort', resolve))
+      })(),
   }
   const f = await fixture(adapter)
-  const restarted = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
+  const restarted = new ConversationRuntime({
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+  })
   try {
-    receiptsPath = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.receipts.json')
     const commandId = randomUUID()
-    assert.ok((await f.runtime.sendTurn({ sessionId: f.sessionId, commandId, message: 'one effect' })).ok)
-    assert.equal(JSON.parse(intent)[0][1].ok, false, 'intent must exist before invoking the provider')
-    await f.runtime.shutdown()
-    // Preserve the exact durable state from before the result receipt was written.
-    await writeFile(receiptsPath, intent)
-    const opened = await restarted.startSession({ ...f.key, providerId: adapter.id, modelId: adapter.listModels()[0] })
+    const committed = new Promise<void>((resolve) =>
+      f.runtime.onEvent((value) => {
+        if (value.type === 'user_message') resolve()
+      }),
+    )
+    // Never answered: the turn it opened is still running when the process goes.
+    void f.runtime.sendTurn({ sessionId: f.sessionId, commandId, message: 'one effect' })
+    await committed
+    // A second process over the same files, the first never shut down: a crash.
+    // The session the send named went with it, and is said to be gone, not
+    // to hold no receipt; the chat's log holds it, session or none.
+    assert.equal(await restarted.commandReceipt(f.sessionId, commandId), 'no_session')
+    assert.equal(await restarted.hasChatCommandReceipt(f.key, commandId), true)
+    const opened = await restarted.startSession({ ...f.key, providerId: 'mock-provider', modelId: 'mock-model' })
     assert.ok(opened.ok)
-    const duplicate = await restarted.sendTurn({
-      sessionId: opened.session.sessionId,
-      commandId,
-      message: 'one effect',
-    })
-    assert.equal(duplicate.ok, false)
+    assert.equal(await restarted.commandReceipt(opened.session.sessionId, commandId), 'kept')
+    const retry = await restarted.sendTurn({ sessionId: opened.session.sessionId, commandId, message: 'one effect' })
+    assert.equal(retry.ok, true, 'the message is in the chat: the retry is answered as sent')
     const transcript = await restarted.readTranscript(f.key, { all: true })
     assert.ok(transcript.ok)
     assert.equal(transcript.events.filter((entry) => entry.type === 'user_message').length, 1)
+    const turnId = transcript.events.find((entry) => entry.type === 'user_message')?.payload?.turnId
+    const end = transcript.events.find((entry) => entry.type === 'turn_failed' && entry.payload?.turnId === turnId)
+    assert.equal(end?.payload?.reason, 'interrupted', 'the turn the crash cut off is closed when the chat opens again')
   } finally {
     await restarted.shutdown()
     await f.cleanup()
+  }
+})
+
+test('a start closes every turn the last run left open, without anyone opening the chat', async () => {
+  // The provider takes the message and never ends the turn: the process dies mid-turn.
+  const hanging: ConversationProviderAdapter = {
+    ...createMockConversationProvider(),
+    sendTurn: (input) =>
+      (async function* () {
+        yield event(input, 'turn_started', { turnId: input.turnId })
+        await new Promise((resolve) => input.signal?.addEventListener('abort', resolve))
+      })(),
+  }
+  const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
+  const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+  const first = new ConversationRuntime({
+    adapters: [hanging],
+    getProviderById: () => undefined,
+    outbox: new ConversationOutbox(dataDir),
+  })
+  const restarted = new ConversationRuntime({
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+    outbox: new ConversationOutbox(dataDir),
+  })
+  try {
+    const started = await first.startSession({ ...key, providerId: hanging.id, modelId: 'mock-model' })
+    assert.ok(started.ok)
+    const committed = new Promise<void>((resolve) =>
+      first.onEvent((value) => {
+        if (value.type === 'turn_started') resolve()
+      }),
+    )
+    void first.sendTurn({ sessionId: started.session.sessionId, commandId: 'phone-1', message: 'one effect' })
+    await committed
+    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [key], 'listed before its turn began')
+
+    // The first process is gone without shutting down; the next one starts.
+    const closed: ConversationEvent[] = []
+    restarted.onEvent((value) => closed.push(value))
+    await restarted.recoverInterruptedTurns()
+    assert.deepEqual(
+      closed.map((value) => [value.type, value.payload?.reason]),
+      [['turn_failed', 'interrupted']],
+      'the turn is closed in the log and said, with no session started on the chat',
+    )
+    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [], 'and the chat leaves the outbox')
+    const replay = await restarted.readTranscript(key, { all: true, closeOpenTurns: false })
+    assert.ok(replay.ok)
+    assert.equal(replay.events.at(-1)?.type, 'turn_failed')
+
+    // A client that retries its send is answered as sent, and nothing is sent twice.
+    const opened = await restarted.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+    assert.ok(opened.ok)
+    const retry = await restarted.sendTurn({
+      sessionId: opened.session.sessionId,
+      commandId: 'phone-1',
+      message: 'one effect',
+    })
+    assert.equal(retry.ok, true)
+    const after = await restarted.readTranscript(key, { all: true })
+    assert.ok(after.ok)
+    assert.equal(after.events.filter((value) => value.type === 'user_message').length, 1)
+  } finally {
+    await restarted.shutdown()
+    await first.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('a send goes when the list of open turns cannot be written: it is an aid, not the log', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
+  const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+  const blocked = join(dataDir, 'data')
+  await writeFile(blocked, 'not a directory')
+  const runtime = new ConversationRuntime({
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+    outbox: new ConversationOutbox(blocked),
+  })
+  try {
+    const started = await runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+    assert.ok(started.ok)
+    const sent = await runtime.sendTurn({ sessionId: started.session.sessionId, message: '/tools', commandId: 'c-1' })
+    assert.equal(sent.ok, true, sent.ok ? '' : sent.message)
+  } finally {
+    await runtime.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+    await rm(dataDir, { recursive: true, force: true })
   }
 })
 
@@ -727,7 +838,8 @@ test('failed startup does not leave a zombie and a rejecting persister clears a 
     assert.equal((await brokenWrite.sendTurn({ sessionId: session.session.sessionId, message: '/tools' })).ok, false)
     const listed = brokenWrite.listSessions()
     assert.ok(listed.ok)
-    assert.equal(listed.sessions[0].status, 'failed')
+    // The message never reached the log, so no turn ran and none holds the chat.
+    assert.equal(listed.sessions[0].status, 'ready')
   } finally {
     await brokenStart.shutdown()
     await brokenWrite.shutdown().catch(() => undefined)
@@ -1386,17 +1498,20 @@ test('a full final output replaces what streamed', async () => {
   }
 })
 
-test('a receipts read that fails once does not fail every later command', async () => {
+test('a log read that fails once does not fail every later command', async () => {
   const f = await fixture()
   try {
     const folder = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace')
-    const receipts = join(folder, 'agent.receipts.json')
+    const transcript = join(folder, 'agent.jsonl')
+    await f.runtime.flushTranscripts()
+    // The log is briefly a link to somewhere else, which conversation storage never follows.
     await mkdir(join(folder, 'elsewhere'), { recursive: true })
-    await writeFile(join(folder, 'elsewhere', 'receipts.json'), '[]')
-    await symlink(join(folder, 'elsewhere', 'receipts.json'), receipts)
+    await rename(transcript, join(folder, 'elsewhere', 'agent.jsonl'))
+    await symlink(join(folder, 'elsewhere', 'agent.jsonl'), transcript)
     const refused = await f.runtime.sendTurn({ sessionId: f.sessionId, commandId: 'first', message: '/tools' })
     assert.equal(refused.ok, false)
-    await rm(receipts)
+    await rm(transcript)
+    await rename(join(folder, 'elsewhere', 'agent.jsonl'), transcript)
     const accepted = await f.runtime.sendTurn({ sessionId: f.sessionId, commandId: 'second', message: '/tools' })
     assert.equal(accepted.ok, true, accepted.ok ? '' : accepted.message)
   } finally {
@@ -1404,23 +1519,20 @@ test('a receipts read that fails once does not fail every later command', async 
   }
 })
 
-test('a corrupt receipts file is moved aside instead of refusing commands', async () => {
+test('a damaged receipt line is passed over instead of refusing commands', async () => {
   const f = await fixture()
   try {
-    const folder = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace')
-    await writeFile(join(folder, 'agent.receipts.json'), '{broken')
+    await f.runtime.flushTranscripts()
+    const transcript = workspaceStorePath(f.key.workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
+    await appendFile(transcript, '{"receipt":{"id":"half\n{"receipt":{"id":"after-corruption","at":"never"}}\n')
     const result = await f.runtime.sendTurn({
       sessionId: f.sessionId,
       commandId: 'after-corruption',
       message: '/tools',
     })
     assert.equal(result.ok, true)
-    assert.equal(await readFile(join(folder, 'agent.receipts.json.corrupt'), 'utf8'), '{broken')
-    const receipts = JSON.parse(await readFile(join(folder, 'agent.receipts.json'), 'utf8')) as [string, unknown][]
-    assert.deepEqual(
-      receipts.map(([id]) => id),
-      ['after-corruption'],
-    )
+    const replay = await f.runtime.readTranscript(f.key)
+    assert.equal(replay.ok && replay.events.filter((e) => e.type === 'user_message').length, 1)
   } finally {
     await f.cleanup()
   }
@@ -1454,7 +1566,7 @@ test('a command that throws records its failure, so a retry gets that result ins
   }
 })
 
-test('a turn failure the transcript cannot store still reaches subscribers, numbered', async () => {
+test('a send the log cannot take is not published and not recorded, so the same id sends once the disk is back', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-unwritable-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   let broken = false
@@ -1462,12 +1574,16 @@ test('a turn failure the transcript cannot store still reaches subscribers, numb
     adapters: [createMockConversationProvider()],
     getProviderById: () => undefined,
     eventLog: {
-      openStream: async () => ({
-        write: async () => {
-          if (broken) throw new Error('disk failed')
-        },
-        close: async () => {},
-      }),
+      openStream: async (filePath) => {
+        await mkdir(dirname(filePath), { recursive: true })
+        return {
+          write: async (chunk) => {
+            if (broken) throw new Error('disk failed')
+            await appendFile(filePath, chunk)
+          },
+          close: async () => {},
+        }
+      },
       onError: (_path, error) => {
         throw error
       },
@@ -1482,14 +1598,24 @@ test('a turn failure the transcript cannot store still reaches subscribers, numb
     const synchronized = frames.find((frame) => frame.type === 'synchronized')
     assert.ok(synchronized?.type === 'synchronized')
     broken = true
-    const result = await runtime.sendTurn({ sessionId: started.session.sessionId, message: '/tools' })
-    assert.equal(result.ok, false)
-    const failed = frames.find((frame) => frame.type === 'event' && frame.event.type === 'turn_failed')
-    assert.ok(failed?.type === 'event', 'the failure is delivered, not dropped for lacking a sequence number')
-    assert.ok(failed.event.seq! > synchronized.seq)
+    const sent = { sessionId: started.session.sessionId, message: '/tools', commandId: 'phone-1' }
+    const refused = await runtime.sendTurn(sent)
+    assert.equal(refused.ok, false)
+    assert.match(refused.ok ? '' : refused.message, /could not be saved/)
+    assert.deepEqual(
+      frames.filter((frame) => frame.type === 'event'),
+      [],
+      'nothing the log did not take is published',
+    )
+    broken = false
+    const accepted = await runtime.sendTurn(sent)
+    assert.equal(accepted.ok, true, 'nothing was recorded for it, so the same id runs')
+    const replay = await runtime.readTranscript(key)
+    assert.ok(replay.ok)
+    assert.equal(replay.events.filter((e) => e.type === 'user_message').length, 1)
     joined.dispose()
 
-    // Its numbering is no longer on disk, so a reconnect is sent a snapshot.
+    // Every number a client was given is on disk: a reconnect from the fence catches up.
     const again: ConversationSessionFrame[] = []
     const rejoined = new ConversationSessionApi(runtime).subscribe(
       { key, afterSeq: synchronized.seq, generation: synchronized.generation },
@@ -1497,7 +1623,7 @@ test('a turn failure the transcript cannot store still reaches subscribers, numb
     )
     await rejoined.ready
     rejoined.dispose()
-    assert.ok(again[0].type === 'snapshot' && again[0].reset)
+    assert.equal(again[0].type, 'event')
   } finally {
     await runtime.shutdown().catch(() => undefined)
     await rm(workspaceRoot, { recursive: true, force: true })
@@ -1677,76 +1803,4 @@ test('a chat’s prompt cache survives a restart: resumed from the transcript, i
     await runtime.shutdown()
     await rm(workspaceRoot, { recursive: true, force: true })
   }
-})
-
-test("a turn left open when its chat's server stopped shows as interrupted, and the server's own log replaces it once back", async () => {
-  const key = { workspaceRoot: '/home/dev/repo', workspaceId: 'workspace', agentId: 'agent' }
-  const base = {
-    sessionId: 'conv_1',
-    workspaceId: 'workspace',
-    agentId: 'agent',
-    providerId: 'mock-provider',
-    modelId: 'mock-model',
-    createdAt: 1,
-  }
-  const asked: Array<{ afterSeq?: number; generation?: string }> = []
-  let resumed: (key: string) => void = () => undefined
-  let lost: (key: string, message: string) => void = () => undefined
-  const routed = {
-    onEvent: () => () => undefined,
-    recoverTranscript: async () => undefined,
-    readConversationSync: async (_key: unknown, input: { afterSeq?: number; generation?: string }) => {
-      asked.push(input)
-      if (asked.length === 1)
-        return {
-          ok: true,
-          kind: 'events',
-          head: 2,
-          generation: 'g1',
-          events: [
-            { ...base, id: 'e1', seq: 1, type: 'user_message', payload: { turnId: 't1', text: 'go' } },
-            { ...base, id: 'e2', seq: 2, type: 'turn_started', payload: { turnId: 't1' } },
-          ],
-        }
-      return { ok: true, kind: 'snapshot', head: 3, generation: 'g1', page: { events: [], hasMore: false } }
-    },
-    routeOf: () => 'Ubuntu',
-    onRouteResumed: (listener: (key: string) => void) => {
-      resumed = listener
-      return () => undefined
-    },
-    onRouteLost: (listener: (key: string, message: string) => void) => {
-      lost = listener
-      return () => undefined
-    },
-  }
-  const api = new ConversationSessionApi(routed as never)
-  const frames: ConversationSessionFrame[] = []
-  const subscription = api.subscribe({ key, afterSeq: 0, generation: 'g1' }, (frame) => frames.push(frame))
-  await subscription.ready
-  frames.length = 0
-
-  lost('Debian', 'another distribution')
-  assert.equal(frames.length, 0, "another server's loss is not this chat's")
-  lost('Ubuntu', 'The Studio server in Ubuntu stopped while this turn was running.')
-  assert.equal(frames.length, 1)
-  const closed = frames[0].type === 'event' ? frames[0].event : null
-  assert.equal(closed?.type, 'turn_failed')
-  assert.equal(closed?.seq, 3)
-  assert.deepEqual(closed?.payload, {
-    turnId: 't1',
-    reason: 'interrupted',
-    message: 'The Studio server in Ubuntu stopped while this turn was running.',
-  })
-  lost('Ubuntu', 'again')
-  assert.equal(frames.length, 1, 'a turn is closed once')
-
-  // Back: a reset snapshot from the log, which the restarted server closed
-  // in its own words, rather than events after a turn this side closed.
-  resumed('Ubuntu')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.deepEqual(asked.at(-1), { afterSeq: 2, generation: undefined, turnLimit: undefined })
-  const snapshot = frames.find((frame) => frame.type === 'snapshot')
-  assert.ok(snapshot && snapshot.type === 'snapshot' && snapshot.reset === true)
-  subscription.dispose()
 })

@@ -21,8 +21,13 @@ export type DetachedServerRecord = {
   environmentId: string
   /** The front door's bridge socket, which the relay proves itself on. */
   socketPath: string
-  /** The backend wire the server speaks (`BACKEND_WIRE_VERSION`). */
-  backendWire: number
+  /**
+   * The Studio protocol window the server speaks: what a desktop decides
+   * compatibility from (`studioCompatibility`). Absent from a record written
+   * before the window was; such a server reads as `unknown`.
+   */
+  protocolVersion: number
+  minProtocolVersion: number
   dataDir: string
 }
 
@@ -58,3 +63,22 @@ export function readServerRecordFile(runDir: string): DetachedServerRecord | nul
     return null
   }
 }
+
+/**
+ * `run/update-failed.json`: an update of this machine's server that did not
+ * start, written by `start --detach --replace` once the old server had left,
+ * and removed by the next start that succeeds. A desktop does not try the
+ * same update again on its own: its row says what failed and offers Retry.
+ */
+export type FailedUpdateRecord = {
+  /** The version that ran before, which was started again. */
+  from: string
+  /** The version that did not start. */
+  to: string
+  /** When, in ms since the epoch. */
+  at: number
+  /** Why, in words, with the end of the server's log. */
+  reason: string
+}
+
+export const FAILED_UPDATE_FILENAME = 'update-failed.json'

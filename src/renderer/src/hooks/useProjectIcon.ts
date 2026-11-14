@@ -5,6 +5,7 @@ import type { ProjectIconSetting } from '../../../shared/project-icon'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { ensureProjectLogo, getProjectLogoDataUrl, subscribeProjectLogos } from '../utils/projectLogos'
 import { useProjectLogo } from './useProjectLogo'
+import { filesApi } from '../studio/files'
 
 /** What a project's icon slot shows; null keeps the folder glyph. */
 export type ProjectIconView = { kind: 'image'; src: string } | { kind: 'monogram'; text: string; hue: number } | null
@@ -42,7 +43,7 @@ export function useProjectIcon(folderPath: string | null | undefined): ProjectIc
   const fileKey = filePath ? `${PROJECT_ICON_FILE_KEY_PREFIX}${filePath}` : null
   useEffect(() => {
     if (!filePath || !fileKey) return
-    ensureProjectLogo(fileKey, () => window.api.readProjectIconFile(filePath))
+    ensureProjectLogo(fileKey, () => filesApi.readProjectIconFile(filePath))
   }, [fileKey, filePath])
   const fileSrc = useSyncExternalStore(
     subscribeProjectLogos,

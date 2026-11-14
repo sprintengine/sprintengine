@@ -3,16 +3,19 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, test } from 'vitest'
+import { afterEach, beforeEach, test, vi } from 'vitest'
 
 import type { StudioAreaSkillChoices, StudioAreaSkillId } from '../../../../shared/studio-area-skills'
+import { agentSetupDouble } from '../../studio/agentSetup.double'
 import { resetStudioAreaSkillsStoreForTests } from '../../store/studioAreaSkillsStore'
 import { StudioSkillsSettings } from '../settings/StudioSkillsSettings'
 import { StudioSkillSuggestion } from './StudioSkillSuggestion'
 
+vi.mock('../../studio/agentSetup', () => import('../../studio/agentSetup.double'))
+
 // A surface offering its Studio skill, and the Settings switches for all six:
-// both read the one record main keeps, so an answer in either place shows in
-// the other. Main here is an in-memory stand-in with the same rules.
+// both read the one record the Studio keeps, so an answer in either place
+// shows in the other. The Studio here is an in-memory stand-in with the same rules.
 
 let root: Root
 let container: HTMLElement
@@ -26,7 +29,7 @@ function installMain(initial: StudioAreaSkillChoices) {
     for (const listener of listeners) listener(record)
     return record
   }
-  ;(window as unknown as { api: unknown }).api = {
+  Object.assign(agentSetupDouble, {
     studioAreaSkillsGet: async () => record,
     studioAreaSkillsSetEnabled: async ({ skillId, enabled }: { skillId: StudioAreaSkillId; enabled: boolean }) =>
       commit({
@@ -39,7 +42,7 @@ function installMain(initial: StudioAreaSkillChoices) {
       listeners.add(cb)
       return () => listeners.delete(cb)
     },
-  }
+  })
 }
 
 async function mount(node: React.ReactNode) {
@@ -136,8 +139,7 @@ test('Not now is remembered, and a skill switched off in Settings is not offered
 
 test('nothing is offered before main has said what was already chosen', async () => {
   installMain({ enabled: ['studio-backlog'], dismissed: [] })
-  ;(window as unknown as { api: { studioAreaSkillsGet: () => Promise<never> } }).api.studioAreaSkillsGet = () =>
-    new Promise<never>(() => undefined)
+  agentSetupDouble.studioAreaSkillsGet = () => new Promise<never>(() => undefined)
   await mount(<StudioSkillSuggestion skillId="studio-backlog" />)
   assert.equal(offer(), null)
 })

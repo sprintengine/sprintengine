@@ -6,6 +6,8 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import type { AgentId, WorkspaceId, WorkspaceWorktree } from '../types/workspace'
 import { publishDiagnosticSync } from './diagnostics'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from './workspaceWorktree'
+import { gitApi } from '../studio/git'
+import { worktreesApi } from '../studio/worktrees'
 
 export type NewChatWorktreeResult =
   | {
@@ -72,7 +74,7 @@ export async function createNewChatWorktree(
   const projectFolder = workspaceProjectRootOf({ folderPath }) ?? folderPath
   const worktreeHostId = hostId ?? undefined
   try {
-    const repoRoot = await window.api.getGitRepoRoot(projectFolder, worktreeHostId)
+    const repoRoot = await gitApi.getGitRepoRoot(projectFolder, worktreeHostId)
     if (!repoRoot) {
       return fail(
         'Worktree needs a git repository',
@@ -87,7 +89,7 @@ export async function createNewChatWorktree(
     // reused slot keeps the last agent's installed dependencies. A chat on a
     // WSL machine is declined by the pool and gets a fresh worktree from that
     // machine's git, forked from the same default branch.
-    const result = await window.api.createGitWorktree({
+    const result = await worktreesApi.createGitWorktree({
       repoRoot,
       containerPath: paths.containerPath,
       destinationPath: paths.destinationPath,
@@ -169,10 +171,24 @@ export function pendingNewChatWorktreeFailure(
   return pending.failure ?? 'Studio closed before this chat’s worktree was made.'
 }
 
+/**
+ * The worktree a chat is waiting on. A chat with a folder waits on nothing,
+ * whatever its record says: a record kept from before clears reached the
+ * registry, or written by an older Studio, can still carry the field.
+ */
+export function pendingNewChatWorktreeOf(
+  workspace: { folderPath?: string | null } | undefined,
+  agent: Pick<AgentState, 'chatPendingWorktree'> | undefined,
+): PendingNewChatWorktree | null {
+  if (workspace?.folderPath?.trim()) return null
+  return agent?.chatPendingWorktree ?? null
+}
+
 function pendingChatOf(workspaceId: WorkspaceId): { agentId: AgentId; pending: PendingNewChatWorktree } | null {
   const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
   for (const [agentId, agent] of Object.entries(workspace?.agents ?? {})) {
-    if (agent.chatPendingWorktree) return { agentId, pending: agent.chatPendingWorktree }
+    const pending = pendingNewChatWorktreeOf(workspace, agent)
+    if (pending) return { agentId, pending }
   }
   return null
 }
@@ -240,8 +256,9 @@ async function giveBackUnusedWorktree(
 ): Promise<void> {
   if (!made.made) return
   try {
-    if (made.made.leaseId) await window.api.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId })
-    else if (!hostId) await window.api.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
+    if (made.made.leaseId)
+      await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId, unused: true })
+    else if (!hostId) await worktreesApi.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
   } catch {
     // Left for the sweep.
   }
@@ -274,8 +291,8 @@ export function startPendingNewChatInProject(workspaceId: WorkspaceId): boolean 
 // computer, on a branch named at random: a name typed into the chip is a
 // different branch, so it is made on Enter as before. Turning Worktree off,
 // moving to another project or closing New chat gives the slot back to the
-// pool, clean, for the next chat; its empty branch goes at the next cleanup
-// sweep, like any other of Studio's with no work of its own.
+// pool, clean, for the next chat, and the pool deletes its empty branch then
+// (pool-return.ts `dropUnusedBranch`).
 //
 // Kept current while it waits: every chat starts on the latest origin/main
 // (owner ruling 2026-10-17), and the person may type for minutes after the
@@ -432,7 +449,7 @@ function catchUpReservation(reservation: Reservation): Promise<void> {
   if (reservation.catchingUp) return reservation.catchingUp
   const leaseId = reservation.settled?.ok ? reservation.settled.made?.leaseId : null
   if (!leaseId) return Promise.resolve()
-  const run = window.api
+  const run = worktreesApi
     .worktreePoolAction({ kind: 'catch-up', leaseId })
     .then(
       (result) => {

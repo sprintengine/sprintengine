@@ -47,7 +47,6 @@ import { ConversationFileDiffScreen } from "../features/conversations/Conversati
 import { PullRequestFileScreen } from "../features/pullRequests/PullRequestFileScreen";
 import { PullRequestScreen } from "../features/pullRequests/PullRequestScreen";
 import { openPullRequest } from "../features/conversations/ChatMarkViews";
-import { tailnetGrantAllows } from "../api/tailnetControlClient";
 import { NewChatScreen } from "../features/conversations/NewChatScreen";
 import { routesAfterNewChat, routesAfterSchedule } from "../features/conversations/launchLogic";
 import { openWebTarget, WebTargetsScreen } from "../features/web/WebTargetsScreen";
@@ -115,7 +114,6 @@ export function AppNavigator() {
     selectSession,
     removeSession,
     renameSession,
-    revokeOnDesktop,
   } = useSessionData();
   const { chats, openedAt } = useChats();
   const notices = useNotices();
@@ -131,7 +129,8 @@ export function AppNavigator() {
   // browser from there.
   const viewsPullRequests = (deviceId: string) => {
     const paired = sessions.find((candidate) => candidate.deviceId === deviceId);
-    return !!paired && tailnetGrantAllows(paired.tailnetScopes, "pullRequest.read");
+    // The desktop reads a pull request in full for a pairing that may operate it.
+    return !!paired && paired.tailnetScopes.includes("workspace:operate");
   };
 
   return (
@@ -303,8 +302,13 @@ export function AppNavigator() {
       <HomeStack.Screen name="ChatLink" options={{ headerShown: false }}>
         {({ navigation, route }) => (
           <ChatLinkScreen
-            key={JSON.stringify([route.params.workspaceId, route.params.agent ?? null])}
-            link={{ workspaceId: route.params.workspaceId, agentId: route.params.agent ?? null }}
+            key={JSON.stringify([route.params.environment ?? null, route.params.workspaceId, route.params.agent ?? null])}
+            link={{
+              kind: "chat",
+              environmentId: route.params.environment ?? null,
+              chatId: route.params.workspaceId,
+              agentId: route.params.agent ?? null,
+            }}
             onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate("HomeOverview"))}
             // The chat takes the link's place, so Back from it is Back from the link.
             onOpen={(target) => navigation.dispatch(inPlaceOfTop(target))}
@@ -430,7 +434,6 @@ export function AppNavigator() {
                   navigation.goBack();
                 }}
                 onRename={(name) => renameSession(route.params.deviceId, name)}
-                onRevokeOnDesktop={route.params.deviceId === activeDeviceId ? revokeOnDesktop : null}
                 onSelect={() => selectSession(route.params.deviceId)}
                 onStartPairing={() => navigation.navigate("Pairing")}
                 session={sessions.find((candidate) => candidate.deviceId === route.params.deviceId) ?? null}
@@ -484,7 +487,6 @@ function BacklogNavigator() {
     refreshSnapshot,
     backlogCapabilities,
     sendBacklogUpdate,
-    sendBacklogCreate,
     currentProject,
   } = useSnapshot();
 
@@ -501,7 +503,6 @@ function BacklogNavigator() {
             errorMessage={snapshotError}
             isLoading={snapshotState === "loading"}
             isRefreshing={isRefreshing}
-            onCreateItem={sendBacklogCreate}
             onOpenItem={(item) =>
               navigation.navigate("BacklogDetail", {
                 workspacePath: item.workspacePath,

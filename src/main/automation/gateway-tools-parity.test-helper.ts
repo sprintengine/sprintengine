@@ -18,7 +18,7 @@ import { desktopGatewayTools } from './desktop-gateway-tools'
 import { createEditorTools } from './editor-tools'
 import { createMcpDispatcher, type McpDispatchGate } from './mcp-dispatch'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
-import { gatewayToolsForCaller, localOnlyGatewayToolReason, requiredScopeForTool } from './tailnet/tailnet-scopes'
+import { localOnlyGatewayToolReason, requiredScopeForTool } from './tailnet/tailnet-scopes'
 import { createTailnetTools } from './tailnet/tailnet-tools'
 import { createTourTools } from './tour-tools'
 import { createVisualTools } from './visual-tools'
@@ -26,7 +26,6 @@ import { createWorktreePoolTools } from '../worktree-pool/worktree-pool-tools'
 import { createArtifactsTools } from '../artifacts/artifacts-tools'
 import { createExtensionTools } from './extension-tools'
 import { createPluginTools } from './plugin-tools'
-import { createUsageTools } from '../usage/usage-tools'
 
 // The tools/list agents see from the desktop, byte for byte: names,
 // descriptions, schemas and order, for an agent Studio launched, a CLI the
@@ -54,7 +53,6 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
     tour: createTourTools(stub),
     visual: createVisualTools(stub),
     automation: createAutomationTools(stub),
-    worktree: createWorktreePoolTools(stub),
     artifacts: createArtifactsTools(stub),
     extension: createExtensionTools(stub),
     plugin: createPluginTools(stub),
@@ -66,7 +64,7 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
       ...createConversationPullRequestTools(stub),
       ...createPullRequestTools(stub),
       ...createLocalServerTools(stub),
-      ...createUsageTools(stub),
+      ...createWorktreePoolTools(stub),
     ],
   }
 }
@@ -102,7 +100,7 @@ export async function listsFor(
     serverName: 'sprintengine-studio',
     serverVersion: '0.0.0-test',
     // As the gateway lists its own tools to each caller (studio-gateway.ts).
-    resolveTools: (context) => gatewayToolsForCaller(resolveTools(context), context),
+    resolveTools: (context) => resolveTools(context),
     ...(clientTools ? { clientTools } : {}),
   })
   const lists: Record<string, unknown> = {}

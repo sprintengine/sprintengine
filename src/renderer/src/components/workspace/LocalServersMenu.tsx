@@ -11,6 +11,7 @@ import { MENU_LIST_CLASS } from '../ui/menuClasses'
 import { openUrlInPane } from './pane/browser/openInPane'
 import { isLocalServerRunConfirmed, rememberLocalServerRun, type LocalServerRun } from './localServerRunConfirmations'
 import { removeLocalServer, runLocalServer, stopLocalServer, type LocalServerActionResult } from './useLocalServers'
+import { tailnetApi } from '../../studio/tailnet'
 
 // The one menu for the local servers a conversation's agents started, opened
 // from the open chat's composer strip and from the sidebar row's mark, so the
@@ -159,12 +160,15 @@ export function localServerActions(
   return actions
 }
 
-/** Tailscale's view of this machine's shares, or null when this shell cannot ask (a browser tab) or it did not answer. */
+/**
+ * Tailscale's view of this machine's shares, or null when it did not answer or
+ * this is not Studio's own window (a browser tab), which may not share a port
+ * (`tailnet.share` is a window's).
+ */
 async function readTailnetStatus(): Promise<TailnetShareStatus | null> {
-  const api = typeof window === 'undefined' ? undefined : window.api
-  if (typeof api?.tailnetShareStatus !== 'function') return null
+  if (!clientSupports('tailnet-admin')) return null
   try {
-    return await api.tailnetShareStatus()
+    return await tailnetApi.tailnetShareStatus()
   } catch {
     return null
   }
@@ -273,7 +277,7 @@ async function runAction(
     }
     case 'share-tailnet': {
       try {
-        const result = await window.api.tailnetSharePort(server.port)
+        const result = await tailnetApi.tailnetSharePort(server.port)
         if (result.ok && result.share) {
           // The link is what the person shares it for, so it is on the
           // clipboard already.

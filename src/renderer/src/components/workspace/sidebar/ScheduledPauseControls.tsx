@@ -67,3 +67,19 @@ export function ScheduledAgentsPausedNotice({ pause, now }: { pause: ScheduledAg
     </InlineNotice>
   )
 }
+
+/**
+ * The line over the Scheduled section while no scheduled agent or message may
+ * run though none is paused: what this computer hands to its machines could
+ * not be read, so nothing it may hand over runs here until it can. Nothing
+ * here lifts it; it ends once the hand-over can read its records.
+ */
+export function ScheduledAgentsHeldNotice({ reason }: { reason: string }) {
+  return (
+    <InlineNotice tone="warn" className="mx-1.5 my-1">
+      <span data-scheduled-held-notice="">
+        <strong>Scheduled agents and messages are paused.</strong> {reason}
+      </span>
+    </InlineNotice>
+  )
+}

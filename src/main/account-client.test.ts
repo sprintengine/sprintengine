@@ -226,6 +226,13 @@ test('account-client', async () => {
     assert.equal(events.find((entry) => entry.event === 'identity-resumed')?.data?.provider, 'multiauth')
   }
 
+  async function aSignedOutProfileSaysSoOnce(): Promise<void> {
+    const backend = new Backend()
+    const { account, events } = client(backend)
+    for (let ask = 0; ask < 6; ask += 1) await assert.rejects(account.resumeStoredSession())
+    assert.equal(events.filter((entry) => entry.event === 'identity-resume-failed').length, 1)
+  }
+
   async function offlineLaunchThenAccessTokenOnceOnline(): Promise<void> {
     const backend = new Backend()
     backend.offline.add(BASE_URL).add(CLERK.issuer)
@@ -448,6 +455,7 @@ test('account-client', async () => {
     ],
     ['a Clerk refresh failure falls through to the retained Multiauth token', clerkFailureFallsThroughToMultiauth],
     ['an offline launch still yields an access token once the network is back', offlineLaunchThenAccessTokenOnceOnline],
+    ['a signed-out profile says its resume failed once, not on every ask', aSignedOutProfileSaysSoOnce],
     ['overlapping refreshes share one round trip', overlappingRefreshesShareOneRoundTrip],
     [
       'logout clears both stores and the marker even when the server is gone',

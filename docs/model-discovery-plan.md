@@ -79,9 +79,9 @@ What each CLI offers, verified on 2026-09-22:
 - **A. Discovery service (main, preload, renderer boot).** `src/main/model-discovery/`:
   probe registry, the Codex JSON parser, the line parsers for Cursor, Grok and
   OpenCode, the Agent SDK probe, freshness and version gating, a main-side cache
-  under userData so the renderer's persisted copy and the gating agree. IPC
-  `cli-models:discover` and push `cli-models:changed` per
-  `src/shared/ipc/cli-model-discovery.ts`. Preload api. A renderer boot module
+  under userData so the renderer's persisted copy and the gating agree. Served
+  as the Studio protocol's `cliModels.discover` and `cliModels.changed`
+  (`packages/studio-protocol/src/agent-settings.ts`). A renderer boot module
   that loads the persisted catalogs into the discovery request and applies the
   answer through `setCliModelCatalog`. Normalizer accepts `firstSeenAt`.
 - **B. Retire the hosted model list and apply the rules.** Remove the model

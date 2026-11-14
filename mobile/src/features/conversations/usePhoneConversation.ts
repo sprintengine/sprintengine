@@ -2,51 +2,51 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import * as Crypto from "expo-crypto";
 import {
-  createTailnetConversationsApi,
+  createDesktopConversationsApi,
+  type ChatRead,
   type ConversationApi,
   type ConversationStream,
   type ConversationConnectionState,
-} from "../../api/tailnetConversations";
+  type ConversationThread,
+} from "../../api/desktopConversations";
 import {
-  conversationSendProblem,
-  conversationSessionWasLost,
-  isConversationEvent,
-  LOST_REQUEST_SENTENCE,
-  plainLineBreaks,
-  type ConversationClientFrame,
+  parseConversationWireEvent,
   type ConversationCommand,
-  type ConversationEvent,
-  type ConversationPermissionPreset,
+  type ConversationWireEvent as ConversationEvent,
+  type ConversationWirePermissionPreset as ConversationPermissionPreset,
   type ConversationQueuedMessage,
   type ConversationScheduledMessage,
   type ConversationSubagent,
-  type ConversationThread,
   type ConversationUsageLimitSnapshot,
-} from "../../api/conversationWire";
-import {
-  declaresConversationHello,
-  declaresQueuedAttachments,
-  declaresQueuedSends,
-  declaresScheduledSends,
-  declaresSteerSends,
-  declaresAgentMessage,
-  declaresConversationSubagents,
-  declaresQuoteTokens,
-  declaresUsageLimits,
-  declaresStopSubagent,
-} from "../../api/tailnetTransport";
+} from "../../../../packages/conversation-protocol/src/public";
+import { useChatOffers, type PhoneChatOffers } from "../../api/chatOffers";
 import type { MobileSession } from "../../api/types";
 import {
-  conversationCanOperate,
+  conversationSendProblem,
+  conversationSessionWasLost,
+  LOST_REQUEST_SENTENCE,
+  plainLineBreaks,
+} from "./sendRules";
+import {
+  foldable,
+  followContext,
   isStreamedEvent,
   keepUnchangedRows,
   mergeConversationEvents,
-  projectConversation,
+  NO_LOCAL_TURNS,
+  PHONE_PROJECTION,
+  phoneRows,
   recordValue,
+  type HeldContext,
+} from "./conversationLogic";
+import {
+  createConversationProjectionState,
+  syncConversationProjection,
+  type AgentLane,
   type ChangedTurn,
   type ConversationRow,
-} from "./conversationLogic";
-import type { AgentLane } from "./agentLogic";
+  type IncrementalConversationState,
+} from "../../../../packages/conversation-timeline/src/public";
 import { chatWorksInBackground } from "./conversationListLogic";
 import { keepUnchanged } from "./keepUnchanged";
 import { CACHE_SAVE_NOTICE, createCacheSaveHealth } from "./cacheSaveHealth";
@@ -64,12 +64,14 @@ import {
 import { createQueuedSendCourier } from "./queuedSendCourier";
 import {
   cancelRefusal,
+  handingSend,
   heldByDesktop,
   holdsOnDesktop,
   queuedSendStale,
   stillHanding,
   type HandingSend,
 } from "./queuedSends";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * How long a streamed delta may wait to be drawn with the ones behind it. A
@@ -111,6 +113,8 @@ const queuedSends = createQueuedSendCourier({
     return () => subscription.remove();
   },
 });
+
+const isWireEvent = (value: unknown): value is ConversationEvent => parseConversationWireEvent(value) !== null;
 
 /** What to tell the person when the desktop refused something without saying why. */
 function refusalText(code: string | undefined, fallback: string): string {
@@ -167,25 +171,15 @@ export type StopAgentResult = { ok: true } | { ok: false; message: string };
 export type ModelSwitchResult =
   | { ok: true; notice?: string }
   | { ok: false; message: string };
-type Request = ConversationClientFrame extends infer F
-  ? F extends { requestId: string }
-    ? Omit<F, "requestId">
-    : never
-  : never;
 export function usePhoneConversation(
   session: MobileSession | undefined,
   thread: ConversationThread,
   apiOverride?: ConversationApi,
+  /** What the harness's fake desktop offers, with its fake API; the app never passes it. */
+  offersOverride?: PhoneChatOffers | null,
 ) {
   const api = useMemo(
-    () =>
-      apiOverride ??
-      (session
-        ? createTailnetConversationsApi({
-            baseUrl: session.baseUrl,
-            deviceToken: session.deviceToken,
-          })
-        : null),
+    () => apiOverride ?? (session ? createDesktopConversationsApi(studioTargetOf(session)) : null),
     [session?.baseUrl, session?.deviceToken, apiOverride],
   );
   // A chat opened earlier in this run draws what it held at once, on the
@@ -278,46 +272,30 @@ export function usePhoneConversation(
   // end (its lane stops running) or the desktop refuses: the Stop says
   // "Stopping" meanwhile, and is not sent twice.
   const [stoppingAgentIds, setStoppingAgentIds] = useState<ReadonlySet<string>>(() => new Set());
-  // Whether the desktop holds queued messages; re-read on every foreground, so
-  // a desktop that updates starts holding them without a re-pair.
-  const holdsQueued = !!session && declaresQueuedSends(session);
-  // Whether it holds a queued message's pictures and files as well, so one
-  // carrying them goes to it too rather than waiting here.
-  const holdsAttachments = !!session && declaresQueuedAttachments(session);
-  // Whether the desktop keeps messages scheduled into a chat, read the same way.
-  const holdsScheduled = !!session && declaresScheduledSends(session);
-  const takesSteer = !!session && declaresSteerSends(session);
-  // Whether an agent of this chat can be stopped by itself from here: the
-  // desktop takes the command and this pairing may drive its chats. Whether
-  // the chat's own CLI can is its listed `capabilities.stopSubagent`.
-  const stopsAgents = !!session && declaresStopSubagent(session) && conversationCanOperate(session);
-  const messagesAgents = !!session && declaresAgentMessage(session) && conversationCanOperate(session);
-  // Whether the socket's probe can be the cheap `hello` rather than a `list`.
-  const answersHello = !!session && declaresConversationHello(session);
-  // Whether the desktop names this chat's sub-agents when asked.
-  const watchesSubagents = !!session && declaresConversationSubagents(session);
-  const watchesUsageLimits = !!session && declaresUsageLimits(session);
-  // Whether a quote goes as its token, which the desktop expands for its
-  // agent and sends back to a socket that says it draws one. The `hello` that
-  // says so needs `conversation-hello` as well; without it the phone writes
-  // a blockquote, as it does for a desktop without tokens.
-  const quoteTokens = answersHello && !!session && declaresQuoteTokens(session);
+  // What this desktop's chats offer here, from its Studio's latest welcome
+  // and this pairing's grant (`chatOffers.ts`): read again on every
+  // connection, so a desktop that updates offers more without a re-pair.
+  const offers = useChatOffers(apiOverride ? null : session, offersOverride);
+  // Whether the desktop holds queued messages, and their pictures and files as well.
+  const holdsQueued = offers.hostQueue;
+  const holdsAttachments = offers.hostQueueAttachments;
+  // Whether the desktop keeps messages scheduled into a chat.
+  const holdsScheduled = offers.hostSchedule;
+  const takesSteer = offers.steer;
+  // Whether an agent of this chat can be stopped by itself from here, or told
+  // something; whether the chat's own CLI can is its listed capabilities.
+  const stopsAgents = offers.stopAgents && offers.operate;
+  const messagesAgents = offers.agentMessages && offers.operate;
+  // Whether the desktop names this chat's sub-agents.
+  const watchesSubagents = offers.subagents;
+  // Whether a quote goes as its token, which the desktop expands for its agent.
+  const quoteTokens = offers.quotes;
   // Read by a send as it is made: a turn running, and messages the phone holds.
   const turnBusyRef = useRef(false);
   const phoneQueuedRef = useRef(0);
 
   const metadataInFlight = useRef<Promise<void> | null>(null);
   const metadataAgain = useRef(false);
-  const requests = useRef(
-    new Map<
-      string,
-      {
-        resolve: (value: unknown) => void;
-        reject: (error: Error) => void;
-        timer: ReturnType<typeof setTimeout>;
-      }
-    >(),
-  );
   // The rows and agents last handed out: a new projection keeps whatever has
   // not changed as the object it was, so only what changed is drawn again.
   const shown = useRef<{ rows: ConversationRow[]; lanes: AgentLane[]; changedTurns: ChangedTurn[] }>({
@@ -325,8 +303,18 @@ export function usePhoneConversation(
     lanes: [],
     changedTurns: [],
   });
+  // The projection is kept from one draw to the next: a log that only grew
+  // is folded from where it was (a streamed word changes one entry), anything
+  // else is folded whole.
+  const folding = useRef<{ state: IncrementalConversationState; context: HeldContext } | null>(null);
   const projection = useMemo(() => {
-    const projected = projectConversation(events);
+    const held = folding.current;
+    const state = held
+      ? syncConversationProjection(held.state, foldable(events), NO_LOCAL_TURNS)
+      : createConversationProjectionState(foldable(events), NO_LOCAL_TURNS, PHONE_PROJECTION);
+    const context = followContext(held?.context ?? null, events);
+    folding.current = { state, context };
+    const projected = phoneRows(state.projection, context.reading);
     const rows = keepUnchangedRows(shown.current.rows, projected.rows);
     const lanes = keepUnchanged(shown.current.lanes, projected.lanes, (lane) => lane.id);
     const changedTurns = keepUnchanged(shown.current.changedTurns, projected.changedTurns, (turn) => turn.id);
@@ -335,7 +323,6 @@ export function usePhoneConversation(
   }, [events]);
   turnBusyRef.current = projection.turnBusy;
   phoneQueuedRef.current = queued.length;
-  const requestsRef = requests.current;
   const cacheKey = useMemo(
     () => ({ workspaceId: thread.workspaceId, agentId: thread.agentId }),
     [thread.workspaceId, thread.agentId],
@@ -720,12 +707,9 @@ export function usePhoneConversation(
         }),
       );
       // A send cached as handed to the desktop is offered to it again
-      // under its id (the desktop holds a repeat once); to a desktop that has
-      // since lost the capability it waits here like any other.
-      const handed = (item: CachedConversation["pending"][number]) =>
-        item.command.queue === true &&
-        holdsQueued &&
-        (!item.command.uploadIds?.length || holdsAttachments);
+      // under its id (the desktop holds a repeat once). One the desktop can
+      // no longer hold, the stream keeps here like any other.
+      const handed = (item: CachedConversation["pending"][number]) => item.command.queue === true;
       setQueued(
         pendingRef.current
           .filter((item) => !handed(item) && !staleAtOpen.has(item.commandId))
@@ -738,7 +722,7 @@ export function usePhoneConversation(
       setHanding(
         pendingRef.current
           .filter((item) => handed(item) && !staleAtOpen.has(item.commandId))
-          .map((item) => ({ commandId: item.commandId, text: item.command.message })),
+          .map((item) => handingSend(item.commandId, item.command)),
       );
       current = api.open(
         cacheKey,
@@ -793,7 +777,7 @@ export function usePhoneConversation(
             setHanding((previous) =>
               previous.some((item) => item.commandId === commandId)
                 ? previous
-                : [...previous, { commandId, text: command.message }],
+                : [...previous, handingSend(commandId, command)],
             );
             void serialize(async () => {
               await mutatePending({
@@ -957,23 +941,6 @@ export function usePhoneConversation(
                     return next;
                   });
               }
-            } else if (frame.type === "result") {
-              const request = requestsRef.get(frame.requestId);
-              if (request) {
-                clearTimeout(request.timer);
-                requestsRef.delete(frame.requestId);
-                if (frame.ok) request.resolve(frame.data);
-                else
-                  // The desktop's own words, else what its code means: a
-                  // bare "unavailable" or "not_found" told nobody anything.
-                  request.reject(
-                    new Error(
-                      typeof frame.message === "string" && frame.message.trim()
-                        ? frame.message.trim()
-                        : refusalText(frame.code, "The desktop could not answer that. Try again."),
-                    ),
-                  );
-              }
             } else if (frame.type === "usageLimits") {
               setUsageLimits(frame.limits);
             } else if (frame.type === "subagents") {
@@ -1126,7 +1093,7 @@ export function usePhoneConversation(
                   return next;
                 });
               }
-            } else if (frame.type === "error") setNotice(frame.message);
+            }
           },
         },
         {
@@ -1138,13 +1105,6 @@ export function usePhoneConversation(
             thread.phase === "running" ||
             thread.phase === "waiting_for_approval" ||
             thread.phase === "waiting_for_input",
-          queuedSends: holdsQueued,
-          queuedAttachments: holdsAttachments,
-          scheduledSends: holdsScheduled,
-          hello: answersHello,
-          subagents: watchesSubagents,
-          usageLimits: watchesUsageLimits,
-          quoteTokens,
         },
       );
       stream.current = current;
@@ -1184,9 +1144,6 @@ export function usePhoneConversation(
           deviceId: durable,
           key: cacheKey,
           api,
-          queuedSends: holdsQueued,
-          queuedAttachments: holdsAttachments,
-          hello: answersHello,
         });
       actionRequests.current.clear();
       abandonThreadChanges(switches, "Conversation closed.");
@@ -1195,11 +1152,6 @@ export function usePhoneConversation(
       for (const settle of scheduling.values()) settle({ ok: false, message: "Conversation closed." });
       scheduling.clear();
       abandonAgentStops("Conversation closed.");
-      for (const request of requestsRef.values()) {
-        clearTimeout(request.timer);
-        request.reject(new Error("Conversation closed."));
-      }
-      requestsRef.clear();
     };
   }, [
     api,
@@ -1207,7 +1159,6 @@ export function usePhoneConversation(
     session?.deviceId,
     apiOverride,
     thread.phase,
-    requestsRef,
     persist,
     persistLatest,
     persistStreamed,
@@ -1216,12 +1167,6 @@ export function usePhoneConversation(
     refreshMetadata,
     memoryKey,
     held,
-    holdsQueued,
-    holdsAttachments,
-    answersHello,
-    watchesSubagents,
-    watchesUsageLimits,
-    quoteTokens,
   ]);
   const command = useCallback((input: ConversationCommand) => {
     if (!stream.current) throw new Error("Conversation is not connected yet.");
@@ -1376,7 +1321,7 @@ export function usePhoneConversation(
           },
         ]);
         if (handOver)
-          setHanding((previous) => [...previous, { commandId, text: command.message }]);
+          setHanding((previous) => [...previous, handingSend(commandId, command)]);
         else if (!steer) {
           // Counted at once, not on the next draw: a second message queued
           // straight after this one must see it and wait behind it.
@@ -1560,7 +1505,7 @@ export function usePhoneConversation(
           ),
         );
         if (command.queue === true && holdsQueued)
-          setHanding((previous) => [...previous, { commandId, text: command.message }]);
+          setHanding((previous) => [...previous, handingSend(commandId, command)]);
         else {
           phoneQueuedRef.current++;
           setQueued((previous) => [
@@ -1583,22 +1528,21 @@ export function usePhoneConversation(
       ),
     );
   }, []);
-  const request = useCallback(
-    (input: Request) =>
-      new Promise<unknown>((resolve, reject) => {
-        if (!stream.current) {
-          reject(new Error("Conversation is not connected."));
-          return;
-        }
-        const requestId = stream.current.request(input);
-        const timer = setTimeout(() => {
-          requestsRef.delete(requestId);
-          reject(new Error("Request timed out. Try again."));
-        }, 15_000);
-        requestsRef.set(requestId, { resolve, reject, timer });
-      }),
-    [requestsRef],
-  );
+  // One read of the chat beside its stream, by its own method; refused in
+  // the desktop's own words, else in what its code means.
+  const request = useCallback(async (input: ChatRead): Promise<unknown> => {
+    if (!stream.current) throw new Error("Conversation is not connected.");
+    try {
+      return await stream.current.read(input);
+    } catch (error) {
+      // A `StudioError`: its code, and the desktop's words where it gave some.
+      const { code, message: said } = (error ?? {}) as { code?: unknown; message?: unknown };
+      const message = typeof said === "string" ? said.trim() : "";
+      throw new Error(
+        message || refusalText(typeof code === "string" ? code : undefined, "The desktop could not answer that. Try again."),
+      );
+    }
+  }, []);
   const retry = useCallback(() => {
     setNotice("");
     stream.current?.retry();
@@ -1622,7 +1566,7 @@ export function usePhoneConversation(
         // the screen draws and the cache keeps.
         eventsRef.current = mergeConversationEvents(
           eventsRef.current,
-          older.events.filter(isConversationEvent),
+          older.events.filter(isWireEvent),
         );
         setEvents(eventsRef.current);
         void persistLatest(held()).catch(() => {});
@@ -1641,12 +1585,41 @@ export function usePhoneConversation(
         );
     }
   }, [page.beforeCursor, request, persistLatest, held]);
+  // Events the desktop sent cut to fit one frame (`wireClipped`): the screen
+  // offers them whole, a read each, put in place of the cut copy as it comes.
+  const clippedCount = useMemo(
+    () => events.filter((event) => recordValue(event.payload).wireClipped === true).length,
+    [events],
+  );
+  const restoreClipped = useCallback(async () => {
+    const owner = lifecycle.current;
+    const clipped = eventsRef.current.filter((event) => recordValue(event.payload).wireClipped === true);
+    try {
+      for (const cut of clipped) {
+        if (cut.seq === undefined) continue;
+        const result = recordValue(await request({ type: "getEvent", seq: cut.seq, id: cut.id }));
+        if (owner !== lifecycle.current) return;
+        if (result.ok !== true || !isWireEvent(result.event)) throw new Error("Could not read it in full.");
+        const whole = { ...result.event, id: cut.id, seq: cut.seq };
+        eventsRef.current = eventsRef.current.map((event) =>
+          event.seq === cut.seq && event.id === cut.id ? whole : event,
+        );
+        setEvents(eventsRef.current);
+      }
+      void persistLatest(held()).catch(() => {});
+    } catch (error) {
+      if (owner === lifecycle.current)
+        setNotice(error instanceof Error ? error.message : "Could not read it in full.");
+    }
+  }, [request, persistLatest, held]);
   // Background work the desktop lists for the chat, which the transcript
   // alone may not show (a monitor that will wake the agent): working, never a
   // turn, so a send goes straight to the desktop.
   const listedBackground = !projection.turnBusy && chatWorksInBackground(effectiveThread);
   return {
     api,
+    /** What this desktop's chats offer here, from its Studio's welcome and this pairing's grant. */
+    offers,
     ...projection,
     /** A turn is in flight, or something works in the background. */
     busy: projection.busy || listedBackground,
@@ -1658,6 +1631,8 @@ export function usePhoneConversation(
     retry,
     page,
     loadEarlier,
+    clippedCount,
+    restoreClipped,
     request,
     command,
     setModel,

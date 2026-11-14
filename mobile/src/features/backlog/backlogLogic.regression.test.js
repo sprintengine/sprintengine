@@ -3,17 +3,14 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
-  backlogCreateCriticalityOptions,
-  backlogCreateDifficultyOptions,
-  backlogCreateTitleMaxChars,
-  backlogCreateTypeOptions,
+  backlogCriticalityOptions,
+  backlogDifficultyOptions,
+  backlogTypeOptions,
   backlogStatusLabel,
   backlogStatusTone,
-  buildBacklogCreatePayload,
   normalizeBacklogWorkspaces,
-  selectBacklogCreateWorkspaces,
   selectBacklogEmptyState,
   triageSummary,
   matchesBacklogView,
@@ -153,82 +150,10 @@ test("triageSummary renders only the present axes", () => {
   assert.equal(triageSummary({}), "");
 });
 
-test("selectBacklogCreateWorkspaces offers every workspace, including empty ones, for the create picker", () => {
-  const options = selectBacklogCreateWorkspaces([
-    { workspaceId: "backlog:/work/app", workspacePath: "/work/app", workspaceName: "app", items: [] },
-    {
-      workspacePath: "/work/api",
-      items: [{ relativePath: "backlog/x.md", status: "idea" }],
-    },
-    "garbage",
-    { items: [] },
-  ]);
-
-  assert.equal(options.length, 2, "valid workspaces survive; malformed entries and pathless groups are dropped");
-  assert.deepEqual(
-    options.map((option) => option.workspacePath),
-    ["/work/app", "/work/api"],
-  );
-  assert.equal(options[0].workspaceName, "app", "empty workspaces are still offered so the first item can be created");
-  assert.equal(options[1].workspaceName, "api", "missing workspaceName falls back to the path's last segment");
-});
-
-test("buildBacklogCreatePayload requires a workspace and a title", () => {
-  const noWorkspace = buildBacklogCreatePayload({ workspacePath: null, title: "Ship it", description: "" });
-  assert.equal(noWorkspace.ok, false);
-  assert.match(noWorkspace.error, /workspace/i);
-
-  const blankWorkspace = buildBacklogCreatePayload({ workspacePath: "   ", title: "Ship it", description: "" });
-  assert.equal(blankWorkspace.ok, false, "whitespace-only workspace is not a valid pick");
-
-  const noTitle = buildBacklogCreatePayload({ workspacePath: "/work/app", title: "   ", description: "" });
-  assert.equal(noTitle.ok, false);
-  assert.match(noTitle.error, /title/i);
-});
-
-test("buildBacklogCreatePayload trims fields and omits empty optionals", () => {
-  const result = buildBacklogCreatePayload({
-    workspacePath: " /work/app ",
-    title: "  Add export button  ",
-    description: "  Lets users download a CSV.  ",
-    type: "feature",
-    difficulty: "m",
-    criticality: "high",
-  });
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.payload, {
-    workspacePath: "/work/app",
-    title: "Add export button",
-    description: "Lets users download a CSV.",
-    type: "feature",
-    difficulty: "m",
-    criticality: "high",
-  });
-
-  const minimal = buildBacklogCreatePayload({ workspacePath: "/work/app", title: "Just a title", description: "   " });
-  assert.equal(minimal.ok, true);
-  assert.deepEqual(
-    Object.keys(minimal.payload).sort(),
-    ["title", "workspacePath"],
-    "blank description and unset axes are omitted, not sent as empty strings",
-  );
-});
-
-test("buildBacklogCreatePayload rejects an over-long title", () => {
-  const result = buildBacklogCreatePayload({
-    workspacePath: "/work/app",
-    title: "x".repeat(backlogCreateTitleMaxChars + 1),
-    description: "",
-  });
-  assert.equal(result.ok, false);
-  assert.match(result.error, /characters/i);
-});
-
-test("create option lists cover the protocol axes and stay membership-valid", () => {
-  assert.deepEqual([...backlogCreateTypeOptions], ["feature", "bug", "spike", "mockup"]);
-  assert.deepEqual([...backlogCreateDifficultyOptions], ["xs", "s", "m", "l", "xl"]);
-  assert.deepEqual([...backlogCreateCriticalityOptions], ["low", "normal", "high", "critical"]);
+test("the triage pickers offer each axis in order, and every type an item may be set to", () => {
+  assert.deepEqual([...backlogDifficultyOptions], ["xs", "s", "m", "l", "xl"]);
+  assert.deepEqual([...backlogCriticalityOptions], ["low", "normal", "high", "critical"]);
+  assert.deepEqual([...backlogTypeOptions], ["epic", "feature", "bug", "mockup", "spike"]);
 });
 
 test("selectBacklogEmptyState distinguishes error, loading, and true-empty", () => {

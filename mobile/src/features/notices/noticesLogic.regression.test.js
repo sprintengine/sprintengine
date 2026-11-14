@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { bellCount, buildNotices, pruneReadIds, splitNotices } = require(
   path.join(buildRoot, "src/features/notices/noticesLogic.js"),
 );
@@ -19,6 +19,8 @@ const chat = (overrides = {}, where = {}) => ({
   workspaceChats: 1,
   ...where,
   thread: {
+    // Every Studio lists the turn's end: a case that names only `updatedAt` means both.
+    ...(!("lastTurnEndedAt" in overrides) ? { lastTurnEndedAt: overrides.updatedAt ?? minutesAgo(10) } : {}),
     workspaceId: "ws",
     agentId: "a1",
     title: "Maeve Doyle",
@@ -77,8 +79,8 @@ test("a second turn on the same chat is a second notice, so marking the first re
   assert.notEqual(first[0].id, second[0].id);
 });
 
-test("a lifecycle desktop's chat is news by its turn's end, and not once anyone has seen it there", () => {
-  const lifecycle = { lifecycle: true };
+test("a chat is news by its turn's end, and not once anyone has seen it there", () => {
+  const lifecycle = {};
   // Read on the desktop after it ended: not news here either.
   const visited = chat({ lastTurnEndedAt: minutesAgo(10), lastVisitedAt: minutesAgo(8), updatedAt: minutesAgo(1) }, lifecycle);
   assert.deepEqual(buildNotices({ chats: [visited], openedAt: {}, now: NOW }), []);
@@ -89,8 +91,8 @@ test("a lifecycle desktop's chat is news by its turn's end, and not once anyone 
   assert.equal(before.length, 1);
   assert.equal(bumped[0].id, before[0].id);
   assert.equal(bumped[0].at, minutesAgo(10));
-  // A chat such a desktop lists with no turn end has never finished one.
-  assert.deepEqual(buildNotices({ chats: [chat({ updatedAt: minutesAgo(1) }, lifecycle)], openedAt: {}, now: NOW }), []);
+  // A chat listed with no turn end has never finished one.
+  assert.deepEqual(buildNotices({ chats: [chat({ updatedAt: minutesAgo(1), lastTurnEndedAt: undefined }, lifecycle)], openedAt: {}, now: NOW }), []);
 });
 
 test("two desktops' chats with one agent id are two notices", () => {

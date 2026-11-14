@@ -1,30 +1,15 @@
 import assert from 'node:assert/strict'
-import type { IpcMain } from 'electron'
 
-import { MODULE_EVENTS_CHANNEL } from '../../shared/modules/events'
-import {
-  MODULE_NOTIFICATIONS_RECENT_CHANNEL,
-  type ModuleNotificationDelivery,
-} from '../../shared/modules/notifications'
+import type { ModuleNotificationDelivery } from '../../shared/modules/notifications'
+import { createStudioModuleHub } from '../../server/rpc/studio-modules'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createMainKernel } from './main-host'
 import { test } from 'vitest'
 
 test('module-notifications', async () => {
-  function createFakeIpcMain(): { ipcMain: IpcMain; handlers: Map<string, (...args: unknown[]) => unknown> } {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>()
-    const ipcMain = {
-      handle(channel: string, handler: (...args: unknown[]) => unknown): void {
-        handlers.set(channel, handler)
-      },
-    } as unknown as IpcMain
-    return { ipcMain, handlers }
-  }
-
   function testNotifyStampsScopedModuleIdentity(): void {
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain)
+    const kernel = createMainKernel()
     const delivered = kernel.recentNotifications()
 
     const host = kernel.hostFor('weather-panel')
@@ -45,8 +30,7 @@ test('module-notifications', async () => {
   }
 
   function testInvalidNotifyPayloadThrows(): void {
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain)
+    const kernel = createMainKernel()
     const host = kernel.hostFor('weather-panel')
 
     assert.throws(() => host.notify({ severity: 'fatal', title: 'x' } as never), /severity/)
@@ -57,8 +41,7 @@ test('module-notifications', async () => {
 
   function testIdenticalRepeatIsDroppedAndDistinctPasses(): void {
     let clock = 1_000
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain, { now: () => clock })
+    const kernel = createMainKernel({ now: () => clock })
     const delivered = kernel.recentNotifications()
     const host = kernel.hostFor('weather-panel')
 
@@ -82,8 +65,7 @@ test('module-notifications', async () => {
 
   function testRateCapBoundsAModuleButNotOthers(): void {
     let clock = 1_000
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain, { now: () => clock })
+    const kernel = createMainKernel({ now: () => clock })
     const delivered = kernel.recentNotifications()
     const noisy = kernel.hostFor('noisy')
     const quiet = kernel.hostFor('quiet')
@@ -109,28 +91,13 @@ test('module-notifications', async () => {
       registerMain: (host) => host.notify({ severity: 'info', title: 'Emitter ready' }),
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report, kernel } = loadMainModules({ ipcMain, modules: [emitter] })
+    const { report, kernel } = loadMainModules({ modules: [emitter] })
 
     assert.deepEqual(report.loaded, ['emitter'])
     // A module that notifies during registerMain lands in the kernel's buffer.
     const delivered = kernel.recentNotifications()
     assert.equal(delivered.length, 1)
     assert.equal(delivered[0].sourceModuleId, 'emitter')
-  }
-
-  function testEventChannelNameIsReservedAgainstModules(): void {
-    const claimer: CapabilityModule = {
-      manifest: { id: 'claimer', displayName: 'Claimer', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc(MODULE_EVENTS_CHANNEL, () => null),
-    }
-
-    const { ipcMain } = createFakeIpcMain()
-    const { report, kernel } = loadMainModules({ ipcMain, modules: [claimer] })
-
-    assert.deepEqual(report.loaded, [])
-    assert.match(report.errors[0]?.message ?? '', /already registered by module "@host"/)
-    assert.equal(kernel.ownedChannels().get(MODULE_EVENTS_CHANNEL), '@host')
   }
 
   function thirdPartyManifestOnly(id: string): CapabilityModule {
@@ -167,9 +134,7 @@ test('module-notifications', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
     const { report, kernel } = loadMainModules({
-      ipcMain,
       modules: [blockedThirdParty, failingThirdParty, failingBundled],
       ineligible: { 'untrusted-module': 'untrusted' },
     })
@@ -199,22 +164,11 @@ test('module-notifications', async () => {
   testIdenticalRepeatIsDroppedAndDistinctPasses()
   testRateCapBoundsAModuleButNotOthers()
   testNotificationsFlowThroughLoadedModuleAndRecentBuffer()
-  testEventChannelNameIsReservedAgainstModules()
   testThirdPartyLoadErrorsBecomeNotificationsBundledStayLogOnly()
   console.log('module-notifications tests passed')
 })
 
 // ── Delivery to the bell ────────────────────────────────────────────────────
-
-function fakeIpcMain(): { ipcMain: IpcMain; handlers: Map<string, (...args: unknown[]) => unknown> } {
-  const handlers = new Map<string, (...args: unknown[]) => unknown>()
-  const ipcMain = {
-    handle(channel: string, handler: (...args: unknown[]) => unknown): void {
-      handlers.set(channel, handler)
-    },
-  } as unknown as IpcMain
-  return { ipcMain, handlers }
-}
 
 const thirdPartyManifest = (id: string, displayName: string): CapabilityManifest => ({
   id,
@@ -225,9 +179,8 @@ const thirdPartyManifest = (id: string, displayName: string): CapabilityManifest
 })
 
 test('a notify is delivered to the clients, stamped with id and display name', () => {
-  const { ipcMain } = fakeIpcMain()
   const delivered: ModuleNotificationDelivery[] = []
-  const kernel = createMainKernel(ipcMain, {
+  const kernel = createMainKernel({
     deliverModuleNotification: (notification) => delivered.push(notification),
     resolveModuleManifest: (id) => (id === 'acme.radar' ? thirdPartyManifest(id, 'PR Radar') : undefined),
   })
@@ -253,32 +206,28 @@ test('a notify is delivered to the clients, stamped with id and display name', (
 })
 
 test('supports("notifications") is true only where delivery is wired', () => {
-  const unwired = createMainKernel(fakeIpcMain().ipcMain)
+  const unwired = createMainKernel()
   assert.equal(unwired.hostFor('acme.radar').supports('notifications'), false)
-  const wired = createMainKernel(fakeIpcMain().ipcMain, { deliverModuleNotification: () => undefined })
+  const wired = createMainKernel({ deliverModuleNotification: () => undefined })
   assert.equal(wired.hostFor('acme.radar').supports('notifications'), true)
 })
 
-test('a window that boots late reads the backlog through the host channel', async () => {
-  const { ipcMain, handlers } = fakeIpcMain()
-  const kernel = createMainKernel(ipcMain, { deliverModuleNotification: () => undefined })
+test('the kernel keeps the recent rows for a client that subscribes late, and hands out copies', () => {
+  const kernel = createMainKernel({ deliverModuleNotification: () => undefined })
   kernel.hostFor('acme.board').notify({ severity: 'info', title: 'Standup ready' })
-  assert.equal(kernel.ownedChannels().get(MODULE_NOTIFICATIONS_RECENT_CHANNEL), '@host')
-  const recent = (await handlers.get(MODULE_NOTIFICATIONS_RECENT_CHANNEL)?.({})) as ModuleNotificationDelivery[]
+  const hub = createStudioModuleHub()
+  hub.readRecentFrom(() => kernel.recentNotifications())
+  const recent = hub.recentNotifications()
   assert.equal(recent.length, 1)
   assert.equal(recent[0]?.title, 'Standup ready')
-  recent[0]!.title = 'mutated'
+  ;(recent[0] as { title: string }).title = 'mutated'
   assert.equal(kernel.recentNotifications()[0]?.title, 'Standup ready', 'the backlog hands out copies')
-  assert.throws(
-    () => kernel.hostFor('impostor').registerIpc(MODULE_NOTIFICATIONS_RECENT_CHANNEL, () => []),
-    /already registered by module "@host"/,
-  )
 })
 
 test('a malformed target throws; the same words about another door are not a repeat', () => {
   let clock = 1_000
   const delivered: ModuleNotificationDelivery[] = []
-  const kernel = createMainKernel(fakeIpcMain().ipcMain, {
+  const kernel = createMainKernel({
     now: () => clock,
     deliverModuleNotification: (notification) => delivered.push(notification),
   })
@@ -302,7 +251,7 @@ test('a malformed target throws; the same words about another door are not a rep
 })
 
 test('a client that cannot be reached does not make notify throw', () => {
-  const kernel = createMainKernel(fakeIpcMain().ipcMain, {
+  const kernel = createMainKernel({
     deliverModuleNotification: () => {
       throw new Error('window gone')
     },

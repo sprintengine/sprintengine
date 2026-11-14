@@ -47,23 +47,4 @@ export type DiagnosticLogEntry = DiagnosticLogInput & {
   logPath?: string
 }
 
-export type WorkspaceFolderCheckResult =
-  | { ok: true; status: 'ready'; path: string; checkedPath: string; message: string }
-  | {
-      ok: false
-      status: 'missing' | 'inaccessible' | 'timeout'
-      path: string
-      checkedPath: string
-      message: string
-      code?: string
-    }
-
-// A logo found at the top level of a project's repo. `dataUrl` is the
-// sanitized, downscaled image ready to render in an icon slot; `path` and
-// `mtimeMs` are what the main process re-checks on the next open so a changed
-// or deleted file is picked up without a watcher.
-export type ProjectLogo = {
-  path: string
-  mtimeMs: number
-  dataUrl: string
-}
+export type { ProjectLogo, WorkspaceFolderCheckResult } from '../../../packages/studio-protocol/src/public'

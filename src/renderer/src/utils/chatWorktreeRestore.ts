@@ -5,6 +5,8 @@ import { showToast } from '../store/toastStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { Workspace, WorkspaceId } from '../types/workspace'
 import { isSettledWorkspace } from './workspaceSettle'
+import { filesApi } from '../studio/files'
+import { worktreesApi } from '../studio/worktrees'
 
 /**
  * The way back into a chat whose worktree was given back.
@@ -85,13 +87,13 @@ async function restore(workspace: RestoreCandidate): Promise<boolean> {
     // pool slot: for those something at the path is not proof the worktree
     // is, and main says (a slot still idle in the pool is taken back for the
     // chat; one another chat holds is refused with the reason).
-    const there = await window.api.pathExists(folderPath).catch(() => false)
+    const there = await filesApi.pathExists(folderPath).catch(() => false)
     if (there && !isPoolSlotPath(folderPath)) return true
     if (refused.has(id)) return false
   }
   const repoRoot = worktree.repoRoot?.trim() || repoRootFromWorktreePath(folderPath)
   const result = repoRoot
-    ? await window.api
+    ? await worktreesApi
         .restoreGitWorktree({
           repoRoot,
           path: folderPath,

@@ -149,16 +149,20 @@ test('an empty pasted code, or one the login would not take, ends the sign-in in
   internals.askpass = async () => undefined
   const ops: string[] = []
   let pasteTaken = true
+  const commandIds = new Set<string>()
   internals.connection = () => ({
-    backend: {
-      signIn: async (params: { op: string }) => {
-        ops.push(params.op)
-        if (params.op === 'start')
-          return { ok: true, id: 'l1', url: 'https://example.test/login', code: null, paste: true }
-        if (params.op === 'paste') return { ok: pasteTaken }
-        // The login itself never finishes here, and a dropped wire would reject it.
-        if (params.op === 'wait')
-          return new Promise((_resolve, reject) => setTimeout(() => reject(new Error('gone')), 50))
+    owner: {
+      supports: (capability: string) => capability === 'provider-sign-in-flow',
+      request: async (method: string, params: { commandId: string }) => {
+        const op = method.replace('providers.signIn', '').toLowerCase()
+        ops.push(op)
+        // A step is one command: never two under one id.
+        assert.ok(!commandIds.has(params.commandId))
+        commandIds.add(params.commandId)
+        if (op === 'start') return { ok: true, id: 'l1', url: 'https://example.test/login', code: null, paste: true }
+        if (op === 'paste') return { ok: pasteTaken }
+        // The login itself never finishes here, and a dropped connection would reject it.
+        if (op === 'wait') return new Promise((_resolve, reject) => setTimeout(() => reject(new Error('gone')), 50))
         return { ok: true }
       },
     },
@@ -180,4 +184,109 @@ test('an empty pasted code, or one the login would not take, ends the sign-in in
     message: 'That code could not be sent to the sign-in. Try signing in again.',
   })
   assert.deepEqual(ops, ['start', 'wait', 'paste', 'cancel'])
+})
+
+test('a window is given a ticket the machine minted, for this computer’s loopback route to it', async () => {
+  const { store } = machines()
+  const internals = store as unknown as {
+    saved: unknown[]
+    connection: (id: string) => unknown
+    connectQuietly: (id: string, ms: number) => Promise<boolean>
+  }
+  internals.saved.push({
+    id: 'm1',
+    label: 'build-box',
+    destination: 'build-box',
+    environmentId: null,
+    settings: { ...DEFAULT_SSH_ENVIRONMENT_SETTINGS },
+    addedAt: 0,
+  })
+  const asked: unknown[] = []
+  let capable = true
+  let connected = true
+  internals.connectQuietly = async () => connected
+  internals.connection = () =>
+    connected
+      ? {
+          owner: {
+            supports: (capability: string) => capable && capability === 'window-tickets',
+            request: async (method: string, params: unknown) => {
+              asked.push([method, params])
+              return { token: 'ticket-1', path: '/ws?ticket=ticket-1' }
+            },
+          },
+          open: async () => {
+            throw new Error('not in this test')
+          },
+        }
+      : null
+  try {
+    const first = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.ok(first.ok)
+    const url = new URL(first.url)
+    assert.equal(url.hostname, '127.0.0.1')
+    assert.equal(`${url.pathname}${url.search}`, '/ws?ticket=ticket-1')
+    assert.equal(first.token, 'ticket-1')
+    assert.deepEqual(asked, [['environment.windowTicket', { windowKey: 'window-7', origin: 'file://' }]])
+    // The route is the machine's for the run: the next ticket names the same port.
+    const second = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.ok(second.ok)
+    assert.equal(new URL(second.url).port, url.port)
+
+    capable = false
+    const outdated = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.equal(outdated.ok ? null : outdated.code, 'outdated')
+    connected = false
+    const away = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.equal(away.ok ? null : away.code, 'unavailable')
+    const unknown = await store.windowTicket('m2', { windowKey: 'window-7', origin: 'file://' })
+    assert.equal(unknown.ok ? null : unknown.code, 'unknown_route')
+  } finally {
+    store.shutdown()
+  }
+})
+
+test('a closed window’s document is revoked on every machine that gave it a ticket, and only those', async () => {
+  const { store } = machines()
+  const internals = store as unknown as {
+    saved: unknown[]
+    connection: (id: string) => unknown
+    connectQuietly: (id: string, ms: number) => Promise<boolean>
+  }
+  for (const id of ['m1', 'm2'])
+    internals.saved.push({
+      id,
+      label: id,
+      destination: id,
+      environmentId: `env-${id}`,
+      settings: { ...DEFAULT_SSH_ENVIRONMENT_SETTINGS },
+      addedAt: 0,
+    })
+  const asked: Array<[string, string, unknown]> = []
+  internals.connectQuietly = async () => true
+  internals.connection = (id: string) => ({
+    label: id,
+    environmentId: `env-${id}`,
+    owner: {
+      supports: () => true,
+      request: async (method: string, params: unknown) => {
+        asked.push([id, method, params])
+        return { token: 'ticket-1', path: '/ws?ticket=ticket-1' }
+      },
+    },
+  })
+  try {
+    assert.ok((await store.windowTicket('m1', { windowKey: 'window-4-1', origin: 'file://' })).ok)
+    assert.ok((await store.windowTicket('m2', { windowKey: 'window-5-2', origin: 'file://' })).ok)
+    asked.length = 0
+    store.revokeWindow('window-4-1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(asked, [['m1', 'environment.revokeWindow', { windowKey: 'window-4-1' }]])
+    // Told once: the document is gone.
+    store.revokeWindow('window-4-1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(asked.length, 1)
+  } finally {
+    store.shutdown()
+  }
 })

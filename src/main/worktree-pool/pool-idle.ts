@@ -68,7 +68,10 @@ import { returnSlot } from './pool-return'
  */
 export const ON_DEMAND_IDLE_MS = 10 * 60_000
 
-/** A chat on record, as the pool weighs a slot it works in (worktree-services.ts builds them from the registry). */
+/**
+ * A chat on record, as the pool weighs a slot it works in
+ * (server/core/studio-worktree-pool.ts builds them from the registry).
+ */
 export type PoolChat = {
   workspaceId: string
   /** The chat's own folder; a worktree chat's is its worktree. */

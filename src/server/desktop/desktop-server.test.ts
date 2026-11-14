@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { connect } from 'node:net'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { afterAll, beforeAll, test } from 'vitest'
 
+import {
+  connect as connectStudio,
+  webSocketTransport,
+  type StudioClient,
+  type StudioWebSocketConstructor,
+} from '../../../packages/client-runtime/src/public'
+import type { StudioWindowTicket } from '../../shared/studio-connection'
 import { createControlRpc } from '../bootstrap/control-rpc'
 import { createMessageHub, type ServerControlChannel } from '../bootstrap/control-channel'
 import type { ServerBootstrapEnvelope } from '../bootstrap/envelope'
@@ -34,7 +44,11 @@ beforeAll(() => {
   process.env.HOME = join(scratch, 'home')
   mkdirSync(process.env.HOME, { recursive: true })
 })
+/** The window clients a test opened, closed with the server's scratch. */
+const windows: StudioClient[] = []
+
 afterAll(() => {
+  for (const client of windows.splice(0)) client.close()
   if (previousHome === undefined) delete process.env.HOME
   else process.env.HOME = previousHome
   resetStudioPlatform()
@@ -43,17 +57,27 @@ afterAll(() => {
 
 const keychainSeal = (plain: string) => Buffer.concat([Buffer.from('v10'), Buffer.from(plain, 'utf8').reverse()])
 
-function shellBridge(): ShellBridge & { notices: unknown[] } {
+function shellBridge(): ShellBridge & { notices: unknown[]; prepared: string[] } {
   const notices: unknown[] = []
+  const prepared: string[] = []
   return {
     notices,
+    prepared,
     cipher: {
       available: async () => true,
       seal: async (plain) => new Uint8Array(keychainSeal(Buffer.from(plain).toString('utf8'))),
       open: async (sealed) => new Uint8Array(Buffer.from(Buffer.from(sealed).subarray(3)).reverse()),
     },
-    terminals: {
-      launchAgent: async () => ({ ok: false, code: 'shell_unavailable', message: 'No terminals in this test.' }),
+    // The shell's part of a launch; the pty itself is the server's.
+    launches: {
+      prepareLaunchIntegration: async (input) => {
+        prepared.push(`integration:${input.cli}`)
+        return { ok: true, integration: null }
+      },
+      syncMcpConfig: async () => ({ ok: true }),
+      ensureBuiltinSkillInstalled: async () => undefined,
+      excludeWorktreeMcpConfig: async () => undefined,
+      prepareAgentStateHook: async () => undefined,
     },
     reveal: { tab: async () => false },
     notify: (notice) => notices.push(notice),
@@ -110,14 +134,13 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   }
   const bridge = shellBridge()
   serveShellBridge(shellRpc, bridge)
-  shellRpc.handle(SHELL_METHODS.marketplaceRead, () => ({ ok: true, entries: [] }))
-  shellRpc.handle(SHELL_METHODS.thirdPartyModules, () => ({ modules: [], rejected: [] }))
   // A terminal agent the shell launched before this server started holds this token.
   const terminalAgent = { workspaceId: 'acme', agentId: 'agent-1' }
   const tokenDigest = createHash('sha256').update('terminal-agent-token').digest('hex')
   shellRpc.handle(SHELL_METHODS.liveLaunchTokens, () => [{ digest: tokenDigest, identity: terminalAgent }])
-  const mirrored: string[] = []
-  shellRpc.on(SERVER_EVENTS.mirrorLaunchSettings, () => mirrored.push('launch-settings'))
+  // The server's terminals, as the shell's own readers see them.
+  const terminalLists: unknown[] = []
+  shellRpc.on(SERVER_EVENTS.terminalSessions, (payload) => terminalLists.push(payload))
 
   const exit = serveOnChannel(channel, {
     starters: { 'desktop-local': startDesktopServer },
@@ -145,47 +168,42 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(typeof ready.gateway.socketPath, 'string')
   // Its bridge is proven the moment the socket is back, before any push after ready.
   assert.deepEqual(resolveGatewayLaunchToken('terminal-agent-token'), terminalAgent)
-  applyGatewayLaunchTokenChange({ digest: tokenDigest, identity: null })
+  applyGatewayLaunchTokenChange('shell', { digest: tokenDigest, identity: null })
   // Desktop role: the lock names the desktop, so the app's own server is never refused by its parent.
   assert.equal(JSON.parse(readFileSync(join(dataDir, 'run', 'studio.lock'), 'utf8')).role, 'desktop')
 
-  // A window attaches; its tunnelled calls reach the server's domains.
+  // A window attaches. Nothing it asks is tunnelled to the server's domains
+  // any more: its registry and this computer's machines are the Studio
+  // protocol's, on a ticket the shell buys for the window, then the window's
+  // own connection to the listener.
   const window = windowPort()
   hub.dispatch(
     { t: 'attach-client', clientId: 'window-1-1', windowId: 'primary', kind: 'desktop-window', workspaceWindow: true },
     [window.port],
   )
-  const settings = await window.invoke('launch-settings:get')
-  assert.equal(settings.ok, true, JSON.stringify(settings))
-  const snapshot = await window.invoke('workspace-sync:get-snapshot')
-  assert.ok(Array.isArray(snapshot.value.state.workspaces))
-  const scheduled = await window.invoke('scheduled-agents:list')
-  assert.equal(scheduled.ok, true, JSON.stringify(scheduled))
-  const update = await window.invoke('launch-settings:update', { lastSelectedCli: 'codex' })
-  assert.equal(update.value.ok, true)
-  // The update is pushed to the window and mirrored to the shell.
-  await waitFor(() =>
-    window.received.find((frame) => frame.t === 'ipc.push' && frame.channel === 'launch-settings:changed'),
-  )
-  await waitFor(() => mirrored.length > 0 || undefined)
+  const studio = await windowStudio(shellRpc)
+  const snapshot = await studio.request('workspaceSync.snapshot', {})
+  assert.ok(Array.isArray(snapshot.state.workspaces))
+  const hosts = await studio.request('hosts.list', {})
+  assert.equal(hosts.hosts[0]?.id, 'local', JSON.stringify(hosts))
 
-  // A Claude terminal's status line, read in the shell, reaches the usage
-  // limits the server's windows draw.
-  shellRpc.emit(SERVER_EVENTS.usageStatusLine, {
-    rateLimits: { five_hour: { usedPercentage: 37, resetsAt: Date.now() + 3_600_000 } },
-    at: Date.now(),
+  // The terminals are this server's: their list reaches the shell once it is
+  // serving, and a launch the shell asks for goes through the server's own
+  // launch service (no refusal, no bridge back to the shell).
+  await waitFor(() => (terminalLists.length > 0 ? true : undefined))
+  assert.deepEqual(terminalLists[0], [])
+  const launched = await shellRpc.call<{ ok: boolean; code?: string; message?: string }>(SERVER_METHODS.agentLaunch, {
+    workspaceId: 'no-such-workspace',
+    cli: 'claude-code',
   })
-  let claudeLimits: { windows: Array<{ id: string; usedPercent: number }> } | undefined
-  for (let tries = 0; tries < 200 && !claudeLimits; tries++) {
-    const answer = await window.invoke('usage-limits:get')
-    claudeLimits = answer.value?.snapshots?.find((snapshot: { provider: string }) => snapshot.provider === 'claude')
-    if (!claudeLimits) await new Promise((resolve) => setTimeout(resolve, 5))
-  }
-  assert.equal(claudeLimits?.windows.find((entry) => entry.id === 'five_hour')?.usedPercent, 37)
+  assert.equal(launched.ok, false)
+  assert.equal(launched.code, 'unknown_workspace', JSON.stringify(launched))
+  assert.equal(await shellRpc.call(SERVER_METHODS.terminalPeekState, { sessionId: 'none' }), null)
 
   // The shell's mirror reads from the server.
   const mirror = await shellRpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)
-  assert.equal(mirror.launchSettings.settings.lastSelectedCli, 'codex')
+  // A window writes the launch settings over the Studio protocol now, not this tunnel.
+  assert.equal(typeof mirror.launchSettings.settings.cliRuntimes, 'object')
   assert.ok(Array.isArray(mirror.state.workspaces))
 
   // A GitHub token is sealed by the shell's keychain, byte for byte.
@@ -197,22 +215,203 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(info.pid, process.pid)
   assert.match(info.cipher, /desktop keychain/)
 
-  // What a quit would stop: no chat has a turn running here.
-  assert.equal(await shellRpc.call(SERVER_METHODS.conversationsWorking), 0)
+  // What a quit would stop: no chat has a turn running here, and no schedule or watch.
+  assert.deepEqual(await shellRpc.call(SERVER_METHODS.quitStops), { agents: 0, schedules: [], watches: [] })
+
+  // The CLIs' version check is this server's: the shell's hourly comparison
+  // runs here (and with checks not switched on yet, asks the registry nothing).
+  const versions = await shellRpc.call<{ ok: boolean; advisories?: unknown }>(SERVER_METHODS.cliVersionsRefresh)
+  assert.deepEqual([versions.ok, versions.advisories], [true, {}])
+
+  // The worktree pool is this server's: the shell's `agent.launch` has its
+  // worktree cut here, from the pool, and listed among its leases. A window
+  // reaches the pool over the Studio protocol (`worktrees.*`), never this
+  // tunnel.
+  const tunnelled = await window.invoke('worktree-pool:settings-get')
+  assert.equal(tunnelled.ok, false, JSON.stringify(tunnelled))
+  const repo = await gitProject(join(scratch, 'repos'))
+  const cut = await shellRpc.call<{ worktreePath?: string; branch?: string; error?: string }>(
+    SERVER_METHODS.createAgentWorktree,
+    { workspaceRoot: repo, name: 'launched' },
+  )
+  assert.equal(cut.error, undefined, cut.error ?? '')
+  assert.equal(cut.branch, 'agent/launched')
+  assert.ok(cut.worktreePath && worktreesOf(repo).includes(realpathSync(cut.worktreePath)), 'cut from the pool')
+
+  // An agent this server's shell launched calls `worktree.lease` and
+  // `worktree.release` over the gateway socket, as this very orchestration's
+  // agents do: the gateway's own tools now, not a toolset the shell offers.
+  const created = await studio.request('workspaceSync.dispatch', {
+    commandId: 'lease-ws-created',
+    windowId: 'primary',
+    command: {
+      type: 'workspace.created',
+      payload: {
+        workspace: projectWorkspace('lease-ws', repo),
+        windowId: 'primary',
+        insert: { kind: 'folder_head', folderPath: repo },
+        activate: false,
+      },
+    },
+  })
+  assert.equal(created.ok, true, JSON.stringify(created))
+  // The shell issued it for a terminal agent and tells this server its digest.
+  const leaseDigest = createHash('sha256').update('lease-agent-token').digest('hex')
+  shellRpc.emit(SERVER_EVENTS.launchTokens, {
+    changes: [{ digest: leaseDigest, identity: { workspaceId: 'lease-ws', agentId: 'agent-lease' } }],
+  })
+  await waitFor(() => resolveGatewayLaunchToken('lease-agent-token') ?? undefined)
+  const mcp = await mcpSession(ready.gateway.socketPath)
+  await mcp.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} })
+  const connected = await mcp.call('sprintengine.studio/connect', {
+    workspaceId: 'lease-ws',
+    agentId: 'agent-lease',
+    launchToken: 'lease-agent-token',
+  })
+  assert.equal(connected.error, undefined, JSON.stringify(connected))
+  const tools = ((await mcp.call('tools/list')).result?.tools as Array<{ name: string }>).map((tool) => tool.name)
+  assert.ok(tools.includes('worktree.lease') && tools.includes('worktree.release'), tools.join(', '))
+  // The terminal and agent tools are the gateway's own too, not a toolset the shell offers.
+  assert.ok(tools.includes('terminal.list') && tools.includes('agent.launch'), tools.join(', '))
+  // And the artifacts tools: the server publishes, over the setting it holds.
+  assert.ok(tools.includes('artifacts.publish') && tools.includes('artifacts.list'), tools.join(', '))
+  const listed = await mcp.call('tools/call', { name: 'terminal.list', arguments: {} })
+  assert.equal(listed.result?.isError ?? false, false, JSON.stringify(listed))
+  const leasedOverMcp = await mcp.call('tools/call', { name: 'worktree.lease', arguments: { name: 'over-mcp' } })
+  assert.equal(leasedOverMcp.result?.isError ?? false, false, JSON.stringify(leasedOverMcp))
+  const leasedPath = (leasedOverMcp.result?.structuredContent as { path: string; branch: string }).path
+  assert.equal((leasedOverMcp.result?.structuredContent as { branch: string }).branch, 'agent/over-mcp')
+  assert.ok(worktreesOf(repo).includes(realpathSync(leasedPath)), 'a slot of the pool')
+  // The release is the holder check: it answers `released` only to the agent
+  // and chat holding the lease, so the launch token's identity is the holder.
+  const releasedOverMcp = await mcp.call('tools/call', { name: 'worktree.release', arguments: { path: leasedPath } })
+  assert.equal(
+    (releasedOverMcp.result?.structuredContent as { released: boolean }).released,
+    true,
+    JSON.stringify(releasedOverMcp),
+  )
+  // The terminal ends and the shell revokes its token: the connection it
+  // proved is ended, not left serving the chat's tools.
+  shellRpc.emit(SERVER_EVENTS.launchTokens, { changes: [{ digest: leaseDigest, identity: null }] })
+  const ended = await Promise.race([
+    mcp.closed.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ])
+  assert.equal(ended, true, 'the gateway ended the connection the revoked token proved')
+  assert.equal(resolveGatewayLaunchToken('lease-agent-token'), null)
 
   // The drain runs every leg and lets the directory go.
   hub.dispatch({ t: 'shutdown', drain: true, budgetMs: 8_000 }, [])
   assert.equal(await exit, 0)
   const legs = fromServer.filter((frame) => frame.t === 'shutdown-progress').map((frame) => frame.leg)
-  assert.deepEqual(legs.slice(0, 2), ['modules (begin)', 'local app socket'])
+  assert.equal(legs[0], 'modules (begin)')
+  // The ptys end after the chats' transcripts are flushed and before the directory goes.
+  assert.ok(legs.indexOf('terminals') > legs.indexOf('chat transcripts'), legs.join(', '))
+  assert.ok(legs.indexOf('terminals') < legs.indexOf('data directory'))
   assert.equal(legs.at(-1), 'data directory')
   assert.ok(legs.indexOf('chat transcripts') < legs.indexOf('data directory'))
+  // The pool's installs stop with the new work, and the pool lets its lock go before the directory.
+  assert.ok(legs.indexOf('dependency installs') > 0 && legs.indexOf('dependency installs') < legs.indexOf('chats'))
+  assert.ok(legs.indexOf('worktree pool') > legs.indexOf('chats'))
+  assert.ok(legs.indexOf('worktree pool') < legs.indexOf('data directory'))
   assert.equal(
     fromServer.filter((frame) => frame.t === 'shutdown-progress').every((frame) => !frame.failed),
     true,
     JSON.stringify(fromServer.filter((frame) => frame.t === 'shutdown-progress')),
   )
 })
+
+/** One newline-delimited JSON-RPC exchange per call, on one gateway connection. */
+/** A desktop window's Studio client: a ticket the shell buys for it, then a socket saying the window's origin. */
+async function windowStudio(shellRpc: { call<T>(method: string, params: unknown): Promise<T> }) {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
+  const WindowWebSocket = class {
+    constructor(url: string) {
+      return new NodeWebSocket(url, { headers: { origin: 'file://' } }) as never
+    }
+  } as unknown as StudioWebSocketConstructor
+  const client = await connectStudio({
+    transport: webSocketTransport({
+      ticket: () =>
+        shellRpc.call<StudioWindowTicket>(SERVER_METHODS.windowTicket, { windowKey: 'window-1-1', origin: 'file://' }),
+      WebSocket: WindowWebSocket,
+    }),
+    client: { name: 'desktop-server test window' },
+    reconnect: false,
+  })
+  windows.push(client)
+  return client
+}
+
+async function mcpSession(socketPath: string) {
+  const socket = connect(socketPath)
+  await new Promise<void>((resolve, reject) => socket.once('connect', resolve).once('error', reject))
+  const replies = createInterface({ input: socket })[Symbol.asyncIterator]()
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
+  let id = 0
+  return {
+    async call(method: string, params: Record<string, unknown> = {}): Promise<Record<string, any>> {
+      socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })}\n`)
+      for (;;) {
+        const next = await replies.next()
+        assert.equal(next.done, false, 'the gateway closed the connection')
+        const message = JSON.parse(next.value) as Record<string, any>
+        if (message.id === id) return message
+      }
+    },
+    close: () => socket.end(),
+    /** Settles when the gateway ends the connection. */
+    closed,
+  }
+}
+
+/** A project's workspace record, as a window creates one. */
+function projectWorkspace(id: string, folderPath: string) {
+  return {
+    id,
+    name: 'app',
+    mode: 'standard',
+    folderPath,
+    templateId: 'solo',
+    layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
+    agents: {},
+    worktreeState: { containerPath: null, entries: {}, updatedAt: null },
+    memory: { relativeRoot: null },
+    editorState: { openFiles: [], activeFilePath: null },
+    createdAt: 1,
+  }
+}
+
+/** The worktrees git lists for a repository, real paths. */
+function worktreesOf(repo: string): string[] {
+  return execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => realpathSync(line.slice('worktree '.length)))
+}
+
+/** A project cloned from an origin of its own, as a person's checkout is. */
+async function gitProject(dir: string): Promise<string> {
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'test',
+    GIT_AUTHOR_EMAIL: 'dev@example.com',
+    GIT_COMMITTER_NAME: 'test',
+    GIT_COMMITTER_EMAIL: 'dev@example.com',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+  }
+  const run = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { env, stdio: 'ignore' })
+  const seed = join(dir, 'seed')
+  mkdirSync(seed, { recursive: true })
+  run(seed, 'init', '-q', '-b', 'main')
+  writeFileSync(join(seed, 'README.md'), '# app\n')
+  run(seed, 'add', '.')
+  run(seed, 'commit', '-q', '-m', 'init')
+  run(dir, 'clone', '-q', '--bare', seed, join(dir, 'origin.git'))
+  run(dir, 'clone', '-q', join(dir, 'origin.git'), join(dir, 'app'))
+  return realpathSync(join(dir, 'app'))
+}
 
 async function waitFor<T>(probe: () => T | undefined): Promise<T> {
   for (let tries = 0; tries < 3_000; tries++) {

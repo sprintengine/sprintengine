@@ -1,9 +1,11 @@
-import React, { useCallback, useId, useMemo, useRef, useState, type JSX } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type JSX } from 'react'
 
 import type { CapabilityManifest, ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { selectModuleEnabled } from '../../modules'
 import { showToast } from '../../store/toastStore'
-import { useWorkspaceStore } from '../../store/workspaceStore'
+import { studioModuleSwitchStore, useWorkspaceStore } from '../../store/workspaceStore'
+import { windowModuleSwitches } from '../../studio/moduleSwitches'
+import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
 import { ChevronDownIcon, FolderPlusIcon, GithubSettingsIcon } from '../AppIcons'
 import { InstallFromGitHubDialog } from '../extensions/InstallFromGitHubDialog'
 import { ExtensionTrustReview } from '../extensions/ExtensionTrustReview'
@@ -121,16 +123,62 @@ function InstallMenu({
   )
 }
 
+/**
+ * The window's Studio's word on its modules: what it holds, switched on or
+ * off and whether each runs there now (`module.list`), and a switch that waits
+ * for it. Without a Studio of this window's own (a browser tab) a switch is
+ * this window's copy alone.
+ */
+function useStudioModules(): {
+  modules: ReadonlyMap<string, StudioModuleSummary>
+  switchModule: (moduleId: string, enabled: boolean) => void
+  failure: string | null
+  dismissFailure: () => void
+} {
+  const setModuleEnabled = useWorkspaceStore((state) => state.setModuleEnabled)
+  const [switches] = useState(() => windowModuleSwitches(studioModuleSwitchStore))
+  const [modules, setModules] = useState<ReadonlyMap<string, StudioModuleSummary>>(
+    () => switches?.modules() ?? new Map(),
+  )
+  const [failure, setFailure] = useState<string | null>(null)
+  useEffect(() => {
+    if (!switches) return
+    const stop = switches.onChange(() => setModules(switches.modules()))
+    // What runs now, not what the window last heard.
+    void switches.refresh()
+    return stop
+  }, [switches])
+  const switchModule = useCallback(
+    (moduleId: string, enabled: boolean) => {
+      if (!switches) {
+        setModuleEnabled(moduleId, enabled)
+        return
+      }
+      setFailure(null)
+      void switches.switchModule(moduleId, enabled).then((answer) => {
+        if (!answer.ok) setFailure(answer.message)
+      })
+    },
+    [setModuleEnabled, switches],
+  )
+  return { modules, switchModule, failure, dismissFailure: () => setFailure(null) }
+}
+
 function BuiltInRow({
   manifest,
   enabled,
+  studio,
   onToggle,
 }: {
   manifest: CapabilityManifest
   enabled: boolean
+  /** What the window's Studio says of it, when it holds it. */
+  studio: StudioModuleSummary | undefined
   onToggle: (next: boolean) => void
 }): JSX.Element {
   const comingSoon = COMING_SOON_IDS.has(manifest.id)
+  // On, but not running where the Studio is: say so rather than show a switch that lies.
+  const notRunning = studio && studio.enabled && !studio.running ? (studio.blocked ?? 'Not running yet.') : null
   return (
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5">
       <ExtensionIcon name={manifest.displayName} size={28} />
@@ -138,6 +186,11 @@ function BuiltInRow({
         <div className="text-body font-medium text-[color:var(--text-strong)]">{manifest.displayName}</div>
         {manifest.summary ? (
           <div className="text-meta leading-4 text-[color:var(--text-muted)]">{manifest.summary}</div>
+        ) : null}
+        {notRunning ? (
+          <div className="text-meta leading-4 text-[color:var(--text-subtle)]" data-testid="module-not-running">
+            {notRunning}
+          </div>
         ) : null}
       </div>
       {comingSoon ? (
@@ -153,7 +206,8 @@ function BuiltInRow({
 
 export function ModulesSettingsTab(): JSX.Element {
   const overrides = useWorkspaceStore((state) => state.appSettings.modules)
-  const setModuleEnabled = useWorkspaceStore((state) => state.setModuleEnabled)
+  const studioModules = useStudioModules()
+  const setModuleEnabled = studioModules.switchModule
   const openSettingsOverlay = useWorkspaceStore((state) => state.openSettingsOverlay)
   const mcpSettings = useWorkspaceStore((state) => state.appSettings.mcp)
   const workspaceRoot = useWorkspaceStore(
@@ -316,6 +370,7 @@ export function ModulesSettingsTab(): JSX.Element {
       </div>
 
       <ActionResultMessage message={extensions.message} />
+      <ActionResultMessage message={studioModules.failure ? { tone: 'error', text: studioModules.failure } : null} />
 
       {nothingMatches ? (
         <p className="text-body leading-5 text-[color:var(--text-muted)]">
@@ -364,7 +419,10 @@ export function ModulesSettingsTab(): JSX.Element {
                 <BuiltInRow
                   key={manifest.id}
                   manifest={manifest}
-                  enabled={selectModuleEnabled(overrides, manifest.id)}
+                  enabled={
+                    studioModules.modules.get(manifest.id)?.enabled ?? selectModuleEnabled(overrides, manifest.id)
+                  }
+                  studio={studioModules.modules.get(manifest.id)}
                   onToggle={(next) => setModuleEnabled(manifest.id, next)}
                 />
               ))}

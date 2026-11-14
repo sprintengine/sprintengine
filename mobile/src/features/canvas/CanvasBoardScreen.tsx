@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { PhoneCanvasPicture } from "../../api/canvasBoards";
-import type { ConversationThread } from "../../api/conversationWire";
+import type { ConversationListedThread as ConversationThread } from "../../../../packages/conversation-protocol/src/public";
+import { useChatOffers } from "../../api/chatOffers";
 import { threadFromLaunch } from "../../api/conversationLaunch";
-import { declaresNewChatNoProject } from "../../api/tailnetTransport";
 import type { MobileSession } from "../../api/types";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../components/Screen";
@@ -97,11 +97,13 @@ export function CanvasBoardScreen({
   const refresh = useCallback(() => setAttempt((count) => count + 1), []);
   const refreshControl = useRefreshControl(refresh, false);
 
-  const launch = session ? chatLaunchAvailability(session, { machineName: machine }) : null;
-  const canContinue = !!session && canStartChats(session);
+  // What the desktop's Studio said it lets this pairing do, from its welcome.
+  const offers = useChatOffers(session);
+  const launch = session ? chatLaunchAvailability(offers, { machineName: machine }) : null;
+  const canContinue = !!session && canStartChats(session, offers);
   const continueInNewChat = useCallback(async () => {
     if (!session || starting) return;
-    const where = canvasContinueTarget(target, { noProject: declaresNewChatNoProject(session), machine });
+    const where = canvasContinueTarget(target, { noProject: true, machine });
     if (where.kind === "refused") {
       toast.show(where.message, "error");
       return;

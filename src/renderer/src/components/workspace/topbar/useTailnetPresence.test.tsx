@@ -140,6 +140,28 @@ test('useTailnetPresence', async () => {
     })
     assert.equal(current().status?.running, true, 'an older pushed revision is dropped')
 
+    // The stream reopened on a restarted server: its `current` is the state
+    // as it stands, applied though its revision starts again below ours, and
+    // the changes after it are applied too.
+    await act(async () => {
+      tailnetListener!({
+        revision: 1,
+        event: { kind: 'current' },
+        status: status(false),
+        live: { revision: 1, devices: [] },
+      })
+    })
+    assert.equal(current().status?.running, false, 'a reopened stream’s current state is applied')
+    await act(async () => {
+      tailnetListener!({
+        revision: 2,
+        event: { kind: 'listener', running: true },
+        status: status(true),
+        live: { revision: 2, devices: [] },
+      })
+    })
+    assert.equal(current().status?.running, true, 'and so is the change after it')
+
     // The mesh channel folds the same way, by its own revision.
     reads.mesh.resolve([])
     reads.meshLive.resolve({
@@ -161,46 +183,33 @@ test('useTailnetPresence', async () => {
     await flush()
     assert.equal(current().meshReachability.get('air')?.reachable, true, 'the mesh snapshot seeds reachability')
 
-    // The change feed: a machine saying it changed lands as the latest change
-    // for that machine.
-    await act(async () => {
-      meshListener!({
-        kind: 'remote-changed',
-        revision: 3,
-        connectionId: 'air',
-        machineName: 'air',
-        what: 'conversations',
-      })
-    })
-    assert.equal(current().meshRemoteChanges.get('air')?.what, 'conversations', 'the change is recorded per machine')
-    assert.equal(current().meshRemoteChanges.get('air')?.revision, 3)
-    await act(async () => {
-      meshListener!({
-        kind: 'remote-changed',
-        revision: 1,
-        connectionId: 'air',
-        machineName: 'air',
-        what: 'workspaces',
-      })
-    })
-    assert.equal(current().meshRemoteChanges.get('air')?.revision, 3, 'an older mesh revision is dropped')
-    // A push of the other kind keeps the first kind's revision, so a reader
-    // that re-reads by kind loses neither when both land between two renders.
-    await act(async () => {
-      meshListener!({
-        kind: 'remote-changed',
-        revision: 4,
-        connectionId: 'air',
-        machineName: 'air',
-        what: 'workspaces',
-      })
-    })
-    assert.deepEqual(current().meshRemoteChanges.get('air')?.revisions, { conversations: 3, workspaces: 4 })
     await act(async () => {
       meshListener!({ kind: 'machine-forgotten', revision: 6, connectionId: 'air', machineName: 'air' })
     })
-    assert.equal(current().meshRemoteChanges.get('air'), undefined, 'forgetting the machine drops its change')
-    assert.equal(current().meshReachability.get('air'), undefined, 'and its reachability')
+    assert.equal(current().meshReachability.get('air'), undefined, 'forgetting the machine drops its reachability')
+
+    // The mesh stream reopened on a restarted server: its `current` is applied
+    // whatever its revision, and so is what follows it.
+    const waiting = {
+      requestId: 'r1',
+      endpoint: 'build-box:7777',
+      machineName: 'build-box',
+      comparisonCode: '000000',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+      reverseOffered: false,
+    }
+    await act(async () => {
+      meshListener!({ kind: 'current', revision: 1, requests: [waiting], reachability: [] })
+    })
+    assert.deepEqual(
+      current().meshRequests.map((entry) => entry.requestId),
+      ['r1'],
+      'a reopened mesh stream’s current state is applied',
+    )
+    await act(async () => {
+      meshListener!({ kind: 'pair-request', revision: 2, phase: 'cancelled', request: waiting })
+    })
+    assert.deepEqual(current().meshRequests, [], 'and so is the change after it')
 
     act(() => root.unmount())
     assert.equal(tailnetListener, null, 'unmount releases the tailnet subscription')
@@ -262,12 +271,6 @@ test('useTailnetPresence is one set of reads and one subscription per window', a
   assert.deepEqual(reads, { status: 1, live: 1, mesh: 1, meshLive: 1 }, 'one set of initial reads')
   assert.equal(tailnetListeners.size, 1, 'one tailnet subscription')
   assert.equal(meshListeners.size, 1, 'one mesh subscription')
-
-  await act(async () => {
-    for (const listener of meshListeners)
-      listener({ kind: 'remote-changed', revision: 1, connectionId: 'mini', machineName: 'mini', what: 'workspaces' })
-  })
-  assert.equal(seen.at(-1)?.meshRemoteChanges.get('mini')?.what, 'workspaces', 'every surface sees the push')
 
   act(() => root.unmount())
   assert.equal(tailnetListeners.size + meshListeners.size, 0, 'the last one out releases both channels')

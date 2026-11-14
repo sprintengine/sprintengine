@@ -2,7 +2,7 @@
 // of the send-turn boundary: the composer stages against them
 // (src/renderer/src/components/panels/AgentChatView.tsx) and
 // `parseImageAttachments` rejects against them
-// (src/main/ipc/conversation-ipc.ts). They were independently declared on each
+// (src/main/conversation-ipc-inputs.ts). They were independently declared on each
 // side; drift showed up as the composer staging an image the boundary then
 // refused mid-send, or trimming to a cap main had already raised (1810).
 //
@@ -41,12 +41,6 @@ export const ATTACHMENT_JPEG_QUALITY = 0.82
 // The quality a JPEG is re-encoded at when it was a JPEG to begin with: a
 // canvas's own default, which is what the composer has always encoded at.
 export const ATTACHMENT_JPEG_SOURCE_QUALITY = 0.92
-
-// What a paired device may upload where the desktop shrinks each picture on
-// receipt (the `conversation-image-downscale` capability): a phone's camera
-// photo is often over the per-image ceiling before it is resized, and under
-// it after. What reaches the model is still held to MAX_ATTACHMENT_BYTES.
-export const MAX_DOWNSCALED_UPLOAD_BYTES = 20 * 1024 * 1024
 
 // Longest-edge-constrained target size, aspect ratio preserved. An image that
 // already fits comes back untouched so small images are never resampled (which

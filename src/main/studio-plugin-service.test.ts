@@ -442,3 +442,64 @@ test('studio-plugin-service', async () => {
 
   await suiteRun
 })
+
+test("Studio's skill copies stay out of the workspace's git: no change for a turn to show, nothing to keep a worktree for", async () => {
+  const { runGitCommand } = await import('./git-utils')
+  const { excludeFromWorktree } = await import('./integrations/worktree-exclude')
+  const { mkdir, realpath } = await import('node:fs/promises')
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-studio-skills-git-')))
+  try {
+    const git = async (cwd: string, ...args: string[]) => {
+      const result = await runGitCommand(cwd, args)
+      assert.ok(result.ok, `git ${args.join(' ')}: ${result.message ?? ''}`)
+      return result.stdout
+    }
+    const repo = join(root, 'repo')
+    await mkdir(repo)
+    await git(repo, 'init', '-q')
+    await git(repo, 'config', 'core.excludesFile', join(root, 'none'))
+    await git(
+      repo,
+      '-c',
+      'user.email=dev@example.com',
+      '-c',
+      'user.name=dev',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'seed',
+    )
+    // A chat's worktree, as the pool makes one.
+    const worktree = join(root, 'demo-01')
+    await git(repo, 'worktree', 'add', '-q', '-b', 'demo-01', worktree)
+    const userData = join(root, 'userData')
+    await mkdir(userData)
+    const reporter = join(root, 'sprintengine-agent-state.mjs')
+    await writeFile(reporter, '// reporter\n', 'utf8')
+    const service = createStudioPluginService({
+      resolveTemplateRoot: () => resolve(process.cwd(), 'resources', 'studio-plugin'),
+      resolveAgentStateReporterPath: () => reporter,
+      resolveBridgeScriptPath: () => join(root, 'mcp-stdio-bridge.mjs'),
+      resolveNodeCommand: () => join(root, 'Electron'),
+      resolveUserDataDir: () => userData,
+      resolveAgentStateSocketPath: () => '',
+      listHarnesses: async (): Promise<SkillHarness[]> => ['agents', 'opencode'],
+      resolveLaunchPluginsActive: () => true,
+      resolveEnabledSkillDirs: () => ['studio-ship'],
+      excludeFromGit: (workspaceRoot, entries) => excludeFromWorktree(workspaceRoot, entries),
+    })
+    for (const workspace of [worktree, repo]) {
+      await service.ensureInstalledForRoots([workspace])
+      assert.equal(existsSync(join(workspace, '.agents', 'skills', 'studio-ship', 'SKILL.md')), true)
+      assert.equal(existsSync(join(workspace, '.opencode', 'skills', 'studio-ship', 'SKILL.md')), true)
+      assert.equal(await git(workspace, 'status', '--porcelain', '--untracked-files=all'), '', workspace)
+    }
+    // A person's own skill beside them is still theirs to see.
+    await mkdir(join(worktree, '.agents', 'skills', 'mine'), { recursive: true })
+    await writeFile(join(worktree, '.agents', 'skills', 'mine', 'SKILL.md'), '# Mine\n')
+    assert.match(await git(worktree, 'status', '--porcelain', '--untracked-files=all'), /\.agents\/skills\/mine/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

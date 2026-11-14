@@ -13,12 +13,18 @@ import type { Workspace } from '../../../types/workspace'
 import {
   newChatWorktreeAttemptRunning,
   pendingNewChatWorktreeFailure,
+  pendingNewChatWorktreeOf,
   prepareNewChatWorktree,
   startPendingNewChatInProject,
   subscribeNewChatWorktreeAttempts,
 } from '../../../utils/newChatWorktree'
 import type { CliRuntimeOption } from '../../ui/CliModelPicker'
 import type { ChatReadiness } from './chatStates'
+import { useStudioChatHeld } from './chatServerHeld'
+import { usePullRequestsOfConversation } from '../../workspace/useConversationPullRequests'
+import { useLocalServersOfConversation } from '../../workspace/useLocalServers'
+import { useConversationTransport } from './conversationTransport'
+import { useEnvironmentReach } from '../../../hooks/useEnvironmentReach'
 
 // What a chat view is bound to besides its transport: the agent fields it reads
 // (name, model, preset, mode, skills, the one-shot startup prompt) and where it writes
@@ -82,21 +88,18 @@ export type ChatBinding = {
    */
   engine?: CliRuntimeOption
   /**
-   * The messages the machine running the chat holds for its turn to end, as
-   * that machine last said, for a chat on another machine whose transport
-   * hands its queue over (`capabilities.hostQueue`).
+   * The messages the chat's server holds for its turn to end, as it last
+   * said (`capabilities.hostQueue`).
    */
   hostQueue?: { machineName: string; messages: MeshQueuedMessage[] }
   /**
-   * The messages the machine running the chat keeps for it until a time, as
-   * that machine last said, for a chat on another machine that schedules them
-   * there (`capabilities.hostSchedule`).
+   * The messages the chat's server keeps for it until a time, as it last said
+   * (`capabilities.hostSchedule`).
    */
   hostSchedule?: { machineName: string; messages: MeshScheduledMessage[] }
   /**
-   * What the machine running the chat knows of its agents' usage limits, and
-   * the notice a limit left on the chat's turn there, as that machine last
-   * said, for a chat on another machine that says so
+   * What the chat's server knows of its agents' usage limits, and the notice
+   * a limit left on the chat's turn, as it last said
    * (`capabilities.hostUsageLimits`).
    */
   hostUsageLimits?: HostUsageLimits
@@ -170,7 +173,7 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
   const attemptRunning = useSyncExternalStore(subscribeNewChatWorktreeAttempts, () =>
     newChatWorktreeAttemptRunning(workspaceId),
   )
-  const pendingWorktree = agent?.chatPendingWorktree
+  const pendingWorktree = pendingNewChatWorktreeOf(workspace ?? undefined, agent)
   const pendingGate = useMemo((): Pick<ChatBinding, 'readiness' | 'worktreeActions'> | null => {
     if (!pendingWorktree) return null
     const failure = attemptRunning ? null : pendingNewChatWorktreeFailure(workspaceId, pendingWorktree)
@@ -182,6 +185,39 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
       },
     }
   }, [pendingWorktree, attemptRunning, workspaceId])
+  // What the chat's own Studio holds and keeps for it, and what it knows of
+  // its usage limits: the window's Studio's for its own chats, an SSH
+  // machine's or a WSL distribution's for theirs (design-wsl-ssh-direct PR 1d,
+  // PR 3c), read on the push topics its transport follows. A paired chat's
+  // come with its lane's frames.
+  const transport = useConversationTransport()
+  const followPush = transport.services.followPush ?? null
+  // A machine forgotten in Settings › Machines holds nothing this window can
+  // follow or change: what it last said it held is not shown as held.
+  const reach = useEnvironmentReach(transport.environment.route, transport.environment.label)
+  const workingRoot =
+    agent?.conversation && !pendingGate && followPush && reach?.kind !== 'forgotten'
+      ? conversationWorkingRoot(agent, workspace?.folderPath)
+      : null
+  const heldKey = useMemo(
+    () => (workingRoot ? { workspaceId, agentId, workspaceRoot: workingRoot } : null),
+    [workspaceId, agentId, workingRoot],
+  )
+  const held = useStudioChatHeld(heldKey, followPush ?? undefined, transport.environment.label ?? undefined)
+  // The pull requests the chat opened and the local servers its agents
+  // started, as the window's Studio lists them: the chat's server's lists, as
+  // a paired chat's are its machine's. Its branch and changes are read from
+  // its checkout through the window (`useConversationStripFacts`).
+  const chatRef = useMemo(
+    () => (agent?.conversation ? { workspaceId, agentId } : null),
+    [agent?.conversation, workspaceId, agentId],
+  )
+  const pullRequests = usePullRequestsOfConversation(chatRef)
+  const localServers = useLocalServersOfConversation(chatRef)
+  const listed = useMemo(
+    () => ({ branch: null, worktree: false, files: null, pullRequests, localServers }),
+    [pullRequests, localServers],
+  )
   return useMemo(
     () =>
       agent?.conversation
@@ -194,9 +230,11 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
             workspaceRoot: pendingGate ? null : conversationWorkingRoot(agent, workspace?.folderPath),
             recordUserMessage,
             rememberModel,
+            ...held,
+            listed,
             ...pendingGate,
           }
         : null,
-    [agent, update, workspace, recordUserMessage, rememberModel, pendingGate],
+    [agent, update, workspace, recordUserMessage, rememberModel, held, listed, pendingGate],
   )
 }

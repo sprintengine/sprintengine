@@ -21,10 +21,12 @@ import {
   laneStatus,
   laneStepCount,
   placeAgentMessages,
-} from "./agentLogic";
+  directLanes,
+  parentRelation,
+  type SubagentParent,
+} from "./subagentLogic";
 import { AgentListRow, ToolStepRow, type StepDetailSource } from "./conversationParts";
 import { ParentLink } from "./ParentLink";
-import { directLanes, parentRelation, type SubagentParent } from "./subagentLogic";
 import { toolDetailChat } from "./toolOutput";
 import { chatThreadCli } from "./launchLogic";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";

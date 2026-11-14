@@ -70,6 +70,9 @@ import {
   overwriteOnDiskConfirmation,
   type EditorDiskNoticeState,
 } from '../panels/editor/EditorDiskNotice'
+import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
+import { isPathOrChild } from '../../utils/paths'
 
 // Match EditorPanel: above this size the rendered preview is disabled and the
 // file falls back to the Monaco source view so a huge document can't hang the
@@ -126,8 +129,8 @@ function useTreeRoot(tab: FileTab | null): string | null {
     let cancelled = false
     const folder = splitTreePath(path).directory || path
     const lookup =
-      typeof window.api.getGitRepoRoot === 'function'
-        ? window.api.getGitRepoRoot(folder).catch(() => null)
+      typeof gitApi.getGitRepoRoot === 'function'
+        ? gitApi.getGitRepoRoot(folder).catch(() => null)
         : Promise.resolve(null)
     void lookup.then((repoRoot) => {
       if (cancelled) return
@@ -214,7 +217,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
   // changed. `saved` is the baseline: what the tab last read or wrote.
   const syncTabWithDisk = useCallback(
     async (path: string) => {
-      const read = await readFileOnDisk(window.api, path)
+      const read = await readFileOnDisk(filesApi, path)
       const buffer = buffersRef.current[path]
       if (!tabsRef.current.some((tab) => tab.path === path)) return
       if (!buffer || buffer.kind !== 'text' || buffer.loading || buffer.error) return
@@ -284,7 +287,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
 
   const loadBuffer = useCallback((tab: FileTab) => {
     setBuffers((prev) => ({ ...prev, [tab.path]: createExternalFileLoadingBuffer(tab.kind) }))
-    void loadExternalFileBuffer(tab.path, tab.kind, window.api).then((buffer) => {
+    void loadExternalFileBuffer(tab.path, tab.kind, filesApi).then((buffer) => {
       setBuffers((prev) => ({ ...prev, [tab.path]: buffer }))
     })
   }, [])
@@ -441,6 +444,21 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
     [setDiskNotice],
   )
 
+  // Studio deleted a file or folder from another window (the Files panel's Move
+  // to Trash, a Backlog item's Delete): its clean tabs close, as that window's
+  // own tabs did. A tab with unsaved edits stays, under the watch's "Deleted on
+  // disk" notice, so the edits can still be saved somewhere.
+  useEffect(() => {
+    if (typeof window.api.onPathsRemoved !== 'function') return
+    return window.api.onPathsRemoved((removed) => {
+      for (const tab of tabsRef.current) {
+        if (!removed.some((path) => isPathOrChild(tab.path, path))) continue
+        if (isDirty(buffersRef.current[tab.path])) continue
+        closeTab(tab.path)
+      }
+    })
+  }, [closeTab])
+
   // Answers whether the tab is saved now: false when the person kept the
   // version on disk instead, or the write failed.
   const saveBuffer = useCallback(
@@ -450,7 +468,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
       // A file that changed on disk since this tab last read or wrote it, which
       // the watch has not reported yet or cannot (an SSH machine's folder), is
       // not written over without asking.
-      const unseen = unseenDiskContent(await readFileOnDisk(window.api, path), before.saved, before.value)
+      const unseen = unseenDiskContent(await readFileOnDisk(filesApi, path), before.saved, before.value)
       if (unseen !== null) {
         const tab = tabsRef.current.find((candidate) => candidate.path === path)
         const overwrite = await confirmDialog(overwriteOnDiskConfirmation(tab?.name ?? path))
@@ -474,7 +492,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
         // The workspace's folder, when the opener named one, so the save does
         // not follow a link out of it.
         const root = tabsRef.current.find((candidate) => candidate.path === path)?.rootPath
-        await window.api.writefile(path, value, { roots: root ? [root] : [] })
+        await filesApi.writefile(path, value, { roots: root ? [root] : [] })
         setDiskNotice(path, null)
         return true
       } catch (error) {
@@ -722,7 +740,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
               notice={diskNotices[activePath]}
               onReload={() => {
                 const path = activePath
-                void readFileOnDisk(window.api, path).then((read) => {
+                void readFileOnDisk(filesApi, path).then((read) => {
                   if (read.kind === 'content') takeDiskContent(path, read.content)
                   else if (read.kind === 'missing') setDiskNotice(path, { kind: 'deleted' })
                 })

@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { test } from 'vitest'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import { describeServerExit, lastErrorLine, startWslServer } from './wsl-server-starter'
 
@@ -11,7 +11,7 @@ import { describeServerExit, lastErrorLine, startWslServer } from './wsl-server-
 // anything the server prints: the starter reads it as text before it
 // classifies it or shows it to the person.
 
-function failingWslExe(stderr: Buffer, code: number): HelperProcess {
+function failingWslExe(stderr: Buffer, code: number): WslStdioProcess {
   const events = new EventEmitter()
   const stdout = new PassThrough()
   const err = new PassThrough()
@@ -30,7 +30,7 @@ function failingWslExe(stderr: Buffer, code: number): HelperProcess {
     kill: () => undefined,
     once: (event: string, listener: (...args: never[]) => void) =>
       events.once(event, listener as (...args: unknown[]) => void),
-  } as HelperProcess
+  } as WslStdioProcess
 }
 
 test("wsl.exe's own UTF-16 message is read as words, and a missing distribution is said so", async () => {

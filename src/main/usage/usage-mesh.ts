@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
+import {
+  USAGE_WIRE_VERSION,
+  type UsageWireAnswer,
+  type UsageWireArgs,
+  type UsageWireRow,
+} from '../../../packages/studio-protocol/src/chat-stores'
 import type { UsageSource } from '../../shared/modules/activity-service'
 import {
   LOCAL_USAGE_MACHINE_ID,
@@ -19,7 +25,7 @@ import { invalidWindow, type UsageService } from './usage-service'
 
 // The usage dashboard across the person's machines: this machine's rows, and
 // what each Studio paired over the tailnet answers for its own over the
-// `usage.report` gateway tool (`usage-report` capability). Each machine folds
+// Studio protocol's `usage.rows`. Each machine folds
 // its own logs (usage-aggregate.ts) into rows of one hour of one model in one
 // session; this desktop prices every row with its own price list, so one
 // model costs the same whichever machine ran it, and passes a cost an agent
@@ -50,48 +56,9 @@ import { invalidWindow, type UsageService } from './usage-service'
 
 // ── The wire ─────────────────────────────────────────────────────────────────
 
-/**
- * One row as `usage.report` sends it:
- * `[hourStartMs, agent, sessionIndex, model, input, output, cacheRead, cacheWrite, requests, reportedCostUsd, speed?]`.
- * `sessionIndex` points into the answer's `sessions`; `speed` is absent at standard speed.
- */
-export type UsageWireRow = [
-  hour: number,
-  agent: string,
-  session: number,
-  model: string,
-  input: number,
-  output: number,
-  cacheRead: number,
-  cacheWrite: number,
-  requests: number,
-  reportedCostUsd: number | null,
-  speed?: UsageSpeed,
-]
+// The wire is the Studio protocol's `usage.rows` (`chat-stores.ts`).
+export type { UsageWireArgs } from '../../../packages/studio-protocol/src/chat-stores'
 
-export type UsageWireArgs = { from: number; to: number; refresh?: boolean; wait?: boolean }
-
-/** `usage.report`'s structured answer. */
-export type UsageWireAnswer = {
-  ok: true
-  /** Bumped only with a change an older reader would misread; a new member is not one. */
-  version: typeof USAGE_WIRE_VERSION
-  scannedAt: number | null
-  /** The figures predate a read of the logs that is running now; ask again with `wait`. */
-  scanning: boolean
-  sources: Array<{ id: string; found: number; error: string | null }>
-  /** `usageSessionHash` of each session the rows name, each once. */
-  sessions: string[]
-  rows: UsageWireRow[]
-  /**
-   * Where the next slice starts when the window's rows did not fit in one
-   * answer (the tailnet client reads 4 MB at most), else null. A slice always
-   * ends on an hour, so no hour is split between two.
-   */
-  nextFrom: number | null
-}
-
-export const USAGE_WIRE_VERSION = 1
 /** What one answer's rows may take, leaving the client's 4 MB for the envelope. */
 const SLICE_BYTES = 3_000_000
 const SPEEDS: ReadonlySet<string> = new Set<UsageSpeed>(['fast', 'ultrafast'])
@@ -152,7 +119,7 @@ export function fleetRowsOf(rows: readonly UsageSpeedRow[]): FleetRow[] {
 }
 
 /**
- * The answer to `usage.report`: the rows from the window's start, as many
+ * The answer to `usage.rows`: the rows from the window's start, as many
  * whole hours as fit in one slice. A source's error is not sent as written,
  * since it may name a file on this disk.
  */

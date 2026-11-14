@@ -7,14 +7,19 @@ import { getWorkspaceChangeSummary } from '../../main/workspace-change-summary'
 import { isMachinePath } from '../../shared/machine-paths'
 import { isWorkspaceTombstoned } from '../../shared/workspace-registry'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
-import { gitHostIdForPath, type ExecutionHostId, type ExecutionHostSettings } from '../../shared/execution-host'
-import { ensureSkillInstalled } from '../../main/builtin-skills'
+import {
+  gitHostIdForPath,
+  wslHostId,
+  type ExecutionHostId,
+  type ExecutionHostSettings,
+} from '../../shared/execution-host'
+import { ensureSkillInstalled, resolveSkillById } from '../../main/builtin-skills'
 import { cliResumeCapabilities } from '../../main/cli-resume-capabilities'
 import {
   createAgentPermissionResolver,
   type AgentPermissionResolver,
 } from '../../main/automation/launch-permission-cap'
-import { createConversationGatewayHost } from '../../main/automation/tailnet/tailnet-conversation-host'
+import { createConversationGatewayHost } from './conversation-host'
 import {
   CONVERSATION_COMMANDS_CACHE_FILE,
   createConversationCommandsDiskCache,
@@ -42,12 +47,19 @@ import {
 import { TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 import { WEB_UPLOADS_DIRNAME } from '../web/web-uploads'
 import { attachmentImagesRoot } from '../../main/attachment-image-file'
-import { createConversationLaunchService } from '../../main/conversation-launch-service'
+import { createConversationLaunchService, SUBAGENT_TASK_ORIGIN } from '../../main/conversation-launch-service'
+import {
+  createPendingFirstMessages,
+  FIRST_MESSAGE_CLIENT_ID,
+  FIRST_MESSAGES_FILENAME,
+  recoverFirstMessages,
+} from '../../main/conversation-first-messages'
 import { createSubagentLifecycle, subagentChangesOf } from '../../main/subagent-lifecycle'
 import { createConversationCheckoutChanges } from '../../main/conversation-checkout-changes'
 import { createConversationImportService } from '../../main/conversation-import/conversation-import-service'
 import { createConversationModelCatalog } from '../../main/conversation-model-catalog'
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
+import { ConversationOutbox } from '../../main/conversation-outbox'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { createGitWorktree, getGitRepoRoot } from '../../main/git'
@@ -65,7 +77,7 @@ import { createWorkspaceRegistryService } from '../../main/workspace-registry-se
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
 import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { startWorkspaceStoreMigration } from '../../main/workspace-store-migration'
-import { knownCliAvailability } from '../../main/cli-availability'
+import { invalidateCliAvailabilityOnHost, knownCliAvailability } from '../../main/cli-availability'
 import { createChatTitler } from '../../main/text-generation/chat-titler'
 import { generateChatTitle } from '../../main/text-generation/text-generation-service'
 import { createTextGenerationSettingsStore } from '../../main/text-generation/text-generation-settings-store'
@@ -83,24 +95,50 @@ import {
   type ConversationSessionSummary,
 } from '../../shared/conversation-runtime'
 import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } from '../platform/platform'
+import { createStudioExtensions, type StudioExtensionsDeps } from '../extensions/extensions-domain'
+import { createStudioArtifacts, type StudioArtifactsShell } from '../artifacts/artifacts-domain'
+import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
 import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
-import { localConversationBackend, refuseMachinePaths, type ConversationBackend } from './conversation-backend'
+import { localConversationBackend, refuseOtherEnvironments, type ConversationBackend } from './conversation-backend'
+import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
+import { createEnvironmentReplicas } from '../environment/environment-replicas'
+import { createEnvironmentMigration } from '../environment/environment-migration'
+import { chatSourceFiles } from '../environment/environment-chat-sources'
 import {
-  createRoutedConversationBackend,
-  type SshRoutedConnection,
-  type SshRoutedServers,
-} from './routed-conversation-backend'
+  handOverSchedulesWhenSaved,
+  scheduleWaitsForHandOver,
+  studioMigrationStores,
+} from '../environment/environment-migration-stores'
+import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/wsl-environment-clients'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
+import { followRelayedAgentState } from '../wsl/agent-state-relay'
+import { createWslLaunchTokens } from '../wsl/wsl-launch-tokens'
+import { createWslTerminalSessions, terminalHostOf, type WslTerminalSessions } from '../wsl/wsl-terminal-host-client'
+import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machine-client'
+import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
+import { createStudioScheduledAgents } from './studio-scheduled-agents'
+import { keptImagesIn } from '../../main/scheduled-agents/prompt-images'
+import { createEnvironmentReadiness } from '../environment/environment-readiness'
+import { sharedGhRunner } from '../../main/github/gh'
+import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'
 import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
 import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
+import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
+import { createStudioAgents, type StudioAgentServices } from './studio-agent-services'
+import type { StudioAgentSkillsDeps } from './studio-agent-skills'
+import {
+  createStudioAgentTerminals,
+  type StudioAgentTerminals,
+  type StudioTerminalHost,
+} from './studio-agent-terminals'
 
 // The Studio core: the services the server owns (studio-server design, section
 // 4.1), composed once. The desktop builds it inside Electron main, from
@@ -113,16 +151,20 @@ import { createStudioSettlement } from './studio-settlement'
 // registry and its sync, git's machine resolver, the conversation runtime and
 // the backend every caller drives chats through (providers, checkpoints, the
 // thread index and transcripts are the runtime's), the model catalog, the
-// launch service that starts a chat for a caller with no window, the pull
+// launch service that starts a chat for a caller with no window, the worktree
+// pool the chats' worktrees are leased from and brought back by, the pull
 // request record, which reacts to chats and so is the server's (owner ruling
 // 2026-10-03), and the local servers the agents started, which are checked
 // where the agents run (owner ruling 2026-10-04). The MCP
 // gateway is composed beside it (studio-gateway.ts), because the desktop adds
 // tools to it that act on windows and terminals.
 //
+// And the terminals and their agents (studio-agent-terminals.ts): the ptys,
+// the reporter's listener and the launches, here in every mode; and the agent
+// CLIs and their setup (studio-agent-services.ts), in every mode too.
+//
 // What is not, yet: the module host and its bundled modules (they still take
-// the shell's terminal runtime and account bridge), terminals (owner ruling
-// 2026-10-01: not served by the server in v1), and everything the shell owns.
+// the shell's account bridge), and everything the shell owns.
 // What is not, ever: the browser and the canvas (owner ruling 2026-10-02: the
 // server draws nothing). They are toolsets a client offers, which the gateway
 // lists and routes (src/server/tools/); the server keeps only the board files,
@@ -137,67 +179,62 @@ export type StudioCoreOptions = {
    */
   resolveStudioMcpServer?: ConversationRuntimeOptions['resolveStudioMcpServer']
   /**
-   * Brings a chat's folder back before an agent runs in it, where this
-   * process keeps a worktree pool that may have given it back
-   * (main/worktree-pool/chat-folder-guard.ts). A server keeps no pool.
+   * What the process around the core adds to its terminal agents: the
+   * shell's part of a launch (over the shell bridge) and, in process, the
+   * shell's observers of the sessions (studio-agent-terminals.ts). Absent,
+   * terminals still run here, launched without the shell's preparation.
    */
-  prepareChatFolder?: ConversationRuntimeOptions['prepareChatFolder']
+  terminalHost?: StudioTerminalHost
   /**
-   * The agent terminals this process runs, for the gateway's launch cap: an
-   * agent may start agents only at its own preset or stricter. A server has
-   * none (owner ruling 2026-10-01), so it defaults to an empty list.
+   * The services the agents are set up with, when the process around the core
+   * uses them too (the desktop's shell, in process): one of each. Absent, the
+   * core builds its own (studio-agent-services.ts).
    */
-  listTerminalSessions?: () => ReadonlyArray<{
-    sessionId?: string
-    kind?: string
-    workspaceId?: string
-    agentId?: string
-    processAlive: boolean
-    /** What the terminal is doing, for Settle from another device: one mid-turn is working. */
-    activity?: { kind: string }
-    /** What its CLI's hooks say, for the rest sweep: one awaiting input wants the person. */
-    agentState?: { phase?: string }
-    /** When its agent last finished a turn, which the rest sweep reads for a chat no window reported on. */
-    lastTurnEndedAt?: number | null
-    agentRecord?: { cliPermissionPreset?: unknown }
-  }>
+  agentServices?: StudioAgentServices
+  /** What the desktop's shell adds to the agents' skills and cards: its Trash and its window focus. */
+  agentSkills?: Omit<StudioAgentSkillsDeps, 'mcpConfig'>
   /**
-   * Whether the list above has been read once. Out of process the shell
-   * pushes it after the server starts, and until then every chat would read
-   * idle to the rest sweep. Absent, it always has been (in process).
+   * What a desktop's Studio is extended with (`extensions`): given, the core
+   * holds the marketplace, the CLI catalogue, the extension scaffold and the
+   * hosted feeds, and a card's `install.module` goes through its marketplace.
+   * The shell adds Studio's own plugin in a workspace, which it installs, and
+   * is told when what is installed changes. Absent (a server on a WSL or SSH
+   * machine), none of it is served.
    */
-  terminalSessionsListed?: () => boolean
-  /** Hear each change to the list above, for the rest sweep. Returns the unsubscribe. */
-  onTerminalSessionsChanged?: (listener: () => void) => () => void
+  extensions?: Pick<StudioExtensionsDeps, 'studioPluginStatus' | 'changed'>
   /**
-   * End the terminals of a chat the rest sweep settled, where this process's
-   * shell holds them: a resting chat holds no processes (owner ruling
-   * 2026-09-07), and with no window open nothing else would end them.
+   * Where a desktop's Studio publishes its agents' pages (`artifacts`): given,
+   * the core holds Settings ▸ Artifacts, its set-up and the agents'
+   * `artifacts.*` tools. The shell adds a page's picture and asks the person
+   * natively when no window is showing; the GitHub token is the process's.
+   * Absent (a server on a WSL or SSH machine), none of it is served.
    */
-  endWorkspaceTerminals?: (workspaceId: string) => void
-  /** A machine's settings changed (a distribution turned on or off). */
-  onHostSettingsChanged?: () => void
+  artifacts?: StudioArtifactsShell & { resolveGitHubToken(): Promise<string> }
   /**
-   * Windows: the WSL distributions whose chats can run on a Studio server
-   * inside them (phase 7). Given, every caller's chats go through a router
-   * that sends a distribution's chats to its server when its switch is on.
+   * Who turns the scheduler on. A process with a module kernel (the desktop,
+   * in process and out) turns it on and off with the person's Scheduled
+   * agents switch (`modules/scheduled-agents-switch.ts`); a server with none
+   * runs its schedules from the start. `core` unless said.
+   */
+  scheduledAgentsSwitch?: 'core' | 'modules'
+  /**
+   * Windows: the Studio servers inside this PC's WSL distributions (phase 7),
+   * each of which holds that distribution's chats (design-wsl-ssh-direct PR
+   * 3c). This core supervises them and reaches each over its owner connection.
    */
   wslServers?: (deps: { readHostSettings: () => Partial<Record<ExecutionHostId, ExecutionHostSettings>> }) => WslServers
   /**
-   * The desktop's SSH machines (phase 8), held by Electron main, which shows
-   * their prompts. Given, a workspace recorded on one runs its chats there.
-   * In process only: out of process, main's sessions are not this core's.
+   * Other environments' Studios (an SSH machine's), as the desktop's own
+   * callers reach a chat one holds: the gateway's tools and modules act on it
+   * there, as a client of that machine (design-wsl-ssh-direct PR 1d).
    */
-  sshServers?: {
-    servers: SshRoutedServers
-    onConnected(listener: (connection: SshRoutedConnection) => void): void
-    /**
-     * A saved SSH machine's host, as its SSH config resolves it (else as it
-     * was typed), and its resolved port: what its kind and colour are keyed
-     * by. Without it a paired phone is not told which SSH machine a chat runs on.
-     */
-    machineOf?(savedId: string): { host: string; port?: number | null } | null
-  }
+  environmentClients?: EnvironmentClients | null
+  /**
+   * A saved SSH machine's host, as its SSH config resolves it (else as it was
+   * typed), and its resolved port: what its kind and colour are keyed by.
+   * Without it a paired phone is not told which SSH machine a chat runs on.
+   */
+  sshMachineOf?(savedId: string): { host: string; port?: number | null } | null
 }
 
 export { StudioDataDirBusyError, StudioDataDirUnusableError } from './take-data-dir'
@@ -244,18 +281,63 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // the same per-machine settings.
   // Built before the WSL servers (below), so their status is read when listed.
   let wslServersForHosts: WslServers | null = null
+  const noWslServers = (distro: string) =>
+    new WslSetupError(`Studio cannot start a server in ${distro} on this computer.`, { fatal: true, code: 'start' })
+  // The launch tokens of this desktop's WSL terminal agents, which the gateway
+  // of each distribution's own Studio proves them by (wsl-launch-tokens.ts).
+  const wslLaunchTokens = createWslLaunchTokens(
+    {
+      connect: (distro) => {
+        const servers = wslServersForHosts
+        return servers ? servers.manager.connect(distro) : Promise.reject(noWslServers(distro))
+      },
+      current: (distro) => wslServersForHosts?.manager.current(distro) ?? null,
+    },
+    (message) => void writeDiagnosticLog({ level: 'info', source: 'terminal', title: 'WSL terminal agents', message }),
+  )
   const hosts = createHostRegistry({
     readHostSettings: () => agentLaunchSettings.get().hosts,
-    chatServer: (distro) => {
+    // Git, the home and watches in a distribution are its own Studio's.
+    machine: createWslMachineAccess(() => wslServersForHosts?.manager ?? null, noWslServers),
+    // A WSL terminal agent's plugin copy carries the Studio skills chosen here.
+    enabledSkills: () => agents.services.areaSkills.enabledSkillDirs(),
+    server: (distro) => {
       const servers = wslServersForHosts
       if (!servers) return undefined
       const status = servers.manager.status(distro)
       return {
-        on: servers.chatServerOn(distro),
         state: status.state,
         ...(status.transport ? { transport: status.transport } : {}),
         ...((status.reason ?? status.transportReason) ? { reason: status.reason ?? status.transportReason } : {}),
       }
+    },
+    // A WSL terminal's agent reports through, and reaches the tools of, its
+    // distribution's server, which this core supervises: started for the
+    // launch, held while it runs, told the launch's token.
+    distribution: {
+      connect: async (distro) => {
+        const servers = wslServersForHosts
+        if (!servers) throw noWslServers(distro)
+        const connection = await servers.manager.connect(distro)
+        return {
+          agentStateSocket: connection.agentStateSocket,
+          dataDir: connection.dataDir,
+          sessionDir: connection.terminals.sessionDir,
+          pidDir: connection.terminals.pidDir,
+          nodePath: connection.terminals.nodePath,
+          resourcesDir: connection.terminals.resourcesDir,
+        }
+      },
+      terminalHost: async (distro, { start }) => {
+        const servers = wslServersForHosts
+        if (!servers) return null
+        const connection = start ? await servers.manager.connect(distro) : servers.manager.current(distro)
+        return connection ? terminalHostOf(connection) : null
+      },
+      hold: (distro, key) => wslServersForHosts?.manager.hold(distro, key),
+      release: (distro, key) => wslServersForHosts?.manager.release(distro, key),
+      issueLaunchToken: (distro, identity) => wslLaunchTokens.issue(distro, identity),
+      revokeLaunchToken: (distro, token) => wslLaunchTokens.revoke(distro, token),
     },
   })
   installHostRegistry(hosts)
@@ -265,7 +347,30 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     if (next === lastHostSettings) return
     lastHostSettings = next
     hosts.notifyChanged()
-    options.onHostSettingsChanged?.()
+  })
+  // The agent CLIs on this machine and what they are set up with, served by
+  // every Studio (`agent-runtimes`, `agent-setup`).
+  // What a desktop's Studio is extended with, built before the agents so a
+  // card's `install.module` goes through the same marketplace a window's does.
+  const extensions = options.extensions
+    ? createStudioExtensions({
+        paths: platform.paths,
+        mcpConfig: () => agents.services.mcpConfig,
+        openWorkspaceRoots: () => listKnownWorkspaceRoots(workspaceSyncService.getSnapshot()),
+        ...options.extensions,
+      })
+    : null
+  const agents = createStudioAgents(platform, {
+    agentLaunchSettings,
+    ...(options.agentServices ? { services: options.agentServices } : {}),
+    ...(options.agentSkills || extensions
+      ? {
+          skills: {
+            ...options.agentSkills,
+            ...(extensions ? { marketplace: extensions.marketplace.cardMarketplace } : {}),
+          },
+        }
+      : {}),
   })
 
   // The authoritative workspace registry. Routing lives in the record, so no
@@ -282,6 +387,55 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     registry: workspaceRegistry,
     resolveResumeCapabilities: cliResumeCapabilities,
   })
+  // This PC's WSL distributions' Studio servers, supervised by this core
+  // (Windows only), and every other environment's Studio this desktop's
+  // callers reach a chat on: a distribution's over this core's own owner
+  // connection to it, an SSH machine's over main's.
+  const wslServers =
+    process.platform === 'win32' && options.wslServers
+      ? options.wslServers({ readHostSettings: () => agentLaunchSettings.get().hosts })
+      : null
+  const wslTerminalSessions: WslTerminalSessions | null = wslServers
+    ? createWslTerminalSessions(wslServers.manager, (message) => {
+        void writeDiagnosticLog({ level: 'info', source: 'terminal', title: 'WSL terminal agents', message })
+      })
+    : null
+  if (wslServers) {
+    wslServersForHosts = wslServers
+    // Settings › Machines reads the server's state with the machine list.
+    wslServers.onStatus(() => hosts.notifyChanged())
+    // A new connection may have missed a revoke: it is told every live token.
+    wslServers.onConnected((connection) => wslLaunchTokens.connected(connection.distro, connection))
+    // The run's first connection to a distribution ends what an earlier run's
+    // WSL terminals left running there.
+    wslServers.onConnected((connection) => wslTerminalSessions?.connected(connection))
+    // A CLI installed or removed in a distribution: what a launch knows of
+    // that machine's CLIs is forgotten, and read again when next asked.
+    wslServers.onConnected((connection) =>
+      followCliPathsChanged(connection, (distro) => invalidateCliAvailabilityOnHost(wslHostId(distro))),
+    )
+  }
+  const environmentClients = combineEnvironmentClients(
+    wslServers
+      ? createWslEnvironmentClients({
+          manager: wslServers.manager,
+          onConnected: (listener) => wslServers.onConnected(listener),
+        })
+      : null,
+    options.environmentClients ?? null,
+  )
+  // This desktop's copies of the chats another environment holds (an SSH
+  // machine's, a WSL distribution's), written only from what that Studio
+  // says (environment-replicas.ts), and followed from each time it connects.
+  const environmentReplicas = environmentClients
+    ? createEnvironmentReplicas({
+        clients: environmentClients,
+        sync: workspaceSyncService,
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Another machine', message })
+        },
+      })
+    : null
 
   // Git for a repository runs on the machine of the open workspace holding
   // it, which is where its agents run theirs: a `C:\` folder of a WSL
@@ -295,6 +449,37 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     return id ? hosts.get(id) : null
   })
 
+  // The terminal agents (studio-agent-terminals.ts), built once the chats and
+  // sub-agents they read exist, below; read lazily by what is built before.
+  let agentTerminals: StudioAgentTerminals | null = null
+
+  // The worktree pool, its dependency installs, the `worktree.*` tools and the
+  // chat-folder guard every turn passes (studio-worktree-pool.ts): this
+  // core's in every mode, beside the agents that work in the slots.
+  const worktrees = createStudioWorktreePool({
+    platform,
+    workspaceRegistry,
+    workspaceSyncService,
+    // Read when a step asks, long after `conversations` below is set.
+    liveConversationPaths: () => conversations.liveConversationWorkspaceRoots(),
+    conversations: () => conversations,
+    // This core's own terminals, read where they run: one starting in a slot
+    // holds it until it is live, through the same holds the pool takes.
+    listTerminalSessions: () => agentTerminals?.list() ?? [],
+  })
+
+  // Where a desktop's Studio publishes its agents' pages: an agent publishes
+  // from its chat's folders, its pool worktree among them.
+  const artifacts = options.artifacts
+    ? createStudioArtifacts({
+        ...options.artifacts,
+        paths: platform.paths,
+        findWorkspace: (workspaceId) =>
+          workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
+        poolWorktrees: async () => (await worktrees.pool.snapshots()).flatMap((snapshot) => snapshot.slots),
+      })
+    : null
+
   // The conversation runtime: chat sessions and the providers and agent CLI
   // children behind them, transcripts, the thread index and checkpoints. Owned
   // here so the owner's shutdown disposes its child processes.
@@ -306,6 +491,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     attachmentStore: new ConversationAttachmentStore(dataDir),
     uploadRoots: [join(dataDir, TAILNET_UPLOADS_DIRNAME), join(dataDir, WEB_UPLOADS_DIRNAME)],
     planStore: new ConversationPlanStore(dataDir),
+    outbox: new ConversationOutbox(dataDir),
     heldChatMode: ({ workspaceId, agentId }) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent?.conversationModeHeld && agent.conversationMode !== 'default' ? agent.conversationMode : undefined
@@ -319,9 +505,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       return parent?.cliPermissionPreset ? normalizeCliPermissionPreset(parent.cliPermissionPreset) : current
     },
     ...(options.resolveStudioMcpServer ? { resolveStudioMcpServer: options.resolveStudioMcpServer } : {}),
-    ...(options.prepareChatFolder ? { prepareChatFolder: options.prepareChatFolder } : {}),
+    // Every session start and turn, whoever sent it, finds the chat's folder
+    // where it should be first: a slot the pool gave back is brought back.
+    prepareChatFolder: worktrees.prepareChatFolder,
   })
   conversationRuntime.startIdleSweep(powerActivity)
+  // The turns the last run left open end now, in their chats' logs, rather
+  // than when someone next opens each chat: once the data directory is this
+  // process's alone (a server it took over may still be finishing those
+  // turns), and never by a process running without its lock.
+  if (dataDirLock)
+    void taken.whenFree
+      .then(() => conversationRuntime.recoverInterruptedTurns())
+      .catch((error: unknown) => {
+        console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+      })
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches
@@ -332,10 +530,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     () => workspaceSyncService.getSnapshot().state.workspaces.map((workspace) => workspace.folderPath),
     { log: (message) => console.info(`[workspace-store] ${message}`) },
   )
-  const wslServers =
-    process.platform === 'win32' && options.wslServers
-      ? options.wslServers({ readHostSettings: () => agentLaunchSettings.get().hosts })
-      : null
   // What only the runtime's owner does with it: the idle threshold, hearing
   // when one of this process's chats lets go of its turn, and the flush and
   // shutdown at the end. Everything else goes through the backend.
@@ -345,48 +539,25 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       conversationRuntime.onSessionIdle(listener),
     flushTranscripts: () => conversationRuntime.flushTranscripts(),
     // Each WSL server drains its own chats, within the quit's ten seconds,
-    // beside this process's.
+    // beside this process's, once it has ended what this desktop's WSL
+    // terminals left there (ending `wsl.exe` does not reach Linux processes).
     shutdown: async () => {
       await Promise.all([
-        wslServers?.manager.shutdown({ budgetMs: 10_000 }).catch(() => undefined),
+        (wslTerminalSessions?.endAll(2_000) ?? Promise.resolve())
+          .then(() => wslServers?.manager.shutdown({ budgetMs: 8_000 }))
+          .catch(() => undefined),
+        wslServers?.access.close().catch(() => undefined),
         conversationRuntime.shutdown(),
       ])
     },
   }
   // What every caller drives chats through; the runtime itself is only for
-  // what its owner does (the idle sweep, flush, shutdown). On Windows, with
-  // WSL servers, a router in front of it sends a distribution's chats there.
-  // A chat whose folder is on an SSH machine never runs in this process.
-  const localConversations = refuseMachinePaths(localConversationBackend(conversationRuntime))
-  let conversations: ConversationBackend = localConversations
-  const sshServers = options.sshServers ?? null
-  if (wslServers || sshServers) {
-    if (wslServers) {
-      wslServersForHosts = wslServers
-      // Settings › Machines reads the server's state with the machine list.
-      wslServers.onStatus(() => hosts.notifyChanged())
-    }
-    const routed = createRoutedConversationBackend({
-      local: localConversations,
-      workspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
-      chatServerOn: (distro) => wslServers?.chatServerOn(distro) ?? false,
-      servers: wslServers?.manager ?? null,
-      ssh: sshServers?.servers ?? null,
-      log: (message) => {
-        void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Remote server', message })
-      },
-    })
-    wslServers?.onConnected((connection) => routed.attach(connection))
-    // A distribution's server that stopped under its chats (a crash, `wsl
-    // --shutdown`): the turns it was running show as interrupted now, not
-    // when the server next starts and its transcripts are read again.
-    wslServers?.onStatus((status) => {
-      if (status.state === 'unavailable' || status.state === 'shut-down')
-        routed.lost(status.distro, `The Studio server in ${status.distro} stopped while this turn was running.`)
-    })
-    sshServers?.onConnected((connection) => routed.attach(connection))
-    conversations = routed
-  }
+  // what its owner does (the idle sweep, flush, shutdown). A chat another
+  // environment holds (an SSH machine's, a WSL distribution's) never runs in
+  // this process: it is that environment's Studio's, reached as its client.
+  const conversations: ConversationBackend = refuseOtherEnvironments(localConversationBackend(conversationRuntime), {
+    recordOf: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
+  })
 
   // What becomes of a sub-agent once it runs. Its end and its parent's stop
   // come from the runtime's events, here, and its record goes through the bus
@@ -397,8 +568,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     return workspaceRoot ? { ...chat, workspaceRoot } : null
   }
   const subagents = createSubagentLifecycle({
-    agentsOf: (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.agents ?? null,
-    workspaceIds: () => workspaceRegistry.getRecords().map((record) => record.id),
+    // This core's chats only: a copy of another environment's chat has its
+    // sub-agents there, and their ends are that Studio's to record.
+    agentsOf: (workspaceId) => {
+      const record = workspaceRegistry.getRecord(workspaceId)
+      return record && !environmentRouteOfRecord(record) ? record.agents : null
+    },
+    workspaceIds: () =>
+      workspaceRegistry
+        .getRecords()
+        .filter((record) => !environmentRouteOfRecord(record))
+        .map((record) => record.id),
     writeEnd: ({ workspaceId, agentId }, subagentEnd) => {
       workspaceSyncService.updateWorkspaceAgent(workspaceId, agentId, { subagentEnd }, 'system')
     },
@@ -431,6 +611,43 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   subagents.reconcile()
 
+  // The terminals and their agents run here, in every mode: the ptys, the
+  // reporter's listener, the launch service every terminal launch goes
+  // through, the control plane and the launch notices. None where this
+  // process cannot load the pty module (a WSL or SSH machine's server).
+  agentTerminals = createStudioAgentTerminals({
+    platform,
+    whenDataDirFree: taken.whenFree,
+    // A desktop that could not take the directory carries on as builds
+    // before the lock did, its reporter included; any other process listens
+    // only with the lock, so two never share the socket.
+    reporterListens: dataDirLock !== null || options.role === 'desktop',
+    workspaceRegistry,
+    workspaceSyncService,
+    agentLaunchSettings,
+    conversations,
+    subagents,
+    onChatIdle: (listener) => {
+      conversationRuntime.onSessionIdle(listener)
+    },
+    setChatIdleThresholdMs: (value) => conversationRuntime.setIdleThresholdMs(value),
+    ...(options.terminalHost ? { host: options.terminalHost } : {}),
+  })
+  // What this desktop's WSL terminals' agents report from inside their
+  // distribution, relayed by its server on each connection to it.
+  if (wslServers && agentTerminals) {
+    const listener = agentTerminals.agentState
+    wslServers.onConnected((connection) =>
+      followRelayedAgentState(
+        connection,
+        (line) => listener.ingestLine(line),
+        (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'terminal', title: 'WSL terminal agents', message })
+        },
+      ),
+    )
+  }
+
   const conversationModelCatalog = createConversationModelCatalog({
     listClis: () => listPluginRegistryEntries(),
     readDiscovered: () => readDiscoveredCliModelCatalogs(),
@@ -442,7 +659,14 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // machine's New chat, `conversation.create`, a module). The record goes
   // through the sequenced bus like any agent the core registers, so every
   // client hears about the chat the moment it exists.
+  // A launched chat's first message, written down until it is answered, and
+  // sent at the next start when a stop cut it off (conversation-first-messages.ts).
+  const firstMessages = createPendingFirstMessages({
+    filePath: join(dataDir, FIRST_MESSAGES_FILENAME),
+    warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
+  })
   const conversationLaunchService = createConversationLaunchService({
+    firstMessages,
     getWorkspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
     getLaunchSettings: () => agentLaunchSettings.get(),
     writeAgent: (workspaceId, agentId, agent) =>
@@ -455,8 +679,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     removeWorkspace: (workspaceId) => {
       workspaceSyncService.removeWorkspace(workspaceId, 'system')
     },
+    persisted: () => workspaceSyncService.flush(),
     startSession: (input) => conversations.startSession(input),
     send: (input) => conversations.sendTurn(input),
+    commandReceipt: (sessionId, commandId) => conversations.commandReceipt(sessionId, commandId),
     recordProjectUse: (folderPath) => {
       agentLaunchSettings.update({ projectUse: { folderPath, at: Date.now() } }, 'system')
     },
@@ -468,9 +694,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         .find((entry) => entry.id === cli)
         ?.reasoningSelection?.levels.map((level) => level.id) ?? [],
     // A new chat's worktree, cut by the machine the chat runs on, as a
-    // scheduled run's is: from the worktree pool when this process keeps one
-    // (the desktop's main does; a server out of process forks a fresh one), on
-    // the default branch, locked to its branch until the chat claims it.
+    // scheduled run's is: from this core's worktree pool (a fresh one when the
+    // pool declines), on the default branch, locked to its branch until the
+    // chat claims it.
     getRepoRoot: (folderPath, hostId) =>
       withGitHost(hostId ? hosts.get(hostId) : null, () => getGitRepoRoot(folderPath)),
     createWorktree: async (input) => {
@@ -524,8 +750,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
 
   // The sessions a person ran in an agent CLI's own terminal, brought in as
   // chats (conversation-import-service.ts). The CLIs' homes it reads are this
-  // machine's, so the chats it writes are this process's own runtime's, never
-  // a router's: a session ran here, in a folder here.
+  // machine's, so the chats it writes are this process's own runtime's: a
+  // session ran here, in a folder here.
   const conversationImport = createConversationImportService({
     listWorkspaces: () => workspaceRegistry.getRecords(),
     createWorkspace: (request) => {
@@ -552,6 +778,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     wakes: studioPullRequestWakes({
       conversations,
       workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
+      workspaceRemoved: (workspaceId) => isWorkspaceTombstoned(workspaceRegistry.getTombstones(), workspaceId),
+      // A WSL distribution's server and an SSH machine's hold no record of
+      // their chats: a watched one's folder is kept here for its wakes.
+      chatFolders: createPullRequestChatFolders({
+        dataDir,
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Pull request watch', message })
+        },
+      }),
       // Called only once a wake goes, long after the core is composed.
       createHost: (hostOptions) => createConversationHost(hostOptions),
       log: (message) => {
@@ -560,7 +795,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     }),
     // An open pull request is probed every couple of minutes while a window
     // is in front, and far less often while none is.
-    recordOptions: { focus: powerActivity },
+    // A watch whose read fails for want of `gh` here holds, and says so.
+    recordOptions: { focus: powerActivity, ghLacking: (reason) => readiness.ghLacking(reason) },
     workspaceFolder: (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.folderPath ?? null,
     log: (message, error) => {
       void writeDiagnosticLog({
@@ -621,7 +857,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       const listed = conversations.listSessions({ agentId })
       return listed.ok ? listed.sessions : []
     },
-    listTerminalSessions: () => options.listTerminalSessions?.() ?? [],
+    listTerminalSessions: () => agentTerminals?.list() ?? [],
     readAgentRecordPreset: (workspaceId, agentId) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent ? { found: true, preset: agent.cliPermissionPreset } : { found: false }
@@ -640,7 +876,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     hostName: readHostName(),
     platform: process.platform,
     marks: agentLaunchSettings.get().machineMarks,
-    ...(sshServers?.machineOf ? { sshMachineOf: (id: string) => sshServers.machineOf?.(id) ?? null } : {}),
+    ...(options.sshMachineOf ? { sshMachineOf: (id: string) => options.sshMachineOf?.(id) ?? null } : {}),
   })
   const listMarks = {
     // What a paired desktop's management of each chat reads: whether it
@@ -715,7 +951,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // working in the background under any parent phase, or one of its agent
   // terminals mid-turn (`conversationSessionWorking`, `terminalAgentWorking`).
   const terminalWorking = (workspaceId: string) =>
-    (options.listTerminalSessions?.() ?? []).some(
+    (agentTerminals?.list() ?? []).some(
       (session) => session.kind === 'agent' && session.workspaceId === workspaceId && terminalAgentWorking(session),
     )
   const chatWorking = (workspaceId: string) => {
@@ -821,10 +1057,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     },
     settings: settledChatsSettings,
     terminals: {
-      list: () => options.listTerminalSessions?.() ?? [],
-      listed: () => options.terminalSessionsListed?.() ?? true,
-      ...(options.onTerminalSessionsChanged ? { onChanged: options.onTerminalSessionsChanged } : {}),
-      ...(options.endWorkspaceTerminals ? { end: options.endWorkspaceTerminals } : {}),
+      list: () => agentTerminals?.list() ?? [],
+      ...(agentTerminals
+        ? {
+            onChanged: agentTerminals.onChanged,
+            end: (workspaceId: string) => agentTerminals.endWorkspaceTerminals(workspaceId),
+          }
+        : {}),
     },
     lifecycle: conversationLifecycle,
     recordTurnEnd: (workspaceId, at) => {
@@ -852,9 +1091,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // `origin` is for Studio's own sends (a resume after a usage limit): they
   // are not the person writing, so each is recorded as Studio's and the chat
   // keeps its place in the lists ordered by when the person last did.
-  // `lifecycleList` is for the door that advertises `conversation-lifecycle`
-  // (the tailnet lane): its list leaves settled chats out, in the sidebar's
-  // order. The Studio RPC's lists every chat by `updatedAt`, as it always has.
+  // `lifecycleList` is for a door that advertises `conversation-lifecycle`
+  // (the tailnet lane and the Studio RPC): its list leaves settled chats out,
+  // in the sidebar's order.
   const createConversationHost = (hostOptions: { origin?: ConversationMessageOrigin; lifecycleList?: boolean } = {}) =>
     createConversationGatewayHost(
       conversations,
@@ -1015,8 +1254,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
 
   // A Claude chat with Auto compact on is compacted by Studio while it sits
   // idle, just before its prompt cache expires (conversation-auto-compact.ts,
-  // wired in studio-auto-compact.ts): its chats' sessions, a distribution's
-  // and an SSH machine's included, read through the router; the send goes
+  // wired in studio-auto-compact.ts): this core's own chats' sessions (a
+  // distribution's and an SSH machine's are compacted there); the send goes
   // through the same door a resume after a usage limit takes, marked as
   // Studio's. Looked at again whenever a chat, its record or the default
   // moves, and on waking, since a timer stands still while the machine sleeps.
@@ -1048,7 +1287,60 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Scheduled messages', message })
     },
   })
-  void scheduledMessages.start()
+  // The hand-over's first plan (below) takes out what is another
+  // environment's before either scheduler sends anything: a schedule or a
+  // message handed over must not also go from here.
+  let firstPlanDone: () => void = () => undefined
+  const firstPlan = new Promise<void>((resolve) => (firstPlanDone = resolve))
+  void scheduledMessages.start({ after: firstPlan })
+
+  // The first messages of chats a launch made that the last stop cut off,
+  // sent now through each chat's ordinary send under the id they were meant
+  // to go under: one that went before the stop is answered from the chat's
+  // receipt and runs no second turn.
+  void recoverFirstMessages({
+    store: firstMessages,
+    findChat: (launchCommandId) => {
+      for (const record of workspaceRegistry.getRecords())
+        for (const [agentId, agent] of Object.entries(record.agents ?? {}))
+          if (agent?.launchCommandId === launchCommandId) return { workspaceId: record.id, agentId }
+      return null
+    },
+    send: async (chat, commandId, message) => {
+      const host = createConversationHost(message.subagentTask ? { origin: SUBAGENT_TASK_ORIGIN } : {})
+      const key = host.resolveKey(chat.workspaceId, chat.agentId)
+      if (!key) return { ok: false, message: 'The chat is no longer there.' }
+      // Its pictures go from where they were kept, as a held message's do.
+      const images = (message.images ?? []).map((image) => ({
+        path: firstMessages.imagePath(commandId, image),
+        name: image.name ?? image.file,
+        mediaType: image.mediaType,
+        bytes: image.byteLength,
+      }))
+      const sent = await host.command(
+        key,
+        FIRST_MESSAGE_CLIENT_ID,
+        commandId,
+        {
+          kind: 'send',
+          message: message.message,
+          ...(message.skills?.length ? { skills: message.skills } : {}),
+          ...(message.mode ? { mode: message.mode } : {}),
+        },
+        undefined,
+        images.length ? { images, files: [] } : undefined,
+      )
+      return sent.ok
+        ? { ok: true }
+        : { ok: false, message: sent.message ?? 'The chat did not take it.', ...(sent.code ? { code: sent.code } : {}) }
+    },
+    answered: async (chat, commandId) => {
+      const host = createConversationHost()
+      const key = host.resolveKey(chat.workspaceId, chat.agentId)
+      return key ? host.sentBefore(key, FIRST_MESSAGE_CLIENT_ID, commandId) : true
+    },
+    warn: (message) => void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'New chats', message }),
+  }).catch(() => undefined)
   const stopFollowingScheduledMessages = [
     powerActivity.onResume(() => scheduledMessages.wake()),
     powerActivity.onScreenLockChange((locked) => {
@@ -1057,6 +1349,166 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // A deleted chat's scheduled messages go with it.
     workspaceRegistry.subscribe(() => scheduledMessages.prune()),
   ]
+
+  // The modules beside this core, once a kernel has loaded them: what an
+  // extension's schedule is held to, and whether its extension is here.
+  // Null on a server with no kernel (standalone, WSL, SSH).
+  let moduleKernel: {
+    permissions(moduleId: string): readonly string[] | undefined
+    loaded(): readonly string[]
+  } | null = null
+
+  // What this machine has and lacks for its background work
+  // (environment-readiness.ts): what holds a schedule or a watch, and what
+  // `environment.readiness` answers.
+  const readiness = createEnvironmentReadiness({
+    machine: readHostName,
+    clis: () => {
+      const known = knownCliAvailability({ cliRuntimes: agentLaunchSettings.get().cliRuntimes })
+      return listPluginRegistryEntries().map((entry) => ({
+        id: entry.id,
+        name: entry.displayName || entry.id,
+        installed: known[entry.id] ? known[entry.id]!.installed === true : null,
+      }))
+    },
+    mcpServers: () => agentLaunchSettings.get().mcp?.servers,
+    skillKnown: (skillId) => resolveSkillById(skillId) !== null,
+    extensions: () => moduleKernel?.loaded() ?? null,
+    gh: readGhHere,
+    schedules: () => scheduledAgents.service.list(),
+    watches: () =>
+      pullRequests.record.watches().flatMap((watched) => {
+        const entry = pullRequests.record
+          .forConversation(watched.conversation)
+          .find((candidate) => candidate.url === watched.url)
+        return entry
+          ? [
+              {
+                url: watched.url,
+                title: entry.title || `#${entry.number}`,
+                ...(entry.watch?.waiting ? { waiting: entry.watch.waiting } : {}),
+              },
+            ]
+          : []
+      }),
+  })
+
+  // Scheduled agents (studio-scheduled-agents.ts): this server's schedules,
+  // run in its chats from its worktree pool, whatever kind of server it is.
+  const scheduledAgents = createStudioScheduledAgents({
+    platform,
+    // Nothing runs before the hand-over's first plan has finished, however
+    // the scheduler is started: here, or by the desktop's Scheduled agents
+    // switch (modules/scheduled-agents-switch.ts), which starts it with no
+    // say of its own.
+    after: firstPlan,
+    conversations,
+    launch: (request) => conversationLaunchService.launch(request),
+    createConversationHost: () => createConversationHost(),
+    workspaceRecords: () => workspaceRegistry.getRecords(),
+    gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),
+    // Run now goes past a sign-in this machine only believes is missing: the
+    // CLI then says for itself whether it is signed in.
+    // One saved here for another machine's folder is that machine's: it never
+    // runs here, Run now included, while it waits to be handed over.
+    waitingFor: (agent, context) =>
+      (environmentClients ? scheduleWaitsForHandOver(agent) : null) ??
+      readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
+  })
+  if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
+
+  // What this desktop kept for another environment's chats (an SSH machine's,
+  // a WSL distribution's) goes to that environment's Studio
+  // (environment-migration.ts): planned at start and on each connect,
+  // delivered once it is reachable. Only then are this desktop's records of
+  // its chats the machine's copies, followed from what it says.
+  const environmentMigration = environmentClients
+    ? createEnvironmentMigration({
+        dataDir,
+        clients: environmentClients,
+        spellingOf: (route) => environmentClients.spellingOf(route),
+        stores: studioMigrationStores({
+          workspaceRegistry,
+          scheduledAgents: scheduledAgents.service,
+          scheduledMessages,
+          usageLimitResumes,
+          pullRequests: pullRequests.record,
+          scheduledImages: (prompt) => keptImagesIn(prompt, dataDir),
+          chatSources: (chat) => chatSourceFiles({ dataDir, ...chat }),
+          approvalRules,
+        }),
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Another machine', message })
+        },
+        // What the machine did not take stays here, planned, and goes again
+        // on its next connect; the person hears of it, not only the log.
+        // The machine by the name the person gave it (`dev@build-box`), as
+        // its client says it, never its internal id.
+        onRefused: ({ route, name }, refused) => {
+          platform.notifier.notify({
+            key: `hand-over:${route}`,
+            title: `${refused.length === 1 ? 'One record' : `${refused.length} records`} did not move to ${name}`,
+            body: `${refused[0]!.reason} Diagnostics lists each one; what ${name} did not take is sent again each time it connects.`,
+          })
+        },
+      })
+    : null
+  const handOver = async (route: string) => {
+    if (!environmentMigration || !environmentReplicas || !environmentClients) return
+    // A WSL distribution says how it spells a drive path only once its
+    // server is up, and its records are planned only then: reach it first
+    // (starting it, so a distribution with chats or schedules runs from the
+    // desktop's start, target 7). Until its records are planned none of
+    // them is taken for handed over.
+    if (!environmentClients.spellingOf(route) && !(await environmentClients.clientFor(route)).ok) return
+    await environmentMigration.plan()
+    if ((await environmentMigration.deliver(route)) && environmentMigration.handedOver(route))
+      await environmentReplicas.follow(route)
+  }
+  if (environmentMigration && environmentClients) {
+    environmentClients.onConnected((route) => void handOver(route).catch(() => undefined))
+    // A schedule saved here for a machine's folder (New scheduled agent in a
+    // project on an SSH machine) is that machine's at once: planned now, so it
+    // never waits in this desktop's store nor runs from it, and delivered now
+    // if the machine is connected, else on its next connect. Its own planning
+    // takes it out of the store, which changes the list again, without it.
+    void firstPlan.then(() => handOverSchedulesWhenSaved(scheduledAgents.service, handOver))
+    // At start: every machine this desktop holds chats or waiting records
+    // for, reached if it is connected already; the rest wait for their connect.
+    // The schedulers wait for a plan that finished (`firstPlan`), so nothing
+    // it takes out also runs here, a crash between its journal and its
+    // release included. One that failed (a journal there but unreadable)
+    // holds them, and says why; a later plan, on a machine's connect, lets
+    // them go once it finishes.
+    void environmentMigration.planned.then(() => {
+      firstPlanDone()
+      scheduledAgents.hold(null)
+    })
+    const planned = environmentMigration.plan().catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error)
+      void writeDiagnosticLog({ level: 'error', source: 'workspace', title: 'Another machine', message: reason })
+      // Said where the schedules are listed, for as long as it lasts (a
+      // notice at start goes by before a window is there to show it), and
+      // by the system as well.
+      scheduledAgents.hold(reason)
+      platform.notifier.notify({
+        key: 'hand-over:unreadable',
+        title: 'Scheduled agents and messages are paused',
+        body: reason,
+      })
+      throw error
+    })
+    void planned
+      .then(() => {
+        const routes = new Set(environmentMigration.waiting())
+        for (const record of workspaceRegistry.getRecords()) {
+          const route = environmentRouteOfRecord(record)
+          if (route) routes.add(route)
+        }
+        for (const route of routes) void handOver(route).catch(() => undefined)
+      })
+      .catch(() => undefined)
+  } else firstPlanDone()
 
   // A chat is titled here, from its own events, rather than by a window: the
   // chats that most need a title are the ones a phone or a paired machine
@@ -1098,6 +1550,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     for (const stop of stopFollowingScheduledMessages.splice(0)) stop()
     return scheduledMessages.dispose()
   }
+  /** The modules a kernel loaded beside this core: an extension's schedules are held to them. */
+  function attachModules(kernel: NonNullable<typeof moduleKernel>): void {
+    moduleKernel = kernel
+    scheduledAgents.setModulePermissions((moduleId) => kernel.permissions(moduleId))
+    scheduledAgents.service.notifyChanged()
+  }
   function stopAutoCompact(): void {
     for (const stop of stopFollowingAutoCompact.splice(0)) stop()
     autoCompact.dispose()
@@ -1123,11 +1581,24 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       stopSettlementSweep,
       stopUsageLimitResumes,
       stopScheduledMessages,
+      () => scheduledAgents.stop(),
       stopAutoCompact,
+      // An install the quit cuts short is not recorded, so its worktree
+      // installs again at its next lease.
+      () => worktrees.installer.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => chatTitler.dispose(),
+      () => agents.stop(),
+      // A child's notices are kept for the next run, the reporter stops
+      // hearing frames, and every pty ends with its painted screen kept.
+      () => agentTerminals?.launchNotices.freeze(),
+      () => agentTerminals?.stopAgentState(),
+      () => agentTerminals?.shutdown(),
       // What the command lists learned is written before the process goes.
       () => commandLists?.dispose(),
       () => conversationOwner.shutdown(),
+      // A lease or return in flight finishes its write, and each pool's
+      // container lock is given up so another Studio can take it over.
+      () => worktrees.pool.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => {
         for (const stop of stopFollowingWatchedChats.splice(0)) stop()
         pullRequests.dispose()
@@ -1152,6 +1623,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   }
 
   return {
+    /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
+    environmentClients,
+    /** This desktop's copies of the chats other environments hold; null where it reaches none. */
+    environmentReplicas,
     platform,
     role: options.role,
     /** Null only in a desktop that could not take the directory and carried on, as builds before the lock did. */
@@ -1173,6 +1648,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     conversationImport,
     resolveAgentPermissionPreset,
     createConversationHost,
+    /** This machine's own kind and colour, as a paired device draws it. */
+    selfMachine: () => tailnetSelfMachine(machineContext()),
     conversationLifecycle,
     conversationMove,
     /** The Settled chats settings, as the windows push them; the rest sweep reads them. */
@@ -1184,8 +1661,23 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     localServers,
     usageLimitResumes,
     scheduledMessages,
+    /** This server's scheduled agents (studio-scheduled-agents.ts). */
+    scheduledAgents,
+    /** What this machine has and lacks for its background work (`environment.readiness`). */
+    readiness,
+    attachModules,
+    /** The worktree pool, its installs and tools, the chat-folder guard (studio-worktree-pool.ts). */
+    worktrees,
+    /** The terminals and their agents (studio-agent-terminals.ts); null where no pty can start. */
+    agentTerminals,
     /** The model-written chat titles setting, as the windows push it. */
     textGenerationSettings,
+    /** The agent CLIs (detection, installs, the version check) and their setup (studio-agent-services.ts). */
+    agents,
+    /** The marketplace, the CLI catalogue, the scaffold and the feeds; null where this Studio serves none. */
+    extensions,
+    /** Settings ▸ Artifacts, its set-up question and the `artifacts.*` tools; null where this Studio serves none. */
+    artifacts,
     /** The composer's `/` lists, which a window's IPC and a paired desktop's reads share. */
     conversationCommands,
     stopUsageLimitResumes,
@@ -1203,6 +1695,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
 export function studioBridgeScriptPath(paths: StudioPaths): string {
   const root = paths.isPackaged() ? paths.resourcesDir() : join(paths.appRoot() ?? process.cwd(), 'resources')
   return join(root ?? '', 'automation', 'mcp-stdio-bridge.mjs')
+}
+
+/** `gh` on this machine: its command, and whether it holds a sign-in (`gh auth token`). */
+async function readGhHere(): Promise<{ installed: boolean | null; signedIn: boolean | null }> {
+  const asked = await sharedGhRunner()
+    .run(['auth', 'token'], { timeoutMs: 10_000 })
+    .catch(() => null)
+  if (!asked) return { installed: null, signedIn: null }
+  if (!asked.found) return { installed: false, signedIn: null }
+  if (asked.timedOut) return { installed: true, signedIn: null }
+  return { installed: true, signedIn: asked.code === 0 && asked.stdout.trim().length > 0 }
 }
 
 /** This machine's host name, or empty when the OS will not say. */

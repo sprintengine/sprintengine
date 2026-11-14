@@ -15,9 +15,9 @@ import type {
   ConversationSideQuestionInput,
   ConversationSetPermissionInput,
   ConversationStartSessionInput,
-  ConversationTranscriptInput,
 } from '../shared/conversation-runtime'
 import { CONVERSATION_PERMISSION_PRESETS } from '../shared/conversation-runtime'
+import { isConversationApprovalDecision } from '../../packages/conversation-protocol/src/public'
 import { parseCliPermissionPreset } from '../shared/cli-permission-preset'
 import { parseCliPermissionModeId } from '../shared/cli-permission-mode'
 import {
@@ -94,17 +94,6 @@ export function parseStartSessionInput(
       ...(Array.isArray(allowedTools) ? { allowedTools: allowedTools as string[] } : {}),
     },
   }
-}
-
-export function parseTranscriptInput(
-  input: unknown,
-): { ok: true; input: ConversationTranscriptInput } | { ok: false; message: string } {
-  if (!isRecord(input)) return { ok: false, message: 'Transcript input must be an object.' }
-  const { workspaceRoot, workspaceId, agentId } = input
-  if (typeof workspaceRoot !== 'string') return { ok: false, message: 'workspaceRoot is required.' }
-  if (typeof workspaceId !== 'string') return { ok: false, message: 'workspaceId is required.' }
-  if (typeof agentId !== 'string') return { ok: false, message: 'agentId is required.' }
-  return { ok: true, input: { workspaceRoot, workspaceId, agentId } }
 }
 
 // Image attachments accepted on a send-turn. The media-type set, the per-image
@@ -185,6 +174,13 @@ export function parseSendTurnInput(
     return { ok: false, message: 'Invalid conversation mode.' }
   if (input.steer !== undefined && typeof input.steer !== 'boolean')
     return { ok: false, message: 'steer must be a boolean when present.' }
+  if (
+    input.composedAt !== undefined &&
+    !(typeof input.composedAt === 'number' && Number.isSafeInteger(input.composedAt) && input.composedAt >= 0)
+  )
+    return { ok: false, message: 'composedAt must be when the message was written, in epoch ms.' }
+  if (input.confirmedStale !== undefined && typeof input.confirmedStale !== 'boolean')
+    return { ok: false, message: 'confirmedStale must be a boolean when present.' }
   let attachments: ConversationImageAttachment[] | undefined
   const mentions = input.mentions === undefined ? undefined : parseConversationMentions(input.mentions)
   if (mentions === null) return { ok: false, message: 'Mention references are invalid.' }
@@ -220,6 +216,8 @@ export function parseSendTurnInput(
       ...(typeof input.reasoningEffort === 'string' ? { reasoningEffort: input.reasoningEffort } : {}),
       ...(input.mode ? { mode: input.mode as ConversationSendTurnInput['mode'] } : {}),
       ...(input.steer === true ? { steer: true } : {}),
+      ...(typeof input.composedAt === 'number' ? { composedAt: input.composedAt } : {}),
+      ...(input.confirmedStale === true ? { confirmedStale: true } : {}),
     },
   }
 }
@@ -372,7 +370,7 @@ export function parseRespondToRequestInput(
   if (!session.ok) return session
   if (!isRecord(input) || typeof input.requestId !== 'string') return { ok: false, message: 'requestId is required.' }
   if (typeof input.approved !== 'boolean') return { ok: false, message: 'approved is required.' }
-  if (input.decision !== undefined && !['once', 'conversation', 'always', 'deny'].includes(String(input.decision)))
+  if (input.decision !== undefined && !isConversationApprovalDecision(input.decision))
     return { ok: false, message: 'Permission decision is invalid.' }
   let answers: Record<string, string> | undefined
   if ('answers' in input && input.answers !== undefined) {
@@ -387,7 +385,7 @@ export function parseRespondToRequestInput(
       ...session.input,
       requestId: input.requestId,
       approved: input.approved,
-      ...(input.decision ? { decision: input.decision as ConversationRespondToRequestInput['decision'] } : {}),
+      ...(input.decision === undefined ? {} : { decision: input.decision }),
       ...(answers ? { answers } : {}),
     },
   }

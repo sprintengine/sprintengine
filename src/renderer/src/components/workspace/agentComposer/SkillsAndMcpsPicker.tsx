@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { pairedWorkspaceExtensions } from '../../../studio/pairedDiscovery'
 
 import type { AgentCli, McpServerConfig, WorkspaceSkill } from '../../../../../shared/electron-api'
 import type { AgentMcpServer, AgentMcpServerStatus, SkillSource } from '../../../../../shared/skills'
@@ -35,6 +36,9 @@ import {
 } from '../../ui'
 import type { AgentComposerConnector } from './useAgentComposer'
 import { isImeKey } from '../../../utils/imeKey'
+import { agentSetupApi } from '../../../studio/agentSetup'
+import { agentSkillsApi } from '../../../studio/agentSkills'
+import { extensionsApi } from '../../../studio/extensions'
 
 // The composer's one picker for what a new agent starts with (browser-pane
 // epic, child 7): the skills this workspace has, the skills it could have,
@@ -474,7 +478,11 @@ export function SkillsAndMcpsPicker({
       if (!settings.syncEnabled) throw new Error('MCP sync is turned off in Settings; turn it on to add servers.')
       // The sync is scoped to the CLI that will launch; the default client
       // list (codex + claude-code) would silently skip any other CLI.
-      const result = await window.api.mcpSync({ workspaceRoot, settings, ...(pluginId ? { clients: [pluginId] } : {}) })
+      const result = await agentSetupApi.mcpSync({
+        workspaceRoot,
+        settings,
+        ...(pluginId ? { clients: [pluginId] } : {}),
+      })
       if (!result.ok) throw new Error(result.message)
       // A sync that wrote no file for this CLI, or wrote one without this
       // server in it, did not make the pick real.
@@ -849,7 +857,7 @@ function useCliMcpServers(
   useEffect(() => {
     if (!active || !workspaceRoot || !cli) return
     let cancelled = false
-    window.api
+    agentSkillsApi
       .agentCapabilities({ workspaceRoot, pluginId: cli })
       .then((answer) => {
         if (!cancelled) setServers(answer.ok ? (answer.servers ?? []) : [])
@@ -871,7 +879,7 @@ function useCliMcpServers(
  * type-ahead reads a remote chat's skills through it too.
  */
 export function useRemoteExtensions(
-  remote: { connectionId: string; workspaceId: string } | null,
+  remote: { connectionId: string; workspaceId: string; machineName?: string } | null,
   cli: string | null,
   active: boolean,
   read = 0,
@@ -884,12 +892,13 @@ export function useRemoteExtensions(
   }>({ skills: [], servers: [], loading: false, error: null })
   const connectionId = remote?.connectionId ?? null
   const workspaceId = remote?.workspaceId ?? null
+  const machineName = remote?.machineName ?? 'That machine'
   useEffect(() => {
     if (!active || !connectionId || !workspaceId) return
     let cancelled = false
     setState((current) => ({ ...current, loading: true, error: null }))
-    window.api
-      .meshWorkspaceExtensions({ connectionId, workspaceId, ...(cli ? { cli } : {}) })
+    // Asked of that machine's Studio by this window itself.
+    pairedWorkspaceExtensions({ id: connectionId, machineName }, workspaceId, cli ?? undefined)
       .then((answer) => {
         if (cancelled) return
         setState(
@@ -910,7 +919,7 @@ export function useRemoteExtensions(
     return () => {
       cancelled = true
     }
-  }, [active, cli, connectionId, workspaceId, read])
+  }, [active, cli, connectionId, workspaceId, machineName, read])
   return state
 }
 
@@ -930,8 +939,8 @@ function MarketplaceList({ query, onOpen }: { query: string; onOpen: () => void 
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      window.api.readMarketplaceRegistry(),
-      window.api.readMarketplacePluginUpdateStates().catch(() => null),
+      extensionsApi.readMarketplaceRegistry(),
+      extensionsApi.readMarketplacePluginUpdateStates().catch(() => null),
     ])
       .then(([registry, states]) => {
         if (cancelled) return
@@ -1028,7 +1037,7 @@ function useSkillSourcesById(active: boolean): ReadonlyMap<string, SkillSource> 
   useEffect(() => {
     if (!active) return
     let cancelled = false
-    Promise.resolve(window.api.skillsListSources?.())
+    Promise.resolve(agentSkillsApi.skillsListSources?.())
       .then((answer) => {
         if (!cancelled && answer?.ok) setSources(new Map(answer.sources.map((source) => [source.id, source])))
       })

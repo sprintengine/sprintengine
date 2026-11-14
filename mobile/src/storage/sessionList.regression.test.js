@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/mobile");
 const {
   createProjectContextStore,
   createSessionListStore,
@@ -148,7 +148,6 @@ test("the relay sweep moves tailnet pairings into v3, drops relay pairings, and 
       pairedAt: "2026-09-02T00:00:00.000Z",
       tailnetScopes: ["workspace:read", "workspace:operate", "conversation:operate"],
       tailnetTransportVersion: 2,
-      tailnetCapabilities: ["conversations"],
       status: "online",
     },
   ]);
@@ -276,6 +275,18 @@ test("readStoredSessionList drops malformed entries and falls back to the first 
   assert.equal(list.sessions[1].status, "stale");
   assert.equal(list.activeDeviceId, "device_1", "unknown active falls back to the first session");
   assert.deepEqual(readStoredSessionList("not json").sessions, []);
+});
+
+test("a stored pairing keeps its desktop's environment id, and one no link can carry drops the record", () => {
+  const list = readStoredSessionList(
+    JSON.stringify({
+      schemaVersion: 3,
+      sessions: [makeSession({ environmentId: "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b" }), makeSession({ deviceId: "device_2", environmentId: "env/1" })],
+      activeDeviceId: "device_1",
+    }),
+  );
+  assert.equal(list.sessions.length, 1);
+  assert.equal(list.sessions[0].environmentId, "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b");
 });
 
 test("fleet ordering puts online desktops first and revoked last", () => {

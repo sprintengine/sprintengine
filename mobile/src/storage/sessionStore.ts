@@ -1,3 +1,4 @@
+import { isLinkId } from "../../../packages/studio-protocol/src/chat-link";
 import { MobileSession } from "../api/types";
 import { readChatGrouping, type ChatGrouping } from "../features/conversations/chatGrouping";
 import { readFollowUpBehavior, type FollowUpBehavior } from "../features/conversations/followUp";
@@ -600,8 +601,8 @@ export function isStoredSession(value: unknown): value is MobileSession {
     Number.isFinite(Date.parse(session.pairedAt)) &&
     isStringArray(session.tailnetScopes) &&
     (session.tailnetTransportVersion === undefined || Number.isInteger(session.tailnetTransportVersion)) &&
-    (session.tailnetCapabilities === undefined || isStringArray(session.tailnetCapabilities)) &&
     (session.machineMark === undefined || isStoredMachineMark(session.machineMark)) &&
+    (session.environmentId === undefined || isLinkId(session.environmentId)) &&
     (session.status === undefined || sessionStatuses.includes(session.status)) &&
     (session.lastSeenAt === undefined || typeof session.lastSeenAt === "string") &&
     (session.revokedAt === undefined || typeof session.revokedAt === "string")

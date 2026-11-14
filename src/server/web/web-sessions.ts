@@ -65,8 +65,19 @@ type PairingCode = { hash: string; expiresAtMs: number; route: WebRoute; owner: 
 export type WebTicketSubject = { kind: 'session'; sessionId: string } | { kind: 'embed'; embedId: string }
 type Ticket = { hash: string; expiresAtMs: number; subject: WebTicketSubject }
 
-/** The scopes a tailnet browser holds: everything but offering tools (P5c §7.1, R79). */
-const TAILNET_SCOPES: StudioScope[] = STUDIO_SCOPES.filter((scope) => scope !== 'tools:offer')
+// What a browser holds. No scope reaches the terminals: a browser never does,
+// an owner's tab included (`studio-browser-reach.ts`). Nor does it load an
+// extension's window code, so it does not operate extensions.
+const BROWSER_SCOPES: StudioScope[] = STUDIO_SCOPES.filter((scope) => scope !== 'modules:operate')
+/**
+ * The scopes a tailnet browser holds: everything but offering tools (P5c
+ * §7.1, R79), updating this machine's Studio, which drains and restarts it,
+ * and changing its settings (a provider's key): a browser that reaches it over
+ * the tailnet is told how, not given it.
+ */
+const TAILNET_SCOPES: StudioScope[] = BROWSER_SCOPES.filter(
+  (scope) => scope !== 'tools:offer' && scope !== 'environment:maintain' && scope !== 'settings:write',
+)
 
 export type WebSessionStore = {
   /** The cookie this server's sessions are kept under. */
@@ -265,7 +276,7 @@ export function createWebSessionStore(options: {
       owner: input.owner,
       // A tailnet browser never offers tools (R79); what else it may not do
       // is held where it is served (no previews, no folder browser).
-      scopes: input.route === 'loopback' ? [...STUDIO_SCOPES] : [...TAILNET_SCOPES],
+      scopes: input.route === 'loopback' ? [...BROWSER_SCOPES] : [...TAILNET_SCOPES],
       createdAt: new Date(at).toISOString(),
       expiresAt: new Date(at + SESSION_LIFETIME_MS).toISOString(),
       lastSeenAt: new Date(at).toISOString(),

@@ -7,7 +7,7 @@ import type {
   ConversationSessionFrame,
   ConversationSubscribeInput,
 } from '../../../../../shared/conversation-runtime'
-import { chatOverStudioUnderTest, installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
+import { installStudioLoopback, settleStudio } from '../../../../../../tests/studio-chat-loopback'
 
 // The virtual list measures a real viewport, which jsdom does not have; this
 // stand-in renders every row so the rows themselves can be driven. Like the
@@ -33,6 +33,8 @@ const ListRow = memo(
   },
   (previous, next) => previous.item === next.item && previous.extraData === next.extraData,
 )
+import { chatStoresDouble, chatStoresDoubleState, resetChatStoresDouble } from '../../../studio/chatStores.double'
+vi.mock('../../../studio/chatStores', () => import('../../../studio/chatStores.double'))
 vi.mock('@legendapp/list/react', () => ({
   LegendList: forwardRef(function LegendList(
     {
@@ -235,6 +237,13 @@ async function mountChat({
       ...extraApi,
     },
   })
+  // What the Studio keeps beside its chats is reached over the protocol: the
+  // test's members for it go to that client's stand-in, and a test that gives
+  // none has a window whose Studio keeps none.
+  resetChatStoresDouble()
+  const stores = Object.entries(extraApi).filter(([member]) => member in chatStoresDouble)
+  Object.assign(chatStoresDouble, Object.fromEntries(stores))
+  chatStoresDoubleState.reachable = stores.length > 0
   installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
@@ -1205,6 +1214,135 @@ function runningTurnSend() {
   return { sendTurn, calls, release: () => release() }
 }
 
+test('a sent draft leaves storage as the send goes, so a reload mid-turn cannot bring it back', async () => {
+  // The send answers when the turn ends. A reload once the Studio had taken
+  // the message, but before the view saw it in the log, read a kept copy back
+  // into the composer, and a second send would run it twice.
+  const turn = runningTurnSend()
+  const chat = await mountChat({ sendTurn: turn.sendTurn })
+  const { composerDraftStore } = await import('./draftStore')
+  const saved = () => composerDraftStore().getState().read('workspace', 'agent').text
+  try {
+    await chat.act(async () => chat.type('Run the whole suite'))
+    await chat.act(async () => chat.enter())
+    expect(turn.calls).toHaveLength(1)
+    expect(saved(), 'nothing of the sent draft is in storage for a reload to read').toBe('')
+    expect(chat.draft()).toBe('')
+    const { localTurnId } = turn.calls[0] as { localTurnId: string }
+    await chat.act(async () => {
+      chat.emit({
+        type: 'event',
+        event: event('user_message', { turnId: 't1', text: 'Run the whole suite', localTurnId }),
+      })
+      chat.emit({ type: 'event', event: event('turn_started', { turnId: 't1' }) })
+    })
+    expect(saved()).toBe('')
+    expect(chat.draft()).toBe('')
+  } finally {
+    turn.release()
+    await chat.unmount()
+  }
+})
+
+// What a reload (or a Studio that stopped) leaves of a send it cut off before
+// Studio answered: the chat's pending send, under its command id.
+const cutOffSend = (commandId: string) => ({
+  text: 'Deploy the staging branch',
+  skillIds: [],
+  mentions: [],
+  files: [],
+  attachments: [],
+  picturesNotKept: 0,
+  commandId,
+  localTurnId: `user-0-${commandId}`,
+  fromDraft: true,
+  at: 1,
+})
+
+test('a send kept while it is out leaves storage once the chat has it', async () => {
+  const turn = runningTurnSend()
+  const chat = await mountChat({ sendTurn: turn.sendTurn })
+  const { composerDraftStore } = await import('./draftStore')
+  const kept = () => composerDraftStore().getState().readSend('workspace', 'agent')
+  try {
+    await chat.act(async () => chat.type('Run the whole suite'))
+    await chat.act(async () => chat.enter())
+    const { localTurnId } = turn.calls[0] as { localTurnId: string }
+    expect(kept(), 'kept, for a reload while it is out').toMatchObject({ text: 'Run the whole suite', localTurnId })
+    await chat.act(async () => {
+      chat.emit({
+        type: 'event',
+        event: event('user_message', { turnId: 't1', text: 'Run the whole suite', localTurnId }),
+      })
+    })
+    expect(kept(), 'let go of once the log shows it').toBeNull()
+  } finally {
+    turn.release()
+    await chat.unmount()
+  }
+})
+
+test('a send a reload cut off comes back to the composer with a notice, and goes again under its own command id', async () => {
+  const turn = runningTurnSend()
+  const { composerDraftStore } = await import('./draftStore')
+  const { useToastStore } = await import('../../../store/toastStore')
+  useToastStore.setState({ toasts: [] })
+  const chat = await mountChat({
+    sendTurn: turn.sendTurn,
+    beforeRender: () => composerDraftStore().getState().putSend('workspace', 'agent', cutOffSend('cmd-cut-off')),
+  })
+  try {
+    expect(chat.draft(), 'the words are not lost').toBe('Deploy the staging branch')
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toContain(
+      'Your last message may not have been sent',
+    )
+    await chat.act(async () => chat.enter())
+    expect(turn.calls).toMatchObject([{ message: 'Deploy the staging branch' }])
+    expect(
+      composerDraftStore().getState().readSend('workspace', 'agent')?.commandId,
+      'sent again under its own id: a late copy Studio still runs is answered from its receipt',
+    ).toBe('cmd-cut-off')
+  } finally {
+    turn.release()
+    await chat.unmount()
+  }
+})
+
+test('a send a reload cut off that the chat’s log shows is let go of: nothing comes back to send twice', async () => {
+  const { composerDraftStore } = await import('./draftStore')
+  const send = cutOffSend('cmd-landed')
+  const chat = await mountChat({
+    events: [event('user_message', { turnId: 't1', text: send.text, localTurnId: send.localTurnId })],
+    beforeRender: () => composerDraftStore().getState().putSend('workspace', 'agent', send),
+  })
+  try {
+    expect(chat.draft()).toBe('')
+    expect(composerDraftStore().getState().readSend('workspace', 'agent')).toBeNull()
+  } finally {
+    await chat.unmount()
+  }
+})
+
+test('a send that fails puts its draft back, on screen and in storage', async () => {
+  let fail = (_message: string) => undefined as void
+  const sendTurn = vi.fn<SendTurn>(
+    () => new Promise((resolve) => (fail = (message) => resolve({ ok: false, message }))),
+  )
+  const chat = await mountChat({ sendTurn })
+  const { composerDraftStore } = await import('./draftStore')
+  const saved = () => composerDraftStore().getState().read('workspace', 'agent').text
+  try {
+    await chat.act(async () => chat.type('Rerun the migration'))
+    await chat.act(async () => chat.enter())
+    expect(saved(), 'cleared while the send is out').toBe('')
+    await chat.act(async () => fail('The provider is restarting.'))
+    expect(chat.draft()).toBe('Rerun the migration')
+    expect(saved(), 'kept at once, for a reload right after').toBe('Rerun the migration')
+  } finally {
+    await chat.unmount()
+  }
+})
+
 test('a queued message is a row of the composer tray, not a bubble over the transcript', async () => {
   const turn = runningTurnSend()
   // An agent that cannot take a message mid-turn: what is sent while it works waits.
@@ -1231,21 +1369,40 @@ test('a queued message is a row of the composer tray, not a bubble over the tran
   }
 })
 
-test('a message queued in words on a chat here is held by main, so a reload does not lose it', async () => {
-  const turn = runningTurnSend()
-  const held: Array<Record<string, unknown>> = []
-  const chat = await mountChat({
-    sendTurn: turn.sendTurn,
-    api: {
-      scheduledMessages: async () => ({ messages: [] }),
-      updateScheduledMessage: async () => ({ messages: [] }),
-      onScheduledMessagesChanged: () => () => undefined,
-      holdQueuedMessage: vi.fn(async (request: Record<string, unknown>) => {
-        held.push(request)
-        return { ok: true, id: 'held-1' }
-      }),
+/** A Studio that holds and keeps a chat's messages, and says what it holds, as the chat's server does. */
+function heldStudio(answer: (command: Record<string, unknown>) => { ok: boolean; message?: string }) {
+  const commands: Array<Record<string, unknown>> = []
+  const queued = new Set<(messages: unknown[]) => void>()
+  const scheduled = new Set<(messages: unknown[]) => void>()
+  const api = {
+    conversationCommand: vi.fn(async (input: { command: Record<string, unknown> }) => {
+      commands.push(input.command)
+      return answer(input.command)
+    }),
+    onConversationQueued: (_chat: unknown, listener: (messages: unknown[]) => void) => {
+      queued.add(listener)
+      listener([])
+      return () => queued.delete(listener)
     },
-  })
+    onConversationScheduled: (_chat: unknown, listener: (messages: unknown[]) => void) => {
+      scheduled.add(listener)
+      listener([])
+      return () => scheduled.delete(listener)
+    },
+  }
+  return {
+    api,
+    commands,
+    sayScheduled: (messages: unknown[]) => {
+      for (const listener of scheduled) listener(messages)
+    },
+  }
+}
+
+test('a message queued in words on a chat here is held by its Studio, so a reload does not lose it', async () => {
+  const turn = runningTurnSend()
+  const studio = heldStudio(() => ({ ok: true }))
+  const chat = await mountChat({ sendTurn: turn.sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Investigate the flaky test'))
     await chat.act(async () => chat.enter())
@@ -1256,10 +1413,8 @@ test('a message queued in words on a chat here is held by main, so a reload does
     })
     await chat.act(async () => chat.type('Use the staging config'))
     await chat.act(async () => chat.enter())
-    expect(held).toHaveLength(1)
-    expect(held[0]).toMatchObject({ text: 'Use the staging config' })
-    expect(typeof held[0]?.source).toBe('string')
-    expect(chat.host.querySelector('[aria-label="Queued message"]'), 'not kept in the view').toBeNull()
+    await settleStudio(chat.act)
+    expect(studio.commands).toEqual([{ kind: 'send', message: 'Use the staging config', queue: true }])
     expect(turn.sendTurn).toHaveBeenCalledOnce()
   } finally {
     turn.release()
@@ -1267,17 +1422,10 @@ test('a message queued in words on a chat here is held by main, so a reload does
   }
 })
 
-test('a message main could not hold waits in the view, whole, and says why', async () => {
+test('a message its Studio could not hold waits in the view, whole, and says why', async () => {
   const turn = runningTurnSend()
-  const chat = await mountChat({
-    sendTurn: turn.sendTurn,
-    api: {
-      scheduledMessages: async () => ({ messages: [] }),
-      updateScheduledMessage: async () => ({ messages: [] }),
-      onScheduledMessagesChanged: () => () => undefined,
-      holdQueuedMessage: async () => ({ ok: false, reason: 'Too many messages are waiting in this chat.' }),
-    },
-  })
+  const studio = heldStudio(() => ({ ok: false, message: 'Too many messages are waiting in this chat.' }))
+  const chat = await mountChat({ sendTurn: turn.sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Investigate the flaky test'))
     await chat.act(async () => chat.enter())
@@ -1288,8 +1436,9 @@ test('a message main could not hold waits in the view, whole, and says why', asy
     })
     await chat.act(async () => chat.type('Use the staging config'))
     await chat.act(async () => chat.enter())
+    await settleStudio(chat.act)
     expect(chat.host.querySelector('[aria-label="Queued message"]')?.textContent).toContain('Use the staging config')
-    expect(chat.host.textContent).toContain('Too many messages are waiting in this chat')
+    expect(chat.host.textContent).toContain('could not hold the message')
   } finally {
     turn.release()
     await chat.unmount()
@@ -1911,6 +2060,66 @@ test('Esc in the composer leaves a turn that is waiting on a request alone', asy
   }
 })
 
+test('a view opened on a chat already waiting on a request answers it, and Stop reaches the turn, before any send', async () => {
+  // The window reloaded mid-turn: the chat's session is live on its Studio,
+  // and this view never started or adopted it.
+  const respond = vi.fn(async () => ({ ok: true }))
+  const interrupt = vi.fn(async () => ({ ok: true }))
+  const turnStarted = event('turn_started', { turnId: 't1' })
+  const asked = event('approval_requested', {
+    turnId: 't1',
+    requestId: 'approval-1',
+    action: 'Bash',
+    summary: 'npm test',
+    input: { command: 'npm test' },
+  })
+  const chat = await mountChat({
+    capabilities: { approvals: true },
+    events: [event('user_message', { turnId: 't1', text: 'Run the tests' }), turnStarted, asked],
+    api: {
+      conversationSessionsList: async () => ({
+        ok: true,
+        sessions: [
+          {
+            sessionId: 'session',
+            workspaceId: 'workspace',
+            agentId: 'agent',
+            providerId: 'mock',
+            modelId: 'mock-model',
+            status: 'awaiting_approval',
+            createdAt: 1,
+            updatedAt: 1,
+            capabilities: { approvals: true },
+          },
+        ],
+      }),
+      conversationSessionRespondToRequest: respond,
+      conversationSessionInterrupt: interrupt,
+    },
+  })
+  try {
+    await settleStudio(chat.act)
+    const allow = Array.from(chat.host.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === 'Allow once',
+    )
+    expect(allow, 'the request card is up').toBeDefined()
+    await chat.act(async () => allow!.click())
+    await settleStudio(chat.act)
+    expect(respond).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session', requestId: 'approval-1', approved: true }),
+    )
+    const stop = chat.host.querySelector<HTMLButtonElement>('[aria-label="Stop responding"]')
+    expect(stop, 'the turn can be stopped').not.toBeNull()
+    await chat.act(async () => stop!.click())
+    await settleStudio(chat.act)
+    expect(interrupt).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session' }))
+  } finally {
+    await chat.unmount()
+    const { resetConversationSessionsStore } = await import('../../../hooks/conversationSessionsStore')
+    resetConversationSessionsStore()
+  }
+})
+
 test('copying a selection of the conversation puts its markdown on the clipboard', async () => {
   const chat = await mountChat({
     events: [
@@ -2215,11 +2424,6 @@ test('a working agent’s card offers to stop that agent alone; an ended agent�
       })
     })
     const stops = () => chat.host.querySelectorAll<HTMLButtonElement>('button[aria-label="Stop this agent"]')
-    // The Studio protocol has no method for it yet, so a window on it offers none.
-    if (chatOverStudioUnderTest()) {
-      expect(stops()).toHaveLength(0)
-      return
-    }
     expect(stops()).toHaveLength(1)
     await chat.act(async () => stops()[0]!.click())
     expect(stopSubagent).toHaveBeenCalledWith({ sessionId: 'session', toolUseId: 'stop-working' })
@@ -2364,38 +2568,17 @@ test('the composer row is the New chat’s: the "+" opens attach and skills, wit
   }
 })
 
-test('the "+" schedules the next message: Enter hands it to main for its time, and the tray says when it goes', async () => {
+test('the "+" schedules the next message: Enter hands it to the chat\'s Studio for its time, and the tray says when it goes', async () => {
   const sendTurn = vi.fn<SendTurn>(async () => ({ ok: true }))
-  type Message = { id: string; workspaceId: string; agentId: string; text: string; sendAt: number; createdAt: number }
-  let state: { messages: Message[] } = { messages: [] }
-  const updates: Array<Record<string, unknown>> = []
-  const chat = await mountChat({
-    capabilities: { skills: 'workspace' },
-    sendTurn,
-    api: {
-      scheduledMessages: async () => state,
-      onScheduledMessagesChanged: () => () => undefined,
-      updateScheduledMessage: async (update: Record<string, unknown>) => {
-        updates.push(update)
-        if (update.kind === 'schedule')
-          state = {
-            messages: [
-              {
-                id: 'sm-1',
-                workspaceId: update.workspaceId as string,
-                agentId: update.agentId as string,
-                text: update.text as string,
-                sendAt: update.sendAt as number,
-                createdAt: Date.now(),
-              },
-            ],
-          }
-        if (update.kind === 'delete') state = { messages: state.messages.filter((entry) => entry.id !== update.id) }
-        return state
-      },
-    },
+  const studio = heldStudio((command) => {
+    if (command.kind === 'scheduleSend')
+      studio.sayScheduled([{ id: 'sm-1', text: command.message, sendAt: command.sendAt, createdAt: Date.now() }])
+    if (command.kind === 'cancelScheduled') studio.sayScheduled([])
+    return { ok: true }
   })
+  const chat = await mountChat({ capabilities: { skills: 'workspace' }, sendTurn, api: studio.api })
   try {
+    await settleStudio(chat.act)
     const doc = chat.dom.window.document
     const plus = Array.from(doc.querySelectorAll('button')).find(
       (item) => item.getAttribute('aria-label') === 'Options',
@@ -2409,26 +2592,20 @@ test('the "+" schedules the next message: Enter hands it to main for its time, a
 
     await chat.act(async () => chat.type('Carry on with the migration.'))
     await chat.act(async () => chat.enter())
-    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    await settleStudio(chat.act)
     expect(sendTurn).not.toHaveBeenCalled()
-    expect(updates[0]).toMatchObject({
-      kind: 'schedule',
-      workspaceId: 'workspace',
-      agentId: 'agent',
-      text: 'Carry on with the migration.',
-    })
-    expect(updates[0]!.sendAt as number).toBeGreaterThan(Date.now())
+    expect(studio.commands[0]).toMatchObject({ kind: 'scheduleSend', message: 'Carry on with the migration.' })
+    expect(studio.commands[0]!.sendAt as number).toBeGreaterThan(Date.now())
     expect(chat.draft()).toBe('')
     expect(chat.host.querySelector('[data-send-time-tag="true"]'), 'the next message sends as usual').toBeNull()
 
     const tray = chat.host.querySelector<HTMLElement>('[role="group"][aria-label="Scheduled message"]')
     expect(tray?.textContent).toContain('Sends ')
     expect(tray?.textContent).toContain('Carry on with the migration.')
-
     const edit = Array.from(tray!.querySelectorAll('button')).find((item) => item.textContent?.trim() === 'Edit')
     await chat.act(async () => edit!.click())
-    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
-    expect(updates[1]).toEqual({ kind: 'delete', id: 'sm-1' })
+    await settleStudio(chat.act)
+    expect(studio.commands[1]).toEqual({ kind: 'cancelScheduled', scheduledId: 'sm-1' })
     expect(chat.draft()).toBe('Carry on with the migration.')
     expect(chat.host.querySelector('[data-send-time-tag="true"]'), 'still set for its time').not.toBeNull()
     expect(chat.host.querySelector('[role="group"][aria-label="Scheduled message"]')).toBeNull()
@@ -2525,12 +2702,6 @@ test('the ring opens what fills the window, read from the chat’s agent', async
     const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')!
     const note = () => chat.dom.window.document.querySelector('[data-context-breakdown-note]')?.textContent
     await chat.act(async () => ring().click())
-    // The Studio protocol has no method for it yet: the panel opens on the
-    // total, and says the window cannot ask rather than that Claude cannot say.
-    if (chatOverStudioUnderTest()) {
-      expect(note()).toMatch(/^This window cannot ask the agent/u)
-      return
-    }
     // Before a session is live there is no agent to ask, and the panel says so.
     expect(note()).toBe(
       'Claude Code is not running for this chat now. Send a message and it can say what fills the window.',
@@ -2932,10 +3103,24 @@ function restartSessionCommand(chat: { dom: JSDOM; field: () => HTMLElement }) {
   )
 }
 
-test('Restart agent session ends the idle agent’s process the way Settle does, keeping the chat', async () => {
+/** A Studio that restarts a chat's session as the chat's server does, answering a notice where none ran. */
+function restartingStudio(notice?: string) {
+  const restarts: Array<Record<string, unknown>> = []
+  return {
+    restarts,
+    api: {
+      conversationCommand: vi.fn(async (input: { key: Record<string, unknown>; command: Record<string, unknown> }) => {
+        if (input.command.kind === 'restartSession') restarts.push(input.key)
+        return notice ? { ok: true, notice } : { ok: true }
+      }),
+    },
+  }
+}
+
+test('Restart agent session asks the chat’s server to end the idle agent’s process, keeping the chat', async () => {
   const sendTurn = vi.fn<SendTurn>(async () => ({ ok: true }))
-  const conversationSessionSuspend = vi.fn(async () => ({ ok: true }))
-  const chat = await mountChat({ sendTurn, api: { conversationSessionSuspend } })
+  const studio = restartingStudio()
+  const chat = await mountChat({ sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Hello'))
     await chat.act(async () => chat.enter())
@@ -2946,7 +3131,8 @@ test('Restart agent session ends the idle agent’s process the way Settle does,
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'hello' }) })
     })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend).toHaveBeenCalledExactlyOnceWith({ sessionId: 'session' })
+    await settleStudio(chat.act)
+    expect(studio.restarts).toEqual([expect.objectContaining({ workspaceId: 'workspace', agentId: 'agent' })])
   } finally {
     await chat.unmount()
   }
@@ -2954,8 +3140,8 @@ test('Restart agent session ends the idle agent’s process the way Settle does,
 
 test('Restart agent session is refused while a turn is running', async () => {
   const sendTurn = vi.fn<SendTurn>(async () => ({ ok: true }))
-  const conversationSessionSuspend = vi.fn(async () => ({ ok: true }))
-  const chat = await mountChat({ sendTurn, api: { conversationSessionSuspend } })
+  const studio = restartingStudio()
+  const chat = await mountChat({ sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Go'))
     await chat.act(async () => chat.enter())
@@ -2964,26 +3150,28 @@ test('Restart agent session is refused while a turn is running', async () => {
       chat.emit({ type: 'event', event: event('turn_started', { turnId: 'running' }) })
     })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend).not.toHaveBeenCalled()
+    await settleStudio(chat.act)
+    expect(studio.restarts).toHaveLength(0)
     await chat.act(async () => {
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'running' }) })
     })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend, 'once the turn is over it goes ahead').toHaveBeenCalledOnce()
+    await settleStudio(chat.act)
+    expect(studio.restarts, 'once the turn is over it goes ahead').toHaveLength(1)
   } finally {
     await chat.unmount()
   }
 })
 
 test('Restart agent session in a chat with no agent running ends nothing, and says so', async () => {
-  const conversationSessionSuspend = vi.fn(async () => ({ ok: true }))
-  const chat = await mountChat({ api: { conversationSessionSuspend } })
+  const studio = restartingStudio('No agent was running for this chat.')
+  const chat = await mountChat({ api: studio.api })
   const { useToastStore } = await import('../../../store/toastStore')
   try {
     // Earlier cases' toasts are still in the one store.
     useToastStore.setState({ toasts: [] })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend).not.toHaveBeenCalled()
+    await settleStudio(chat.act)
     const titles = useToastStore.getState().toasts.map((toast) => toast.title)
     expect(titles).toContain('No agent session to restart')
     expect(titles).not.toContain('Agent session restarted')
@@ -3067,11 +3255,6 @@ test('/btw mid-turn asks the chat a side question and leaves the turn and its qu
     await chat.act(async () => chat.type('/btw which file is the parser in?'))
     await chat.act(async () => chat.enter())
     const drawer = () => chat.dom.window.document.querySelector('[role="dialog"][aria-label^="Side question"]')
-    // The Studio protocol has no method for it yet, so a window on it keeps /btw the CLI's.
-    if (chatOverStudioUnderTest()) {
-      expect(askSideQuestion).not.toHaveBeenCalled()
-      return
-    }
     expect(askSideQuestion).toHaveBeenCalledOnce()
     expect(askSideQuestion.mock.calls[0]![0]).toMatchObject({
       sessionId: 'session',
@@ -3149,12 +3332,9 @@ test('the composer’s “+” offers a side question once the chat has a reply,
   try {
     doc = answering.dom.window.document
     await openPlus(answering)
-    if (chatOverStudioUnderTest()) expect(row()).toBeNull()
-    else {
-      expect(row()?.textContent).toContain('Side question')
-      await answering.act(async () => row()!.click())
-      expect(doc.querySelector('[role="dialog"][aria-label^="Side question"]')).not.toBeNull()
-    }
+    expect(row()?.textContent).toContain('Side question')
+    await answering.act(async () => row()!.click())
+    expect(doc.querySelector('[role="dialog"][aria-label^="Side question"]')).not.toBeNull()
   } finally {
     await answering.unmount()
   }

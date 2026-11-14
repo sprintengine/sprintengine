@@ -53,10 +53,10 @@ test('the node platform seals with a key file in the data directory and fans out
   platform.clients.subscribe(() => {
     throw new Error('one listener failing')
   })
-  platform.clients.publish('scheduled-agents:changed', [{ id: 'a' }])
+  platform.clients.publish('example:changed', [{ id: 'a' }])
   stop()
-  platform.clients.publish('scheduled-agents:changed', [])
-  assert.deepEqual(published, [['scheduled-agents:changed', [{ id: 'a' }]]])
+  platform.clients.publish('example:changed', [])
+  assert.deepEqual(published, [['example:changed', [{ id: 'a' }]]])
 
   const notices: StudioNotice[] = []
   platform.notifier.subscribe((notice) => notices.push(notice))

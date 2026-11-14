@@ -68,6 +68,21 @@ import { TerminalLinkMenu } from '../terminal/TerminalLinkMenu'
 import type { TerminalLinkTarget } from '../../utils/terminalLinkActions'
 import { workspaceSyncClient } from '../../store/workspaceSyncClient'
 import { hostPlatform } from '../../clientCapabilities'
+import {
+  closeTerminal,
+  onTerminalData,
+  onTerminalError,
+  onTerminalExit,
+  onTerminalReplay,
+  openTerminal,
+  resizeTerminal,
+  resumeTerminal,
+  setTerminalVisible,
+  terminalStatus,
+  writeTerminal,
+} from '../../studio/terminals'
+import { agentSetupApi } from '../../studio/agentSetup'
+import { filesApi } from '../../studio/files'
 
 interface Props {
   workspaceId: string
@@ -139,7 +154,7 @@ async function resolveMemoryLaunchContext(
   const configuredRoot = relativeRoot?.trim()
   if (!configuredRoot) return { promptSuffix: null, rootPath: undefined, relativeRoot: undefined }
 
-  const status = await window.api
+  const status = await agentSetupApi
     .memoryResolveRoot({
       workspaceRoot,
       relativeRoot: configuredRoot,
@@ -455,7 +470,7 @@ function TerminalViewOnThisComputer({
     // fail. Shared by the OSC 8 handler and the heuristic provider below.
     const inspectPath = async (path: string): Promise<{ exists: boolean; isDirectory: boolean }> => {
       try {
-        const stat = await window.api.statPath(path)
+        const stat = await filesApi.statPath(path)
         return { exists: true, isDirectory: stat.isDirectory }
       } catch {
         return { exists: false, isDirectory: false }
@@ -505,7 +520,7 @@ function TerminalViewOnThisComputer({
       if (mount.clientWidth === 0 || mount.clientHeight === 0) return
       fitAddon.fit()
       if (term.cols > 0 && term.rows > 0) {
-        void window.api.terminalResize(sessionId, term.cols, term.rows)
+        void resizeTerminal(sessionId, term.cols, term.rows)
       }
     }
 
@@ -525,7 +540,7 @@ function TerminalViewOnThisComputer({
      */
     const reclaimPtySize = () => {
       if (term.cols > 0 && term.rows > 0) {
-        void window.api.terminalResize(sessionId, term.cols, term.rows)
+        void resizeTerminal(sessionId, term.cols, term.rows)
       }
     }
 
@@ -554,7 +569,7 @@ function TerminalViewOnThisComputer({
       }
       if (event.type === 'keydown' && event.key === 'Enter' && event.shiftKey) {
         event.preventDefault()
-        window.api.terminalWriteFast(sessionId, '\u001b[13;2u')
+        writeTerminal(sessionId, '\u001b[13;2u')
         terminalDiagnostics.recordInputDispatch('\u001b[13;2u')
         return false
       }
@@ -674,14 +689,14 @@ function TerminalViewOnThisComputer({
       },
     })
 
-    const disposeData = window.api.onTerminalData(sessionId, (data) => {
+    const disposeData = onTerminalData(sessionId, (data) => {
       replayGate.handleLiveData(data)
     })
-    const disposeReplay = window.api.onTerminalReplay(sessionId, (data) => {
+    const disposeReplay = onTerminalReplay(sessionId, (data) => {
       replayGate.handleReplay(data)
     })
 
-    const disposeExit = window.api.onTerminalExit(sessionId, (code) => {
+    const disposeExit = onTerminalExit(sessionId, (code) => {
       const latestContext = currentContext()
       // If the process died mid-resume, reveal any held start-up output first so
       // a genuine startup error surfaces ahead of the exit banner — under the
@@ -720,7 +735,7 @@ function TerminalViewOnThisComputer({
       })
     })
 
-    const disposeError = window.api.onTerminalError(sessionId, (message) => {
+    const disposeError = onTerminalError(sessionId, (message) => {
       const latestContext = currentContext()
       term.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`)
       reportedTerminalFailure = true
@@ -757,7 +772,7 @@ function TerminalViewOnThisComputer({
           const next = queue[0] as PendingResumeInput
           if (next.kind === 'paste' && upToFirstPaste) return
           queue.shift()
-          if (next.kind === 'keys') window.api.terminalWriteFast(sessionId, next.data)
+          if (next.kind === 'keys') writeTerminal(sessionId, next.data)
           // Through xterm, now that it holds the live CLI's modes: bracketed
           // if that CLI asked for it, and out through `onData` like any paste.
           else term.paste(next.text)
@@ -934,7 +949,7 @@ function TerminalViewOnThisComputer({
         pendingResumeInputRef.current.push({ kind: 'keys', data })
         return
       }
-      window.api.terminalWriteFast(sessionId, data)
+      writeTerminal(sessionId, data)
       terminalDiagnostics.recordInputDispatch(data)
     })
 
@@ -978,7 +993,7 @@ function TerminalViewOnThisComputer({
     const disposeFocusRequest = onTerminalFocusRequest({ workspaceId, agentId }, focusTerminal)
 
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
-      void window.api.terminalResize(sessionId, cols, rows)
+      void resizeTerminal(sessionId, cols, rows)
     })
 
     const fitScheduler = createTerminalFitScheduler(fitTerminal, mount)
@@ -1020,9 +1035,7 @@ function TerminalViewOnThisComputer({
       // folder check already waits on that; a view kept mounted from before the
       // worktree went holds an older answer, so the launch asks as well.
       if (!(await ensureChatWorktree(workspaceId)) || disposed) return
-      const terminalStatus = await window.api
-        .terminalStatus(sessionId)
-        .catch(() => ({ processAlive: false, suspended: false }))
+      const status = await terminalStatus(sessionId).catch(() => ({ processAlive: false, suspended: false }))
       if (disposed) return
       const postStatusContext = currentContext()
       const postStatusAgent = postStatusContext.agent
@@ -1030,7 +1043,7 @@ function TerminalViewOnThisComputer({
       if (!postStatusAgent || !postStatusCli) return
       if (postStatusContext.savedFolderPath && !folderReadyPath) return
 
-      const resumeExistingPty = shouldResume && terminalStatus.processAlive
+      const resumeExistingPty = shouldResume && status.processAlive
       // Prefer the resume capability stamped + persisted on the agent (survives a
       // cold restart), like the codex branch reads agent.cliResumeAvailable above.
       // The catalog is only a fallback for a pre-upgrade agent whose flag predates
@@ -1061,8 +1074,8 @@ function TerminalViewOnThisComputer({
       // agent became a fresh CLI launch.
       const coldLoadDecision = resolveAgentColdLoadDecision({
         attachedSessionId,
-        processAlive: terminalStatus.processAlive,
-        suspended: terminalStatus.suspended,
+        processAlive: status.processAlive,
+        suspended: status.suspended,
         hasLaunchIntent: hasLiveAgentLaunchIntent(postStatusAgent),
         sessionMintedThisAppSession: wasAgentSessionMintedThisAppSession(sessionId),
         launchFailedThisAppSession: hasAgentLaunchFailedThisAppSession(workspaceId, agentId),
@@ -1091,7 +1104,7 @@ function TerminalViewOnThisComputer({
         workspaceId,
         agentId,
         kind: 'agent',
-        processAlive: terminalStatus.processAlive,
+        processAlive: status.processAlive,
         resumeRequested: shouldResume,
         attachedSessionId,
         cliHasLaunched: postStatusAgent?.cliHasLaunched,
@@ -1103,7 +1116,7 @@ function TerminalViewOnThisComputer({
           workspaceId,
           agentId,
           kind: 'agent',
-          processAlive: terminalStatus.processAlive,
+          processAlive: status.processAlive,
           resumeRequested: shouldResume,
           attachedSessionId,
           cliHasLaunched: postStatusAgent?.cliHasLaunched,
@@ -1123,7 +1136,7 @@ function TerminalViewOnThisComputer({
       const workspaceWorktreeCwd =
         launchAgent.execution?.mode === 'worktree'
           ? { cwd: null, missing: false }
-          : await resolveWorkspaceTerminalCwd(workspaceWorktreeGitRoot, folderReadyPath, window.api.pathExists)
+          : await resolveWorkspaceTerminalCwd(workspaceWorktreeGitRoot, folderReadyPath, filesApi.pathExists)
       if (disposed) return
       let executionRoot = resolveAgentExecutionRoot(
         launchAgent.execution,
@@ -1165,7 +1178,7 @@ function TerminalViewOnThisComputer({
         executionRoot.mode,
         executionRoot.cwd,
         fallbackWorkspace ? (fallbackWorkspace.folderPath ?? null) : folderReadyPath,
-        window.api.pathExists,
+        filesApi.pathExists,
       )
       if (disposed) return
       if (worktreeFallback.fellBack) {
@@ -1230,7 +1243,7 @@ function TerminalViewOnThisComputer({
       // below but forces resume and sends no fresh prompt; reads the live term
       // size at call time.
       resumeThunkRef.current = () =>
-        window.api.terminalResume(
+        resumeTerminal(
           sessionId,
           term.cols,
           term.rows,
@@ -1292,7 +1305,7 @@ function TerminalViewOnThisComputer({
         // A fresh xterm: main paints it in full, now or — in a window that is
         // not being painted — when WorkspaceManager reveals it.
         const painted = paneIsPainted()
-        await window.api.terminalSetVisible(sessionId, painted, { freshPane: true }).catch(() => {})
+        await setTerminalVisible(sessionId, painted, { freshPane: true }).catch(() => {})
         if (!painted && !disposed) notePaneAttachedHidden(sessionId)
         logPerfEvent('TerminalView', 'terminal-paused-on-open', {
           sessionId,
@@ -1307,63 +1320,61 @@ function TerminalViewOnThisComputer({
 
       replayGate.beginReplayWait()
       const spawnPainted = paneIsPainted()
-      const spawnResult = await window.api
-        .terminalSpawn(
-          sessionId,
-          term.cols,
-          term.rows,
-          executionRoot.cwd,
-          shouldResumeCli,
-          finalCli,
-          launchInitialPrompt,
-          finalContext.cliRuntimes,
-          false,
-          {
-            kind: 'agent',
-            workspaceId,
-            ...(finalContext.hostId ? { hostId: finalContext.hostId } : {}),
-            agentId,
-            agentName: finalAgent.name,
-            // The agent's own CLI/harness session id, used as the resume token so
-            // non-Claude CLIs (e.g. Codex) reattach the right conversation. Read
-            // live at call time — the resume thunk outlives this closure, and the
-            // harness id is learned from the hook AFTER launch, so the captured
-            // `finalAgent` may not have it yet. For Claude this coincides with the
-            // terminal id, so main's fallback keeps `--resume <id>` identical.
-            cliSessionId: currentContext().agent?.harnessSessionId ?? finalAgent.harnessSessionId,
-            executionMode: executionRoot.mode,
-            worktreeId: executionRoot.worktreeId,
-            worktreePath: executionRoot.worktreePath,
-            cliPermissionPreset: finalContext.cliPermissionPreset,
-            // The CLI's own mode rides beside the preset it was chosen at.
-            ...(finalContext.cliPermissionPreset && finalAgent.cliPermissionMode
-              ? { cliPermissionMode: finalAgent.cliPermissionMode }
-              : {}),
-            cliModel: finalAgent.cliModel,
-            cliReasoning: finalAgent.cliReasoning,
-            memoryRootPath: memoryContext.rootPath,
-            memoryRelativeRoot: memoryContext.relativeRoot,
-            // A connector chat forwards its own connector-only MCP settings so the
-            // spawn syncs that server into the worktree .mcp.json — never the
-            // global appSettings.mcp. Ordinary agents fall through to the
-            // workspace's MCP.
-            mcpSettings: finalAgent.connectorMcpSettings ?? finalContext.mcpSettings,
-            connectorLaunch: finalAgent.connectorMcpSettings != null,
-            spawnSkillId: finalAgent.spawnSkillId,
-            visible: spawnPainted,
-            ...(agentSession ? { agentSession } : {}),
-          } as TerminalSpawnMetadata & {
-            executionMode: AgentExecutionMode
-            worktreeId?: string
-            worktreePath?: string
-          },
-        )
-        .catch((error): TerminalSpawnResult => ({
-          ok: false,
-          sessionId,
-          message: error instanceof Error ? error.message : 'Failed to start terminal.',
-          exitCode: 1,
-        }))
+      const spawnResult = await openTerminal(
+        sessionId,
+        term.cols,
+        term.rows,
+        executionRoot.cwd,
+        shouldResumeCli,
+        finalCli,
+        launchInitialPrompt,
+        finalContext.cliRuntimes,
+        false,
+        {
+          kind: 'agent',
+          workspaceId,
+          ...(finalContext.hostId ? { hostId: finalContext.hostId } : {}),
+          agentId,
+          agentName: finalAgent.name,
+          // The agent's own CLI/harness session id, used as the resume token so
+          // non-Claude CLIs (e.g. Codex) reattach the right conversation. Read
+          // live at call time — the resume thunk outlives this closure, and the
+          // harness id is learned from the hook AFTER launch, so the captured
+          // `finalAgent` may not have it yet. For Claude this coincides with the
+          // terminal id, so main's fallback keeps `--resume <id>` identical.
+          cliSessionId: currentContext().agent?.harnessSessionId ?? finalAgent.harnessSessionId,
+          executionMode: executionRoot.mode,
+          worktreeId: executionRoot.worktreeId,
+          worktreePath: executionRoot.worktreePath,
+          cliPermissionPreset: finalContext.cliPermissionPreset,
+          // The CLI's own mode rides beside the preset it was chosen at.
+          ...(finalContext.cliPermissionPreset && finalAgent.cliPermissionMode
+            ? { cliPermissionMode: finalAgent.cliPermissionMode }
+            : {}),
+          cliModel: finalAgent.cliModel,
+          cliReasoning: finalAgent.cliReasoning,
+          memoryRootPath: memoryContext.rootPath,
+          memoryRelativeRoot: memoryContext.relativeRoot,
+          // A connector chat forwards its own connector-only MCP settings so the
+          // spawn syncs that server into the worktree .mcp.json — never the
+          // global appSettings.mcp. Ordinary agents fall through to the
+          // workspace's MCP.
+          mcpSettings: finalAgent.connectorMcpSettings ?? finalContext.mcpSettings,
+          connectorLaunch: finalAgent.connectorMcpSettings != null,
+          spawnSkillId: finalAgent.spawnSkillId,
+          visible: spawnPainted,
+          ...(agentSession ? { agentSession } : {}),
+        } as TerminalSpawnMetadata & {
+          executionMode: AgentExecutionMode
+          worktreeId?: string
+          worktreePath?: string
+        },
+      ).catch((error): TerminalSpawnResult => ({
+        ok: false,
+        sessionId,
+        message: error instanceof Error ? error.message : 'Failed to start terminal.',
+        exitCode: 1,
+      }))
       replayGate.finishReplayWait()
       if (disposed) return
       if (spawnResult.ok && !spawnPainted) notePaneAttachedHidden(sessionId)
@@ -1444,7 +1455,7 @@ function TerminalViewOnThisComputer({
           // input line is ready). Never auto-sent — the user finishes it.
           if (finalAgent.cliPendingInput) {
             const pendingInput = finalAgent.cliPendingInput
-            void window.api.terminalWrite(sessionId, `\x1b[200~${pendingInput}\x1b[201~`).catch(() => {})
+            void writeTerminal(sessionId, `\x1b[200~${pendingInput}\x1b[201~`).catch(() => {})
           }
         }
       }
@@ -1471,7 +1482,7 @@ function TerminalViewOnThisComputer({
       disposed = true
       textarea?.removeEventListener('focus', reclaimPtySize)
       if (shouldKillOnUnmount?.(sessionId)) {
-        void window.api.terminalKill(sessionId).catch(() => {})
+        void closeTerminal(sessionId).catch(() => {})
       } else {
         logPerfEvent('TerminalView', 'terminal-detached-from-renderer', {
           sessionId,
@@ -1479,7 +1490,7 @@ function TerminalViewOnThisComputer({
           agentId,
           kind: 'agent',
         })
-        void window.api.terminalSetVisible(sessionId, false).catch(() => {})
+        void setTerminalVisible(sessionId, false).catch(() => {})
       }
       window.clearTimeout(settleTimer)
       resizeObserver.disconnect()

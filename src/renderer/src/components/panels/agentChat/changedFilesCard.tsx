@@ -23,6 +23,7 @@ import { openFileSurface } from '../../../utils/openFileSurface'
 import { openGitDiff } from '../../../utils/openGitDiff'
 import type { ChatFileSource } from './chatServices'
 import { useConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 import { formatDiffCount } from '../../../utils/diffCount'
 
 export type TurnChangeSummary = { files: number; addedLines: number; removedLines: number }
@@ -472,6 +473,7 @@ export function ChangedFilesCard({
 }) {
   const context = useConversationLinkContext()
   const transport = useConversationTransport()
+  const reach = useShellReach()
   const conversationKey = `${context?.workspaceId ?? ''}:${context?.agentId ?? ''}`
   // A handful of files is shown as it stands, so the turn's footprint reads at
   // a glance; past that the card starts as its one-line summary.
@@ -496,7 +498,7 @@ export function ChangedFilesCard({
     ? { workspaceRoot: context.workspaceRoot, workspaceId: context.workspaceId, agentId: context.agentId }
     : undefined
   // Both open this machine's files, so a conversation on another one offers neither.
-  const localKey = transport.capabilities.localFiles ? key : undefined
+  const localKey = reach.openDocument ? key : undefined
   // Opens in the app's diff viewer, which reads this machine's working tree —
   // so, like the file itself, only for a conversation on this machine. One on
   // another machine keeps the inline preview below instead.

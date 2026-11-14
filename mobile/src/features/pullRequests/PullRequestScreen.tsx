@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { StyleSheet, Text, View } from "react-native";
 
 import { createPullRequestApi, pullRequestReadsUnsupported, type PullRequestDetail } from "../../api/pullRequests";
-import { tailnetClientForSession } from "../../api/tailnetControlClient";
 import type { MobileSession } from "../../api/types";
 import { Card, CardRow } from "../../components/Card";
 import { formatTimestamp } from "../../components/formatTimestamp";
@@ -23,6 +22,7 @@ import {
   remarksSummaryWords,
   reviewSummaryWords,
 } from "./pullRequestView";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 type ReadView =
   | { status: "loading" }
@@ -50,7 +50,7 @@ export function PullRequestScreen({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const api = useMemo(() => (session ? createPullRequestApi(tailnetClientForSession(session)) : null), [session]);
+  const api = useMemo(() => (session ? createPullRequestApi(studioTargetOf(session)) : null), [session]);
   const [view, setView] = useState<ReadView>({ status: "loading" });
   const [refreshing, setRefreshing] = useState(false);
   const live = useRef(true);

@@ -1,5 +1,9 @@
-import type { StudioClient } from '../../../packages/agent-sdk/src/client'
-import type { OfferedToolset, ToolCall, ToolDefinition } from '../../../packages/agent-sdk/src/tools'
+import type {
+  StudioClient,
+  OfferedToolset,
+  ToolCall,
+  ToolDefinition,
+} from '../../../packages/client-runtime/src/public'
 import type { McpConnectionContext, McpConnectionMetadata, McpToolRegistration } from '../../shared/modules/mcp-tools'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 

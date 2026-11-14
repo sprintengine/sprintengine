@@ -49,6 +49,22 @@ export type StudioCommonErrorCode =
   | 'too_large'
   | 'command_id_conflict'
 
+/**
+ * Where a mutation's receipts are kept. Every mutation is answered from its
+ * receipt on a retry while the server that carried it out runs; `durable`
+ * says the receipt outlives that server too (written with the command in the
+ * chat's own log, or in the record the command made), so a retry reaching a
+ * restarted server is answered from it, not carried out again. A chat's
+ * control commands (stop a turn, answer a request, set a model or a preset,
+ * end a session) write theirs once answered: a crash before that leaves none,
+ * and the retry acts again on the chat as it is then, which is safe only
+ * because each of them sets a state or finds nothing left to act on. A
+ * method is marked `durable` only where that holds. A mutation without it
+ * keeps its receipts in the running server's memory only, so the client
+ * sends it again only to the same boot (`bootId`).
+ */
+export type StudioMethodReceipts = 'durable'
+
 /** How a method is held: the scope a grant needs, whether it mutates, the capability that offers it. */
 export type StudioMethodSpec = {
   /** The scope a client asks to be granted for it; null for what any authenticated client may ask. */
@@ -59,13 +75,42 @@ export type StudioMethodSpec = {
    * carries, never less.
    */
   extraPermissions?: readonly StudioPermission[]
-  /** A mutation carries a `commandId`, is audited, and is answered from its receipt on a retry. */
-  mutation: boolean
   /** The capability a client checks before calling it. */
   capability: StudioCapability | null
-  /** Only an owner's connection may call it, whatever scopes another grant holds. */
-  owner?: true
-}
+  /**
+   * Only an owner's connection may call it, whatever scopes another grant
+   * holds, and why: it runs a program or opens a terminal on this machine, or
+   * records what only Studio's own agents report. Everything else reaches a
+   * paired client by its scope.
+   */
+  owner?: string
+  /**
+   * Only the desktop's own shell connection may call it, and why: it hands out
+   * what admits a window of Studio's own. Always with `owner`, which every
+   * other non-owner refusal reads; this refuses the owner's other clients too
+   * (a web tab, a paired app).
+   */
+  shell?: string
+  /**
+   * Only Studio's own desktop windows may call it, and why: its answer
+   * carries a credential, or it lets someone reach this machine from
+   * elsewhere. Always with `owner`; this refuses the owner's other clients
+   * too: a web tab (a stolen browser session must not mint the next way in),
+   * an app or script holding the owner's credential, and the shell.
+   */
+  window?: string
+} & (
+  | {
+      /** A mutation carries a `commandId`, is audited, and is answered from its receipt on a retry. */
+      mutation: boolean
+      receipts?: never
+    }
+  | {
+      mutation: true
+      /** Only a mutation has receipts to keep (`StudioMethodReceipts`). */
+      receipts: StudioMethodReceipts
+    }
+)
 
 /**
  * Why a request's params were refused: not in the method's shape, over a
@@ -138,11 +183,15 @@ export type StudioTopicContract = { params: object; payload: unknown; stream: 'p
 
 /** How a topic is held, as a method is, and the validator its params are read by. */
 export type StudioTopicDefinition<C extends StudioTopicContract> = {
-  scope: StudioScope
+  /** As for a method: null where no scope is asked for (an owner's only stream names `owner`). */
+  scope: StudioScope | null
   /** What it needs beyond its scope's permission, as for a method. */
   extraPermissions?: readonly StudioPermission[]
   capability: StudioCapability
-  owner?: true
+  /** As for a method: why only an owner may follow it. */
+  owner?: string
+  /** As for a method: why only Studio's own desktop windows may follow it. */
+  window?: string
   /** Reads an object of params; absent params are read as `{}`, which a topic that names something refuses. */
   readonly params: (value: Record<string, unknown>) => StudioParsed<C['params']>
 } & (C['stream'] extends 'push' ? { push: true } : { push?: never })

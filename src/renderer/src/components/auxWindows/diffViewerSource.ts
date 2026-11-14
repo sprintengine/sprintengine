@@ -6,6 +6,10 @@ import type {
 } from '../../../../../packages/conversation-protocol/src/checkoutChanges'
 import type { BranchStepDiff, BranchStepSelection, BranchStepsSnapshot } from '../../../../shared/electron-api'
 import type { MeshConversationKey } from '../../../../shared/tailnet-mesh'
+import type { StudioClient } from '../../../../../packages/client-runtime/src/public'
+import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../../../packages/studio-protocol/src/public'
+import { environmentRefusal, pairedTarget, withEnvironmentStudio } from '../../studio/environmentStudio'
+import { environmentConversationTransport } from '../panels/agentChat/environmentChat'
 
 // Where a diff viewer reads a checkout that is not on this computer: a chat on
 // a paired machine, whose machine reads its checkout as its own Diff tab does
@@ -43,18 +47,18 @@ export function pairedChangesRoot(key: MeshConversationKey): string {
   return `paired:${key.connectionId}/${key.workspaceId}/${key.agentId}`
 }
 
-/** How long to wait before asking again for a watch the machine's link was not ready for. */
-const WATCH_RETRY_MS = 500
-const WATCH_RETRIES = 10
-
 /**
- * The changes of a chat on a paired machine, read from that machine. It
- * follows the chat while anyone reads them, so the readings arrive whether or
- * not the chat's own pane is open in this window, and asks the machine to say
- * how the checkout stands for as long as it does.
+ * The changes of a chat on a paired machine, read from that machine over this
+ * window's own client of it. It follows the chat's changes (`conversation.changes`)
+ * while anyone reads them, so the readings arrive whether or not the chat's
+ * own pane is open in this window; the client follows again after a drop and
+ * is told how the checkout stands now.
  */
 export function createPairedDiffSource(input: { key: MeshConversationKey; machineName: string }): DiffViewerSource {
   const { key, machineName } = input
+  const target = pairedTarget({ id: key.connectionId, machineName })
+  const services = environmentConversationTransport(target).services
+  const chat = { workspaceId: key.workspaceId, agentId: key.agentId }
   const listeners = new Set<(reading: DiffSourceReading) => void>()
   let last: DiffSourceReading | null = null
   let stop: (() => void) | null = null
@@ -62,45 +66,32 @@ export function createPairedDiffSource(input: { key: MeshConversationKey; machin
     last = reading
     for (const listener of listeners) listener(reading)
   }
-  const start = () => {
-    let ended = false
-    let retry: ReturnType<typeof setTimeout> | null = null
-    const unfollow = window.api.onMeshConversationSession({ key }, (frame) => {
-      if (frame.type !== 'changes') return
-      tell(
-        frame.changes
-          ? {
-              state: 'ready',
-              snapshot: { ...frame.changes, steps: frame.changes.steps.map((step) => ({ ...step })) },
-              revision: frame.revision,
-            }
-          : { state: 'not-git' },
-      )
+  const start = (): (() => void) => {
+    const follow = services.followPush
+    if (!follow) {
+      tell({ state: 'error', message: `${machineName} cannot be reached from this window.` })
+      return () => undefined
+    }
+    return follow({
+      topic: 'conversation.changes',
+      params: { key: chat },
+      capability: STUDIO_CONVERSATIONS_CAPABILITY,
+      onPayload: (frame) =>
+        tell(
+          frame.changes
+            ? {
+                state: 'ready',
+                snapshot: { ...frame.changes, steps: frame.changes.steps.map((step) => ({ ...step })) },
+                revision: frame.revision,
+              }
+            : { state: 'not-git' },
+        ),
     })
-    const ask = (attempt: number) => {
-      void window.api.meshConversationWatchChanges({ key, watching: true }).then(
-        (result) => {
-          if (ended || result.ok) return
-          // The follow it rides on is a moment behind on its first open.
-          if (result.code === 'not_following' && attempt < WATCH_RETRIES) {
-            retry = setTimeout(() => ask(attempt + 1), WATCH_RETRY_MS)
-            return
-          }
-          tell({ state: 'error', message: result.message })
-        },
-        (failure: unknown) => {
-          if (!ended) tell({ state: 'error', message: failure instanceof Error ? failure.message : String(failure) })
-        },
-      )
-    }
-    ask(0)
-    return () => {
-      ended = true
-      if (retry) clearTimeout(retry)
-      void window.api.meshConversationWatchChanges({ key, watching: false }).catch(() => undefined)
-      unfollow()
-    }
   }
+  const ask = <T>(work: (client: StudioClient) => Promise<T>): Promise<T> =>
+    withEnvironmentStudio(target, work).catch((error: unknown) => {
+      throw new Error(environmentRefusal(target, error).message)
+    })
   return {
     root: pairedChangesRoot(key),
     machineName,
@@ -118,14 +109,12 @@ export function createPairedDiffSource(input: { key: MeshConversationKey; machin
       }
     },
     async stepDiff(selection) {
-      const result = await window.api.meshConversationChangesDiff({ key, selection })
-      if (!result.ok) throw new Error(result.message)
-      return { files: result.files, additions: result.additions, deletions: result.deletions }
+      const diff = await ask((client) => client.request('conversation.changesDiff', { key: chat, selection }))
+      return { files: diff.files, additions: diff.additions, deletions: diff.deletions }
     },
     async file(selection, path) {
-      const result = await window.api.meshConversationChangedFile({ key, selection, path })
-      if (!result.ok) throw new Error(result.message)
-      return { original: result.original, modified: result.modified }
+      const sides = await ask((client) => client.request('conversation.changedFile', { key: chat, selection, path }))
+      return { original: sides.original, modified: sides.modified }
     },
   }
 }

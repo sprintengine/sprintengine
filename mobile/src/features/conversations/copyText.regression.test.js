@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
-const { messageCopyText, replyCopyText } = require("../../../.mobile-test-build/src/features/conversations/copyText.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { messageCopyText, replyCopyText } = require("../../../.mobile-test-build/mobile/src/features/conversations/copyText.js");
 
 function event(seq, type, payload) {
   return { id: `event-${seq}`, seq, sessionId: "session", workspaceId: "workspace", agentId: "agent", createdAt: seq, type, payload };
@@ -9,7 +9,7 @@ function event(seq, type, payload) {
 const footer = (rows, turn) => rows.find((row) => row.kind === "meta" && row.turn === turn);
 
 test("a reply copies everything the turn said, in order, as the Markdown written", () => {
-  const { rows } = projectConversation([
+  const { rows } = projectPhoneConversation([
     event(1, "user_message", { text: "fix the test" }),
     event(2, "turn_started", { turnId: "t" }),
     event(3, "reasoning_delta", { turnId: "t", text: "Look at the fixture." }),
@@ -28,7 +28,7 @@ test("a reply copies everything the turn said, in order, as the Markdown written
 });
 
 test("a reply's copy is its own turn's, never the person's words or another turn's", () => {
-  const { rows } = projectConversation([
+  const { rows } = projectPhoneConversation([
     event(1, "user_message", { text: "one" }),
     event(2, "turn_started", { turnId: "a" }),
     event(3, "content_delta", { turnId: "a", text: "First answer." }),
@@ -44,7 +44,7 @@ test("a reply's copy is its own turn's, never the person's words or another turn
 });
 
 test("a turn that said nothing offers no reply to copy", () => {
-  const { rows } = projectConversation([
+  const { rows } = projectPhoneConversation([
     event(1, "user_message", { text: "run it" }),
     event(2, "turn_started", { turnId: "t" }),
     event(3, "reasoning_delta", { turnId: "t", text: "Just run it." }),
@@ -60,7 +60,7 @@ test("a turn that said nothing offers no reply to copy", () => {
 });
 
 test("a reply's opening indent survives the copy, its blank lines do not", () => {
-  const { rows } = projectConversation([
+  const { rows } = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "content_delta", { turnId: "t", text: "\n\n    indented code\nmore\n\n" }),
     event(3, "turn_completed", { turnId: "t" }),

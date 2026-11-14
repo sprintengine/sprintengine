@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest'
 import { JSDOM } from 'jsdom'
 import type { ConversationStoredImageAttachment } from '../../../../../shared/conversation-runtime'
+import { installStudioLoopback, settleStudio } from '../../../../../../tests/studio-chat-loopback'
 
 test('a replayed bubble reads its images back by reference, and says so when one is gone', async () => {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
@@ -23,19 +24,24 @@ test('a replayed bubble reads its images back by reference, and says so when one
           ? { ok: true, mediaType: 'image/png', dataBase64: 'Zm9v' }
           : { ok: false, message: 'That attachment is no longer on this machine.' }
       },
-      // The machine a remote chat runs on serves its own, as a data URL.
-      meshConversationAttachment: async ({ ref }: { ref: string }) => {
-        reads.push(`remote:${ref}`)
-        return ref.endsWith('kept.png')
-          ? { ok: true, dataUrl: 'data:image/png;base64,YmF6' }
-          : { ok: false, code: 'images_unsupported', message: 'This picture is on mac-mini.' }
-      },
     },
   })
+  installStudioLoopback(dom.window as never)
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { StoredAttachmentThumbnail } = await import('./storedAttachments')
-  const { ConversationTransportProvider, createRemoteConversationTransport } = await import('./conversationTransport')
+  const { ConversationTransportProvider } = await import('./conversationTransport')
+  const { createPairedChatTransport } = await import('./pairedChat')
+  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
+  // The machine a remote chat runs on serves its own (`conversation.attachment` on its Studio).
+  fakePairedStudios(dom.window.api, {
+    'conversation.attachment': ({ ref }) => {
+      reads.push(`remote:${String(ref)}`)
+      return String(ref).endsWith('kept.png')
+        ? { ok: true, mediaType: 'image/png', dataBase64: 'YmF6' }
+        : { ok: false, message: 'This picture is on mac-mini.' }
+    },
+  })
   const kept: ConversationStoredImageAttachment = {
     id: 'a',
     mediaType: 'image/png',
@@ -56,6 +62,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
         </>,
       )
     })
+    await settleStudio(act)
     expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,Zm9v')
     expect(host.querySelector('img')?.getAttribute('alt')).toBe('cat.png')
     expect(host.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Attached image, not available')
@@ -63,14 +70,14 @@ test('a replayed bubble reads its images back by reference, and says so when one
     await act(async () => {
       root.render(<StoredAttachmentThumbnail attachment={kept} className="h-16 w-16" />)
     })
+    await settleStudio(act)
     expect(reads.filter((ref) => ref === kept.ref)).toHaveLength(1)
 
     // A conversation on another machine keeps its images there, and they are
     // asked of it, never read from this machine's store.
-    const remote = createRemoteConversationTransport({
+    const remote = createPairedChatTransport({
       key: { connectionId: 'mac-mini', workspaceId: 'w', agentId: 'a' },
       machineName: 'mac-mini',
-      access: 'read',
     })
     await act(async () => {
       root.render(
@@ -79,6 +86,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
         </ConversationTransportProvider>,
       )
     })
+    await settleStudio(act)
     expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,YmF6')
     expect(reads).toContain('remote:f/remote-kept.png')
     expect(reads).not.toContain('f/remote-kept.png')
@@ -90,6 +98,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
         </ConversationTransportProvider>,
       )
     })
+    await settleStudio(act)
     expect(host.querySelector('img')).toBeNull()
     expect(host.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('cat.png, not available')
   } finally {

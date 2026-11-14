@@ -1,13 +1,6 @@
 import assert from 'node:assert/strict'
-import type { IpcMain } from 'electron'
 import { test } from 'vitest'
 
-import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
-import { MESH_CONVERSATION_FOLLOW_CHANNEL } from '../../shared/tailnet-mesh'
-import { registerWorkspaceSyncIpc } from '../../main/ipc/workspace-sync-ipc'
-import { createWorkspaceRegistryService } from '../../main/workspace-registry-service'
-import { createInMemoryWorkspaceRegistryStore } from '../../main/workspace-registry-store'
-import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { createIpcTunnel, IpcSenderUnavailable, type TunnelClient, type TunnelPort } from './ipc-tunnel'
 
 /** A window's end of its port, as the preload holds it, wired to the server's end. */
@@ -63,12 +56,12 @@ const client = (clientId: string, overrides: Partial<TunnelClient> = {}): Tunnel
 
 test('an invoke is answered with what the handler returns, sync or async', async () => {
   const tunnel = createIpcTunnel()
-  tunnel.registry.handle('launch-settings:get', () => ({ lastSelectedCli: 'claude' }))
-  tunnel.registry.handle('hosts:list', async (_event, filter: string) => [`${filter}-local`])
+  tunnel.registry.handle('workspace-sync:get-snapshot', () => ({ lastSelectedCli: 'claude' }))
+  tunnel.registry.handle('example:list', async (_event, filter: string) => [`${filter}-local`])
   const window = portPair()
   tunnel.attach(client('w1'), window.server)
-  window.send({ t: 'ipc.invoke', id: 1, channel: 'launch-settings:get', args: [] })
-  window.send({ t: 'ipc.invoke', id: 2, channel: 'hosts:list', args: ['all'] })
+  window.send({ t: 'ipc.invoke', id: 1, channel: 'workspace-sync:get-snapshot', args: [] })
+  window.send({ t: 'ipc.invoke', id: 2, channel: 'example:list', args: ['all'] })
   assert.deepEqual(await window.result(1), { t: 'ipc.result', id: 1, ok: true, value: { lastSelectedCli: 'claude' } })
   assert.deepEqual((await window.result(2)).value, ['all-local'])
 })
@@ -217,61 +210,4 @@ test('a channel registered twice is refused where it is wired', () => {
   tunnel.registry.removeHandler('once')
   tunnel.registry.handle('once', () => undefined)
   assert.deepEqual(tunnel.channels(), ['once'])
-})
-
-test('the workspace bus moves verbatim: a dispatch reaches every workspace window but its own', async () => {
-  const tunnel = createIpcTunnel()
-  const registry = createWorkspaceRegistryService({ store: createInMemoryWorkspaceRegistryStore() })
-  const service = createWorkspaceSyncService({ registry })
-  registerWorkspaceSyncIpc(tunnel.registry as unknown as IpcMain, service, {
-    registry,
-    listWindows: () => tunnel.windows('workspace-windows') as never,
-    getSourceWindowId: (event) =>
-      (event as unknown as { caller: { windowId: string | null } }).caller.windowId ?? 'primary',
-  })
-  const [source, other, aux] = [portPair(), portPair(), portPair()]
-  tunnel.attach(client('source', { windowId: 'primary' }), source.server)
-  tunnel.attach(client('other', { windowId: 'window-2' }), other.server)
-  tunnel.attach(client('aux', { workspaceWindow: false, windowId: null }), aux.server)
-  source.send({
-    t: 'ipc.invoke',
-    id: 1,
-    channel: 'workspace-sync:dispatch',
-    args: [
-      {
-        type: 'workspace_window.update_placement',
-        payload: { windowId: 'primary', bounds: { x: 0, y: 0, width: 800, height: 600 }, isMaximized: false },
-      },
-    ],
-  })
-  const result = await source.result(1)
-  assert.equal(result.ok, true, JSON.stringify(result))
-  assert.equal(result.value.ok, true, JSON.stringify(result.value))
-  const events = (port: ReturnType<typeof portPair>) =>
-    port.received.filter((frame) => frame.t === 'ipc.push' && frame.channel === 'workspace-sync:event')
-  assert.equal(events(source).length, 0, 'the window that dispatched already shows it')
-  assert.equal(events(other).length, 1)
-  assert.equal(events(aux).length, 0)
-})
-
-test('a followed conversation on another machine ends with the window that followed it', async () => {
-  const tunnel = createIpcTunnel()
-  const unfollowed: unknown[] = []
-  const mesh = {
-    followConversation: () => ({ ok: true }),
-    unfollowConversation: (followId: unknown) => unfollowed.push(followId),
-  }
-  registerMeshIpc(tunnel.registry as unknown as IpcMain, { mesh: () => mesh } as never)
-  const window = portPair()
-  tunnel.attach(client('w1'), window.server)
-  window.send({
-    t: 'ipc.invoke',
-    id: 1,
-    channel: MESH_CONVERSATION_FOLLOW_CHANNEL,
-    args: [{ followId: 'f1', key: { workspaceId: 'ws', agentId: 'a' } }],
-  })
-  const answer = await window.result(1)
-  assert.equal(answer.ok, true, JSON.stringify(answer))
-  window.hangUp()
-  assert.deepEqual(unfollowed, ['f1'])
 })

@@ -9,12 +9,47 @@ import {
   StudioError,
   type ConversationFollowFrame,
   type ConversationEventStream,
-} from '../../packages/agent-sdk/src/index'
+  type StudioClient,
+} from '../../packages/client-runtime/src/public'
 import { connectToStudio } from '../../packages/agent-sdk/src/node'
-import type { StudioClient } from '../../packages/agent-sdk/src/client'
 import {
+  STUDIO_AGENT_SETTINGS_METHODS,
+  STUDIO_AGENT_SETUP_METHODS,
+  STUDIO_CHAT_STORES_METHODS,
+  STUDIO_AGENT_SKILLS_METHODS,
+  STUDIO_SCHEDULES_METHODS,
+  STUDIO_FILE_SYSTEM_METHODS,
+  STUDIO_GIT_METHODS,
+  STUDIO_WORKTREES_METHODS,
+  STUDIO_WORKSPACE_SYNC_METHODS,
+  STUDIO_CHAT_LIFECYCLE_METHODS,
+  STUDIO_CANVAS_METHODS,
+  STUDIO_EXTENSIONS_METHODS,
+  STUDIO_ARTIFACTS_METHODS,
+  STUDIO_ACCESS_METHODS,
+  STUDIO_WEB_DEVICES_METHODS,
+  STUDIO_TAILNET_METHODS,
   STUDIO_CHAT_METHODS,
+  STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
+  STUDIO_METHOD_ACCESS,
+  studioGrantAllows,
+  type StudioAgentSettingsMethod,
+  type StudioSchedulesMethod,
+  type StudioChatLifecycleMethod,
+  type StudioCanvasMethod,
+  type StudioAgentSetupMethod,
+  type StudioChatStoresMethod,
+  type StudioAgentSkillsMethod,
+  type StudioFileSystemMethod,
+  type StudioGitMethod,
+  type StudioWorktreesMethod,
+  type StudioWorkspaceSyncMethod,
+  type StudioExtensionsMethodMap,
+  type StudioArtifactsMethodMap,
+  type StudioTailnetMethodMap,
+  type StudioAccessMethodMap,
+  type StudioWebDevicesMethodMap,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -23,10 +58,8 @@ import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
 import type { Workspace } from '../renderer/src/types/workspace'
 import { createStaticAppIdentity } from '../server/platform/app-identity'
-import { createLocalClientBus } from '../server/platform/client-bus'
-import { STUDIO_LOCAL_APPS_CHANGED_CHANNEL, type StudioLocalAppsStatus } from '../shared/studio-local-apps'
 import { createGatewayAuditStore } from '../main/automation/gateway-audit'
-import { createConversationGatewayHost } from '../main/automation/tailnet/tailnet-conversation-host'
+import { createConversationGatewayHost } from '../server/core/conversation-host'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
 import { ConversationRuntime } from '../main/conversation-runtime'
 import { createStudioConversationBackend } from '../main/studio-rpc/studio-conversation-backend'
@@ -52,8 +85,6 @@ let root: string
 let userData: string
 let service: StudioRpcService
 let runtime: ConversationRuntime
-const bus = createLocalClientBus()
-const published: Array<{ topic: string; payload: unknown }> = []
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'studio-rpc-seam-'))
@@ -128,12 +159,10 @@ beforeAll(async () => {
     send: (input) => runtime.sendTurn(input),
   })
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => userData })
-  bus.subscribe((topic, payload) => published.push({ topic, payload }))
   service = createStudioRpcService({
     // The platform's pieces, as a standalone server would install them.
     paths: { dataDir: () => userData },
     identity: createStaticAppIdentity({ version: '0.0.0-seam' }),
-    clients: bus,
     backend: () =>
       createStudioConversationBackend({
         host: createConversationGatewayHost(
@@ -202,7 +231,17 @@ test('a paired app starts a chat, follows it and drives it, held to its ceiling'
     // Asked for bypass, given the ceiling.
     assert.equal(chat.info.permissionPreset, 'auto')
     const stream = chat.events()
-    const opening = await until(stream, (frame) => frame.type === 'event' && frame.event.type === 'turn_completed')
+    // The first turn may end before the follow begins (a busy machine), and is
+    // then in the snapshot, not after it: waiting only for a live end would wait forever.
+    const opening = await until(
+      stream,
+      (frame) =>
+        (frame.type === 'event' && frame.event.type === 'turn_completed') ||
+        (frame.type === 'snapshot' && frame.page.events.some((event) => event.type === 'turn_completed')),
+    )
+    // Ended in the snapshot, it is read on to the fence, which the cursor is.
+    if (opening.at(-1)?.type === 'snapshot')
+      opening.push(...(await until(stream, (frame) => frame.type === 'synchronized')))
     const snapshot = opening.find((frame) => frame.type === 'snapshot')
     const snapshotTexts =
       snapshot?.type === 'snapshot'
@@ -281,13 +320,11 @@ test('revoking the app in Settings ends its stream and its client', async () => 
   await until(stream, (frame) => frame.type === 'synchronized')
   const app = service.getStatus().apps.find((entry) => entry.id === client.grant.clientId)
   assert.equal(app?.connected, true)
-  published.length = 0
   service.revoke(client.grant.clientId)
   await assert.rejects(stream.next(), (error: StudioError) => error.code === 'revoked')
-  // Settings hears it on the platform's client bus, with the app gone.
-  const pushed = published.filter((entry) => entry.topic === STUDIO_LOCAL_APPS_CHANGED_CHANNEL).at(-1)
+  // Settings reads it with the app gone (its stream is `localApps.changed`, studio-access.test.ts).
   assert.equal(
-    (pushed?.payload as StudioLocalAppsStatus | undefined)?.apps.some((entry) => entry.id === client.grant.clientId),
+    service.getStatus().apps.some((entry) => entry.id === client.grant.clientId),
     false,
   )
   // Parked, not retrying: another try would only be refused again.
@@ -314,11 +351,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     'conversation.stop': 'conversations.stop',
     // Taking back a held message is Studio's own windows', called by name.
     'conversation.cancelQueued': 'request',
-    // So is stopping one agent of a chat, an owner's for now: no SDK call names it yet.
+    // So is stopping one agent of a chat: no SDK call names it yet.
     'conversation.stopSubagent': 'request',
     'conversation.messageSubagent': 'request',
-    // And a chat's effort, its MCP servers and its agent's restart, owners' for
-    // now, as a chat followed from another desktop uses them.
+    // And a chat's effort, its MCP servers and its agent's restart, as a chat
+    // followed from another desktop uses them.
     'conversation.setReasoningEffort': 'request',
     'conversation.mcpServerAction': 'request',
     'conversation.restartSession': 'request',
@@ -330,7 +367,14 @@ test('every method the server serves has its call in the SDK, under the same sco
     'conversation.usageLimitResume': 'request',
     'conversation.loadEarlier': 'conversations.loadEarlier',
     'conversation.toolDetail': 'conversations.toolDetail',
+    'conversation.event': 'conversations.event',
     'conversation.turnDiff': 'conversations.turnDiff',
+    // What a follower of a chat reads and does beside its stream, as a chat
+    // followed from another desktop or the phone uses them, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_FOLLOWED_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof typeof STUDIO_FOLLOWED_METHODS,
+      string
+    >),
     // The chat surface is Studio's own windows' and is called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_METHODS).map((method) => [method, 'request'])) as Record<
       StudioChatMethod,
@@ -357,11 +401,178 @@ test('every method the server serves has its call in the SDK, under the same sco
     'pullRequests.noteToolCall': 'request',
     'pullRequests.link': 'request',
     'pullRequests.unwatch': 'request',
+    'pullRequests.createState': 'request',
+    'pullRequests.draft': 'request',
+    'pullRequests.draftCancel': 'request',
+    'pullRequests.push': 'request',
+    'pullRequests.create': 'request',
     // So are its local servers.
     'localServers.list': 'request',
     'localServers.run': 'request',
     'localServers.stop': 'request',
     'localServers.remove': 'request',
+    // A module's declared methods, called by name: a window's renderer halves.
+    'module.read': 'request',
+    'module.operate': 'request',
+    // What runs on the Studio: listed, and changed from Settings, by name.
+    'module.list': 'request',
+    'module.setEnabled': 'request',
+    'module.install': 'request',
+    'module.setTrust': 'request',
+    'module.uninstall': 'request',
+    // The extensions installed there, their window halves, and what a window sets for them.
+    'module.installed': 'request',
+    'module.rendererEntries': 'request',
+    'module.setAppState': 'request',
+    'module.reportRegistry': 'request',
+    // The host's services a renderer half calls, by name too.
+    'moduleBacklog.location': 'request',
+    'moduleBacklog.create': 'request',
+    'moduleBacklog.updateStatus': 'request',
+    'moduleBacklog.updateTriage': 'request',
+    'moduleBacklog.addLink': 'request',
+    'moduleBacklog.updateModuleMetadata': 'request',
+    'moduleUsage.query': 'request',
+    // And what a client reads before it starts a chat.
+    'workspaces.list': 'request',
+    'cliRuntimes.list': 'request',
+    'workspaces.checkout': 'request',
+    'workspaces.extensions': 'request',
+    'terminal.list': 'request',
+    'terminal.status': 'request',
+    'terminal.open': 'request',
+    'terminal.resume': 'request',
+    'terminal.write': 'request',
+    'terminal.ack': 'request',
+    'terminal.resize': 'request',
+    'terminal.setVisible': 'request',
+    'terminal.suspend': 'request',
+    'terminal.close': 'request',
+    'terminal.setReapExempt': 'request',
+    'terminal.takeUndeliveredPrompts': 'request',
+    'terminal.configure': 'request',
+    // Updates are asked like any method on a normal connection, and through
+    // `openStudioUpdateSession` on one kept for them.
+    'update.status': 'request',
+    'update.start': 'request',
+    // A Studio's CLIs and launch settings are its own clients' (Settings), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SETTINGS_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioAgentSettingsMethod,
+      string
+    >),
+    // So is what its agents are set up with.
+    ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SETUP_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioAgentSetupMethod,
+      string
+    >),
+    // What the machine lacks for its schedules and watches, asked like any read.
+    'environment.readiness': 'request',
+    'environment.windowTicket': 'request',
+    'environment.revokeWindow': 'request',
+    'environment.adopt': 'request',
+    'environment.work': 'request',
+    'environment.launchTokens': 'request',
+    'environment.launchFiles': 'request',
+    'environment.terminalProcesses': 'request',
+    'environment.pluginCopy': 'request',
+    'environment.git': 'request',
+    'environment.home': 'request',
+    'environment.detectClis': 'request',
+    'environment.run': 'request',
+    'providers.signInStart': 'request',
+    'providers.signInPaste': 'request',
+    'providers.signInWait': 'request',
+    'providers.signInCancel': 'request',
+    // What a Studio keeps beside its chats, which its own windows draw (the
+    // trays, Settings, the usage dashboard, onboarding), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_CHAT_STORES_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioChatStoresMethod,
+      string
+    >),
+    // The phone's reads beside its chats (`backlog.ts`, `pull-request-reads.ts`), called by name.
+    'backlog.list': 'request',
+    'backlog.update': 'request',
+    // A project's backlog by its folder, which the desktop's own Backlog panel drives, called by name.
+    'backlog.location': 'request',
+    'backlog.setRoot': 'request',
+    'backlog.ensureRecords': 'request',
+    'backlog.ensureIds': 'request',
+    'backlog.edit': 'request',
+    'backlog.createEpic': 'request',
+    'shares.list': 'request',
+    'pullRequests.detail': 'request',
+    'pullRequests.diff': 'request',
+    // And the skills, design systems and cards they are given.
+    ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SKILLS_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioAgentSkillsMethod,
+      string
+    >),
+    // A Studio's scheduled agents, which the phone and a paired desktop
+    // drive (`schedules.ts`), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_SCHEDULES_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioSchedulesMethod,
+      string
+    >),
+    // The files on a Studio's machine by path, which its own windows browse and edit, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_FILE_SYSTEM_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioFileSystemMethod,
+      string
+    >),
+    // And git on it, which its windows' Git pane and diff view drive, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_GIT_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioGitMethod,
+      string
+    >),
+    // And the worktrees its agents run in, with settled chats, which its
+    // windows' Settings ▸ Worktrees and Delete drive, called by name.
+    // And the desktop's own windows' workspace registry, which they drive, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_WORKSPACE_SYNC_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioWorkspaceSyncMethod,
+      string
+    >),
+    ...(Object.fromEntries(Object.keys(STUDIO_WORKTREES_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioWorktreesMethod,
+      string
+    >),
+    // A chat's record beyond its rest, which the phone and a paired desktop
+    // write (`chat-lifecycle.ts`), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_CHAT_LIFECYCLE_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioChatLifecycleMethod,
+      string
+    >),
+    // A machine's boards, which the phone and a paired desktop read and draw
+    // on (`canvas.ts`), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_CANVAS_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioCanvasMethod,
+      string
+    >),
+    // And what it is extended with, which its Extensions door, Settings and New chat use, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_EXTENSIONS_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioExtensionsMethodMap,
+      string
+    >),
+    // And where it publishes its agents' pages, which its Settings ▸ Artifacts uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_ARTIFACTS_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioArtifactsMethodMap,
+      string
+    >),
+    // And who may reach its agents from its machine, which its Settings uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_ACCESS_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioAccessMethodMap,
+      string
+    >),
+    // And the browsers paired with its web listener, which a web tab's Settings uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_WEB_DEVICES_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioWebDevicesMethodMap,
+      string
+    >),
+    // And the machines its computer offers, which New chat and Settings ▸ Machines use, by name.
+    'hosts.list': 'request',
+    // And who reaches it over the tailnet and the machines it drives, which its Settings uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_TAILNET_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioTailnetMethodMap,
+      string
+    >),
   }
   assert.deepEqual(Object.keys(sdkCalls).sort(), Object.keys(STUDIO_METHODS).sort())
   const client = await pairedClient(['conversation:read'], 'manual')
@@ -384,20 +595,56 @@ test('every method the server serves has its call in the SDK, under the same sco
       'conversation.setModel': () => service.setModel(ref, 'm'),
       'conversation.stop': () => service.stop(ref),
       'conversation.create': () => service.create({ workspaceId: 'ws-a' }),
+      'update.start': () =>
+        client.request('update.start', { commandId: 'update-1' }).then(
+          () => ({ ok: true }),
+          (error: StudioError) => ({ ok: false, code: error.code }),
+        ),
+      // A terminal's start and end are an owner's: no app's grant reaches them.
+      ...Object.fromEntries(
+        (['terminal.open', 'terminal.resume'] as const).map((method) => [
+          method,
+          () =>
+            client.request(method, { sessionId: 't', cols: 80, rows: 24, commandId: `${method}-1` }).then(
+              () => ({ ok: true }),
+              (error: StudioError) => ({ ok: false, code: error.code }),
+            ),
+        ]),
+      ),
+      'terminal.close': () =>
+        client.request('terminal.close', { sessionId: 't', commandId: 'close-1' }).then(
+          () => ({ ok: true }),
+          (error: StudioError) => ({ ok: false, code: error.code }),
+        ),
     }
+    // Every other mutation is refused it by name, before its params are read.
+    const byName = (method: StudioMethod) => () =>
+      client.request(method, {} as never).then(
+        () => ({ ok: true }),
+        (error: StudioError) => ({ ok: false, code: error.code }),
+      )
     const mutations = Object.entries(STUDIO_METHODS).filter(([, spec]) => spec.mutation && !spec.owner)
-    assert.deepEqual(mutations.map(([method]) => method).sort(), Object.keys(refusals).sort())
     for (const [method] of mutations) {
-      const answer = await refusals[method]()
+      const answer = await (refusals[method] ?? byName(method as StudioMethod))()
       assert.deepEqual([method, answer.ok, answer.code], [method, false, 'scope_required'])
     }
-    // The chat surface is refused to any app that is not Studio's own, whatever it was granted.
+    // The chat surface reaches an app by its scopes, as the protocol's table
+    // says: an owner's method is refused as one, one that needs more than
+    // reading as a scope, and a read is not refused for its grant at all.
     for (const method of Object.keys(STUDIO_CHAT_METHODS) as StudioChatMethod[]) {
       const refused = await client.request(method, {} as never).then(
         () => null,
         (error: { code?: string }) => error.code,
       )
-      assert.deepEqual([method, refused], [method, 'owner_required'])
+      const access = STUDIO_METHOD_ACCESS[method]
+      const expected =
+        'permissions' in access && access.owner !== undefined
+          ? 'owner_required'
+          : studioGrantAllows(client.grant, method)
+            ? 'not refused for its grant'
+            : 'scope_required'
+      const got = refused === 'owner_required' || refused === 'scope_required' ? refused : 'not refused for its grant'
+      assert.deepEqual([method, got], [method, expected])
     }
     const info = await client.request('server.info', {})
     assert.equal(info.grant.clientId, client.grant.clientId)

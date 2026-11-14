@@ -28,7 +28,6 @@ const SERIAL = [
   'src/main/environments/ssh/ssh-connect.test.ts',
   'src/main/environments/ssh/ssh-environment.test.ts',
   'src/main/environments/ssh/ssh-environment.docker.test.ts',
-  'src/server/desktop/shell-ssh-servers.test.ts',
   'src/main/environments/ssh/ssh-resume.test.ts',
   'src/main/environments/ssh/machine-files.test.ts',
   'src/main/environments/ssh/ssh-variants.docker.test.ts',
@@ -43,19 +42,6 @@ const SERIAL = [
   'src/seams/skillSourcesSeam.test.tsx',
 ]
 
-// The chat view's suites that script its conversation IPC, run a second time
-// with the window on the Studio protocol (tests/studio-chat-loopback.ts): the
-// same assertions, through the protocol path.
-const CHAT_OVER_STUDIO = [
-  'chatViewMount.test.tsx',
-  'changedFilesCard.test.tsx',
-  'composerContextPicker.test.tsx',
-  'editFromHere.test.tsx',
-  'useConversationSession.test.tsx',
-  'useConversationCommands.test.ts',
-  'streamingTurnRenders.test.tsx',
-].map((file) => `src/renderer/src/components/panels/agentChat/${file}`)
-
 export default defineConfig({
   // The renderer's tsx is compiled the way the app's own build compiles it.
   oxc: { jsx: { runtime: 'automatic' } },
@@ -63,6 +49,9 @@ export default defineConfig({
     alias: { '@renderer': new URL('./src/renderer/src', import.meta.url).pathname },
   },
   test: {
+    // The run's own temp folder, removed at the end; each file gets one inside
+    // it (tests/global-setup.ts, tests/setup.ts).
+    globalSetup: ['./tests/global-setup.ts'],
     setupFiles: ['./tests/setup.ts'],
     environment: 'node',
     // Nearly every file is one test that walks all of its cases in order (see
@@ -103,14 +92,6 @@ export default defineConfig({
             'resources/marketplace/**/*.test.ts',
           ],
           exclude: ['**/node_modules/**', '**/dist/**', ...SERIAL],
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: 'chat-over-studio',
-          include: CHAT_OVER_STUDIO,
-          env: { STUDIO_CHAT_TRANSPORT_UNDER_TEST: 'studio' },
         },
       },
       {

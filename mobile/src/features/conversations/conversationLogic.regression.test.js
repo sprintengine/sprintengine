@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseChatLink, parseAppLink, conversationEnabled, conversationCanOperate, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+const { projectPhoneConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseAppLink, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 
 // A turn's steps rest inside its fold; these tests read the groups as the fold
 // holds them, in place, as the fold draws them when it is opened.
@@ -24,7 +24,7 @@ test("sequence replay merges old pages without duplicates", () => {
   assert.equal(mergeConversationEvents(merged, [existing[0]]), merged);
 });
 test("prose divides collapsed work groups and acknowledgements use exact command ids", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "inspect", commandId: "uuid-send", turnId: "turn" }),
     event(2, "turn_started", { turnId: "turn" }),
     event(3, "tool_started", { toolUseId: "read", name: "Read", input: { path: "a.ts" } }),
@@ -42,110 +42,36 @@ test("prose divides collapsed work groups and acknowledgements use exact command
 });
 test("multiple pending requests retain their order and resolve independently", () => {
   const events = [event(1, "turn_started", { turnId: "turn" }), ...["a", "b", "c"].map((id, index) => event(index + 2, "approval_requested", { requestId: id, kind: "tool" }))];
-  assert.deepEqual(projectConversation(events).pending.map((item) => item.id), ["a", "b", "c"]);
+  assert.deepEqual(projectPhoneConversation(events).pending.map((item) => item.id), ["a", "b", "c"]);
   events.push(event(5, "approval_resolved", { requestId: "b" }));
-  assert.deepEqual(projectConversation(events).pending.map((item) => item.id), ["a", "c"]);
+  assert.deepEqual(projectPhoneConversation(events).pending.map((item) => item.id), ["a", "c"]);
   events.push(event(6, "turn_failed", { message: "Interrupted" }));
-  assert.equal(projectConversation(events).pending.length, 0);
-  assert.equal(projectConversation(events).busy, false);
-});
-test("the conversation capability and the operate grant are separate", () => {
-  const paired = { tailnetCapabilities: ["conversations"], tailnetScopes: ["conversation:read"] };
-  assert.equal(conversationEnabled(paired), true);
-  assert.equal(conversationCanOperate(paired), false);
-  assert.equal(conversationEnabled({ ...paired, tailnetCapabilities: ["conversation-models"] }), false);
-  assert.equal(conversationCanOperate({ ...paired, tailnetScopes: ["conversation:operate"] }), true);
-  assert.equal(conversationEnabled({ ...paired, status: "revoked" }), false);
-  // The desktop refuses the socket to a grant without conversation:read; a
-  // phone that dialled anyway read the bare close as a dropped link forever.
-  assert.equal(conversationEnabled({ ...paired, tailnetScopes: ["workspace:read", "backlog:read"] }), false);
-  assert.equal(conversationEnabled({ ...paired, tailnetScopes: ["conversation:operate"] }), true);
+  assert.equal(projectPhoneConversation(events).pending.length, 0);
+  assert.equal(projectPhoneConversation(events).busy, false);
 });
 test("deep links contain only paired desktop and conversation identifiers", () => {
   assert.deepEqual(parseConversationLink("sprintengine://conversation/device/workspace/agent"), { deviceId: "device", workspaceId: "workspace", agentId: "agent" });
   for (const url of ["https://example.com/conversation/a/b/c", "sprintengine://conversation/a/b", "sprintengine://conversation/a/b/%00", "sprintengine://user:secret@conversation/a/b/c"]) assert.equal(parseConversationLink(url), null);
 });
 
-// The desktop's chat link (`sprintengine://chat/<workspaceId>[?agent=<agentId>]`),
-// read with the desktop's own strictness: these cases are its suite's.
-const chatLink = (workspaceId, agentId = null) => ({ workspaceId, agentId });
-test("a desktop's chat link names its workspace, and its agent when it has one", () => {
-  assert.deepEqual(parseChatLink("sprintengine://chat/V1StGXR8_Z5jdHi6B-myT"), chatLink("V1StGXR8_Z5jdHi6B-myT"));
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1?agent=agent-claude-0a1b2c3d4e5f6g7h"), chatLink("ws-1", "agent-claude-0a1b2c3d4e5f6g7h"));
-  // Scheme and host in any case, the ids exactly as written; the trailing slash a browser adds.
-  assert.deepEqual(parseChatLink("SprintEngine://CHAT/AbC"), chatLink("AbC"));
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1/"), chatLink("ws-1"));
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1/?agent=a1"), chatLink("ws-1", "a1"));
-});
-test("a chat link's other parameters and fragment are ignored, and a bad agent is dropped", () => {
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1?prompt=rm%20-rf%20~&send=1&agent=a1#top"), chatLink("ws-1", "a1"));
-  for (const url of [
-    "sprintengine://chat/ws-1?agent=../../etc",
-    "sprintengine://chat/ws-1?agent=",
-    "sprintengine://chat/ws-1?agent",
-    "sprintengine://chat/ws-1?agent=a1&agent=a2",
-    "sprintengine://chat/ws-1?agent=a%20b",
-    "sprintengine://chat/ws-1?agent=a+b",
-    "sprintengine://chat/ws-1?agent=%E0%A4%A",
-  ])
-    assert.deepEqual(parseChatLink(url), chatLink("ws-1"), url);
-  // A key spelled with an escape is the same key, as URLSearchParams reads it.
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1?ag%65nt=a1"), chatLink("ws-1", "a1"));
-});
-test("a chat link refuses any other host, path, scheme, authority or id", () => {
-  for (const url of [
-    "sprintengine://new?project=/Users/dev/app&prompt=hello",
-    "sprintengine://chat",
-    "sprintengine://chat/",
-    "sprintengine://chat/ws-1/agent-1",
-    "sprintengine://chats/ws-1",
-    "sprintengine:chat/ws-1",
-    "sprintengine:///chat/ws-1",
-    "sprintengine://auth/callback?code=abc",
-    "sprintengine://verify/chat/ws-1",
-    "https://chat/ws-1",
-    "javascript://chat/ws-1",
-    "sprintengine2://chat/ws-1",
-    "sprintengine-tailnet://chat/ws-1",
-    "sprintengine://evil@chat/ws-1",
-    "sprintengine://user:pass@chat/ws-1",
-    "sprintengine://chat:80/ws-1",
-    "sprintengine://chat.example.com/ws-1",
-    "sprintengine://chat/..",
-    "sprintengine://chat/../../etc/passwd",
-    "sprintengine://chat/ws-1/../ws-2",
-    "sprintengine://chat/%2e%2e",
-    "sprintengine://chat/ws%2F1",
-    "sprintengine://chat/ws-1;rm",
-    "sprintengine://chat/$(id)",
-    "sprintengine://chat/ws\"1",
-    "sprintengine://chat/ws.1",
-    "sprintengine://chat/ws\\1",
-    `sprintengine://chat/${"a".repeat(129)}`,
-    " sprintengine://chat/ws-1",
-    "sprintengine://chat/ws-1 ",
-    "sprintengine://chat/ws 1",
-    "sprintengine://chat/ws-1\n--inspect",
-    "sprintengine://chat/ws-1\u0000",
-    "sprintengine://chat/ws-1\u007f",
-    `sprintengine://chat/ws-1?pad=${"x".repeat(2048)}`,
-    "",
-  ])
-    assert.equal(parseChatLink(url), null, JSON.stringify(url));
-  for (const raw of [undefined, null, 42, {}, ["sprintengine://chat/ws-1"]]) assert.equal(parseChatLink(raw), null);
-});
-test("an app link is a conversation on a named desktop, or a desktop's chat link", () => {
+// A Studio chat link is read by the protocol package's grammar, whose own
+// suite has its cases (packages/studio-protocol/test/chat-link.test.ts).
+const chatLink = (environmentId, chatId, agentId = null) => ({ kind: "chat", environmentId, chatId, agentId });
+test("an app link is a conversation on a named desktop, or a Studio chat link", () => {
   assert.deepEqual(parseAppLink("sprintengine://conversation/device/workspace/agent"), {
     kind: "conversation",
     link: { deviceId: "device", workspaceId: "workspace", agentId: "agent" },
   });
-  assert.deepEqual(parseAppLink("sprintengine://chat/ws-1?agent=a1"), { kind: "chat", link: chatLink("ws-1", "a1") });
+  assert.deepEqual(parseAppLink("sprintengine://chat/env-mini/ws-1?agent=a1"), { kind: "chat", link: chatLink("env-mini", "ws-1", "a1") });
+  // A link from a desktop before links named an environment still opens.
+  assert.deepEqual(parseAppLink("sprintengine://chat/ws-1?agent=a1"), { kind: "chat", link: chatLink(null, "ws-1", "a1") });
+  assert.equal(parseAppLink("sprintengine://chat/env-mini/ws-1/agent-1"), null);
   assert.equal(parseAppLink("sprintengine://verify/notices"), null);
   assert.equal(parseAppLink("sprintengine-tailnet://pair?code=x"), null);
 });
 
 test("canonical tool kinds and final statuses survive wire projection", () => {
-  const rows = projectConversation([
+  const rows = projectPhoneConversation([
     event(1, "turn_started", { turnId: "turn" }),
     event(2, "tool_started", { toolUseId: "custom", name: "read_workspace", kind: "file_read", input: { path: "src/app.ts" } }),
     event(3, "tool_output", { toolUseId: "custom", status: "declined", preview: "Permission declined" }),
@@ -165,7 +91,7 @@ test("canonical tool kinds and final statuses survive wire projection", () => {
 });
 
 test("session close clears pending work and stops unfinished tool rows", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "turn" }),
     event(2, "tool_started", { toolUseId: "read", name: "Read" }),
     event(3, "approval_requested", { requestId: "request" }),
@@ -177,7 +103,7 @@ test("session close clears pending work and stops unfinished tool rows", () => {
 });
 
 test("tool-only turns remain separate groups and output updates are linear keyed lookups", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "first" }),
     event(2, "tool_started", { toolUseId: "one", name: "Read" }),
     event(3, "turn_completed", { turnId: "first" }),
@@ -195,7 +121,7 @@ test("tool-only turns remain separate groups and output updates are linear keyed
 });
 
 test("automatic grants are not human requests and a published user send acquires busy immediately", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { turnId: "turn", text: "hello" }),
     event(2, "approval_requested", { requestId: "auto", autoApproved: true }),
     event(3, "approval_requested", { requestId: "human" }),
@@ -206,7 +132,8 @@ test("automatic grants are not human requests and a published user send acquires
 });
 
 test("the model control names the current model and offers the CLI's catalog only where it may be used", () => {
-  const session = { tailnetCapabilities: ["conversations", "conversation-models"], tailnetScopes: ["conversation:operate"] };
+  // What the desktop's welcome and the grant say (`chatOffers.ts`): a model switch is offered.
+  const session = { modelSwitch: true };
   const models = { cli: "claude-code", cliLabel: "Claude Code", liveModelSwitch: true, options: [{ id: "model-a", label: "Model A" }, { id: "model-b" }] };
   const chat = { workspaceId: "w", agentId: "a", modelId: "model-a", models };
   const control = modelControl(session, chat);
@@ -220,10 +147,8 @@ test("the model control names the current model and offers the CLI's catalog onl
   assert.equal(modelLabel({ ...chat, modelId: "default" }), "Claude Code default");
   assert.equal(modelLabel({ ...chat, modelId: "unlisted-model" }), "unlisted-model");
   // Hidden: an undeclared or older desktop, no catalog, or a read-only pairing.
-  assert.equal(modelControl({ ...session, tailnetCapabilities: ["conversations"] }, chat), null);
-  assert.equal(modelControl({ ...session, tailnetCapabilities: undefined }, chat), null);
+  assert.equal(modelControl({ modelSwitch: false }, chat), null, "a desktop that switches no models, or a grant that may not");
   assert.equal(modelControl(session, { ...chat, models: undefined }), null);
-  assert.equal(modelControl({ ...session, tailnetScopes: ["conversation:read"] }, chat), null);
   // A provider that cannot switch mid-chat shows its model read-only: the
   // desktop refuses a switch for it.
   const fixed = { ...chat, models: { ...models, liveModelSwitch: false } };
@@ -232,7 +157,7 @@ test("the model control names the current model and offers the CLI's catalog onl
 
 const agentEvent = (seq, type, payload, extra = {}) => ({ ...event(seq, type, payload), ...extra });
 test("an agent is a lane of its own, its steps nest under it, and the main groups keep only the turn's own steps", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "look", turnId: "turn" }),
     event(2, "turn_started", { turnId: "turn" }),
     event(3, "tool_started", { turnId: "turn", toolUseId: "read", name: "Read", input: { path: "a.ts" } }),
@@ -262,7 +187,7 @@ test("a background agent hides its launch notice, keeps the chat working after i
     event(5, "tool_output", { turnId: "turn", toolUseId: "task", output: "Async agent launched successfully. agentId: x" }),
     event(6, "turn_completed", { turnId: "turn" }),
   ];
-  let value = projectConversation(events);
+  let value = projectPhoneConversation(events);
   const lane = value.lanes[0];
   assert.equal(lane.status, "running");
   assert.equal(lane.report, undefined, "the launch notice is for the model");
@@ -274,7 +199,7 @@ test("a background agent hides its launch notice, keeps the chat working after i
     event(8, "tool_output", { toolUseId: "task", output: "It is mapped in mesh.ts", backgroundResult: true, status: "ok" }),
     event(9, "subagent_status", { toolUseId: "task", status: "completed", usage: { totalTokens: 12000, toolUses: 7, durationMs: 89000 } }),
   );
-  value = projectConversation(events);
+  value = projectPhoneConversation(events);
   assert.equal(value.busy, false);
   assert.equal(value.lanes[0].status, "done");
   assert.equal(value.lanes[0].outcome, "ok");
@@ -284,7 +209,7 @@ test("a background agent hides its launch notice, keeps the chat working after i
 });
 
 test("reports, words and steps that arrive before their lane are kept for it", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "turn" }),
     event(2, "subagent_message", { parentToolUseId: "task", text: "Starting." }),
     event(3, "subagent_status", { toolUseId: "task", status: "failed", error: "vitest exited with 1" }),
@@ -301,7 +226,7 @@ test("reports, words and steps that arrive before their lane are kept for it", (
 });
 
 test("a late progress report does not reopen a finished agent, and a failed turn stops only foreground agents", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "turn" }),
     event(2, "tool_started", { turnId: "turn", toolUseId: "fore", name: "Task" }),
     event(3, "tool_started", { turnId: "turn", toolUseId: "back", name: "Task" }),
@@ -318,7 +243,7 @@ test("a late progress report does not reopen a finished agent, and a failed turn
   assert.equal(byId.fore.outcome, "stopped");
   assert.equal(byId.back.status, "running");
   assert.equal(value.busy, true);
-  const closed = projectConversation([
+  const closed = projectPhoneConversation([
     event(1, "turn_started", { turnId: "turn" }),
     event(2, "tool_started", { turnId: "turn", toolUseId: "back", name: "Task" }),
     event(3, "subagent_status", { toolUseId: "back", status: "running", background: true }),
@@ -329,7 +254,7 @@ test("a late progress report does not reopen a finished agent, and a failed turn
 });
 
 test("compaction, command output, turn meta and plans are rows in the order they happened", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "go", turnId: "turn" }),
     agentEvent(2, "turn_started", { turnId: "turn" }, { modelId: "claude-opus-5-5-20260901" }),
     event(3, "context_compacted", { turnId: "turn", trigger: "auto", preTokens: 182000, postTokens: 24000 }),
@@ -352,7 +277,7 @@ test("compaction, command output, turn meta and plans are rows in the order they
 });
 
 test("an unanswered plan is cancelled with its turn, and the prompt cache folds from usage reports", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "turn" }),
     event(2, "approval_requested", { requestId: "plan", kind: "plan", plan: "Plan" }),
     event(3, "usage_updated", { turnId: "turn", promptCache: { ttl: "5m", cached: true, recacheTokens: 412000 } }),
@@ -398,8 +323,8 @@ test("the header names the CLI and model, and the permission chip names the pres
 
 test("a chat's permission menu offers what its desktop and provider run, and always the chat's own preset", () => {
   const ids = (session, thread) => permissionChoices(session, thread).map((choice) => choice.id);
-  const older = { tailnetCapabilities: ["conversations"] };
-  const current = { tailnetCapabilities: ["conversations", "conversation-permission-modes"] };
+  const older = { permissionModes: false };
+  const current = { permissionModes: true };
   assert.deepEqual(ids(older, { permissionPreset: "none" }), ["bypass", "none"]);
   assert.deepEqual(ids(current, { permissionPreset: "auto" }), ["manual", "auto", "bypass", "none"]);
   assert.deepEqual(
@@ -413,7 +338,7 @@ test("a chat's permission menu offers what its desktop and provider run, and alw
 });
 
 test("a finished turn's steps and in-between prose rest behind one line, and its reply stays as written", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "fix the tests", turnId: "turn" }),
     { ...event(2, "turn_started", { turnId: "turn" }), createdAt: 1_000 },
     event(3, "content_delta", { turnId: "turn", text: "Let me look." }),
@@ -449,7 +374,7 @@ test("a finished turn's steps and in-between prose rest behind one line, and its
 });
 
 test("the running turn folds too, an agent stays a card, and a turn without steps has no fold", () => {
-  const running = projectConversation([
+  const running = projectPhoneConversation([
     event(1, "user_message", { text: "go", turnId: "turn" }),
     event(2, "turn_started", { turnId: "turn" }),
     event(3, "tool_started", { turnId: "turn", toolUseId: "read", name: "Read" }),
@@ -458,7 +383,7 @@ test("the running turn folds too, an agent stays a card, and a turn without step
   assert.deepEqual(running.rows.map((row) => row.kind), ["message", "fold", "agent"]);
   assert.equal(running.rows[1].label, "Working · 1 step");
   assert.equal(running.rows[1].live, true);
-  const plain = projectConversation([
+  const plain = projectPhoneConversation([
     event(1, "user_message", { text: "hi", turnId: "t" }),
     event(2, "turn_started", { turnId: "t" }),
     event(3, "content_delta", { turnId: "t", text: "Hello." }),
@@ -470,18 +395,18 @@ test("the running turn folds too, an agent stays a card, and a turn without step
 });
 
 test("a turn's file counts come from the desktop's checkpoint, else from what its steps reported", () => {
-  const unchanged = projectConversation([
+  const unchanged = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "turn_completed", { turnId: "t", checkpointAvailable: true, checkpointTurnSeq: 1, checkpointSummary: { files: 0, addedLines: 0, removedLines: 0 } }),
   ]);
   assert.equal(unchanged.rows.some((row) => row.kind === "diff"), false, "a checkpoint that changed nothing earns no row");
-  const older = projectConversation([
+  const older = projectPhoneConversation([
     event(1, "user_message", { text: "go" }),
     event(2, "turn_started", { turnId: "t" }),
     event(3, "turn_completed", { turnId: "t", checkpointAvailable: true }),
   ]);
   assert.equal(older.rows.find((row) => row.kind === "diff").turnSeq, 1, "a desktop that sends no summary still opens the turn's files");
-  const reported = projectConversation([
+  const reported = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_started", { turnId: "t", toolUseId: "edit", name: "Edit" }),
     event(3, "tool_output", { turnId: "t", toolUseId: "edit", output: "ok", fileChanges: [{ path: "/Users/dev/app/a.ts", additions: 3, deletions: 1 }, { path: "/Users/dev/app/b.ts", additions: 2, deletions: 0 }] }),
@@ -500,22 +425,22 @@ test("a provider retrying a failed call says why until the turn reports anything
     event(2, "turn_started", { turnId: "t" }),
     event(3, "turn_retrying", { turnId: "t", attempt: 3, maxAttempts: 10, retryInMs: 8000, error: "authentication_failed", status: 401 }),
   ];
-  const waiting = projectConversation(events);
+  const waiting = projectPhoneConversation(events);
   assert.equal(retryLabel(waiting.retrying), "Couldn\u2019t authenticate · retrying (3 of 10)…");
   assert.equal(waiting.rows.some((row) => row.kind === "message" && row.role === "assistant"), false, "a retry notice is never a row");
   // An event without the turn's id says nothing about the call.
   events.push(event(4, "usage_updated", { promptCache: {} }));
-  assert.ok(projectConversation(events).retrying);
+  assert.ok(projectPhoneConversation(events).retrying);
   events.push(event(5, "content_delta", { turnId: "t", text: "Here." }));
-  assert.equal(projectConversation(events).retrying, null);
+  assert.equal(projectPhoneConversation(events).retrying, null);
   assert.equal(retryLabel({ attempt: 1, maxAttempts: 5 }), "Couldn\u2019t connect · retrying (1 of 5)…");
   assert.equal(retryLabel({ attempt: 2, maxAttempts: 5, status: 500 }), "Request failed (500) · retrying (2 of 5)…");
-  const ended = projectConversation([...events.slice(0, 3), event(6, "turn_failed", { turnId: "t", message: "Gave up." })]);
+  const ended = projectPhoneConversation([...events.slice(0, 3), event(6, "turn_failed", { turnId: "t", message: "Gave up." })]);
   assert.equal(ended.retrying, null, "a turn that ended is not retrying");
 });
 
 test("a step's changed files count once, however often it is reported, and only once it finished", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_started", { turnId: "t", toolUseId: "edit", name: "Edit" }),
     // A step still running has changed nothing yet, as the desktop reads it.
@@ -526,7 +451,7 @@ test("a step's changed files count once, however often it is reported, and only 
     event(6, "turn_completed", { turnId: "t" }),
   ]);
   assert.deepEqual(value.rows.find((row) => row.kind === "diff").changes, { files: 1, addedLines: 3, removedLines: 1 });
-  const uncounted = projectConversation([
+  const uncounted = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_output", { turnId: "t", toolUseId: "one", output: "ok", fileChanges: [{ path: "/Users/dev/app/a.ts", additions: 2, deletions: 0 }] }),
     event(3, "tool_output", { turnId: "t", toolUseId: "two", output: "ok", fileChanges: [{ path: "/Users/dev/app/a.ts" }] }),
@@ -536,7 +461,7 @@ test("a step's changed files count once, however often it is reported, and only 
 });
 
 test("a retry notice ends with its turn, even when the stop names no turn", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "go" }),
     event(2, "turn_started", { turnId: "t1" }),
     event(3, "turn_retrying", { turnId: "t1", attempt: 2, maxAttempts: 10, retryInMs: 1000, error: "rate_limit", status: 429 }),
@@ -550,7 +475,7 @@ test("a retry notice ends with its turn, even when the stop names no turn", () =
 });
 
 test("a turn whose only step made a picture has nothing to fold, as on the desktop", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_started", { turnId: "t", toolUseId: "img", name: "GenerateImage", input: { prompt: "a chart" } }),
     event(3, "tool_output", { turnId: "t", toolUseId: "img", output: "ok" }),
@@ -558,7 +483,7 @@ test("a turn whose only step made a picture has nothing to fold, as on the deskt
   ]);
   assert.deepEqual(value.rows.map((row) => row.kind), ["tools", "meta"]);
   // A picture beside real work is folded with it and drawn under the line.
-  const mixed = projectConversation([
+  const mixed = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_started", { turnId: "t", toolUseId: "read", name: "Read", input: { path: "a.ts" } }),
     event(3, "tool_started", { turnId: "t", toolUseId: "img", name: "GenerateImage", input: { prompt: "a chart" } }),
@@ -597,30 +522,30 @@ test("a streamed delta hands the list one new row and keeps every other as it wa
     );
     if (turn < 2) events.push(event(base + 7, "turn_completed", { turnId: `t${turn}` }));
   }
-  const before = projectConversation(events).rows;
-  const after = keepUnchangedRows(before, projectConversation([...events, event(40, "content_delta", { turnId: "t2", text: " More." })]).rows);
+  const before = projectPhoneConversation(events).rows;
+  const after = keepUnchangedRows(before, projectPhoneConversation([...events, event(40, "content_delta", { turnId: "t2", text: " More." })]).rows);
   assert.deepEqual(after.map((row) => row.id), before.map((row) => row.id));
   const changed = after.filter((row, index) => row !== before[index]);
   assert.deepEqual(changed.map((row) => row.kind === "message" && row.text), ["Done. More."]);
   // Nothing moved: the same list, so the list itself is not handed anything new.
-  assert.equal(keepUnchangedRows(after, projectConversation([...events, event(40, "content_delta", { turnId: "t2", text: " More." })]).rows), after);
+  assert.equal(keepUnchangedRows(after, projectPhoneConversation([...events, event(40, "content_delta", { turnId: "t2", text: " More." })]).rows), after);
   // A step finishing inside a fold changes the fold, and only it.
   const running = [...events.slice(0, -2), event(41, "content_delta", { turnId: "t2", text: "Checking." })];
-  const first = projectConversation(running).rows;
-  const settled = keepUnchangedRows(first, projectConversation([...running, event(42, "tool_output", { turnId: "t2", toolUseId: "read2", output: "x" })]).rows);
+  const first = projectPhoneConversation(running).rows;
+  const settled = keepUnchangedRows(first, projectPhoneConversation([...running, event(42, "tool_output", { turnId: "t2", toolUseId: "read2", output: "x" })]).rows);
   assert.deepEqual(settled.filter((row, index) => row !== first[index]).map((row) => row.kind), ["fold"]);
 });
 
 test("an agent that takes another step keeps its earlier steps as they were drawn", () => {
-  const { keepUnchanged } = require("../../../.mobile-test-build/src/features/conversations/keepUnchanged.js");
+  const { keepUnchanged } = require("../../../.mobile-test-build/mobile/src/features/conversations/keepUnchanged.js");
   const events = [
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_started", { turnId: "t", toolUseId: "agent", name: "Task", subagentLane: true, input: { description: "Look around" } }),
     event(3, "tool_started", { turnId: "t", toolUseId: "s1", parentToolUseId: "agent", name: "Read", input: { path: "a.ts" } }),
     event(4, "tool_output", { turnId: "t", toolUseId: "s1", output: "x" }),
   ];
-  const before = projectConversation(events).lanes;
-  const after = keepUnchanged(before, projectConversation([...events, event(5, "tool_started", { turnId: "t", toolUseId: "s2", parentToolUseId: "agent", name: "Grep", input: { pattern: "cache" } })]).lanes, (lane) => lane.id);
+  const before = projectPhoneConversation(events).lanes;
+  const after = keepUnchanged(before, projectPhoneConversation([...events, event(5, "tool_started", { turnId: "t", toolUseId: "s2", parentToolUseId: "agent", name: "Grep", input: { pattern: "cache" } })]).lanes, (lane) => lane.id);
   assert.notEqual(after[0], before[0], "the lane moved");
   assert.equal(after[0].steps.length, 2);
   assert.equal(after[0].steps[0], before[0].steps[0], "its first step is the object drawn before");
@@ -663,7 +588,7 @@ test("an event merged on its own lands where the full merge puts it", () => {
 // ── Thinking ───────────────────────────────────────────────────────────────
 
 test("reasoning becomes a row of its own, ahead of the reply it led to", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "why?" }),
     event(2, "turn_started", { turnId: "t" }),
     event(3, "reasoning_delta", { turnId: "t", text: "Check the fixture first." }),
@@ -681,7 +606,7 @@ test("reasoning becomes a row of its own, ahead of the reply it led to", () => {
 });
 
 test("consecutive reasoning deltas merge into one row, across events that draw nothing", () => {
-  const split = projectConversation([
+  const split = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "reasoning_delta", { turnId: "t", text: "Read the" }),
     event(3, "usage_updated", { turnId: "t", contextUsed: 10 }),
@@ -692,7 +617,7 @@ test("consecutive reasoning deltas merge into one row, across events that draw n
   assert.equal(thoughts.length, 1);
   assert.equal(thoughts[0].text, "Read the plan, then the tests.");
   // The cache keeps a run of deltas as one event; the row reads the same.
-  const merged = projectConversation([
+  const merged = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(5, "reasoning_delta", { turnId: "t", text: "Read the plan, then the tests." }),
   ]);
@@ -705,17 +630,17 @@ test("thinking is live only while it is the last thing the running turn said", (
     event(2, "turn_started", { turnId: "t" }),
     event(3, "reasoning_delta", { turnId: "t", text: "Hmm" }),
   ];
-  const thinking = projectConversation(events).rows.find((row) => row.kind === "reasoning");
+  const thinking = projectPhoneConversation(events).rows.find((row) => row.kind === "reasoning");
   assert.equal(thinking.live, true);
   assert.equal(rowStreaming(thinking, "t", true), true);
   events.push(event(4, "content_delta", { turnId: "t", text: "Done." }));
-  assert.equal(projectConversation(events).rows.find((row) => row.kind === "reasoning").live, false, "words came after it");
+  assert.equal(projectPhoneConversation(events).rows.find((row) => row.kind === "reasoning").live, false, "words came after it");
   const stopped = [...events.slice(0, 3), event(4, "turn_failed", { turnId: "t", reason: "interrupted" })];
-  assert.equal(projectConversation(stopped).rows.find((row) => row.kind === "reasoning").live, false, "the turn ended");
+  assert.equal(projectPhoneConversation(stopped).rows.find((row) => row.kind === "reasoning").live, false, "the turn ended");
 });
 
 test("each stretch of thinking keeps its place among the turn's words and steps", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "fix it" }),
     event(2, "turn_started", { turnId: "t" }),
     event(3, "reasoning_delta", { turnId: "t", text: "Look at the test." }),
@@ -750,7 +675,7 @@ test("each stretch of thinking keeps its place among the turn's words and steps"
 
 test("thinking between steps splits their group, as the agent's words do", () => {
   const rows = unfold(
-    projectConversation([
+    projectPhoneConversation([
       event(1, "turn_started", { turnId: "t" }),
       event(2, "tool_started", { turnId: "t", toolUseId: "a", name: "Read", input: { path: "a.ts" } }),
       event(3, "reasoning_delta", { turnId: "t", text: "Next file." }),
@@ -761,14 +686,14 @@ test("thinking between steps splits their group, as the agent's words do", () =>
 });
 
 test("empty reasoning produces no row, and a stretch that opens blank starts at its words", () => {
-  const blank = projectConversation([
+  const blank = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "reasoning_delta", { turnId: "t", text: "  \n\n" }),
     event(3, "reasoning_delta", { turnId: "t", text: "" }),
     event(4, "content_delta", { turnId: "t", text: "Hi." }),
   ]);
   assert.equal(blank.rows.some((row) => row.kind === "reasoning"), false);
-  const opened = projectConversation([
+  const opened = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "reasoning_delta", { turnId: "t", text: "\n" }),
     event(3, "reasoning_delta", { turnId: "t", text: "\n  First thought" }),
@@ -785,9 +710,9 @@ test("a thought arriving keeps every other row as it was drawn", () => {
     event(2, "turn_started", { turnId: "t" }),
     event(3, "reasoning_delta", { turnId: "t", text: "One" }),
   ];
-  const before = projectConversation(events).rows;
+  const before = projectPhoneConversation(events).rows;
   events.push(event(4, "reasoning_delta", { turnId: "t", text: " two" }));
-  const after = keepUnchangedRows(before, projectConversation(events).rows);
+  const after = keepUnchangedRows(before, projectPhoneConversation(events).rows);
   assert.equal(after[0], before[0], "the person's message is the object it was");
   assert.notEqual(after[1], before[1]);
   assert.equal(after[1].text, "One two");
@@ -804,7 +729,7 @@ test("a closed thought previews its first line as plain words", () => {
 });
 
 test("a kept side question is a row of its own after its turn, the reply left whole", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "fix it", turnId: "t1" }),
     event(2, "turn_started", { turnId: "t1" }),
     event(3, "content_delta", { turnId: "t1", text: "Looking. " }),
@@ -823,7 +748,7 @@ test("a kept side question is a row of its own after its turn, the reply left wh
   assert.deepEqual(asides[0], { kind: "sideQuestion", id: "event-4", question: "Which test?", answer: "The parser one." });
   assert.equal(asides[1].truncated, true);
   // Asked while a turn still runs: under all it has said so far.
-  const running = projectConversation([
+  const running = projectPhoneConversation([
     event(1, "user_message", { text: "fix it", turnId: "t1" }),
     event(2, "turn_started", { turnId: "t1" }),
     event(3, "content_delta", { turnId: "t1", text: "Looking." }),
@@ -833,7 +758,7 @@ test("a kept side question is a row of its own after its turn, the reply left wh
 });
 
 test("a handoff is the desktop's divider, and Studio's own compaction says it came before the cache expired", () => {
-  const value = projectConversation([
+  const value = projectPhoneConversation([
     event(1, "user_message", { text: "fix it", turnId: "t1" }),
     event(2, "turn_started", { turnId: "t1" }),
     event(3, "turn_completed", { turnId: "t1" }),

@@ -1,4 +1,4 @@
-import type { StudioTransportFactory } from '../../../packages/agent-sdk/src/transport'
+import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
 import type { StudioCore } from '../../server/core/studio-core'
 import type { ControlRpc } from '../../server/bootstrap/control-rpc'
 import { SERVER_EVENTS, SERVER_METHODS } from '../../server/desktop/server-methods'
@@ -9,14 +9,18 @@ import { createHostRegistry, installHostRegistry } from '../hosts/host-registry'
 import { setWorktreeBranchPrefixReader } from '../worktree-branch-prefix'
 import type { TerminalRootInfo } from '../workspace-memory'
 import type { GitHubTokenStatus, GitHubTokenStore } from '../github-token-store'
-import type { ProviderSecretStore, ProviderSecretValueResult } from '../secret-store'
 import type { ServerStateMirror } from './server-mirror'
+import type {
+  StudioCliProbeAnswer,
+  StudioEnvironmentHome,
+  StudioEnvironmentRunOutcome,
+} from '../../../packages/studio-protocol/src/environment-access'
 
 // The shell's view of the core when the Studio server runs in a process of its
 // own (phase 6 spec, sections 5 and 7.3). The shell builds no server-owned
 // store: what it reads synchronously comes from the mirror, what it writes or
-// asks goes over the control channel, and the machines its terminals launch on
-// come from a host registry of its own over the mirrored settings.
+// asks goes over the control channel, and the machines its terminals and git
+// run on come from a host registry of its own over the mirrored settings.
 //
 // It has the core's shape for the members the shell's composition uses, so
 // that composition does not branch on every read. Any other member is the
@@ -54,15 +58,53 @@ const SHELL_CORE_MEMBERS = new Set([
   // process; present so destructuring the core does not throw.
   'conversationModelCatalog',
   'conversationLaunchService',
-  'subagents',
   'resolveAgentPermissionPreset',
 ])
+
+// How long a WSL ask forwarded to the server may take to reach a distribution's
+// Studio that has to be started (or installed) first, and the bound on a git
+// that has no deadline of its own.
+const SERVER_START_MS = 5 * 60_000
+const NO_DEADLINE_MS = 24 * 60 * 60_000
 
 export function createRemoteCore(link: ShellServerLink): StudioCore {
   const { mirror, rpc } = link
   // The machines this computer offers, for the shell's terminal launches: one
   // registry in each process, over the same settings.
-  const hosts = createHostRegistry({ readHostSettings: () => mirror.launchSettings.get().hosts })
+  const hosts = createHostRegistry({
+    readHostSettings: () => mirror.launchSettings.get().hosts,
+    // Git, the home, CLI detection and running a program in a WSL
+    // distribution are its own Studio's, which the server holds; watches are
+    // the server's alone (its checkouts).
+    // The first ask may start (or install) that Studio: minutes, not the
+    // control channel's usual seconds; a git with no deadline has none here.
+    machine: {
+      git: (distro, ask) =>
+        rpc.call<StudioEnvironmentRunOutcome>(
+          SERVER_METHODS.wslMachine,
+          { distro, method: 'git', ask },
+          { timeoutMs: ask.timeoutMs === null ? NO_DEADLINE_MS : ask.timeoutMs + SERVER_START_MS },
+        ),
+      home: (distro) =>
+        rpc.call<StudioEnvironmentHome>(
+          SERVER_METHODS.wslMachine,
+          { distro, method: 'home' },
+          { timeoutMs: SERVER_START_MS },
+        ),
+      detectClis: (distro, requests, force) =>
+        rpc.call<StudioCliProbeAnswer[]>(
+          SERVER_METHODS.wslMachine,
+          { distro, method: 'detectClis', ask: { requests, force } },
+          { timeoutMs: SERVER_START_MS },
+        ),
+      run: (distro, ask) =>
+        rpc.call<StudioEnvironmentRunOutcome>(
+          SERVER_METHODS.wslMachine,
+          { distro, method: 'run', ask },
+          { timeoutMs: ask.timeoutMs + SERVER_START_MS },
+        ),
+    },
+  })
   installHostRegistry(hosts)
   // The worktree branch prefix the shell names its own worktrees with (a New
   // chat's, a pool lease's), from the same settings the server names its by.
@@ -130,15 +172,6 @@ export function createRemoteCore(link: ShellServerLink): StudioCore {
       interrupt: async () => ({ ok: false, message: 'Chats are served by the Studio server.' }),
       onEvent: () => () => undefined,
       listLiveConversationRoots: readConversationRoots,
-      // Asked of the server as the worktree cleanup needs it, not cached: it is
-      // the last look before a worktree is removed.
-      liveConversationWorkspaceRoots: () =>
-        link.isServing()
-          ? rpc.call<unknown>(SERVER_METHODS.conversationWorkspaceRoots).then(
-              (roots) => (Array.isArray(roots) ? roots.filter((root): root is string => typeof root === 'string') : []),
-              () => [],
-            )
-          : Promise.resolve([]),
     },
     conversationOwner: {
       // One idle setting governs terminals and chats; the chats' half is the server's.
@@ -151,7 +184,6 @@ export function createRemoteCore(link: ShellServerLink): StudioCore {
     dataDirLock: null,
     conversationModelCatalog: { forCli: serverOnly('conversationModelCatalog') },
     conversationLaunchService: { launch: serverOnly('conversationLaunchService') },
-    subagents: { result: serverOnly('subagents') },
     resolveAgentPermissionPreset: serverOnly('resolveAgentPermissionPreset'),
   }
   return new Proxy(members, {
@@ -178,21 +210,4 @@ export function createRemoteGitHubTokenStore(
     writeToken: (token: string) => ask<GitHubTokenStatus>('write', { token }),
     clearToken: () => ask<GitHubTokenStatus>('clear'),
   }
-}
-
-/**
- * The credential a terminal launch hands its CLI (phase 6 spec,
- * `secrets.resolveForLaunch`): kept by the server, asked for by the shell
- * only, at the moment of the launch.
- */
-export function createRemoteCredentialStore(rpc: Pick<ControlRpc, 'call'>): ProviderSecretStore {
-  return {
-    resolveSecret: (cli: string) =>
-      rpc
-        .call<ProviderSecretValueResult>(SERVER_METHODS.resolveSecretForLaunch, { cli })
-        .catch((error: unknown): ProviderSecretValueResult => ({
-          ok: false,
-          message: error instanceof Error ? error.message : String(error),
-        })),
-  } as unknown as ProviderSecretStore
 }

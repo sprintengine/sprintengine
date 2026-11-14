@@ -79,7 +79,7 @@ export function problemText(problem: ExtensionProblem): string {
   switch (problem.kind) {
     case 'host-api':
       return problem.direction === 'older'
-        ? 'Built for an older version of Studio.'
+        ? `Built for an older version of Studio. It needs updating to host API ${HOST_API_VERSION}: the “Host API version” section of the extension SDK’s README (@sprintengine/module-sdk) says how. If an agent made it, ask an agent to update it.`
         : problem.direction === 'newer'
           ? 'Built for a newer version of Studio.'
           : 'Doesn’t say which version of Studio it’s built for.'
@@ -226,7 +226,14 @@ export function marketplaceUpdateFor(
 
 export type ExtensionFilter = 'all' | 'review' | 'on' | 'off'
 
-export const needsReview = (module: ThirdPartyModuleView): boolean => module.trust !== 'trusted'
+/**
+ * Whether an extension waits on the person's trust decision. One built for
+ * another host API does not: the host refuses it before trust is asked, so it
+ * offers no Review, says it needs updating, and sits under Installed rather
+ * than swelling the Needs review count with something nobody can review.
+ */
+export const needsReview = (module: ThirdPartyModuleView): boolean =>
+  module.trust !== 'trusted' && module.launch.status !== 'blocked_host_api'
 
 export function matchesQuery(query: string, ...parts: Array<string | null | undefined>): boolean {
   const needle = query.trim().toLowerCase()

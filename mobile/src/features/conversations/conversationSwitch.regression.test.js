@@ -12,7 +12,7 @@ const { createRequire } = require("node:module");
 const { test } = require("node:test");
 const compiled = path.resolve(
   __dirname,
-  "../../../.mobile-test-build/src/features/conversations/usePhoneConversation.js",
+  "../../../.mobile-test-build/mobile/src/features/conversations/usePhoneConversation.js",
 );
 const localRequire = createRequire(compiled);
 const { createConversationCacheStore } = localRequire("../../storage/conversationCacheModel.js");
@@ -28,6 +28,8 @@ const event = (agentId, seq, type, payload = {}) => ({
   sessionId: `s-${agentId}`,
   workspaceId: "w",
   agentId,
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload,
 });
@@ -123,7 +125,7 @@ function harness({ deviceId = "device" } = {}) {
         connection.sent.push(id ?? "command");
         return id ?? "command";
       };
-      connection.request = () => "request";
+      connection.read = () => Promise.reject(new Error("No answer."));
       connections.push(connection);
       return connection;
     },
@@ -149,7 +151,9 @@ function harness({ deviceId = "device" } = {}) {
         if (name === "react-native")
           return { AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) } };
         if (name === "expo-crypto") return { randomUUID: () => `send-${++serial}` };
-        if (name.endsWith("/tailnetConversations")) return { createTailnetConversationsApi: () => api };
+        if (name.endsWith("/desktopConversations")) return { createDesktopConversationsApi: () => api };
+        // A desktop that has said nothing yet: every offer off, as the app starts.
+        if (name.endsWith("/chatOffers")) return { useChatOffers: () => localRequire("../../api/chatOffers.js").phoneChatOffers(null) };
         if (name.endsWith("/conversationCache")) return cache;
         if (name.endsWith("/transcriptMemory")) {
           if (!fresh.has(name)) {

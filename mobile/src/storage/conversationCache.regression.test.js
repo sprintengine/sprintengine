@@ -3,7 +3,7 @@ const { test } = require("node:test");
 const {
   boundedConversationCache,
   createConversationCacheStore,
-} = require("../../.mobile-test-build/src/storage/conversationCacheModel.js");
+} = require("../../.mobile-test-build/mobile/src/storage/conversationCacheModel.js");
 const event = (
   seq,
   type = "user_message",
@@ -16,6 +16,8 @@ const event = (
   sessionId: "s",
   workspaceId: "w",
   agentId: "a",
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload: { turnId, text },
 });
@@ -243,17 +245,23 @@ test("a handed-over send keeps the cursor it was queued at, and a malformed one 
 
 test("an event the wire takes is one the cache keeps, and one it cannot keep costs the transcript, not the write", async () => {
   const { store } = fixture();
-  // The wire never asked for these ids: an event without them is on screen.
-  const { sessionId: _s, workspaceId: _w, agentId: _a, ...bare } = event(2, "content_delta", "turn-1");
-  const kept = await store.update("aa", () => ({ lastSeq: 2, generation: "g", events: [event(1), bare], pending: [pending("keep")] }));
+  // The contract's own reader decides: what a frame carries, the cache keeps.
+  const kept = await store.update("aa", () => ({
+    lastSeq: 2,
+    generation: "g",
+    events: [event(1), { ...event(2, "content_delta", "turn-1"), createdAt: 2.5 }],
+    pending: [pending("keep")],
+  }));
   assert.equal(kept.events.length, 2);
   assert.equal(kept.lastSeq, 2);
-  // Something no frame carries: the write lands, the queue is kept, and the
-  // cursor goes with the transcript so the next subscription asks afresh.
+  // Something no frame carries (an event naming no session): the write lands,
+  // the queue is kept, and the cursor goes with the transcript so the next
+  // subscription asks afresh.
+  const { sessionId: _s, ...sessionless } = event(3);
   const broken = await store.update("aa", (current) => ({
     ...current,
     lastSeq: 3,
-    events: [...current.events, { ...event(3), createdAt: 1.5 }],
+    events: [...current.events, sessionless],
   }));
   assert.deepEqual(broken, { lastSeq: 0, events: [], pending: [pending("keep")] });
   assert.deepEqual((await store.load("aa")).pending.map((item) => item.commandId), ["keep"]);

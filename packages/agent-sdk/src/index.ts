@@ -1,13 +1,20 @@
 // `@sprintengine/agent-sdk`: drive SprintEngine Studio's agents from your own
-// code. This entry is the transport-agnostic client and runs in Node and in a
-// browser; `@sprintengine/agent-sdk/node` adds the owner socket on this
-// machine, discovery and token keeping.
+// code. This entry is the transport-agnostic client, `@sprintengine/client-runtime`'s,
+// and runs in Node and in a browser; `@sprintengine/agent-sdk/node` adds the
+// owner socket on this machine, discovery and token keeping.
 //
 // The protocol is re-exported whole, so the frames, events and validators a
 // client reads come from the same package that connects it.
 export * from './protocol.js'
-export { StudioError, TERMINAL_CODES } from './errors.js'
-export type { StudioTransport, StudioTransportFactory } from './transport.js'
+export { StudioError, TERMINAL_CODES } from './runtime.js'
+export type { StudioTransport, StudioTransportFactory } from './runtime.js'
+export {
+  webSocketTransport,
+  type StudioWebSocketConstructor,
+  type StudioWebSocketLike,
+  type StudioWebSocketTicket,
+  type WebSocketTransportOptions,
+} from './runtime.js'
 export {
   connect,
   type ConnectOptions,
@@ -15,7 +22,7 @@ export {
   type StudioClientState,
   type StudioPushListener,
   type StudioConversationService,
-} from './client.js'
+} from './runtime.js'
 export {
   agentConversations,
   approvalRequestOf,
@@ -33,7 +40,8 @@ export {
   type ConversationService,
   type CreateConversationInput,
   type EventStreamOptions,
-} from './conversations.js'
+} from './runtime.js'
+export { openStudioUpdateSession, type StudioUpdateSession, type StudioUpdateSessionOptions } from './runtime.js'
 export { fromModuleConversationService, type ModuleConversationServiceLike } from './module.js'
 export {
   StudioToolError,
@@ -46,4 +54,4 @@ export {
   type ToolDefinition,
   type ToolHandler,
   type ToolsetInput,
-} from './tools.js'
+} from './runtime.js'

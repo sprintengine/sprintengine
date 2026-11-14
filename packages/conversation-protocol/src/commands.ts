@@ -1,4 +1,6 @@
 import type { ConversationWireCommand, ConversationWireKey, ConversationWirePermissionPreset } from './index.js'
+import type { ConversationMentionRef } from './messageParts.js'
+import type { ConversationLaneSend, ConversationSendRequest, ConversationTurnMode } from './send.js'
 
 // The commands a client sends a conversation, and the answers it gives one.
 //
@@ -9,19 +11,38 @@ import type { ConversationWireCommand, ConversationWireKey, ConversationWirePerm
 // unknown member, which is the fallback each extension below is shaped for.
 
 /**
- * An answer to a `tool` permission request: allow this request `once`, allow
- * requests of its kind for the rest of the `conversation`, or `deny` it. A
- * rule that outlives the conversation (`always`) is not among them: the first
- * version of the lane refuses it, and only a desktop that advertises
+ * An answer to a `tool` permission request, every way one is given: allow
+ * this request `once`, allow requests of its kind for the rest of the
+ * `conversation`, allow them `always` (a rule saved for the chat's workspace,
+ * which outlives the conversation), or `deny` it.
+ */
+export type ConversationApprovalDecision = 'once' | 'conversation' | 'always' | 'deny'
+
+/** Every approval decision, narrowest first, `deny` last. */
+export const CONVERSATION_APPROVAL_DECISIONS: readonly ConversationApprovalDecision[] = [
+  'once',
+  'conversation',
+  'always',
+  'deny',
+]
+
+export function isConversationApprovalDecision(value: unknown): value is ConversationApprovalDecision {
+  return CONVERSATION_APPROVAL_DECISIONS.includes(value as ConversationApprovalDecision)
+}
+
+/**
+ * The decisions every version of the lane takes. A rule that outlives the
+ * conversation (`always`) is not among them: the first version of the lane
+ * refuses it, and only a desktop that advertises
  * `conversation-permanent-approvals` takes it (`ConversationCommand`).
  */
-export type ConversationRequestDecision = 'once' | 'conversation' | 'deny'
+export type ConversationRequestDecision = Exclude<ConversationApprovalDecision, 'always'>
 
-/** Every decision a client may send, narrowest first. */
+/** Every decision a client may send any desktop, narrowest first. */
 export const CONVERSATION_REQUEST_DECISIONS: readonly ConversationRequestDecision[] = ['once', 'conversation', 'deny']
 
 /** The rule that outlives the conversation, for a desktop that takes one (`conversation-permanent-approvals`). */
-export type ConversationPermanentRequestDecision = 'always'
+export type ConversationPermanentRequestDecision = Exclude<ConversationApprovalDecision, ConversationRequestDecision>
 
 /** An answer to a `plan` request: carry the plan out, or send the agent back to planning. */
 export type ConversationPlanDecision = 'approve' | 'reject'
@@ -220,21 +241,10 @@ export type ConversationQuestionAnswers = Record<string, string>
  *   desktop without it refuses the kind as `unsupported_command`.
  */
 export type ConversationCommand =
-  | Exclude<ConversationWireCommand, { kind: 'setPermissionPreset' } | { kind: 'send' }>
-  | {
-      kind: 'send'
-      message: string
-      uploadIds?: string[]
-      queue?: true
-      skills?: string[]
-      mentions?: ConversationWireMention[]
-      steer?: true
-      composedAt?: number
-      confirmedStale?: true
-      mode?: ConversationSendMode
-    }
+  | Exclude<ConversationWireCommand, { kind: 'setPermissionPreset' } | { kind: 'send' } | { kind: 'resolveApproval' }>
+  | ({ kind: 'send' } & ConversationLaneSend)
   | { kind: 'setPermissionPreset'; preset: ConversationWirePermissionPreset; permissionMode?: string }
-  | { kind: 'resolveApproval'; requestId: string; decision: ConversationPermanentRequestDecision }
+  | { kind: 'resolveApproval'; requestId: string; decision: ConversationApprovalDecision }
   | { kind: 'resolvePlan'; requestId: string; decision: ConversationPlanDecision }
   | { kind: 'cancelQueued'; queuedId: string }
   | { kind: 'stopSubagent'; toolUseId: string }
@@ -246,7 +256,18 @@ export type ConversationCommand =
   | { kind: 'setReasoningEffort'; effort?: string }
   | { kind: 'mcpServerAction'; serverId: string; action: ConversationWireMcpServerAction }
   | { kind: 'restartSession' }
-  | { kind: 'scheduleSend'; message: string; sendAt: number }
+  | {
+      kind: 'scheduleSend'
+      message: string
+      sendAt: number
+      /**
+       * Send it when this provider's usage limit resets: `sendAt` is when the
+       * client read that it would, and the Studio asks the limit again when
+       * the time comes, moving the message to a later reset if one stands.
+       * A provider the Studio does not meter is read as a plain time.
+       */
+      untilLimitReset?: string
+    }
   | { kind: 'sendScheduledNow'; scheduledId: string }
   | { kind: 'cancelScheduled'; scheduledId: string }
   | { kind: 'usageLimitResume'; action: ConversationUsageLimitResumeAction; always?: true }
@@ -299,7 +320,7 @@ export const CONVERSATION_MCP_SERVER_ACTIONS: readonly ConversationWireMcpServer
 export type ConversationSendMode = 'plan' | 'ask'
 
 /** Every mode a `send` may name, the default one included, which is the same as naming none. */
-export const CONVERSATION_SEND_MODES: readonly (ConversationSendMode | 'default')[] = ['default', 'plan', 'ask']
+export const CONVERSATION_SEND_MODES: readonly ConversationTurnMode[] = ['default', 'plan', 'ask']
 
 /**
  * How old a `send`'s `composedAt` may be before a desktop asks for it to be
@@ -317,7 +338,7 @@ export const CONVERSATION_STALE_SEND_MS = 30 * 60_000
  * never stale.
  */
 export function isStaleConversationSend(
-  command: { composedAt?: number; confirmedStale?: true | boolean },
+  command: Pick<ConversationSendRequest, 'composedAt' | 'confirmedStale'>,
   now: number,
 ): boolean {
   return (
@@ -389,15 +410,6 @@ export type ConversationQueuedMessage = {
 /** What a desktop holds for one chat, at most this many. */
 export const CONVERSATION_MAX_QUEUED_MESSAGES = 20
 
-/**
- * Ask the desktop to say what it holds for the chat this socket follows:
- * answered by a `result` under `requestId`, then a `queued` frame now and on
- * every change, until the socket follows another chat or closes. Sent again
- * after each subscription's fence. A desktop without
- * `conversation-queued-sends` answers it `ok: false` with `invalid_frame`.
- */
-export type ConversationWatchQueuedRequest = { type: 'watchQueued'; requestId: string }
-
 /** What the desktop holds for `key`, whole each time: an empty list once nothing is held. */
 export type ConversationQueuedFrame = {
   type: 'queued'
@@ -432,19 +444,12 @@ export type ConversationScheduledMessage = {
    * saying so, until it is sent again or deleted.
    */
   failure?: string
+  /** It goes when this provider's usage limit resets (`scheduleSend`'s `untilLimitReset`). */
+  untilLimitReset?: string
 }
 
 /** The most scheduled messages a `scheduled` frame names for one chat. */
 export const CONVERSATION_MAX_SCHEDULED_MESSAGES = 50
-
-/**
- * Ask the desktop to say what it has scheduled into the chat this socket
- * follows: answered by a `result` under `requestId`, then a `scheduled` frame
- * now and on every change, until the socket follows another chat or closes.
- * Sent again after each subscription's fence. A desktop without
- * `conversation-scheduled-sends` answers it `ok: false` with `invalid_frame`.
- */
-export type ConversationWatchScheduledRequest = { type: 'watchScheduled'; requestId: string }
 
 /** What the desktop has scheduled into `key`, soonest first, whole each time: empty once nothing is. */
 export type ConversationScheduledFrame = {
@@ -514,25 +519,6 @@ export type ConversationUsageLimitSnapshot = {
 }
 
 /**
- * Ask the desktop to say what it knows of the usage limits, for the chat this
- * socket follows: answered by a `result` under `requestId`, then a
- * `usageLimits` frame now and on every change, until the socket follows
- * another chat or closes. Sent again after each subscription's fence. A
- * desktop without `conversation-usage-limits` answers it `ok: false` with
- * `invalid_frame`.
- */
-export type ConversationWatchUsageLimitsRequest = { type: 'watchUsageLimits'; requestId: string }
-
-/**
- * Ask the desktop to say which sub-agents the chat followed has, in
- * `subagents` frames: now, and again whenever one starts, moves or ends, until
- * the socket follows another chat or closes. Sent again after each
- * subscription's fence. A desktop without `conversation-subagents` answers it
- * `ok: false` with `invalid_frame`.
- */
-export type ConversationWatchSubagentsRequest = { type: 'watchSubagents'; requestId: string }
-
-/**
  * The desktop's usage limits, whole each time: the chat's `notice` (null for
  * a chat no limit has stopped), whether it resumes every such chat by itself
  * (`autoResume`), and each plan's windows (`limits`, empty before any agent
@@ -593,15 +579,8 @@ export const CONVERSATION_MAX_CREATE_SKILLS = 32
 // segments, and for a file a line or a range of lines. Never a path of the
 // client's own: the folder is the desktop's (`conversation-send-mentions`).
 
-/** One file or folder a `send` names. */
-export type ConversationWireMention = {
-  path: string
-  kind: 'file' | 'folder'
-  /** The first line meant, from 1. */
-  line?: number
-  /** The last line meant, at or after `line`. */
-  endLine?: number
-}
+/** One file or folder a `send` names: a mention, its path relative to the chat's folder. */
+export type ConversationWireMention = ConversationMentionRef
 
 /** The most mentions a send names, as the desktop's own composer takes. */
 export const CONVERSATION_MAX_SEND_MENTIONS = 50

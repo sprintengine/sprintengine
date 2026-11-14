@@ -7,6 +7,22 @@ the desktop's projects, `workspace:read`) appears only where some desktop
 grants it. A desktop too old to stream chats lists nothing; update Studio and
 pair again if conversation access is missing.
 
+New's reads (the desktop's projects, its CLIs, a project's checkout) and
+starting the chat (`conversation.create`) go over the desktop's Studio
+protocol: one socket per desktop at `/tailnet/v1/studio`, through the shared
+client runtime (`src/api/desktopStudio.ts`), opened with a ticket the device
+token buys and saying no `Origin`. What the phone may ask is its pairing's
+grant, read by the desktop at every request. A desktop whose Studio predates
+the endpoint is told to update. Following and driving a chat go over the same
+socket (`src/api/desktopConversations.ts`): the chat is the topic
+`conversation.session`, resumed by its cursor after a dropped connection with
+nothing missed and nothing twice; its held, scheduled and sub-agent lists are
+push topics; every command is a method of its own under the phone's command
+id, which the client sends again after a reconnect and the desktop answers
+once. What a chat offers here (models, held messages, files, pictures, Settle
+and the row menu) is read from the desktop Studio's welcome and this pairing's
+grant there (`src/api/chatOffers.ts`), never from what it said at pairing.
+
 ## The list
 
 Chats are in the order you last wrote in each, newest first, in Recent and in
@@ -54,7 +70,7 @@ green read `updatedAt`, which also moves on a rename, a session starting or
 stopping and a usage report, and the phone cannot settle or stamp visits.
 
 While a chat is open, the phone tells its desktop so with
-`conversation.visit`: on opening, at most every ten seconds while it stays on
+`conversation.visit` on the desktop's Studio (`api/chatLifecycle.ts`): on opening, at most every ten seconds while it stays on
 screen with the app in front, at once when a turn ends in view or the chat has
 a turn nobody has seen, and on leaving. A stamp that fails is logged and
 nothing else; this phone still keeps when it last opened each chat itself.
@@ -64,7 +80,7 @@ sidebar files it: its row names the project ("multicode") with the worktree's
 mark, it groups under that project, and New's project list holds the project
 once. The desktop's New chat starts every chat in a pooled worktree by
 default, so without this each chat founded a project named after its slug
-("pool-02", "chat-ab12"). The desktop's `workspace.list` sends each
+("pool-02", "chat-ab12"). The desktop's `workspaces.list` sends each
 workspace's folder but not the project a worktree was cut from, so the phone
 reads the desktop's own path convention for that
 (`<parent>/.sprintengine-worktrees/<repo>/<slug>` is `<parent>/<repo>`'s,
@@ -86,11 +102,12 @@ project with no remote sent each pooled worktree in a colour of its own; the
 phone paints every workspace of the project in its checkout's hue where the
 checkout is listed, else the first worktree's (`oneHuePerProject`). Every row
 shows its colour at rest; a row with none draws its folder in the row's ink.
-Where a chat runs somewhere other than the desktop itself (a WSL distribution,
-an SSH machine), that machine's mark leads the project line in the folder's
-ink, as on the desktop's sidebar, and its name is in the row's spoken label;
-in the project view, where the row has no project line, the mark keeps its
-name beside it. Rows are filed by what the desktop's list says on each read,
+A desktop lists only the chats its own Studio runs: a chat on one of its WSL
+distributions or SSH machines is reached only from that desktop, so the phone
+never lists one. Where a desktop's list does name another machine for a chat,
+that machine's mark leads the project line in the folder's ink, as on the
+desktop's sidebar, and its name is in the row's spoken label; in the project
+view, where the row has no project line, the mark keeps its name beside it. Rows are filed by what the desktop's list says on each read,
 so a project renamed there regroups on the next one.
 
 The phone has no Working section and no By status view, so the desktop's
@@ -98,7 +115,8 @@ rules for those have nothing to change here. A failed chat says Failed on its
 row and nothing on the bell, as before.
 
 Long-press a row, or use the chat header's More button, and choose Settle to
-settle the chat on its desktop (`conversation.settle`), which moves it to the
+settle the chat on its desktop (`conversation.settle` on its Studio, under a
+command id, so a retried settle settles once), which moves it to the
 desktop's Settled shelf. A screen reader finds Settle among the row's actions.
 The row leaves the list at once, and the chat closes back to the list; if the
 desktop refuses, the row comes back and a toast says why. Settle is offered
@@ -106,12 +124,12 @@ only where the desktop advertises `conversation-lifecycle` and the pairing
 operates its chats.
 
 The same menus offer Mark unread where the desktop advertises
-`chat-mark-unread` (2026-10-07), the pairing operates its chats, and the
+`conversation-lifecycle` (2026-10-07), the pairing operates its chats, and the
 chat's agent has finished something, unless the row is already green. It
-calls `conversation.mark_unread`, which moves the chat's `lastVisitedAt` back
+calls the desktop's `conversation.markUnread`, which moves the chat's `lastVisitedAt` back
 to just before its latest finish, so the finish reads as unseen on every
 device. The row goes green the moment the desktop answers; a refusal (one with
-nothing finished is refused as `nothing_finished`) leaves it as it was, and a
+nothing finished is refused as a `conflict`, in the desktop's words) leaves it as it was, and a
 toast says why. Marked from the chat's own More menu, the chat closes back to
 the list, since looking at it is what reads it: nothing on this phone stamps
 it seen again until it is next opened.
@@ -122,8 +140,8 @@ clock a visit it stamped answered with. A mark unread now wins over every
 such reading taken before it (`chatLifecycleLogic.ts`, `visitRewindApplies`),
 and a reading taken after it, the person opening the chat again, wins over
 the mark. The phone learns of a mark from its own call, from a desktop that
-lists `visitRewoundAt` beside the clock, or, from a desktop that advertises
-`chat-mark-unread` and lists no such stamp (as of 2026-10-07 none does), from
+lists `visitRewoundAt` beside the clock, or, from a desktop that keeps its
+chats' rest and lists no such stamp (as of 2026-10-07 none does), from
 a listed clock earlier than the last it heard from the desktop: its previous
 read of the list, or a visit answered before the read set out. The
 readings it resets are reset in its device notes too, so the mark stays up
@@ -147,8 +165,8 @@ and Cron, with the days, typed times ("+ Time"), a readout of the next runs,
 and Once's quick times with a day stepper and a time. Its cron reader
 (`src/shared/cron/cron.ts`) and its tab model (`scheduleEditor.ts`) are the
 desktop's own files, mirrored and held to them by the regression suite. Once
-is `schedule.create`'s `once`, offered only where the desktop advertises
-`scheduled-agents`, since an older handler refuses the argument. Sending makes
+is `schedules.create`'s `once`, on the desktop's Studio protocol; a desktop
+from before it is told to update. Sending makes
 the schedule with New's own choices: the machine and project, the agent and
 model, the access and the Worktree switch; a schedule's runs start from words
 alone, so nothing can be attached while it is on. New then leaves and the
@@ -198,7 +216,7 @@ Access row. New keeps one choice the desktop's picker has no row for:
 Desktop default, which sends no CLI and leaves it to the desktop's last-used
 one.
 
-A desktop that advertises `cli-runtime-catalog` answers `cli.runtime.list`
+A desktop that advertises `cli-runtime-catalog` answers `cliRuntimes.list`
 with its picker's own rows for each CLI (`catalog`): New offers every CLI it
 says can run as a chat, and hides the ones it says cannot. An older desktop's
 CLIs are offered as before, those that list models, grouped into families by
@@ -215,8 +233,9 @@ files, send a message, or respond to pending requests. Supported live sessions
 also offer image attachments and interruption. Images are uploaded directly to
 the paired desktop, not the hosted relay, and their references expire. A
 picture over 5 MB is refused before it is uploaded, since the desktop would
-refuse it; one that advertises `conversation-image-downscale` scales pictures
-down itself and takes them up to 20 MB, and the phone lets them through there.
+refuse it. A picture goes up in pieces on the chat's own socket
+(`uploads.begin`, then `uploads.append`, each read from the file as it goes),
+and the send names the upload.
 
 **Choose photos** opens the library for several at once, on New and in a chat:
 as many as the message still has room for (sixteen uploads a send, photos and
@@ -239,8 +258,8 @@ new build. iOS hands back a copy whose name is the file's; Android hands back a
 document uri, which is copied into the app's cache before it uploads, and
 named from the path its provider id carries, or `file` with the extension its
 type says where the id names nothing. A file over 25 MB, or an empty one, is
-refused before it goes (`chatFiles.ts`). It uploads to the chat's session with
-`kind=file`; the desktop keeps it in Studio's own data folder, never the
+refused before it goes (`chatFiles.ts`). It uploads the way a picture does, as
+an `attachment`; the desktop keeps it in Studio's own data folder, never the
 project, and the send names its id beside any photo's, sixteen at most
 between them. The tray shows it as a chip with its kind's glyph, and the
 message, once the desktop has it, as a file card (below). A desktop without
@@ -251,8 +270,8 @@ line, not your bubble: an agent the chat launched reporting back, or a resume
 once a usage limit that stopped the chat has reset. The desktop records it as
 any other `user_message`, since the agent is handed it as a turn, and marks it
 with an `origin` (`{ kind: 'studio', reason }`) on the payload. The phone
-reads that optional member off the payload without its pinned wire types
-changing (`studioNotice.ts`): a `studio` origin whose reason this phone does
+reads that optional member off the payload (`studioNotice.ts`), whose shape
+the desktop's contract leaves open: a `studio` origin whose reason this phone does
 not know is still Studio's, and an origin in any other shape, or none, is
 yours, as every message before the member was. The row reads "SprintEngine
 Studio · …" in the note's ink, without the bracketed name the agent's copy of
@@ -283,9 +302,11 @@ drawn from the phone's own file, remembered by its upload id the moment it
 uploads, so the message shows it while it is pending and after the desktop
 echoes it, with no fetch. Any other (sent from the desktop, from another
 phone, or before the app last started) is fetched from a desktop that
-advertises `conversation-message-images`, by its `ref` on the
-`conversation-image` route (`attachment=<ref>`). Where neither has it, the
-square names the picture instead. The phone reads the member defensively
+advertises `conversation-message-images`, by its `ref`
+(`conversation.picture` with `attachment`). A fetched picture is written to
+the phone's cache and drawn from there, and no more than two cross from the
+desktops at once, since one answer can be 8 MB of picture.
+Where neither has it, the square names the picture instead. The phone reads the member defensively
 (`sentPhotos.ts`): an entry without an id is skipped, a ref not in the
 desktop store's shape is never asked for, and no more than the desktop's
 sixteen are drawn.
@@ -420,6 +441,22 @@ no summary, the count is taken from those: each step once, however often it
 is reported, and never from a partial output. A turn whose only steps made
 pictures has no fold, as on the desktop.
 
+The rows are not the phone's own reading of the events. A chat's events are
+folded by the projection every client folds (`projectConversation` in
+`packages/conversation-timeline`), and the phone lays its entries out with
+that package's narrow layout (`deriveConversationRows`, `conversationRows.ts`):
+the person's message, the turn's thinking, prose and steps in the order they
+came, its agents as cards, its decisions, the reply, then its footer and
+changed files. `conversationLogic.ts` says only where the phone asks for
+something the window does not, as options: a session's end settles the work it
+was doing (`sessionEndSettlesWork`); durations on the phone's clock ("2m", not
+"2m 0s"); a Studio subagent's start kept in view; its own reading of a sent
+picture; Studio's notices without the name they open with. The hook keeps the
+projection between draws, so a streamed word folds into the one entry it
+changes rather than refolding the chat. The context ring's reading
+(`contextUsage.ts`) is still the phone's: it falls back to a report's input and
+output where the window shows no ring.
+
 ### Visuals in a reply
 
 An agent's reply draws its `visual` fences (and `studio-visual`) as the
@@ -461,6 +498,14 @@ frame is built. The WebView refuses every navigation but its own first load and
 the frame's `srcdoc`, opens no window and stores nothing. What the page sends
 the app (a height, a link, "nothing to draw") is read as untrusted: its shape
 is checked, the height capped, and a link offered at most once a second.
+
+### A message cut to fit
+
+The desktop sends no event larger than one frame: a longer one (a long
+answer, a pasted log) comes with its longest text cut and `wireClipped: true`.
+The chat's foot says part of it came cut short and offers it in full, which
+reads each cut event whole (`getEvent`, by the `seq` and `id` it came under)
+and puts it in place of the cut copy.
 
 ### A step's output
 
@@ -523,7 +568,8 @@ row of its own, where in the turn it thought it: a bulb, "Thinking" and the
 first line of the thought, closed, or "Thinking…" while it is the last thing
 the running turn has said. Tapping it opens the thought as Markdown in the
 muted ink on the steps' rail. One stretch of thinking is one row however many
-deltas it came in; words or a step after it start the next. Thinking before
+deltas it came in; a step after it starts the next, and thinking either side
+of words with no step between is one row, ahead of the words. Thinking before
 a turn's last step folds with the turn's work, as its prose does, and the
 thinking after it stays in view above the reply. A stretch that never says
 anything leaves no row. The thought is never part of a copied reply.
@@ -570,8 +616,7 @@ shows "76,000 / 200,000 tokens". It reads `contextWindow` and `contextUsed` off
 report's input plus output tokens. A desktop that never sends `contextWindow`
 shows no ring (`contextUsage.ts`).
 
-The chat's header names the paired desktop it runs on. The tailnet lane does
-not yet say when that desktop runs the chat in WSL or on an SSH machine.
+The chat's header names the paired desktop it runs on.
 
 A desktop that advertises `conversation-models` lists each chat's CLI and the
 models it can switch between, and the composer shows the chat's model by its
@@ -601,9 +646,10 @@ only those two are offered there. A desktop that advertises
 `conversation-plans` takes a plan's answer as `resolvePlan`; an older one takes
 it as an approval, as before.
 
-A desktop that advertises `conversation-images` serves a chat's pictures over
-the tailnet (`GET /tailnet/v1/conversation-image`, with the device token, as
-the image upload is authorised). A picture Codex generated shows under its step
+A desktop that advertises `conversation-images` serves a chat's pictures
+(`conversation.picture`, by the step): each is read once into a file in the
+phone's cache and drawn from there, so scrolling back never reads it again and
+no picture is held in memory as text. A picture Codex generated shows under its step
 without opening it, captioned with its prompt; an image an agent read shows when
 its step is opened. Only finished steps are fetched. Tapping a picture opens it
 full screen. A picture the desktop no longer has, or one too large to send,
@@ -634,10 +680,10 @@ phone) stops the chat and asks for a new pairing, without marking the desktop
 as having revoked the phone. Only a token the desktop no longer knows is a
 revocation.
 
-A chat on a Studio server that restarted (a WSL distribution's, an SSH
-machine's, or the desktop's own when it runs out of process) can have a send
-refused because the session it went to is gone (`session_not_found`, or the
-runtime's "Conversation session is invalid." on the tailnet lane). The phone
+A chat on a Studio server that restarted (the desktop's own, when it runs out
+of process) can have a send refused because the session it went to is gone
+(`session_not_found`, or the runtime's "Conversation session is invalid."
+where no code came with it). The phone
 offers that send once more under the same command id, and the desktop resumes
 the chat from its transcript and sends it there. A second refusal stands. An
 answer to a request on a lost session says the request ended with it.
@@ -694,7 +740,7 @@ Not every message goes to the desktop (`queuedSends.ts`):
 - The phone sends no skills, which the contract would refuse beside `queue`.
 
 The stream makes the same choice for a send the screen thought had no turn to
-wait on (`tailnetConversations.ts`). A send made while the stream knows the
+wait on (`desktopConversations.ts`). A send made while the stream knows the
 chat is busy (a turn running, or the phone's own last send in the chat and its
 turn not over) is handed to the desktop at once, under its id, rather than
 waiting in the phone's outbox. So is what still waits there when a redial finds
@@ -763,18 +809,25 @@ way; an older desktop ignores both members.
 Conversation links use
 `sprintengine://conversation/<deviceId>/<workspaceId>/<agentId>`, with each
 component URL-encoded. They resolve against an existing paired desktop, never a
-server address supplied by the link. The desktop's own chat links,
-`sprintengine://chat/<workspaceId>`, optionally with `?agent=<agentId>` (its
-row menu's "Copy link to chat"), open on the phone too. They name no desktop,
-so the phone reads every paired desktop's chats afresh and looks for the
-workspace: where one desktop lists it the chat opens, on that agent's chat when
-the link names one the workspace has, else the one last written in; where
-several do, the person picks the desktop; where none does it says "That chat
-isn't on a desktop you're paired with", and which desktops did not answer. The
-link is read with the desktop's strictness (`parseChatLink`, after its
-`deep-link.ts`): the scheme and the bare `chat` host in any case, one id of
-`[A-Za-z0-9_-]{1,128}`, the one `agent` parameter, any other parameter
-ignored. Like the desktop, it only ever navigates. Hosted push delivery is not included in
+server address supplied by the link. Studio's chat links,
+`sprintengine://chat/<environmentId>/<workspaceId>`, optionally with
+`?agent=<agentId>` (a desktop row menu's "Copy link to chat"), open on the
+phone too. The phone reads every paired desktop's chats afresh and looks for
+the workspace on the desktop that is that environment: the id each desktop's
+identity says (`environmentId`, kept on the pairing and re-read on
+foreground), so two pairings with one desktop are one desktop. Until some
+paired desktop has said it is that environment, a desktop that has said none
+may be it. A link from a desktop before links named an environment,
+`sprintengine://chat/<workspaceId>`, is looked for on every paired desktop.
+Where one desktop has the chat it opens, on that agent's chat when the link
+names one the workspace has, else the one last written in; where several do,
+the person picks the desktop; where none does it says "That chat isn't on a
+desktop you're paired with", and which desktops did not answer. The link is
+read by the desktop's own grammar, which the phone imports
+(`packages/studio-protocol/src/chat-link.ts`): the scheme and the bare `chat`
+host in any case, one or two ids of `[A-Za-z0-9_-]{1,128}`, the one `agent`
+parameter, any other parameter ignored. Like the desktop, it only ever
+navigates. Hosted push delivery is not included in
 this client change; it requires notification infrastructure and credentials.
 
 ## Verification
@@ -941,9 +994,8 @@ number where the passage lies in one run of words; one that runs across
 formatting or a line break is not marked rather than half marked.
 
 A quote crosses as its token only where the desktop advertises
-`conversation-quote-tokens` and `conversation-hello`: the phone then names
-the capability in a `hello` ahead of every subscription (`clientCapabilities`),
-and the desktop sends tokens back to that socket. Anywhere else the phone
+`conversation-quote-tokens`, and the desktop then sends the chat back as it
+is kept, tokens included. Anywhere else the phone
 sends the passage as a blockquote with the comment under it, the words an
 older desktop's agent reads, and reads quotes as words as it always did. A
 held or scheduled message reads its quotes as words in its bubble and row,

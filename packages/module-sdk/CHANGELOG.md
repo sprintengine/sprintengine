@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.0.0-beta.1
+
+Host API 2: a module's window code reaches its `entry.main` through methods
+it declares, carried over the Studio protocol to the server the module runs
+on, instead of IPC channels. Host API 1's `registerIpc` and `invoke` are gone
+with no shim, and Studio no longer loads a module built for host API 1.
+
+### Breaking: declared methods replace IPC channels
+
+- `MainHost.registerMethods<Contract>({ name: { access, params, handler } })`
+  replaces `registerIpc(channel, handler)`. A method says who may call it
+  (`access: 'read'`, which changes nothing, or `'operate'`, carried out once
+  per command id), reads its params with its own validator
+  (`(value) => { ok: true, params } | { ok: false, message }`), and its
+  handler gets `(params, { clientId, commandId? })` and answers
+  `{ ok: true, result }` (JSON) or `{ ok: false, code, message }`. Names are a
+  lower-case letter, then letters, digits, dots and dashes; the module id is
+  their namespace, so no `<moduleId>:` prefix. Declaring methods needs
+  `module:bridge` (or the broad `ipc:invoke`); without it `registerMethods`
+  throws.
+- `RendererHost.methods<Contract>()` replaces `invoke(channel, payload)`:
+  `read(method, params)` offers the contract's `read` methods,
+  `operate(method, params, { commandId? })` its `operate` ones. A call never
+  throws: the module's refusals and the host's (`module_unavailable`,
+  `module_method_unknown`, `invalid_params`, `scope_required`, `unavailable`)
+  are answers (`ModuleCallAnswer`).
+- New types: `ModuleMethodAccess`, `ModuleMethodContract`,
+  `ModuleMethodContracts`, `ModuleMethodParsed`, `ModuleMethodAnswer`,
+  `ModuleMethodContext`, `ModuleMethodRegistration(s)`, `ModuleCallAnswer`,
+  `ModuleCallRefusalCode`, `ModuleMethodsClient`, `ModuleReadMethod`,
+  `ModuleOperateMethod`, `ModuleMethodErrorCode`; values `isModuleMethodName`
+  and `MODULE_METHOD_MAX_CHARS`. Removed: `IpcInvokeHandler`,
+  `ModuleBridgeRefusalCode`.
+- `HOST_API_VERSION` and `HOST_API_MIN_SUPPORTED` are 2. A manifest declaring
+  `"engines": { "hostApi": 1 }` is refused (`host_api_too_old`) with a message
+  that names what to change; Settings and the bell show it.
+- Testing: `createFakeMainHost(...).methods.read` / `.operate` / `.declared()`
+  replace `ipc.invoke` / `ipc.channels()`, refused as the host refuses; the
+  fake renderer host's `methods()` reaches the main fake.
+- Templates, the `main` part (now with `src/methods.ts` and `module:bridge`
+  always) and the guides use declared methods.
+
+### Added
+
+- `ScheduledAgentView.waiting`: why the machine a scheduled agent lives on
+  cannot run it now, in words, while its times pass without a run. Absent when
+  it can run.
+
+To move a module from host API 1: write a contract type for its channels, turn
+each `registerIpc('<id>:name', (event, payload) => result)` into a
+`registerMethods` entry with an access, a params validator and a handler
+answering `{ ok: true, result }`, turn each `host.invoke('<id>:name', payload)`
+into `host.methods<Contract>().read('name', params)` (or `.operate`), and set
+`"engines": { "hostApi": 2 }`.
+
 ## 1.0.0-beta.1
 
 Automations became scheduled agents: a prompt and a cron schedule, each run a
@@ -8,6 +63,14 @@ Beside that, it adds the Backlog, usage, activity and text-generation
 services, the shell's notifications and window context, main-host plumbing,
 `module:bridge`, the testing kit, and companion tools, turn replies and
 scheduled-agent runs, all additive under host API 1.
+
+### Changed: module events are JSON
+
+- `MainHost.emit` payloads cross the Studio protocol's `module.events` stream,
+  so a payload must be a JSON value (plain objects, arrays, strings, finite
+  numbers, booleans, null). Anything else (a `Date`, a `Map`, a class
+  instance, `NaN`, a cycle) throws from `emit`, naming where it is, in the app
+  and in the test host alike. The delivery contract is otherwise unchanged.
 
 ### Changed: the extension guide replaces the extension-builder skill
 

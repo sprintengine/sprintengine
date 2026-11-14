@@ -14,6 +14,7 @@ import { dispatchExtensionsSurfaceTarget } from '../../../workspace/globalSurfac
 import { useConversationLinkContext } from '../conversationLinks'
 import type { TranscriptToolEntry } from '../conversationProjection'
 import { useConversationTransport } from '../conversationTransport'
+import { useShellReach } from '../shellReach'
 import { PluginInstallDialog } from './PluginInstallDialog'
 import {
   installedRecord,
@@ -23,6 +24,7 @@ import {
   serverNeedingSignIn,
   type PluginOfferIds,
 } from './pluginOfferModel'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
 
 // The plugin an agent offered with Studio's `plugin.offer`: its icon, its
 // name, one line, and one button (owner ruling 2026-11-02). Install opens the
@@ -58,18 +60,18 @@ type Loaded =
     }
 
 async function readOffer(ids: PluginOfferIds, workspaceRoot: string, cli: string | null): Promise<Loaded> {
-  const scan = await window.api.skillsGetScan({ sourceId: ids.sourceId })
+  const scan = await agentSkillsApi.skillsGetScan({ sourceId: ids.sourceId })
   if (!scan.ok) return { status: 'missing', message: scan.message }
   const plugin = scanPlugins(scan.scan).find((candidate) => candidate.id === ids.pluginId)
   if (!plugin) return { status: 'missing', message: `No longer in ${scan.source.name}` }
   const installed = workspaceRoot
-    ? await window.api.skillsListInstalledPlugins({ workspaceRoot }).catch(() => null)
+    ? await agentSkillsApi.skillsListInstalledPlugins({ workspaceRoot }).catch(() => null)
     : null
   const record = installed?.ok ? installedRecord(installed.plugins, ids) : null
   // How the servers it added are doing, as chats here last reported them.
   const capabilities =
     record && record.mcpServerIds.length > 0 && cli
-      ? await window.api.agentCapabilities({ workspaceRoot, pluginId: cli }).catch(() => null)
+      ? await agentSkillsApi.agentCapabilities({ workspaceRoot, pluginId: cli }).catch(() => null)
       : null
   const servers = capabilities?.ok ? (capabilities.servers ?? []) : []
   return { status: 'ready', source: scan.source, plugin, record, servers }
@@ -88,10 +90,12 @@ export const PluginOfferCard = memo(function PluginOfferCard({
   const pluginId = ids?.pluginId ?? ''
   const workspaceRoot = useConversationLinkContext()?.workspaceRoot ?? ''
   const transport = useConversationTransport()
-  // A chat on another machine has that machine's plugins, which this one
-  // cannot read or install; a read-only view acts on nothing; and a plugin
-  // installs into a workspace, so a chat without one has nowhere to put it.
-  const drawable = !transport.remoteExtensions && transport.capabilities.operate && workspaceRoot !== ''
+  // The card reads and installs through the window's own Studio, so only a
+  // chat that Studio runs has it: another environment's plugins are its own.
+  // A read-only view acts on nothing; and a plugin installs into a workspace,
+  // so a chat without one has nowhere to put it.
+  const { openDocument } = useShellReach()
+  const drawable = openDocument && transport.capabilities.operate && workspaceRoot !== ''
   const chat = useContext(PluginOfferChatContext)
   const openExtensionsSurface = useWorkspaceStore((state) => state.openExtensionsSurface)
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' })

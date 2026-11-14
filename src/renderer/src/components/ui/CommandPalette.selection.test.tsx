@@ -43,6 +43,7 @@ vi.mock('../../hooks/useTerminalSessions', () => ({
 vi.mock('../workspace/useConversationPullRequests', () => ({ useConversationPullRequests: () => ({}) }))
 
 import CommandPalette from './CommandPalette'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 const workspace = {
   id: 'ws-1',

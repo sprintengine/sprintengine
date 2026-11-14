@@ -8,7 +8,6 @@ import { afterEach, test } from 'vitest'
 import { STUDIO_SCOPES } from '../../../packages/studio-protocol/src/public'
 import { STUDIO_LOCAL_APPS_FILENAME, createStudioLocalAppStore } from './studio-local-app-store'
 import { createGatewayAuditStore } from '../automation/gateway-audit'
-import { readStudioEnvironmentId } from './studio-rpc-service'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -134,13 +133,6 @@ test('a local app is recorded in the gateway audit by the identity its token pro
   const line = JSON.parse((await readFile(join(dir, 'sprintengine-studio-mcp-audit.jsonl'), 'utf8')).trim())
   assert.deepEqual(line.connection, { kind: 'studio-client', clientId: 'sla_1', clientName: 'release-bot' })
   assert.deepEqual(line.targets, { workspaceId: 'ws-1', agentId: 'agent-1', id: 'cmd-1' })
-})
-
-test('a data directory keeps one environment id for good', async () => {
-  const dir = await dataDir()
-  const id = readStudioEnvironmentId(dir)
-  assert.match(id, /^[0-9a-f-]{36}$/)
-  assert.equal(readStudioEnvironmentId(dir), id)
 })
 
 test.runIf(process.platform !== 'win32')(

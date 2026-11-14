@@ -16,10 +16,15 @@ import type {
 import {
   bindGatewayConversation,
   gatewayConversation,
+  gatewayLaunchEnded,
   runGatewayCall,
   type GatewayCallScope,
 } from '../../server/tools/client-tool-gateway'
-import { resolveGatewayLaunchToken, type GatewayLaunchIdentity } from '../../server/core/gateway-launch-tokens'
+import {
+  gatewayLaunchTokenDigest,
+  resolveGatewayLaunchToken,
+  type GatewayLaunchIdentity,
+} from '../../server/core/gateway-launch-tokens'
 import type { ClientToolServedBy } from '../../server/tools/client-tool-registry'
 
 // The gateway's MCP method semantics, independent of how bytes arrive.
@@ -75,6 +80,8 @@ export type McpDispatchGate = {
 export type McpDispatchIo = {
   requestId?: JsonRpcId
   notify?: (message: Record<string, unknown>) => void
+  /** The caller's connection, while it lasts: when it ends, the call is cancelled as a cancel would. */
+  signal?: AbortSignal
 }
 
 export type McpDispatcher = {
@@ -115,6 +122,7 @@ const runningCalls = new WeakMap<McpConnectionContext, Map<string, AbortControll
 // another request on the same connection. Bounded; the oldest go first.
 const earlyCancels = new WeakMap<McpConnectionContext, Set<string>>()
 const MAX_EARLY_CANCELS = 64
+const LAUNCH_ENDED_MESSAGE = 'The launch this connection belonged to has ended; its token proves nothing now.'
 const callKey = (id: JsonRpcId) => (typeof id === 'number' ? `n:${id}` : `s:${String(id)}`)
 
 export function createMcpDispatcher(options: {
@@ -123,18 +131,19 @@ export function createMcpDispatcher(options: {
   /** The tools this connection may see, resolved per request: client tools differ by connection. */
   resolveTools: (context?: McpConnectionContext) => McpToolRegistration[]
   clientTools?: McpClientToolHooks
-  /** Who a launch token was issued to; the process-wide launch tokens unless a test names its own. */
-  resolveLaunchToken?: (token: string) => GatewayLaunchIdentity | null
   onToolCall?: (event: McpToolCallEvent) => void
 }): McpDispatcher {
-  const resolveLaunchToken = options.resolveLaunchToken ?? resolveGatewayLaunchToken
   return {
     async dispatch(method, params, context, gate, io): Promise<McpDispatchOutcome> {
+      // A connection a launch token proved ends with the launch: its transport
+      // closes it, and anything it still asks meanwhile is refused.
+      if (gatewayLaunchEnded(context) && method !== 'notifications/cancelled')
+        return { kind: 'error', code: JSONRPC_INVALID_REQUEST, errorMessage: LAUNCH_ENDED_MESSAGE }
       switch (method) {
         case 'sprintengine.studio/connect': {
           const declared = applyDeclaredConnectionMetadata(context.metadata, params)
           if (!declared.ok) return { kind: 'error', code: JSONRPC_INVALID_REQUEST, errorMessage: declared.message }
-          const proven = provenLaunch(context, params, resolveLaunchToken)
+          const proven = provenLaunch(context, params)
           if (!proven.ok) return { kind: 'error', code: JSONRPC_INVALID_REQUEST, errorMessage: proven.message }
           context.metadata = proven.identity
             ? {
@@ -148,7 +157,7 @@ export function createMcpDispatcher(options: {
                 verified: true,
               }
             : declared.metadata
-          if (proven.identity) bindGatewayConversation(context, proven.identity)
+          if (proven.identity) bindGatewayConversation(context, proven.identity, proven.launchDigest)
           return { kind: 'no_response' }
         }
         case 'initialize': {
@@ -231,6 +240,10 @@ export function createMcpDispatcher(options: {
           if (key) running.set(key, controller)
           // Cancelled while it waited its turn: it starts cancelled.
           if (key && earlyCancels.get(context)?.delete(key)) controller.abort()
+          // Its connection's lifetime bounds it: a caller that has gone is waited on by no one.
+          const connectionEnded = () => controller.abort()
+          if (io?.signal?.aborted) controller.abort()
+          else io?.signal?.addEventListener('abort', connectionEnded, { once: true })
           const meta = isRecord(params._meta) ? params._meta : undefined
           const progressToken =
             typeof meta?.progressToken === 'string' || typeof meta?.progressToken === 'number'
@@ -273,6 +286,7 @@ export function createMcpDispatcher(options: {
             options.onToolCall?.({ context, tool: name, args, durationMs: Date.now() - startedAt, error })
             throw error
           } finally {
+            io?.signal?.removeEventListener('abort', connectionEnded)
             if (key && running.get(key) === controller) running.delete(key)
           }
         }
@@ -389,8 +403,7 @@ function applyDeclaredConnectionMetadata(
 function provenLaunch(
   context: McpConnectionContext,
   params: Record<string, unknown>,
-  resolve: (token: string) => GatewayLaunchIdentity | null,
-): { ok: true; identity: GatewayLaunchIdentity | null } | { ok: false; message: string } {
+): { ok: true; identity: GatewayLaunchIdentity | null; launchDigest?: string } | { ok: false; message: string } {
   const token = typeof params.launchToken === 'string' ? params.launchToken.trim() : ''
   const bound = gatewayConversation(context)
   if (!token || context.metadata.kind === 'remote-tailnet') {
@@ -407,7 +420,7 @@ function provenLaunch(
       }
     return { ok: true, identity: null }
   }
-  const identity = resolve(token)
+  const identity = resolveGatewayLaunchToken(token)
   // A token no live launch holds proves nothing; the declared identity stands
   // as the claim it always was.
   if (!identity) return { ok: true, identity: bound ? { ...bound } : null }
@@ -416,7 +429,7 @@ function provenLaunch(
       ok: false,
       message: 'This connection already belongs to another agent and cannot take a second launch’s token.',
     }
-  return { ok: true, identity }
+  return { ok: true, identity, launchDigest: gatewayLaunchTokenDigest(token) }
 }
 
 export type DeclaredProtocolVersion = { kind: 'absent' | 'supported' } | { kind: 'unsupported'; value: unknown }

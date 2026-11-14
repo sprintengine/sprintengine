@@ -16,6 +16,7 @@ import {
   canvasBoardClient,
   canvasBoardSourceOf,
   continueBoardInNewChat,
+  onCanvasScene,
   readCanvasBoardAccess,
   type CanvasOpenedBoard,
 } from './canvasBoardSource'
@@ -99,7 +100,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   // one a paired chat runs on: one code path for both (canvasBoardSource.ts).
   const client = useMemo(() => canvasBoardClient(source), [source])
   // Whether the paired machine's boards open in the editor here: a machine
-  // whose Studio predates `canvas-live-boards` shows them as pictures, and says so.
+  // whose Studio does not serve `canvas-boards` shows them as pictures, and says so.
   const [access, setAccess] = useState<AccessState>(() =>
     far ? { kind: 'loading' } : { ok: true, live: true, canEdit: true },
   )
@@ -211,7 +212,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   // The mounted editor applies the same pushes itself, with reconciliation.
   useEffect(() => {
     if (!path) return
-    return window.api.onCanvasScene((push) => {
+    return onCanvasScene((push) => {
       if (!canvasPushMatchesBoard(push, board)) return
       setState((previous) => {
         if (previous.kind !== 'ready') return previous

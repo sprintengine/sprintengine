@@ -12,12 +12,19 @@ import {
   type AgentLaunchSettingsRecord,
   type AgentLaunchSettingsSnapshot,
 } from '../../shared/launch-settings'
-import type { WorkspaceSyncEvent, WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
+import {
+  agentPatchForWire,
+  type WorkspaceSyncEvent,
+  type WorkspaceSyncSnapshot,
+  type WorkspaceSyncState,
+} from '../../shared/workspace-sync'
 import type { WorkspaceRegistryRecord } from '../../shared/workspace-registry'
+import type { AgentState } from '../../shared/agent-state'
+import type { MeshConnection, MeshMachineReachability } from '../../shared/tailnet-mesh'
 
 // The shell's read-only copy of what the Studio server owns and the shell
-// reads synchronously (phase 6 spec, section 5): the workspace registry and
-// the launch settings. A terminal launch, the agent registration, the plugin
+// reads synchronously (phase 6 spec, section 5): the workspace registry, the
+// launch settings, and the desktops the server's mesh is paired with. A terminal launch, the agent registration, the plugin
 // pass over every workspace, the canvas and the tours all ask these at once,
 // in the middle of their own work; out of process the answer has to be here
 // already. The server pushes each change as it is accepted, and the mirror
@@ -40,6 +47,20 @@ export type ServerStateMirror = {
   readonly registry: MirrorRegistry
   readonly workspaceSync: MirrorWorkspaceSync
   readonly launchSettings: MirrorLaunchSettings
+  readonly meshConnections: MirrorMeshConnections
+  readonly meshReachability: MirrorMeshReachability
+}
+
+/** Whether each paired desktop answers, as the environment registry reads their connections. */
+export type MirrorMeshReachability = {
+  list(): MeshMachineReachability[]
+  onChanged(listener: () => void): () => void
+}
+
+/** The paired desktops, without credentials, as the environment registry reads them. */
+export type MirrorMeshConnections = {
+  list(): MeshConnection[]
+  onChanged(listener: () => void): () => void
 }
 
 export type MirrorRegistry = {
@@ -95,6 +116,10 @@ export function createServerStateMirror(deps: {
   const registryListeners = new Set<(state: WorkspaceSyncState) => void>()
   const eventListeners = new Set<(event: WorkspaceSyncEvent) => void>()
   const launchListeners = new Set<(record: AgentLaunchSettingsRecord) => void>()
+  let meshConnections: MeshConnection[] = []
+  const meshListeners = new Set<() => void>()
+  let meshReachability: MeshMachineReachability[] = []
+  const reachabilityListeners = new Set<() => void>()
   // Agent records the server could not take yet, oldest first.
   const heldWrites: Array<Record<string, unknown>> = []
   let markLoaded: () => void = () => undefined
@@ -124,6 +149,16 @@ export function createServerStateMirror(deps: {
   deps.rpc.on(SERVER_EVENTS.mirrorRegistry, (payload) => applyRegistry(payload as ServerMirrorRegistry))
   deps.rpc.on(SERVER_EVENTS.mirrorWorkspaceEvent, (payload) => fan(eventListeners, payload as WorkspaceSyncEvent))
   deps.rpc.on(SERVER_EVENTS.mirrorLaunchSettings, (payload) => applyLaunch(payload as ServerMirrorLaunchSettings))
+  const applyMesh = (next: unknown): void => {
+    meshConnections = Array.isArray(next) ? (next as MeshConnection[]) : []
+    fan(meshListeners, undefined)
+  }
+  deps.rpc.on(SERVER_EVENTS.mirrorMeshConnections, applyMesh)
+  const applyReachability = (next: unknown): void => {
+    meshReachability = Array.isArray(next) ? (next as MeshMachineReachability[]) : []
+    fan(reachabilityListeners, undefined)
+  }
+  deps.rpc.on(SERVER_EVENTS.mirrorMeshReachability, applyReachability)
 
   const serverAway = (error: unknown): boolean =>
     error instanceof ControlRpcError && (error.code === 'unavailable' || error.code === 'no_handler')
@@ -159,6 +194,8 @@ export function createServerStateMirror(deps: {
       const state = await deps.rpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)
       applyRegistry({ state: state.state, snapshot: state.snapshot, needsHydration: state.needsHydration })
       applyLaunch(state.launchSettings)
+      applyMesh(state.meshConnections)
+      applyReachability(state.meshReachability)
       markLoaded()
     },
     whenLoaded: () => loaded,
@@ -185,7 +222,9 @@ export function createServerStateMirror(deps: {
         }
       },
       updateWorkspaceAgent(workspaceId, agentId, patch, actor, stamp) {
-        const params = { workspaceId, agentId, patch, actor, ...(typeof stamp === 'number' ? { stamp } : {}) }
+        // A cleared field goes as null: on stdio the channel is JSON, which drops undefined.
+        const wire = patch && typeof patch === 'object' ? agentPatchForWire(patch as Partial<AgentState>) : patch
+        const params = { workspaceId, agentId, patch: wire, actor, ...(typeof stamp === 'number' ? { stamp } : {}) }
         // Behind any already held, so a later patch never lands before an earlier one.
         if (heldWrites.length > 0) {
           hold(params)
@@ -211,6 +250,24 @@ export function createServerStateMirror(deps: {
         launchListeners.add(listener)
         return () => {
           launchListeners.delete(listener)
+        }
+      },
+    },
+    meshConnections: {
+      list: () => meshConnections.map((connection) => ({ ...connection, scopes: [...connection.scopes] })),
+      onChanged(listener) {
+        meshListeners.add(listener)
+        return () => {
+          meshListeners.delete(listener)
+        }
+      },
+    },
+    meshReachability: {
+      list: () => meshReachability.map((entry) => ({ ...entry })),
+      onChanged(listener) {
+        reachabilityListeners.add(listener)
+        return () => {
+          reachabilityListeners.delete(listener)
         }
       },
     },

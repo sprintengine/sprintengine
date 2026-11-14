@@ -55,8 +55,8 @@ createInterface({input:process.stdin}).on('line',async line=>{
    opened=m.method;
    if(p.mcpServers?.length)require('node:fs').writeFileSync('mcp-servers.json',JSON.stringify(p.mcpServers));
    if(m.method==='session/load')update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:'REPLAY SHOULD BE SUPPRESSED'}});
-   // KIMI_MODES: Kimi Code's four session modes, which its presets are told as.
-   result(m.id,{...(m.method==='session/new'?{sessionId:'native'}:{}),modes:process.env.KIMI_MODES?{currentModeId:'default',availableModes:['default','plan','auto','yolo'].filter(id=>!process.env.KIMI_MODES.includes('-'+id)).map(id=>({id,name:id}))}:{currentModeId:'agent',availableModes:[{id:'agent',name:'Agent'},{id:'plan',name:'Plan'},{id:'ask',name:'Ask'}]},configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'model-one',options:[{value:'model-one',name:'Model One'},{value:'model-two',name:'Model Two'}]}]});
+   // KIMI_MODES: Kimi Code's four session modes, which its presets are told as. NO_MODES: an agent with none.
+   result(m.id,{...(m.method==='session/new'?{sessionId:'native'}:{}),modes:process.env.NO_MODES?undefined:process.env.KIMI_MODES?{currentModeId:'default',availableModes:['default','plan','auto','yolo'].filter(id=>!process.env.KIMI_MODES.includes('-'+id)).map(id=>({id,name:id}))}:{currentModeId:'agent',availableModes:[{id:'agent',name:'Agent'},{id:'plan',name:'Plan'},{id:'ask',name:'Ask'}]},configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'model-one',options:[{value:'model-one',name:'Model One'},{value:'model-two',name:'Model Two'}]}]});
    // Like Cursor and OpenCode: the command list follows the new session, outside any turn. STRAY
    // text goes first, so a test that has seen the list knows the text was read too.
    if(m.method==='session/new'){if(process.env.STRAY)update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STRAY OUTSIDE A TURN'}});update({sessionUpdate:'available_commands_update',availableCommands:[{name:'review',description:'Review changes',input:{hint:'[commit|branch]'}},{name:'triage',description:'Sort the open issues. (builtin skill)'},{name:'changelog',description:'Draft a changelog entry. (global)'},{name:'always-approve',description:'Toggle approvals',input:{hint:'on|off'}},{name:'exit',description:'Leave'}]})}
@@ -1532,54 +1532,6 @@ test("ACP opens the session with the chat's own MCP servers, and refuses one the
   } finally {
     delete process.env.ACP_MCP_TEST_TOKEN
   }
-
-  // An agent in WSL keeps the channel token and identity it was started with:
-  // a stale one in this app's environment is not handed to its gateway.
-  const gateway = {
-    id: 'sprintengine-studio',
-    name: 'SprintEngine Studio',
-    transport: 'stdio' as const,
-    command: '/home/dev/.local/share/sprintengine-studio/launcher',
-    args: ['mcp'],
-    env: { SPRINTENGINE_USER_DATA_DIR: '/run/user/1000/sprintengine' },
-    envVarNames: ['SPRINTENGINE_MCP_CHANNEL_TOKEN', 'SPRINTENGINE_AGENT_ID', 'ACP_MCP_TEST_TOKEN'],
-  }
-  const saved = {
-    token: process.env.SPRINTENGINE_MCP_CHANNEL_TOKEN,
-    agent: process.env.SPRINTENGINE_AGENT_ID,
-  }
-  process.env.SPRINTENGINE_MCP_CHANNEL_TOKEN = 'stale-token'
-  process.env.SPRINTENGINE_AGENT_ID = 'stale-agent'
-  process.env.ACP_MCP_TEST_TOKEN = 'secret-token'
-  try {
-    expect(acpMcpServers([gateway], undefined, 'Test agent', { wsl: true })).toEqual([
-      {
-        name: 'sprintengine-studio',
-        command: '/home/dev/.local/share/sprintengine-studio/launcher',
-        args: ['mcp'],
-        env: [
-          { name: 'SPRINTENGINE_USER_DATA_DIR', value: '/run/user/1000/sprintengine' },
-          { name: 'ACP_MCP_TEST_TOKEN', value: 'secret-token' },
-        ],
-      },
-    ])
-    // On this machine the app's environment is the agent's, as before.
-    expect(acpMcpServers([gateway], undefined, 'Test agent')[0]).toMatchObject({
-      env: expect.arrayContaining([
-        { name: 'SPRINTENGINE_MCP_CHANNEL_TOKEN', value: 'stale-token' },
-        { name: 'SPRINTENGINE_AGENT_ID', value: 'stale-agent' },
-      ]),
-    })
-  } finally {
-    for (const [name, value] of [
-      ['SPRINTENGINE_MCP_CHANNEL_TOKEN', saved.token],
-      ['SPRINTENGINE_AGENT_ID', saved.agent],
-      ['ACP_MCP_TEST_TOKEN', undefined],
-    ] as const) {
-      if (value === undefined) delete process.env[name]
-      else process.env[name] = value
-    }
-  }
 })
 
 test('ACP branches its running session for a fork at the newest reply, and leaves any other fork to be seeded', async () => {
@@ -1913,6 +1865,29 @@ test('another ACP agent asking with the same title gets a tool approval card', a
   try {
     const events = await turn(f as Awaited<ReturnType<typeof fixture>>, 'question')
     expect(events.find((event) => event.type === 'approval_requested')?.payload).toMatchObject({ kind: 'tool' })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('an agent that offers no session modes runs every turn as it is', async () => {
+  const f = await fixture(false, undefined, { NO_MODES: '1' })
+  try {
+    for (const mode of [undefined, 'default'] as const) {
+      const events: ConversationEvent[] = []
+      for await (const event of await f.provider.sendTurn({
+        ...f.input,
+        turnId: `turn-${mode ?? 'none'}`,
+        requestId: 'request',
+        message: 'say hello',
+        ...(mode ? { mode } : {}),
+      }))
+        events.push(event)
+      expect(events.find((event) => event.type === 'turn_failed')).toBeUndefined()
+      expect(events.filter((event) => event.type === 'content_delta').map((event) => event.payload?.text)).toEqual([
+        'hello',
+      ])
+    }
   } finally {
     await f.cleanup()
   }

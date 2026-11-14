@@ -1,6 +1,6 @@
 // AgentChatView — the chat runtime surface for conversation-backed standard
 // agents (T6). It renders canonical ConversationEvents from the main runtime
-// over the typed conversation IPC/preload path, and drives the session
+// over the window's Studio protocol client, and drives the session
 // lifecycle: start, send a turn, stream assistant output, approve/deny tool
 // requests, interrupt, stop, and retry. It deliberately has no terminal
 // emulator dependency and no landing/hero — the first screen is the usable
@@ -11,12 +11,15 @@
 // AgentChatView.test.ts so the streaming/approval/interrupt/failure states have
 // node-level coverage without rendering.
 
+import { pairedConnectionOf } from '../../studio/environmentStudio'
 import { parseMachinePath } from '../../../../shared/machine-paths'
 import { workspaceHostIdOf } from '../../../../shared/execution-host'
 import { withoutStudioNoticePrefix } from '../../../../shared/studio-notice'
-import { limitResetSendAt, selectChatScheduledMessages } from '../../../../shared/scheduled-messages'
+import { limitResetSendAt } from '../../../../shared/scheduled-messages'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import type { BranchPullRequest } from '../../../../shared/git/pull-request'
+import type { StudioLocalServer } from '../../../../../packages/studio-protocol/src/public'
 import {
   LegendList,
   type LegendListRef,
@@ -25,18 +28,19 @@ import {
 } from '@legendapp/list/react'
 
 import type {
+  ConversationApprovalDecision,
   ConversationCliRuntimeOverrides,
   ConversationImageAttachment,
   ConversationSessionSummary,
   ConversationMcpServerAction,
 } from '../../../../shared/conversation-runtime'
-import type { ConversationApprovalDecision } from '../../../../shared/conversation/approvalRules'
 import type { MeshQueuedMessage } from '../../../../shared/tailnet-mesh'
 import { apiKeyBillingNotice } from '../../../../shared/conversation/apiKeySource'
 import { PromptCacheComposerNotice } from './agentChat/promptCacheNotice'
 import type { ConversationProviderListEntry, ConversationProviderModel } from '../../../../shared/plugin-manifest'
 import type { CliPermissionPreset } from '../../types/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { workspaceSyncClient } from '../../store/workspaceSyncClient'
 import { ChevronDownIcon, ScheduleGlyph } from '../AppIcons'
 import { copySelectionAsMarkdown } from '../../utils/selectionToMarkdown'
 import { getEffectiveKeybindings, platformKeybindingsFromApiPlatform } from '../../commands/effectiveKeybindings'
@@ -120,7 +124,8 @@ import { PluginOfferChatProvider, type PluginOfferChat } from './agentChat/plugi
 import { StopGlyph } from './agentChat/stopGlyph'
 import { recalledConversationScroll, rememberConversationScroll } from './agentChat/conversationViewState'
 import { chatResumesInTerminal, resumeChatInTerminal } from './agentChat/resumeInTerminal'
-import { useConversationSession } from './agentChat/useConversationSession'
+import { isClippedEvent, useConversationSession } from './agentChat/useConversationSession'
+import { useListedSession } from './agentChat/useListedSession'
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
 import { useConversationTransport } from './agentChat/conversationTransport'
@@ -133,31 +138,21 @@ import { useComposerRecall } from './agentChat/composerRecall'
 import { ComposerField, type ComposerFieldHandle, type ComposerKeyEvent } from './agentChat/ComposerField'
 import { ComposerContextChips, SkillContextChip, useComposerContextPicker } from './agentChat/composerContextPicker'
 import { ComposerPlusMenu } from '../workspace/agentComposer/ComposerPlusMenu'
-import { unwatchPullRequest, usePullRequestsOfConversation } from '../workspace/useConversationPullRequests'
-import { useLocalServersOfConversation } from '../workspace/useLocalServers'
 import {
   CreatePullRequestDialogHost,
   useCreatePullRequestFlow,
   useCreatePullRequestState,
 } from './agentChat/createPullRequest'
-import { localPullRequestHost } from './agentChat/pullRequestHost'
 import { conversationContextReading } from './agentChat/contextReading'
 import { ContextComposerButton, type ContextBreakdownSource } from './agentChat/ContextBreakdown'
 import { useConversationStripFacts } from './agentChat/conversationStripFacts'
 import { useChatActivityCard } from './agentChat/ChatActivityCard'
 import { usePublishChatPanelFacts, type ChatPanelPermissions } from './agentChat/chatPanelStore'
-import { UsageLimitsComposerButton, useUsageLimitSnapshot } from './agentChat/usageLimits'
-import { HostUsageLimitNoticeRow, UsageLimitResumeRow } from './agentChat/usageLimitResume'
-import {
-  HostScheduledMessageRows,
-  ScheduledMessageRows,
-  type ScheduledMessageView,
-} from './agentChat/scheduledMessages'
-import {
-  canScheduleMessages,
-  updateScheduledMessage,
-  useScheduledMessagesStore,
-} from '../../store/scheduledMessagesStore'
+import { UsageLimitsComposerButton } from './agentChat/usageLimits'
+import { HostUsageLimitNoticeRow } from './agentChat/usageLimitResume'
+import { HostScheduledMessageRows, type ScheduledMessageView } from './agentChat/scheduledMessages'
+import { WINDOW_STUDIO_NAME } from './agentChat/chatServerHeld'
+import { useShellReach } from './agentChat/shellReach'
 import { SendTimeTag, type SendAtLimitReset } from '../workspace/agentComposer/schedule/SendTimeEditor'
 import { defaultSendAt } from '../workspace/agentComposer/schedule/sendTime'
 import { selectUsageLimitSnapshot, usageLimitProviderOf } from '../../store/usageLimitsStore'
@@ -217,7 +212,7 @@ import { loadWholeConversation } from './agentChat/conversationReplay'
 import { ConversationReplayView, type ConversationReplaySource } from './agentChat/conversationReplayView'
 import { onChatReplayRequest, takeChatReplayRequest } from './agentChat/chatReplayRequests'
 import { chatExportSupported, exportChatOrToast } from './agentChat/chatExport'
-import type { ChatExportAction, ChatExportRemoteSource } from '../../../../shared/chat-export'
+import type { ChatExportAction, ChatExportSource } from '../../../../shared/chat-export'
 import { useConversationScrollRestore } from './agentChat/conversationScrollRestore'
 import { useComposerSkillReader } from './agentChat/composerSkillReader'
 import { nextConversationEffort } from './agentChat/conversationEffort'
@@ -248,15 +243,17 @@ import { BackgroundTasksTrayRow } from './agentChat/backgroundTasksRow'
 import { GoalTrayRow } from './agentChat/goalTrayRow'
 import { WorktreeInstallTrayRow } from './agentChat/worktreeInstallRow'
 import { StudioConnectionNotice } from './agentChat/studioConnectionNotice'
+import { tellOfTurnFailure } from './agentChat/turnFailureNotices'
 import { ConversationTodoStrip } from './agentChat/todoProgressStrip'
 import { TimelineRow, type TimelineChrome } from './agentChat/timelineRows'
 import { UnreadDivider } from './agentChat/turnMeta'
 import { editFromHereDraft, type EditFromHereDraft } from './agentChat/editFromHere'
-import { forkChat, forkRemoteChat, takeForkedAttachments, type ForkFromHereTarget } from './agentChat/forkFromHere'
+import { forkChat, takeForkedAttachments, type ForkFromHereTarget } from './agentChat/forkFromHere'
 import { SideQuestionDrawer, useSideQuestion, type SideQuestionApi } from './agentChat/sideQuestion'
 import { ReadinessState, readinessLabel, type ChatReadiness } from './agentChat/chatStates'
 import { PendingFirstMessage } from './agentChat/pendingFirstMessage'
 import { withRequestedTurn, type RequestedTurnRowCache } from './agentChat/requestedTurnRow'
+import { useEnvironmentAway } from '../../hooks/useEnvironmentReach'
 import { ComposerActionButton, ComposerContextMenu, type ComposerMenuState } from './agentChat/composerControls'
 export { ComposerContextMenu, editingShortcut } from './agentChat/composerControls'
 export type { ComposerMenuState } from './agentChat/composerControls'
@@ -396,6 +393,8 @@ const EMPTY_MODELS: ConversationProviderModel[] = []
 // What a chat hands the skills picker for MCP servers: none — a chat reads
 // skills only, and the picker is told not to list servers.
 const NO_MCP_SERVERS: never[] = []
+const NO_PULL_REQUESTS: readonly BranchPullRequest[] = []
+const NO_LOCAL_SERVERS: readonly StudioLocalServer[] = []
 const ignoreMcpServers = (): void => undefined
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -424,12 +423,6 @@ const COMPOSER_CLASS = 'max-h-[280px] min-h-[40px] w-full'
 // not go carries the send, so Retry repeats exactly that message and only
 // appears when there is one to repeat.
 type ComposerActionError = string | { message: string; retry: QueuedTurn }
-
-// A message's words as the runtime records them: one kind of line break, no
-// space at either end.
-function steeredText(text: string): string {
-  return text.replace(/\r\n?/gu, '\n').trim()
-}
 
 function composerErrorMessage(error: ComposerActionError | null): string | null {
   return typeof error === 'string' ? error : (error?.message ?? null)
@@ -513,7 +506,7 @@ function LocalSubagentChat({
 
 /**
  * The chat view itself, over whichever transport the tree provides: the
- * conversation IPC here, or a paired machine's conversation over the Mesh.
+ * Studio protocol here, or a paired machine's conversation over the Mesh.
  * `binding` is the agent it is for — a record in the store, or the fields a
  * remote pane keeps — and the transport's capabilities decide which controls
  * it offers.
@@ -546,6 +539,17 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const label = agent.name ?? agentId
   const workspaceRoot = binding.workspaceRoot
   const { operate } = transport.capabilities
+  // What this window and its shell reach of the chat's disk.
+  const shellReach = useShellReach()
+  // The chat as its server's queue, schedule and resume calls name it.
+  const chatKey = useMemo(
+    () => ({ workspaceRoot: binding.sessionRoot ?? workspaceRoot ?? '', workspaceId, agentId }),
+    [binding.sessionRoot, workspaceRoot, workspaceId, agentId],
+  )
+  // Who holds what the chat's server keeps for it, in words: a paired
+  // machine by its name, the window's own Studio as Studio.
+  const environment = transport.environment
+  const serverName = environment.label ?? WINDOW_STUDIO_NAME
 
   const [localReadiness, setReadiness] = useState<ChatReadiness>({ kind: 'loading' })
   // A transport that decides readiness itself (a remote link) replaces this
@@ -592,6 +596,24 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     heldRootRef.current = workspaceRoot
     if (moved && transport.capabilities.startSession && hostSession === undefined) setSession(null)
   }, [workspaceRoot, transport, hostSession])
+  // A view mounted on a chat whose session is already live (a reload, a tab
+  // reopened, a second window) adopts the one its Studio lists, so Stop and
+  // the request cards answer before anything is sent (`useListedSession`).
+  // One this view found gone is not adopted again from a list not yet re-read.
+  const lostSessionIds = useRef(new Set<string>())
+  const listedSession = useListedSession(
+    workspaceId,
+    agentId,
+    hostSession === undefined && Boolean(transport.capabilities.startSession),
+  )
+  const listedSessionRef = useRef(listedSession)
+  listedSessionRef.current = listedSession
+  const listedSessionId = listedSession?.sessionId ?? null
+  useEffect(() => {
+    const listed = listedSessionRef.current
+    if (!listed || lostSessionIds.current.has(listed.sessionId)) return
+    setSession((current) => current ?? listed)
+  }, [listedSessionId])
   const sessionId = session?.sessionId ?? null
   const providerEntry = providers.find((entry) => entry.id === conversation?.providerId)
   const capabilities = session?.capabilities ?? providerEntry?.capabilities
@@ -621,7 +643,18 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     error: historyError,
     replayThroughSeq,
     announcement,
+    restoreClipped,
   } = useConversationSession(binding.sessionRoot ?? workspaceRoot, workspaceId, agentId, { active: viewActive })
+  // Events too large for one frame crossed with their longest text cut; the
+  // tray offers them whole, which is a read per event.
+  const clippedCount = useMemo(() => events.filter(isClippedEvent).length, [events])
+  const [restoringClipped, setRestoringClipped] = useState(false)
+  const showClippedWhole = () => {
+    setRestoringClipped(true)
+    void restoreClipped()
+      .catch(() => undefined)
+      .finally(() => setRestoringClipped(false))
+  }
   const animatedRowIds = useRef(new Set<string>())
   const [userTurns, setUserTurns] = useState<UserTurn[]>([])
   const {
@@ -634,6 +667,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     beginDraftSend,
     finishDraftSend,
     clearDraft,
+    pendingSend,
+    settlePendingSend,
+    commandIdFor,
   } = useComposerDraft(workspaceId, agentId, '')
   const draftMetadata = useMemo<ComposerDraftMetadata>(
     () => ({
@@ -667,6 +703,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     startupPending &&
     (readiness.kind === 'ready' || readiness.kind === 'loading' || readiness.kind === 'preparing-worktree')
   const sendInFlightRef = useRef(false)
+  // Drafts sent and not yet answered, by the turn id the send carries. The
+  // draft left storage when the send began, so a reload never brings it back;
+  // the copy held in memory to put back if the send fails is let go once its
+  // `user_message` is in the log, since the send answers only when its turn
+  // ends, and a turn that fails after that must not put the message it already
+  // shows back in the composer.
+  const unlandedDraftSendsRef = useRef(new Map<string, symbol>())
   // The ref's value as state, so what waits on a send (the queue's flush) runs
   // again once it settles; the ref stays the synchronous re-entry guard.
   const [sendInFlight, setSendInFlight] = useState(false)
@@ -695,12 +738,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // typed intent is dropped. Attachments ride the queue too — dropping them at
   // the queue boundary would silently lose what the user staged.
   const [queuedTurn, setQueuedTurn] = useState<QueuedTurn | null>(null)
-  // A chat on this computer hands a message queued in words alone to main,
-  // which holds it in its file and sends it when the turn ends, as it does a
-  // paired machine's (scheduled-messages.ts): kept in this view's state, a
-  // reload or a crash lost it. Set once the chat's machine is known, below;
-  // a chat on another machine, or one carrying more than words, queues here.
-  const holdQueueInMainRef = useRef(false)
   // When the draft is to be sent, picked from the "+" (Schedule); null sends
   // it as usual. While set, Enter and the send button schedule the draft
   // instead: main keeps it and sends it into this chat at that time, whether
@@ -713,10 +750,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Steers whose `user_message` is in the conversation while their send has
   // not settled yet.
   const landedSteerIdsRef = useRef(new Set<string>())
-  // A steer to a chat on a paired machine has no echoed id to land by: its
-  // words, and how many of the chat's messages were already in when it went,
-  // are what its own message is known by when it arrives.
-  const steerLandingRef = useRef<{ id: string; text: string; before: number } | null>(null)
   // The composer's right-click menu (1793); null when closed. Opening it snapshots
   // the click point, the field's selection, and the clipboard, so the menu's
   // enable states describe the moment the user asked for it.
@@ -741,7 +774,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // it in the transcript, so a page of older replies loaded above is not news.
   const replySeenRef = useRef<{ turnId: string | null } | null>(null)
 
-  // Resolve provider/model/key readiness from the conversation IPC.
+  // Resolve provider/model/key readiness from the window's Studio.
   useEffect(() => {
     let cancelled = false
     if (!conversation || overridingReadiness) return
@@ -891,13 +924,42 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // Only a new message can land one: keyed on the transcript's shape.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureRevision, userTurns, transport])
+  // A sent draft whose message has landed in the log is the chat's, not the
+  // composer's: the copy held in case the send failed is let go.
+  useEffect(() => {
+    const unlanded = unlandedDraftSendsRef.current
+    if (!unlanded.size) return
+    const stop = Math.max(0, events.length - 2_000)
+    for (let index = events.length - 1; index >= stop && unlanded.size; index--) {
+      const event = events[index]!
+      if (event.type !== 'user_message') continue
+      const localTurnId = readString(event.payload, 'localTurnId')
+      const token = localTurnId ? unlanded.get(localTurnId) : undefined
+      if (!token) continue
+      unlanded.delete(localTurnId!)
+      finishDraftSend(token, true)
+    }
+    // Only a new message can land one: keyed on the transcript's shape.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureRevision, finishDraftSend])
   const previousRowsRef = useRef<ReturnType<typeof deriveConversationTimelineRows>>([])
   const requestedTurnRowRef = useRef<RequestedTurnRowCache>(null)
+  // The machine the chat runs on is away: a message sent now waits for it.
+  const environmentAway = useEnvironmentAway(environment.route, environment.label)
+  const waitingOn = environmentAway ? (environment.label ?? 'the machine') : null
   const timelineRows = useMemo(() => {
     const rows = deriveConversationTimelineRows(projection.entries, projection.activeTurn, previousRowsRef.current)
     previousRowsRef.current = rows
-    return withRequestedTurn(rows, turnRequestedAt, sending, requestedTurnRowRef)
-  }, [projection.entries, projection.activeTurn, turnRequestedAt, sending])
+    return withRequestedTurn(rows, turnRequestedAt, sending, requestedTurnRowRef, waitingOn)
+  }, [projection.entries, projection.activeTurn, turnRequestedAt, sending, waitingOn])
+  // Back, the waiting message goes now: its turn is counted from here, not
+  // from when it was written.
+  const wasAwayRef = useRef(environmentAway)
+  useEffect(() => {
+    const wasAway = wasAwayRef.current
+    wasAwayRef.current = environmentAway
+    if (wasAway && !environmentAway && turnRequestedAt !== null) setTurnRequestedAt(Date.now())
+  }, [environmentAway, turnRequestedAt])
   // The send has settled and no turn runs: the turn asked for has ended (or
   // never began), and its working line with it.
   useEffect(() => {
@@ -1004,9 +1066,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   useEffect(() => {
     if (!liveModelEvent || appliedModelEventRef.current === liveModelEvent.id) return
     appliedModelEventRef.current = liveModelEvent.id
-    if (transport.kind !== 'local' || !conversation || liveModelEvent.modelId === conversation.modelId) return
+    if (!conversation || liveModelEvent.modelId === conversation.modelId) return
     updateBinding({ conversation: { providerId: conversation.providerId, modelId: liveModelEvent.modelId } })
-  }, [liveModelEvent, transport.kind, conversation, updateBinding])
+  }, [liveModelEvent, conversation, updateBinding])
 
   // Follow the stream only while the user is at (or near) the bottom: reading
   // scrollback must never be yanked away by incoming tokens. A "jump to
@@ -1220,17 +1282,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   }, [timelineRows, atBottomRef])
 
   // Surface turn failures (streamed via `turn_failed`) to the app Notifications
-  // panel, deduped on the message so a single failure is logged once.
-  const lastNotifiedErrorRef = useRef<string | null>(null)
+  // panel, once each: a failure is its event (`lastErrorId`), so the same
+  // failure read again whole (a reconnect, a server restarted under the chat,
+  // the view mounted again) is not told twice, and a later turn failing with
+  // the same words still is. One already in the history this window first
+  // reads of the chat is not told: the chat shows it.
   useEffect(() => {
+    if (!hydrated) return
     const message = projection.lastError
-    // Clear on recovery so an identical error on a later turn notifies again.
-    if (!message) {
-      lastNotifiedErrorRef.current = null
-      return
-    }
-    if (message === lastNotifiedErrorRef.current) return
-    lastNotifiedErrorRef.current = message
+    if (!tellOfTurnFailure(workspaceId, agentId, message ? (projection.lastErrorId ?? message) : null)) return
+    if (!message) return
     publishDiagnosticSync({
       level: 'error',
       source: 'workspace',
@@ -1243,7 +1304,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       workspaceName: workspace?.name,
       agentId,
     })
-  }, [projection.lastError, projection.lastErrorDetail, label, workspaceId, workspace?.name, agentId])
+  }, [
+    hydrated,
+    projection.lastError,
+    projection.lastErrorDetail,
+    projection.lastErrorId,
+    label,
+    workspaceId,
+    workspace?.name,
+    agentId,
+  ])
 
   // Surface session/send action errors (start failure, missing key, IPC error)
   // the same way — these never reach the event stream.
@@ -1303,6 +1373,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   > => {
     if (!conversation || !workspaceRoot || !transport.capabilities.startSession || !transport.startSession) return null
     try {
+      // A new chat starts nothing before Studio has it on disk: a stop in
+      // between would leave a conversation, and a first message the agent
+      // may run, that no chat lists. Through a restart this waits for the
+      // chat to be sent again; refused, the send fails with the reason.
+      const created = await workspaceSyncClient.whenCreated(workspaceId)
+      if (!created.ok) return { ok: false, message: created.message }
       if (!(await ensureChatWorktree(workspaceId))) return { ok: false, message: WORKTREE_NOT_BACK }
       const result = await transport.startSession({
         workspaceRoot,
@@ -1350,10 +1426,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const forgetLostSession = useCallback(
     (result: { ok: boolean; code?: unknown; message?: unknown }): boolean => {
       if (!transport.capabilities.startSession || !sessionWasLost(result)) return false
+      if (sessionId) lostSessionIds.current.add(sessionId)
       setSession(null)
       return true
     },
-    [transport],
+    [transport, sessionId],
   )
 
   // Change the tool-permission preset. The agent record is the durable seed (it
@@ -1469,12 +1546,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       // that began when the chat opened; the turn's carries on from there.
       setTurnRequestedAt(inPlace ? startupSince : Date.now())
       const localTurnId = `user-${userTurns.length}-${Date.now()}`
-      // An optimistic bubble only where the runtime echoes its id back on the
-      // `user_message` that replaces it. A remote send has no such id, so its
-      // bubble is the host's own event, a moment later. It goes up before the
-      // session is made sure of: a chat's first message otherwise waited out
-      // its CLI starting before it showed at all.
-      if (transport.capabilities.optimisticTurns) {
+      // An optimistic bubble, which the `user_message` echoing its id
+      // replaces. It goes up before the session is made sure of: a chat's
+      // first message otherwise waited out its CLI starting before it showed
+      // at all.
+      {
         pendingUserScrollIdRef.current = `user:${localTurnId}`
         if (inPlace) animatedRowIds.current.add(`user:${localTurnId}`)
         setUserTurns((current) => [
@@ -1490,9 +1566,25 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           },
         ])
       }
+      // Kept until Studio answers it, from now: a reload or a restart while
+      // the chat's session starts, or while the send is out, finds it and
+      // settles it against the log rather than losing it. Its command id is
+      // the one a send of these words was given back with, if it was.
+      const commandId = commandIdFor(text)
+      const draftSend = beginDraftSend({
+        message,
+        fromDraft,
+        commandId,
+        localTurnId,
+        attachments: turnAttachments,
+        metadata,
+      })
+      unlandedDraftSendsRef.current.set(localTurnId, draftSend)
       const activeSession = await ensureSession()
       const thisSend = { text, attachments: turnAttachments, metadata }
       if (!activeSession) {
+        unlandedDraftSendsRef.current.delete(localTurnId)
+        finishDraftSend(draftSend, false)
         // The turn never left: its bubble comes down with the text going back.
         setUserTurns((current) => current.filter((turn) => turn.id !== localTurnId))
         setTurnRequestedAt(null)
@@ -1520,13 +1612,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         }
         return
       }
-      const draftSend = fromDraft ? beginDraftSend(message) : null
       setPending('sending')
       recordUserMessage?.(Date.now())
       try {
         const result = await sendRecoveringSession({
           sessionId: activeSession,
-          send: (onSession) =>
+          newCommandId: () => commandId,
+          send: (onSession, commandId) =>
             transport.send({
               sessionId: onSession,
               message: text,
@@ -1537,6 +1629,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               mode: conversationMode,
               reasoningEffort,
               ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+              commandId,
             }),
           restart: async () => {
             // A view that cannot start one (a paired machine's chat) keeps the one it has.
@@ -1580,6 +1673,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           retry: thisSend,
         })
       } finally {
+        unlandedDraftSendsRef.current.delete(localTurnId)
         sendInFlightRef.current = false
         setSendInFlight(false)
         setPending(null)
@@ -1598,10 +1692,34 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       supportsSkills,
       beginDraftSend,
       finishDraftSend,
+      commandIdFor,
       setDraft,
       setDraftMetadata,
     ],
   )
+
+  // A send a reload or a restart cut off before Studio answered it, settled
+  // once the chat's log is read: there, it is let go of; not there, it is
+  // back in the composer, said so, with its pictures. Its command id stays
+  // with the words, so sending them again cannot run a late copy twice.
+  useEffect(() => {
+    if (!pendingSend || !hydrated) return
+    const landed = events.some(
+      (event) => event.type === 'user_message' && readString(event.payload, 'localTurnId') === pendingSend.localTurnId,
+    )
+    const given = settlePendingSend(landed)
+    if (!given) return
+    if (given.attachments.length > 0) setAttachments((current) => (current.length > 0 ? current : given.attachments))
+    const lostPictures =
+      given.picturesNotKept > 0
+        ? ` ${given.picturesNotKept === 1 ? 'Its picture was' : `${given.picturesNotKept} of its pictures were`} too large to keep: attach ${given.picturesNotKept === 1 ? 'it' : 'them'} again.`
+        : ''
+    showToast({
+      tone: 'warn',
+      title: 'Your last message may not have been sent',
+      description: `Studio stopped before it answered. The message is back in the composer: send it again.${lostPictures}`,
+    })
+  }, [pendingSend, hydrated, events, settlePendingSend])
 
   // Set further down, once the model picker and effort control it drives are
   // known; answers whether it handled the message.
@@ -1635,9 +1753,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       try {
         const files = attachedFilesOf(turn.metadata.files)
         result = await queue({
+          key: chatKey,
           message: turn.text,
           ...(turn.attachments.length ? { attachments: turn.attachments } : {}),
-          ...(turn.metadata.skillIds.length ? { skills: turn.metadata.skillIds } : {}),
+          ...(turn.metadata.skillIds.length ? { skills: turn.metadata.skillIds.map((id) => ({ id })) } : {}),
           ...(turn.metadata.mentions.length ? { mentions: turn.metadata.mentions } : {}),
           ...(files.length ? { files } : {}),
         })
@@ -1651,13 +1770,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       setQueuedTurn((current) =>
         current ? queueComposerDraft(turn, current.text, current.attachments, current.metadata).turn : turn,
       )
-      const machine = transport.machineName ?? 'The other machine'
       setActionError(
-        `${machine} could not hold the message (${result.message.replace(/\.$/u, '')}). It waits here, and goes when the turn ends while this machine is awake.`,
+        `${serverName} could not hold the message (${result.message.replace(/\.$/u, '')}). It waits here, and goes when the turn ends while this window is open.`,
       )
       return false
     },
-    [transport],
+    [transport, chatKey, serverName],
   )
   // Whether a commit while the turn runs is handed to the machine running the chat.
   const handsQueueToHost =
@@ -1695,32 +1813,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // or for one message by Primary+Enter (`commitComposerNow`). A steer the
   // turn cannot take now queues instead, and one the runtime refuses goes back
   // to the queue, so a message is never lost to the race with the turn's end.
-  // Hand a queued message to main to hold. One main would not keep waits here,
-  // whole, ahead of anything queued since, as every queued message did before.
-  const holdQueuedInMain = useCallback(
-    async (turn: QueuedTurn) => {
-      let reason: string
-      try {
-        const held = await window.api.holdQueuedMessage({
-          workspaceId,
-          agentId,
-          text: turn.text,
-          source: `${workspaceId}:${agentId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
-        })
-        if (held.ok) return
-        reason = held.reason
-      } catch (error) {
-        reason = error instanceof Error ? error.message : 'main did not answer'
-      }
-      setQueuedTurn((current) =>
-        current ? queueComposerDraft(turn, current.text, current.attachments, current.metadata).turn : turn,
-      )
-      setActionError(
-        `The message could not be kept for after this turn (${reason.replace(/\.$/u, '')}). It waits here instead, and goes when the turn ends.`,
-      )
-    },
-    [workspaceId, agentId],
-  )
   const commitDraft = useCallback(
     (forceQueue: boolean): boolean => {
       const text = draft.trim()
@@ -1771,19 +1863,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           void steerTurnRef.current(turn)
           return true
         }
-        if (
-          holdQueueInMainRef.current &&
-          queuedTurn === null &&
-          attachments.length === 0 &&
-          !draftMetadata.mentions.length &&
-          !draftMetadata.skillIds.length &&
-          !draftMetadata.files.length
-        ) {
-          const { turn } = queueComposerDraft(null, text, attachments, draftMetadata)
-          clearDraft()
-          void holdQueuedInMain(turn)
-          return true
-        }
         if (handsQueueToHost) {
           const { turn, dropped } = queueComposerDraft(null, text, attachments, draftMetadata)
           clearDraft()
@@ -1820,7 +1899,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       sendTurn,
       sendAt,
       handsQueueToHost,
-      holdQueuedInMain,
       handToHost,
       followUpBehavior,
       canSteer,
@@ -1918,8 +1996,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // The files New chat attached by path go with it as this chat's own send
   // would carry them: beside the words, drawn as cards in its first bubble.
   const startupFiles = agent?.chatStartupFiles
-  const startupTakesImages =
-    readiness.kind === 'ready' && capabilities?.images === true && transport.capabilities.imageAttachments
+  const startupTakesImages = readiness.kind === 'ready' && capabilities?.images === true
   const startupHandledRef = useRef(false)
   // A New chat still waiting on its worktree holds the message (it has no
   // root, so no history to hydrate); one whose worktree could not be made
@@ -2269,19 +2346,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     const text = turn.text.trim()
     const files = attachedFilesOf(metadata.files)
     const localTurnId = `user-${userTurns.length}-${Date.now()}`
-    // An optimistic bubble only where the runtime echoes its id back, as for
-    // any send: a paired machine's chat draws the message from its own event.
-    const optimistic = transport.capabilities.optimisticTurns
     setActionError(null)
     setSteeringTurnId(localTurnId)
-    steerLandingRef.current = optimistic
-      ? null
-      : {
-          id: localTurnId,
-          text: steeredText(text),
-          before: shapeEntries.filter((entry) => entry.kind === 'user' && entry.seq !== undefined).length,
-        }
-    if (optimistic) {
+    // An optimistic bubble, which the `user_message` echoing its id replaces.
+    {
       pendingUserScrollIdRef.current = `user:${localTurnId}`
       setUserTurns((current) => [
         ...current,
@@ -2300,24 +2368,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // The send settles only when the turn the steer opened does, so a failure
     // can arrive after the message was already written to the conversation.
     // Queueing that one again would send it twice; only a message that never
-    // landed goes back to the head of the queue. Where the landing cannot be
-    // seen (no echoed id: a paired machine, which holds a steer its turn
-    // could not take for the turn's end itself), a refused one goes back to
-    // the composer instead, for the person to send again or not.
+    // landed goes back to the head of the queue.
     const requeue = (message: string) => {
       setActionError(message)
       if (landedSteerIdsRef.current.has(localTurnId)) return
-      if (!optimistic) {
-        setDraft((current) => restoreRefusedText(current, turn.text))
-        setDraftMetadata((current) => ({
-          skillIds: [...new Set([...turn.metadata.skillIds, ...current.skillIds])],
-          mentions: [...turn.metadata.mentions, ...current.mentions],
-          files: [...new Set([...turn.metadata.files, ...current.files])],
-        }))
-        if (turn.attachments.length)
-          setAttachments((current) => [...turn.attachments, ...current].slice(0, MAX_ATTACHMENTS_PER_TURN))
-        return
-      }
       setUserTurns((current) => current.filter((entry) => entry.id !== localTurnId))
       putBackQueued(turn)
     }
@@ -2342,7 +2396,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       requeue(err instanceof Error ? err.message : 'Could not send the message.')
     } finally {
       landedSteerIdsRef.current.delete(localTurnId)
-      if (steerLandingRef.current?.id === localTurnId) steerLandingRef.current = null
       setSteeringTurnId((current) => (current === localTurnId ? null : current))
     }
   }
@@ -2353,13 +2406,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // until its send settles, so a late failure knows the message is already in.
   useEffect(() => {
     if (steeringTurnId === null) return
-    const landing = steerLandingRef.current?.id === steeringTurnId ? steerLandingRef.current : null
-    const landed = landing
-      ? shapeEntries
-          .filter((entry) => entry.kind === 'user' && entry.seq !== undefined)
-          .slice(landing.before)
-          .some((entry) => entry.kind === 'user' && steeredText(entry.text) === landing.text)
-      : shapeEntries.some((entry) => entry.kind === 'user' && entry.id === steeringTurnId && entry.seq !== undefined)
+    const landed = shapeEntries.some(
+      (entry) => entry.kind === 'user' && entry.id === steeringTurnId && entry.seq !== undefined,
+    )
     if (!landed) return
     landedSteerIdsRef.current.add(steeringTurnId)
     setSteeringTurnId(null)
@@ -2405,7 +2454,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transport.cancelQueued || takingBackRef.current.has(message.id)) return
     takingBackRef.current.add(message.id)
     try {
-      const result = await transport.cancelQueued({ queuedId: message.id })
+      const result = await transport.cancelQueued({ key: chatKey, queuedId: message.id })
       if (!result.ok) {
         setActionError(result.message)
         return
@@ -2430,7 +2479,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transport.cancelQueued || takingBackRef.current.has(message.id)) return
     takingBackRef.current.add(message.id)
     try {
-      const result = await transport.cancelQueued({ queuedId: message.id })
+      const result = await transport.cancelQueued({ key: chatKey, queuedId: message.id })
       if (!result.ok) {
         setActionError(result.message)
         return
@@ -2592,7 +2641,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   })
   const sshMachinesOn = window.api?.sshMachinesEnabled === true
   const signInProviderId =
-    transport.kind === 'local' &&
+    transport.capabilities.providerSignIn &&
     (!machineId || sshMachinesOn) &&
     (machineId
       ? cliForConversationProvider(conversation?.providerId)
@@ -2770,7 +2819,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const pluginCatalogEntries = useWorkspaceStore((s) => s.pluginCatalogEntries)
   const isSubagent = binding.subagent !== undefined
   const resumesInTerminal =
-    transport.kind === 'local' && !isSubagent && chatResumesInTerminal(agent, pluginCatalogEntries)
+    transport.capabilities.resumeInTerminal &&
+    clientSupports('terminals') &&
+    !isSubagent &&
+    chatResumesInTerminal(agent, pluginCatalogEntries)
   const resumeInTerminalRef = useRef(() => {})
   resumeInTerminalRef.current = () => {
     if (!resumesInTerminal) {
@@ -2834,9 +2886,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       ...(queuedTurn?.text ? [queuedTurn.text] : []),
       ...handingOff.map((turn) => turn.text),
       ...(hostQueue?.messages.map((message) => message.text) ?? []),
-      ...selectChatScheduledMessages(useScheduledMessagesStore.getState().state, { workspaceId, agentId }).map(
-        (message) => message.text,
-      ),
+      ...(binding.hostSchedule?.messages.map((message) => message.text) ?? []),
     ],
     transcriptRef,
     listRef,
@@ -2903,19 +2953,27 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transcript || composerInputDisabled) return false
     return quoteSelectionInto(transcript, document.getSelection(), quoteIntoComposer, citeIntoComposer)
   }
-  // Restart agent session (`chat.restartSession`): end the agent's process the
-  // way Settle and the idle sweep do — suspended, so the session keeps its
-  // resume cursor and the next message starts it again on the same
-  // conversation (sessionRecovery.ts covers a session the runtime no longer
-  // holds) — then list the slash commands again, so a skill or plugin
-  // installed since shows up. Refused while the agent works: a suspend
-  // interrupts the turn and ends the agents it sent off. A chat on another
-  // machine is restarted by that machine, the same way.
+  // Restart agent session (`chat.restartSession`): the chat's server ends the
+  // agent's session (`conversation.restartSession`), keeping the conversation,
+  // so the next message starts it again — then list the slash commands again,
+  // so a skill or plugin installed since shows up. Refused while the agent
+  // works: ending it interrupts the turn and the agents it sent off. Offered
+  // where the chat's server restarts sessions for this window.
   const restartSessionRef = useRef<() => Promise<void>>(async () => undefined)
   restartSessionRef.current = async () => {
-    const restartRemotely = transport.restartSession
-    if (transport.kind !== 'local' && !restartRemotely) {
-      showToast({ tone: 'warn', title: 'This chat runs on another machine', description: 'Restart it there.' })
+    const restart = transport.capabilities.restartSession ? transport.restartSession : undefined
+    if (!restart) {
+      // Say what would let it: a grant that may operate the chat, or a
+      // machine whose Studio restarts sessions.
+      showToast({
+        tone: 'warn',
+        title: 'This chat cannot be restarted from here',
+        description: !transport.capabilities.operate
+          ? 'This window may read this chat but not drive it.'
+          : environment.label
+            ? `Update SprintEngine Studio on ${environment.label} to restart its chats from here.`
+            : 'Its server does not restart sessions for this window.',
+      })
       return
     }
     const working =
@@ -2930,41 +2988,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       })
       return
     }
-    if (restartRemotely) {
-      const result = await restartRemotely().catch((error: unknown) => ({
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error),
-      }))
-      if (!result.ok) {
-        showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
-        return
-      }
-      conversationCommands.refresh()
-      // A notice is that machine saying it had no agent running for the chat.
-      showToast(
-        result.notice
-          ? { tone: 'neutral', title: 'No agent session to restart', description: result.notice }
-          : {
-              tone: 'good',
-              title: 'Agent session restarted',
-              description: 'Your next message starts it again, with the conversation as it was.',
-            },
-      )
-      return
-    }
-    if (!sessionId) {
-      // No agent has started for this chat since it opened: nothing runs to
-      // end. The command list is still asked again, which is what someone
-      // reaching for this after an install wants.
-      conversationCommands.refresh()
-      showToast({
-        tone: 'neutral',
-        title: 'No agent session to restart',
-        description: 'This chat has no agent running. Your next message starts one.',
-      })
-      return
-    }
-    const result = await window.api.conversationSessionSuspend({ sessionId }).catch((error: unknown) => ({
+    const result = await restart({ key: chatKey }).catch((error: unknown) => ({
       ok: false as const,
       message: error instanceof Error ? error.message : String(error),
     }))
@@ -2972,13 +2996,17 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
       return
     }
-    if (result.session) setSession(result.session)
     conversationCommands.refresh()
-    showToast({
-      tone: 'good',
-      title: 'Agent session restarted',
-      description: 'Your next message starts it again, with the conversation as it was.',
-    })
+    // A notice is the server saying it had no agent running for the chat.
+    showToast(
+      result.notice
+        ? { tone: 'neutral', title: 'No agent session to restart', description: result.notice }
+        : {
+            tone: 'good',
+            title: 'Agent session restarted',
+            description: 'Your next message starts it again, with the conversation as it was.',
+          },
+    )
   }
   // Typing or pasting in the chat away from the composer lands in it
   // (agentChat/typeToComposer). Read through a ref so the listeners are bound
@@ -3050,7 +3078,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const remoteOrigin = useWorkspaceStore(
     (s) => s.workspaces.find((candidate) => candidate.id === workspaceId)?.remoteOrigin ?? null,
   )
-  const remoteExportSourceRef = useRef<() => Promise<ChatExportRemoteSource>>(async () => {
+  const remoteExportSourceRef = useRef<() => Promise<ChatExportSource>>(async () => {
     throw new Error('This chat could not be read.')
   })
   remoteExportSourceRef.current = async () => {
@@ -3059,6 +3087,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     const all = await loadWholeConversation((input) => transport.loadEarlier(input), key, held)
     return {
       events: all,
+      // The pictures stay on that machine: named in the export, not drawn.
+      attachments: {},
       title: label,
       project: remoteOrigin?.workspaceName ?? null,
       providerId: conversation?.providerId || null,
@@ -3067,7 +3097,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     }
   }
   const exportable = chatExportSupported()
-  const exportsRemote = transport.kind === 'remote'
+  // Read from the chat's server where it pages a transcript out; elsewhere from what this view holds.
+  const exportsFromView = !transport.capabilities.transcriptExport
   useEffect(
     () =>
       registerMountedChatView({
@@ -3089,8 +3120,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         openSideQuestion: () => openSideQuestionRef.current(),
         ensureSession: () => ensureSessionRef.current(),
         hasMessages: () => hasMessagesRef.current,
-        // Main reads a local chat's transcript; a chat on another machine has
-        // none here to read, so this window reads it from there and hands it on.
+        // A chat is read from this window's Studio; one followed over a paired
+        // machine's lane is read from that machine by this view instead.
         ...(exportable
           ? {
               exportChat: (action: ChatExportAction) =>
@@ -3098,12 +3129,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   workspaceId,
                   agentId,
                   action,
-                  ...(exportsRemote ? { remote: () => remoteExportSourceRef.current() } : {}),
+                  ...(exportsFromView ? { remote: () => remoteExportSourceRef.current() } : {}),
                 }),
             }
           : {}),
       }),
-    [workspaceId, agentId, stepTurn, openChatFind, exportable, exportsRemote],
+    [workspaceId, agentId, stepTurn, openChatFind, exportable, exportsFromView],
   )
   const modelPickerShortcutLabel = useMemo(() => {
     const keybinding = getEffectiveKeybindings(MODEL_PICKER_TOGGLE_COMMAND, keybindingSettings)[0]
@@ -3238,10 +3269,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     [hasContextReading, breakdownDeclared, readContextBreakdown, sessionId, assistantName, contextRefreshKey],
   )
   // Image attach is offered only where a provider actually reads the turn's
-  // attachments, the transport carries them there, and the session can take a
-  // turn — a control that stages images no one will receive is worse than no
-  // control.
-  const imagesEnabled = ready && capabilities?.images === true && transport.capabilities.imageAttachments
+  // attachments and the session can take a turn: every transport carries
+  // them to the chat's server. A control that stages images no one will
+  // receive is worse than no control.
+  const imagesEnabled = ready && capabilities?.images === true
   // Files attached by path are cards only where the agent can read them by
   // that path and the card can open them: a chat on this computer (not an
   // SSH machine's or a WSL distribution's), in a window that reads a file's
@@ -3250,16 +3281,25 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Anywhere else a file is typed as its path.
   const filesEnabled =
     ready &&
-    clientSupports('drag-paths') &&
-    (transport.kind === 'local'
-      ? transport.capabilities.localFiles && workspaceRunsHere(binding.workspace)
-      : transport.capabilities.attachFiles)
+    ((shellReach.dragPaths && workspaceRunsHere(binding.workspace)) ||
+      (clientSupports('drag-paths') && transport.capabilities.attachFiles))
 
-  const skillInventory = useWorkspaceSkills(
-    workspaceRoot,
-    null,
-    supportsSkills && transport.capabilities.composerContext,
+  // The inventory is the window's own Studio's, except for a paired desktop's
+  // chat, which that machine lists for the chat's project there.
+  const pairedConnection = pairedConnectionOf(environment.route)
+  const pairedWorkspaceId = pairedConnection ? (hostSession?.workspaceId ?? null) : null
+  const pairedSkills = useMemo(
+    () =>
+      pairedConnection && pairedWorkspaceId
+        ? {
+            connectionId: pairedConnection,
+            workspaceId: pairedWorkspaceId,
+            ...(environment.label ? { machineName: environment.label } : {}),
+          }
+        : null,
+    [pairedConnection, pairedWorkspaceId, environment.label],
   )
+  const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !pairedSkills)
   // Held from render to render, as the "+" menu that takes them is memoized:
   // a list rebuilt each render redrew the menu on every keystroke and token.
   const attachedSkills = useMemo(
@@ -3303,7 +3343,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             mcpCli: chatCli,
             mcpPickable: false,
             // A chat on a paired machine lists that machine's.
-            ...(transport.remoteExtensions ? { remote: transport.remoteExtensions } : {}),
+            ...(pairedSkills ? { remote: pairedSkills } : {}),
             // A live chat can reconnect its servers, switch them, and sign in
             // to one, as far as its CLI lets it; one on a paired machine as
             // far as that machine takes it, which its session says.
@@ -3324,7 +3364,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       attachedSkills,
       setAttachedSkills,
       chatCli,
-      transport.remoteExtensions,
+      pairedSkills,
       runMcpServerAction,
       sessionId,
       mcpServerActions,
@@ -3358,8 +3398,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // that machine lists its CLI's commands, the menu asks it for the chat's
   // folder there; elsewhere it holds Studio's commands, and the CLI's only
   // once a list for it has reached this machine.
-  const localCommands = transport.capabilities.composerContext
-  const listCommandsThere = !localCommands && transport.capabilities.commandList ? transport.listCommands : undefined
+  const listCommandsThere = transport.capabilities.commandList ? transport.listCommands : undefined
+  // The window's own Studio lists them for the chat's folder where the
+  // transport has no list of its own.
+  const localCommands = transport.capabilities.commandList && !transport.listCommands
   const commandSource = useMemo<ChatCommandSource | undefined>(
     () =>
       listCommandsThere
@@ -3387,9 +3429,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   )
   const conversationCommands = useConversationCommands(
     chatCli,
-    localCommands
-      ? workspaceRoot
-      : ((commandSource ? transport.commandsFolder : undefined) ?? binding.sessionRoot ?? null),
+    localCommands ? workspaceRoot : (binding.sessionRoot ?? null),
     {
       appCommands,
       discover: localCommands || Boolean(commandSource),
@@ -3409,8 +3449,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     caret: composerCaret,
     // The type-ahead reads this machine's inventory, and a remote chat's that
     // machine's, as its "+" does.
-    skillsEnabled: supportsSkills && (transport.capabilities.composerContext || Boolean(transport.remoteExtensions)),
-    remoteSkills: transport.capabilities.composerContext ? null : (transport.remoteExtensions ?? null),
+    skillsEnabled: supportsSkills,
+    remoteSkills: pairedSkills,
     // A file mention names a file in the chat's folder: on this machine's
     // disk, or, for a remote chat, in its folder over there, searched there.
     mentionsEnabled: transport.capabilities.mentions,
@@ -3571,22 +3611,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // open the fork in a tab. A provider that branches only the session it is
   // running (an ACP agent's `session/fork`, `forkFromLiveSession`) has this
   // chat's session started first for a fork at the newest reply; any other
-  // is not started for nothing. A paired machine's chat is forked over there,
-  // never started here, and the fork opens as a pane onto that machine.
+  // is not started for nothing. The chat's Studio answers where the fork is,
+  // and it opens there. A paired machine's chat followed over the tailnet lane
+  // is forked over there, never started here, and the fork opens as a pane
+  // onto that machine (`openPairedFork`), until that lane is the protocol.
   const forkRef = useRef<(target: ForkFromHereTarget) => Promise<void>>(async () => undefined)
   forkRef.current = async (target) => {
-    if (transport.kind === 'remote') {
-      await forkRemoteChat({
-        transport,
-        workspaceId,
-        agentId,
-        providerId: conversation?.providerId || 'remote',
-        name: agent.name,
-        target,
-      })
-      return
-    }
-    if (!workspaceRoot) throw new Error('This chat has no folder to fork in.')
     if (
       target.side === 'assistant' &&
       target.turnId === latestTurnId &&
@@ -3594,7 +3624,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       transport.capabilities.startSession
     )
       await ensureSession()
-    await forkChat({ transport, key: { workspaceRoot, workspaceId, agentId }, target })
+    if (!conversation?.providerId) throw new Error('This chat cannot be forked here.')
+    await forkChat({ transport, key: chatKey, providerId: conversation.providerId, name: agent.name, target })
   }
   const forkFromHere = useCallback((target: ForkFromHereTarget) => forkRef.current(target), [])
   const onFork =
@@ -3602,11 +3633,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       ? forkFromHere
       : undefined
   // The Files and Folders setting is this Mac's, so only a chat that runs on
-  // it, in a window that can reach System Settings, offers to open it.
+  // its disk, in a shell that can reach System Settings, offers to open it.
   const onOpenPrivacySettings =
-    transport.kind === 'local' && !machineId && hostPlatform() === 'darwin' && clientSupports('reveal-in-folder')
-      ? openMacosPrivacySettings
-      : undefined
+    shellReach.revealInFolder && !machineId && hostPlatform() === 'darwin' ? openMacosPrivacySettings : undefined
   // A side question is offered once the chat has a reply to ask about, and
   // carried on in a chat of its own where the chat can be forked here: from
   // its newest reply, once no turn runs, as Fork from here is.
@@ -3695,16 +3724,19 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Whether this chat's permission preset can be changed from its picker: the
   // same gate the separate pill used to have. A preset the provider cannot run
   // stays listed, dimmed, with the reason.
+  // A chat whose server lists its session (one not started here) shows the
+  // preset that listing names, and none where it names none: a picker
+  // showing a guess would be worse than none.
   const permissionsEditable =
     operate &&
     !isSubagent &&
-    (transport.capabilities.reportsPreset || session?.permissionPreset !== undefined) &&
+    (hostSession === undefined || session?.permissionPreset !== undefined) &&
     Boolean(capabilities?.approvals || capabilities?.permissionPresets?.length)
   const presetRefusals = chatPermissionRefusals({
     cli: chatCli,
     allowed: capabilities?.permissionPresets,
     permissionModes: transport.capabilities.permissionModes,
-    machineName: transport.machineName,
+    ...(environment.label ? { machineName: environment.label } : {}),
   })
   // The CLI's modes under its own names. A mode of its own is offered where
   // this chat's runtime maps it: a local chat says which it maps, and a remote
@@ -3895,12 +3927,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     transport,
     listed: binding.listed ?? null,
   })
-  holdQueueInMainRef.current =
-    operate &&
-    transport.kind !== 'remote' &&
-    !stripFacts.machine &&
-    canScheduleMessages() &&
-    typeof window.api?.holdQueuedMessage === 'function'
   // ── What the agent touched ───────────────────────────────────────────────
   // Published for the title bar's pill (ChatActivityCard). Its Changes row
   // counts what the strip counts, so the two never disagree.
@@ -3918,31 +3944,29 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     workspaceRoot,
   })
   // ── Scheduling the next message ──────────────────────────────────────────
-  // Offered for a chat that runs on this computer, as its usage-limit resume
-  // is: main sends the message, through this computer's own chats. And for a
-  // chat on a paired machine that keeps scheduled messages itself
-  // (`hostSchedule`): that machine keeps the message and sends it, so it goes
-  // at its time whether or not this one is awake then, and the tray draws
-  // what it says it keeps.
+  // Offered where the chat's server keeps scheduled messages
+  // (`hostSchedule`): it keeps the message and sends it, so it goes at its
+  // time whether or not this window is open then, and the tray draws what it
+  // says it keeps.
   const hostSchedule =
-    transport.kind === 'remote' && transport.capabilities.hostSchedule && transport.scheduleSend
-      ? (binding.hostSchedule ?? null)
-      : null
-  const remoteSchedule = hostSchedule !== null
-  const scheduleOffered =
-    operate && (transport.kind === 'remote' ? remoteSchedule : !stripFacts.machine && canScheduleMessages())
+    transport.capabilities.hostSchedule && transport.scheduleSend ? (binding.hostSchedule ?? null) : null
+  const scheduleOffered = operate && hostSchedule !== null
   // What a scheduled message carries is its text: a picture or a file staged
   // with it is the moment's, and is not kept for later.
   const scheduleBlocked =
     attachments.length > 0 || draftMetadata.files.length > 0
       ? 'A scheduled message carries text only — remove the pictures and files first'
       : null
-  // "When my limit resets": offered for a chat on this machine whose provider
-  // meters its use and has said when a window resets. Main keeps the provider
-  // with the message and asks the limit again when its time comes.
-  const scheduleLimitProvider =
-    transport.kind !== 'remote' && !stripFacts.machine ? usageLimitProviderOf(conversation?.providerId) : null
-  const scheduleLimitSnapshot = useUsageLimitSnapshot(sendAt !== null ? scheduleLimitProvider : null)
+  // What the chat's server knows of its agents' usage limits
+  // (`hostUsageLimits`): the strip's plans, the tray's notice, and the time
+  // "When my limit resets" picks.
+  const hostUsageLimits = transport.capabilities.hostUsageLimits ? (binding.hostUsageLimits ?? null) : null
+  // "When my limit resets": offered where the chat's provider meters its use
+  // and its server has said when a window resets. The server keeps the
+  // provider with the message and asks the limit again when its time comes.
+  const scheduleLimitProvider = hostUsageLimits ? usageLimitProviderOf(conversation?.providerId) : null
+  const scheduleLimitSnapshot =
+    sendAt !== null && hostUsageLimits ? selectUsageLimitSnapshot(hostUsageLimits.state, scheduleLimitProvider) : null
   const [sendAtLimit, setSendAtLimit] = useState(false)
   const limitResetAt = limitResetSendAt(scheduleLimitSnapshot, Date.now())
   const sendAtLimitReset = useMemo<SendAtLimitReset | null>(
@@ -3987,20 +4011,19 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     async (ask: 'send' | 'delete', message: ScheduledMessageView): Promise<boolean> => {
       const call = ask === 'send' ? transport.sendScheduledNow : transport.cancelScheduled
       if (!call) return false
-      const machine = transport.machineName ?? 'The other machine'
       let result: { ok: true } | { ok: false; message: string }
       try {
-        result = await call({ scheduledId: message.id })
+        result = await call({ key: chatKey, scheduledId: message.id })
       } catch (err) {
         result = { ok: false, message: err instanceof Error ? err.message : 'It did not answer.' }
       }
       if (!result.ok)
         setActionError(
-          `${machine} could not ${ask === 'send' ? 'send' : 'delete'} the scheduled message: ${result.message.replace(/\.$/u, '')}.`,
+          `${serverName} could not ${ask === 'send' ? 'send' : 'delete'} the scheduled message: ${result.message.replace(/\.$/u, '')}.`,
         )
       return result.ok
     },
-    [transport],
+    [transport, chatKey, serverName],
   )
   const sendHostScheduledNow = useCallback(
     (message: ScheduledMessageView) => void askHostScheduled('send', message),
@@ -4012,19 +4035,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   )
   const editScheduledMessage = useCallback(
     (message: ScheduledMessageView & { queued?: true }) => {
-      const deleting = remoteSchedule
-        ? askHostScheduled('delete', message)
-        : updateScheduledMessage({ kind: 'delete', id: message.id })
-      void deleting.then((deleted) => {
+      void askHostScheduled('delete', message).then((deleted) => {
         if (!deleted) return
         setDraft((current) => [message.text, current].filter(Boolean).join('\n'))
-        // One a paired machine queued was set for the turn's end, not for a
-        // time: it comes back as a plain draft.
+        // One the server held for the turn's end was set for no time: it
+        // comes back as a plain draft.
         if (!message.queued) setSendAt(message.sendAt > Date.now() ? message.sendAt : defaultSendAt(Date.now()))
         composerRef.current?.focus()
       })
     },
-    [setDraft, remoteSchedule, askHostScheduled],
+    [setDraft, askHostScheduled],
   )
   scheduleDraftRef.current = async () => {
     if (sendAt === null) return
@@ -4038,140 +4058,102 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       setActionError('That time has passed — pick one ahead, or send it now.')
       return
     }
-    if (remoteSchedule) {
-      // Kept and sent by the machine the chat runs on; its tray rows come back
-      // from what it says it keeps.
-      const machine = transport.machineName ?? 'The other machine'
-      let kept: { ok: true } | { ok: false; message: string }
-      try {
-        kept = (await transport.scheduleSend?.({ message: text, sendAt })) ?? {
-          ok: false,
-          message: 'it does not schedule messages',
-        }
-      } catch (err) {
-        kept = { ok: false, message: err instanceof Error ? err.message : 'it did not answer' }
-      }
-      if (!kept.ok) {
-        setActionError(`${machine} could not schedule the message: ${kept.message.replace(/\.$/u, '')}.`)
-        return
-      }
-    } else {
-      const untilLimitReset = sendAtLimit && scheduleLimitProvider ? scheduleLimitProvider : undefined
-      const scheduled = await updateScheduledMessage({
-        kind: 'schedule',
-        workspaceId,
-        agentId,
-        text,
+    // Kept and sent by the chat's server; its tray rows come back from what
+    // it says it keeps.
+    const untilLimitReset = sendAtLimit && scheduleLimitProvider ? scheduleLimitProvider : undefined
+    let kept: { ok: true } | { ok: false; message: string }
+    try {
+      kept = (await transport.scheduleSend?.({
+        key: chatKey,
+        message: text,
         sendAt,
         ...(untilLimitReset ? { untilLimitReset } : {}),
-      })
-      if (!scheduled) {
-        setActionError('The message could not be scheduled.')
-        return
-      }
+      })) ?? { ok: false, message: 'it does not schedule messages' }
+    } catch (err) {
+      kept = { ok: false, message: err instanceof Error ? err.message : 'it did not answer' }
+    }
+    if (!kept.ok) {
+      setActionError(`${serverName} could not schedule the message: ${kept.message.replace(/\.$/u, '')}.`)
+      return
     }
     setActionError(null)
     clearDraft()
     setSendAt(null)
   }
-  // The pull requests this conversation opened, from the record the sidebar
-  // reads. A chat on a paired machine has its record there, and its machine
-  // lists them with the chat.
-  const localPullRequests = usePullRequestsOfConversation(transport.kind === 'remote' ? null : { workspaceId, agentId })
-  const conversationPullRequests =
-    transport.kind === 'remote' ? (binding.listed?.pullRequests ?? localPullRequests) : localPullRequests
-  // The person's "Stop watching" on the strip's pull request: the record's
-  // change comes back through the list above, so nothing is held here. A
-  // chat on a paired machine is watched by that machine, which ends it, where
-  // this pairing may drive the chat.
+  // The pull requests this conversation opened and the local servers its
+  // agents started, as the chat's server lists them (`binding.listed`).
+  const conversationPullRequests = binding.listed?.pullRequests ?? NO_PULL_REQUESTS
+  // The person's "Stop watching" on the strip's pull request, asked of the
+  // server that keeps the watch, where this client may drive the chat; the
+  // record's change comes back through the list.
+  const unwatch = operate ? transport.unwatchPullRequest : undefined
   const stopWatchingPullRequest = useCallback(
     (url: string) => {
-      void unwatchPullRequest({ workspaceId, agentId }, url).then((stopped) => {
+      void unwatch?.({ key: chatKey, url }).then((stopped) => {
         if (!stopped.ok) setActionError(`Could not stop watching the pull request: ${stopped.message}`)
       })
     },
-    [workspaceId, agentId],
+    [unwatch, chatKey],
   )
-  const remoteUnwatch = transport.kind === 'remote' && operate ? transport.unwatchPullRequest : undefined
-  const stopRemoteWatch = useCallback(
-    (url: string) => {
-      void remoteUnwatch?.({ url }).then((stopped) => {
-        if (!stopped.ok) setActionError(`Could not stop watching the pull request: ${stopped.message}`)
-      })
-    },
-    [remoteUnwatch],
+  // Drawn read-only, and opened from here only where their address reaches
+  // here. Another machine's are labelled with its name.
+  const conversationLocalServers = binding.listed?.localServers ?? NO_LOCAL_SERVERS
+  const remoteMachineName = environment.label
+  const stripLocalServers = useMemo(
+    () =>
+      conversationLocalServers.length > 0
+        ? {
+            workspaceId,
+            servers: conversationLocalServers,
+            ...(remoteMachineName !== null ? { elsewhere: { machineName: remoteMachineName } } : {}),
+          }
+        : null,
+    [conversationLocalServers, remoteMachineName, workspaceId],
   )
-  // The local servers this conversation's agents started, from the same
-  // Studio record the sidebar's marks read. A paired machine's are its own,
-  // and its list names them with the chat: drawn read-only, and opened from
-  // here only where their address reaches here.
-  const conversationLocalServers = useLocalServersOfConversation(
-    transport.kind === 'remote' ? null : { workspaceId, agentId },
-  )
-  const remoteLocalServers = transport.kind === 'remote' ? binding.listed?.localServers : undefined
-  const remoteMachineName = transport.kind === 'remote' ? (transport.machineName ?? 'the other machine') : null
-  const stripLocalServers = useMemo(() => {
-    if (remoteMachineName !== null)
-      return remoteLocalServers?.length
-        ? { workspaceId, servers: remoteLocalServers, elsewhere: { machineName: remoteMachineName } }
-        : null
-    return conversationLocalServers.length > 0 ? { workspaceId, servers: conversationLocalServers } : null
-  }, [conversationLocalServers, remoteLocalServers, remoteMachineName, workspaceId])
-  // The subscription limits of the agent this chat runs on — read on this
-  // computer for a chat that runs here, and on the paired machine a remote
-  // chat runs on, where it says what its agents reported (`hostUsageLimits`).
-  // A chat on WSL or an SSH machine has its agent's readings over there, and
-  // nothing there says them.
+  // The subscription limits of the agent this chat runs on, as the chat's
+  // server says its agents reported them (`hostUsageLimits`). A chat on WSL
+  // or an SSH machine has its agent's readings over there, and nothing there
+  // says them yet.
   const usageLimitsShown = useWorkspaceStore((s) => s.appSettings.appearance.usageLimits)
-  const hostUsageLimits =
-    transport.kind === 'remote' && transport.capabilities.hostUsageLimits ? (binding.hostUsageLimits ?? null) : null
-  const usageProvider =
-    usageLimitsShown && transport.kind !== 'remote' && !stripFacts.machine
-      ? usageLimitProviderOf(conversation?.providerId)
-      : null
-  const localUsageLimits = useUsageLimitSnapshot(usageProvider)
   const hostUsageProvider = usageLimitsShown && hostUsageLimits ? usageLimitProviderOf(conversation?.providerId) : null
-  const stripUsageLimits = hostUsageLimits
-    ? selectUsageLimitSnapshot(hostUsageLimits.state, hostUsageProvider)
-    : localUsageLimits
+  const stripUsageLimits = hostUsageLimits ? selectUsageLimitSnapshot(hostUsageLimits.state, hostUsageProvider) : null
+  // Another machine's readings are labelled with its name; the window's own
+  // Studio's are this window's.
   const usageLimitsElsewhere = useMemo(
-    () => (hostUsageLimits ? { machineName: hostUsageLimits.machineName, state: hostUsageLimits.state } : undefined),
-    [hostUsageLimits],
+    () =>
+      hostUsageLimits && environment.label
+        ? { machineName: environment.label, state: hostUsageLimits.state }
+        : undefined,
+    [hostUsageLimits, environment.label],
   )
-  // The resume row's buttons on a remote chat ask that machine, which sends
-  // the resume; a refusal is said here in its words.
+  // The resume row's buttons ask the chat's server, which sends the resume;
+  // a refusal is said here in its words.
   const actOnHostUsageLimit = useCallback(
     (action: 'schedule' | 'cancel' | 'dismiss' | 'retry', always?: boolean) => {
       const resume = transport.usageLimitResume
       if (!resume) return
-      void resume({ action, ...(always ? { always: true } : {}) }).then(
+      void resume({ key: chatKey, action, ...(always ? { always: true } : {}) }).then(
         (result) => {
-          if (!result.ok)
-            setActionError(
-              `${transport.machineName ?? 'The other machine'} could not do that: ${result.message.replace(/\.$/u, '')}.`,
-            )
+          if (!result.ok) setActionError(`${serverName} could not do that: ${result.message.replace(/\.$/u, '')}.`)
         },
-        () => setActionError(`${transport.machineName ?? 'The other machine'} did not answer.`),
+        () => setActionError(`${serverName} did not answer.`),
       )
     },
-    [transport],
+    [transport, chatKey, serverName],
   )
-  // "Create PR" works in this computer's checkout, or on the paired machine a
-  // remote chat runs on, which does every step in its own checkout (owner
-  // ruling 2026-10-18) where it says it can and this pairing may drive the
-  // chat. A chat on WSL or an SSH machine (the strip names its machine) has
-  // no git or `gh` here, and nothing there answers for them.
-  const createPullRequestCwd =
-    transport.kind !== 'remote' && transport.capabilities.localFiles && !stripFacts.machine ? workspaceRoot : null
-  const remotePullRequestHost =
-    transport.kind === 'remote' && transport.capabilities.hostPullRequests && operate
-      ? (transport.pullRequestHost ?? null)
-      : null
+  // "Create PR" is asked of the server the chat runs on, which does every
+  // step in the chat's own checkout there (owner ruling 2026-10-18), where it
+  // serves it and this client may drive the chat. A chat on WSL or an SSH
+  // machine routed through this desktop has no checkout its Studio reads
+  // (design-wsl-ssh-direct).
   const pullRequestHost = useMemo(
     () =>
-      remotePullRequestHost ??
-      (createPullRequestCwd ? localPullRequestHost(createPullRequestCwd, { workspaceId, agentId }) : null),
-    [remotePullRequestHost, createPullRequestCwd, workspaceId, agentId],
+      transport.capabilities.hostPullRequests && operate && workspaceRunsHere(binding.workspace)
+        ? (transport.pullRequestHost?.(chatKey) ?? null)
+        : null,
+    // The capability is read off the transport each render; a host is made for the chat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transport, transport.capabilities.hostPullRequests, operate, binding.workspace, chatKey],
   )
   // A turn ending moves the transcript's shape, and a token never does: read
   // when the shape moves, not on every streamed frame, which scanned back over
@@ -4257,15 +4239,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     harnessLabel: chatCli ? labelForCliRuntime(chatCli) : assistantName,
     modelLabel: currentModelLabel,
     machine: stripFacts.machine,
-    remote: transport.kind === 'remote',
+    environmentLabel: environment.label,
     branch: stripFacts.branch,
     changes: stripFacts.changes,
     pullRequests: conversationPullRequests,
-    ...(transport.kind !== 'remote'
-      ? { onStopWatchingPullRequest: stopWatchingPullRequest }
-      : remoteUnwatch
-        ? { onStopWatchingPullRequest: stopRemoteWatch }
-        : {}),
+    ...(unwatch ? { onStopWatchingPullRequest: stopWatchingPullRequest } : {}),
     createPullRequest,
     localServers: stripLocalServers,
     permissions: panelPermissions,
@@ -4491,9 +4469,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
              * changed, stay beside it.
              */}
             <ComposerTray>
-              {/* A window on the Studio protocol whose connection is down
-                says so, in words, while the transcript stays as it was. */}
-              <StudioConnectionNotice />
+              {/* A chat whose Studio is out of reach (the window's own, or
+                the machine the chat runs on) says so, in words, while the
+                transcript stays as it was. */}
+              <StudioConnectionNotice environment={environment} />
               {/* The chat's worktree still installing its dependencies: the
                 first message a chat started from outside a window waits for it. */}
               <WorktreeInstallTrayRow folder={workspaceRoot} />
@@ -4686,17 +4665,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               />
 
               {/* A turn a usage limit stopped: when the limit resets, and
-                the resume Studio can send the chat then. Read on this
-                computer for a chat that runs here, and on the paired
-                machine a remote chat runs on, which sends its resume. */}
+                the resume the chat's server can send it then. */}
               {hostUsageLimits ? (
                 <HostUsageLimitNoticeRow
                   notice={hostUsageLimits.notice}
                   autoResume={hostUsageLimits.autoResume}
                   {...(operate && transport.usageLimitResume ? { onAct: actOnHostUsageLimit } : {})}
                 />
-              ) : transport.kind !== 'remote' && !stripFacts.machine ? (
-                <UsageLimitResumeRow workspaceId={workspaceId} agentId={agentId} />
               ) : null}
 
               {/* The messages scheduled into this chat from the "+": when each
@@ -4711,8 +4686,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   onEdit={editScheduledMessage}
                   onDelete={deleteHostScheduled}
                 />
-              ) : scheduleOffered ? (
-                <ScheduledMessageRows workspaceId={workspaceId} agentId={agentId} onEdit={editScheduledMessage} />
               ) : null}
 
               {/*
@@ -4724,6 +4697,23 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                * failed transcript entry, and must still surface somewhere in the
                * chat.
                */}
+              {clippedCount > 0 ? (
+                <ComposerTrayRow
+                  tone="neutral"
+                  actions={
+                    <OutlineButton
+                      size="xs"
+                      busy={restoringClipped}
+                      disabled={restoringClipped}
+                      onClick={showClippedWhole}
+                    >
+                      {restoringClipped ? 'Reading…' : 'Show in full'}
+                    </OutlineButton>
+                  }
+                >
+                  Part of this chat was too long to send at once, so it is shown cut short.
+                </ComposerTrayRow>
+              ) : null}
               {composerError && composerError !== dismissedError ? (
                 <ComposerTrayRow
                   tone="error"
@@ -4849,7 +4839,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     const text = event.clipboardData?.getData('text/plain') ?? ''
                     const paths = pastedImagePaths(
                       text,
-                      transport.capabilities.localFiles && workspaceRoot ? [workspaceRoot] : [],
+                      shellReach.openDocument && workspaceRoot ? [workspaceRoot] : [],
                     )
                     if (!paths) return
                     event.preventDefault()

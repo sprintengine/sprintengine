@@ -39,6 +39,9 @@ import type { CliModelRefreshOutcome } from './modelDiscoveryLine'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { isImeKey } from '../../utils/imeKey'
+import { agentSettingsApi } from '../../studio/agentSettings'
+import { windowChatServices } from '../panels/agentChat/windowChat'
+import type { ConversationSecretStatusResult } from '../../../../shared/electron-api'
 
 // The bare shell runtime is the machine's own `sh`, not a CLI this app
 // installs or updates. Asked `--version`, bash answers with its whole banner
@@ -161,8 +164,7 @@ export function useAgentCliRuns(): AgentCliRuns {
   const [modelRefresh, setModelRefresh] = useState<ModelRefreshState>({ running: {}, outcomes: {} })
   const refreshCliModels = useCallback(
     async (cli: string) => {
-      const api = typeof window === 'undefined' ? null : window.api
-      if (typeof api?.cliModelsDiscover !== 'function') return
+      const api = agentSettingsApi
       setModelRefresh((current) => ({ ...current, running: { ...current.running, [cli]: true } }))
       let outcome: CliModelRefreshOutcome | null = null
       try {
@@ -205,25 +207,21 @@ export function useAgentCliRuns(): AgentCliRuns {
   const [cliUpdateRuns, setCliUpdateRuns] = useState<Record<string, CliUpdateRun>>({})
   const runCliUpdate = useCallback(
     async ({ cli, hostId, before, onSettled }: CliUpdateRequest) => {
-      const api = window.api
-      if (typeof api.cliUpdate !== 'function') return
+      const api = agentSettingsApi
       const runtime = cliRuntimeOnMachine(cli, hostId, { cliRuntimes, hosts })
       const key = cliUpdateRunKey(hostId, cli)
       setCliUpdateRuns((prev) => ({ ...prev, [key]: { running: true, notice: null, log: '' } }))
-      // Updates stream on the channel installs use, one per CLI per machine,
+      // Updates stream on the output installs use, one per CLI per machine,
       // so the same CLI updating on two machines at once keeps two logs.
-      const unsubscribe =
-        typeof api.onCliInstallOutput === 'function'
-          ? api.onCliInstallOutput(
-              cli,
-              (chunk) =>
-                setCliUpdateRuns((prev) => {
-                  const run = prev[key]
-                  return run?.running ? { ...prev, [key]: { ...run, log: run.log + chunk } } : prev
-                }),
-              hostId,
-            )
-          : () => undefined
+      const unsubscribe = api.onCliInstallOutput(
+        cli,
+        (chunk) =>
+          setCliUpdateRuns((prev) => {
+            const run = prev[key]
+            return run?.running ? { ...prev, [key]: { ...run, log: run.log + chunk } } : prev
+          }),
+        hostId,
+      )
       let notice: { tone: 'warn' | 'error'; text: string } | null = null
       try {
         const result = await api.cliUpdate(cli, runtime)
@@ -662,20 +660,23 @@ export function AgentClisSection({
 }
 
 // API-key entry for a CLI whose manifest declares `auth` (e.g. Z.AI). Reads and
-// writes through the shared credential store via the generic `credentialSecret*`
-// IPC — the same store the chat Providers tab uses. Mirrors the Providers tab's
-// masked/save/remove pattern; the value is write-only and never read back.
+// writes the Studio's one credential store over the protocol's
+// `providers.secretStatus` / `setSecret` / `clearSecret`, by the CLI's manifest
+// id: the same store, and the same calls, the chat Providers tab uses. Mirrors
+// its masked/save/remove pattern; the value is write-only and never read back.
 function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; displayName: string; label: string }) {
-  const [status, setStatus] = useState<Awaited<ReturnType<typeof window.api.credentialSecretStatus>> | null>(null)
+  const [status, setStatus] = useState<ConversationSecretStatusResult | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
-    void window.api.credentialSecretStatus({ id: pluginId }).then((result) => {
-      if (active) setStatus(result)
-    })
+    void windowChatServices()
+      .providers.secretStatus({ providerId: pluginId })
+      .then((result) => {
+        if (active) setStatus(result)
+      })
     return () => {
       active = false
     }
@@ -693,7 +694,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
     if (!value || busy) return
     setBusy(true)
     setMessage(null)
-    const result = await window.api.credentialSecretSet({ id: pluginId, value })
+    const result = await windowChatServices().providers.setSecret({ providerId: pluginId, value })
     setBusy(false)
     if (result.ok) {
       setStatus(result)
@@ -709,7 +710,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
     if (busy) return
     setBusy(true)
     setMessage(null)
-    const result = await window.api.credentialSecretClear({ id: pluginId })
+    const result = await windowChatServices().providers.clearSecret({ providerId: pluginId })
     setBusy(false)
     if (result.ok) {
       setStatus(result)

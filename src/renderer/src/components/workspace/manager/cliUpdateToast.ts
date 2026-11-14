@@ -13,6 +13,7 @@ import { useToastStore, showToast } from '../../../store/toastStore'
 import { cliRuntimeOnMachine } from '../newWorkspace/cliRuntimeOptions'
 import { hostPlatform } from '../../../clientCapabilities'
 import { createCliOutputLatestLineReader, withLastOutputLine } from './cliUpdateProgress'
+import { agentSettingsApi } from '../../../studio/agentSettings'
 
 // The CLI-update toast (owner ruling 2026-09-04): the CLI's glyph,
 // "Update available: Codex 0.153.3", and two buttons — Settings, and Update,
@@ -142,8 +143,7 @@ export async function runCliUpdateFromToast(
   name: string,
   id: string,
 ): Promise<void> {
-  const api = window.api
-  if (typeof api.cliUpdate !== 'function') return
+  const api = agentSettingsApi
   const { cli, hostId } = advisory
   const store = useWorkspaceStore.getState()
   const runtime = cliRuntimeOnMachine(cli, hostId, store.appSettings)
@@ -172,21 +172,15 @@ export async function runCliUpdateFromToast(
     lastShownAt = Date.now()
     showUpdating(line)
   }
-  const unsubscribe =
-    typeof api.onCliInstallOutput === 'function'
-      ? api.onCliInstallOutput(
-          cli,
-          (chunk) => {
-            output.push(chunk)
-            if (progressTimer !== null) return
-            progressTimer = setTimeout(
-              showProgress,
-              Math.max(0, lastShownAt + CLI_UPDATE_PROGRESS_INTERVAL_MS - Date.now()),
-            )
-          },
-          hostId,
-        )
-      : () => undefined
+  const unsubscribe = api.onCliInstallOutput(
+    cli,
+    (chunk) => {
+      output.push(chunk)
+      if (progressTimer !== null) return
+      progressTimer = setTimeout(showProgress, Math.max(0, lastShownAt + CLI_UPDATE_PROGRESS_INTERVAL_MS - Date.now()))
+    },
+    hostId,
+  )
   // A failure keeps the updater's last line, so the toast that says it did not
   // update also says where it stopped.
   const failure = (description: string): string => withLastOutputLine(description, output.latest())

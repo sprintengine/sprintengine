@@ -6,7 +6,6 @@
 // and left alone.
 
 import { existsSync, statSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 
@@ -77,7 +76,7 @@ import {
 } from './github-tree'
 import { installSkill, uninstallSkill } from './install'
 import { installPlugin, readEnabledClaudePlugins, selectPluginItems, uninstallPlugin } from './install-plugin'
-import { listLocalTree, scanLocalSkillSource } from './local-source'
+import { listLocalTree, readFileInside, scanLocalSkillSource } from './local-source'
 import type { PluginDirectoryFile } from './plugin-directory'
 import { createPluginInstallStore, mergeInstalledPluginRecord, type PluginInstallStore } from './plugin-install-store'
 import type { SkillRepoReader, SkillRepoTransport } from './repo-reader'
@@ -969,7 +968,7 @@ export function createSkillsService(
         return {
           ok: true,
           files: entries.map((entry) => ({ path: entry.path, size: entry.size ?? 0 })),
-          readFile: (file) => readFile(join(root, ...file.path.split('/'))),
+          readFile: (file) => readFileInside(root, join(root, ...file.path.split('/'))),
         }
       } catch (error) {
         return { ok: false, message: describeFetchError(error) }
@@ -1119,7 +1118,7 @@ export function createSkillsService(
     }
     const root = localRootFor(source.id)
     if (!root) throw new SkillFetchError(`${source.name} is not available in this build.`)
-    return readFile(join(root, ...skill.id.split('/').filter(Boolean), ...file.path.split('/')))
+    return readFileInside(root, join(root, ...skill.id.split('/').filter(Boolean), ...file.path.split('/')))
   }
 
   /**
@@ -1149,7 +1148,7 @@ export function createSkillsService(
     const base = resolve(root)
     const full = resolve(base, ...repoPath.split('/').filter(Boolean))
     if (full !== base && !full.startsWith(`${base}${sep}`)) return null
-    return readFile(full).catch(() => null)
+    return readFileInside(base, full).catch(() => null)
   }
 }
 

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import { windowChatStores, type ChatStoresApi } from '../studio/chatStores'
+
 import type {
   UsageLimitResumeChat,
   UsageLimitResumeNotice,
@@ -7,10 +9,11 @@ import type {
   UsageLimitResumeUpdate,
 } from '../../../shared/usage-limit-resume'
 
-// The chats a usage limit stopped and the resume each has, as main last
-// reported them (`usage-limit-resumes:*`), with the setting that schedules one
-// for every such chat. Held once per window so every chat's tray and Settings
-// read one answer. Not persisted: main keeps them, in a file of its own.
+// The chats a usage limit stopped and the resume each has, as the window's
+// Studio last told them (`usageLimitResumes.*`), with the setting that
+// schedules one for every such chat. Held once per window so every chat's tray
+// and Settings read one answer. Not persisted: the Studio keeps them, in a
+// file of its own.
 //
 // Subscribed only while something draws it: every Claude or Codex chat
 // retains it as it mounts, and Settings while its switch is on screen.
@@ -26,10 +29,10 @@ export const useUsageLimitResumeStore = create<UsageLimitResumeStore>()((set) =>
 }))
 
 type UsageLimitResumeApi = Partial<
-  Pick<Window['api'], 'usageLimitResumes' | 'updateUsageLimitResume' | 'onUsageLimitResumesChanged'>
+  Pick<ChatStoresApi, 'usageLimitResumes' | 'updateUsageLimitResume' | 'onUsageLimitResumesChanged'>
 >
 
-const defaultApi = (): UsageLimitResumeApi | null => (typeof window === 'undefined' ? null : window.api)
+const defaultApi = (): UsageLimitResumeApi | null => windowChatStores()
 
 let holders = 0
 let release: (() => void) | null = null

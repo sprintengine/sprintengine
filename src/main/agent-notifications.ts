@@ -14,6 +14,11 @@ import { isAttentionEvent } from './agent-attention'
 // replaces the earlier one, so a chat that finished three turns while the
 // person was away shows one banner, the latest.
 //
+// A click opens the chat by its address: the environment whose runtime raised
+// the phase, and the chat's id there. Every phase here is this desktop's
+// runtime's, whose chats (here, in WSL, on SSH machines) this desktop's Studio
+// holds, so they are addressed under its environment id.
+//
 // Pure: the events in, the notice out. The shell's bridge shows it, in process
 // or for the server in its own process alike, since every phase reaches the
 // shell either way.
@@ -26,6 +31,8 @@ export type ChatLabel = {
 }
 
 export type AgentNotifierDeps = {
+  /** The environment whose chats these phases are: this desktop's. */
+  environmentId: string
   mode: () => AgentNotificationMode
   isAnyWindowFocused: () => boolean
   /** The chat an event belongs to; null for one the sidebar does not list, which is never announced. */
@@ -38,7 +45,12 @@ export type AgentNotifier = {
 }
 
 /** What a phase change says, or null when it says nothing worth a banner. */
-export function agentNotice(event: AgentPhaseEvent, label: ChatLabel, mode: AgentNotificationMode): ShellNotice | null {
+export function agentNotice(
+  event: AgentPhaseEvent,
+  label: ChatLabel,
+  mode: AgentNotificationMode,
+  environmentId: string,
+): ShellNotice | null {
   if (mode === 'off' || !event.workspaceId || !isAttentionEvent(event)) return null
   const who = label.agentName ?? null
   const body =
@@ -58,7 +70,7 @@ export function agentNotice(event: AgentPhaseEvent, label: ChatLabel, mode: Agen
     title: label.title,
     body,
     silent: mode !== 'banner-sound',
-    activate: { kind: 'chat', chatId: event.workspaceId, agentId: event.agentId },
+    activate: { kind: 'chat', environmentId, chatId: event.workspaceId, agentId: event.agentId },
   }
 }
 
@@ -70,7 +82,7 @@ export function createAgentNotifier(deps: AgentNotifierDeps): AgentNotifier {
       if (deps.isAnyWindowFocused()) return
       const label = deps.chatLabel(event.workspaceId, event.agentId)
       if (!label) return
-      const notice = agentNotice(event, label, mode)
+      const notice = agentNotice(event, label, mode, deps.environmentId)
       if (notice) deps.show(notice)
     },
   }

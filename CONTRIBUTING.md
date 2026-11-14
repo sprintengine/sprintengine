@@ -80,13 +80,21 @@ test. `tests/` holds what they share: the setup every worker runs
 (`tests/stubs/`, `tests/stand-in.ts`) and fixtures. Each test runs with the
 app's own `SPRINTENGINE_*` variables removed from its
 environment, so the suite behaves the same from a Studio terminal as from CI.
+Each test file's `tmpdir()` is a scratch folder of its own, removed once the
+file is done (`tests/temp-folders.ts`), so a test need not remove what it
+makes there; it must stop the servers and processes it starts, because the
+run fails, naming the file, when something is still writing there at the end
+(`tests/global-setup.ts`).
 The suites that assert on timing run in a `serial` project, one file at a time,
 after the rest. The release-script tests under `scripts/release/` run as
 `npm run test:release`, and the lint guard probes as part of `npm run lint` —
 both are in `verify:app`.
 
 The phone companion under `mobile/` is a separate package, with its own
-`package.json`, lockfile and gate, and none of the commands above look at it. To
+`package.json`, lockfile and gate, and none of the commands above look at it.
+It imports the protocol packages and the client runtime from `packages/` as
+source, and its gate runs the runtime's and the conversation timeline's tests
+too, so a change there is the phone's: run its gate as well. To
 work on it, run `npm ci` and `npm run ci` (typecheck, ESLint, its token lint and
 its tests) inside `mobile/`; CI runs the same as a job of its own.
 `mobile/README.md` covers building it onto a phone.
@@ -95,6 +103,59 @@ Most suites predate Vitest: each file is one `test()` that walks its cases in
 order and asserts with `node:assert/strict`, because the cases share state and
 their order matters. Write a new file with a `test()` per case, and split an
 old one the same way when you are working in it anyway.
+
+### The cross-client gate
+
+```
+npm run build:server && npm run test:cross-client
+```
+
+Passing suites side by side do not show that the clients of one server agree.
+The cross-client gate (`scripts/cross-client-gate.mjs`, the scenarios in
+`tests/cross-client/`) boots the built server and drives it with several of
+its clients at once, each running the code that surface really runs: the
+desktop window over the Studio protocol, a paired desktop and the phone's own
+protocol client (the modules under `mobile/src/api`) over the tailnet lane, and
+a read-only embed. They share one chat on the built-in fake provider: start
+it, stream a turn, send a picture, answer an approval another client's turn
+raised, message a sub-agent, schedule a send, drop mid-turn and come back by
+cursor, and survive the server being killed and started again. Then two
+machine legs, each a chat on another machine's own Studio as the desktop
+window reaches it: a WSL-shaped distribution, with `sh` standing in for
+`wsl.exe` (a terminal agent's launch token, git, the home and file reads by
+the environment methods, a server killed and started again, and the phone and
+the paired desktop held off it), and, with `STUDIO_TEST_DOCKER=1` and Docker
+running, an SSH machine in a container. It takes under a minute on a laptop,
+and runs on Linux and macOS (its sockets are Unix sockets).
+
+Its output is a table of client by scenario, and it says what it simulates
+(the Electron shell's port broker, the phone's file module, the tailnet bound
+to loopback) and what it cannot run. A scenario a client cannot do yet is a
+known gap in `tests/cross-client/gaps.ts`, naming the change that closes it; a
+gap that starts passing fails the gate, so the change that closes one deletes
+its line. A change that moves a client to another transport changes that
+client's adapter in `tests/cross-client/clients/`, not the scenarios.
+
+WSL itself cannot run on the hosted runners. Check a change to WSL chats by
+hand, on a Windows PC with a WSL 2 distribution: build the app
+(`npm run dist:win`), start a chat in the distribution, send a turn, answer its
+approval, open a terminal agent there, then quit and reopen the app and send
+again. The gate prints the same steps.
+
+### The checks a pull request needs
+
+CI (`.github/workflows/ci.yml`) runs on every pull request. These checks are
+required to merge, as `.github/main-ruleset.json` lists them:
+
+| Check | What it runs |
+|---|---|
+| Conventional PR title | The title, as the merge commit's subject |
+| Build (ubuntu-latest), Build (windows-latest), Build (macos-latest) | Typecheck and build on each OS; the whole suite on macOS |
+| JS tests (ubuntu-latest) | `npm run verify:app` and the marketplace signatures |
+| Cross-client gate | `npm run test:cross-client -- --require-ssh` against the built server, the WSL-shaped and SSH machines included |
+
+The web client smoke, the phone app, the Android APK and the SSH machine
+suites run beside them and are expected green too.
 
 ## The design-system rule
 
@@ -138,6 +199,19 @@ instead, and which of the enforcement sites have to agree.
 
 [`docs/compatibility.md`](docs/compatibility.md) is the policy, and it is short.
 Read it before you change anything that crosses either wire.
+
+## Adding a channel between a window and main
+
+IPC is for the desktop shell alone: windows, dialogs, updates, revealing a
+file. Everything else a window does goes over the Studio protocol, the same
+methods a paired desktop, the phone and a browser tab use, so a feature built
+for the local window works on every client. Every channel has a row in
+`src/shared/ipc-inventory.ts`, saying whether it is the shell's (and why) or
+which part of the protocol replaces it. Main refuses to register a channel
+without a row, and `src/main/ipc-inventory.test.ts` holds the rows to what
+main, the server, the modules and the preload really register and use. It
+also counts the rows still waiting to move, so a new non-shell channel fails
+it: add a protocol method instead.
 
 ## Names that do not go in the tree
 

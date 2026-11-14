@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
+import type { EnvironmentEntry } from '../../../../shared/environments'
 import type { HostsListResult } from '../../../../shared/execution-host'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 // Settings ▸ Agents' machine switcher and Settings ▸ Machines' link into it,
 // wired together through the panel itself. Every IPC the panel reaches for on
@@ -13,6 +19,31 @@ import type { HostsListResult } from '../../../../shared/execution-host'
 let listing: HostsListResult
 let platform: string
 const probes: unknown[] = []
+
+/** Main's list of machines: this PC and the distribution turned on. */
+function environments(): EnvironmentEntry[] {
+  const up = { state: 'up' as const, detail: null, lastReachedAt: null }
+  return [
+    {
+      environmentId: 'env-local',
+      displayName: 'This PC (Windows)',
+      routes: [{ kind: 'local' }],
+      machine: { kind: 'local' },
+      descriptor: null,
+      connection: up,
+      compatibility: 'unknown',
+    },
+    {
+      environmentId: null,
+      displayName: 'WSL: Ubuntu',
+      routes: [{ kind: 'wsl', distro: 'Ubuntu' }],
+      machine: { kind: 'wsl', hostId: 'wsl:Ubuntu' },
+      descriptor: null,
+      connection: up,
+      compatibility: 'unknown',
+    },
+  ]
+}
 
 function stubApi(): void {
   const named: Record<string, unknown> = {
@@ -24,6 +55,7 @@ function stubApi(): void {
     },
     pluginsList: async () => ({ ok: true, plugins: [] }),
     getGitHubTokenStatus: async () => ({ configured: false }),
+    environmentsList: async () => environments(),
   }
   ;(window as unknown as { api: unknown }).api = new Proxy(named, {
     get(target, key) {
@@ -39,6 +71,7 @@ const { default: SettingsPanel } = await import('./SettingsPanel')
 const { ConfirmDialogProvider } = await import('../ui/ConfirmDialog')
 const { useWorkspaceStore } = await import('../../store/workspaceStore')
 const { rememberAgentsMachine } = await import('./agentsMachine')
+const { resetEnvironmentsForTests } = await import('../../hooks/useEnvironments')
 
 function Panel({ initialTab }: { initialTab: string }): React.JSX.Element {
   return (
@@ -53,6 +86,7 @@ let host: HTMLDivElement
 
 beforeEach(() => {
   probes.length = 0
+  resetEnvironmentsForTests()
   // Both outlive a test: the store is the app's one store, and the machine the
   // window last showed is module state.
   rememberAgentsMachine('local')

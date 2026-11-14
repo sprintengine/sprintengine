@@ -11,7 +11,9 @@
  * at the end, without the store.
  */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+vi.mock('../studio/agentSettings', () => import('../studio/agentSettings.double'))
 import type { AgentLaunchSettingsRecord } from '../../../shared/launch-settings'
 import type { McpServerConfig } from '../types/workspace'
 import { createFakeLaunchSettingsMain, installFakeWindow, settleIpc } from './launchSettingsFakeMain.test-helper'

@@ -24,6 +24,6 @@ test('the command says hello with the host API version', async () => {
   const shown: string[] = []
   Object.assign(globalThis, { window: { alert: (message: string) => shown.push(message) } })
   await fake.runCommand('say-hello')
-  assert.deepEqual(shown, ['{{displayName}} is running on host API 1.'])
+  assert.deepEqual(shown, ['{{displayName}} is running on host API 2.'])
   assert.deepEqual(fake.undeclared, [], 'everything it used is declared in module/manifest.json')
 })

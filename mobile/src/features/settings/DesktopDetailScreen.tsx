@@ -1,20 +1,19 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { describeTransport, transportStanding, transportStandingSentence } from "../../api/tailnetTransport";
+import { describeTransport } from "../../api/tailnetTransport";
 import type { MobileSession } from "../../api/types";
 import { Card, StatusDot } from "../../components/Card";
 import { formatTimestamp } from "../../components/formatTimestamp";
 import { iconSize, RemoteMachineGlyph } from "../../components/glyphs";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenFrame, useListContentStyle } from "../../components/Screen";
-import { mobileControlProtocolVersion } from "../../shared/mobile-control";
+import { STUDIO_PROTOCOL_VERSION } from "../../../../packages/studio-protocol/src/public";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
 import { sessionDisplayStatus, sessionStatusLabel } from "../fleet/fleetLogic";
 
-type RevokeState = { status: "idle" } | { status: "pending" } | { status: "error"; message: string };
 
 /**
  * One paired desktop: the diagnostics, and the controls that end the pairing
@@ -32,7 +31,6 @@ export function DesktopDetailScreen({
   onBack,
   onStartPairing,
   onForget,
-  onRevokeOnDesktop,
   onSelect,
   onRename,
 }: {
@@ -40,9 +38,8 @@ export function DesktopDetailScreen({
   isActive: boolean;
   onBack: () => void;
   onStartPairing: () => void;
-  /** Removes it from this phone; also revokes on the desktop where that is possible. */
+  /** Removes it from this phone. */
   onForget: () => void;
-  onRevokeOnDesktop: (() => Promise<void>) | null;
   onSelect: () => void;
   /** Renames it on this phone only; nothing is sent to the desktop. */
   onRename: (name: string) => void;
@@ -50,7 +47,6 @@ export function DesktopDetailScreen({
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const contentStyle = useListContentStyle();
-  const [revokeState, setRevokeState] = useState<RevokeState>({ status: "idle" });
   // Seeded from the session and owned by the field while it is being edited, so
   // a poll landing mid-type cannot yank the caret.
   const [draftName, setDraftName] = useState<string | null>(null);
@@ -69,27 +65,11 @@ export function DesktopDetailScreen({
 
   const status = sessionDisplayStatus(session);
   const isRevoked = status === "revoked";
-  const standingSentence = transportStandingSentence(transportStanding(session));
   const scopes = session.tailnetScopes;
 
-  const forget = async () => {
-    // Forgetting revokes on the desktop too where the transport allows it, and
-    // removes the pairing here either way — an unreachable desktop must not be
-    // able to keep a pairing on this phone that the person has ended.
-    if (onRevokeOnDesktop && status === "online") {
-      setRevokeState({ status: "pending" });
-      try {
-        await onRevokeOnDesktop();
-      } catch (error) {
-        setRevokeState({
-          status: "error",
-          message: error instanceof Error ? error.message : "The desktop refused the revoke, so it was forgotten here only.",
-        });
-      }
-    }
-    setRevokeState({ status: "idle" });
-    onForget();
-  };
+  // The desktop takes no revoke from a phone: forgetting removes the pairing
+  // here, and the desktop's own Settings ends it there.
+  const forget = () => onForget();
 
   return (
     <ScreenFrame
@@ -134,40 +114,19 @@ export function DesktopDetailScreen({
           <Field label="Endpoint" mono value={session.baseUrl} />
           <Field label="This phone" mono value={session.deviceId} />
           <Field label="Last seen" value={formatTimestamp(session.lastSeenAt ?? session.pairedAt)} />
-          <Field label="Protocol" value={`${mobileControlProtocolVersion} · ${describeScopes(scopes)}`} />
+          <Field label="Protocol" value={`Studio ${STUDIO_PROTOCOL_VERSION} · ${describeScopes(scopes)}`} />
           <Field label="Transport" value={describeTransport(session)} />
           <Field label="Storage" value="Encrypted on this device" />
         </Card>
-
-        {standingSentence ? (
-          // Out of step is a sentence, not an error: the list still draws, and
-          // the person reading this is the one who can update whichever side.
-          <Card>
-            <Text style={styles.notice}>{standingSentence}</Text>
-          </Card>
-        ) : null}
-
-        {revokeState.status === "error" ? (
-          <Card>
-            <Text accessibilityRole="alert" style={styles.error}>
-              {revokeState.message}
-            </Text>
-          </Card>
-        ) : null}
 
         <View style={styles.actions}>
           {!isActive && !isRevoked ? (
             <PrimaryButton label="Use this desktop" onPress={onSelect} variant="secondary" />
           ) : null}
           <PrimaryButton label="Pair another desktop" onPress={onStartPairing} variant="secondary" />
-          <PrimaryButton
-            disabled={revokeState.status === "pending"}
-            label={revokeState.status === "pending" ? "Forgetting…" : "Forget this desktop"}
-            onPress={() => void forget()}
-            variant="danger"
-          />
+          <PrimaryButton label="Forget this desktop" onPress={forget} variant="danger" />
         </View>
-        <Text style={styles.foot}>Forgetting revokes this phone on the desktop too.</Text>
+        <Text style={styles.foot}>Forgetting removes this desktop from this phone. To end the pairing on the desktop too, revoke this phone in its Settings.</Text>
       </ScrollView>
     </ScreenFrame>
   );

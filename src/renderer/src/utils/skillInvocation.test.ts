@@ -9,7 +9,8 @@ import {
   type SkillIntegrationLike,
 } from './skillInvocation'
 import type { WorkspaceSkill } from '../../../shared/electron-api'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+vi.mock('../studio/agentSkills', () => import('../studio/agentSkills.double'))
 
 test('skillInvocation', async () => {
   const CLAUDE_INTEGRATION: SkillIntegrationLike = {

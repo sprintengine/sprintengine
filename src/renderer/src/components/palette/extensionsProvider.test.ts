@@ -24,7 +24,8 @@ import {
   type ExtensionsCatalogue,
   type ExtensionsCatalogueApi,
 } from './extensionsProvider'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 test('extensionsProvider', async () => {
   let failures = 0

@@ -1,9 +1,8 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const {
-  parseConversationBackgroundWork,
-  parseConversationFrame,
-} = require("../../../.mobile-test-build/src/api/conversationWire.js");
+const { parseConversationServerFrame } = require("../../../.mobile-test-build/packages/conversation-protocol/src/public.js");
+// A frame's text, read by the contract's own parser.
+const parseConversationFrame = (text) => parseConversationServerFrame(JSON.parse(text));
 const {
   CHAT_EARLIER_AFTER_MS,
   chatActivity,
@@ -11,8 +10,8 @@ const {
   chatRowState,
   chatSections,
   chatWorksInBackground,
-} = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
-const { backgroundWorkLabel } = require("../../../.mobile-test-build/src/features/conversations/agentLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
+const { backgroundWorkLabel } = require("../../../.mobile-test-build/mobile/src/features/conversations/subagentLogic.js");
 
 // A chat whose turn is over but which still has an agent working in the
 // background, or a monitor that will wake its agent, as the desktop lists it
@@ -52,7 +51,7 @@ test("background work in the wrong shape is left out, and the chat still lists",
   const chats = parseList(malformed.map((backgroundWork, index) => listed({ agentId: `a${index}`, backgroundWork })));
   assert.equal(chats.length, malformed.length);
   for (const chat of chats) assert.equal("backgroundWork" in chat, false);
-  assert.equal(parseConversationBackgroundWork(null), null);
+  assert.equal("backgroundWork" in parseList([listed({ backgroundWork: null })])[0], false);
 });
 
 test("an older desktop lists no background work, and its finished chat reads as at rest, as before", () => {

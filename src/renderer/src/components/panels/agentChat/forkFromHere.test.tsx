@@ -1,14 +1,14 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { Model, TabNode, TabSetNode } from 'flexlayout-react'
 
-import type { ConversationForkInput } from '../../../../../shared/conversation-runtime'
+import type { ChatForkInput, ChatForkResult } from './conversationTransport'
 import { defaultAgent } from '../../../../../shared/agent-state'
 import type { AgentState, Workspace } from '../../../types/workspace'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { useToastStore } from '../../../store/toastStore'
 import { addAgentTabAfter, registerModel, unregisterModel } from '../../../utils/modelRegistry'
 import { composerDraftStore } from './draftStore'
-import { forkChat, forkRemoteChat, takeForkedAttachments } from './forkFromHere'
+import { forkChat, takeForkedAttachments } from './forkFromHere'
 import { forkName, forkedAgentPatch } from '../../../../../shared/conversation/fork'
 
 const WS = 'fork-from-here-ws'
@@ -26,7 +26,14 @@ const parent: AgentState = {
   execution: { mode: 'worktree', worktreeId: null, cwd: root },
 }
 
-function setup(answer: { ok: true } | { ok: false; message: string } = { ok: true }) {
+type Answer = ChatForkResult | 'studio'
+
+/**
+ * `studio` (the default) answers as a Studio does: the fork joins the
+ * workspace's records, which reach this window's store a moment after the
+ * answer, as the sync's push does, and the answer says where it is.
+ */
+function setup(answer: Answer = 'studio') {
   const storage = new Map<string, string>()
   Object.assign(globalThis, {
     window: {
@@ -60,14 +67,28 @@ function setup(answer: { ok: true } | { ok: false; message: string } = { ok: tru
     },
   })
   registerModel(WS, model)
-  const forks: ConversationForkInput[] = []
+  const forks: ChatForkInput[] = []
   const transport = {
-    fork: async (input: ConversationForkInput) => {
+    environment: { id: 'env-studio', label: null, route: null },
+    fork: async (input: ChatForkInput): Promise<ChatForkResult> => {
       forks.push(input)
-      return answer
+      if (answer !== 'studio') return answer
+      const name = forkName('Atlas', ['Atlas', 'Iris'])
+      setTimeout(() => useWorkspaceStore.getState().updateAgent(WS, input.newAgentId, { name }), 0)
+      return {
+        ok: true,
+        address: { environmentId: 'env-studio', chatId: WS, agentId: input.newAgentId },
+        name,
+      }
     },
   }
-  return { model, forks, transport, key: { workspaceRoot: root, workspaceId: WS, agentId: 'parent' } }
+  return {
+    model,
+    forks,
+    transport,
+    key: { workspaceRoot: root, workspaceId: WS, agentId: 'parent' },
+    providerId: 'claude-agent',
+  }
 }
 
 afterEach(() => {
@@ -83,11 +104,12 @@ const tabsOf = (model: Model) => {
   }
 }
 
-test('a fork opens beside the chat it came from, as its twin, with the message forked before in its composer', async () => {
+test('a fork opens where its Studio says it is, beside the chat it came from, with the message forked before in its composer', async () => {
   const t = setup()
   await forkChat({
     transport: t.transport,
     key: t.key,
+    providerId: t.providerId,
     target: {
       side: 'user',
       turnSeq: 4,
@@ -96,20 +118,13 @@ test('a fork opens beside the chat it came from, as its twin, with the message f
   })
   expect(t.forks).toHaveLength(1)
   const [asked] = t.forks
-  expect(asked).toMatchObject({ key: t.key, side: 'user', turnSeq: 4, title: 'Atlas (fork)' })
+  // The Studio names it: the window sends no name of its own.
+  expect(asked).toEqual({ key: t.key, side: 'user', turnSeq: 4, newAgentId: asked.newAgentId })
   expect(asked.newAgentId).toMatch(/^conversation-claude-agent-/)
 
-  const fork = useWorkspaceStore.getState().workspaces[0].agents[asked.newAgentId]
-  expect(fork).toMatchObject({
-    name: 'Atlas (fork)',
-    runtimeKind: 'conversation',
-    conversation: { providerId: 'claude-agent', modelId: 'opus' },
-    cliPermissionPreset: 'auto',
-    cliPermissionMode: 'acceptEdits',
-    conversationReasoningEffort: 'high',
-    conversationSkills: ['review'],
-    execution: { mode: 'worktree', cwd: root },
-  })
+  // Its record is the Studio's, which arrived before its tab opened; the
+  // window wrote none of its own.
+  expect(useWorkspaceStore.getState().workspaces[0].agents[asked.newAgentId]).toMatchObject({ name: 'Atlas (fork)' })
   expect(composerDraftStore().getState().read(WS, asked.newAgentId)).toMatchObject({
     text: 'try again',
     // The files it attached by path come back as the fork composer's cards.
@@ -129,6 +144,7 @@ test('a message forked before goes to the fork’s composer with its images, han
   await forkChat({
     transport: t.transport,
     key: t.key,
+    providerId: t.providerId,
     target: {
       side: 'user',
       turnSeq: 4,
@@ -149,6 +165,7 @@ test('a fork’s images are let go when nobody takes them: its chat removed, an 
     await forkChat({
       transport: t.transport,
       key: t.key,
+      providerId: t.providerId,
       target: {
         side: 'user',
         turnSeq: 4,
@@ -193,10 +210,36 @@ test('a fork’s images are let go when nobody takes them: its chat removed, an 
 test('a refused fork opens nothing', async () => {
   const t = setup({ ok: false, message: 'Stop the running turn before forking from an earlier message.' })
   await expect(
-    forkChat({ transport: t.transport, key: t.key, target: { side: 'assistant', turnId: 'turn_1' } }),
+    forkChat({
+      transport: t.transport,
+      key: t.key,
+      providerId: t.providerId,
+      target: { side: 'assistant', turnId: 'turn_1' },
+    }),
   ).rejects.toThrow('Stop the running turn')
   expect(Object.keys(useWorkspaceStore.getState().workspaces[0].agents)).toEqual(['parent', 'other'])
   expect(tabsOf(t.model).agents).toEqual(['parent', 'other'])
+})
+
+test('a fork answered without where it is opens nothing, rather than a tab onto a chat that may not be here', async () => {
+  // A Studio from before the answer said where: `{ ok: true }` alone.
+  for (const answer of [
+    { ok: true as const, address: { environmentId: 'env-studio', chatId: 'another-chat', agentId: 'x' }, name: 'X' },
+    // A fork is made beside its chat: an address on another machine is not it.
+    { ok: true as const, address: { environmentId: 'env-elsewhere', chatId: 'ws', agentId: 'x' }, name: 'X' },
+  ]) {
+    const t = setup(answer)
+    await expect(
+      forkChat({
+        transport: t.transport,
+        key: t.key,
+        providerId: t.providerId,
+        target: { side: 'assistant', turnId: 'turn_1' },
+      }),
+    ).rejects.toThrow('did not say where it is')
+    expect(tabsOf(t.model).agents).toEqual(['parent', 'other'])
+    unregisterModel(WS)
+  }
 })
 
 test('the fork carries the engine, never the parent’s launch-only state', () => {
@@ -225,6 +268,7 @@ test('a side question carried on in a new chat forks at the newest reply, with t
   await forkChat({
     transport: t.transport,
     key: t.key,
+    providerId: t.providerId,
     target: { side: 'assistant', turnId: 'turn_7', draft: { text: 'Which file is the parser in?' } },
   })
   const [asked] = t.forks
@@ -271,27 +315,20 @@ function remoteSetup(options: { mounted?: boolean; listedTitle?: string } = {}) 
     },
   })
   if (options.mounted !== false) registerModel(REMOTE_WS, model)
-  const listed = vi.fn(async (_connectionId: string) => ({
-    ok: true,
-    conversations: [
-      {
-        workspaceId: 'remote-workspace',
-        agentId: forks.at(-1)?.newAgentId,
-        title: options.listedTitle ?? 'Atlas (fork 2)',
-      },
-    ],
-  }))
-  Object.assign(globalThis.window as object, { api: { meshConversationList: listed } })
-  const forks: ConversationForkInput[] = []
+  const forks: ChatForkInput[] = []
   const transport = {
-    machineName: 'mac-mini',
-    remoteExtensions: { connectionId: 'connection', workspaceId: 'remote-workspace' },
-    fork: async (input: ConversationForkInput) => {
+    environment: { id: 'env-mini', label: 'mac-mini', route: 'tailnet:connection' },
+    // That machine makes the fork beside the chat, in its workspace there, and says where.
+    fork: async (input: ChatForkInput) => {
       forks.push(input)
-      return { ok: true as const }
+      return {
+        ok: true as const,
+        address: { environmentId: 'env-mini', chatId: 'remote-workspace', agentId: input.newAgentId },
+        name: options.listedTitle ?? 'Atlas (fork 2)',
+      }
     },
   }
-  return { ...t, model, forks, transport, listed }
+  return { ...t, model, forks, transport }
 }
 
 const meshTabsOf = (model: Model) => {
@@ -308,10 +345,9 @@ const meshTabsOf = (model: Model) => {
 test('a chat on a paired machine forks over there, and the fork opens here in the tab after it, named as it is there', async () => {
   const t = remoteSetup()
   try {
-    await forkRemoteChat({
+    await forkChat({
       transport: t.transport,
-      workspaceId: REMOTE_WS,
-      agentId: 'remote-agent',
+      key: { workspaceRoot: '', workspaceId: REMOTE_WS, agentId: 'remote-agent' },
       providerId: 'claude-agent',
       name: 'Atlas',
       target: {
@@ -322,15 +358,15 @@ test('a chat on a paired machine forks over there, and the fork opens here in th
     })
     expect(t.forks).toHaveLength(1)
     const [asked] = t.forks
-    // Named by the chat's ids over there, and with no title: that machine names it.
+    // Asked with no title: that machine names it. The view names the chat as
+    // it does every chat; a paired machine's transport asks by its own key there.
     expect(asked).toMatchObject({
       side: 'user',
       turnSeq: 4,
-      key: { workspaceId: 'remote-workspace', agentId: 'remote-agent' },
+      key: { workspaceId: REMOTE_WS, agentId: 'remote-agent' },
     })
     expect(asked).not.toHaveProperty('title')
     expect(asked.newAgentId).toMatch(/^conversation-claude-agent-/)
-    expect(t.listed).toHaveBeenCalledWith('connection')
 
     const tabs = meshTabsOf(t.model)
     expect(tabs.agents).toEqual(['remote-agent', asked.newAgentId, 'remote-other'])
@@ -354,10 +390,9 @@ test('a remote fork whose chat has no pane mounted here opens as a chat of its o
   const addWorkspace = useWorkspaceStore.getState().addWorkspace
   useWorkspaceStore.setState({ addWorkspace: added as never })
   try {
-    await forkRemoteChat({
+    await forkChat({
       transport: t.transport,
-      workspaceId: REMOTE_WS,
-      agentId: 'remote-agent',
+      key: { workspaceRoot: '', workspaceId: REMOTE_WS, agentId: 'remote-agent' },
       providerId: 'claude-agent',
       name: 'Atlas',
       target: { side: 'assistant', turnId: 'turn_1', draft: { text: 'and the docs?' } },

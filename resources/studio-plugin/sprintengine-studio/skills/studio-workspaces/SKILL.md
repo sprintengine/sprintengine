@@ -171,18 +171,9 @@ loop.
 ## The mobile companion and the tailnet
 
 The phone companion pairs with and talks to this desktop only over the tailnet;
-there is no hosted relay. These two tools are its whole connection.
-
-`workspace_snapshot` is the companion document: backlog and the dev servers
-published on the tailnet as one versioned read, in path-token form
-— `ws_` tokens round-trip and local paths never leave the desktop. Pass
-`knownSnapshotVersion` from your previous read to get an `{unchanged: true}`
-marker instead of the whole document when nothing moved; a polling loop that
-ignores this is re-sending the same document every time.
-
-`workspace_mobile_command` dispatches one mobile-control command envelope from a
-paired device. The device identity comes from the transport, never from the
-arguments — do not try to name a device in the payload.
+there is no hosted relay. It reads the backlog, the pages this machine shares
+and a pull request over Studio's own protocol, not over MCP tools, so there is
+no tool here to serve it or to call on its behalf.
 
 The `tailnet_*` tools are served **only over the local socket** and are
 unreachable from a remote client, by design. `tailnet_status` and

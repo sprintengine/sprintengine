@@ -16,30 +16,18 @@ import {
 import { TAILNET_DEVICES_FILENAME, createTailnetDeviceStore } from './tailnet-devices'
 import { tailnetDeviceRouteOf, tailnetUpgradeRouteOf } from './tailnet-gateway-server'
 import {
-  TAILNET_CONVERSATION_COMMANDS_PATH,
-  TAILNET_CONVERSATION_FILES_PATH,
-  TAILNET_CONVERSATION_IMAGE_PATH,
-  TAILNET_CONVERSATION_PATH,
-  TAILNET_CANVAS_PATH,
-  TAILNET_EVENTS_PATH,
   TAILNET_IDENTITY_PATH,
   TAILNET_STREAM_PATH,
+  TAILNET_STUDIO_PATH,
   TAILNET_MCP_PATH,
-  TAILNET_UPLOAD_PATH,
   TAILNET_WS_TICKET_PATH,
 } from './tailnet-routes'
-import {
-  CANVAS_LANE_ACCESS,
-  CONVERSATION_LANE_ACCESS,
-  TAILNET_ROUTE_ACCESS,
-  tailnetToolAccess,
-  type TailnetDeviceRoute,
-} from './tailnet-scopes'
+import { TAILNET_ROUTE_ACCESS, tailnetToolAccess, type TailnetDeviceRoute } from './tailnet-scopes'
 
 // What a paired device (another desktop, the phone) may ask, before and after
 // every check went through `authorizeStudioAccess`. The oracles below are the
 // checks as they stood, frozen, and every set of the six scopes is held to
-// them for every route, frame and tool.
+// them for every route and tool.
 
 function* scopeSubsets(): Generator<TailnetScope[]> {
   for (let mask = 0; mask < 1 << TAILNET_SCOPES.length; mask++)
@@ -60,6 +48,14 @@ const LEGACY_CHAT_TO_CHAT_TOOLS = new Set([
   'subagent.status',
   'subagent.cancel',
 ])
+const LEGACY_CHAT_LIFECYCLE_TOOLS = new Set([
+  'conversation.settle',
+  'conversation.visit',
+  'conversation.mark_unread',
+  'conversation.snooze',
+  'conversation.highlight',
+  'conversation.auto_settle',
+])
 function legacyLocalOnly(toolName: string): boolean {
   return (
     toolName.startsWith('tailnet.') ||
@@ -75,7 +71,15 @@ function legacyLocalOnly(toolName: string): boolean {
     toolName.startsWith('worktree.') ||
     LEGACY_CHAT_TO_CHAT_TOOLS.has(toolName) ||
     toolName.startsWith('visual.') ||
-    toolName.startsWith('terminal.')
+    // Since `schedules.*` on the protocol: a device's way to the schedules.
+    toolName.startsWith('schedule.') ||
+    // Since `conversation.settle` and `chat-lifecycle` on the protocol: a device's way to a chat's record.
+    LEGACY_CHAT_LIFECYCLE_TOOLS.has(toolName) ||
+    // Since `canvas.*` on the protocol: a device's way to the boards.
+    toolName.startsWith('canvas.') ||
+    toolName.startsWith('terminal.') ||
+    // Since a device was found reading the person's in-app browser pane: the agents' tools here alone.
+    toolName.startsWith('browser.')
   )
 }
 function legacyRequiredScopeForTool(toolName: string, isMutation: boolean): TailnetScope {
@@ -90,16 +94,8 @@ const LEGACY_ROUTES: { [R in TailnetDeviceRoute]: (scopes: TailnetScope[]) => bo
   'ws-ticket': () => true,
   mcp: () => true,
   stream: () => true,
-  events: () => true,
-  conversation: (scopes) => legacy(scopes, 'conversation:read'),
-  'conversation-image': (scopes) => legacy(scopes, 'conversation:read'),
-  'conversation-files': (scopes) => legacy(scopes, 'conversation:read'),
-  'conversation-commands': (scopes) => legacy(scopes, 'conversation:read'),
-  'conversation-commands:refresh': (scopes) =>
-    legacy(scopes, 'conversation:read') && legacy(scopes, 'conversation:operate'),
-  upload: (scopes) => legacy(scopes, 'conversation:operate'),
-  // Newer than the hand-written checks: a paired desktop's Canvas pane, on looking at boards.
-  canvas: (scopes) => legacy(scopes, 'workspace:read'),
+  // Newer still: the Studio protocol, whose methods are judged one by one by the Studio router.
+  studio: () => true,
 }
 
 test('each of the six scopes carries only permissions from the closed set, and none a device was never given', () => {
@@ -107,14 +103,10 @@ test('each of the six scopes carries only permissions from the closed set, and n
     for (const permission of TAILNET_SCOPE_PERMISSIONS[scope]) assert.equal(isStudioPermission(permission), true)
   const carried = new Set(TAILNET_SCOPES.flatMap((scope) => TAILNET_SCOPE_PERMISSIONS[scope]))
   for (const permission of [
-    'terminal:read',
-    'terminal:operate',
     'filesystem:read',
     'filesystem:write',
     'settings:write',
     'environment:maintain',
-    'access:read',
-    'access:write',
     'conversation:create',
     'tools:offer',
   ])
@@ -135,82 +127,40 @@ test('every route a device token opens is declared, and every set of scopes reac
   }
 })
 
-test('an authenticated request names its route, a refresh is its own, and anything else is no route', () => {
+test('an authenticated request names its route, and anything else is no route', () => {
   assert.equal(tailnetDeviceRouteOf('GET', TAILNET_IDENTITY_PATH), 'identity')
-  assert.equal(tailnetDeviceRouteOf('POST', TAILNET_UPLOAD_PATH), 'upload')
-  assert.equal(tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_IMAGE_PATH), 'conversation-image')
-  assert.equal(tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_FILES_PATH), 'conversation-files')
-  assert.equal(tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_COMMANDS_PATH), 'conversation-commands')
-  assert.equal(
-    tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_COMMANDS_PATH, `${TAILNET_CONVERSATION_COMMANDS_PATH}?refresh=1`),
-    'conversation-commands:refresh',
-  )
   assert.equal(tailnetDeviceRouteOf('POST', TAILNET_WS_TICKET_PATH), 'ws-ticket')
   assert.equal(tailnetDeviceRouteOf('POST', TAILNET_MCP_PATH), 'mcp')
-  assert.equal(tailnetDeviceRouteOf('GET', TAILNET_UPLOAD_PATH), null, 'the wrong verb is no route')
+  assert.equal(tailnetDeviceRouteOf('GET', TAILNET_MCP_PATH), null, 'the wrong verb is no route')
+  // The conversation lane's routes went when every client moved to the Studio socket.
+  for (const gone of ['upload', 'conversation-image', 'conversation-files', 'conversation-commands'])
+    assert.equal(
+      tailnetDeviceRouteOf('GET', `/tailnet/v1/${gone}`) ?? tailnetDeviceRouteOf('POST', `/tailnet/v1/${gone}`),
+      null,
+      gone,
+    )
   assert.equal(tailnetDeviceRouteOf('GET', '/tailnet/v1/terminal'), null)
   assert.equal(tailnetDeviceRouteOf('GET', '/tailnet/v1/constructor'), null)
 })
 
 test('each upgrade path names its route, and every declared route is one some request resolves to', () => {
   assert.equal(tailnetUpgradeRouteOf(TAILNET_STREAM_PATH), 'stream')
-  assert.equal(tailnetUpgradeRouteOf(TAILNET_EVENTS_PATH), 'events')
-  assert.equal(tailnetUpgradeRouteOf(TAILNET_CONVERSATION_PATH), 'conversation')
-  assert.equal(tailnetUpgradeRouteOf(TAILNET_CANVAS_PATH), 'canvas')
+  // The lanes went to the Studio socket: boards with `canvas.*`, chats and
+  // the change feed with `conversation.*` and `conversations.changed`.
+  for (const gone of ['/tailnet/v1/canvas', '/tailnet/v1/conversation', '/tailnet/v1/events'])
+    assert.equal(tailnetUpgradeRouteOf(gone), null, gone)
+  assert.equal(tailnetUpgradeRouteOf(TAILNET_STUDIO_PATH), 'studio')
   assert.equal(tailnetUpgradeRouteOf(TAILNET_MCP_PATH), null)
+  // No path reaches a machine this desktop holds: SSH and WSL machines are reached from this desktop only.
+  assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/environments/env-build-box/studio'), null)
   // No entry in the table goes unconsulted: each is what some request is judged by.
   const resolved = new Set<string>([
-    ...[TAILNET_STREAM_PATH, TAILNET_EVENTS_PATH, TAILNET_CONVERSATION_PATH, TAILNET_CANVAS_PATH].map((path) =>
-      tailnetUpgradeRouteOf(path)!,
-    ),
+    ...[TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH].map((path) => tailnetUpgradeRouteOf(path)!),
     tailnetDeviceRouteOf('GET', TAILNET_IDENTITY_PATH)!,
-    tailnetDeviceRouteOf('POST', TAILNET_UPLOAD_PATH)!,
-    tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_IMAGE_PATH)!,
-    tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_FILES_PATH)!,
-    tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_COMMANDS_PATH)!,
-    tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_COMMANDS_PATH, '?refresh=1')!,
     tailnetDeviceRouteOf('POST', TAILNET_WS_TICKET_PATH)!,
     tailnetDeviceRouteOf('POST', TAILNET_MCP_PATH)!,
   ])
   assert.deepEqual([...resolved].sort(), Object.keys(TAILNET_ROUTE_ACCESS).sort())
-})
-
-test('the canvas lane lets a device look at boards on read, and change them only on operate', () => {
-  const draws = new Set(['file', 'commit', 'human'])
-  for (const scopes of scopeSubsets()) {
-    const principal = tailnetDevicePrincipal(scopes)
-    const mayRead = legacy(scopes, 'workspace:read')
-    const mayOperate = legacy(scopes, 'workspace:operate')
-    assert.equal(
-      authorizeStudioAccess(principal, TAILNET_ROUTE_ACCESS.canvas).ok,
-      mayRead,
-      `canvas [${scopes.join(', ')}]`,
-    )
-    for (const [message, access] of Object.entries(CANVAS_LANE_ACCESS)) {
-      const decision = authorizeStudioAccess(principal, access)
-      assert.equal(
-        decision.ok,
-        draws.has(message) ? mayRead && mayOperate : mayRead,
-        `${message} [${scopes.join(', ')}]`,
-      )
-    }
-  }
-})
-
-test('every conversation lane frame is declared, and every set of scopes is answered as before', () => {
-  const drives = new Set(['askSideQuestion', 'command'])
-  for (const scopes of scopeSubsets()) {
-    const principal = tailnetDevicePrincipal(scopes)
-    const mayRead = legacy(scopes, 'conversation:read')
-    const mayOperate = legacy(scopes, 'conversation:operate')
-    for (const [frame, access] of Object.entries(CONVERSATION_LANE_ACCESS)) {
-      const decision = authorizeStudioAccess(principal, access)
-      assert.equal(decision.ok, drives.has(frame) ? mayRead && mayOperate : mayRead, `${frame} [${scopes.join(', ')}]`)
-      // The lane refuses not following before anything, and not driving where it answers.
-      const following = authorizeStudioAccess(principal, CONVERSATION_LANE_ACCESS.subscribe).ok
-      assert.equal(following, mayRead, `${frame} [${scopes.join(', ')}]`)
-    }
-  }
 })
 
 test('every tool, local-only or served, is judged for every set of scopes as before', () => {
@@ -275,8 +225,6 @@ test('a device stored before permissions loads as it was and is judged by its sc
     assert.deepEqual(device.scopes, ['backlog:read', 'conversation:operate'])
     const principal = tailnetDevicePrincipal(device.scopes)
     assert.deepEqual([...principal.permissions].sort(), ['backlog:read', 'conversation:operate', 'conversation:read'])
-    assert.equal(authorizeStudioAccess(principal, CONVERSATION_LANE_ACCESS.command).ok, true)
-    assert.equal(authorizeStudioAccess(principal, TAILNET_ROUTE_ACCESS.upload).ok, true)
     assert.equal(authorizeStudioAccess(principal, tailnetToolAccess('workspace.list', false)).ok, false)
     assert.equal(authorizeStudioAccess(principal, tailnetToolAccess('terminal.read', false)).ok, false)
   } finally {

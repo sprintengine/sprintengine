@@ -130,6 +130,12 @@ export function isNetworkPath(path: string, platform: string): boolean {
 }
 
 /** What main answers about an attached file: what to draw, and whether a click may open it. */
+/** The most bytes of one attached file read for a chat on another machine: what that machine takes for one. */
+export const MAX_ATTACHED_FILE_READ_BYTES = 25 * 1024 * 1024
+
+/** An attached file's bytes, for a chat on another machine to take with a message. */
+export type AttachedFileBytes = { ok: true; name: string; dataBase64: string } | { ok: false; message: string }
+
 export type AttachedFilePreview = {
   /**
    * `missing` when the path names nothing on this disk any more; `unknown` for

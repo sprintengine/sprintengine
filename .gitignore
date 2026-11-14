@@ -1,9 +1,6 @@
 node_modules
 .venv/
 dist/
-# Except the committed Reviews seed: the marketplace plugin ships this bundle,
-# and its signature is taken over these exact bytes.
-!/resources/marketplace/plugins/review/module/dist/
 dist-electron/
 coverage/
 out/

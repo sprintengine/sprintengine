@@ -132,6 +132,17 @@ test('a welcome is read whole, with the conversation hello answer nested unchang
   assert.equal(parseStudioServerFrame({ ...welcome, pairing: { token: TOKEN } })?.t === 'welcome', true)
 })
 
+test('a welcome’s boot id is kept; one in the wrong shape, or none from an older server, reads as absent', () => {
+  const bootOf = (frame: unknown) => {
+    const parsed = parseStudioServerFrame(frame)
+    return parsed?.t === 'welcome' ? parsed.bootId : 'unparsed'
+  }
+  assert.equal(bootOf({ ...welcome, bootId: 'boot-1' }), 'boot-1')
+  assert.equal(bootOf(welcome), undefined)
+  assert.equal(bootOf({ ...welcome, bootId: 7 }), undefined)
+  assert.equal(bootOf({ ...welcome, bootId: '' }), undefined)
+})
+
 test('a stream frame is the conversation lane’s frame, validated by the lane’s own parser', () => {
   const synchronized = { t: 'frame', sub: 's1', frame: { type: 'synchronized', seq: 4, generation: 'log-1' } }
   assert.deepEqual(parseStudioServerFrame(synchronized), {
@@ -147,6 +158,15 @@ test('a stream frame is the conversation lane’s frame, validated by the lane�
     code: 'revoked',
     message: 'Revoked in Settings.',
   })
+  // A version refusal keeps the Studio's window, both numbers or neither.
+  const refused = { t: 'bye', code: 'unsupported_protocol_version', message: 'Update this app.' }
+  assert.deepEqual(parseStudioServerFrame({ ...refused, protocolVersion: 3, minProtocolVersion: 2 }), {
+    ...refused,
+    protocolVersion: 3,
+    minProtocolVersion: 2,
+  })
+  assert.deepEqual(parseStudioServerFrame({ ...refused, protocolVersion: 3 }), refused)
+  assert.deepEqual(parseStudioServerFrame({ ...refused, protocolVersion: 0, minProtocolVersion: 'x' }), refused)
   assert.deepEqual(
     parseStudioServerFrame({
       t: 'res',

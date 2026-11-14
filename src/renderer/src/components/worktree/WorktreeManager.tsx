@@ -34,6 +34,10 @@ import {
   type SelectItem,
 } from '../ui'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
+import { openTerminal } from '../../studio/terminals'
+import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
+import { worktreesApi } from '../../studio/worktrees'
 
 type WorktreeMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -236,10 +240,10 @@ export default function WorktreeManager({
   }, [worktreeName])
 
   const refreshWorktrees = useCallback(async () => {
-    if (typeof window.api.listGitWorktrees !== 'function') return
+    if (typeof gitApi.listGitWorktrees !== 'function') return
     setLoading(true)
     try {
-      const result = await window.api.listGitWorktrees(repoRoot)
+      const result = await gitApi.listGitWorktrees(repoRoot)
       if (!result.ok) {
         setMessage({ tone: 'error', text: result.message })
         return
@@ -247,11 +251,11 @@ export default function WorktreeManager({
 
       const listedRows = await Promise.all(
         result.data.worktrees.map(async (worktree): Promise<WorktreeRow> => {
-          const exists = await window.api.pathExists(worktree.path).catch(() => false)
+          const exists = await filesApi.pathExists(worktree.path).catch(() => false)
           let dirtyCount: number | null = null
           if (exists && !worktree.bare) {
             try {
-              const status = await window.api.getGitStatus(worktree.path)
+              const status = await gitApi.getGitStatus(worktree.path)
               dirtyCount = Object.keys(status.files).length
             } catch {
               dirtyCount = null
@@ -268,7 +272,7 @@ export default function WorktreeManager({
             missing: !exists,
             // This profile's own agent in-use lock is the app's bookkeeping, not
             // a lock the person placed: it is not shown, and removing the
-            // worktree here releases it (main's removeGitWorktree). Another
+            // worktree here releases it (the server's `worktrees.remove`). Another
             // profile's is shown for what it is.
             locked: worktree.locked && worktree.agentLock !== 'this-profile',
             lockedReason:
@@ -293,7 +297,7 @@ export default function WorktreeManager({
           storedEntries
             .filter((entry) => !listedPaths.has(trimPath(entry.path).toLowerCase()))
             .map(async (entry): Promise<WorktreeRow | null> => {
-              const exists = await window.api.pathExists(entry.path).catch(() => false)
+              const exists = await filesApi.pathExists(entry.path).catch(() => false)
               if (!exists) {
                 removeWorktreeEntry(workspaceId, entry.id)
                 return null
@@ -325,27 +329,23 @@ export default function WorktreeManager({
         ),
       )
 
-      if (typeof window.api.getWorktreePoolSnapshot === 'function') {
-        setPool(await window.api.getWorktreePoolSnapshot(repoRoot).catch(() => null))
-      }
+      setPool(await worktreesApi.getWorktreePoolSnapshot(repoRoot).catch(() => null))
 
       // What the automatic cleanup would do, without doing it: the kept
       // worktrees (unmerged work, uncommitted changes) are shown here, which
       // is the only place anyone will see why they are still on disk.
-      if (typeof window.api.cleanupAgentWorktrees === 'function') {
-        const records = useWorkspaceStore.getState()
-        const plan = agentWorktreeCleanupPlan(records.workspaces, openWorkspaceIds(records))
-        const report = await window.api
-          .cleanupAgentWorktrees({
-            repoRoot,
-            protectedPaths: plan.protectedPaths,
-            agentIds: plan.agentIds,
-            agentKeys: plan.agentKeys,
-            dryRun: true,
-          })
-          .catch(() => null)
-        setCleanupReport(report)
-      }
+      const records = useWorkspaceStore.getState()
+      const plan = agentWorktreeCleanupPlan(records.workspaces, openWorkspaceIds(records))
+      const report = await worktreesApi
+        .cleanupAgentWorktrees({
+          repoRoot,
+          protectedPaths: plan.protectedPaths,
+          agentIds: plan.agentIds,
+          agentKeys: plan.agentKeys,
+          dryRun: true,
+        })
+        .catch(() => null)
+      setCleanupReport(report)
     } finally {
       setLoading(false)
     }
@@ -357,8 +357,7 @@ export default function WorktreeManager({
 
   // A slot leased, returned or held while the manager is open.
   useEffect(() => {
-    if (typeof window.api.onWorktreePoolChanged !== 'function') return
-    return window.api.onWorktreePoolChanged((snapshot) => {
+    return worktreesApi.onWorktreePoolChanged((snapshot) => {
       if (samePath(snapshot.repoRoot, repoRoot)) setPool(snapshot)
     })
   }, [repoRoot])
@@ -387,7 +386,7 @@ export default function WorktreeManager({
     await runWorktreeAction('Creating worktree', async () => {
       const destinationPath = pathJoin(containerPath, slug)
       setWorkspaceWorktreeState(workspaceId, { containerPath })
-      const result = await window.api.createGitWorktree({
+      const result = await worktreesApi.createGitWorktree({
         repoRoot,
         containerPath,
         destinationPath,
@@ -418,7 +417,7 @@ export default function WorktreeManager({
 
   const handlePrune = async () => {
     await runWorktreeAction('Pruning stale worktrees', async () => {
-      const result = await window.api.pruneGitWorktrees(repoRoot)
+      const result = await gitApi.pruneGitWorktrees(repoRoot)
       setMessage(messageFromResult(result, 'Pruned stale worktree metadata.'))
       if (result.ok) {
         await refreshWorktrees()
@@ -452,7 +451,7 @@ export default function WorktreeManager({
   const handleOpenTerminal = async (row: WorktreeRow) => {
     await runWorktreeAction('Opening terminal', async () => {
       const terminalId = `worktree-${row.id}`
-      const result = await window.api.terminalSpawn(
+      const result = await openTerminal(
         `terminal-${terminalId}`,
         terminalCols,
         terminalRows,
@@ -502,7 +501,7 @@ export default function WorktreeManager({
     }
 
     await runWorktreeAction('Removing worktree', async () => {
-      const result = await window.api.removeGitWorktree({ repoRoot, path: row.path, force })
+      const result = await worktreesApi.removeGitWorktree({ repoRoot, path: row.path, force })
       setMessage(messageFromResult(result, 'Removed worktree.'))
       if (!result.ok) return
       if (row.storedEntry) removeWorktreeEntry(workspaceId, row.storedEntry.id)
@@ -536,7 +535,7 @@ export default function WorktreeManager({
       keep: 'Keeping the worktree',
     }
     await runWorktreeAction(labels[action], async () => {
-      const result = await window.api.worktreePoolAction({ kind: 'held', repoRoot, slotId: slot.id, action })
+      const result = await worktreesApi.worktreePoolAction({ kind: 'held', repoRoot, slotId: slot.id, action })
       setMessage(
         result.ok ? { tone: 'success', text: result.message ?? 'Done.' } : { tone: 'error', text: result.message },
       )
@@ -559,7 +558,7 @@ export default function WorktreeManager({
     })
     if (!confirmed) return
     await runWorktreeAction('Removing the pooled worktree', async () => {
-      const result = await window.api.worktreePoolAction({ kind: 'evict', repoRoot, slotId: slot.id })
+      const result = await worktreesApi.worktreePoolAction({ kind: 'evict', repoRoot, slotId: slot.id })
       setMessage(
         result.ok ? { tone: 'success', text: result.message ?? 'Removed.' } : { tone: 'error', text: result.message },
       )
@@ -584,7 +583,7 @@ export default function WorktreeManager({
     })
     if (!confirmed) return
     await runWorktreeAction('Releasing agent lock', async () => {
-      const result = await window.api.unlockAgentGitWorktree(repoRoot, row.path)
+      const result = await gitApi.unlockAgentGitWorktree(repoRoot, row.path)
       setMessage(messageFromResult(result, 'Released the agent lock.'))
       if (!result.ok) return
       await refreshWorktrees()
@@ -596,7 +595,7 @@ export default function WorktreeManager({
     await runWorktreeAction('Cleaning up merged agent worktrees', async () => {
       const store = useWorkspaceStore.getState()
       const plan = agentWorktreeCleanupPlan(store.workspaces, openWorkspaceIds(store))
-      const report = await window.api.cleanupAgentWorktrees({
+      const report = await worktreesApi.cleanupAgentWorktrees({
         repoRoot,
         protectedPaths: plan.protectedPaths,
         agentIds: plan.agentIds,
@@ -702,7 +701,7 @@ export default function WorktreeManager({
                   id: 'cleanup',
                   label: 'Clean up merged agent worktrees',
                   onSelect: () => void handleCleanup(),
-                  disabled: formDisabled || typeof window.api.cleanupAgentWorktrees !== 'function',
+                  disabled: formDisabled,
                 },
               ]}
             />

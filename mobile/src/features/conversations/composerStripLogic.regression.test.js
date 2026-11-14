@@ -8,7 +8,7 @@ const test = require("node:test");
 // items leave for the "⋮" in a fixed order (branch → diff → machine). The
 // chat's changes, added up for its page, are worked out here too.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   ELLIPSIS,
   MIN_BRANCH_CHARS,

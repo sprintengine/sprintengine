@@ -6,6 +6,7 @@ import { SettingCard, SettingsSectionTitle } from './SettingsAtoms'
 import { listOpenProjectKnowledge, relativePathBetween, type ProjectKnowledgeEntry } from '../../utils/projectKnowledge'
 import { isAbsolutePath } from '../../store/slices/memorySlice'
 import { isImeKey } from '../../utils/imeKey'
+import { agentSetupApi } from '../../studio/agentSetup'
 
 type RowStatus = MemoryRootStatus | null
 
@@ -70,7 +71,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
     }
     setChecking((c) => ({ ...c, [key]: true }))
     try {
-      const status = await window.api.memoryResolveRoot({ workspaceRoot: projectRoot, relativeRoot })
+      const status = await agentSetupApi.memoryResolveRoot({ workspaceRoot: projectRoot, relativeRoot })
       setStatuses((s) => ({ ...s, [key]: status }))
     } catch (error) {
       setStatuses((s) => ({

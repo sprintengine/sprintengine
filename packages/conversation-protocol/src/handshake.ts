@@ -22,8 +22,6 @@ export const CONVERSATION_PROTOCOL_VERSION = 1
 /** The oldest contract a desktop built from this package still serves. */
 export const CONVERSATION_PROTOCOL_MIN_SUPPORTED = 1
 
-/** The desktop answers `hello` with its protocol version and conversation capabilities. */
-export const CONVERSATION_HELLO_CAPABILITY = 'conversation-hello' as const
 /** The `resolvePlan` command answers a `plan` request as a plan. */
 export const CONVERSATION_PLANS_CAPABILITY = 'conversation-plans' as const
 /**
@@ -185,13 +183,6 @@ export const CONVERSATION_MESSAGE_IMAGES_CAPABILITY = 'conversation-message-imag
  */
 export const CONVERSATION_MESSAGE_FILES_CAPABILITY = 'conversation-message-files' as const
 /**
- * A picture uploaded for a chat (`POST upload`) is shrunk by the desktop on
- * receipt to the long edge its own composer sends (1568px), so the route takes
- * one up to 20MB as it arrives; what is kept is still at most 5MB. A client
- * without it keeps its upload under 5MB itself.
- */
-export const CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY = 'conversation-image-downscale' as const
-/**
  * A chat may be forked from a paired device, as its Fork from here does on the
  * desktop: `fork` names the point and the new chat's id, and the desktop
  * writes the new chat beside this one, in the same workspace and files. A
@@ -293,7 +284,6 @@ export const CONVERSATION_CAPABILITIES = [
   CONVERSATION_MODELS_CAPABILITY,
   'conversation-images',
   CONVERSATION_PERMISSION_MODES_CAPABILITY,
-  CONVERSATION_HELLO_CAPABILITY,
   CONVERSATION_PLANS_CAPABILITY,
   CONVERSATION_CLI_PERMISSION_MODES_CAPABILITY,
   CONVERSATION_LIFECYCLE_CAPABILITY,
@@ -302,7 +292,6 @@ export const CONVERSATION_CAPABILITIES = [
   CONVERSATION_STEER_SENDS_CAPABILITY,
   CONVERSATION_MESSAGE_IMAGES_CAPABILITY,
   CONVERSATION_MESSAGE_FILES_CAPABILITY,
-  CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY,
   CONVERSATION_STOP_SUBAGENT_CAPABILITY,
   CONVERSATION_AGENT_MESSAGE_CAPABILITY,
   CONVERSATION_HANDOFF_CAPABILITY,
@@ -330,59 +319,16 @@ export const CONVERSATION_CAPABILITIES = [
 
 export type ConversationCapability = (typeof CONVERSATION_CAPABILITIES)[number]
 
-/**
- * Whether a peer serves a capability. `null` — a peer that published no list
- * — is unknown, which is not the same as a list without the name; both answer
- * false here, and a caller that must tell them apart checks for null first.
- */
-export function conversationPeerSupports(
-  capabilities: readonly string[] | null | undefined,
-  capability: ConversationCapability,
-): boolean {
-  return Array.isArray(capabilities) && capabilities.includes(capability)
-}
-
-/** The most capability names one `hello` may carry; a longer list is cut here. */
-const MAX_CLIENT_CAPABILITIES = 64
-
 const CAPABILITY_NAME = /^[a-z][a-z0-9.-]{0,63}$/
 
-/**
- * The `hello` request: a client's first frame, answered by a `result` under
- * its `requestId` whose `data` is a `ConversationHelloAnswer`. A desktop from
- * before `conversation-hello` answers it `ok: false` with `invalid_frame`,
- * which a client reads as protocol 1 with whatever capabilities the
- * transport's own handshake listed.
- *
- * `clientCapabilities` is the same vocabulary from the other end: what the
- * client reads that the desktop must otherwise keep from it. It holds for the
- * socket it was said on, and only frames sent after it, so a client says it
- * ahead of its `subscribe` and need not wait for the answer. A desktop that
- * does not know the member drops it, and a client that does not send it is
- * sent what every client was.
- */
-export type ConversationHelloRequest = {
-  type: 'hello'
-  requestId: string
-  protocolVersion?: number
-  clientCapabilities?: string[]
-}
-
-/** The names a `hello` says its client reads: a member that does not read is no names, not a refused `hello`. */
-export function parseConversationClientCapabilities(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((name): name is string => typeof name === 'string' && CAPABILITY_NAME.test(name))
-    .slice(0, MAX_CLIENT_CAPABILITIES)
-}
-
+/** The conversation contract a Studio serves, as its welcome names it (`welcome.conversation`). */
 export type ConversationHelloAnswer = {
   protocolVersion: number
   minProtocolVersion: number
   capabilities: string[]
 }
 
-/** A `hello` answer read off a `result`'s `data`, or null when it is not one. */
+/** The contract a welcome names, or null when it is not one. */
 export function parseConversationHelloAnswer(value: unknown): ConversationHelloAnswer | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
   const answer = value as Record<string, unknown>
@@ -397,26 +343,4 @@ export function parseConversationHelloAnswer(value: unknown): ConversationHelloA
       (name): name is string => typeof name === 'string' && CAPABILITY_NAME.test(name),
     ),
   }
-}
-
-/**
- * Whether two ends can talk: each must serve the other's version. The
- * refusal names both numbers and which side to update, so it is a fix and not
- * a support thread.
- */
-export function checkConversationProtocolVersion(
-  peerVersion: number,
-  peerMinVersion: number = peerVersion,
-): { ok: true } | { ok: false; message: string } {
-  if (peerVersion < CONVERSATION_PROTOCOL_MIN_SUPPORTED)
-    return {
-      ok: false,
-      message: `The other end speaks conversation protocol ${peerVersion}, and this one needs ${CONVERSATION_PROTOCOL_MIN_SUPPORTED} or newer. Update the other end.`,
-    }
-  if (peerMinVersion > CONVERSATION_PROTOCOL_VERSION)
-    return {
-      ok: false,
-      message: `The other end needs conversation protocol ${peerMinVersion} or newer, and this one speaks ${CONVERSATION_PROTOCOL_VERSION}. Update this end.`,
-    }
-  return { ok: true }
 }

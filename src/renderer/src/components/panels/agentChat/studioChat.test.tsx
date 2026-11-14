@@ -13,9 +13,7 @@ import { installStudioLoopback, type StudioLoopback } from '../../../../../../te
 // repeats or skips text after the connection drops mid-turn, a picture that
 // arrives cut, a socket's own words in an error — is what these look for.
 
-beforeEach(() => {
-  vi.stubEnv('STUDIO_CHAT_TRANSPORT_UNDER_TEST', 'studio')
-})
+beforeEach(() => {})
 afterEach(() => {
   vi.unstubAllEnvs()
 })
@@ -175,8 +173,8 @@ test('a picture goes up in pieces and reaches the runtime whole; the socket’s 
     // A reconnect Studio refuses ends the client; the call in flight is told
     // in one plain sentence, not in the socket's words.
     const api = window.api as unknown as Record<string, () => Promise<{ connectionId: string; ticket: string }>>
-    const connect = api.studioConnect
-    api.studioConnect = async () => ({ ...(await connect()), ticket: 'seport_not_the_ticket_000000' })
+    const connect = api.studioWindowTicket
+    api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seticket_not_the_ticket_000000' })
     loopback.drop()
     const refused = await transport.services.providers.list({})
     expect(refused).toEqual({
@@ -292,5 +290,324 @@ test('a send’s files attached by path reach the runtime over the protocol, bes
     expect(sends[0]).toMatchObject({ message: 'Summarise', files: [{ path: '/Users/dev/Desktop/Q3 budget.xlsx' }] })
   } finally {
     restore()
+  }
+})
+
+test('the window’s chat services reach its Studio’s chats over the protocol, each by its method', async () => {
+  const asked: string[] = []
+  const status = { providerId: 'p', configured: true, source: 'settings', persistence: 'encrypted', label: 'Key' }
+  const { restore } = await setup({
+    conversationSessionsList: async () => {
+      asked.push('list')
+      return { ok: true, sessions: [] }
+    },
+    conversationSessionStop: async ({ sessionId }: { sessionId: string }) => {
+      asked.push(`stop:${sessionId}`)
+      return { ok: true }
+    },
+    conversationSessionSuspend: async ({ sessionId }: { sessionId: string }) => {
+      asked.push(`suspend:${sessionId}`)
+      return { ok: true }
+    },
+    conversationThreads: async ({ workspaceId }: { workspaceId: string }) => {
+      asked.push(`threads:${workspaceId}`)
+      return { ok: true, threads: [] }
+    },
+    conversationSearch: async ({ query }: { query: string }) => {
+      asked.push(`search:${query}`)
+      return { ok: true, hits: [] }
+    },
+    conversationApprovalRules: async () => {
+      asked.push('rules')
+      return { ok: true, rules: [] }
+    },
+    conversationRevokeApprovalRule: async ({ ruleId }: { ruleId: string }) => {
+      asked.push(`revoke:${ruleId}`)
+      return { ok: true }
+    },
+    conversationSecretSet: async ({ providerId, value }: { providerId: string; value: string }) => {
+      asked.push(`set:${providerId}:${value}`)
+      return { ok: true, status }
+    },
+    conversationSecretClear: async ({ providerId }: { providerId: string }) => {
+      asked.push(`clear:${providerId}`)
+      return { ok: true, status }
+    },
+  })
+  try {
+    const { windowChatServices } = await import('./windowChat')
+    const services = windowChatServices()
+    expect(await services.sessions.list()).toEqual({ ok: true, sessions: [] })
+    expect((await services.sessions.stop({ sessionId: 's1' })).ok).toBe(true)
+    expect((await services.sessions.suspend({ sessionId: 's1' })).ok).toBe(true)
+    expect((await services.history.threads({ workspaceId: 'ws', workspaceRoot: '/Users/dev/app' })).ok).toBe(true)
+    expect(
+      (await services.history.search({ workspaceId: 'ws', workspaceRoot: '/Users/dev/app', query: 'wave' })).ok,
+    ).toBe(true)
+    expect((await services.approvalRules.list()).ok).toBe(true)
+    expect((await services.approvalRules.revoke('rule-1')).ok).toBe(true)
+    expect((await services.providers.setSecret({ providerId: 'p', value: 'sk-test' })).ok).toBe(true)
+    expect((await services.providers.clearSecret({ providerId: 'p' })).ok).toBe(true)
+    expect(asked).toEqual([
+      'list',
+      'stop:s1',
+      'suspend:s1',
+      'threads:ws',
+      'search:wave',
+      'rules',
+      'revoke:rule-1',
+      'set:p:sk-test',
+      'clear:p',
+    ])
+  } finally {
+    restore()
+  }
+})
+
+test('every chat’s lifecycle is heard across a dropped connection, and the reader is told to read its list again', async () => {
+  const listeners = new Set<(event: ConversationEvent) => void>()
+  const { loopback, restore } = await setup({
+    onConversationEvent: (listener: (event: ConversationEvent) => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  })
+  try {
+    const { windowChatServices } = await import('./windowChat')
+    const heard: string[] = []
+    let reconnected = 0
+    const stop = windowChatServices().sessions.onLifecycleEvent(
+      (event) => heard.push(event.type),
+      () => reconnected++,
+    )
+    await until(() => listeners.size === 1, 'the stream to be followed')
+    for (const listener of listeners) listener(event(1, 'turn_started', {}))
+    await until(() => heard.length === 1, 'the first event')
+    const before = reconnected
+    // Studio restarts under the window: what happened meanwhile was never heard.
+    loopback.drop()
+    await until(() => loopback.connections() >= 2 && reconnected > before, 'the reconnect to be told')
+    await until(() => listeners.size >= 1, 'the stream to be followed again')
+    for (const listener of listeners) listener(event(2, 'turn_completed', {}))
+    await until(() => heard.includes('turn_completed'), 'the event after the reconnect')
+    stop()
+  } finally {
+    restore()
+  }
+})
+
+test('a fork is asked only of a Studio that says where its forks are, and an answer that does not say is not read as made', async () => {
+  const { createStudioConversationParts } = await import('./studioChat')
+  const asked: string[] = []
+  const studio = (capabilities: string[], answer: unknown) => async () =>
+    ({
+      welcome: { conversation: { capabilities } },
+      request: async (method: string) => {
+        asked.push(method)
+        return answer
+      },
+    }) as never
+  const fork = {
+    key: { workspaceRoot: '/Users/dev/app', workspaceId: 'ws', agentId: 'agent' },
+    newAgentId: 'agent-2',
+    side: 'assistant' as const,
+    turnId: 'turn-1',
+  }
+  // A Studio from before: its fork would leave a transcript no window lists.
+  const older = await createStudioConversationParts(studio([], { ok: true })).fork!(fork)
+  expect(older).toEqual({ ok: false, message: expect.stringContaining('older than this window') })
+  expect(asked).toEqual([])
+  // One that forked but did not say where, or said another fork.
+  for (const answer of [
+    { ok: true },
+    { ok: true, address: { environmentId: 'env', chatId: 'ws', agentId: 'another' }, name: 'Atlas (fork)' },
+  ]) {
+    const unsaid = await createStudioConversationParts(studio(['conversation-fork'], answer)).fork!(fork)
+    expect(unsaid).toEqual({ ok: false, message: expect.stringContaining('did not say where it is') })
+  }
+  const address = { environmentId: 'env', chatId: 'ws', agentId: 'agent-2' }
+  const made = await createStudioConversationParts(
+    studio(['conversation-fork'], { ok: true, address, name: 'Atlas (fork)' }),
+  ).fork!(fork)
+  expect(made).toEqual({ ok: true, address, name: 'Atlas (fork)' })
+  expect(asked).toEqual(['conversation.fork', 'conversation.fork', 'conversation.fork'])
+})
+
+// A chat on an SSH machine: a file attached on this computer is not on that
+// machine, so its path here would name nothing there (and leak a path of this
+// disk). Its bytes go up first and the send names the upload; the machine
+// keeps it and attaches it by its own path.
+test('a file attached to another machine’s chat goes up to it, and the send names the upload, never the path here', async () => {
+  const { createStudioConversationParts } = await import('./studioChat')
+  const asked: Array<{ method: string; params: Record<string, unknown> }> = []
+  let uploads = 0
+  const client = {
+    supports: (capability: string) => capability === 'session-file-uploads' || capability === 'session-files',
+    request: async (method: string, params: Record<string, unknown>) => {
+      asked.push({ method, params })
+      if (method === 'uploads.begin') return { uploadId: `up-${++uploads}`, chunkBytes: 512 * 1024 }
+      if (method === 'uploads.append') return { received: 0 }
+      return { ok: true, session: {} }
+    },
+  }
+  const read: string[] = []
+  const parts = createStudioConversationParts(async () => client as never, {
+    filesFromThisDisk: true,
+    readFile: async (path) => {
+      read.push(path)
+      return { ok: true, name: 'f1.txt', dataBase64: Buffer.from('the notes').toString('base64') }
+    },
+  })
+  const sent = await parts.send({
+    sessionId: 'session',
+    message: 'read it',
+    files: [{ path: '/tmp/r2files/f1.txt' }],
+    commandId: 'c1',
+  })
+  expect(sent).toMatchObject({ ok: true })
+  expect(read).toEqual(['/tmp/r2files/f1.txt'])
+  expect(asked.find((entry) => entry.method === 'uploads.begin')?.params).toMatchObject({
+    name: 'f1.txt',
+    purpose: 'attachment',
+  })
+  const send = asked.find((entry) => entry.method === 'session.send')!.params
+  expect(send.fileUploadIds).toEqual(['up-1'])
+  expect(send.files).toBeUndefined()
+  expect(JSON.stringify(send)).not.toContain('/tmp/r2files')
+
+  // A machine whose Studio cannot take them says so, and nothing goes.
+  const older = createStudioConversationParts(
+    async () => ({ ...client, supports: (capability: string) => capability === 'session-files' }) as never,
+    { filesFromThisDisk: true, readFile: async () => ({ ok: false, message: 'unread' }) },
+  )
+  const refused = await older.send({ sessionId: 'session', message: 'x', files: [{ path: '/tmp/a.txt' }] })
+  expect(refused).toMatchObject({ ok: false })
+  expect(asked.filter((entry) => entry.method === 'session.send')).toHaveLength(1)
+})
+
+test('a scheduled message whose answer was lost with the connection is asked again under its command id, and kept once', async () => {
+  const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const { createStudioConversationParts } = await import('./studioChat')
+  // A Studio that keeps a scheduled message once per command id, as its store
+  // does, and a window client that gives up the first answer.
+  const kept = new Map<string, string>()
+  const asked: string[] = []
+  let lose = 1
+  const client = {
+    request: async (method: string, params: { commandId: string; message: string }) => {
+      expect(method).toBe('conversation.scheduleSend')
+      asked.push(params.commandId)
+      if (!kept.has(params.commandId)) kept.set(params.commandId, params.message)
+      if (lose > 0) {
+        lose--
+        throw new StudioError('closed', 'The client is closed.')
+      }
+      return {}
+    },
+  }
+  const parts = createStudioConversationParts(async () => client as never)
+  const key = { workspaceId: 'workspace', agentId: 'agent', workspaceRoot: '/Users/dev/app' }
+  expect(await parts.scheduleSend!({ key, message: 'Morning check.', sendAt: 1_900_000_000_000 })).toEqual({ ok: true })
+  expect(asked).toHaveLength(2)
+  expect(asked[1]).toBe(asked[0])
+  expect([...kept.values()]).toEqual(['Morning check.'])
+}, 20_000)
+
+test('a queued message whose answer was lost with the connection is asked again under its command id, and held once', async () => {
+  const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const { createStudioConversationParts } = await import('./studioChat')
+  // A Studio that holds a message once per command id, as its hold does, and
+  // a window client that gives up the first answer: closed and replaced
+  // before it came, as a client that is replaced or parked gives its requests up.
+  const held = new Map<string, string>()
+  const asked: Array<{ method: string; commandId: string }> = []
+  let lose = 1
+  const client = {
+    request: async (method: string, params: { commandId: string; message: string; queue?: boolean }) => {
+      asked.push({ method, commandId: params.commandId })
+      if (params.queue && !held.has(params.commandId)) held.set(params.commandId, params.message)
+      if (lose > 0) {
+        lose--
+        throw new StudioError('closed', 'The client is closed.')
+      }
+      return {}
+    },
+  }
+  const parts = createStudioConversationParts(async () => client as never)
+  const key = { workspaceId: 'workspace', agentId: 'agent', workspaceRoot: '/Users/dev/app' }
+  expect(await parts.queue!({ key, message: 'Then the docs.' })).toEqual({ ok: true })
+  expect(asked).toHaveLength(2)
+  expect(asked[0]!.method).toBe('conversation.send')
+  expect(asked[1]!.commandId).toBe(asked[0]!.commandId)
+  expect([...held.values()]).toEqual(['Then the docs.'])
+
+  // Lost every time, it is asked a bounded number of times and said in the window's words.
+  asked.length = 0
+  lose = Number.POSITIVE_INFINITY
+  const gaveUp = await parts.queue!({ key, message: 'And the tests.' })
+  expect(gaveUp.ok).toBe(false)
+  expect(!gaveUp.ok && gaveUp.message).toMatch(/lost its connection to Studio/)
+  expect(asked).toHaveLength(4)
+  expect(new Set(asked.map((entry) => entry.commandId)).size).toBe(1)
+
+  // A refusal is the Studio's answer, not a lost one: it is not asked again.
+  asked.length = 0
+  lose = 0
+  client.request = async (method, params) => {
+    asked.push({ method, commandId: params.commandId })
+    throw new StudioError('stale', 'This message was written a while ago and was not sent.')
+  }
+  const refused = await parts.queue!({ key, message: 'Old words.' })
+  expect(refused.ok).toBe(false)
+  expect(asked).toHaveLength(1)
+}, 20_000)
+
+test('a push stream that cannot be followed waits longer each time, and a minute at once for an older Studio, however it failed', async () => {
+  vi.useFakeTimers()
+  try {
+    const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+    const { createStudioChatServices } = await import('./studioChat')
+    // When each attempt to follow was made, ms from the start, and how it ends.
+    const attempts: number[] = []
+    let fail: 'refused' | 'outdated' | 'closes' | 'closes-outdated' = 'refused'
+    const start = Date.now()
+    const client = async () => {
+      attempts.push(Date.now() - start)
+      if (fail === 'refused') throw new StudioError('unavailable', 'The machine did not answer.')
+      if (fail === 'outdated') throw new StudioError('outdated', 'That Studio is older than the protocol.')
+      // A client that opens, and whose connection then closes for good under the stream.
+      const connected = {
+        state: 'open',
+        subscribe: (_topic: string, _params: unknown, handlers: { onEnd?: (error?: unknown) => void }) => {
+          connected.state = 'closed'
+          handlers.onEnd?.(
+            fail === 'closes-outdated'
+              ? new StudioError('outdated', 'That Studio is older than the protocol.')
+              : new StudioError('closed', 'The client is closed.'),
+          )
+          return () => undefined
+        },
+      }
+      return connected as never
+    }
+    const run = async (mode: typeof fail, ms: number) => {
+      fail = mode
+      attempts.length = 0
+      const startedAt = Date.now()
+      const stop = createStudioChatServices(client).sessions.onLifecycleEvent(() => undefined)
+      await vi.advanceTimersByTimeAsync(ms)
+      stop()
+      return attempts.map((at) => at - (startedAt - start))
+    }
+    // A connect refused: 2 s, then 4, 8, 16, 32, then a minute between tries.
+    expect(await run('refused', 200_000)).toEqual([0, 2_000, 6_000, 14_000, 30_000, 62_000, 122_000, 182_000])
+    // A connection closed under the stream backs off the same way, rather than every 2 s.
+    expect(await run('closes', 70_000)).toEqual([0, 2_000, 6_000, 14_000, 30_000, 62_000])
+    // A Studio older than the protocol is asked again after a minute, whether its connect
+    // said so or the stream ended with it.
+    expect(await run('outdated', 130_000)).toEqual([0, 60_000, 120_000])
+    expect(await run('closes-outdated', 130_000)).toEqual([0, 60_000, 120_000])
+  } finally {
+    vi.useRealTimers()
   }
 })

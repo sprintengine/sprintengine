@@ -14,36 +14,9 @@
 
 import { isRecord } from './records'
 
-export type ObservedCheckout = {
-  /** The cwd exactly as the hook payload reported it (verbatim, untrusted-but-shape-checked). */
-  cwd: string
-  /** Epoch ms of the frame that carried the cwd. */
-  at: number
-  /**
-   * False until git has answered for this cwd. While false every git-derived
-   * field below is null/false and a consumer should fall back to launch intent
-   * rather than read "not a checkout" into the nulls.
-   */
-  resolved: boolean
-  /** Top level of the checkout containing `cwd` (realpath, from git); null when not inside a git work tree. */
-  gitRoot: string | null
-  /**
-   * Root of the PRIMARY checkout this working tree belongs to: for a linked
-   * worktree, the checkout that owns the common git dir; for a primary
-   * checkout, `gitRoot` itself. Null when unknown (bare/odd layouts, not a repo).
-   */
-  repoRoot: string | null
-  /** Current branch, or null on a detached HEAD / not a repo. */
-  branch: string | null
-  /** True when `gitRoot` is a linked worktree (`git worktree add`), false for a primary checkout or a non-repo. */
-  isLinkedWorktree: boolean
-  /**
-   * True when the observed cwd no longer exists on disk (a worktree pruned out
-   * from under the agent). Only meaningful with `resolved: true` and no
-   * `gitRoot`; distinguishes "removed" from a plain folder.
-   */
-  missing?: boolean
-}
+import type { ObservedCheckout } from '../../packages/studio-protocol/src/public'
+
+export type { ObservedCheckout }
 
 /** Cap on a reported cwd; a longer value signals a broken reporter and drops the field. */
 export const MAX_OBSERVED_CWD_LENGTH = 4096

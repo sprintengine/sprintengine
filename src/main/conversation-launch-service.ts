@@ -63,6 +63,7 @@ import type { McpServerConfig } from '../shared/ipc/mcp'
 import { SOLO_CHAT_TEMPLATE_AGENT_ID, SOLO_CHAT_TEMPLATE_ID } from '../shared/layouts/templates'
 import { deriveWorkspaceTitle, nextNewChatName } from '../shared/workspace-title'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from '../shared/worktree-paths'
+import { firstMessageCommandId, firstMessageSettled, type PendingFirstMessages } from './conversation-first-messages'
 import type { WorkspaceWorktree } from '../renderer/src/types/workspace'
 import type { WorkspaceCreateRequest } from './workspace-registry-service'
 import { isMachinePath } from '../shared/machine-paths'
@@ -83,7 +84,7 @@ export type ConversationLaunchWorkspace = {
 }
 
 /** Who a sub-agent's first message is from: Studio, giving it the task, not the person. */
-const SUBAGENT_TASK_ORIGIN = { kind: 'studio', reason: 'subagent-task' } as const
+export const SUBAGENT_TASK_ORIGIN = { kind: 'studio', reason: 'subagent-task' } as const
 
 export type ConversationLaunchRequest = {
   /** The workspace the chat joins (or, with `newChat`, whose folder a new one starts in). */
@@ -234,6 +235,14 @@ export type ConversationLaunchRequest = {
    * first turn learns that none is coming.
    */
   onFirstSendFailed?: (message: string) => void
+  /**
+   * The command id the first message goes under: a caller that wrote it down
+   * before the launch (a scheduled run) can send that message again after a
+   * restart, and the chat's receipt answers the repeat. Absent, one is made.
+   */
+  firstCommandId?: string
+  /** Told when the chat answered the first message, as a send is answered: when its turn ended. */
+  onFirstSent?: () => void
 }
 
 export type ConversationLaunchResult =
@@ -274,7 +283,26 @@ export type ConversationLaunchServiceDeps = {
     request: WorkspaceCreateRequest,
   ) => { ok: true; workspaceId: string } | { ok: false; message: string }
   removeWorkspace: (workspaceId: string) => void
+  /**
+   * Settles once the chat's record is on disk. Awaited before the session is
+   * started, so nothing of a chat (its conversation, its first message sent)
+   * exists that a crash could leave with no record listing it. Absent, the
+   * record's own write delay applies.
+   */
+  persisted?: () => Promise<void>
   startSession: (input: ConversationStartSessionInput) => Promise<ConversationStartSessionResult>
+  /**
+   * Where a first message is written down before the launch answers, and let
+   * go of once it is: the next start sends one a stop cut off
+   * (`conversation-first-messages.ts`). Absent, a stop loses it.
+   */
+  firstMessages?: PendingFirstMessages
+  /**
+   * Whether a session's command has a receipt in its chat's log
+   * (`ConversationRuntime.commandReceipt`): a refused first message is let go
+   * of only when the chat recorded the refusal. Absent, a refusal keeps it.
+   */
+  commandReceipt?: (sessionId: string, commandId: string) => Promise<'kept' | 'none' | 'no_session'>
   send: (
     input: Pick<
       ConversationSendTurnInput,
@@ -369,11 +397,6 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     | { ok: true; folderPath: string; worktree: WorkspaceWorktree; dependencyInstall?: StartedDependencyInstall }
     | { ok: false; message: string }
   > {
-    // A folder on an SSH machine is not this computer's to fork: a window's
-    // New chat does not offer the worktree there either.
-    if (isMachinePath(folderPath)) {
-      return { ok: false, message: 'A chat on an SSH machine starts in its folder there; it cannot have a worktree.' }
-    }
     if (!deps.getRepoRoot || !deps.createWorktree) {
       return { ok: false, message: 'This Studio cannot make worktrees for the chats it starts.' }
     }
@@ -426,9 +449,6 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
   ): Promise<
     { ok: true; worktree: { folderPath: string; marker: WorkspaceWorktree } | null } | { ok: false; message: string }
   > {
-    if (isMachinePath(folderPath)) {
-      return { ok: false, message: 'A chat on an SSH machine starts in its folder there; it cannot pick a worktree.' }
-    }
     if (!deps.getRepoRoot || !deps.listWorktrees) {
       return { ok: false, message: 'This Studio cannot start a chat in an existing worktree.' }
     }
@@ -485,6 +505,16 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         ok: false,
         code: 'workspace_folder_missing',
         message: `Workspace "${workspace.id}" has no project folder, so there is nowhere to start the chat.`,
+      }
+    }
+    // A folder on an SSH machine (`ssh://…`) is that machine's Studio's: its
+    // chats start there, as a client of it asks (design-wsl-ssh-direct PR 1d),
+    // never in this core's runtime.
+    if (isMachinePath(workspaceRoot)) {
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: 'That folder is on an SSH machine: its chats start on that machine’s Studio, not on this computer.',
       }
     }
 
@@ -566,7 +596,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // behind, as a window's New chat that fails after cutting one does; a pool
     // slot comes back with the pool's return sweep, which takes back a lease
     // no chat has been seen to hold.
-    let chatFolder = workspaceRoot
+    let chatFolder: string = workspaceRoot
     let chatWorktree = workspace.worktree ?? null
     let installing: StartedDependencyInstall | null = null
     // The worktree the new chat runs in, for the answer: one cut for it here,
@@ -598,9 +628,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // be written is only reported — the runtime installs a missing skill again
     // when the first message attaches it.
     const skills = [...new Set((request.skills ?? []).map((id) => id.trim()).filter(Boolean))]
-    // A folder on an SSH machine (`ssh://…`) is not this computer's to write
-    // a skill into: the machine's own runtime attaches skills there.
-    if (deps.ensureSkillInstalled && !isMachinePath(workingRoot)) {
+    if (deps.ensureSkillInstalled) {
       for (const skillId of skills) {
         const installed = await deps
           .ensureSkillInstalled(workingRoot, skillId)
@@ -657,6 +685,53 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         ? { scheduledAgentTag: request.scheduledAgentTag.trim() }
         : {}),
     }
+    // The first message, whole (its pictures too), is written down and
+    // flushed before the chat is: the launch answers only once nothing it
+    // promised can be lost to a stop, and the next start sends one a stop cut
+    // off under the id it was meant to go under. One that cannot be written
+    // refuses the launch, before anything is made. A scheduled run keeps its
+    // own record.
+    const prompt = request.prompt?.trim()
+    const firstCommandId =
+      request.firstCommandId ??
+      (request.launchCommandId ? firstMessageCommandId(request.launchCommandId) : newCommandId())
+    const kept =
+      prompt &&
+      request.sendFirst !== false &&
+      deps.firstMessages &&
+      request.launchCommandId &&
+      !request.scheduledAgentId
+        ? deps.firstMessages
+        : null
+    if (kept) {
+      const written = await kept
+        .keep(
+          firstCommandId,
+          {
+            launchCommandId: request.launchCommandId!,
+            message: prompt!,
+            ...(skills.length > 0 ? { skills } : {}),
+            ...(turnMode ? { mode: turnMode } : {}),
+            ...(subagentOf ? { subagentTask: true as const } : {}),
+            at: Date.now(),
+          },
+          request.attachments ?? [],
+        )
+        .then(
+          () => null,
+          (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        )
+      if (written !== null)
+        return {
+          ok: false,
+          code: 'agent_write_failed',
+          message: `The chat's first message could not be saved, so the chat was not made: ${written}`,
+        }
+    }
+    // Let go of the first message of a launch refused from here on: no chat holds it.
+    const unkeep = () => {
+      if (kept) void kept.done(firstCommandId).catch(() => undefined)
+    }
     let chatWorkspaceId = workspace.id
     if (newChat) {
       // Named after the message it is about to be sent, so the chat has its
@@ -689,11 +764,15 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         templateAgentIds: { [SOLO_CHAT_TEMPLATE_AGENT_ID]: agentId },
         agents: { [agentId]: agent },
       })
-      if (!created.ok) return { ok: false, code: 'workspace_create_failed', message: created.message }
+      if (!created.ok) {
+        unkeep()
+        return { ok: false, code: 'workspace_create_failed', message: created.message }
+      }
       chatWorkspaceId = created.workspaceId
     } else {
       const written = deps.writeAgent(workspace.id, agentId, agent)
       if (!written.ok) {
+        unkeep()
         return {
           ok: false,
           code: 'agent_write_failed',
@@ -701,6 +780,11 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         }
       }
     }
+
+    // On disk before anything else of the chat is made: a stop from here on
+    // finds the chat listed, with its first message kept beside it. A write
+    // that fails is reported by the registry, which keeps the chat in memory.
+    await deps.persisted?.()
 
     // The chat's CLI on the machine the chat runs on: a WSL workspace's chat
     // runs that distribution's CLI, whichever it is, as a window's chat would.
@@ -732,6 +816,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         message: error instanceof Error ? error.message : 'The conversation could not start.',
       }))
     if (!started.ok) {
+      unkeep()
       if (newChat) deps.removeWorkspace(chatWorkspaceId)
       else deps.writeAgent(workspace.id, agentId, null)
       return { ok: false, code: 'conversation_start_failed', message: started.message }
@@ -741,7 +826,6 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // worktree this chat may have been given.
     if (request.newChat === true) deps.recordProjectUse?.(workspaceRoot)
 
-    const prompt = request.prompt?.trim()
     if (prompt && request.sendFirst !== false) {
       const sessionId = started.session.sessionId
       const failed = (message: string): void => {
@@ -766,12 +850,27 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         reasoningEffort && started.session.capabilities?.reasoningEfforts?.includes(reasoningEffort)
           ? reasoningEffort
           : undefined
+      // Let go of once the chat has answered it for good: taken, or refused
+      // in an answer its log keeps. A refusal it did not keep (the chat busy,
+      // its agent not starting, a failure on the way) leaves it kept, and the
+      // next start sends it again (`firstMessageSettled`).
+      const settle = async (sent: ConversationSessionActionResult | null): Promise<boolean> => {
+        if (!kept) return true
+        const settled = sent
+          ? await firstMessageSettled(sent, async () => {
+              const receipt = await deps.commandReceipt?.(sessionId, firstCommandId)
+              return receipt === 'kept'
+            })
+          : false
+        if (settled) await kept.done(firstCommandId).catch(() => undefined)
+        return settled
+      }
       void ready
         .then(async (go) => {
           if (!go) return
           const sent = await deps.send({
             sessionId,
-            commandId: newCommandId(),
+            commandId: firstCommandId,
             message: prompt,
             ...(turnEffort ? { reasoningEffort: turnEffort } : {}),
             ...(turnMode ? { mode: turnMode } : {}),
@@ -779,9 +878,15 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             ...(skills.length > 0 ? { skills: skills.map((id) => ({ id })) } : {}),
             ...(request.attachments?.length ? { attachments: request.attachments } : {}),
           })
-          if (!sent.ok) failed(`The first message of chat "${agentId}" was refused: ${sent.message}`)
+          const settled = await settle(sent)
+          if (!sent.ok)
+            failed(
+              `The first message of chat "${agentId}" was refused: ${sent.message}${settled ? '' : ' It is sent again when Studio next starts.'}`,
+            )
+          else request.onFirstSent?.()
         })
-        .catch((error: unknown) => {
+        .catch(async (error: unknown) => {
+          await settle(null)
           failed(
             `The first message of chat "${agentId}" failed: ${error instanceof Error ? error.message : String(error)}`,
           )

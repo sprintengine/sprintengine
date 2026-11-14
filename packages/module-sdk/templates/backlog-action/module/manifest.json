@@ -7,11 +7,9 @@
   "defaultEnabled": false,
   "source": "third-party",
   "engines": {
-    "hostApi": 1
+    "hostApi": 2
   },
-  "permissions": [
-    "conversation:operate"
-  ],
+  "permissions": ["conversation:operate"],
   "entry": {
     "renderer": "dist/renderer.mjs"
   }

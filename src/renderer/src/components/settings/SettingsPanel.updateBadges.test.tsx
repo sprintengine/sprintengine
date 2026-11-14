@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { AppUpdateState, CliVersionAdvisory, CliVersionHostAdvisories } from '../../../../shared/electron-api'
 import type { ExecutionHostId, HostsListResult } from '../../../../shared/execution-host'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 // The update badges inside Settings (owner ruling 2026-09-25), through the real
 // panel: General wears the app update, Agents the CLI updates of every machine,
@@ -12,7 +17,11 @@ import type { ExecutionHostId, HostsListResult } from '../../../../shared/execut
 // update. Also the other half of "links now open Settings ▸ Agents": an
 // opener that names a machine lands on it.
 //
-// Every IPC the panel reaches for on mount answers "nothing" unless named here.
+// Every IPC the panel reaches for on mount answers "nothing" unless named here,
+// and so does the window's Studio (its double), for the CLIs' models and versions.
+
+vi.mock('../../studio/agentSettings', () => import('../../studio/agentSettings.double'))
+const { agentSettingsDouble } = await import('../../studio/agentSettings.double')
 
 let listing: HostsListResult
 let appUpdate: AppUpdateState
@@ -78,6 +87,10 @@ function stubApi(): void {
       }
     },
   }
+  Object.assign(agentSettingsDouble, {
+    cliModelsDiscover: named.cliModelsDiscover,
+    cliVersionAdvisories: named.cliVersionAdvisories,
+  })
   ;(window as unknown as { api: unknown }).api = new Proxy(named, {
     get(target, key) {
       if (key === 'platform') return 'win32'

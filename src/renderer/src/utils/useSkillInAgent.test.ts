@@ -19,7 +19,11 @@ import {
   useSkillInAgent,
   type SkillCliEntry,
 } from './useSkillInAgent'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../studio/terminals.double'
+vi.mock('../studio/agentSkills', () => import('../studio/agentSkills.double'))
+
+vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
 
 test('useSkillInAgent', async () => {
   const CLAUDE_INTEGRATION: SkillIntegrationLike = {
@@ -109,18 +113,18 @@ test('useSkillInAgent', async () => {
   }): { writes: WriteCall[]; attachCalls: unknown[] } {
     const writes: WriteCall[] = []
     const attachCalls: unknown[] = []
+    terminalsDouble.listTerminals = async () => {
+      if (input.terminalListThrows) throw new Error(input.terminalListThrows)
+      return input.sessions ?? LIVE_TARGETS
+    }
+    terminalsDouble.writeTerminal = async (sessionId: string, data: string) => {
+      if (input.terminalWriteThrows) throw new Error(input.terminalWriteThrows)
+      writes.push({ sessionId, data })
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         api: {
-          terminalList: async () => {
-            if (input.terminalListThrows) throw new Error(input.terminalListThrows)
-            return input.sessions ?? LIVE_TARGETS
-          },
-          terminalWrite: async (sessionId: string, data: string) => {
-            if (input.terminalWriteThrows) throw new Error(input.terminalWriteThrows)
-            writes.push({ sessionId, data })
-          },
           agentSkillAttach: async (attachInput: unknown) => {
             attachCalls.push(attachInput)
             return input.attach ?? { ok: true as const, skillId: 'backlog', targets: [target({})] }

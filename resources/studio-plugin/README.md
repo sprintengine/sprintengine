@@ -167,7 +167,7 @@ One per area: `studio-backlog`, `studio-scheduled-agents`, `studio-canvas`,
 `studio-diff-tours`, `studio-workspaces`, `studio-ship` (push, open the pull
 request, set it to merge, and have Studio watch it) and `studio-design-system`
 — seven. (`studio-review` left
-with the Reviews module, which ships it itself. `sprintengine-extension-builder`,
+with the Reviews module, which ships it itself and is no longer bundled. `sprintengine-extension-builder`,
 the module SDK's skill that the Extensions home used to offer, left on
 2026-10-30: the gateway's `extension.create` and `extension.guide` tools teach
 every agent instead, and the workspace pass removes a copy an earlier build

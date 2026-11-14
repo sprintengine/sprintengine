@@ -1,7 +1,11 @@
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { conversationTurnInProgress } from '../../shared/conversation/phase'
-import { composePullRequestWake, type PullRequestWake } from './pull-request-watch'
-import type { PullRequestConversationKey, PullRequestWatchNewsEvent } from './pull-request-record'
+import { composePullRequestWake } from './pull-request-watch'
+import type {
+  PullRequestConversationKey,
+  PullRequestUntoldSource,
+  PullRequestWatchNewsEvent,
+} from './pull-request-record'
 
 // Waking a chat about the pull request its agent asked Studio to watch.
 //
@@ -28,8 +32,11 @@ import type { PullRequestConversationKey, PullRequestWatchNewsEvent } from './pu
 // - One message per wake: everything every watch of the chat learned while
 //   it waited is folded into one, newest news last.
 //
-// What is waiting lives in memory. A restart forgets news not yet said; the
-// watch itself is stored, and its next read finds whatever is still true.
+// What is waiting is the record's (`untold`, pull-request-untold.ts), stored
+// in the same write as the watch state that found it, so a restart neither
+// loses news the watch has moved past nor says it twice: a message goes under
+// a command id stamped on what it carries before it is sent, the chat's
+// receipt answers a repeat of it, and the news leaves once the chat answers.
 
 /** After a chat's turn ends, before the wake goes: the runtime lets go of the turn just after it says so. */
 const TURN_END_SETTLE_MS = 1_500
@@ -51,6 +58,8 @@ export type PullRequestWakesDeps = {
   chat(key: PullRequestConversationKey): { settled: boolean } | null
   /** Send a turn through the chat's normal send path, marked as Studio's. */
   send(key: PullRequestConversationKey, text: string, commandId: string): Promise<PullRequestWakeSendResult>
+  /** The news chats have not been told, kept by the record. */
+  untold: PullRequestUntoldSource
   /** Whether a chat provider is out of its plan's usage now, and when that lifts. Absent, nothing waits on a limit. */
   usageLimit?(providerId: string): { limited: boolean; resetsAt: number | null }
   /** The chat is deleted or put away: its watches stop, and nothing is said. */
@@ -62,20 +71,24 @@ export type PullRequestWakesDeps = {
 }
 
 export type PullRequestWakes = {
-  /** News for a chat: said now if it takes a message, else as soon as it does. */
+  /** News for a chat, already kept as untold: said now if it takes a message, else as soon as it does. */
   deliver(event: PullRequestWatchNewsEvent): void
+  /** A chat with untold news is looked at as if it had just come (its record is known now). */
+  lookAt(key: PullRequestConversationKey): void
+  /** At start: the chats the last run left news for are looked at as if it had just come. */
+  resume(): Promise<void>
   /** The computer woke or was unlocked: timers stood still while it slept. */
   wake(): void
-  /** How many pull requests have news waiting for a chat. Exposed for tests. */
-  pendingCount(key: PullRequestConversationKey): number
   dispose(): void
 }
 
 type Waiting = {
   key: PullRequestConversationKey
-  /** URL → its news, folded. */
-  wakes: Map<string, PullRequestWake>
   sending: boolean
+  /** News came while a message was out: looked at again once it is answered. */
+  again: boolean
+  /** Its record could not be written, and that has been said once. */
+  stalled?: boolean
   timer: unknown
   /** When the armed timer is due, so a sooner look replaces a later one and not the other way round. */
   timerAt: number
@@ -94,7 +107,6 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
     })
   const clearTimer = deps.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   const waiting = new Map<string, Waiting>()
-  let sequence = 0
   let disposed = false
 
   const stopListening = deps.onConversationEvent((event) => {
@@ -103,21 +115,13 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
     if (entry) lookAgainIn(entry, TURN_END_SETTLE_MS)
   })
 
-  function deliver(event: PullRequestWatchNewsEvent): void {
+  /** A chat has news: looked at now, or once the message out to it is answered. */
+  function lookAt(key: PullRequestConversationKey): void {
     if (disposed) return
-    const id = idOf(event.conversation)
-    const entry = waiting.get(id) ?? {
-      key: { ...event.conversation },
-      wakes: new Map<string, PullRequestWake>(),
-      sending: false,
-      timer: null,
-      timerAt: 0,
-    }
+    const id = idOf(key)
+    const entry = waiting.get(id) ?? { key: { ...key }, sending: false, again: false, timer: null, timerAt: 0 }
     waiting.set(id, entry)
-    const known = entry.wakes.get(event.wake.url)
-    // Several reads' news for one pull request: in order, under what the
-    // latest read says about it now.
-    entry.wakes.set(event.wake.url, known ? { ...event.wake, news: [...known.news, ...event.wake.news] } : event.wake)
+    if (entry.sending) entry.again = true
     void flush(entry)
   }
 
@@ -143,10 +147,11 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
   }
 
   async function flush(entry: Waiting): Promise<void> {
-    if (disposed || entry.sending || waiting.get(idOf(entry.key)) !== entry || entry.wakes.size === 0) return
+    if (disposed || entry.sending || waiting.get(idOf(entry.key)) !== entry) return
     const chat = deps.chat(entry.key)
     if (!chat || chat.settled) {
       drop(entry)
+      deps.untold.forget(entry.key)
       deps.onChatGone(entry.key)
       return
     }
@@ -168,39 +173,63 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
       return
     }
 
-    const batch = [...entry.wakes.values()]
-    entry.wakes.clear()
     entry.sending = true
+    entry.again = false
     let result: PullRequestWakeSendResult
+    let message: Awaited<ReturnType<PullRequestUntoldSource['next']>> = null
     try {
-      sequence += 1
-      result = await deps.send(entry.key, composePullRequestWake(batch), `pull-request-watch:${now()}:${sequence}`)
+      // The message a send already went out under, or everything not told
+      // yet under a new id, written before it goes.
+      message = await deps.untold.next(entry.key)
+      entry.stalled = false
+    } catch (error) {
+      // Its id could not be written: nothing goes until it can be.
+      entry.sending = false
+      if (!entry.stalled)
+        deps.log?.(
+          `A pull request wake waits for its record to be written: ${error instanceof Error ? error.message : error}`,
+        )
+      entry.stalled = true
+      if (!disposed) lookAgainIn(entry, BUSY_RETRY_MS)
+      return
+    }
+    try {
+      result =
+        message && !disposed
+          ? await deps.send(entry.key, composePullRequestWake(message.wakes), message.commandId)
+          : { ok: true }
     } catch (error) {
       result = { ok: false, message: error instanceof Error ? error.message : String(error) }
     } finally {
       entry.sending = false
     }
     if (disposed) return
+    if (!message) {
+      if (entry.again) void flush(entry)
+      else drop(entry)
+      return
+    }
+    // A turn that started between the look and the send: the same message,
+    // under the same id, goes when it ends.
     if (!result.ok && result.code === 'busy') {
-      // A turn that started between the look and the send: back in front of
-      // anything newer, for its end.
-      for (const wake of batch) {
-        const newer = entry.wakes.get(wake.url)
-        entry.wakes.set(wake.url, newer ? { ...newer, news: [...wake.news, ...newer.news] } : wake)
-      }
-      waiting.set(idOf(entry.key), entry)
       lookAgainIn(entry, Math.max(BUSY_RETRY_MS, result.retryAfterMs ?? 0))
       return
     }
     if (!result.ok)
       deps.log?.(`A pull request watch could not wake its chat: ${result.message ?? 'the chat refused it'}`)
-    // News that arrived while the send was out goes in a message of its own.
-    if (entry.wakes.size > 0) void flush(entry)
-    else drop(entry)
+    deps.untold.told(entry.key, message.commandId)
+    // News that came while the send was out goes in a message of its own.
+    void flush(entry)
   }
 
   return {
-    deliver,
+    deliver: (event) => lookAt(event.conversation),
+    lookAt,
+    async resume() {
+      // A chat the records do not name yet (they may still be loading) keeps
+      // its news for the next start, rather than being taken for deleted.
+      for (const key of await deps.untold.chats()) if (deps.chat(key)) lookAt(key)
+    },
     wake() {
       for (const entry of waiting.values()) {
         if (entry.timer === null) continue
@@ -209,7 +238,6 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
         void flush(entry)
       }
     },
-    pendingCount: (key) => waiting.get(idOf(key))?.wakes.size ?? 0,
     dispose() {
       disposed = true
       stopListening()

@@ -1,8 +1,4 @@
-import { randomUUID } from 'node:crypto'
-import { hostname } from 'node:os'
-
 import type { AutomationBackends } from '../../main/automation/automation-tools'
-import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
 import {
   addOrUpdateBacklogLink,
   listBacklogItems,
@@ -22,18 +18,8 @@ import { readBranchName, resolveTrunk } from '../../main/git-branch-span'
 import { getGitBranches } from '../../main/git-read-models'
 import { listGitWorktrees } from '../../main/git-worktree-list'
 import { hostRegistry } from '../../main/hosts/host-registry'
-import { MobileControlCommandService } from '../../main/mobile/control/command'
-import { deepRedactLocalPaths } from '../../main/mobile/control/path-safety'
-import {
-  mobileControlProtocolVersion,
-  mobileSnapshotCollections,
-  type MobileControlCommandType,
-  type MobileSnapshotCollection,
-} from '../../main/mobile/control/protocol'
-import { MobileControlSnapshotService, sanitizeMobileSnapshotForTransport } from '../../main/mobile/control/snapshot'
 import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { readRepositoryIdentity } from '../../main/repository-identity'
-import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 import { readDiscoveredCliModelCatalogs } from '../../main/model-discovery/service'
 import { effectiveAgentLaunchSettings, type AgentLaunchSettings } from '../../shared/launch-settings'
 import { agentWorktreePaths } from '../../shared/worktree-paths'
@@ -56,6 +42,7 @@ export type GatewayBackendDeps = Pick<
   | 'resolveAgentPermissionPreset'
   | 'createWorkspace'
   | 'getScheduledAgents'
+  | 'machineSchedules'
   | 'defaultChatCli'
   | 'projectUsage'
   | 'getModuleRegistrySnapshot'
@@ -74,6 +61,53 @@ export type GatewayBackendDeps = Pick<
   userCliModels?: (cli: string) => readonly string[] | undefined
   /** The ids the person took off a CLI's list in Settings. */
   removedCliModels?: (cli: string) => readonly string[] | undefined
+  /** Where an agent-at-launch worktree is cut; this process's own pool when left out. */
+  createAgentWorktree?: AutomationBackends['createAgentWorktree']
+}
+
+/**
+ * An agent-at-launch worktree (agent.launch isolation + every connector
+ * launch), cut in this process: derive the `<prefix>/<slug>` branch (the
+ * person's branch prefix) and container the Worktree manager uses, then create
+ * through the shared git helper, from the worktree pool this process's core
+ * keeps. Mirrors WorkspaceManager's own worktree-agent spawn
+ * (copyIncludedFiles carries the repo's worktree-include set into the
+ * isolated tree).
+ */
+export const createAgentWorktreeHere: AutomationBackends['createAgentWorktree'] = async ({
+  workspaceRoot,
+  name,
+  baseRef,
+}) => {
+  const paths = agentWorktreePaths(workspaceRoot, name, worktreeBranchPrefix())
+  if (!paths) return { error: `"${name}" does not reduce to a usable worktree name.` }
+  const named = baseRef?.trim()
+  const created = await createGitWorktree({
+    repoRoot: workspaceRoot,
+    containerPath: paths.containerPath,
+    destinationPath: paths.destinationPath,
+    branchName: paths.branchName,
+    // A remote launch names the branch to fork from (its picker lists
+    // this checkout's branches); a launch that names none forks the
+    // default branch, from the worktree pool.
+    baseRef: named || 'HEAD',
+    fromPool: !named,
+    copyIncludedFiles: true,
+    // The agent's id is minted after this, by the launch; the branch
+    // names the owner until then.
+    agentLockOwner: paths.branchName,
+    // A gateway call answers while the project's dependency install
+    // runs, and the launch waits on it instead (`agent.launch`): the
+    // call's client would give up long before an install ends.
+    dependencyInstall: 'start',
+  })
+  if (!created.ok) return { error: created.message ?? 'Git worktree creation failed.' }
+  const installing = startedDependencyInstall(created.data.dependencyInstall)
+  return {
+    worktreePath: created.data.path,
+    branch: created.data.branch ?? paths.branchName,
+    ...(installing ? { dependencyInstall: installing } : {}),
+  }
 }
 
 /**
@@ -94,7 +128,7 @@ export function launchSettingsGatewayDeps(settings: {
 }
 
 export function createServerGatewayBackends(deps: GatewayBackendDeps): AutomationBackends {
-  const { userCliModels, removedCliModels, ...backends } = deps
+  const { userCliModels, removedCliModels, createAgentWorktree, ...backends } = deps
   return {
     ...backends,
     // The model picker's sources, read where the picker's are: the discovery
@@ -119,50 +153,10 @@ export function createServerGatewayBackends(deps: GatewayBackendDeps): Automatio
       addOrUpdateLink: addOrUpdateBacklogLink,
       repairIntegrity: repairBacklogIntegrity,
     },
-    // The mobile companion, which reaches this desktop only over the tailnet
-    // gateway: the snapshot builder and the command service behind
-    // `workspace.snapshot` and `workspace.mobile_command`, scoped to the
-    // workspaces the registry knows. Both are stateless enough to own here,
-    // and nothing else holds an instance: this desktop publishes nothing to a
-    // phone, it only answers what a paired device asks.
-    mobileControl: createMobileControl(() => deps.getWorkspaceSyncSnapshot()),
     // Agent-at-launch worktrees (agent.launch isolation + every connector
-    // launch): derive the `<prefix>/<slug>` branch (the person's branch prefix)
-    // and container the Worktree manager uses, then create through the shared
-    // git helper. Mirrors WorkspaceManager's own worktree-agent spawn
-    // (copyIncludedFiles carries the repo's worktree-include set into the
-    // isolated tree).
-    createAgentWorktree: async ({ workspaceRoot, name, baseRef }) => {
-      const paths = agentWorktreePaths(workspaceRoot, name, worktreeBranchPrefix())
-      if (!paths) return { error: `"${name}" does not reduce to a usable worktree name.` }
-      const named = baseRef?.trim()
-      const created = await createGitWorktree({
-        repoRoot: workspaceRoot,
-        containerPath: paths.containerPath,
-        destinationPath: paths.destinationPath,
-        branchName: paths.branchName,
-        // A remote launch names the branch to fork from (its picker lists
-        // this checkout's branches); a launch that names none forks the
-        // default branch, from the worktree pool when this process keeps one.
-        baseRef: named || 'HEAD',
-        fromPool: !named,
-        copyIncludedFiles: true,
-        // The agent's id is minted after this, by the launch; the branch
-        // names the owner until then.
-        agentLockOwner: paths.branchName,
-        // A gateway call answers while the project's dependency install
-        // runs, and the launch waits on it instead (`agent.launch`): the
-        // call's client would give up long before an install ends.
-        dependencyInstall: 'start',
-      })
-      if (!created.ok) return { error: created.message ?? 'Git worktree creation failed.' }
-      const installing = startedDependencyInstall(created.data.dependencyInstall)
-      return {
-        worktreePath: created.data.path,
-        branch: created.data.branch ?? paths.branchName,
-        ...(installing ? { dependencyInstall: installing } : {}),
-      }
-    },
+    // launch), cut where the worktree pool is: here, unless the caller is the
+    // shell out of process, which asks the server (agent-worktree-rpc.ts).
+    createAgentWorktree: createAgentWorktree ?? createAgentWorktreeHere,
     readRepositoryIdentity: (folderPath) => readRepositoryIdentity(folderPath),
     // The facts behind `workspace.checkout` (checkout-and-branch-on-remote-
     // create): the same readers the sidebar rows and the Worktree manager
@@ -217,93 +211,6 @@ export function createServerGatewayBackends(deps: GatewayBackendDeps): Automatio
         console.warn(`[skills] backlog.work asked for unknown skill "${skillId}".`)
       }
       return result.ok
-    },
-  }
-}
-
-function createMobileControl(
-  getWorkspaceSyncSnapshot: AutomationBackends['getWorkspaceSyncSnapshot'],
-): AutomationBackends['mobileControl'] {
-  // Dev servers this machine publishes on the tailnet ride the snapshot
-  // so the phone has a door to them. Stateless; the daemon is the truth.
-  const shareService = createTailnetShareService()
-  const snapshotService = new MobileControlSnapshotService({
-    readWebTargets: () => readTailnetWebTargets(shareService),
-  })
-  const commandService = new MobileControlCommandService()
-  // Stable for the app's lifetime; the phone treats it as an opaque id.
-  const desktopSessionId = `tailnet:${hostname()}`
-  // The commands the gateway transport actually serves: snapshot reads
-  // via workspace.snapshot, mutations via workspace.mobile_command's
-  // allowlist. Advertised in the snapshot so the phone's affordance
-  // gate shows exactly what will work over this transport.
-  // The pull request reads joined on 2026-10-30: a phone that sees them here
-  // opens a pull request in its own viewer rather than the browser.
-  const gatewayCommands: MobileControlCommandType[] = [
-    'snapshot.request',
-    'backlog.update',
-    'pullRequest.read',
-    'pullRequest.diff',
-  ]
-  const workspaceRoots = () => uniqueResolvedRoots(listKnownWorkspaceRoots(getWorkspaceSyncSnapshot()))
-  return {
-    async readSnapshot(input: { include?: string[]; knownSnapshotVersion?: string }) {
-      const roots = workspaceRoots()
-      // An empty or absent `include` is the default set. A named one is
-      // served exactly, retired names included: they select nothing, so
-      // a read that names only a retired collection gets an empty
-      // snapshot rather than silently widening to every collection.
-      const include =
-        input.include && input.include.length > 0
-          ? input.include.filter((entry): entry is MobileSnapshotCollection =>
-              (mobileSnapshotCollections as readonly string[]).includes(entry),
-            )
-          : undefined
-      const snapshot = await snapshotService.readSnapshot({
-        desktopSessionId,
-        workspaceRoots: roots,
-        commands: gatewayCommands,
-        ...(include ? { include } : {}),
-      })
-      // The version is computed before sanitizing and sanitizing
-      // keeps it, so an unchanged read is answered without the copy.
-      if (input.knownSnapshotVersion && input.knownSnapshotVersion === snapshot.snapshotVersion) {
-        return { unchanged: true as const, snapshotVersion: snapshot.snapshotVersion }
-      }
-      const safe = sanitizeMobileSnapshotForTransport(snapshot)
-      return { unchanged: false as const, snapshot: safe as unknown as Record<string, unknown> }
-    },
-    async dispatchCommand(input: {
-      type: string
-      payload: Record<string, unknown>
-      deviceId: string
-      idempotencyKey: string
-      expectedSnapshotVersion?: string
-    }) {
-      const result = await commandService.dispatch(
-        {
-          protocolVersion: mobileControlProtocolVersion,
-          commandId: `tnc_${randomUUID()}`,
-          type: input.type,
-          payload: input.payload,
-          deviceId: input.deviceId,
-          issuedAt: new Date().toISOString(),
-          idempotencyKey: input.idempotencyKey,
-          ...(input.expectedSnapshotVersion ? { expectedSnapshotVersion: input.expectedSnapshotVersion } : {}),
-        },
-        { allowedWorkspaceRoots: workspaceRoots() },
-      )
-      if (!result.ok) {
-        return { ok: false as const, code: result.error.code, message: result.error.message }
-      }
-      return {
-        ok: true as const,
-        commandId: result.commandId,
-        commandType: result.commandType,
-        executedAt: result.executedAt,
-        // The result crosses to another device: local paths never do.
-        data: deepRedactLocalPaths(result.data),
-      }
     },
   }
 }
