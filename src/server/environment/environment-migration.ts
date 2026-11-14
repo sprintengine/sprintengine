@@ -345,9 +345,16 @@ export function createEnvironmentMigration(deps: {
    * Stage the parts of the chats in `copies` for the machine to put back
    * together, a few to a call (inside what a connection may stage at once),
    * each read where it lies and checked against the digest it was planned
-   * with. A file changed since then stops the delivery; it is planned again.
+   * with. Answers the chats whose files changed or went since then, each
+   * with why: they are not sent, and the rest of the hand-over goes on
+   * (this desktop's copies stay where they lie).
    */
-  async function stageChatParts(client: StudioClient, migrationId: string, copies: PendingCopy[]): Promise<void> {
+  async function stageChatParts(
+    client: StudioClient,
+    migrationId: string,
+    copies: PendingCopy[],
+  ): Promise<Map<PendingCopy, string>> {
+    const unsent = new Map<PendingCopy, string>()
     let staged: Array<{ uploadId: string; digest: string }> = []
     let stagedBytes = 0
     let calls = 0
@@ -365,15 +372,26 @@ export function createEnvironmentMigration(deps: {
     const sent = new Set<string>()
     for (const copy of copies)
       for (const source of copy.chatSources ?? []) {
-        const handle = await open(source.source, 'r')
+        if (unsent.has(copy)) break
+        const handle = await open(source.source, 'r').catch(() => null)
+        if (!handle) {
+          unsent.set(copy, `${source.source} is gone since it was planned.`)
+          break
+        }
         try {
+          if ((await handle.stat()).size !== source.bytes) {
+            unsent.set(copy, `${source.source} changed since it was planned.`)
+            break
+          }
           for (const [index, digest] of source.parts.entries()) {
             if (sent.has(digest)) continue
             const length = Math.min(MAX_ADOPTED_PART_BYTES, source.bytes - index * MAX_ADOPTED_PART_BYTES)
             const bytes = Buffer.alloc(length)
             await handle.read(bytes, 0, length, index * MAX_ADOPTED_PART_BYTES)
-            if (createHash('sha256').update(bytes).digest('hex') !== digest)
-              throw new Error(`${source.source} changed since it was planned.`)
+            if (createHash('sha256').update(bytes).digest('hex') !== digest) {
+              unsent.set(copy, `${source.source} changed since it was planned.`)
+              break
+            }
             if (staged.length >= 5 || stagedBytes + length > 4 * STUDIO_MAX_UPLOAD_BYTES) await flush()
             staged.push({ uploadId: await uploadBytes(client, bytes, 'part', null), digest })
             stagedBytes += length
@@ -384,6 +402,7 @@ export function createEnvironmentMigration(deps: {
         }
       }
     await flush()
+    return unsent
   }
 
   async function uploadBytes(
@@ -434,8 +453,19 @@ export function createEnvironmentMigration(deps: {
           let partBytes = 0
           const send = async () => {
             if (part.length === 0) return
-            // A chat's parts go ahead of it, in calls that name no record.
-            await stageChatParts(reached.client, working.migrationId, part)
+            // A chat's parts go ahead of it, in calls that name no record. A
+            // chat whose files changed or went since it was planned is not
+            // sent: it is left here, said as a conflict, rather than holding
+            // up every other record of this machine's on each connect.
+            const unsent = await stageChatParts(reached.client, working.migrationId, part)
+            for (const [copy, reason] of unsent) {
+              conflicts.push({ kind: copy.kind, id: copy.id, reason })
+              part = part.filter((each) => each !== copy)
+            }
+            if (part.length === 0) {
+              partBytes = 0
+              return
+            }
             const files: Array<{ uploadId: string; digest: string }> = []
             for (const copy of part)
               for (const file of copy.files) {

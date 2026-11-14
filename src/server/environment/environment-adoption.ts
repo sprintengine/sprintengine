@@ -420,6 +420,9 @@ export function createEnvironmentAdoption(deps: {
     records: StudioAdoptedRecord[]
     files?: AdoptedFiles
   }): Promise<StudioAdoptResult> {
+    // Only this call's: a call that stopped before its ledger let go of none,
+    // and its parts are this one's to use (a repeat stages them first).
+    usedParts.clear()
     // Parts staged ahead of the chats they make up: kept, and nothing else.
     if (input.records.length === 0) {
       await keepParts(input.migrationId, input.files ?? new Map())

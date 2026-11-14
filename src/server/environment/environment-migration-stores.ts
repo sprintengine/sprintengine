@@ -3,6 +3,7 @@ import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-
 import type { UsageLimitResumer } from '../../main/usage-limits/resume'
 import type { WorkspaceRegistryService } from '../../main/workspace-registry-service'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import { isMachinePath } from '../../shared/machine-paths'
 import { machineRouteOfPath } from '../../shared/machine-spelling'
 import { parseEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { PullRequestRecord } from '../pull-requests/pull-request-record'
@@ -88,7 +89,11 @@ export function studioMigrationStores(stores: {
       for (const agent of stores.scheduledAgents.list()) {
         // Its folder's machine, as a chat's record says it: an SSH machine's
         // path, or a WSL workspace's machine (its `hostId`, else its folder).
-        const route = machineRouteOfPath(agent.folderPath) ?? environmentRouteOfRecord(agent)
+        // One picked to run on This PC in a distribution's folder stays
+        // (decision R88), as a workspace's record does.
+        const route = isMachinePath(agent.folderPath)
+          ? (machineRouteOfPath(agent.folderPath) ?? null)
+          : environmentRouteOfRecord(agent)
         if (!route) continue
         // The pictures its prompt names go with it, each by the path the prompt names it by.
         const images = (await stores.scheduledImages?.(agent.prompt)) ?? []

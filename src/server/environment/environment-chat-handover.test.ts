@@ -67,7 +67,8 @@ test('a chat ran here lists its own files, those of its store only where the dis
   ])
 })
 
-test("a WSL workspace's chat, its files and its saved approvals reach the distribution's Studio, respelled, in parts", async () => {
+/** This desktop with one WSL workspace, its chat and a saved approval, and the distribution's real adoption. */
+function handOverRig() {
   process.env.SPRINTENGINE_STORE_HOME = temp('chat-handover-home-')
   const desktopDir = temp('chat-handover-desktop-')
   const machineDir = temp('chat-handover-machine-')
@@ -185,6 +186,20 @@ test("a WSL workspace's chat, its files and its saved approvals reach the distri
       approvalRules: desktopRules,
     }),
   })
+  return {
+    migration,
+    theirs,
+    machineDir,
+    desktopDir,
+    sourceDir,
+    transcript,
+    partsCalls: () => partsCalls,
+    uploads: () => uploads,
+  }
+}
+
+test("a WSL workspace's chat, its files and its saved approvals reach the distribution's Studio, respelled, in parts", async () => {
+  const { migration, theirs, machineDir, desktopDir, transcript, partsCalls, uploads } = handOverRig()
   await migration.plan()
   assert.equal(await migration.deliver('wsl:Ubuntu'), true)
   assert.equal(migration.handedOver('wsl:Ubuntu'), true)
@@ -195,7 +210,7 @@ test("a WSL workspace's chat, its files and its saved approvals reach the distri
   assert.equal(there.hostId, undefined)
   assert.equal(there.environment, undefined)
   // The transcript, put back together from its two parts where its runtime reads it.
-  assert.ok(partsCalls >= 1, 'its parts went ahead of it')
+  assert.ok(partsCalls() >= 1, 'its parts went ahead of it')
   const store = workspaceStorePath('/mnt/c/code/repo', 'conversations', 'ws-1')
   assert.deepEqual(readFileSync(join(store, 'a1.jsonl')), transcript)
   assert.equal(
@@ -218,8 +233,46 @@ test("a WSL workspace's chat, its files and its saved approvals reach the distri
   assert.deepEqual(await new ConversationApprovalRuleStore(desktopDir).list(), [], 'let go here')
 
   // Planned again (a restart): nothing more goes.
-  const before = uploads
+  const before = uploads()
   await migration.plan()
   assert.equal(await migration.deliver('wsl:Ubuntu'), true)
-  assert.equal(uploads, before)
+  assert.equal(uploads(), before)
+})
+
+test('a chat whose files changed after it was planned is left here as a conflict; the rest of the hand-over goes on', async () => {
+  const { migration, theirs, machineDir, sourceDir } = handOverRig()
+  await migration.plan()
+  // The transcript is written again between the plan and the delivery.
+  writeFileSync(join(sourceDir, 'a1.jsonl'), 'another transcript')
+  assert.equal(await migration.deliver('wsl:Ubuntu'), true, 'not held up on every connect')
+  assert.equal(migration.handedOver('wsl:Ubuntu'), true)
+  assert.ok(theirs.has('ws-1'), 'the workspace went')
+  assert.equal((await new ConversationApprovalRuleStore(machineDir).list()).length, 1, 'its approval went')
+  const store = workspaceStorePath('/mnt/c/code/repo', 'conversations', 'ws-1')
+  assert.throws(() => readFileSync(join(store, 'a1.jsonl')), 'the chat did not')
+  assert.equal(readFileSync(join(sourceDir, 'a1.jsonl'), 'utf8'), 'another transcript', 'left where it lies')
+})
+
+test("a schedule goes with its folder's machine; one picked to run on This PC in a distribution's folder stays (R88)", async () => {
+  const schedule = (id: string, folderPath: string, hostId: string | null) => ({ id, folderPath, hostId, prompt: 'p' })
+  const stores = studioMigrationStores({
+    workspaceRegistry: { getRecords: () => [] },
+    scheduledAgents: {
+      loaded: async () => undefined,
+      list: () => [
+        schedule('on-ssh', 'ssh://build-box/home/dev/repo', null),
+        schedule('on-this-pc', '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo', 'local'),
+        schedule('here', '/Users/dev/repo', null),
+      ],
+      remove: async () => undefined,
+    } as never,
+    scheduledMessages: { state: () => ({ messages: [] }) } as never,
+    usageLimitResumes: { state: () => ({ notices: [] }) } as never,
+    pullRequests: { whenLoaded: async () => undefined, handingOver: () => [] } as never,
+  })
+  const found = await stores.collect(() => true)
+  assert.deepEqual(
+    found.filter((record) => record.kind === 'schedule').map((record) => `${record.id} ${record.route}`),
+    ['on-ssh ssh:build-box'],
+  )
 })
