@@ -32,6 +32,21 @@ export function scheduleRouteOf(agent: { folderPath: string; hostId?: string | n
 }
 
 /**
+ * Why a schedule kept here does not run here: it names another
+ * environment's folder, so it is that machine's to run, and waits here only
+ * until it is handed over. Read off the record itself, so it holds from the
+ * moment any caller saves one (an agent's tool, a phone, an extension), with
+ * nothing to set beside the save: the scheduler skips its times and Run now
+ * is refused, both with this reason. Null for one this computer runs.
+ */
+export function scheduleWaitsForHandOver(agent: { folderPath: string; hostId?: string | null }): string | null {
+  const route = scheduleRouteOf(agent)
+  if (!route) return null
+  const name = route.replace(/^[a-z]+:/u, '')
+  return `It runs on ${name}, and moves there the next time ${name} is connected.`
+}
+
+/**
  * Hand a schedule over as soon as it is saved here for another machine's
  * folder (New scheduled agent in a project on an SSH machine): each list the
  * scheduler publishes asks for every route its schedules name, so none waits

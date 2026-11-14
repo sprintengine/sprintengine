@@ -310,3 +310,65 @@ test('a schedule saved for a machine is handed over at once, each machine once a
   publish([schedule('nightly', 'ssh://build-box/home/dev/repo')] as never[])
   assert.deepEqual(handedOver, ['ssh:build-box'], 'nothing after it stops')
 })
+
+test('a schedule saved here for a machine never runs here: its times are skipped and Run now is refused, from the save on', async () => {
+  const { scheduleWaitsForHandOver } = await import('./environment-migration-stores')
+  const { createScheduledAgentsStore } = await import('../../main/scheduled-agents/store')
+  const { createScheduledAgentsService } = await import('../../main/scheduled-agents/service')
+  const { schedulerWithRunRecords } = await import('../../main/scheduled-agents/scheduled-runs.test-helper')
+  const dir = mkdtempSync(join(tmpdir(), 'schedule-ownership-'))
+  let now = Date.UTC(2026, 8, 30, 12, 59)
+  let fire: (() => void) | null = null
+  const ran: string[] = []
+  try {
+    const store = createScheduledAgentsStore({ filePath: join(dir, 'scheduled-agents.json'), now: () => now })
+    await store.load()
+    const scheduler = schedulerWithRunRecords({
+      list: () => store.list(),
+      run: async (agent) => {
+        ran.push(agent.folderPath)
+        return { at: now, ok: true, workspaceId: 'run' }
+      },
+      recordRun: (entry, run) => store.recordRun(entry, run),
+      waitingFor: scheduleWaitsForHandOver,
+      now: () => now,
+      setTimer: (callback) => {
+        fire = callback
+        return 1
+      },
+      clearTimer: () => undefined,
+    })
+    const service = createScheduledAgentsService({
+      store,
+      scheduler,
+      now: () => now,
+      waitingFor: scheduleWaitsForHandOver,
+    })
+    scheduler.start()
+    const base = {
+      prompt: 'Triage.',
+      schedule: { cron: '* * * * *', timezone: 'UTC' },
+      hostId: null,
+      cli: 'claude-code',
+      cliModel: null,
+      permissionPreset: null,
+      skills: [],
+      mcpServers: [],
+      worktree: null,
+    }
+    const machine = await service.create({ ...base, folderPath: 'ssh://build-box/home/dev/repo' })
+    const here = await service.create({ ...base, folderPath: '/Users/dev/repo' })
+    assert.ok(machine.ok && here.ok)
+    assert.match(service.get(machine.agent.id)?.waiting ?? '', /build-box/, 'listed as waiting to move')
+    const refused = await service.runNow(machine.agent.id)
+    assert.equal(refused.ok, false, 'Run now is refused here')
+    assert.equal(service.get(here.agent.id)?.waiting, undefined)
+    // Both come due at the next minute: only this computer's runs.
+    now += 60_000
+    ;(fire as (() => void) | null)?.()
+    for (let wait = 0; wait < 100 && ran.length === 0; wait++) await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.deepEqual(ran, ['/Users/dev/repo'], 'its time is skipped here')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

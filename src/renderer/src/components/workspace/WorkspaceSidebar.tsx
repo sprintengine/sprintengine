@@ -356,9 +356,9 @@ type WorkspaceSidebarProps = {
   // The scheduled agent the door in this window is editing, drawn selected.
   openScheduledAgentId?: string | null
   // Open a paired machine's scheduled agent: the same editor, saving there.
-  onOpenRemoteScheduledAgent?: (connectionId: string, id: string) => void
+  onOpenRemoteScheduledAgent?: (route: string, id: string) => void
   // The paired machine's scheduled agent the door is editing, drawn selected.
-  openRemoteScheduledAgent?: { connectionId: string; id: string } | null
+  openRemoteScheduledAgent?: { route: string; id: string } | null
   // Reopen a kept New chat draft, and throw one away. Absent, no Drafts section.
   onOpenDraft?: (id: string) => void
   onDeleteDraft?: (id: string) => void
@@ -3652,20 +3652,15 @@ function WorkspaceSidebar({
                     machine={{ ref: machine.machine, name: machine.machineName }}
                     runInProgress={null}
                     selected={
-                      machine.connectionId !== null &&
-                      openRemoteScheduledAgent?.connectionId === machine.connectionId &&
-                      openRemoteScheduledAgent.id === agent.id
+                      openRemoteScheduledAgent?.route === machine.route && openRemoteScheduledAgent.id === agent.id
                     }
                     pausedAll={machine.pausedAll !== null}
                     {...(machine.operable
                       ? {
-                          // A paired desktop's opens in New chat's editor, whose
-                          // project list is that machine's; another machine's is
-                          // run, paused and closed from its row.
-                          ...(onOpenRemoteScheduledAgent && machine.connectionId !== null
-                            ? {
-                                onOpen: () => onOpenRemoteScheduledAgent(machine.connectionId as string, agent.id),
-                              }
+                          // Opens in New chat's editor, which saves it on the
+                          // machine it runs on, addressed by its route.
+                          ...(onOpenRemoteScheduledAgent
+                            ? { onOpen: () => onOpenRemoteScheduledAgent(machine.route, agent.id) }
                             : {}),
                           onClose: () => actOnRemoteScheduled(machine, agent, 'delete'),
                           onTogglePause: () =>

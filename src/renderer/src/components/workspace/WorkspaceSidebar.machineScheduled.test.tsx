@@ -128,6 +128,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
   followEnvironmentChats([{ route: 'ssh:m1', name: 'dev@build-box' }])
 
   const noop = () => {}
+  const opened: Array<[string, string]> = []
   const props = {
     workspaces,
     workspaceWindowId: 'win1',
@@ -146,7 +147,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     onNewChatInFolder: noop,
     onRevealFolder: noop,
     onOpenScheduledAgent: noop,
-    onOpenRemoteScheduledAgent: noop,
+    onOpenRemoteScheduledAgent: (route: string, id: string) => opened.push([route, id]),
     onSetSidebarCollapsed: noop,
     sidebarWidth: 260,
     onSetSidebarWidth: noop,
@@ -236,7 +237,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     const opens = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((item) =>
       item.textContent?.trim(),
     )
-    assert.ok(!opens.includes('Open'), "a machine's schedule is not opened in this computer's editor")
+    assert.ok(opens.includes('Open'), "a machine's schedule opens in the editor, to be saved there")
     act(() => {
       runNow.click()
     })
@@ -244,6 +245,22 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     assert.deepEqual(
       studio.writes().map(({ connectionId, method, params }) => ({ connectionId, method, params })),
       [{ connectionId: 'ssh:m1', method: 'schedules.runNow', params: { id: 'sa-box' } }],
+    )
+    // Opened, it is addressed to its machine by its route.
+    act(() => {
+      row().dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }))
+    })
+    await settle()
+    act(() => {
+      ;[...dom.window.document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent?.trim() === 'Open')
+        ?.click()
+    })
+    await settle()
+    assert.ok(opened.length > 0, 'it opens')
+    assert.ok(
+      opened.every(([route, id]) => route === 'ssh:m1' && id === 'sa-box'),
+      'opened on its machine, by its route',
     )
 
     // Forgotten in Settings › Machines: its schedules go with it.
