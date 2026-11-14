@@ -1,0 +1,165 @@
+#!/usr/bin/env node
+// A stand-in agent CLI for the harness, installed as `opencode` so Studio
+// offers it in New chat and drives it over the Agent Client Protocol
+// (`opencode acp`), as it drives the real one. It needs no account and sends
+// nothing anywhere: every reply is made up here.
+//
+// What a message makes it do:
+//   anything          a short reply that quotes the message, streamed in pieces
+//   /slow             a reply streamed over about 20 s (to try Stop)
+//   /tool             a tool call that reads README.md, then a reply
+//   /permission       asks for permission first, then says what was chosen
+//   /fail             the turn fails with an error
+'use strict'
+const { createInterface } = require('node:readline')
+
+const args = process.argv.slice(2)
+if (args.includes('--version') || args[0] === 'version') {
+  // Newer than any release, so Studio offers no update over the stand-in.
+  process.stdout.write('99.0.0\n')
+  process.exit(0)
+}
+if (args.at(-1) !== 'acp' && !args.includes('acp')) {
+  // `opencode run <prompt>`, the terminal launch: print a reply and stop.
+  const prompt = args.filter((arg) => !arg.startsWith('-') && arg !== 'run').at(-1) ?? ''
+  process.stdout.write(`Stand-in agent (no real model): you said "${prompt}".\n`)
+  process.exit(0)
+}
+
+const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`)
+const pending = new Map()
+let nextId = 1
+const ask = (method, params) =>
+  new Promise((resolve, reject) => {
+    const id = `agent-${nextId++}`
+    pending.set(id, { resolve, reject })
+    send({ id, method, params })
+  })
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const cancelled = new Set()
+let sessions = 0
+
+function update(sessionId, value) {
+  send({ method: 'session/update', params: { sessionId, update: value } })
+}
+async function say(sessionId, text, pieceMs) {
+  for (const piece of text.match(/\S+\s*/gu) ?? [text]) {
+    if (cancelled.has(sessionId)) return
+    update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: piece } })
+    await sleep(pieceMs)
+  }
+}
+
+async function prompt({ sessionId, prompt: blocks }) {
+  cancelled.delete(sessionId)
+  const text = blocks
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+    .trim()
+  const command = text.split(/\s/u)[0]
+  if (command === '/fail')
+    throw Object.assign(new Error('The stand-in agent failed this turn on purpose.'), { code: -32603 })
+  if (command === '/slow') {
+    await say(sessionId, 'This reply is slow on purpose. '.repeat(25), 150)
+  } else if (command === '/tool') {
+    const toolCallId = `tool-${Date.now()}`
+    update(sessionId, {
+      sessionUpdate: 'tool_call',
+      toolCallId,
+      title: 'Read README.md',
+      kind: 'read',
+      status: 'in_progress',
+      rawInput: { path: 'README.md' },
+    })
+    await sleep(500)
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId,
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: '(the stand-in read nothing)' } }],
+    })
+    await say(sessionId, 'I pretended to read README.md.', 40)
+  } else if (command === '/permission') {
+    const toolCallId = `tool-${Date.now()}`
+    const answer = await ask('session/request_permission', {
+      sessionId,
+      toolCall: {
+        toolCallId,
+        title: 'Run `echo hello`',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'echo hello' },
+      },
+      options: [
+        { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+      ],
+    })
+    const outcome = answer?.outcome
+    await say(
+      sessionId,
+      outcome?.outcome === 'selected' ? `You chose ${outcome.optionId}.` : 'The request was cancelled.',
+      40,
+    )
+  } else {
+    await say(sessionId, `Stand-in agent (no real model): you said "${text}". Turn ${Date.now() % 1000}.`, 40)
+  }
+  return { stopReason: cancelled.has(sessionId) ? 'cancelled' : 'end_turn' }
+}
+
+const handlers = {
+  initialize: () => ({
+    protocolVersion: 1,
+    agentCapabilities: { loadSession: false, promptCapabilities: { image: false, embeddedContext: true } },
+    authMethods: [],
+    agentInfo: { name: 'studio-test-stand-in', version: '1.0.0' },
+  }),
+  authenticate: () => ({}),
+  // Two modes, as the real agent has: Studio puts a turn in one (Plan, or the default).
+  'session/new': () => ({
+    sessionId: `stand-in-${process.pid}-${++sessions}`,
+    modes: {
+      currentModeId: 'build',
+      availableModes: [
+        { id: 'build', name: 'Build' },
+        { id: 'plan', name: 'Plan' },
+      ],
+    },
+  }),
+  'session/prompt': prompt,
+  'session/set_mode': () => ({}),
+  'session/set_config_option': () => ({ configOptions: [] }),
+}
+
+createInterface({ input: process.stdin }).on('line', async (line) => {
+  let message
+  try {
+    message = JSON.parse(line)
+  } catch {
+    return
+  }
+  if (message.method === undefined) {
+    const waiting = pending.get(message.id)
+    pending.delete(message.id)
+    if (waiting) message.error ? waiting.reject(message.error) : waiting.resolve(message.result)
+    return
+  }
+  if (message.method === 'session/cancel') {
+    cancelled.add(message.params?.sessionId)
+    return
+  }
+  if (message.id === undefined) return
+  const handler = handlers[message.method]
+  if (!handler)
+    return send({
+      id: message.id,
+      error: { code: -32601, message: `${message.method} is not supported by the stand-in` },
+    })
+  try {
+    send({ id: message.id, result: await handler(message.params ?? {}) })
+  } catch (error) {
+    send({ id: message.id, error: { code: error.code ?? -32603, message: error.message } })
+  }
+})
+process.stdin.on('end', () => process.exit(0))
