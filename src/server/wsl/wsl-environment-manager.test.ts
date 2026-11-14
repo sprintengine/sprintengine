@@ -683,9 +683,14 @@ test("a WSL terminal holds its server: its agent's reports reach this PC through
   const home = fakeHome('held')
   const lines: string[] = []
   const statuses: WslServerStatus[] = []
+  // The app's clock (the wall clock) and its timers' (a monotonic one) can
+  // disagree: by a millisecond as each is rounded, or more once the wall
+  // clock is set back. Set back here once the crash is reported.
+  let behind = 0
   const { manager: wsl } = manager({
     homes: { Ubuntu: home },
     statuses,
+    now: () => Date.now() - behind,
     idleMs: 500,
     connected: (connection) =>
       void followRelayedAgentState(
@@ -723,6 +728,9 @@ test("a WSL terminal holds its server: its agent's reports reach this PC through
   await waitFor(() => since().includes('unavailable'), 20_000).catch(() =>
     assert.fail(`the crash was never reported: ${since().join(', ') || 'no status since'}`),
   )
+  // The backoff is the restart timer's to wait out: a clock that reads
+  // behind when it fires does not turn the restart away.
+  behind = 1_000
   await waitFor(() => since().slice(since().indexOf('unavailable')).includes('ready'), 30_000).catch(() =>
     assert.fail(`the held server was not started again: ${since().join(', ')}`),
   )
