@@ -972,6 +972,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       confirmLabel: 'Create',
       required: true,
       selectFileStem: kind === 'file',
+      typedExtensionReplaces: kind === 'file',
     })
     const name = rawName?.trim()
     if (!name) return
