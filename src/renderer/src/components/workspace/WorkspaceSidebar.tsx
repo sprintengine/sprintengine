@@ -155,7 +155,11 @@ import {
   workspaceWokeAt,
 } from '../../utils/workspaceSnooze'
 import { workspaceRowEmphasis } from '../../utils/workspaceRowEmphasis'
-import { useScheduledAgents, useScheduledAgentsPause } from '../../store/scheduledAgentsStore'
+import {
+  useScheduledAgents,
+  useScheduledAgentsHeld,
+  useScheduledAgentsPause,
+} from '../../store/scheduledAgentsStore'
 import { showToast } from '../../store/toastStore'
 import { regenerateStoreWorkspaceTitle } from '../../store/generatedWorkspaceTitle'
 import { inWorkingSection } from './sidebar/workingSection'
@@ -176,7 +180,11 @@ import {
   useRemoteScheduledAgents,
   type RemoteScheduledMachine,
 } from './sidebar/useRemoteScheduledAgents'
-import { PauseAllScheduledAgentsControl, ScheduledAgentsPausedNotice } from './sidebar/ScheduledPauseControls'
+import {
+  PauseAllScheduledAgentsControl,
+  ScheduledAgentsHeldNotice,
+  ScheduledAgentsPausedNotice,
+} from './sidebar/ScheduledPauseControls'
 import { setScheduledAgentPaused } from '../../utils/scheduledAgentsPause'
 import { isScheduledRunChat, scheduledAgentRunInProgress } from '../../utils/scheduledAgentRuns'
 import type { ScheduledAgentView } from '../../../../shared/scheduled-agents'
@@ -523,6 +531,8 @@ function WorkspaceSidebar({
   // Every scheduled agent paused at once, and until when (null: they are not).
   const scheduledAgentsPause = useScheduledAgentsPause()
   const scheduledPausedAll = scheduledAgentsEnabled ? scheduledAgentsPause : null
+  // None runs though none is paused: the hand-over's records could not be read.
+  const scheduledHeld = useScheduledAgentsHeld()
   // Run now from a schedule's menu: the run is a chat of its own, started in
   // the background as every run is, and it runs whether or not the schedule is
   // paused — it was asked for.
@@ -3600,7 +3610,7 @@ function WorkspaceSidebar({
   }
   const renderScheduledSection = () => {
     const remoteCount = remoteScheduled.machines.reduce((count, machine) => count + machine.agents.length, 0)
-    if (scheduledAgents.length === 0 && remoteCount === 0) return null
+    if (scheduledAgents.length === 0 && remoteCount === 0 && !scheduledHeld) return null
     const expanded = expandedShelves[SCHEDULED_SHELF_KEY] !== false
     return (
       <section role="group" className="relative pt-1" aria-label="Scheduled agents">
@@ -3613,6 +3623,7 @@ function WorkspaceSidebar({
           onToggle={() => setExpandedShelves((prev) => ({ ...prev, [SCHEDULED_SHELF_KEY]: !expanded }))}
           trailing={<PauseAllScheduledAgentsControl pause={scheduledPausedAll} />}
         />
+        {scheduledHeld ? <ScheduledAgentsHeldNotice reason={scheduledHeld} /> : null}
         {scheduledPausedAll ? <ScheduledAgentsPausedNotice pause={scheduledPausedAll} now={now} /> : null}
         <div id={SCHEDULED_SHELF_ID} role="group" aria-label="Scheduled agents" hidden={!expanded}>
           {expanded

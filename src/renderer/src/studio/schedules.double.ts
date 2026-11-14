@@ -30,6 +30,8 @@ function blank(): Api {
     pauseAllScheduledAgents: () => notStubbed('pauseAllScheduledAgents'),
     resumeAllScheduledAgents: () => notStubbed('resumeAllScheduledAgents'),
     onScheduledAgentsPauseChanged: () => () => undefined,
+    getScheduledAgentsHeld: async () => null,
+    onScheduledAgentsHeldChanged: () => () => undefined,
   }
 }
 

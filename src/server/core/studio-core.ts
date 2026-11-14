@@ -1396,6 +1396,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // run in its chats from its worktree pool, whatever kind of server it is.
   const scheduledAgents = createStudioScheduledAgents({
     platform,
+    // Nothing runs before the hand-over's first plan has finished, however
+    // the scheduler is started: here, or by the desktop's Scheduled agents
+    // switch (modules/scheduled-agents-switch.ts), which starts it with no
+    // say of its own.
+    after: firstPlan,
     conversations,
     launch: (request) => conversationLaunchService.launch(request),
     createConversationHost: () => createConversationHost(),
@@ -1409,7 +1414,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       (environmentClients ? scheduleWaitsForHandOver(agent) : null) ??
       readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
   })
-  if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start({ after: firstPlan })
+  if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
 
   // What this desktop kept for another environment's chats (an SSH machine's,
   // a WSL distribution's) goes to that environment's Studio
@@ -1436,9 +1441,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         },
         // What the machine did not take stays here, planned, and goes again
         // on its next connect; the person hears of it, not only the log.
-        onRefused: (route, refused) => {
-          // The machine as its route names it (`ssh:build-box` is build-box).
-          const name = route.replace(/^[a-z]+:/u, '')
+        // The machine by the name the person gave it (`dev@build-box`), as
+        // its client says it, never its internal id.
+        onRefused: ({ route, name }, refused) => {
           platform.notifier.notify({
             key: `hand-over:${route}`,
             title: `${refused.length === 1 ? 'One record' : `${refused.length} records`} did not move to ${name}`,
@@ -1474,10 +1479,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // release included. One that failed (a journal there but unreadable)
     // holds them, and says why; a later plan, on a machine's connect, lets
     // them go once it finishes.
-    void environmentMigration.planned.then(firstPlanDone)
+    void environmentMigration.planned.then(() => {
+      firstPlanDone()
+      scheduledAgents.hold(null)
+    })
     const planned = environmentMigration.plan().catch((error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error)
       void writeDiagnosticLog({ level: 'error', source: 'workspace', title: 'Another machine', message: reason })
+      // Said where the schedules are listed, for as long as it lasts (a
+      // notice at start goes by before a window is there to show it), and
+      // by the system as well.
+      scheduledAgents.hold(reason)
       platform.notifier.notify({
         key: 'hand-over:unreadable',
         title: 'Scheduled agents and messages are paused',

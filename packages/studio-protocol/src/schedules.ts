@@ -125,7 +125,16 @@ export type StudioSchedule = ScheduledAgentView & {
 }
 
 /** Every schedule a Studio holds, and whether they are all paused. */
-export type StudioSchedules = { schedules: StudioSchedule[]; pausedAll: ScheduledAgentsPause | null }
+export type StudioSchedules = {
+  schedules: StudioSchedule[]
+  pausedAll: ScheduledAgentsPause | null
+  /**
+   * Why none of them runs now though none is paused, in words: what this
+   * Studio hands to another machine could not be read, so nothing it may
+   * hand over runs here until it can. Absent while they run.
+   */
+  held?: string
+}
 
 /** A skill or MCP server a schedule attaches: by id, or by id with the name its chip shows. */
 export type StudioScheduleAttachment = string | ScheduledAgentAttachment

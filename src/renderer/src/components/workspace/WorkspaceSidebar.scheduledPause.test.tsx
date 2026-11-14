@@ -80,10 +80,11 @@ afterEach(async () => {
   dom.window.document.body.innerHTML = ''
 })
 
-async function mount(agents: unknown[]) {
+async function mount(agents: unknown[], options: { held?: string } = {}) {
   const calls: Calls = { paused: [], resumed: [], pausedAll: [], resumedAll: 0 }
   let publishAgents: (agents: unknown) => void = () => {}
   let publishPause: (pause: unknown) => void = () => {}
+  let publishHeld: (held: unknown) => void = () => {}
   const viewOf = (id: string) => agents.find((agent) => (agent as { id: string }).id === id)
   terminalsDouble.listTerminals = async () => []
   terminalsDouble.onTerminalSessionsDelta = () => () => {}
@@ -100,6 +101,11 @@ async function mount(agents: unknown[]) {
     getScheduledAgentsPause: async () => null,
     onScheduledAgentsPauseChanged: (listener: (pause: unknown) => void) => {
       publishPause = listener
+      return () => {}
+    },
+    getScheduledAgentsHeld: async () => options.held ?? null,
+    onScheduledAgentsHeldChanged: (listener: (held: unknown) => void) => {
+      publishHeld = listener
       return () => {}
     },
     pauseScheduledAgent: async (id: string) => {
@@ -225,8 +231,24 @@ async function mount(agents: unknown[]) {
       act(() => publishPause(pause))
       await settle()
     },
+    publishHeld: async (held: unknown) => {
+      act(() => publishHeld(held))
+      await settle()
+    },
   }
 }
+
+test('while the hand-over cannot be read, the Scheduled section says the schedules are held and why, until they run', async () => {
+  const reason = 'The hand-over journal could not be read (EACCES).'
+  // Shown with no schedule listed too: held messages wait as well.
+  const view = await mount([], { held: reason })
+  const notice = () => view.container.querySelector<HTMLElement>('[data-scheduled-held-notice]')
+  assert.ok(notice(), 'the notice is shown')
+  assert.match(notice()!.textContent ?? '', /Scheduled agents and messages are paused/u)
+  assert.match(notice()!.textContent ?? '', /EACCES/u)
+  await view.publishHeld(null)
+  assert.equal(notice(), null, 'gone once they may run')
+})
 
 test('a paused schedule is quiet and says Paused, since when; a running one says neither', async () => {
   const pausedAt = createdAt - 5 * 60 * 1000

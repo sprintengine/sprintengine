@@ -261,6 +261,7 @@ export function createStudioRpc(
     // changed by the rules the gateway's `schedule.*` tools follow.
     schedules: createStudioSchedulesDomain({
       service: core.scheduledAgents.service,
+      held: () => core.scheduledAgents.held(),
       findWorkspace: (workspaceId) =>
         core.workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ??
         null,
