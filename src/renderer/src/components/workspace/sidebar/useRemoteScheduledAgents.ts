@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
 import { parseEnvironmentRoute } from '../../../../../../packages/studio-protocol/src/environment'
+import { STUDIO_SCHEDULES_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
 import type { MachineRef } from '../../../../../shared/machine-identity'
 import type { ScheduledAgentView, ScheduledAgentsPause } from '../../../../../shared/scheduled-agents'
@@ -20,7 +21,8 @@ import {
   pairedRoute,
   type EnvironmentTarget,
 } from '../../../studio/environmentStudio'
-import { pairedScheduledAgents } from '../../../studio/pairedSchedules'
+import { pairedScheduledAgents, scheduledAgentsOf } from '../../../studio/pairedSchedules'
+import { environmentConversationTransport } from '../../panels/agentChat/environmentChat'
 
 // Each other machine's scheduled agents, for the sidebar's Scheduled section:
 // a paired desktop's, and an SSH machine's or a WSL distribution's this window
@@ -257,6 +259,34 @@ export function useRemoteScheduledAgents({
       changeListeners.delete(announced)
     }
   }, [read])
+  // Another environment's list as it changes there (`schedules.changed`, the
+  // push this window's own Scheduled section follows on its Studio): a
+  // schedule handed over to it, run, paused or closed there shows at once.
+  const pushedRoutes = readable
+    .filter(({ connectionId }) => connectionId === null)
+    .map(({ target }) => `${target.route}\u0001${target.name}`)
+    .join('\u0000')
+  useEffect(() => {
+    if (!pushedRoutes) return
+    const stops = pushedRoutes.split('\u0000').map((entry) => {
+      const [route, name] = entry.split('\u0001') as [string, string]
+      const { followPush } = environmentConversationTransport({ route, name }).services
+      return (
+        followPush?.({
+          topic: 'schedules.changed',
+          params: {},
+          capability: STUDIO_SCHEDULES_CAPABILITY,
+          onPayload: (state) => {
+            const { agents, pausedAll } = scheduledAgentsOf(state)
+            setLists((current) => new Map(current).set(route, { agents, pausedAll }))
+          },
+        }) ?? (() => undefined)
+      )
+    })
+    return () => {
+      for (const stop of stops) stop()
+    }
+  }, [pushedRoutes])
   const beat = readable.map(({ target, beat: at }) => `${target.route}@${at}`).join('|')
   useEffect(() => {
     for (const { target } of readable) read(target.route)

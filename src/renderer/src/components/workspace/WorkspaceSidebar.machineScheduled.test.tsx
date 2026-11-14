@@ -185,12 +185,48 @@ test('WorkspaceSidebar.machineScheduled', async () => {
       ['sa-box'],
     )
     assert.ok(studio.calls.some((call) => call.connectionId === 'ssh:m1' && call.method === 'schedules.list'))
-    const row = scheduledRows()[0]!
-    assert.match(row.getAttribute('aria-label') ?? '', /in proj on dev@build-box/u, 'it names its project and machine')
+    const row = (): HTMLElement => scheduledRows()[0]!
+    assert.match(
+      row().getAttribute('aria-label') ?? '',
+      /in proj on dev@build-box/u,
+      'it names its project and machine',
+    )
+
+    // One the machine says it now holds (handed over from this desktop, made
+    // there) shows as the machine pushes its list, with no read asked for it.
+    const reads = studio.calls.filter((call) => call.method === 'schedules.list').length
+    act(() => {
+      studio.push('schedules.changed', {
+        schedules: [
+          {
+            id: 'sa-box',
+            prompt: 'Triage the build',
+            schedule: { cron: '0 9 * * 1-5', timezone: 'UTC' },
+            folderPath: '/home/dev/proj',
+            cli: 'opencode',
+          },
+          {
+            id: 'sa-handed',
+            prompt: 'Sweep the logs',
+            schedule: { cron: '0 18 * * *', timezone: 'UTC' },
+            folderPath: '/home/dev/proj',
+            cli: 'opencode',
+          },
+        ],
+        pausedAll: null,
+      })
+    })
+    await settle()
+    assert.deepEqual(
+      scheduledRows().map((each) => each.dataset.scheduledAgent),
+      ['sa-box', 'sa-handed'],
+      'a schedule the machine pushes is listed at once',
+    )
+    assert.equal(studio.calls.filter((call) => call.method === 'schedules.list').length, reads, 'from the push itself')
 
     // Run now runs it on the machine.
     act(() => {
-      row.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }))
+      row().dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 }))
     })
     await settle()
     const runNow = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
