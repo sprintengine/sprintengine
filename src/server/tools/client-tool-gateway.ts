@@ -122,6 +122,11 @@ export function runGatewayCall<T>(scope: GatewayCallScope, handler: () => T): T 
   return callScope.run(scope, handler)
 }
 
+/** What a running tool call is stopped by: its caller cancelling it, or the caller's connection going. */
+export function gatewayCallSignal(): AbortSignal | undefined {
+  return callScope.getStore()?.signal
+}
+
 /** The shell toolsets a first `tools/list` waits for: fixed, or read when that list comes. */
 export type ExpectedShellToolsets = readonly string[] | (() => readonly string[])
 

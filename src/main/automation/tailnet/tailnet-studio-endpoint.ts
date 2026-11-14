@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 
 import type { StudioGrant } from '../../../../packages/studio-protocol/src/public'
-import type { StudioAuthenticator } from '../../../server/rpc/studio-rpc-types'
+import type { StudioAuthenticator, StudioWorkBudget } from '../../../server/rpc/studio-rpc-types'
 import { tailnetDeviceStudioScopes, type TailnetDevice } from '../../../shared/tailnet'
 import type { TailnetDeviceStore } from './tailnet-devices'
 
@@ -23,8 +23,12 @@ import type { TailnetDeviceStore } from './tailnet-devices'
 
 /** The Studio server the endpoint hands an admitted socket to. */
 export type TailnetStudioHost = {
-  /** Serve one device's socket under the authenticator given; it ends when the stream does. */
-  attach(stream: Duplex, authenticator: StudioAuthenticator): void
+  /**
+   * Serve one device's socket under the authenticator given; it ends when the
+   * stream does. Its requests count against `budget`, the device's one budget
+   * over all its sockets and tool streams.
+   */
+  attach(stream: Duplex, authenticator: StudioAuthenticator, budget: StudioWorkBudget): void
 }
 
 /** A device's client id on the Studio protocol: its own, kept apart from apps and browsers. */

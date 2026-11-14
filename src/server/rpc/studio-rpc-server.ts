@@ -102,6 +102,7 @@ import type {
   StudioDiscovery,
   StudioFollowedBackend,
   StudioEnvironmentAccess,
+  StudioWorkBudget,
 } from './studio-rpc-types'
 
 // The Studio RPC as one piece: the owner socket, a connection per client, and
@@ -261,6 +262,8 @@ export type StudioRpcAttachOptions = {
   browser?: boolean
   /** The window it is one of Studio's own for, as main names it: what a pop-out may attach to is asked by it. */
   windowKey?: string
+  /** A paired device's: its requests count against the budget it shares with its other sockets. */
+  workBudget?: StudioWorkBudget
 }
 
 export type StudioRpcServer = StudioRpcListener & {
@@ -469,6 +472,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(attachOptions.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
         ...(attachOptions.browser ? { browser: true } : {}),
         ...(attachOptions.windowKey === undefined ? {} : { windowKey: attachOptions.windowKey }),
+        ...(attachOptions.workBudget ? { workBudget: attachOptions.workBudget } : {}),
         welcome,
         audit: options.audit,
         ...(options.tools ? { tools: options.tools } : {}),

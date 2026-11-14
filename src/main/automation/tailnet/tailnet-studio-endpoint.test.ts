@@ -16,10 +16,13 @@ import {
 } from '../../../../packages/client-runtime/src/public'
 import { createFakeBackend, startTestServer } from '../../../server/rpc/studio-rpc.test-helper'
 import type { StudioDiscovery } from '../../../server/rpc/studio-rpc-types'
+import { gatewayCallSignal } from '../../../server/tools/client-tool-gateway'
+import type { McpToolRegistration } from '../../../shared/modules/mcp-tools'
 import type { TailnetScope } from '../../../shared/tailnet'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
 import {
   createTailnetGatewayServer,
+  MAX_DEVICE_OUTSTANDING_REQUESTS,
   MAX_SOCKETS_PER_DEVICE,
   MAX_STREAM_QUEUED_MESSAGES,
   MAX_TICKETS_PER_DEVICE,
@@ -66,7 +69,7 @@ const DISCOVERY: StudioDiscovery = {
   }),
 }
 
-async function rig(clock: { now: number } | null = null): Promise<Rig> {
+async function rig(clock: { now: number } | null = null, tools: McpToolRegistration[] = []): Promise<Rig> {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-studio-'))
   const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
   const studio = await startTestServer({ backend: createFakeBackend(['agent-1']), discovery: DISCOVERY })
@@ -76,15 +79,21 @@ async function rig(clock: { now: number } | null = null): Promise<Rig> {
       port,
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
-      resolveTools: () => [],
+      resolveTools: () => tools,
       isMutation: () => false,
       devices,
       peers: { identify: async () => null, resolve: async () => null },
       ...(clock ? { now: () => clock.now } : {}),
       // As the core links it (src/server/core/studio-rpc.ts → connectDevice).
       studio: () => ({
-        attach: (stream, authenticator) =>
-          void studio.server.attach(stream, { authenticator, ownWindow: false, audited: true, knownFoldersOnly: true }),
+        attach: (stream, authenticator, workBudget) =>
+          void studio.server.attach(stream, {
+            authenticator,
+            ownWindow: false,
+            audited: true,
+            knownFoldersOnly: true,
+            workBudget,
+          }),
       }),
     })
   let gateway = build(0)
@@ -583,8 +592,97 @@ test('a tool stream that sends faster than it is answered is closed, not queued 
       JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'workspace.stall', arguments: {} } }),
     )
   assert.equal(await closed, 1008)
-  assert.equal(started, 1, 'answered one at a time: the rest only waited')
+  // Answered one at a time, and closed with the rest still waiting: none of
+  // those runs. (All may arrive in one read, closing it before even the first starts.)
+  assert.ok(started <= 1, 'answered one at a time: the rest only waited')
   await until(() => gateway.streamCount() === 0, 'the stream to be dropped')
+})
+
+/** A tool call on a stream, as JSON-RPC. */
+const toolCall = (id: number, name: string) =>
+  JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } })
+
+/** A tool that is held until the test lets it go or its call is cancelled, and says which. */
+function heldTool(name: string, record: { started: number; cancelled: number }, letGo: Promise<void>) {
+  return {
+    name,
+    description: 'Holds until let go.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      record.started += 1
+      const signal = gatewayCallSignal()
+      await new Promise<void>((resolve) => {
+        void letGo.then(resolve)
+        signal?.addEventListener('abort', () => {
+          record.cancelled += 1
+          resolve()
+        })
+      })
+      return { content: [{ type: 'text' as const, text: 'done' }] }
+    },
+  }
+}
+
+test('a closed tool stream runs nothing it had waiting, and the call it was running is cancelled', async () => {
+  const record = { started: 0, cancelled: 0 }
+  let letGo!: () => void
+  const r = await rig(null, [heldTool('workspace.hold', record, new Promise<void>((resolve) => (letGo = resolve)))])
+  const phone = r.pair(['workspace:read'])
+  const { socket, closed } = await toolStream(r.port(), phone.token)
+  for (let id = 1; id <= 3; id++) socket.send(toolCall(id, 'workspace.hold'))
+  await until(() => record.started === 1, 'the first call to start')
+  socket.close()
+  await closed
+  await until(() => r.gateway.streamCount() === 0, 'the stream to be dropped')
+  await until(() => record.cancelled === 1, 'the running call to be cancelled')
+  // Were the call not cancelled, letting it go now would start the two behind it.
+  letGo()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.equal(record.started, 1, 'a request the closed stream had waiting ran')
+})
+
+test("a device's requests share one budget across its sockets: closing and reopening them does not pile up work", async () => {
+  // A tool that never stops, cancelled or not: the worst a device's work can be.
+  let started = 0
+  const stuck = {
+    name: 'workspace.stuck',
+    description: 'Never answers.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      started += 1
+      return new Promise<never>(() => undefined)
+    },
+  }
+  const r = await rig(null, [stuck])
+  const phone = r.pair(['workspace:read', 'conversation:read'])
+  // A stream's waiting requests stop counting the moment it closes; the one it was running does not.
+  const first = await toolStream(r.port(), phone.token)
+  for (let id = 1; id <= 10; id++) first.socket.send(toolCall(id, 'workspace.stuck'))
+  await until(() => started === 1, 'the first call to start')
+  first.socket.close()
+  await first.closed
+  for (let index = 1; index < MAX_DEVICE_OUTSTANDING_REQUESTS; index++) {
+    const stream = await toolStream(r.port(), phone.token)
+    stream.socket.send(toolCall(1, 'workspace.stuck'))
+    await until(() => started === index + 1, `call ${index + 1} to start`)
+    stream.socket.close()
+    await stream.closed
+  }
+  // The budget is spent by calls whose sockets are all gone: the next is answered busy and never run.
+  const last = await toolStream(r.port(), phone.token)
+  const answered = new Promise<{ id: number | null; error?: { code: number } }>((resolve) => {
+    last.socket.addEventListener('message', (event) => resolve(JSON.parse(String(event.data))))
+    // Run rather than refused, the call is never answered.
+    setTimeout(() => resolve({ id: null }), 3_000).unref?.()
+  })
+  last.socket.send(toolCall(7, 'workspace.stuck'))
+  const answer = await answered
+  assert.equal(answer.id, 7)
+  assert.equal(answer.error?.code, -32000)
+  assert.equal(started, MAX_DEVICE_OUTSTANDING_REQUESTS)
+  // And a Studio socket of the same device draws on the same budget.
+  const window = await deviceClient(r, phone.token)
+  assert.equal(await refusal(window.rpc['workspaces.list']({})), 'busy')
 })
 
 test('a dropped device socket comes back and resumes its chat by cursor: no gap, no repeat', async () => {

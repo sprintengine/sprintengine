@@ -309,7 +309,9 @@ export function createStudioRpc(
   })
   // A paired device's Studio socket on the tailnet listener is served here,
   // by the same server the windows use: one contract, one set of receipts.
-  gateway.linkStudio({ attach: (stream, authenticator) => void service.connectDevice(stream, authenticator) })
+  gateway.linkStudio({
+    attach: (stream, authenticator, budget) => void service.connectDevice(stream, authenticator, budget),
+  })
   // Like the gateway, it binds only once a Studio server this desktop
   // displaced has gone: that server's listener still answers until then, and
   // this one would refuse to start beside it.

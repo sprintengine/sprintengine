@@ -79,6 +79,7 @@ import type {
   StudioChatRef,
   StudioConversationBackend,
   StudioRequestContext,
+  StudioWorkBudget,
 } from './studio-rpc-types'
 
 // One client's connection to the Studio RPC: newline-delimited JSON on a
@@ -168,6 +169,8 @@ export type StudioRpcConnectionOptions = {
   knownFoldersOnly?: boolean
   /** A browser's connection, an owner's tab included: never the terminals. */
   browser?: boolean
+  /** Shared with the client's other connections: a paired device's, across its sockets and tool streams. */
+  workBudget?: StudioWorkBudget
   /** The client tools registry, when this Studio serves client tools. */
   tools?: ClientToolRegistry
   /** Files under a workspace's roots: the `files.watch` stream. */
@@ -1643,6 +1646,18 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       })
       return
     }
+    // And bounded across the client's connections: a request still running
+    // after its connection closed counts until it ends, so closing and
+    // reopening sockets does not pile up work.
+    const release = options.workBudget ? options.workBudget.acquire() : () => undefined
+    if (!release) {
+      refuseRequest(frame.id, {
+        code: 'busy',
+        message: 'Too many requests from this device are waiting or running.',
+        retryAfterMs: BUSY_RETRY_MS,
+      })
+      return
+    }
     if (mutation) commandsInFlight++
     else readsInFlight++
     void router
@@ -1654,6 +1669,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       .finally(() => {
         if (mutation) commandsInFlight--
         else readsInFlight--
+        release()
       })
   }
 

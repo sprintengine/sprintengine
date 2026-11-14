@@ -70,6 +70,7 @@ import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
+  StudioWorkBudget,
   StudioChatBackend,
   StudioConversationBackend,
   StudioDiscovery,
@@ -153,7 +154,11 @@ export type StudioRpcService = {
    * at every request and is never an owner's; it is a client of this server,
    * audited, and the folders it names are held to the ones Studio knows.
    */
-  connectDevice(stream: Duplex, authenticator: StudioAuthenticator): { connectionId: string }
+  connectDevice(
+    stream: Duplex,
+    authenticator: StudioAuthenticator,
+    workBudget?: StudioWorkBudget,
+  ): { connectionId: string }
   /** The chat surface, from the handlers the app's own IPC serves its windows with. */
   provideChat(chat: StudioChatBackend): void
   /** The web listener's paired browsers, from the front door once it starts (`web-devices`). */
@@ -661,12 +666,13 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       })
       return { connectionId: connection.connectionId }
     },
-    connectDevice(stream, authenticator) {
+    connectDevice(stream, authenticator, workBudget) {
       const connection = hub().attach(stream, {
         authenticator,
         ownWindow: false,
         audited: true,
         knownFoldersOnly: true,
+        ...(workBudget ? { workBudget } : {}),
       })
       return { connectionId: connection.connectionId }
     },

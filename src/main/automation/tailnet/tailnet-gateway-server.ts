@@ -259,6 +259,10 @@ type StreamSession = {
   context: McpConnectionContext
   /** Ends the stream's place among the connections client tools tell about a longer list. */
   untrack?: () => void
+  /** Aborted when the stream closes: what it queued is not run, and what it is running is cancelled. */
+  ended: AbortController
+  /** The device-budget releases of its messages still waiting their turn: let go the moment it closes. */
+  waiting: Set<() => void>
 }
 
 /** A device's Studio protocol socket, for revocation, shutdown and the connected state. */
@@ -286,6 +290,19 @@ export const MAX_TICKETS_PER_DEVICE = 32
  */
 export const MAX_STREAM_QUEUED_MESSAGES = 64
 
+/**
+ * Requests one device may have waiting or running at once, over its tool
+ * streams and Studio sockets together. Work lasts only as long as the
+ * connection that asked for it: one that closes drops what it had waiting and
+ * cancels what it was running. A running request that has not stopped yet
+ * still counts here, so a device that closes and reopens its sockets cannot
+ * pile up work past this.
+ */
+export const MAX_DEVICE_OUTSTANDING_REQUESTS = 128
+
+/** JSON-RPC's server-defined range: the device has too many requests waiting or running. */
+const JSONRPC_DEVICE_BUSY = -32000
+
 /** What a tool stream may have waiting to be written to a client that is not reading, before it is closed. */
 export const MAX_STREAM_UNSENT_BYTES = 8 * 1024 * 1024
 
@@ -305,6 +322,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
   // the ticket was asked for; null for every other socket, which says none.
   const tickets = new Map<string, { deviceId: string; expiresAtMs: number; origin: string | null }>()
   const studioSockets = new Set<StudioSocket>()
+  // Each device's requests waiting or running, on every route (MAX_DEVICE_OUTSTANDING_REQUESTS).
+  const deviceWork = new Map<string, number>()
   // Each socket's place in its device's budget: newer is larger.
   let socketsOpened = 0
   // Streamable HTTP sessions of the revisions that keep one (2025-03-26 to
@@ -926,6 +945,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     protocolHeader: string | null,
     /** The request's id on the HTTP endpoint, so a session's `notifications/cancelled` can find the call. */
     requestId?: string | number | null,
+    /** The asking connection's lifetime: a call still running when it ends is cancelled. */
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown> | null> {
     if (!isRecord(parsed) || parsed.jsonrpc !== '2.0' || typeof parsed.method !== 'string') {
       return jsonRpcErrorResponse(
@@ -952,7 +973,9 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
         params,
         context,
         gateFor(device),
-        requestId === undefined ? undefined : { requestId },
+        requestId === undefined && signal === undefined
+          ? undefined
+          : { ...(requestId === undefined ? {} : { requestId }), ...(signal ? { signal } : {}) },
       )
       if (isNotification) return null
       if (outcome.kind === 'no_response') return { jsonrpc: '2.0', id, result: {} }
@@ -1194,6 +1217,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       queued: 0,
       device,
       context: contextFor(device, peerNode),
+      ended: new AbortController(),
+      waiting: new Set(),
     }
     streams.add(session)
     session.untrack = options.clientTools?.track(session.context, () =>
@@ -1230,15 +1255,26 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
           closeStream(session, WEBSOCKET_CLOSE_POLICY, 'Too many requests are waiting for an answer.')
           return
         }
+        // Counted against the device until it has really ended, not only until its stream has.
+        const release = acquireDeviceWork(session.deviceId)
+        if (!release) {
+          refuseBusy(session, text)
+          continue
+        }
         session.queued += 1
+        session.waiting.add(release)
         // One message that throws must not skip every message after it.
         pending = pending
-          .then(() => handleStreamMessage(session, text))
+          .then(() => {
+            session.waiting.delete(release)
+            return handleStreamMessage(session, text)
+          })
           .catch((error: unknown) => {
             options.log?.(`tailnet stream message failed: ${message(error)}`)
           })
           .finally(() => {
             session.queued -= 1
+            release()
           })
       }
     }
@@ -1266,13 +1302,58 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
    * `streams.delete` returning false is what dedupes.
    */
   function dropStream(session: StreamSession): void {
+    // What it had waiting is dropped, and let go of the device's budget now
+    // rather than when its turn comes; what it is running is cancelled, and
+    // counts until it has stopped.
+    session.ended.abort()
+    for (const release of session.waiting) release()
+    session.waiting.clear()
     if (streams.delete(session)) {
       session.untrack?.()
       options.onActivity?.({ kind: 'stream', device: session.device, open: false })
     }
   }
 
+  /**
+   * Take one more of a device's requests, or none past its budget: the
+   * release, called once the request has ended, or null.
+   */
+  function acquireDeviceWork(deviceId: string): (() => void) | null {
+    const held = deviceWork.get(deviceId) ?? 0
+    if (held >= MAX_DEVICE_OUTSTANDING_REQUESTS) return null
+    deviceWork.set(deviceId, held + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const left = (deviceWork.get(deviceId) ?? 1) - 1
+      if (left > 0) deviceWork.set(deviceId, left)
+      else deviceWork.delete(deviceId)
+    }
+  }
+
+  /** Answer a request over the device's budget as busy, without running or queueing it. */
+  function refuseBusy(session: StreamSession, text: string): void {
+    let id: unknown = null
+    try {
+      id = jsonRpcIdOf(JSON.parse(text))
+    } catch {
+      // Not JSON: nothing to answer, and nothing was run.
+    }
+    if (typeof id !== 'string' && typeof id !== 'number') return
+    sendStream(
+      session,
+      jsonRpcErrorResponse(
+        id,
+        JSONRPC_DEVICE_BUSY,
+        'This device has too many requests waiting or running. Try again when some have been answered.',
+      ),
+    )
+  }
+
   async function handleStreamMessage(session: StreamSession, text: string): Promise<void> {
+    // A stream that closed while this waited its turn has no one to answer: it is not run.
+    if (session.ended.signal.aborted) return
     // Re-check the device on every message, not only at upgrade: authorization
     // on a long-lived socket must follow the store, and the revocation listener
     // is a fast path, not the guarantee.
@@ -1289,7 +1370,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       return
     }
     try {
-      const answer = await handleMessage(parsed, session.context, device, null)
+      const answer = await handleMessage(parsed, session.context, device, null, undefined, session.ended.signal)
       if (answer) sendStream(session, answer)
     } catch (error) {
       // A request that failed past its handler (a result JSON cannot encode)
@@ -1347,6 +1428,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
         ticket,
         peerNode: peer.peerNode,
       }),
+      // Its requests count against the device's one budget, as its tool streams' do.
+      { acquire: () => acquireDeviceWork(device.id) },
     )
   }
 
