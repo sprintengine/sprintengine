@@ -274,8 +274,10 @@ client sends an unanswered mutation again after a reconnect only to the same
 boot, or anywhere for a durable one (`studioResendableAfterRestart`); one sent
 to a server that has since restarted is refused to its caller
 `unknown_outcome`, for the person to check. Command ids are namespaced per client by
-Studio, so one client can neither collide with nor answer from another's. An
-id names one command: sent again with different params, or for another method,
+Studio, so one client can neither collide with nor answer from another's. What
+a client reads of a chat carries the person's messages it sent under the ids it
+chose, so it can match the chat's copy of a message to the one it drew on
+sending it. An id names one command: sent again with different params, or for another method,
 it is refused `command_id_conflict` rather than answered with the first
 command's result.
 

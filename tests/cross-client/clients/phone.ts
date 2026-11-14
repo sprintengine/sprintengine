@@ -91,7 +91,8 @@ export async function phoneClient(input: {
   >()
   const keyOf = (chat: ChatRef) => `${chat.workspaceId}/${chat.agentId}`
 
-  async function command(chat: ChatRef, what: string, body: Record<string, unknown>): Promise<string> {
+  /** A command, answered: the id it went under. */
+  async function issue(chat: ChatRef, what: string, body: Record<string, unknown>): Promise<string> {
     const open = streams.get(keyOf(chat))
     if (!open) throw new Error(`phone: ${what}: the chat is not open`)
     const id = `phone-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -108,6 +109,10 @@ export async function phoneClient(input: {
     return id
   }
 
+  async function command(chat: ChatRef, what: string, body: Record<string, unknown>): Promise<void> {
+    await issue(chat, what, body)
+  }
+
   /**
    * A send, and its message as the chat echoes it: under the command id the
    * phone sent it with. The phone draws a message the moment it is sent and
@@ -115,7 +120,7 @@ export async function phoneClient(input: {
    * until the send was answered.
    */
   async function send(chat: ChatRef, what: string, body: Record<string, unknown> & { message: string }): Promise<void> {
-    const id = await command(chat, what, body)
+    const id = await issue(chat, what, body)
     const feed = streams.get(keyOf(chat))!.feed
     const deadline = Date.now() + 20_000
     let echo: GateEvent | undefined
