@@ -1,5 +1,5 @@
 import { nativeImage } from 'electron'
-import { readFile, readdir, stat } from 'fs/promises'
+import { readFile, readdir, realpath, stat } from 'fs/promises'
 import { join } from 'path'
 import type { ProjectLogoIo } from './project-logo'
 import { imageWithinDecodeLimits } from '../shared/image-dimensions'
@@ -18,6 +18,7 @@ export function createProjectLogoIo(): ProjectLogoIo {
       return { isFile: stats.isFile(), size: stats.size, mtimeMs: stats.mtimeMs }
     },
     readFile,
+    realpath,
     async downscaleRaster(bytes: Buffer, mimeType: string, maxPx: number) {
       // nativeImage decodes PNG and JPEG; a `.ico` (or anything it cannot read)
       // comes back empty and is served at its original bytes, which the 1 MB
