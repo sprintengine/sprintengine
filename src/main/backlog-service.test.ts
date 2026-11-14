@@ -1,11 +1,24 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  link,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
 import { parseBacklogFrontmatter } from '../shared/backlog/frontmatter'
 import {
   addOrUpdateBacklogLink,
+  BACKLOG_ITEM_MAX_BYTES,
   createBacklogEpic,
   createBacklogItem,
   ensureBacklogItemIds,
@@ -1758,3 +1771,110 @@ test.runIf(process.platform !== 'win32')(
     }
   },
 )
+
+// A paired device reaches these files: a huge file, or one whose second name
+// (a hard link) is a file elsewhere on the disk, is refused, not read into
+// memory or written through.
+test.runIf(process.platform !== 'win32')(
+  'backlog files past the size limit, or with a second name, are neither read nor written',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-bounds-')))
+    const project = join(root, 'project')
+    const unfiled = join(project, 'backlog', 'unfiled')
+    const secret = join(root, 'private', 'canary.txt')
+    const secretText = 'PRIVATE_CANARY\n'
+    try {
+      await mkdir(unfiled, { recursive: true })
+      await mkdir(dirname(secret))
+      await writeFile(secret, secretText, 'utf-8')
+      await writeFile(join(unfiled, 'big.md'), `---\nstatus: idea\n---\n${'a'.repeat(BACKLOG_ITEM_MAX_BYTES)}`, 'utf-8')
+      await link(secret, join(unfiled, 'hard.md'))
+
+      const big = await readBacklogItem(project, 'backlog/unfiled/big.md')
+      assert.equal(big.ok, false)
+      assert.match(big.ok ? '' : big.message, /over the 1 MB/)
+      const hard = await readBacklogItem(project, 'backlog/unfiled/hard.md')
+      assert.equal(hard.ok, false)
+      assert.ok(!JSON.stringify(hard).includes('PRIVATE_CANARY'))
+      assert.match(hard.ok ? '' : hard.message, /hard link/)
+      const listed = await listBacklogItems(project)
+      assert.ok(listed.ok)
+      assert.deepEqual(
+        listed.items.map((item) => item.relativePath),
+        [],
+        'the list skips both',
+      )
+
+      const updated = await updateBacklogStatus({
+        workspaceRoot: project,
+        relativePath: 'backlog/unfiled/hard.md',
+        status: 'ready',
+      })
+      assert.equal(updated.ok, false)
+      assert.equal(await readFile(secret, 'utf-8'), secretText, "the other name's file is untouched")
+      assert.equal((await stat(join(unfiled, 'big.md'))).size > BACKLOG_ITEM_MAX_BYTES, true)
+      const bigUpdate = await updateBacklogStatus({
+        workspaceRoot: project,
+        relativePath: 'backlog/unfiled/big.md',
+        status: 'ready',
+      })
+      assert.equal(bigUpdate.ok, false)
+
+      const created = await createBacklogItem({
+        workspaceRoot: project,
+        title: 'Huge',
+        description: 'b'.repeat(BACKLOG_ITEM_MAX_BYTES),
+      })
+      assert.equal(created.ok, false, 'an item past the limit is not written')
+      assert.match(created.ok ? '' : created.message, /over the 1 MB/)
+    } finally {
+      await rm(root, { force: true, recursive: true })
+    }
+  },
+)
+
+test('a working-agent link is recorded only on an item that is there, inside the backlog', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-backlog-assign-')))
+  const project = join(root, 'project')
+  const unfiled = join(project, 'backlog', 'unfiled')
+  const secret = join(root, 'private', 'secret.md')
+  const link = {
+    id: 'weather-deck:kept',
+    moduleId: 'weather-deck',
+    type: 'execution' as const,
+    label: 'Weather Deck forecast',
+    target: { kind: 'weather-deck.forecast', id: 'kept' },
+  }
+  try {
+    await mkdir(unfiled, { recursive: true })
+    await mkdir(dirname(secret))
+    await writeFile(secret, '# PRIVATE_CANARY\n', 'utf-8')
+    await writeFile(join(unfiled, 'kept.md'), '# Kept\n', 'utf-8')
+    await symlink(secret, join(unfiled, 'escape.md'))
+
+    const missing = await addOrUpdateBacklogLink({
+      workspaceRoot: project,
+      relativePath: 'backlog/unfiled/none.md',
+      link,
+    })
+    assert.equal(missing.ok, false)
+    assert.match(missing.ok ? '' : missing.message, /does not exist/)
+    const escaped = await addOrUpdateBacklogLink({
+      workspaceRoot: project,
+      relativePath: 'backlog/unfiled/escape.md',
+      link,
+    })
+    assert.equal(escaped.ok, false)
+    assert.match(escaped.ok ? '' : escaped.message, /escaped the backlog root/)
+    const kept = await addOrUpdateBacklogLink({ workspaceRoot: project, relativePath: 'backlog/unfiled/kept.md', link })
+    assert.equal(kept.ok, true, kept.ok ? '' : kept.message)
+    const store = await readBacklogObjectStore(project)
+    assert.ok(store.ok)
+    assert.deepEqual(
+      store.store.items.map((record) => record.source.relativePath),
+      ['backlog/unfiled/kept.md'],
+    )
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
+})

@@ -2,7 +2,8 @@ import { readdir, realpath, stat } from 'fs/promises'
 import { extname, join, resolve } from 'path'
 
 import { isSafeManifestRelativePath } from '../../../packages/module-sdk/src/manifest-validate'
-import { readConfinedFile } from '../confined-file'
+import { isConfinedFileTooLarge, readConfinedFile } from '../confined-file'
+import { MAX_TEXT_FILE_READ_BYTES } from '../filesystem-read-limits'
 import { isPathInsideOrEqual } from '../path-containment'
 
 import {
@@ -136,12 +137,10 @@ class AssetInliner {
     if (!realBundleDir || !real || !isPathInsideOrEqual(realBundleDir, real)) return null
     let bytes: Buffer
     try {
-      bytes = await readConfinedFile(real)
-    } catch {
-      return null
-    }
-    if (this.spent + bytes.byteLength > ASSET_BUDGET_BYTES) {
-      this.exhausted = true
+      // What is left of the budget bounds the read itself: an asset past it is refused unread.
+      bytes = await readConfinedFile(real, { maxBytes: ASSET_BUDGET_BYTES - this.spent })
+    } catch (error) {
+      if (isConfinedFileTooLarge(error)) this.exhausted = true
       return null
     }
     this.spent += bytes.byteLength
@@ -252,7 +251,7 @@ async function readTextOrNull(bundleDir: string, path: string): Promise<string |
   const real = await realPathInBundle(bundleDir, path)
   if (!real) return null
   try {
-    return await readConfinedFile(real, 'utf-8')
+    return await readConfinedFile(real, 'utf-8', { maxBytes: MAX_TEXT_FILE_READ_BYTES })
   } catch {
     return null
   }

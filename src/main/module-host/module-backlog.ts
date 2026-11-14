@@ -36,6 +36,7 @@ import type { BacklogTriageInput } from '../../shared/electron-api'
 import { errorMessage } from '../../shared/errors'
 import {
   addOrUpdateBacklogLink,
+  BACKLOG_ITEM_MAX_BYTES,
   createBacklogItem,
   peekBacklogDisplayKey,
   readBacklogItem,
@@ -114,7 +115,7 @@ function nodeBacklogFsIn(folder: string | null): BacklogFilesystemAdapter {
     async readfile(path) {
       const real = await realPathInBacklogFolder(folder, path)
       if (!real) throw new Error('This file is a link to a file outside the Backlog folder.')
-      return readConfinedFile(real, 'utf-8')
+      return readConfinedFile(real, 'utf-8', { maxBytes: BACKLOG_ITEM_MAX_BYTES })
     },
   }
 }

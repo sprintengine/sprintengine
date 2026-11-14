@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -81,8 +81,9 @@ test('copies, renames, moves and dropped pictures', async () => {
       join(sourceManifestsDir, 'marketer.json'),
       destinationManifestsDir,
       'overwrite',
+      true,
     )
-    const copiedSkillPath = await files.copy(sourceSkillDir, destinationSkillsDir, 'overwrite')
+    const copiedSkillPath = await files.copy(sourceSkillDir, destinationSkillsDir, 'overwrite', true)
 
     assert.equal(
       copiedManifestPath,
@@ -101,7 +102,7 @@ test('copies, renames, moves and dropped pictures', async () => {
     )
 
     await writeFile(join(sourceSkillDir, 'SKILL.md'), '# Growth Copywriter v2\n', 'utf-8')
-    await files.copy(sourceSkillDir, destinationSkillsDir, 'overwrite')
+    await files.copy(sourceSkillDir, destinationSkillsDir, 'overwrite', true)
     assert.equal(
       await readFile(join(destinationSkillsDir, 'growth-copywriter', 'SKILL.md'), 'utf-8'),
       '# Growth Copywriter v2\n',
@@ -111,17 +112,17 @@ test('copies, renames, moves and dropped pictures', async () => {
     const renameSource = join(tempRoot, 'plan.md')
     await writeFile(renameSource, '# Plan\n', 'utf-8')
     await assert.rejects(
-      () => files.rename(renameSource, 'CON.md'),
+      () => files.rename(renameSource, 'CON.md', true),
       /reserved by Windows/,
       'rename rejects Windows reserved names',
     )
     await assert.rejects(
-      () => files.rename(renameSource, 'bad:name.md'),
+      () => files.rename(renameSource, 'bad:name.md', true),
       /cannot contain control characters/,
       'rename rejects Windows-invalid filename characters',
     )
     await assert.rejects(
-      () => files.rename(renameSource, 'trailing-space.md '),
+      () => files.rename(renameSource, 'trailing-space.md ', true),
       /cannot end with a period or space/,
       'rename rejects trailing spaces before filesystem mutation',
     )
@@ -138,7 +139,7 @@ test('copies, renames, moves and dropped pictures', async () => {
     const moveSourceFile = join(moveSourceDir, 'notes.md')
     await writeFile(moveSourceFile, '# Notes\n', 'utf-8')
 
-    const movedFilePath = await files.move(moveSourceFile, moveDestinationDir)
+    const movedFilePath = await files.move(moveSourceFile, moveDestinationDir, true)
     assert.equal(
       movedFilePath,
       join(moveDestinationDir, 'notes.md'),
@@ -150,7 +151,7 @@ test('copies, renames, moves and dropped pictures', async () => {
     const collisionSource = join(moveSourceDir, 'notes.md')
     await writeFile(collisionSource, '# Collision\n', 'utf-8')
     await assert.rejects(
-      () => files.move(collisionSource, moveDestinationDir),
+      () => files.move(collisionSource, moveDestinationDir, true),
       /already exists/,
       'move rejects destination name collisions',
     )
@@ -160,7 +161,7 @@ test('copies, renames, moves and dropped pictures', async () => {
     const nestedDestinationDir = join(moveParentDir, 'nested')
     await mkdir(nestedDestinationDir, { recursive: true })
     await assert.rejects(
-      () => files.move(moveParentDir, nestedDestinationDir),
+      () => files.move(moveParentDir, nestedDestinationDir, true),
       /Cannot move a file or folder into itself\./,
       'move rejects moving a folder into its own child',
     )
@@ -237,11 +238,119 @@ test.runIf(process.platform !== 'win32')(
           await symlink(secret, file)
         },
       }
-      await expect(files().writeText(file, 'saved\n', [project])).rejects.toThrow()
+      await expect(files().writeText(file, 'saved\n', [project], false)).rejects.toThrow()
       expect(afterRealpath.at).toBeNull()
       expect(await readFile(secret, 'utf-8')).toBe('PRIVATE_CANARY\n')
     } finally {
       afterRealpath.at = null
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
+
+// A file with a second name elsewhere (a hard link) is the file elsewhere: a
+// client held to known folders does not save through it; the owner, who may
+// name that file anyway, does.
+test.runIf(process.platform !== 'win32')('a save to a file with a second name is the owner’s alone', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-fs-hardlink-')))
+  const project = join(root, 'project')
+  const file = join(project, 'notes.md')
+  const secret = join(root, 'private', 'secret.md')
+  try {
+    await mkdir(project)
+    await mkdir(join(root, 'private'))
+    await writeFile(secret, 'PRIVATE_CANARY\n')
+    await link(secret, file)
+    await expect(files().writeText(file, 'held\n', [project], false)).rejects.toThrow(/hard link/)
+    expect(await readFile(secret, 'utf-8')).toBe('PRIVATE_CANARY\n')
+    await files().writeText(file, 'owner\n', [project], true)
+    expect(await readFile(secret, 'utf-8')).toBe('owner\n')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// A client held to known folders names real paths the router checked; a
+// folder or file on them swapped for a link after the check must not carry
+// a copy, a move or a rename anywhere else.
+test.runIf(process.platform !== 'win32')(
+  'a link swapped in after a copy or move is checked is not followed',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-fs-copy-swap-')))
+    const project = join(root, 'project')
+    const outside = join(root, 'private')
+    const secret = join(outside, 'secret.md')
+    const source = join(project, 'notes.md')
+    const into = join(project, 'into')
+    const swap = async () => {
+      await rm(into, { recursive: true, force: true })
+      await symlink(outside, into)
+    }
+    try {
+      await mkdir(project)
+      await mkdir(outside)
+      await writeFile(secret, 'PRIVATE_CANARY\n')
+      await writeFile(source, 'notes\n')
+
+      // Swapped between the router's check and the work.
+      await mkdir(into)
+      await swap()
+      await expect(files().copy(source, into, 'fail', false)).rejects.toThrow()
+      await mkdir(join(project, 'folder'))
+      await writeFile(join(project, 'folder', 'a.md'), 'a\n')
+      await expect(files().copy(join(project, 'folder'), into, 'rename', false)).rejects.toThrow()
+      await expect(files().move(source, into, false)).rejects.toThrow()
+      expect(await readdir(outside)).toEqual(['secret.md'])
+      expect(await readFile(source, 'utf-8')).toBe('notes\n')
+
+      // A file to overwrite swapped for a link to one elsewhere.
+      await rm(into)
+      await mkdir(into)
+      await symlink(secret, join(into, 'notes.md'))
+      await expect(files().copy(source, into, 'overwrite', false)).rejects.toThrow()
+      expect(await readFile(secret, 'utf-8')).toBe('PRIVATE_CANARY\n')
+
+      // Swapped while the move runs: put back, and refused.
+      await rm(into, { recursive: true })
+      await mkdir(into)
+      afterRealpath.at = { path: into, run: swap }
+      await expect(files().move(source, into, false)).rejects.toThrow(/replaced by a link/)
+      expect(afterRealpath.at).toBeNull()
+      expect(await readdir(outside)).toEqual(['secret.md'])
+      expect(await readFile(source, 'utf-8')).toBe('notes\n')
+
+      // And while a copy runs: nothing of it is left there.
+      await rm(into)
+      await mkdir(into)
+      afterRealpath.at = { path: into, run: swap }
+      await expect(files().copy(source, into, 'fail', false)).rejects.toThrow(/replaced by a link/)
+      expect(afterRealpath.at).toBeNull()
+      expect(await readdir(outside)).toEqual(['secret.md'])
+    } finally {
+      afterRealpath.at = null
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
+
+test.runIf(process.platform !== 'win32')(
+  'a held copy refuses a file with a second name; the owner’s copies it',
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-fs-copy-hardlink-')))
+    const project = join(root, 'project')
+    const secret = join(root, 'private', 'secret.md')
+    try {
+      await mkdir(join(project, 'into'), { recursive: true })
+      await mkdir(join(root, 'private'))
+      await writeFile(secret, 'PRIVATE_CANARY\n')
+      await link(secret, join(project, 'hard.md'))
+      await expect(files().copy(join(project, 'hard.md'), join(project, 'into'), 'fail', false)).rejects.toThrow(
+        /hard link/,
+      )
+      await expect(stat(join(project, 'into', 'hard.md'))).rejects.toThrow()
+      await files().copy(join(project, 'hard.md'), join(project, 'into'), 'fail', true)
+      expect(await readFile(join(project, 'into', 'hard.md'), 'utf-8')).toBe('PRIVATE_CANARY\n')
+    } finally {
       await rm(root, { recursive: true, force: true })
     }
   },

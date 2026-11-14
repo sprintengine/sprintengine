@@ -208,8 +208,9 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
       writing('files.writeText', params, asking, [{ raw: params.path, purpose: 'write' }], async (fs, [path]) => {
         // A client held to known folders writes only inside them: its own
         // roots are those, whatever it named.
-        const roots = namesAnyPath(asking) ? (params.roots ?? []) : await fs.writableRoots()
-        await fs.writeText(path!, params.text, roots)
+        const owner = namesAnyPath(asking)
+        const roots = owner ? (params.roots ?? []) : await fs.writableRoots()
+        await fs.writeText(path!, params.text, roots, owner)
         return {}
       }),
     // It names no path: the picture goes to Studio's own picture folder.
@@ -240,7 +241,7 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
         params,
         asking,
         [{ raw: params.path, purpose: 'write', notRoot: true }],
-        async (fs, [at]) => ({ path: await fs.rename(at!, params.name) }),
+        async (fs, [at]) => ({ path: await fs.rename(at!, params.name, namesAnyPath(asking)) }),
       ),
     'files.copy': (params, asking) =>
       writing(
@@ -251,7 +252,7 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
           { raw: params.path, purpose: 'read' },
           { raw: params.toFolder, purpose: 'write' },
         ],
-        async (fs, [from, to]) => ({ path: await fs.copy(from!, to!, params.onConflict) }),
+        async (fs, [from, to]) => ({ path: await fs.copy(from!, to!, params.onConflict, namesAnyPath(asking)) }),
       ),
     'files.move': (params, asking) =>
       writing(
@@ -262,7 +263,7 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
           { raw: params.path, purpose: 'write', notRoot: true },
           { raw: params.toFolder, purpose: 'write' },
         ],
-        async (fs, [from, to]) => ({ path: await fs.move(from!, to!) }),
+        async (fs, [from, to]) => ({ path: await fs.move(from!, to!, namesAnyPath(asking)) }),
       ),
     'files.trash': (params, asking) =>
       writing(

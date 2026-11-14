@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readFile, readdir, realpath, rename, stat } from 'node:fs/promises'
+import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
@@ -14,7 +14,7 @@ import type {
   WorkspaceFolderCheckResult,
 } from '../../../packages/studio-protocol/src/public'
 import { writeAttachmentImageFile } from '../../main/attachment-image-file'
-import { writeConfinedFile } from '../../main/confined-file'
+import { copyConfined, moveConfined, realFolderPath, writeConfinedFile } from '../../main/confined-file'
 import { resolveEditorSaveTarget } from '../../main/editor-save-target'
 import { getUniqueCopyPath } from '../../main/filesystem-copy'
 import { createFilesystemReadHandlers } from '../../main/filesystem-read'
@@ -79,13 +79,18 @@ export type StudioFileSystem = {
   /** A connection went: its searches end. */
   releaseSlot(slot: number): void
   defaultWorkspaceParent(): string | null
-  writeText(path: string, text: string, roots: readonly string[]): Promise<void>
+  /** `owner`: the owner naming any path, who saves a file with a second name (a hard link) too. */
+  writeText(path: string, text: string, roots: readonly string[], owner: boolean): Promise<void>
   saveDroppedImage(input: { mediaType: string; dataBase64: string }): Promise<string>
   createFile(parentPath: string, name: string): Promise<string>
   createDirectory(parentPath: string, name: string, existing?: 'keep'): Promise<string>
-  rename(path: string, name: string): Promise<string>
-  copy(path: string, toFolder: string, onConflict: StudioCopyConflict): Promise<string>
-  move(path: string, toFolder: string): Promise<string>
+  /**
+   * `owner`, here and below: the owner naming any path, whose paths are
+   * taken as written. Anyone else's are the real paths the router checked.
+   */
+  rename(path: string, name: string, owner: boolean): Promise<string>
+  copy(path: string, toFolder: string, onConflict: StudioCopyConflict, owner: boolean): Promise<string>
+  move(path: string, toFolder: string, owner: boolean): Promise<string>
   trash(path: string): Promise<void>
   /** Hear changes under a folder until disposed. A folder that is not there is answered so. */
   watch(
@@ -178,9 +183,11 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
     defaultWorkspaceParent: () => (options.defaultWorkspaceParent ?? defaultParent)(),
 
     // Writes go to the real path checked and never through a link put there
-    // after the check (`writeConfinedFile`).
-    async writeText(path, text, roots) {
-      await writeConfinedFile(await resolveEditorSaveTarget(path, roots), text)
+    // after the check (`writeConfinedFile`). A file with a second name is
+    // saved for the owner, who may name any file anyway; a client held to
+    // known folders is refused it, as the second name may be outside them.
+    async writeText(path, text, roots, owner) {
+      await writeConfinedFile(await resolveEditorSaveTarget(path, roots), text, owner ? { hardLinks: 'allow' } : {})
     },
     saveDroppedImage: (input) => writeAttachmentImageFile(input, 'pasted'),
     async createFile(parentPath, name) {
@@ -193,35 +200,46 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
       await mkdir(dirPath, existing === 'keep' ? { recursive: true } : {})
       return dirPath
     },
-    async rename(sourcePath, nextName) {
+    // Renames, copies and moves go between the real paths checked, and never
+    // through a folder or file swapped for a link after the check
+    // (`moveConfined`, `copyConfined`). The owner's paths are as written:
+    // their folders are made real here, which for anyone else would follow a
+    // link put there since.
+    async rename(sourcePath, nextName, owner) {
       const name = normalizeEntryName(nextName)
       const targetPath = join(dirname(sourcePath), name)
       if (targetPath === sourcePath) return targetPath
       if (await pathExists(targetPath)) throw new Error(`A file or folder named "${name}" already exists.`)
-      await rename(sourcePath, targetPath)
+      const from = owner ? await realFolderPath(sourcePath) : sourcePath
+      await moveConfined(from, join(dirname(from), name))
       return targetPath
     },
-    async copy(sourcePath, toFolder, onConflict) {
+    async copy(sourcePath, toFolder, onConflict, owner) {
       const sourceName = basename(sourcePath)
+      const from = owner ? await realFolderPath(sourcePath) : sourcePath
+      const into = owner ? await realpath(toFolder) : toFolder
+      const hardLinks = owner ? 'allow' : 'refuse'
       if (onConflict === 'rename') {
         const destinationPath = await getUniqueCopyPath(toFolder, sourceName, sourcePath, pathExists)
-        await cp(sourcePath, destinationPath, { errorOnExist: true, force: false, recursive: true })
+        await copyConfined(from, join(into, basename(destinationPath)), { hardLinks })
         return destinationPath
       }
       const destinationPath = join(toFolder, sourceName)
       const overwrite = onConflict === 'overwrite'
       if (!overwrite && (await pathExists(destinationPath)))
         throw new Error(`A file or folder named "${sourceName}" already exists.`)
-      await cp(sourcePath, destinationPath, { errorOnExist: !overwrite, force: overwrite, recursive: true })
+      await copyConfined(from, join(into, sourceName), { overwrite, hardLinks })
       return destinationPath
     },
-    async move(sourcePath, toFolder) {
+    async move(sourcePath, toFolder, owner) {
       if (isInsideOrEqual(toFolder, sourcePath)) throw new Error('Cannot move a file or folder into itself.')
       const sourceName = basename(sourcePath)
       const destinationPath = join(toFolder, sourceName)
       if (destinationPath === sourcePath) return sourcePath
       if (await pathExists(destinationPath)) throw new Error(`A file or folder named "${sourceName}" already exists.`)
-      await rename(sourcePath, destinationPath)
+      const from = owner ? await realFolderPath(sourcePath) : sourcePath
+      const into = owner ? await realpath(toFolder) : toFolder
+      await moveConfined(from, join(into, sourceName))
       return destinationPath
     },
     async trash(path) {

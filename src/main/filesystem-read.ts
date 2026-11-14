@@ -64,7 +64,10 @@ export function createFilesystemReadHandlers(options: { opener?: FileOpener; pro
         )
       }
 
-      const content = options.confined ? await readConfinedFile(filePath) : await readFile(filePath)
+      // The stat above may be of a file swapped since: the confined read holds the same limit itself.
+      const content = options.confined
+        ? await readConfinedFile(filePath, { maxBytes: MAX_TEXT_FILE_READ_BYTES })
+        : await readFile(filePath)
       if (looksLikeBinary(content)) {
         throw new Error('File appears to be binary and cannot be opened as text.')
       }

@@ -543,10 +543,11 @@ test('bundle-read', async () => {
         .map((name) => name.trim())
         .filter(Boolean)
       assert.deepEqual(imported.sort(), ['readdir', 'realpath', 'stat'], 'read-only fs surface')
-      // Files are read through the confined reader, and nothing else of it.
+      // Files are read through the confined reader, and nothing else of it
+      // but the test for a read refused for its size.
       assert.match(
         code,
-        /import \{ readConfinedFile \} from '\.\.\/confined-file'/,
+        /import \{ isConfinedFileTooLarge, readConfinedFile \} from '\.\.\/confined-file'/,
         'reads go through readConfinedFile',
       )
 
