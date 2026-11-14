@@ -33,6 +33,8 @@ import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { studioBridgeScriptPath, type StudioCore } from './studio-core'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import { isMachinePath } from '../../shared/machine-paths'
+import { confineToRoots } from '../../main/studio-rpc/studio-file-confinement'
 import { environmentCommand, environmentPage, launchWhereItLives } from './environment-chat-calls'
 
 // The Studio MCP gateway over a core: the always-on socket agents reach the
@@ -124,6 +126,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
+      // A paired device moves a chat only into this machine's own projects.
+      deviceMayName: async (folder) => (await confineToRoots(folder, ownWorkspaceFolders(core))).ok,
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
     }),
     // One chat's agent sending to, reading, waiting on and stopping another
@@ -457,6 +461,17 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
       return { ok: true, events: read.events, hasMore: false, before: null }
     },
   }
+}
+
+/** The folders of the workspaces this core holds itself: never a copy of another environment's chat. */
+function ownWorkspaceFolders(core: StudioCore): string[] {
+  return core.workspaceRegistry
+    .getRecords()
+    .flatMap((record) =>
+      record.folderPath && !environmentRouteOfRecord(record) && !isMachinePath(record.folderPath)
+        ? [record.folderPath]
+        : [],
+    )
 }
 
 /** This core's own sessions of a chat, newest first: what a sub-agent here is read by. */

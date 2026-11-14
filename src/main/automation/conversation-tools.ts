@@ -59,7 +59,15 @@ const MAX_CREATE_SKILLS = 32
 export type ConversationToolsDeps = {
   /** Makes the folder a chat with no project runs in. Absent, the one on this machine's disk. */
   makeProjectlessFolder?: (prompt: string | null) => Promise<string>
-  launch: ConversationLaunchService['launch']
+  /**
+   * Starts the chat. Handed the caller, so a launch that would leave this
+   * machine (a workspace another environment holds) can refuse a paired
+   * device (environment-chat-calls.ts).
+   */
+  launch: (
+    request: Parameters<ConversationLaunchService['launch']>[0],
+    caller?: McpConnectionContext,
+  ) => ReturnType<ConversationLaunchService['launch']>
   /** The calling agent's own preset, which a chat it starts may not exceed (launch-permission-cap.ts). */
   resolveAgentPermissionPreset: AgentPermissionResolver
   /** A CLI's permission modes as `cli.runtime.list` gives them, for a caller that names one. */
@@ -72,6 +80,12 @@ export type ConversationToolsDeps = {
    * history (a Studio server out of process), and the tool says so.
    */
   moveChat?: ConversationMove['move']
+  /**
+   * Whether a paired device may name this folder: inside one of this
+   * machine's own workspaces' folders, as the Studio protocol holds a device
+   * to them. Absent, a device names none.
+   */
+  deviceMayName?: (folder: string) => Promise<boolean>
   /**
    * Remember that the calling agent started this chat, so the caller is told
    * when its turn ends or it waits on someone (agent-launch-notices.ts).
@@ -327,27 +341,30 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
             return toolError('launch_failed', `The chat's folder could not be made: ${message}`)
           }
         }
-        const launched = await deps.launch({
-          ...(projectlessFolder
-            ? { newChatIn: { folderPath: projectlessFolder } }
-            : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),
-          ...(args.worktree === true ? { newWorktree: true } : {}),
-          ...(typeof args.worktreeName === 'string' && args.worktreeName.trim()
-            ? { worktreeName: args.worktreeName.trim() }
-            : {}),
-          ...(typeof args.inWorktree === 'string' && args.inWorktree.trim()
-            ? { existingWorktreePath: args.inWorktree.trim() }
-            : {}),
-          ...(typeof args.effort === 'string' ? { reasoningEffort: args.effort.trim() } : {}),
-          ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
-          ...(typeof args.cliModel === 'string' ? { cliModel: args.cliModel } : {}),
-          ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
-          ...(Array.isArray(args.skills) && args.skills.length > 0 ? { skills: args.skills as string[] } : {}),
-          ...(typeof args.name === 'string' ? { name: args.name } : {}),
-          ...(capped.permissionPreset ? { permissionPreset: capped.permissionPreset } : {}),
-          ...(namedMode?.ok && namedMode.permissionMode ? { permissionMode: namedMode.permissionMode } : {}),
-          ...(args.mode === 'plan' || args.mode === 'ask' ? { mode: args.mode } : {}),
-        })
+        const launched = await deps.launch(
+          {
+            ...(projectlessFolder
+              ? { newChatIn: { folderPath: projectlessFolder } }
+              : { workspaceId, ...(args.newChat === true ? { newChat: true } : {}) }),
+            ...(args.worktree === true ? { newWorktree: true } : {}),
+            ...(typeof args.worktreeName === 'string' && args.worktreeName.trim()
+              ? { worktreeName: args.worktreeName.trim() }
+              : {}),
+            ...(typeof args.inWorktree === 'string' && args.inWorktree.trim()
+              ? { existingWorktreePath: args.inWorktree.trim() }
+              : {}),
+            ...(typeof args.effort === 'string' ? { reasoningEffort: args.effort.trim() } : {}),
+            ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
+            ...(typeof args.cliModel === 'string' ? { cliModel: args.cliModel } : {}),
+            ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
+            ...(Array.isArray(args.skills) && args.skills.length > 0 ? { skills: args.skills as string[] } : {}),
+            ...(typeof args.name === 'string' ? { name: args.name } : {}),
+            ...(capped.permissionPreset ? { permissionPreset: capped.permissionPreset } : {}),
+            ...(namedMode?.ok && namedMode.permissionMode ? { permissionMode: namedMode.permissionMode } : {}),
+            ...(args.mode === 'plan' || args.mode === 'ask' ? { mode: args.mode } : {}),
+          },
+          context,
+        )
         if (!launched.ok) return toolError(launched.code, launched.message)
         const parent = launchingAgentOf(context)
         const linked: LaunchLinkResult | null =
@@ -633,6 +650,11 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId.trim() : caller?.workspaceId
         if (!workspaceId) return toolError('invalid_arguments', 'Name the chat to move: "workspaceId".')
         if (!deps.moveChat) return toolError('unavailable', 'This machine cannot move its chats from here.')
+        if (context?.metadata.kind === 'remote-tailnet' && !(await deps.deviceMayName?.(args.folder)))
+          return toolError(
+            'folder_refused',
+            'A paired device moves a chat only to a folder inside the projects this machine has open.',
+          )
         const moved = await deps.moveChat(workspaceId, args.folder, lifecycleActor(context), caller)
         if (!moved.ok) return toolError(moved.code, moved.message)
         if (moved.movesWhenTurnEnds)

@@ -7,6 +7,7 @@ import type { ConversationEvent, ConversationKey } from '../../shared/conversati
 import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
 import type { ConversationGatewayCommandResult } from './conversation-host'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../../main/conversation-launch-service'
+import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 
 // A chat another environment holds, acted on from this desktop's own callers
 // (the gateway's conversation tools, modules): the same protocol method a
@@ -89,15 +90,29 @@ export async function environmentPage(
  * Launch a chat as this core does, or, when the workspace it joins is another
  * environment's (an SSH machine's copy here), there: `conversation.create` on
  * that environment's Studio, answered as this core's launch answers.
+ *
+ * Only for this machine's own callers. The create there goes out on this
+ * desktop's owner connection to that machine, so a paired device asking for
+ * it would be starting an agent on the SSH machine or in the WSL distribution
+ * through the desktop: the relay the protocol does not offer devices. A
+ * device's call naming such a workspace is refused before any connection is
+ * chosen.
  */
 export function launchWhereItLives(
   clients: EnvironmentClients | null,
   recordOf: (workspaceId: string) => Parameters<typeof environmentRouteOfRecord>[0] | null,
   launchHere: (request: ConversationLaunchRequest) => Promise<ConversationLaunchResult>,
-): (request: ConversationLaunchRequest) => Promise<ConversationLaunchResult> {
-  return async (request) => {
+): (request: ConversationLaunchRequest, caller?: McpConnectionContext) => Promise<ConversationLaunchResult> {
+  return async (request, caller) => {
     const route = request.workspaceId ? environmentRouteOfRecord(recordOf(request.workspaceId)) : null
     if (!route || !request.workspaceId) return launchHere(request)
+    if (caller?.metadata.kind === 'remote-tailnet')
+      return {
+        ok: false,
+        code: 'tailnet_local_only',
+        message:
+          'That workspace is on another machine this computer connects to, and a paired device cannot start chats there. Start it on one of this computer’s own projects.',
+      }
     // What only this desktop's own launch carries has no place in a create there.
     if (request.subagentOf || request.attachments?.length || request.scheduledAgentId || request.ownerModuleId)
       return {
