@@ -218,7 +218,24 @@ async function inlineMarkupUrls(
   return output
 }
 
-async function readDirNames(dir: string): Promise<string[]> {
+/**
+ * Where `path` really is, when that is inside the bundle's real folder; null
+ * otherwise. A bundle is a folder anyone may have written (a repository opened
+ * as a workspace), so a file or folder in it that is a link out of it, to a
+ * key in the home folder say, is read as absent: every read here goes through
+ * this, as `AssetInliner` does for the assets it inlines.
+ */
+async function realPathInBundle(bundleDir: string, path: string): Promise<string | null> {
+  const [realBundleDir, real] = await Promise.all([
+    realpath(bundleDir).catch(() => null),
+    realpath(path).catch(() => null),
+  ])
+  return realBundleDir && real && isPathInsideOrEqual(realBundleDir, real) ? real : null
+}
+
+async function readDirNames(bundleDir: string, path: string): Promise<string[]> {
+  const dir = await realPathInBundle(bundleDir, path)
+  if (!dir) return []
   try {
     const entries = await readdir(dir, { withFileTypes: true })
     return entries
@@ -230,9 +247,11 @@ async function readDirNames(dir: string): Promise<string[]> {
   }
 }
 
-async function readTextOrNull(path: string): Promise<string | null> {
+async function readTextOrNull(bundleDir: string, path: string): Promise<string | null> {
+  const real = await realPathInBundle(bundleDir, path)
+  if (!real) return null
   try {
-    return await readFile(path, 'utf8')
+    return await readFile(real, 'utf8')
   } catch {
     return null
   }
@@ -266,7 +285,11 @@ export async function readDesignSystemBundle(bundleDir: string): Promise<DesignS
 
   let manifestContents: string
   try {
-    manifestContents = await readFile(join(bundleDir, DESIGN_SYSTEM_MANIFEST_FILENAME), 'utf8')
+    // Absent, `realpath` says ENOENT; a link out of the bundle is no manifest of it either.
+    const real = await realpath(join(bundleDir, DESIGN_SYSTEM_MANIFEST_FILENAME))
+    if (!isPathInsideOrEqual(await realpath(bundleDir), real))
+      throw Object.assign(new Error('The manifest is a link out of the bundle.'), { code: 'ENOENT' })
+    manifestContents = await readFile(real, 'utf8')
   } catch (error) {
     const code = codeOf(error)
     if (code === 'ENOENT') {
@@ -336,7 +359,7 @@ export async function readDesignSystemBundle(bundleDir: string): Promise<DesignS
 }
 
 async function readTokenDocument(bundleDir: string): Promise<Record<string, unknown> | null> {
-  const contents = await readTextOrNull(join(bundleDir, TOKENS_SOURCE_RELATIVE_PATH))
+  const contents = await readTextOrNull(bundleDir, join(bundleDir, TOKENS_SOURCE_RELATIVE_PATH))
   return contents === null ? null : parseTokenDocument(contents)
 }
 
@@ -508,15 +531,15 @@ async function readComponents(
   const declared = Array.isArray(manifest.contents.components)
     ? manifest.contents.components.filter((name): name is string => typeof name === 'string')
     : []
-  const present = new Set(await readDirNames(componentsDir))
+  const present = new Set(await readDirNames(bundleDir, componentsDir))
   const views: DesignSystemComponentView[] = []
   for (const name of declared) {
     if (!present.has(name)) continue
     const dir = join(componentsDir, name)
     const unresolvedRefs: string[] = []
-    const rawHtml = (await readTextOrNull(join(dir, 'component.html'))) ?? ''
-    const rawCss = (await readTextOrNull(join(dir, 'component.css'))) ?? ''
-    const markdown = await readTextOrNull(join(dir, 'component.md'))
+    const rawHtml = (await readTextOrNull(bundleDir, join(dir, 'component.html'))) ?? ''
+    const rawCss = (await readTextOrNull(bundleDir, join(dir, 'component.css'))) ?? ''
+    const markdown = await readTextOrNull(bundleDir, join(dir, 'component.md'))
 
     const css = await inlineCssUrls(rawCss, dir, inliner, unresolvedRefs)
     const inlineStyles: string[] = []
@@ -565,7 +588,7 @@ async function readPatterns(
     if (!isSafeManifestRelativePath(name)) continue
     const relative = name.startsWith('patterns/') ? name.slice('patterns/'.length) : name
     const fileName = relative.endsWith('.html') ? relative : `${relative}.html`
-    const raw = await readTextOrNull(join(dir, fileName))
+    const raw = await readTextOrNull(bundleDir, join(dir, fileName))
     if (raw === null) continue
     const unresolvedRefs: string[] = []
     const inlineStyles: string[] = []
@@ -595,7 +618,7 @@ async function readGlyphs(bundleDir: string, manifest: DesignSystemManifest): Pr
     if (!isSafeManifestRelativePath(name)) continue
     const relative = name.startsWith('glyphs/') ? name.slice('glyphs/'.length) : name
     const fileName = relative.endsWith('.svg') ? relative : `${relative}.svg`
-    const svg = await readTextOrNull(join(dir, fileName))
+    const svg = await readTextOrNull(bundleDir, join(dir, fileName))
     if (svg === null) continue
     views.push({ name: relative.replace(/\.svg$/i, ''), svg })
   }

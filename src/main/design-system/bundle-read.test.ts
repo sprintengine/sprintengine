@@ -426,6 +426,61 @@ test('bundle-read', async () => {
       }
     })
 
+  if (process.platform !== 'win32')
+    run('a glyph, pattern, component file or token source that is a link out of the bundle is not read', async () => {
+      const dir = exampleCopy()
+      const outside = mkdtempSync(join(tmpdir(), 'ds-read-outside-'))
+      try {
+        // A key in the home folder, say: what a repository opened as a workspace could link to.
+        writeFileSync(join(outside, 'id_ed25519'), '-----BEGIN OPENSSH PRIVATE KEY----- secret')
+        const secret = join(outside, 'id_ed25519')
+        const relink = (path: string) => {
+          rmSync(path, { force: true })
+          symlinkSync(secret, path)
+        }
+        relink(join(dir, 'glyphs', 'check.svg'))
+        relink(join(dir, 'patterns', 'sign-in.html'))
+        relink(join(dir, 'components', 'button', 'component.html'))
+        relink(join(dir, 'components', 'button', 'component.css'))
+        relink(join(dir, 'components', 'button', 'component.md'))
+        relink(join(dir, 'foundations', 'tokens.tokens.json'))
+        // And a folder of the bundle that is a link out of it lists nothing.
+        mkdirSync(join(outside, 'elsewhere'))
+        symlinkSync(join(outside, 'elsewhere'), join(dir, 'components', 'card'))
+        const result = await readDesignSystemBundle(dir)
+        assert.equal(result.ok, true, result.ok ? '' : result.message)
+        if (!result.ok) return
+        assert.ok(!JSON.stringify(result.view).includes('PRIVATE KEY'), 'the linked file was never read')
+        assert.deepEqual(result.view.glyphs, [])
+        assert.deepEqual(result.view.patterns, [])
+        const button = result.view.components.find((component) => component.name === 'button')
+        assert.ok(button, 'the component is still listed, its linked files read as absent')
+        assert.equal(button.doc, null)
+        assert.equal(result.view.identity.accent.light, null)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+        rmSync(outside, { recursive: true, force: true })
+      }
+    })
+
+  if (process.platform !== 'win32')
+    run('a manifest that is a link out of the bundle makes no design system', async () => {
+      const dir = exampleCopy()
+      const outside = mkdtempSync(join(tmpdir(), 'ds-read-outside-'))
+      try {
+        cpSync(join(dir, 'design-system.json'), join(outside, 'design-system.json'))
+        rmSync(join(dir, 'design-system.json'))
+        symlinkSync(join(outside, 'design-system.json'), join(dir, 'design-system.json'))
+        const result = await readDesignSystemBundle(dir)
+        assert.equal(result.ok, false)
+        if (result.ok) return
+        assert.equal(result.reason, 'no-manifest')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+        rmSync(outside, { recursive: true, force: true })
+      }
+    })
+
   run('a glyph or pattern named by a path that climbs out of the bundle is not read', async () => {
     const dir = exampleCopy()
     const outside = `${dir}-outside`
