@@ -362,6 +362,28 @@ test('an untrusted extension’s details offer Review and trust, and claim nothi
   expect(button('Review and trust', details)).toBeTruthy()
 })
 
+test('an untrusted extension built for an older host API says it needs updating and offers no Review', async () => {
+  // Trusting it would not let it run: the host refuses it before trust is
+  // asked, and the trust write then failed with signing advice that does not
+  // apply. The row says what would help instead.
+  installed = [
+    ...installed,
+    module('old-api', 'Old Api', {
+      trust: 'unsigned',
+      manifest: { engines: { hostApi: HOST_API_VERSION - 1 } },
+      launch: { status: 'blocked_host_api', mainLoaded: false },
+    }),
+  ]
+  await mount()
+  const row = rowOf('Old Api')
+  expect(row.textContent).toContain('Needs updating')
+  expect(row.textContent).toContain(`It needs updating to host API ${HOST_API_VERSION}`)
+  expect(button('Review Old Api', row)).toBeUndefined()
+  await click(button('Old Api'))
+  const details = document.querySelector('[aria-label="Old Api details"]')!
+  expect(button('Review and trust', details)).toBeUndefined()
+})
+
 test('Update appears only for a marketplace install with a newer version, labelled with it', async () => {
   await mount()
   const weather = rowOf('Weather Deck')
