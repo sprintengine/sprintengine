@@ -565,7 +565,10 @@ that every reader passes over (`conversation-command-receipts.ts`).
   holds it, in its chats, from its worktree pool. New chat makes a schedule
   for a project on an SSH machine on that machine's own server
   (`schedules.create` by its folder there, `pairedSchedules.ts`), so it is
-  never in the desktop's store. One another caller saves on the desktop for a
+  never in the desktop's store. A change to a machine's schedules goes only
+  while the machine is connected: with it away the change is refused, never
+  held for its return, and each try of one draft is the same command there
+  (one command id), so a lost answer makes nothing twice. One another caller saves on the desktop for a
   machine's folder never runs there: the scheduler reads it as waiting, and
   Run now is refused (`scheduleWaitsForHandOver`), until it is handed over
   (`environment-migration-stores.ts`, `handOverSchedulesWhenSaved`). The
@@ -573,9 +576,14 @@ that every reader passes over (`conversation-command-receipts.ts`).
   machine's own server, on the route the window follows its chats on
   (`sidebar/useRemoteScheduledAgents.ts`), and opens one in New chat's
   editor, which saves, pauses and runs it on that machine by its route.
+  Pause all and Resume all cover this device and each machine it owns whose
+  schedules the section lists, and say which machine they could not reach.
   Where a module kernel runs,
   the person's Scheduled agents switch turns the scheduler on and off
-  (`modules/scheduled-agents-switch.ts`). A watch an agent asks for is kept by
+  (`modules/scheduled-agents-switch.ts`). Whoever starts the scheduler, it
+  waits for the hand-over's first plan; while that cannot finish (its journal
+  unreadable) the Scheduled section says the schedules are paused and why
+  (`schedules.list`'s `held`). A watch an agent asks for is kept by
   the server its gateway belongs to; where that server holds no record of the
   chat (a WSL or SSH server, whose chat records the desktop keeps), the folder
   the chat works in is kept with the watch (`pull-requests/chat-folders.json`),

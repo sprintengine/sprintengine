@@ -109,6 +109,15 @@ function subscribePublishedMachines(listener: () => void): () => void {
   }
 }
 
+/**
+ * The machines this desktop owns (its SSH machines and WSL distributions, not
+ * a paired desktop) whose schedules the Scheduled section lists now: what
+ * Pause all and Resume all cover beside this device.
+ */
+export function ownedScheduledMachines(): readonly RemoteScheduledMachine[] {
+  return publishedMachines.filter((machine) => machine.connectionId === null)
+}
+
 /** One of another machine's schedules as the Scheduled section holds it now, with its machine, by its route. */
 export function remoteScheduledAgentNow(
   route: string,

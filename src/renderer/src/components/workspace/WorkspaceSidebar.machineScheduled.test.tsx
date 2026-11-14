@@ -103,6 +103,7 @@ test('WorkspaceSidebar.machineScheduled', async () => {
       pausedAll: null,
     }),
     'schedules.runNow': () => ({ workspaceId: 'run-1' }),
+    'schedules.pauseAll': (params) => ({ pausedAll: { since: createdAt, until: params.until } }),
   })
   const { followEnvironmentChats } = await import('../../studio/environmentChats')
 
@@ -261,6 +262,35 @@ test('WorkspaceSidebar.machineScheduled', async () => {
     assert.ok(
       opened.every(([route, id]) => route === 'ssh:m1' && id === 'sa-box'),
       'opened on its machine, by its route',
+    )
+
+    // Pause all pauses the machine's schedules too, not only this device's.
+    const pausedHere: Array<number | null> = []
+    // The same bridge, which the machine's double stands behind.
+    ;(domWindow.api as Record<string, unknown>).pauseAllScheduledAgents = async (until: number | null) => {
+      pausedHere.push(until)
+      return { ok: true, pause: { since: createdAt, until } }
+    }
+    const writesBefore = studio.writes().length
+    const pauseAll = container.querySelector<HTMLElement>('[aria-label="Pause all scheduled agents"]')
+    assert.ok(pauseAll, 'the section offers Pause all')
+    act(() => {
+      pauseAll.click()
+    })
+    await settle()
+    const untilResumed = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('Until I resume them'),
+    )
+    assert.ok(untilResumed, 'until resumed is offered')
+    act(() => {
+      untilResumed.click()
+    })
+    await settle()
+    assert.deepEqual(pausedHere, [null], 'this device is paused')
+    assert.deepEqual(
+      studio.writes().slice(writesBefore),
+      [{ connectionId: 'ssh:m1', method: 'schedules.pauseAll', params: { until: null } }],
+      'and so is the machine it owns',
     )
 
     // Forgotten in Settings › Machines: its schedules go with it.

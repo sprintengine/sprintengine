@@ -111,6 +111,31 @@ export async function pairedScheduledAgentAction(
   return answer.ok ? { ok: true, id, action } : answer
 }
 
+/**
+ * Pause every schedule there until `until` (epoch ms; null until resumed),
+ * or (`'resume'`) end that pause: what this desktop's Pause all asks of each
+ * machine it owns. Refused, not held for later, with the machine away.
+ */
+export async function pairedScheduledAgentsPauseAll(
+  machine: PairedMachine | EnvironmentTarget,
+  until: number | null | 'resume',
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  const commandId = environmentCommandId()
+  const answer = changeRefusal(
+    await askSchedules<unknown>(
+      machine,
+      (client) =>
+        until === 'resume'
+          ? client.rpc['schedules.resumeAll']({ commandId })
+          : client.rpc['schedules.pauseAll']({ until, commandId }),
+      { change: true },
+    ),
+    nameOf(machine),
+    until === 'resume' ? 'resumed' : 'paused',
+  )
+  return answer.ok ? { ok: true } : answer
+}
+
 const ACTION_DONE: Record<MeshScheduledAgentAction, string> = {
   run: 'started',
   pause: 'paused',
