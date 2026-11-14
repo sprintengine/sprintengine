@@ -127,6 +127,7 @@ import {
 import { isLegacyV44WorkspaceEnvelope, splitLegacyV44Envelope } from './repositories/workspaceRegistry'
 import type { AgentLaunchSettings } from '../../../shared/launch-settings'
 import { launchSettingsApiFromWindow, launchSettingsClient } from './launchSettingsClient'
+import { showToast } from './toastStore'
 import { migrateLegacyCliPermissionPresets } from './legacyCliPermissionPresets'
 import { onWindowVisibilityChange } from '../utils/windowActivity'
 import {
@@ -1869,6 +1870,21 @@ function initWorkspaceSyncClient(): void {
       applyImportedSyncEvent(() => useWorkspaceStore.getState().applyAgentTerminalSessionEvent(apply)),
     applyAgentTerminalLaunchState: (apply: AgentTerminalLaunchStateApply) =>
       applyImportedSyncEvent(() => useWorkspaceStore.getState().applyAgentTerminalLaunchStateEvent(apply)),
+    currentWorkspace: (workspaceId) =>
+      useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
+    // A new chat Studio never took: said, with its first message, which went
+    // nowhere else, so the words can be sent again.
+    reportUnsavedWorkspace: (workspace, message) => {
+      const firstMessage = Object.values(workspace.agents ?? {})
+        .map((agent) => agent.chatStartupPrompt?.trim())
+        .find(Boolean)
+      showToast({
+        tone: 'error',
+        title: `“${workspace.name}” was not saved`,
+        description: firstMessage ? `${message} Its first message was: “${firstMessage}”` : message,
+        autoDismissMs: false,
+      })
+    },
   })
   // Subscribe immediately so no broadcast is missed, and offer hydration
   // alongside it. The two race by design: the snapshot seed cannot blank this

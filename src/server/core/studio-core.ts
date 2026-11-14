@@ -679,6 +679,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     removeWorkspace: (workspaceId) => {
       workspaceSyncService.removeWorkspace(workspaceId, 'system')
     },
+    persisted: () => workspaceSyncService.flush(),
     startSession: (input) => conversations.startSession(input),
     send: (input) => conversations.sendTurn(input),
     commandReceipt: (sessionId, commandId) => conversations.commandReceipt(sessionId, commandId),

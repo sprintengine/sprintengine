@@ -832,7 +832,11 @@ that made it hears it too and takes it once by its sequence; a server that
 restarts numbers them from the start again, so a window reads the snapshot
 again each time its connection opens and takes its sequence as the baseline,
 whatever it held before), `.dispatch`
-(one change from a named window), `.lifecycle` (Settle, Un-settle, Snooze or
+(one change from a named window, answered only once it is on disk: a new
+workspace at once, any other change on the registry's own write delay; a
+window sends a new workspace or a stamped edit again when its answer was lost,
+before it reads the snapshot, and a new chat's window starts nothing of the
+chat before its create is answered), `.lifecycle` (Settle, Un-settle, Snooze or
 Wake on the reading the window made it on), `.setSettledChatsSettings` and
 `.setModuleRunStates` (what only a desktop window knows; a browser's is
 answered and not applied), the one-time hydration (`workspaceRegistry.*`),

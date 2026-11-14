@@ -170,3 +170,40 @@ test('an ordinary write takes a waiting lazy one with it on its own short deboun
     vi.useRealTimers()
   }
 })
+
+test('whenWritten settles only once the change is on disk, on the write delay, and not for a lazy change', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const dir = tempDir()
+    const store = createWorkspaceRegistryStore({
+      resolveUserDataDir: () => dir,
+      persistDebounceMs: 250,
+      lazyPersistMs: 60_000,
+    })
+    store.write(registry('Alpha', 1))
+    let written = false
+    const waiting = store.whenWritten().then(() => {
+      written = true
+    })
+    await vi.advanceTimersByTimeAsync(100)
+    assert.equal(written, false, 'not before the write delay has run')
+    assert.equal(existsSync(join(dir, WORKSPACE_REGISTRY_FILE_NAME)), false)
+    // A burst still writes once: a change meanwhile moves the write, and the wait with it.
+    store.write(registry('Beta', 2))
+    await vi.advanceTimersByTimeAsync(200)
+    assert.equal(written, false)
+    await vi.advanceTimersByTimeAsync(100)
+    await waiting
+    assert.equal(persistedName(dir), 'Beta', 'settled with the change on disk')
+
+    store.write(registry('Visited', 3), { lazy: true })
+    let lazyWritten = false
+    await store.whenWritten().then(() => {
+      lazyWritten = true
+    })
+    assert.equal(lazyWritten, true, 'nothing waits on a lazy change')
+    assert.equal(persistedName(dir), 'Beta')
+  } finally {
+    vi.useRealTimers()
+  }
+})
