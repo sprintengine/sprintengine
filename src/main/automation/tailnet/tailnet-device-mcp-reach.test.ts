@@ -453,7 +453,7 @@ test("a device cannot start a chat on an SSH machine or in a WSL distribution, o
     }
     // Refused before any connection to that machine was chosen.
     assert.deepEqual(listener.reached, [])
-    assert.deepEqual(listener.launchedHere, [])
+    assert.equal(listener.launchedHere.length, 0)
     const here = await listener.overMcp('conversation.create', { workspaceId: 'w-here', prompt: 'Go' })
     assert.equal(here.code, 'launched_here')
     assert.deepEqual(
