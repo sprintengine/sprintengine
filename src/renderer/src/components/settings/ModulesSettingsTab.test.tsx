@@ -382,6 +382,10 @@ test('an untrusted extension built for an older host API says it needs updating 
   await click(button('Old Api'))
   const details = document.querySelector('[aria-label="Old Api details"]')!
   expect(button('Review and trust', details)).toBeUndefined()
+  // Nothing to review, so it is not counted or listed as waiting on one.
+  expect(list('Needs review')!.contains(row)).toBe(false)
+  expect(list('Installed')!.contains(row)).toBe(true)
+  expect(panel().querySelector('[role="radio"][aria-label^="Needs review"]')?.textContent).toContain('3')
 })
 
 test('Update appears only for a marketplace install with a newer version, labelled with it', async () => {
