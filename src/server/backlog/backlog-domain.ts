@@ -38,8 +38,8 @@ import type {
 // What a client away from the desktop reads of the projects a Studio holds,
 // and the little it changes there: each project's backlog (`backlog.*`), the
 // pages the machine shares on the tailnet (`shares.list`), and a pull request
-// read in full (`pullRequests.detail`, `.diff`). The services are the ones the
-// phone's old mobile-control lane called (`src/main/mobile/control/`).
+// read in full (`pullRequests.detail`, `.diff`), from the services in
+// `src/main/mobile/control/`.
 //
 // No local path leaves: a project is named by a token derived from its folder
 // (`deriveWorkspaceId`), which an update names back and which resolves only to

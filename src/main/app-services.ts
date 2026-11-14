@@ -1787,9 +1787,8 @@ export function createAppServices(
         })
       : null
   if (server) {
-    // The launch tokens the shell issues (its WSL helper's channels, R87), by
-    // digest: each change as it happens, and all of them again to a server
-    // that has just started.
+    // The launch tokens the shell issues, by digest: each change as it
+    // happens, and all of them again to a server that has just started.
     onGatewayLaunchTokenChange((change) => server.rpc.emit(SERVER_EVENTS.launchTokens, { changes: [change] }))
     // Asked by a server as it starts, before its gateway listens.
     server.rpc.handle(SHELL_METHODS.liveLaunchTokens, () => liveGatewayLaunchTokens())

@@ -215,11 +215,11 @@ export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type S
 // against the grant as it stands at that moment (`authorizeStudioMethod`,
 // `permissions.ts`).
 //
-// A conversation command is the conversation lane's own command, addressed:
-// its params are the command's members plus the conversation `key` and the
-// client's `commandId`, and they are read by the lane's own validator
-// (`parseConversationClientMessage`), so the socket and the tailnet accept
-// exactly the same commands. Every mutation carries a `commandId`; a retry
+// A conversation command is the conversation contract's own command,
+// addressed: its params are the command's members plus the conversation `key`
+// and the client's `commandId`, and they are read by the contract's own
+// validator (`parseConversationClientMessage`), so every client's commands are
+// held to exactly the same rules. Every mutation carries a `commandId`; a retry
 // with the same id is answered with the first attempt's result and is never
 // carried out twice, across a reconnect and an app restart alike.
 
@@ -502,9 +502,9 @@ const COMMAND_ID = '"commandId" must be a string of 1 to 200 characters.'
 
 /**
  * A command method's params as the conversation command they carry, read by
- * the conversation lane's own validator. The refusal is the lane's own
+ * the conversation contract's own validator. The refusal is the contract's own
  * (`explainRejectedConversationMessage`), so an over-long message is refused
- * as too large, exactly as on the tailnet.
+ * as too large.
  */
 export function parseStudioCommand(
   method: StudioCommandMethod,

@@ -64,7 +64,7 @@
   ],
   "ignoreBinaries": [
     // The Windows system launcher for a WSL distribution: it lists the
-    // distributions and starts each one's helper. Not an npm binary.
+    // distributions and starts each one's Studio server. Not an npm binary.
     "wsl.exe",
     // The POSIX tool clone-tree.test.ts makes a FIFO with; Node has no API for it.
     "mkfifo",
