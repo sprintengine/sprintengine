@@ -68,8 +68,10 @@ export function allocateNextBacklogId(existing: Iterable<number | null | undefin
 // current max. Pure — the caller writes the frontmatter. Returns a relativePath
 // -> numericId map of only the *newly assigned* ids (already-id'd items are
 // untouched), so an idempotent re-run over a fully-id'd backlog returns {}.
-export function planBacklogIdAllocation(items: BacklogIdItem[]): Record<string, number> {
-  let max = 0
+// `floor` is the highest id claimed by anything outside `items` (a file the scan
+// did not list): numbering continues above it too.
+export function planBacklogIdAllocation(items: BacklogIdItem[], floor = 0): Record<string, number> {
+  let max = Number.isInteger(floor) && floor > 0 ? floor : 0
   const missing: BacklogIdItem[] = []
   for (const item of items) {
     const current = item.numericId ?? undefined

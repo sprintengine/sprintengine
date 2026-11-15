@@ -30,6 +30,7 @@ import {
   settleOverride,
   type HunkOverride,
 } from './hunkGutterModel'
+import { gitApi } from '../../studio/git'
 
 export type FileHunksState = {
   hunks: GitHunkView[]
@@ -103,7 +104,7 @@ export function useFileHunks({
     const token = loadSeqRef.current
     // Which TEXT is on screen. Both diffs are read whichever this is.
     const scope = kind === 'staged' ? 'staged' : 'unstaged'
-    void window.api
+    void gitApi
       .getGitFileHunks(repoRoot, path, scope)
       .then((result) => {
         if (loadSeqRef.current !== token) return
@@ -183,7 +184,7 @@ export function useFileHunks({
             index: hunk.index,
             fingerprint: hunk.fingerprint,
           }
-          const result = hunk.included ? await window.api.unstageGitHunk(ref) : await window.api.stageGitHunk(ref)
+          const result = hunk.included ? await gitApi.unstageGitHunk(ref) : await gitApi.stageGitHunk(ref)
           if (!result.ok) {
             // Let the real state win rather than leaving a box that lies.
             setOverride(null)

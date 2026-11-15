@@ -30,7 +30,6 @@ import { isInsideWsl, resolveTailnetInterface, TAILNET_IN_WSL_ENV } from './tail
 import { createTailnetPeerResolver, type TailnetPeerIdentity, type TailnetPeerResolver } from './tailnet-peer-identity'
 import { createTailnetPeerScanner, type TailnetPeerScanner } from './tailnet-peers'
 import { readTailnetSettings, writeTailnetSettings, type TailnetSettings } from './tailnet-settings'
-import type { ConversationGatewayHost } from './tailnet-conversation-host'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from './tailnet-file-uploads'
 import type { McpToolCallEvent } from '../mcp-dispatch'
 import { createTailnetOAuthStore, type TailnetOAuthStore } from './tailnet-oauth'
@@ -43,6 +42,7 @@ import {
 } from './tailnet-gateway-https'
 import { readSelfDnsName } from './tailscale-serve'
 import { TAILNET_MCP_PATH } from './tailnet-routes'
+import { readStudioEnvironmentId } from '../../../server/environment/environment-id'
 
 // Lifecycle for tailnet remote control: settings, paired devices, and the
 // listener itself.
@@ -54,7 +54,7 @@ import { TAILNET_MCP_PATH } from './tailnet-routes'
 
 /**
  * What approving a request answers with. Aliased from the shared view rather
- * than restated: Settings reads the same shape over IPC, and two declarations
+ * than restated: Settings reads the same shape over the Studio protocol, and two declarations
  * of it would be two things to keep in step.
  */
 export type TailnetApprovePairRequestResult = TailnetApprovePairRequestView
@@ -113,16 +113,17 @@ export type TailnetRemoteService = {
    *
    * `via` says which door the answer came through, and exists only so the audit
    * is written exactly once: a `tailnet.*` tool call is already audited by
-   * dispatch, so only the IPC path records here.
+   * dispatch, and so is a protocol call the router audits (`tool`), so only a
+   * Studio window's answer (`window`), which the router leaves out, records here.
    */
   approvePairRequest(input: {
     id: string
     scopes?: unknown
     /** The six digits on the asker's screen, typed here (phase 2). */
     code?: unknown
-    via?: 'ipc' | 'tool'
+    via?: 'window' | 'tool'
   }): TailnetApprovePairRequestResult
-  denyPairRequest(id: string, via?: 'ipc' | 'tool'): TailnetRemoteStatus
+  denyPairRequest(id: string, via?: 'window' | 'tool'): TailnetRemoteStatus
   /**
    * Machines on this tailnet, and which of them answer as a Studio.
    *
@@ -148,9 +149,6 @@ export type TailnetRemoteService = {
    */
   getLiveState(): TailnetLiveState
   notifyToolsListChanged(): void
-  /** The change feed: this machine's workspace list, or conversation list, changed. No-ops with no listener. */
-  notifyWorkspacesChanged(): void
-  notifyConversationsChanged(): void
   shutdown(): Promise<void>
 }
 
@@ -162,11 +160,10 @@ export type TailnetRemoteServiceOptions = {
   clientTools?: TailnetGatewayServerOptions['clientTools']
   isMutation: (toolName: string) => boolean
   onToolCall?: (event: McpToolCallEvent) => void
-  conversations?: ConversationGatewayHost
-  /** Shrinks an uploaded picture for the model; see the gateway's own option. */
-  downscaleUpload?: TailnetGatewayServerOptions['downscaleUpload']
-  /** This machine's canvas service, for a paired desktop's Canvas pane; see the gateway's own option. */
-  canvas?: TailnetGatewayServerOptions['canvas']
+  /** This machine's own kind and colour; see the gateway's own option. */
+  machine?: TailnetGatewayServerOptions['machine']
+  /** This machine's Studio server, for a device's Studio socket; see the gateway's own option. */
+  studio?: TailnetGatewayServerOptions['studio']
   /**
    * The live-state push (remote-sessions-ux): fired on every observable change
    * — listener up/down, a pair request arriving or resolving, a device's
@@ -630,17 +627,17 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
       port: current.port,
       serverName: options.serverName,
       serverVersion: options.serverVersion,
+      environmentId: readStudioEnvironmentId(options.resolveUserDataDir(), { log: options.log }),
       resolveTools: options.resolveTools,
       ...(options.clientTools ? { clientTools: options.clientTools } : {}),
       isMutation: options.isMutation,
       devices,
       peers,
-      conversations: options.conversations,
+      ...(options.machine ? { machine: options.machine } : {}),
       // The files a device sends with a message, kept in Studio's own data
-      // folder beside a browser's uploads, never in a project's folder.
+      // folder beside a browser's uploads: they go with the device.
       fileUploads: createTailnetFileUploads({ root: join(options.resolveUserDataDir(), TAILNET_UPLOADS_DIRNAME) }),
-      ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
-      ...(options.canvas ? { canvas: options.canvas } : {}),
+      ...(options.studio ? { studio: options.studio } : {}),
       onToolCall: options.onToolCall,
       onPairRequested: () => announcePairRequests(),
       onReverseGrant: (input) => {
@@ -879,7 +876,7 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
         id: requestId,
         scopes: normalizeTailnetScopes(input.scopes),
         code: input.code,
-        // Passed as given: only an explicit 'ipc' may approve a sign-in.
+        // Passed as given: only an explicit 'window' may approve a sign-in.
         via: input.via,
       })
       if (!outcome.ok) {
@@ -979,14 +976,6 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
 
     notifyToolsListChanged(): void {
       server?.notifyToolsListChanged()
-    },
-
-    notifyWorkspacesChanged(): void {
-      server?.notifyWorkspacesChanged()
-    },
-
-    notifyConversationsChanged(): void {
-      server?.notifyConversationsChanged()
     },
 
     async shutdown(): Promise<void> {

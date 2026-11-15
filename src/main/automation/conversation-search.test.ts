@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 import { CHAT_SEARCH_CHAT_LIMIT, CHAT_SEARCH_HIT_LIMIT, searchChatsHere } from './conversation-search'
-import { createConversationTools } from './conversation-tools'
 
-// A paired desktop's palette finds what was said in this machine's chats as
+// A phone's or a paired desktop's palette (`conversation.searchChats`) finds what was said in this machine's chats as
 // this machine's own palette does: chat by chat, in the sidebar's order, in
 // one bounded answer.
 
@@ -57,26 +55,4 @@ test('the answer stops at its limit, and at its time, and says so', async () => 
   })
   assert.equal(slow.chats.length, 2)
   assert.equal(slow.truncated, true)
-})
-
-test('conversation.search refuses a question too short, and answers through the search it is given', async () => {
-  const TAILNET: McpConnectionContext = { metadata: { kind: 'remote-tailnet', deviceId: 'device-1' } }
-  const tools = createConversationTools({
-    launch: async () => assert.fail('no chat is started here'),
-    resolveAgentPermissionPreset: () => 'bypass',
-    lifecycle: {} as never,
-    searchChats: async (query) => ({
-      chats: [{ workspaceId: 'a', chatTitle: query, hits: [hit(3)], count: 1 }],
-      truncated: false,
-    }),
-  })
-  const search = tools.find((tool) => tool.name === 'conversation.search')!
-  const short = await search.handler({ query: ' p ' }, TAILNET)
-  assert.equal((short.structuredContent as { error: { code: string } }).error.code, 'invalid_arguments')
-  const found = await search.handler({ query: ' parser ' }, TAILNET)
-  assert.deepEqual(found.structuredContent, {
-    ok: true,
-    chats: [{ workspaceId: 'a', chatTitle: 'parser', hits: [hit(3)], count: 1 }],
-    truncated: false,
-  })
 })

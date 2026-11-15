@@ -12,9 +12,9 @@ const {
   messageParts,
   quoteSource,
   splitQuoteDraft,
-} = require("../../../.mobile-test-build/src/features/conversations/quoteLogic.js");
-const quotes = require("../../../.mobile-test-build/src/shared/quotes/chat-quotes.js");
-const { messageCopyText } = require("../../../.mobile-test-build/src/features/conversations/copyText.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/quoteLogic.js");
+const quotes = require("../../../.mobile-test-build/mobile/src/shared/quotes/chat-quotes.js");
+const { messageCopyText } = require("../../../.mobile-test-build/mobile/src/features/conversations/copyText.js");
 
 const repoRoot = path.resolve(__dirname, "../../../..");
 

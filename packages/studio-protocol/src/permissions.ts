@@ -36,18 +36,15 @@ export const STUDIO_PERMISSIONS = [
   'filesystem:write',
   // Give Studio's agents tools of the client's own.
   'tools:offer',
+  // Hear this machine's modules: their events and the bell rows they raise.
+  'module:read',
+  // Call what this machine's modules declare as changing something.
+  'module:operate',
   // Change this machine's settings.
   'settings:write',
   // Open a preview of a server an agent runs here.
   'preview:operate',
-  // See and change who may reach this machine: paired browsers, embeds, endpoints.
-  'access:read',
-  'access:write',
-  // Remote terminals and keeping this machine's Studio itself: named so the
-  // methods that need them declare them when they ship. No method requires
-  // them yet and no grant that exists today carries them.
-  'terminal:read',
-  'terminal:operate',
+  // Keep this machine's Studio itself: update it, which drains and restarts it.
   'environment:maintain',
 ] as const
 
@@ -62,11 +59,16 @@ export function isStudioPermission(value: unknown): value is StudioPermission {
  * What one method asks of its caller.
  *
  * Either the permissions it needs, all of them, and whether only an owner's
- * connection may call it at all; or that it is not served remotely, whatever
+ * connection may call it at all (with the reason); or that it is not served remotely, whatever
  * a caller holds, with the reason a refusal says.
  */
 export type StudioAccess =
-  { readonly permissions: readonly StudioPermission[]; readonly owner?: true } | { readonly localOnly: string }
+  | {
+      readonly permissions: readonly StudioPermission[]
+      /** Only an owner's connection may call it, and why. */
+      readonly owner?: string
+    }
+  | { readonly localOnly: string }
 
 /** Who is asking, as far as authorization goes: whether it is an owner, and what it holds. */
 export type StudioPrincipal = { readonly owner: boolean; readonly permissions: ReadonlySet<StudioPermission> }
@@ -118,7 +120,9 @@ export function studioPrincipal(input: { owner: boolean; permissions: Iterable<S
 /**
  * What each Studio scope a grant holds carries. `conversation:operate` carries
  * `conversation:read`, as it always has: a client that drives a chat can see
- * what it is driving. Every other scope carries the one permission it names.
+ * what it is driving; `modules:operate` carries `module:read` and
+ * `workspaces:operate` carries `workspace:read` the same way.
+ * Every other scope carries the one permission it names.
  */
 export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly StudioPermission[] } = {
   'conversation:read': ['conversation:read'],
@@ -127,8 +131,15 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'providers:read': ['providers:read'],
   'files:read': ['filesystem:read'],
   'workspaces:read': ['workspace:read'],
+  'backlog:read': ['backlog:read'],
+  'backlog:operate': ['backlog:read', 'backlog:operate'],
   'tools:offer': ['tools:offer'],
   'files:write': ['filesystem:write'],
+  'environment:maintain': ['environment:maintain'],
+  'settings:write': ['settings:write'],
+  'modules:read': ['module:read'],
+  'modules:operate': ['module:read', 'module:operate'],
+  'workspaces:operate': ['workspace:read', 'workspace:operate'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -139,8 +150,15 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'providers:read': 'providers:read',
   'files:read': 'filesystem:read',
   'workspaces:read': 'workspace:read',
+  'backlog:read': 'backlog:read',
+  'backlog:operate': 'backlog:operate',
   'tools:offer': 'tools:offer',
   'files:write': 'filesystem:write',
+  'environment:maintain': 'environment:maintain',
+  'settings:write': 'settings:write',
+  'modules:read': 'module:read',
+  'modules:operate': 'module:operate',
+  'workspaces:operate': 'workspace:operate',
 }
 
 /**

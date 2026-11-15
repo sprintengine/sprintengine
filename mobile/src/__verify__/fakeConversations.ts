@@ -1,12 +1,12 @@
-import type { ConversationLifecycleApi } from "../api/conversationLifecycle";
-import type { ConversationApi, ConversationStreamHandlers } from "../api/tailnetConversations";
-import type {
-  ConversationEvent,
-  ConversationQueuedMessage,
-  ConversationSubagent,
-  ConversationThread,
-  ConversationUsageLimitSnapshot,
-} from "../api/conversationWire";
+import type { ChatLifecycleApi } from "../api/chatLifecycle";
+import type { ConversationApi, ConversationStreamHandlers } from "../api/desktopConversations";
+import {
+  type ConversationWireEvent as ConversationEvent,
+  type ConversationQueuedMessage,
+  type ConversationSubagent,
+  type ConversationListedThread as ConversationThread,
+  type ConversationUsageLimitSnapshot,
+} from "../../../packages/conversation-protocol/src/public";
 import { quoteToken } from "../shared/quotes/chat-quotes";
 import { chatOpenedKey } from "../features/conversations/conversationListLogic";
 
@@ -65,8 +65,8 @@ import { chatOpenedKey } from "../features/conversations/conversationListLogic";
 // A fifth chat's workspace is settled. The fake lists it anyway, as a desktop
 // mid-update might, so it is the phone's own drop that keeps it off the list.
 // Settle on any row takes it off every later list; a visit moves the chat's
-// `lastVisitedAt`, and Mark unread (the fake desktop advertises
-// `chat-mark-unread`) moves it back to just before the chat's latest finish,
+// `lastVisitedAt`, and Mark unread (the fake desktop keeps its
+// chats' rest) moves it back to just before the chat's latest finish,
 // as the desktop does. Opened and left, the green row's chat can be marked
 // unread from its row's long press or its More menu, and opened again on the
 // "New" divider above its second turn.
@@ -321,7 +321,7 @@ const visitedAt = new Map<string, number>();
 const snoozedUntil = new Map<string, number>();
 
 /** `conversation.settle`, `conversation.visit`, `conversation.mark_unread` and `conversation.snooze` on the fake desktop. */
-export const fakeLifecycleApi: ConversationLifecycleApi = {
+export const fakeLifecycleApi: ChatLifecycleApi = {
   async settle(workspaceId, settled = true) {
     const settledAt = settled ? Date.now() : null;
     if (settledAt === null) verifySettledAt.delete(workspaceId);
@@ -361,19 +361,19 @@ const event = (
   payload: Record<string, unknown>,
   agoMs = 0,
   owner: ConversationThread = verifyConversation,
-): ConversationEvent =>
-  ({
-    id: `event-${++sequence}`,
-    seq: sequence,
-    workspaceId: owner.workspaceId,
-    agentId: owner.agentId,
-    sessionId: owner.sessionId!,
-    // The desktop stamps the model on every event; turn meta reads it.
-    modelId: "claude-opus-5-5",
-    type,
-    payload,
-    createdAt: at(agoMs),
-  }) as ConversationEvent;
+): ConversationEvent => ({
+  id: `event-${++sequence}`,
+  seq: sequence,
+  workspaceId: owner.workspaceId,
+  agentId: owner.agentId,
+  sessionId: owner.sessionId!,
+  // The desktop stamps the provider and model on every event; turn meta reads it.
+  providerId: owner.providerId,
+  modelId: "claude-opus-5-5",
+  type,
+  payload,
+  createdAt: at(agoMs),
+});
 const tool = (id: string, name: string, input: Record<string, unknown>, agoMs: number, extra: Record<string, unknown> = {}) =>
   event("tool_started", { turnId: extra.turnId ?? "turn-one", toolUseId: id, name, input, ...extra }, agoMs);
 const done = (id: string, output: string, agoMs: number, extra: Record<string, unknown> = {}) =>
@@ -1098,7 +1098,7 @@ export const fakeConversationsApi: ConversationApi = {
         })
     );
   },
-  open(key, _afterSeq, handlers, options) {
+  open(key, _afterSeq, handlers) {
     listener = handlers;
     const started = VERIFY_SUBAGENTS.find((subagent) => subagent.agentId === key.agentId);
     if (started && !fakeChats.has(`${key.workspaceId}/${key.agentId}`))
@@ -1113,7 +1113,7 @@ export const fakeConversationsApi: ConversationApi = {
     const { history, owner } = chat;
     // What this desktop holds for the chat, told to a stream that watches.
     const tellHeld = () => {
-      if (options?.queuedSends && listener === handlers)
+      if (listener === handlers)
         handlers.onFrame({ type: "queued", key, messages: chat.desktopHeld.map((message) => ({ ...message })) });
     };
     queueMicrotask(() => {
@@ -1127,9 +1127,9 @@ export const fakeConversationsApi: ConversationApi = {
       handlers.onState("live");
       tellHeld();
       // The main chat's subagents and its plan's usage, to a stream that asks.
-      if (options?.subagents && key.agentId === verifyConversation.agentId)
+      if (key.agentId === verifyConversation.agentId)
         handlers.onFrame({ type: "subagents", key, subagents: VERIFY_SUBAGENTS });
-      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, limits: VERIFY_USAGE });
+      handlers.onFrame({ type: "usageLimits", key, notice: null, autoResume: false, limits: VERIFY_USAGE });
     });
     const publish = (entry: ConversationEvent) => {
       history.push(entry);
@@ -1241,7 +1241,7 @@ export const fakeConversationsApi: ConversationApi = {
             tellHeld();
           } else if (command.kind === "send" && command.steer && chat.turnOpen) {
             publish(event("user_message", { turnId: "turn-one", text: command.message, commandId }, 0, owner));
-          } else if (command.kind === "send" && command.queue && options?.queuedSends) {
+          } else if (command.kind === "send" && command.queue) {
             if (!chat.turnOpen) reply(commandId, command.message);
             else {
               // Joined with what else this turn has queued, as the desktop does.
@@ -1262,22 +1262,10 @@ export const fakeConversationsApi: ConversationApi = {
         });
         return commandId;
       },
-      request(frame) {
-        const requestId = `fixture-request-${++counter}`;
-        queueMicrotask(() =>
-          handlers.onFrame({
-            type: "result",
-            requestId,
-            ok: true,
-            data:
-              frame.type === "getToolDetail" && "toolUseId" in frame && typeof frame.toolUseId === "string"
-                ? fixtureToolDetail(history, frame.toolUseId)
-                : frame.type === "getTurnDiff"
-                  ? turnDiffAnswer("path" in frame && typeof frame.path === "string" ? frame.path : undefined)
-                  : { ok: false, message: "Not in the fixture." },
-          }),
-        );
-        return requestId;
+      async read(request) {
+        if (request.type === "getToolDetail") return { ok: true, ...(fixtureToolDetail(history, request.toolUseId) as object) };
+        if (request.type === "getTurnDiff") return { ok: true, ...(turnDiffAnswer(request.path) as object) };
+        throw new Error("Not in the fixture.");
       },
       cancelPending(commandId) {
         const index = held.findIndex((send) => send.commandId === commandId);
@@ -1296,11 +1284,8 @@ export const fakeConversationsApi: ConversationApi = {
   async uploadFile() {
     return "fixture-file-upload";
   },
-  imageSource() {
-    return { uri: fixturePicture };
-  },
-  async imageProblem() {
-    return "gone";
+  async picture() {
+    return { ok: true, uri: fixturePicture };
   },
 };
 

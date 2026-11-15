@@ -1,14 +1,15 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
+// The reading is folded by the shared projection's reader.
+const { applyPromptCacheEvent } = require("../../../.mobile-test-build/packages/conversation-timeline/src/promptCache.js");
 const {
-  applyPromptCacheEvent,
   promptCacheState,
   promptCacheNeedsAttention,
   promptCacheCopy,
   promptCacheLine,
   promptCacheReadingKey,
   formatTokenCount,
-} = require("../../../.mobile-test-build/src/features/conversations/promptCache.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/promptCache.js");
 
 const usage = (createdAt, promptCache) => ({ type: "usage_updated", createdAt, payload: { promptCache } });
 

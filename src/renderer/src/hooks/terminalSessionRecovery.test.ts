@@ -100,8 +100,8 @@ test('the store reconciles against what the pushes delivered', async () => {
   let mainList: TerminalSessionSnapshot[] = [session('a')]
   let push: ((delta: TerminalSessionsDelta) => void) | null = null
   const store = createTerminalSessionsStore(() => ({
-    terminalList: async () => mainList,
-    onTerminalSessionsDelta: (cb: (delta: TerminalSessionsDelta) => void) => {
+    list: async () => mainList,
+    onDelta: (cb: (delta: TerminalSessionsDelta) => void) => {
       push = cb
       return () => {
         push = null

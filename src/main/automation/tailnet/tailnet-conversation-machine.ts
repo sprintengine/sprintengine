@@ -51,7 +51,7 @@ export type TailnetSelfMachine = { kind: string; color: string }
 export type ConversationMachineRecord = {
   hostId?: string | null
   folderPath?: string | null
-  environment?: { kind: 'ssh'; id: string; label: string } | null
+  environment?: { kind: 'ssh' | 'wsl'; id: string; label: string } | null
   remoteOrigin?: { machineName: string } | null
 }
 
@@ -149,7 +149,7 @@ export function conversationPullRequestsOf(found: readonly StudioPullRequest[]):
     url: entry.url,
     title: entry.title,
     // Whether the chat's agent has this machine watching it, which a paired
-    // desktop's Stop watching ends (`chat-unwatch-pull-request`).
+    // desktop's Stop watching ends (`pullRequests.unwatch`).
     ...(entry.watch ? { watch: { ...entry.watch } } : {}),
   }))
 }

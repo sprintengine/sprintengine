@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -174,6 +174,69 @@ test('a paired device cannot open what an agent wrote outside the workspace', as
   assert.equal(file.reason, 'outside_workspace')
   assert.equal(reveals.length, 0, 'nothing to show, so no window is asked')
 })
+
+// The diff view draws a working-tree file as it is on disk: an untracked
+// link in the checkout to a file elsewhere would draw that file on the
+// person's screen, which `editor.open` refuses for the same path.
+test.runIf(process.platform !== 'win32')(
+  'open_diff does not show a changed file that is a link out of the workspace',
+  async () => {
+    const escape = join(repo, 'src', 'escape.txt')
+    await symlink(join(outside, 'other.txt'), escape).catch(() => undefined)
+    // A second name (a hard link) for the same file elsewhere: no real path shows it.
+    const secondName = join(repo, 'src', 'second-name.txt')
+    await link(join(outside, 'other.txt'), secondName).catch(() => undefined)
+    const workingTree = async () =>
+      ['src/escape.txt', 'src/second-name.txt', 'src/a.ts'].map((relativePath) => ({
+        relativePath,
+        staged: false,
+        unstaged: true,
+      }))
+    const { tool, reveals } = build({
+      diff: {
+        workingTree,
+        branch: async () => [],
+        commit: async () => [],
+        resolveCommit: async () => null,
+        branchCommits: async () => [],
+        agentChangelistPaths: async () => null,
+      },
+    })
+    const remote: McpConnectionContext = {
+      metadata: { kind: 'remote-tailnet', workspaceId: 'ws-1', deviceId: 'android-phone' },
+    }
+
+    const named = await tool('editor.open_diff').handler({ only: 'all', paths: ['src/escape.txt'] }, remote)
+    assert.equal(named.isError, true)
+    assert.equal((structured(named).error as { code: string }).code, 'outside_workspace')
+    assert.equal(reveals.length, 0, 'nothing is drawn')
+
+    const mixed = structured(
+      await tool('editor.open_diff').handler({ only: 'all', paths: ['src/escape.txt', 'src/a.ts'] }, remote),
+    )
+    assert.deepEqual(
+      (mixed.files as Array<Record<string, unknown>>).map((file) => [file.displayPath, file.status, file.reason]),
+      [
+        ['src/a.ts', 'opened', null],
+        ['src/escape.txt', 'refused', 'outside_workspace'],
+      ],
+    )
+    assert.deepEqual(reveals[0]?.diff?.paths, ['src/a.ts'])
+
+    // Unnamed, the view lists what is left, and lands on it.
+    await tool('editor.open_diff').handler({ only: 'all' }, remote)
+    assert.deepEqual(reveals[1]?.diff?.paths, ['src/a.ts'])
+    assert.equal(reveals[1]?.diff?.focusPath, `${repo}/src/a.ts`)
+    // An agent here is held to its own checkouts the same way; it runs as the
+    // person, so a second name is shown to it.
+    await tool('editor.open_diff').handler({ only: 'all' }, agent)
+    assert.deepEqual(reveals[2]?.diff?.paths, ['src/second-name.txt', 'src/a.ts'])
+    const linked = await tool('editor.open_diff').handler({ only: 'all', paths: ['src/second-name.txt'] }, remote)
+    assert.equal((structured(linked).error as { code: string }).code, 'outside_workspace')
+    await rm(escape)
+    await rm(secondName)
+  },
+)
 
 test('the arguments are checked before anything is resolved', async () => {
   const { tool } = build()

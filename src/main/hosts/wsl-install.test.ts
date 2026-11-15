@@ -27,7 +27,6 @@ import {
   buildLaunchScript,
   buildStageScript,
   buildTar,
-  buildUnreadyScript,
   COMMITTED_MARKER,
   commitFailure,
   NEEDS_INSTALL_EXIT,
@@ -91,28 +90,17 @@ function fakeNodeArchive(pkg: WslNodePackage, version = WSL_NODE_VERSION): Buffe
   return gzipSync(withExec)
 }
 
-function install(kind: 'node' | 'app', archive: Buffer, digest: string, pkg?: WslNodePackage) {
+function install(archive: Buffer, digest: string, pkg: WslNodePackage) {
   const id = `t${Math.random().toString(16).slice(2, 10)}`
   const staged = sh(buildStageScript(id))
   assert.ok(staged.stdout.includes(STAGED_MARKER), staged.stderr)
-  const argv = kind === 'node' && pkg ? tarArgs('node', id, pkg) : tarArgs('app', id)
+  const argv = tarArgs('node', id, pkg)
   assert.equal(untar(argv, archive), 0, `tar ${argv.join(' ')}`)
-  return sh(
-    buildCommitScript(
-      kind === 'node'
-        ? { kind: 'node', stageId: id, digest }
-        : { kind: 'app', stageId: id, digest, appVersion: '0.4.0' },
-    ),
-  )
+  return sh(buildCommitScript({ kind: 'node', stageId: id, digest }))
 }
 
 const payload = () =>
   buildAppPayload([
-    {
-      dir: join(process.cwd(), 'resources', 'wsl-helper'),
-      into: 'wsl-helper',
-      filter: (path) => path.endsWith('.mjs'),
-    },
     { dir: join(process.cwd(), 'resources', 'hooks'), into: 'hooks', filter: (path) => path.endsWith('.mjs') },
     {
       dir: join(process.cwd(), 'resources', 'automation'),
@@ -141,13 +129,10 @@ test('the architecture and archive choice follow what the distribution reports',
     assert.doesNotMatch(arg, /[\s'"$`\\]/u, 'nothing wsl.exe could mangle crosses its command line')
   }
   assert.throws(() => buildStageScript("x'; rm -rf ~"), /plain token/u)
-  assert.throws(
-    () => buildLaunchScript({ appVersion: '0.4.0', nodeDigests: ['zz'], appDigest: 'ab', profile: 'p' }),
-    /hex/u,
-  )
+  assert.throws(() => buildLaunchScript({ appVersion: '0.4.0', nodeDigests: ['zz'], appDigest: 'ab' }), /hex/u)
 })
 
-test('the app payload is the same bytes from the same files, and holds the helper, hooks and bridge', () => {
+test('a payload is the same bytes from the same files', () => {
   const first = payload()
   const second = payload()
   assert.equal(first.digest, second.digest)
@@ -166,82 +151,52 @@ test('the digest alone, and the payload gzipped as a stream, are the same digest
   assert.ok(gunzipSync(Buffer.concat(chunks)).equals(gunzipSync(packed.tarGz)))
 })
 
-test.skipIf(!HAS_TAR)(
-  'a fresh distribution is told what to install, installs it atomically, and then runs the helper',
-  async () => {
-    const pkg: WslNodePackage = { ...wslNodePackage('x64', 'gz'), sha256: 'c'.repeat(64) }
-    const app = payload()
-    const launch = buildLaunchScript({
-      appVersion: '0.4.0',
-      nodeDigests: [pkg.sha256],
-      appDigest: app.digest,
-      profile: 'abc123def456',
-    })
-    const first = sh(launch)
-    assert.equal(first.code, NEEDS_INSTALL_EXIT)
-    const needs = parseNeedReport(first.stdout)
-    assert.ok(needs)
-    assert.equal(needs.node, true)
-    assert.equal(needs.app, true)
-    assert.ok(needs.arch.length > 0)
+test.skipIf(!HAS_TAR)('a fresh distribution is told what to install, and installs Node atomically', async () => {
+  const pkg: WslNodePackage = { ...wslNodePackage('x64', 'gz'), sha256: 'c'.repeat(64) }
+  const app = payload()
+  const launch = buildLaunchScript({
+    appVersion: '0.4.0',
+    nodeDigests: [pkg.sha256],
+    appDigest: app.digest,
+  })
+  const first = sh(launch)
+  assert.equal(first.code, NEEDS_INSTALL_EXIT)
+  const needs = parseNeedReport(first.stdout)
+  assert.ok(needs)
+  assert.equal(needs.node, true)
+  assert.equal(needs.app, true)
+  assert.ok(needs.arch.length > 0)
 
-    // An old runtime nothing runs from is pruned by the next install.
-    const old = join(home, WSL_DATA_REL, 'runtime', 'node-v1.0.0')
-    mkdirSync(join(old, 'bin'), { recursive: true })
+  // An old runtime nothing runs from is pruned by the next install.
+  const old = join(home, WSL_DATA_REL, 'runtime', 'node-v1.0.0')
+  mkdirSync(join(old, 'bin'), { recursive: true })
 
-    const node = install('node', fakeNodeArchive(pkg), pkg.sha256, pkg)
-    assert.ok(node.stdout.includes(COMMITTED_MARKER), `${node.stdout}${node.stderr}`)
-    const runtime = join(home, WSL_DATA_REL, 'runtime', `node-${WSL_NODE_VERSION}`)
-    assert.equal(readFileSync(join(runtime, '.ready'), 'utf8'), pkg.sha256)
-    assert.ok(existsSync(join(runtime, 'bin', 'node')))
-    assert.ok(!existsSync(join(runtime, 'lib')), 'only the binary is unpacked')
-    assert.ok(!existsSync(old), 'the unused old runtime is pruned')
+  const node = install(fakeNodeArchive(pkg), pkg.sha256, pkg)
+  assert.ok(node.stdout.includes(COMMITTED_MARKER), `${node.stdout}${node.stderr}`)
+  const runtime = join(home, WSL_DATA_REL, 'runtime', `node-${WSL_NODE_VERSION}`)
+  assert.equal(readFileSync(join(runtime, '.ready'), 'utf8'), pkg.sha256)
+  assert.ok(existsSync(join(runtime, 'bin', 'node')))
+  assert.ok(!existsSync(join(runtime, 'lib')), 'only the binary is unpacked')
+  assert.ok(!existsSync(old), 'the unused old runtime is pruned')
 
-    const appInstall = install('app', app.tarGz, app.digest)
-    assert.ok(appInstall.stdout.includes(COMMITTED_MARKER), `${appInstall.stdout}${appInstall.stderr}`)
-    assert.ok(existsSync(join(home, WSL_DATA_REL, '0.4.0', 'wsl-helper', 'helper.mjs')))
-    assert.ok(existsSync(join(home, WSL_DATA_REL, '0.4.0', 'hooks', 'sprintengine-agent-state.mjs')))
-    assert.ok(existsSync(join(home, WSL_DATA_REL, '0.4.0', 'automation', 'mcp-stdio-bridge.mjs')))
-    assert.deepEqual(
-      spawnSync('ls', [join(home, WSL_DATA_REL, '.stage')], { encoding: 'utf8' }).stdout.trim(),
-      '',
-      'no staging directory is left behind',
-    )
+  assert.deepEqual(
+    spawnSync('ls', [join(home, WSL_DATA_REL, '.stage')], { encoding: 'utf8' }).stdout.trim(),
+    '',
+    'no staging directory is left behind',
+  )
+  // Node is there now; the server tree is still to come.
+  assert.deepEqual(parseNeedReport(sh(launch).stdout), { ...needs, node: false })
 
-    // Installed: the launch script now execs the helper, which says `boot`.
-    const child = spawn('sh', ['-s'], {
-      cwd: home,
-      env: { PATH: process.env.PATH, HOME: home, SPRINTENGINE_HELPER_SOCKET_BASE: join(temp, 'rt') },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    child.stdin.write(`${launch}\n`)
-    const boot = await new Promise<string>((resolve, reject) => {
-      let out = ''
-      child.stdout.on('data', (chunk: Buffer) => {
-        out += chunk.toString('utf8')
-        if (out.includes('\n')) resolve(out.split('\n')[0])
-      })
-      child.on('close', (code) => reject(new Error(`exited ${code}: ${out}`)))
-    })
-    assert.equal((JSON.parse(boot) as { t: string }).t, 'boot')
-    child.stdin.end()
-    await new Promise((resolve) => child.on('close', resolve))
-
-    // The same install again changes nothing and still succeeds.
-    const again = install('node', fakeNodeArchive(pkg), pkg.sha256, pkg)
-    assert.ok(again.stdout.includes(COMMITTED_MARKER))
-
-    // A launch probe that failed drops the Node marker, so the next start installs again.
-    sh(buildUnreadyScript())
-    assert.equal(parseNeedReport(sh(launch).stdout)?.node, true)
-  },
-)
+  // The same install again changes nothing and still succeeds.
+  const again = install(fakeNodeArchive(pkg), pkg.sha256, pkg)
+  assert.ok(again.stdout.includes(COMMITTED_MARKER))
+})
 
 test.skipIf(!HAS_TAR)(
   'a Node that does not run, or reports another version, is refused and leaves nothing behind',
   () => {
     const pkg: WslNodePackage = { ...wslNodePackage('arm64', 'gz'), sha256: 'd'.repeat(64) }
-    const failed = install('node', fakeNodeArchive(pkg, 'v1.2.3'), pkg.sha256, pkg)
+    const failed = install(fakeNodeArchive(pkg, 'v1.2.3'), pkg.sha256, pkg)
     assert.equal(commitFailure(failed.stdout, failed.stderr), 'node-version v1.2.3')
     const marker = join(home, WSL_DATA_REL, 'runtime', `node-${WSL_NODE_VERSION}`, '.ready')
     assert.notEqual(
@@ -258,34 +213,37 @@ test.skipIf(!HAS_TAR)(
 )
 
 test.skipIf(!HAS_TAR)('a tree set aside while in use is kept until nothing runs from its old path', () => {
-  // A stand-in /proc (macOS has none): one process running the helper of the
-  // installed 0.4.0, by the path it was started from.
+  // A stand-in /proc (macOS has none): one process running the installed
+  // Node, by the path it was started from.
   const base = join(home, WSL_DATA_REL)
+  const runtimeDir = join(base, 'runtime')
+  const current = `node-${WSL_NODE_VERSION}`
   const fakeProc = join(temp, 'fake-proc')
   const running = join(fakeProc, '4242')
   mkdirSync(running, { recursive: true })
-  writeFileSync(join(running, 'cmdline'), `node\0${base}/0.4.0/wsl-helper/helper.mjs\0`)
+  writeFileSync(join(running, 'cmdline'), `${runtimeDir}/${current}/bin/node\0server.cjs\0`)
+  const pkg: WslNodePackage = { ...wslNodePackage('x64', 'gz'), sha256: 'f'.repeat(64) }
   const commit = (digest: string) => {
     const id = `t${Math.random().toString(16).slice(2, 10)}`
     assert.ok(sh(buildStageScript(id)).stdout.includes(STAGED_MARKER))
-    assert.equal(untar(tarArgs('app', id), payload().tarGz), 0)
-    const script = buildCommitScript({ kind: 'app', stageId: id, digest, appVersion: '0.4.0' })
+    assert.equal(untar(tarArgs('node', id, pkg), fakeNodeArchive(pkg)), 0)
+    const script = buildCommitScript({ kind: 'node', stageId: id, digest })
     assert.ok(script.includes('/proc/[0-9]*/cmdline'))
     const result = sh(script.replace('/proc/[0-9]*/cmdline', `${fakeProc}/[0-9]*/cmdline`))
     assert.ok(result.stdout.includes(COMMITTED_MARKER), `${result.stdout}${result.stderr}`)
   }
-  const setAside = () => readdirSync(base).filter((name) => name.startsWith('0.4.0.old-'))
+  const setAside = () => readdirSync(runtimeDir).filter((name) => name.startsWith(`${current}.old-`))
 
   // Whatever an earlier case left, set aside or not, goes first.
-  for (const name of setAside()) rmSync(join(base, name), { recursive: true, force: true })
-  rmSync(join(base, '0.4.0'), { recursive: true, force: true })
+  for (const name of setAside()) rmSync(join(runtimeDir, name), { recursive: true, force: true })
+  rmSync(join(runtimeDir, current), { recursive: true, force: true })
   commit('a1'.repeat(32))
   assert.deepEqual(setAside(), [], 'nothing was there to set aside')
-  // The same version with another payload (a dev build), while the helper
-  // runs from it: the tree it runs from is set aside, not deleted.
+  // The same version with another digest, while a process runs from it: the
+  // tree it runs from is set aside, not deleted.
   commit('b2'.repeat(32))
-  assert.equal(setAside().length, 1, `set aside while the old helper still runs from it: ${readdirSync(base)}`)
-  assert.ok(existsSync(join(base, setAside()[0], 'wsl-helper', 'helper.mjs')), 'whole')
+  assert.equal(setAside().length, 1, `set aside while the old Node still runs from it: ${readdirSync(runtimeDir)}`)
+  assert.ok(existsSync(join(runtimeDir, setAside()[0], 'bin', 'node')), 'whole')
   // Another commit while it still runs: kept, because its processes name the
   // old path and not the set-aside one.
   commit('b2'.repeat(32))
@@ -294,7 +252,7 @@ test.skipIf(!HAS_TAR)('a tree set aside while in use is kept until nothing runs 
   rmSync(running, { recursive: true, force: true })
   commit('b2'.repeat(32))
   assert.deepEqual(setAside(), [])
-  assert.ok(existsSync(join(base, '0.4.0', 'wsl-helper', 'helper.mjs')), 'the current tree stays')
+  assert.ok(existsSync(join(runtimeDir, current, 'bin', 'node')), 'the current tree stays')
 })
 
 test.skipIf(!existsSync('/proc/self/cmdline'))('pruning skips a runtime a running process still uses', async () => {
@@ -307,7 +265,7 @@ test.skipIf(!existsSync('/proc/self/cmdline'))('pruning skips a runtime a runnin
   try {
     await new Promise((resolve) => setTimeout(resolve, 200))
     const pkg: WslNodePackage = { ...wslNodePackage('x64', 'gz'), sha256: 'e'.repeat(64) }
-    const result = install('node', fakeNodeArchive(pkg), pkg.sha256, pkg)
+    const result = install(fakeNodeArchive(pkg), pkg.sha256, pkg)
     assert.ok(result.stdout.includes(COMMITTED_MARKER))
     assert.ok(existsSync(live), 'a runtime in use is left alone')
   } finally {
@@ -334,21 +292,19 @@ test("no install's prune ever reaches a server's data directory", () => {
   }
   assert.equal(matches(PRUNE_GLOBS.server, 'server-0.4.0'), true)
   assert.equal(matches(PRUNE_GLOBS.app, '0.4.0'), true)
-  assert.equal(matches(PRUNE_GLOBS.app, 'server-0.4.0'), false, "the helper's prune leaves the server tree alone")
-  for (const kind of ['app', 'server'] as const) {
-    const script = buildCommitScript({ kind, stageId: 'stage1', digest: 'ab', appVersion: '0.4.0' })
-    assert.ok(script.includes(`for d in ${PRUNE_GLOBS[kind]}; do`), kind)
-  }
+  assert.equal(
+    matches(PRUNE_GLOBS.app, 'server-0.4.0'),
+    false,
+    "the retired helper's prune leaves the server tree alone",
+  )
+  // A server's install prunes its older trees, and the retired helper's.
+  const script = buildCommitScript({ kind: 'server', stageId: 'stage1', digest: 'ab', appVersion: '0.4.0' })
+  assert.ok(script.includes(`for d in ${PRUNE_GLOBS.server}; do`))
+  assert.ok(script.includes(`for d in ${PRUNE_GLOBS.app}; do`))
 })
 
-test('the server entry starts the server tree, and reports it missing as the app', () => {
-  const script = buildLaunchScript({
-    appVersion: '0.4.0',
-    nodeDigests: ['aa'],
-    appDigest: 'bb',
-    profile: 'abc123def456',
-    entry: 'server',
-  })
+test('the launch script starts the server tree, and reports it missing as the app', () => {
+  const script = buildLaunchScript({ appVersion: '0.4.0', nodeDigests: ['aa'], appDigest: 'bb' })
   assert.ok(script.includes('app="$base/server-0.4.0"'))
   assert.ok(script.includes('[ -f "$app/server.cjs" ]'))
   assert.ok(script.trimEnd().endsWith('exec "$rt/bin/node" "$app/server.cjs" --bootstrap stdio'))

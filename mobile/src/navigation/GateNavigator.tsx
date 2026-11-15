@@ -34,7 +34,6 @@ export function GateNavigator() {
     removeSession,
     renameSession,
     selectSession,
-    revokeOnDesktop,
   } = useSessionData();
 
   return (
@@ -79,7 +78,6 @@ export function GateNavigator() {
                 navigation.goBack();
               }}
               onRename={(name) => renameSession(route.params.deviceId, name)}
-              onRevokeOnDesktop={route.params.deviceId === activeDeviceId ? revokeOnDesktop : null}
               onSelect={() => selectSession(route.params.deviceId)}
               onStartPairing={() => navigation.navigate("Pairing")}
               session={sessions.find((candidate) => candidate.deviceId === route.params.deviceId) ?? null}

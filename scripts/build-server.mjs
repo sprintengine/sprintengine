@@ -16,8 +16,8 @@
 // build identity (`build.json`). The
 // app streams it into each distribution once per version.
 //
-// The build fails if anything the server would load reaches Electron, the
-// updater or the terminal's native module, naming the file that imported it:
+// The build fails if anything the server would load reaches Electron or the
+// updater, naming the file that imported it:
 // the import-graph guard (src/server/electron-boundary.test.ts) says the same
 // in the test suite, this says it before a bundle that cannot start is written.
 
@@ -40,7 +40,13 @@ const WSL_RESOURCES = ['automation', 'hooks', 'plugins', 'studio-plugin', 'built
 
 // What only the desktop shell may load. Reaching one of them from the server
 // is a wiring bug, not a missing dependency.
-const SHELL_ONLY = /^(electron|electron-updater|node-pty)(\/|$)/
+//
+// The terminal's native module (node-pty) is the server's: its terminal
+// runtime loads it on first use (terminal-runtime.ts `loadPty`). It stays
+// external in both shapes: beside node_modules it loads from there, and a WSL
+// or SSH tree, which carries no native code, starts without it and serves no
+// terminals (`ptyAvailable`).
+const SHELL_ONLY = /^(electron|electron-updater)(\/|$)/
 
 function buildIdentity() {
   const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
@@ -100,8 +106,9 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
   await build({
     ...common(),
     outfile: join(outDir, 'server.cjs'),
-    // Inlined, so the tree runs with no node_modules beside it. The ESM
-    // runtime packages read `import.meta.url` (to make a `require`), which a
+    // Inlined, so the tree runs with no node_modules beside it, but for the
+    // pty module, which it does without (see SHELL_ONLY). The ESM runtime
+    // packages read `import.meta.url` (to make a `require`), which a
     // CommonJS bundle answers with this file's own URL.
     external: ['electron', 'electron-updater', 'node-pty'],
     sourcemap: false,

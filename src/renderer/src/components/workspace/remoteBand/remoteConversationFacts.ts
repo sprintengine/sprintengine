@@ -5,6 +5,7 @@ import type {
   ConversationWireFileCounts,
   ConversationWireLocalServer,
 } from '../../../../../../packages/conversation-protocol/src/public'
+import { readableConversationPhase } from '../../../../../../packages/conversation-protocol/src/public'
 import type { StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import { phaseWithBackgroundWork } from '../../../../../shared/conversation/phase'
@@ -93,7 +94,7 @@ function factsOf(conversation: MeshConversation): RemoteConversationFacts {
     modelId: conversation.modelId?.trim() || null,
     // Its background work counts, as it does for the chat's sidebar row: a
     // tab whose chat's agents go on after the turn reads as working.
-    phase: phaseWithBackgroundWork(conversation.phase, Boolean(conversation.backgroundWork)),
+    phase: phaseWithBackgroundWork(readableConversationPhase(conversation.phase), Boolean(conversation.backgroundWork)),
     live: Boolean(conversation.sessionId),
     lastTurnEndedAt: conversation.lastTurnEndedAt ?? null,
     pullRequests: branchPullRequestsOfWire(conversation.pullRequests ?? []),

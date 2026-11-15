@@ -1,5 +1,5 @@
 // The registry read behind every connectors surface (the modal today, the
-// Extensions door): `window.api.readMarketplaceRegistry`, the
+// Extensions door): `extensionsApi.readMarketplaceRegistry`, the
 // installable plugins. Extracted from ConnectorsPanel so the door surface and
 // the modal read the exact same source, degrade the exact same way, and share
 // the workspace `.mcp.json` sync — one implementation, two mounts.
@@ -15,6 +15,8 @@ import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/m
 import type { McpServerConfig, McpSettings } from '../../../types/workspace'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { SourceLoad } from './connectorsFacets'
+import { agentSetupApi } from '../../../studio/agentSetup'
+import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
 
 const EMPTY_MCP_SETTINGS: McpSettings = { syncEnabled: true, servers: {} }
 
@@ -36,7 +38,7 @@ export function useConnectorSources(activeWorkspaceRoot: string | null): Connect
   const [registryUrl, setRegistryUrl] = useState<string | null>(null)
 
   const loadRegistry = useCallback(async (forceRefresh?: boolean) => {
-    if (typeof window.api.readMarketplaceRegistry !== 'function') {
+    if (!windowHasStudio()) {
       // An older build with no registry API is not a hard failure — the
       // marketplace source degrades to a notice, so treat it as an empty,
       // reachable registry.
@@ -49,7 +51,7 @@ export function useConnectorSources(activeWorkspaceRoot: string | null): Connect
     // panel) mounted.
     setRegistryLoad((current) => (current.status === 'ready' ? current : { status: 'loading' }))
     try {
-      const result = await window.api.readMarketplaceRegistry(forceRefresh ? { forceRefresh: true } : undefined)
+      const result = await extensionsApi.readMarketplaceRegistry(forceRefresh ? { forceRefresh: true } : undefined)
       if (result.ok) {
         // ok / empty / offline-with-cache all carry a (possibly stale) index.
         setRegistryUrl(result.registryUrl ?? null)
@@ -84,8 +86,8 @@ export function useConnectorSources(activeWorkspaceRoot: string | null): Connect
   useEffect(() => {
     const settings = mcpSettingsRef.current
     if (!activeWorkspaceRoot || !settings.syncEnabled) return
-    if (typeof window.api.mcpSync !== 'function') return
-    void window.api.mcpSync({ workspaceRoot: activeWorkspaceRoot, settings }).catch(() => {})
+    if (typeof agentSetupApi.mcpSync !== 'function') return
+    void agentSetupApi.mcpSync({ workspaceRoot: activeWorkspaceRoot, settings }).catch(() => {})
   }, [activeWorkspaceRoot, serverSnapshot])
 
   const installedServerIds = useMemo(

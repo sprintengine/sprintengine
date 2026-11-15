@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+// A stand-in for the `tailscale` CLI, for the harness's paired topology. The
+// containers share a Docker network in 100.64.0.0/10 and each names its
+// interface on it `tailscale0`, so Studio's tailnet listener binds there as it
+// would on a real tailnet; this answers the few CLI questions Studio asks
+// (`status --json`, `whois --json`, `ip`, `version`) from the node list the
+// entry script wrote. Anything else (serve, cert, up) is refused.
+'use strict'
+const { readFileSync } = require('node:fs')
+
+const SUFFIX = 'example.ts.net'
+let config
+try {
+  config = JSON.parse(readFileSync(process.env.STUDIO_TAILNET_FILE || '/tmp/studio-tailnet.json', 'utf8'))
+} catch {
+  process.stderr.write('tailscale (test stand-in): not running on a test tailnet\n')
+  process.exit(1)
+}
+// { self: 'desk-a', nodes: { 'desk-a': '100.100.0.11', ... } }
+const nodes = Object.entries(config.nodes)
+
+function node(name, ip) {
+  return {
+    ID: `n${name}`,
+    PublicKey: `nodekey:${name}`,
+    HostName: name,
+    DNSName: `${name}.${SUFFIX}.`,
+    OS: 'linux',
+    TailscaleIPs: [ip],
+    Online: true,
+    Active: true,
+    LastSeen: new Date().toISOString(),
+  }
+}
+
+const [command, ...args] = process.argv.slice(2)
+const print = (value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+const selfIp = config.nodes[config.self]
+
+switch (command) {
+  case 'version':
+    process.stdout.write('1.80.0\n  test stand-in\n')
+    break
+  case 'ip':
+    process.stdout.write(`${selfIp}\n`)
+    break
+  case 'status': {
+    if (!args.includes('--json')) {
+      for (const [name, ip] of nodes) process.stdout.write(`${ip}  ${name}  tester@  linux  -\n`)
+      break
+    }
+    const self = node(config.self, selfIp)
+    delete self.Online
+    print({
+      Version: '1.80.0',
+      BackendState: 'Running',
+      TailscaleIPs: [selfIp],
+      Self: self,
+      MagicDNSSuffix: SUFFIX,
+      CurrentTailnet: { Name: 'tester@example.com', MagicDNSSuffix: SUFFIX, MagicDNSEnabled: true },
+      Peer: Object.fromEntries(
+        nodes.filter(([name]) => name !== config.self).map(([name, ip]) => [`nodekey:${name}`, node(name, ip)]),
+      ),
+    })
+    break
+  }
+  case 'whois': {
+    const address = args.filter((arg) => !arg.startsWith('-'))[0]?.replace(/:\d+$/u, '')
+    const found = nodes.find(([, ip]) => ip === address)
+    if (!found) {
+      process.stderr.write(`no match for IP:port ${address}\n`)
+      process.exit(1)
+    }
+    const [name, ip] = found
+    print({
+      Node: { ID: 1, StableID: `n${name}CNTRL`, Name: `${name}.${SUFFIX}.`, Addresses: [`${ip}/32`] },
+      UserProfile: { ID: 1, LoginName: 'tester@example.com', DisplayName: 'Tester' },
+    })
+    break
+  }
+  default:
+    process.stderr.write(`tailscale (test stand-in): "${command}" is not available on the test tailnet\n`)
+    process.exit(1)
+}

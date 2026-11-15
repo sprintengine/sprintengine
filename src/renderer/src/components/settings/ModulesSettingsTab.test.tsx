@@ -8,12 +8,19 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import type { MarketplaceUpdateStatesResult, ThirdPartyModuleUninstallInput } from '../../../../shared/electron-api'
+import type { MarketplacePluginUninstallInput, MarketplaceUpdateStatesResult } from '../../../../shared/electron-api'
 import { HOST_API_VERSION } from '../../../../shared/modules/host-api'
 import type { CapabilityManifest, ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { ConfirmDialogProvider } from '../ui/ConfirmDialog'
 import { ModulesSettingsTab } from './ModulesSettingsTab'
+import { COMING_SOON_IDS, MODULE_CATEGORY_GROUPS } from './ModuleControls'
+import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 const registry = {
   getWorkspaceTypeModule: () => null,
@@ -32,6 +39,27 @@ vi.mock('../../modules', async (importOriginal) => ({
   getRendererHost: () => registry,
   onThirdPartyRendererModulesLoaded: () => () => {},
   refreshThirdPartyRendererModules: async () => {},
+}))
+
+// What runs on the window's Studio is changed through it (`module.setTrust`,
+// `module.uninstall`); this stands in for the window's connection.
+vi.mock('../../studio/moduleLifecycle', () => ({
+  windowModuleLifecycle: () => ({
+    setEnabled: async (id: string, enabled: boolean | null) => {
+      enableCalls.push([id, enabled])
+      return setEnabledAnswer
+    },
+    install: async () => ({ ok: false, message: 'not here' }),
+    setTrust: async (id: string, trusted: boolean) => {
+      trustCalls.push([id, trusted])
+      return { ok: true }
+    },
+    uninstall: async (id: string) => {
+      uninstallCalls.push(id)
+      installed = installed.filter((candidate) => candidate.manifest.id !== id)
+      return { ok: true, removedModuleIds: [id] }
+    },
+  }),
 }))
 
 vi.mock('../../modules/third-party-loader', async (importOriginal) => ({
@@ -123,8 +151,11 @@ const UPDATES: MarketplaceUpdateStatesResult = {
 } as MarketplaceUpdateStatesResult
 
 let installed: ThirdPartyModuleView[] = []
+const enableCalls: Array<[string, boolean | null]> = []
+let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string } = { ok: true, module: null }
 const trustCalls: Array<[string, boolean]> = []
-const uninstallCalls: ThirdPartyModuleUninstallInput[] = []
+const uninstallCalls: string[] = []
+const pluginUninstallCalls: MarketplacePluginUninstallInput[] = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
 let host: HTMLElement | null = null
@@ -133,19 +164,26 @@ beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, WEATHER, TAMPERED]
   trustCalls.length = 0
+  enableCalls.length = 0
+  setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
+  pluginUninstallCalls.length = 0
   restartApp.mockClear()
   ;(window as unknown as { api: unknown }).api = {
     listThirdPartyModules: async () => ({ modules: installed, rejected: [] }),
     readMarketplacePluginUpdateStates: async () => UPDATES,
-    setThirdPartyModuleTrust: async (id: string, trusted: boolean) => {
-      trustCalls.push([id, trusted])
-      return { ok: true }
-    },
-    uninstallThirdPartyModule: async (input: ThirdPartyModuleUninstallInput) => {
-      uninstallCalls.push(input)
-      installed = installed.filter((candidate) => candidate.manifest.id !== input.id)
-      return { ok: true, removedModuleIds: [input.id], mcpSettings: { syncEnabled: true, servers: {} } }
+    uninstallMarketplacePlugin: async (input: MarketplacePluginUninstallInput) => {
+      pluginUninstallCalls.push(input)
+      const removed = installed.filter(
+        (candidate) => candidate.origin?.kind !== 'folder' && candidate.origin?.pluginId === input.pluginId,
+      )
+      installed = installed.filter((candidate) => !removed.includes(candidate))
+      return {
+        ok: true,
+        id: input.pluginId,
+        removed: removed.map((candidate) => ({ kind: 'module', id: candidate.manifest.id })),
+        mcpSettings: { syncEnabled: true, servers: {} },
+      }
     },
     restartApp,
     clipboardWriteText: async () => undefined,
@@ -324,6 +362,32 @@ test('an untrusted extension’s details offer Review and trust, and claim nothi
   expect(button('Review and trust', details)).toBeTruthy()
 })
 
+test('an untrusted extension built for an older host API says it needs updating and offers no Review', async () => {
+  // Trusting it would not let it run: the host refuses it before trust is
+  // asked, and the trust write then failed with signing advice that does not
+  // apply. The row says what would help instead.
+  installed = [
+    ...installed,
+    module('old-api', 'Old Api', {
+      trust: 'unsigned',
+      manifest: { engines: { hostApi: HOST_API_VERSION - 1 } },
+      launch: { status: 'blocked_host_api', mainLoaded: false },
+    }),
+  ]
+  await mount()
+  const row = rowOf('Old Api')
+  expect(row.textContent).toContain('Needs updating')
+  expect(row.textContent).toContain(`It needs updating to host API ${HOST_API_VERSION}`)
+  expect(button('Review Old Api', row)).toBeUndefined()
+  await click(button('Old Api'))
+  const details = document.querySelector('[aria-label="Old Api details"]')!
+  expect(button('Review and trust', details)).toBeUndefined()
+  // Nothing to review, so it is not counted or listed as waiting on one.
+  expect(list('Needs review')!.contains(row)).toBe(false)
+  expect(list('Installed')!.contains(row)).toBe(true)
+  expect(panel().querySelector('[role="radio"][aria-label^="Needs review"]')?.textContent).toContain('3')
+})
+
 test('Update appears only for a marketplace install with a newer version, labelled with it', async () => {
   await mount()
   const weather = rowOf('Weather Deck')
@@ -372,7 +436,44 @@ test('built-in modules are folded away until asked for', async () => {
   expect(list('Built in')!.textContent).toContain('Always on')
 })
 
-test('uninstall goes through the channel that handles any install, and forgets the module here', async () => {
+test('a built-in row shows what the Studio runs, and a switch the Studio refused says so and changes nothing', async () => {
+  const manifest = MODULE_CATEGORY_GROUPS.flatMap((group) => group.manifests).find(
+    (candidate) => !candidate.core && !COMING_SOON_IDS.has(candidate.id),
+  )!
+  // The window's copy says off; the Studio holds it on, and it does not run there.
+  useWorkspaceStore.getState().setModuleEnabled(manifest.id, false)
+  const api = (window as unknown as { api: Record<string, unknown> }).api
+  api.listStudioModules = async (): Promise<StudioModuleSummary[]> => [
+    {
+      id: manifest.id,
+      name: manifest.displayName,
+      version: manifest.version,
+      source: 'bundled',
+      enabled: true,
+      running: false,
+      blocked: 'A module it needs is switched off.',
+      methods: [],
+    },
+  ]
+  await mount()
+  await click(button('Built in', panel()))
+  const row = [...list('Built in')!.querySelectorAll('li')].find((li) =>
+    li.textContent?.includes(manifest.displayName),
+  )!
+  expect(row.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true')
+  expect(row.querySelector('[data-testid="module-not-running"]')?.textContent).toBe(
+    'A module it needs is switched off.',
+  )
+  expect(useWorkspaceStore.getState().appSettings.modules?.[manifest.id]).toBe(true)
+
+  setEnabledAnswer = { ok: false, message: 'The choice could not be saved.' }
+  await click(row.querySelector('[role="switch"]'))
+  expect(enableCalls).toContainEqual([manifest.id, false])
+  expect(panel().textContent).toContain('The choice could not be saved.')
+  expect(useWorkspaceStore.getState().appSettings.modules?.[manifest.id]).toBe(true)
+})
+
+test('a module added from a folder is uninstalled by the Studio, and forgotten here', async () => {
   await mount()
   await click(button('More for Decision Log'))
   await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
@@ -382,12 +483,27 @@ test('uninstall goes through the channel that handles any install, and forgets t
   expect(document.body.textContent).toContain('Work it saved in your projects stays')
   await click(confirm)
 
-  expect(uninstallCalls).toHaveLength(1)
-  expect(uninstallCalls[0]?.id).toBe('decision-log')
-  expect(uninstallCalls[0]?.mcpSettings).toBeDefined()
+  expect(uninstallCalls).toEqual(['decision-log'])
+  expect(pluginUninstallCalls).toHaveLength(0)
   const settings = useWorkspaceStore.getState().appSettings
   expect(settings.modules).toEqual({ 'other-ext': false })
   expect(settings.moduleSettings?.['module:decision-log']).toBeUndefined()
   expect(rowOf('PR Radar')).toBeTruthy()
   expect(panel().textContent).not.toContain('Decision Log')
+})
+
+test('a module a plugin put in place is uninstalled with its plugin, carrying the MCP settings', async () => {
+  await mount()
+  await click(button('More for Weather Deck'))
+  await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
+  const confirm = buttons(document.querySelector('[role="alertdialog"], [role="dialog"]')!).find(
+    (candidate) => candidate.textContent?.trim() === 'Uninstall',
+  )
+  await click(confirm)
+
+  expect(uninstallCalls).toHaveLength(0)
+  expect(pluginUninstallCalls).toHaveLength(1)
+  expect(pluginUninstallCalls[0]?.pluginId).toBe('weather')
+  expect(pluginUninstallCalls[0]?.mcpSettings).toBeDefined()
+  expect(panel().textContent).not.toContain('Weather Deck')
 })

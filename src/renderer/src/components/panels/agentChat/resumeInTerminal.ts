@@ -4,6 +4,7 @@ import type { PluginRegistryListEntry } from '../../../../../shared/plugin-manif
 import { showToast } from '../../../store/toastStore'
 import type { AgentState } from '../../../types/workspace'
 import { clientSupports } from '../../../clientCapabilities'
+import { windowChatServices } from './windowChat'
 import { ensureChatWorktree } from '../../../utils/chatWorktreeRestore'
 
 /**
@@ -39,7 +40,7 @@ export async function resumeChatInTerminal(input: {
   // By the chat's identity: main hands over the session it is running, or,
   // for a chat not sent anything since the app started, starts one to read
   // the CLI session from its transcript.
-  const result = await window.api.conversationSessionTerminalHandoff({
+  const result = await windowChatServices().sessions.terminalHandoff({
     workspaceId: input.workspaceId,
     agentId: input.agentId,
   })

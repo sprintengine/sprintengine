@@ -1,3 +1,17 @@
+export type {
+  OwnedSpan,
+  ChangelistOwner,
+  Edit,
+  HunkRange,
+  Changelist,
+} from '../../../packages/studio-protocol/src/public'
+import type {
+  OwnedSpan,
+  ChangelistOwner,
+  Edit,
+  HunkRange,
+  Changelist,
+} from '../../../packages/studio-protocol/src/public'
 // Changelists — the app's own grouping of a repository's changed files (epic
 // `git-commit-window`, T6; mockup 2522 panel 2), and since agent changelists,
 // of a file's individual HUNKS.
@@ -59,63 +73,9 @@
 export const DEFAULT_CHANGELIST_ID = 'default'
 export const DEFAULT_CHANGELIST_NAME = 'Changes'
 
-/**
- * A run of NEW-side lines, in git's own hunk convention: `start` is 1-based and
- * `lines` may be 0 for a pure deletion anchored AFTER line `start` (git writes
- * `+4,0` for "deleted after new line 4", and `+0,0` when the deletion was at
- * the head of the file — which is the one case `start` is 0).
- *
- * A zero-length span is a point between two lines, not a line, so it neither
- * overlaps nor widens a run: it is kept as its own entry and dropped only when
- * the line it is anchored after is itself owned by the same list.
- */
-export type OwnedSpan = { start: number; lines: number }
-
-/** The agent a list was made for. `exited` is a flag the store sets when the
- *  agent's session ends; reconcile then deletes the list if it is also empty. */
-export type ChangelistOwner = {
-  kind: 'agent'
-  agentId: string
-  name: string
-  workspaceId?: string
-  exited?: boolean
-}
-
-/** One minimal changed region of a single tool call, in git hunk convention:
- *  `old*` in the file's coordinates BEFORE the call, `new*` after it. Not the
- *  hunk bounds of a context diff — the changed lines only. */
-export type Edit = {
-  oldStart: number
-  oldLines: number
-  newStart: number
-  newLines: number
-}
 /** The same shape under a name that survives being imported next to a dozen
  *  other `Edit`s. */
 export type ChangelistEdit = Edit
-
-/** The new-side half of a git hunk — the only half ownership is expressed in.
- *  `DiffHunk` (`./hunks`) is assignable to it. */
-export type HunkRange = { newStart: number; newLines: number }
-
-/** The one shape, on disk and on the wire. `paths` are repo-relative and posix
- *  ('src/main/git.ts'), because that is the spelling git reports and the only
- *  one that survives a repository moving between machines. */
-export type Changelist = {
-  id: string
-  name: string
-  /** The list's comment — the composer offers it as the commit message's
-   *  placeholder when the list is active. Absent, never empty. */
-  comment?: string
-  /** WHOLE-file membership: the file's home list. Exclusive across lists. */
-  paths: string[]
-  /** Repo-relative path -> the spans this list owns in a file whose home is a
-   *  DIFFERENT list. Absent, never `{}`; no entry is ever empty. */
-  spans?: Record<string, OwnedSpan[]>
-  active: boolean
-  /** Present on lists made for an agent (`changelistOwnerId`). */
-  owner?: ChangelistOwner
-}
 
 export function createDefaultChangelists(): Changelist[] {
   return [{ id: DEFAULT_CHANGELIST_ID, name: DEFAULT_CHANGELIST_NAME, paths: [], active: true }]

@@ -66,6 +66,8 @@ export function scheduledAgentStatusLine(
   const failure = scheduledAgentFailureUnseen(agent)
   if (failure) return { text: `Last run failed — ${failure}`, tone: 'error' }
   if (agent.pausedAt !== undefined) return { text: pausedSinceWords(agent.pausedAt, now), tone: 'default' }
+  // Its machine lacks something it needs: its times pass without a run until then.
+  if (agent.waiting) return { text: `Waiting: ${agent.waiting}`, tone: 'default' }
   return { text: scheduledAgentScheduleWords(agent.schedule) ?? agent.schedule.cron, tone: 'default' }
 }
 

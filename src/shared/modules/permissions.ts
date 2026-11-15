@@ -22,7 +22,7 @@
 //   snapshots/events (`workspaceSyncGetSnapshot`, `onWorkspaceSyncEvent`),
 //   window state, git read models (`getGitStatus`, branches/history/graph/
 //   worktree lists), backlog reads, knowledge/memory reads, terminal session
-//   lists (`terminalList`, `terminalStatus`), workspace backup reads.
+//   lists (`terminal.list`, `terminal.status`), workspace backup reads.
 // - `ipc:workspace-write` — changing workspace and project state through the
 //   studio: `workspaceSyncDispatch`, filesystem mutation routes (`writefile`,
 //   create/rename/copy/delete), git mutations (stage/commit/push/branch/
@@ -41,17 +41,17 @@
 // scope. `ipc:invoke` remains valid for existing manifests and means "any
 // internal API, including everything above"; the consent UI flags it as broad.
 //
-// ## The own-module bridge
+// ## A module's own methods
 //
-// `module:bridge` is the narrow gate for the renderer→module-main bridge
-// (`RendererHost.invoke` → the module's own `registerIpc` channels; see
-// shared/modules/bridge.ts): a module's window code talking to its own
-// background code, and nothing of the app's. It is the one place the main-side
-// dispatcher actually checks a declaration, because the bridge is the
-// highest-capability surface and the check is one map lookup. `ipc:invoke`
-// still opens the bridge, so a manifest written before the split keeps
-// working, but a module that only bridges to itself declares `module:bridge`
-// and its consent prompt stops saying "any of the app's internal APIs".
+// `module:bridge` is the narrow gate for a module's declared methods
+// (`MainHost.registerMethods`, called by its window code through
+// `RendererHost.methods` over the Studio protocol; see
+// shared/modules/methods.ts): a module's window code talking to its own
+// background code, and nothing of the app's. The kernel checks it when a
+// third-party module declares methods. `ipc:invoke` still opens them, so a
+// manifest written before the split keeps working, but a module that only
+// talks to itself declares `module:bridge` and its consent prompt stops saying
+// "any of the app's internal APIs".
 // Unknown scopes stay forward-compatible: they validate structurally and are
 // surfaced verbatim as unrecognized.
 
@@ -65,9 +65,9 @@ export type CapabilityPermission =
   | 'ipc:workspace-write'
   | 'ipc:settings'
   | 'ipc:invoke'
-  // The renderer→own-main bridge alone (`RendererHost.invoke` to the module's
-  // own `registerIpc` channels), split out of `ipc:invoke`. Checked by the
-  // bridge dispatcher, which also still accepts `ipc:invoke`.
+  // A module's own declared methods alone (`MainHost.registerMethods`, called
+  // through `RendererHost.methods`), split out of `ipc:invoke`. Checked when a
+  // third-party module declares methods, which `ipc:invoke` also allows.
   | 'module:bridge'
   // Backlog-focused disclosure scopes. Finer-grained than the broad
   // `ipc:workspace-read`/`ipc:workspace-write` areas Backlog reads and writes

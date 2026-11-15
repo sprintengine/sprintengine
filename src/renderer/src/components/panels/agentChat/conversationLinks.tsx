@@ -15,6 +15,7 @@ import { ConversationImage } from './ConversationImage'
 import { renderMarkdown } from '../../../utils/markdown'
 import { FOCUS_RING_CLASS } from '../../ui/tokens'
 import { useConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 import { clientSupports, hostPlatform } from '../../../clientCapabilities'
 import { revealLabel } from '../../../utils/revealLabel'
 import { parseQuoteHref } from '../../../../../shared/chat-quotes'
@@ -136,7 +137,7 @@ export const ConversationFileLink = React.memo(function ConversationFileLink({
   // A path from a conversation on another machine names a file over there;
   // resolving it here could open a same-named local file.
   const transport = useConversationTransport()
-  const localFiles = transport.capabilities.localFiles
+  const localFiles = useShellReach().openDocument
   const target = classifyLinkToken(token, {
     source,
     cwd: context?.cwd,

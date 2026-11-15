@@ -1,17 +1,12 @@
-// Putting the helper and its Node into a distribution, and starting it.
+// Putting the Studio server and its Node into a distribution, and starting it.
 //
 // Everything lands under `~/.local/share/sprintengine-studio/`:
 //
 //   runtime/node-<version>/bin/node    the pinned Node (`wsl-node-runtime.ts`)
-//   <appVersion>/wsl-helper/…          the helper
-//   <appVersion>/hooks/…               the hook reporters and status line
-//   <appVersion>/automation/…          the MCP bridge
-//   <appVersion>/plugin/…              the Claude plugin copy (written later,
-//                                      by the helper itself; see `wsl-host.ts`)
-//   server-<appVersion>/…              the Studio server a distribution's chats
-//                                      run on (phase 7), a tree of its own with
-//                                      its own marker, so a person who uses WSL
-//                                      only for terminals never receives it
+//   server-<appVersion>/…              the Studio server the distribution runs
+//                                      (phase 7), with the hooks, the MCP
+//                                      bridge and the plugin sources its
+//                                      terminals' agents use
 //   data/, data-<profile>/             that server's data, never pruned
 //
 // Each tree is installed the same way, and atomically:
@@ -27,10 +22,6 @@
 //      SSH machine's install runs too (`remote-install.ts`).
 //
 // A later start trusts a tree only when its marker holds the expected digest.
-// When a start with a trusted Node still fails to run the helper, the Node
-// marker is removed, so the next start installs Node again rather than
-// failing the same way forever.
-//
 // Why the archive does not follow the script on one stdin: `sh` on Debian and
 // Ubuntu is dash, which reads its script from a pipe in blocks, so the first
 // bytes of an archive written after the script would be swallowed as script.
@@ -68,15 +59,8 @@ export type WslLaunchScriptInput = {
   appVersion: string
   /** The pinned archives' digests; the Node marker must hold one of them. */
   nodeDigests: readonly string[]
-  /** The digest of the tree this entry runs from: the helper's payload, or the server's. */
+  /** The digest of the server tree; a missing or other one is reported as `app`. */
   appDigest: string
-  profile: string
-  /**
-   * What to start: the helper (the default), or the Studio server, which
-   * reads a bootstrap envelope on stdin (`--bootstrap stdio`). Either way a
-   * missing tree is reported as `app`.
-   */
-  entry?: 'helper' | 'server'
 }
 
 export const NEED_MARKER = '@@SPRINTENGINE_NEED'
@@ -85,36 +69,32 @@ export const STAGED_MARKER = '@@SPRINTENGINE_STAGED'
 export const NEEDS_INSTALL_EXIT = 3
 
 /**
- * The script `sh -s` runs to start the helper: it `exec`s Node on the helper
- * when both trees are installed with the expected digests, and otherwise
+ * The script `sh -s` runs to start the Studio server, which then reads its
+ * bootstrap envelope on stdin (`--bootstrap stdio`): it `exec`s Node on the
+ * server when both trees are installed with the expected digests, and otherwise
  * prints what is missing (with `uname -m`, and whether `xz` is there to unpack
  * the smaller Node archive) and exits 3.
  */
 export function buildLaunchScript(input: WslLaunchScriptInput): string {
   const version = token(input.appVersion, 'The app version')
-  const profile = token(input.profile, 'The profile id')
   const nodeDigests = input.nodeDigests.map((digest) => hex(digest, 'A Node digest')).join('|')
-  const server = input.entry === 'server'
-  const entryFile = server ? 'server.cjs' : 'wsl-helper/helper.mjs'
   return [
     'set -u',
     `base="$HOME/${WSL_DATA_REL}"`,
     `rt="$base/runtime/node-${WSL_NODE_VERSION}"`,
-    `app="$base/${server ? serverTreeName(version) : version}"`,
+    `app="$base/${serverTreeName(version)}"`,
     "need=''",
     'ok=0',
     `[ -x "$rt/bin/node" ] && case "$(cat "$rt/.ready" 2>/dev/null)" in ${nodeDigests}) ok=1 ;; esac`,
     '[ "$ok" = 1 ] || need="$need node"',
-    `{ [ -f "$app/${entryFile}" ] && [ "$(cat "$app/.ready" 2>/dev/null)" = '${hex(input.appDigest, 'The app digest')}' ]; } || need="$need app"`,
+    `{ [ -f "$app/server.cjs" ] && [ "$(cat "$app/.ready" 2>/dev/null)" = '${hex(input.appDigest, 'The app digest')}' ]; } || need="$need app"`,
     'if [ -n "$need" ]; then',
     '  xz=0; command -v xz >/dev/null 2>&1 && xz=1',
     `  printf '${NEED_MARKER}%s arch=%s xz=%s\\n' "$need" "$(uname -m)" "$xz"`,
     `  exit ${NEEDS_INSTALL_EXIT}`,
     'fi',
-    server
-      ? // The envelope follows on stdin, once the server has said `boot`.
-        'exec "$rt/bin/node" "$app/server.cjs" --bootstrap stdio'
-      : `exec "$rt/bin/node" "$app/wsl-helper/helper.mjs" --profile '${profile}'`,
+    // The envelope follows on stdin, once the server has said `boot`.
+    'exec "$rt/bin/node" "$app/server.cjs" --bootstrap stdio',
   ].join('\n')
 }
 
@@ -185,7 +165,7 @@ export function tarArgs(kind: 'node' | 'app', stageId: string, pkg?: WslNodePack
 
 export type CommitInput =
   | { kind: 'node'; stageId: string; digest: string }
-  | { kind: 'app' | 'server'; stageId: string; digest: string; appVersion: string }
+  | { kind: 'server'; stageId: string; digest: string; appVersion: string }
 
 /**
  * Checks the staged tree, marks it, moves it into place under the install
@@ -197,21 +177,11 @@ export type CommitInput =
 export function buildCommitScript(input: CommitInput): string {
   const id = token(input.stageId, 'The stage id')
   const digest = hex(input.digest, 'The digest')
-  const final =
-    input.kind === 'node'
-      ? `$base/${NODE_RUNTIME_REL}`
-      : input.kind === 'server'
-        ? `$base/${serverTreeName(input.appVersion)}`
-        : `$base/${token(input.appVersion, 'The app version')}`
+  const final = input.kind === 'node' ? `$base/${NODE_RUNTIME_REL}` : `$base/${serverTreeName(input.appVersion)}`
   // Each kind prunes only its own trees. `data*/` matches none of these, so a
   // person's chats are never pruned.
   const prune = PRUNE_GLOBS[input.kind]
-  const check =
-    input.kind === 'node'
-      ? checkLines('node', {})
-      : input.kind === 'server'
-        ? checkLines('server', { appVersion: input.appVersion })
-        : ['[ -f "$stage/wsl-helper/helper.mjs" ] || fail "payload incomplete"']
+  const check = input.kind === 'node' ? checkLines('node', {}) : checkLines('server', { appVersion: input.appVersion })
   return [
     'set -u',
     `base="$HOME/${WSL_DATA_REL}"`,
@@ -232,14 +202,12 @@ export function buildCommitScript(input: CommitInput): string {
     '  place "$stage" "$final" || fail move',
     'fi',
     ...pruneLines(prune),
+    // The retired WSL helper's trees (`<appVersion>/`) go with a server's
+    // install, unless something still runs from one.
+    ...(input.kind === 'server' ? pruneLines(PRUNE_GLOBS.app) : []),
     'lock_drop',
     `echo ${COMMITTED_MARKER}`,
   ].join('\n')
-}
-
-/** Drops the Node ready marker after a start that could not run the helper. */
-export function buildUnreadyScript(): string {
-  return `rm -f "$HOME/${WSL_DATA_REL}/runtime/node-${WSL_NODE_VERSION}/.ready"`
 }
 
 // ── The app payload ─────────────────────────────────────────────────────────

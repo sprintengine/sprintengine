@@ -12,7 +12,7 @@ export type GuardedChat = {
 }
 
 export type ChatFolderGuardDeps = {
-  /** The pool this process keeps, or null (git.ts `activeWorktreePool`). */
+  /** The pool the Studio core keeps (server/core/studio-worktree-pool.ts), or null. */
   pool: () => Pick<WorktreePoolService, 'load' | 'awaitsChat'> | null
   chat: (workspaceId: string) => GuardedChat | null | undefined
   /** git.ts `restoreGitWorktree`: the pool's `reclaim` first, a plain worktree at the path failing that. */
@@ -25,8 +25,8 @@ export type ChatFolderGuard = (input: {
 }) => Promise<{ ok: true } | { ok: false; message: string }>
 
 /**
- * The last word before an agent runs in a chat's folder, asked by main's
- * conversation runtime for every session start and every turn, whoever sent
+ * The last word before an agent runs in a chat's folder, asked by the Studio
+ * core's conversation runtime for every session start and every turn, whoever sent
  * it: a window, a paired phone, a schedule, another agent. A worktree chat
  * whose pool slot was given back while it sat idle (pool-idle.ts) gets its
  * branch checked out again at the same path first, so the agent's CLI finds

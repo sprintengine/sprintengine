@@ -66,6 +66,11 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps) {
   let writeSequence = 0
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
   let pendingFile: WorkspaceRegistryFile | null = null
+  // Whether everything the pending write holds beyond what is already written
+  // or on its way is `lazy`: nothing waits on such a write.
+  let pendingLazy = false
+  // Callers waiting for the pending write to land (`whenWritten`).
+  let pendingWaiters: Array<() => void> = []
   // The content key of the newest file accepted for writing (pending, in
   // flight or on disk), so each commit stringifies only its own side. The file
   // read at boot is keyed lazily: a session that never writes never pays for it.
@@ -152,6 +157,7 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps) {
     acceptedContent = content
     pendingFile = file
     if (options.lazy && pendingTimer) return
+    pendingLazy = options.lazy === true
     if (pendingTimer) clearTimeout(pendingTimer)
     pendingTimer = setTimeout(
       () => {
@@ -160,6 +166,19 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps) {
       },
       options.lazy ? lazyMs : debounceMs,
     )
+  }
+
+  /**
+   * Settles once every change accepted so far is on disk, `lazy` ones aside:
+   * the pending write lands on its own debounce, never sooner, so a burst
+   * still writes once. What answers a change it was asked for waits on this,
+   * so an answer never promises what a crash could still take back. A write
+   * that fails settles it too: the failure is reported as a diagnostic, and
+   * memory stays authoritative, as for any write.
+   */
+  function whenWritten(): Promise<void> {
+    if (!pendingFile || pendingLazy) return writeQueue.catch(() => undefined)
+    return new Promise((resolve) => pendingWaiters.push(resolve))
   }
 
   /** Persist the pending write immediately and await it — used on `before-quit`. */
@@ -176,6 +195,9 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps) {
     const file = pendingFile
     if (!file) return writeQueue
     pendingFile = null
+    pendingLazy = false
+    const waiters = pendingWaiters
+    pendingWaiters = []
     const content = acceptedContent
     // Writes serialize behind one another and each gets its own temp file: two
     // mutations in the same tick would otherwise race on a shared temp path and
@@ -206,10 +228,13 @@ export function createWorkspaceRegistryStore(deps: WorkspaceRegistryStoreDeps) {
           })
         }
       })
+      .finally(() => {
+        for (const waiter of waiters) waiter()
+      })
     return writeQueue
   }
 
-  return { read, write, flush, filePath }
+  return { read, write, whenWritten, flush, filePath }
 }
 
 /**
@@ -228,6 +253,7 @@ export function createInMemoryWorkspaceRegistryStore(
     write: (file) => {
       current = file
     },
+    whenWritten: async () => undefined,
     flush: async () => undefined,
     filePath: () => `<memory>/${WORKSPACE_REGISTRY_FILE_NAME}`,
     current: () => current,

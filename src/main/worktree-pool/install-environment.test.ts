@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
+import { captureLoginEnv } from '../../server/wsl/distribution/login-env.mjs'
 import {
   cachedDependencyInstallEnvironment,
   dependencyInstallEnvironment,

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ChipButton, GhostButton, IconButton, Skeleton, Tooltip, TruncatedText } from '../ui'
 import { basename } from '../../utils/paths'
 import { inertHtml } from '../../utils/inertHtml'
+import { filesApi } from '../../studio/files'
 
 // The generated-HTML artifact viewer: one file on disk, live-rendered in a
 // scripts-off sandbox, with device widths, zoom and an optional source view.
@@ -192,13 +193,13 @@ export function HtmlArtifactFrame({
 
     const load = async () => {
       try {
-        const exists = await window.api.pathExists(absolutePath)
+        const exists = await filesApi.pathExists(absolutePath)
         if (cancelled) return
         if (!exists) {
           setFrameState((prev) => (prev.kind === 'deleted' ? prev : { kind: 'deleted' }))
           return
         }
-        const content = await window.api.readfile(absolutePath)
+        const content = await filesApi.readfile(absolutePath)
         if (cancelled) return
         if (!content.trim()) {
           // Exists but empty — the agent is still writing it. A designed
@@ -223,7 +224,7 @@ export function HtmlArtifactFrame({
     }
 
     void load()
-    void window.api
+    void filesApi
       .watchPath(watchDirectoryPath, () => {
         void load()
       })
@@ -245,7 +246,7 @@ export function HtmlArtifactFrame({
   const onOpenInBrowser = async () => {
     setBrowserOpenState({ kind: 'opening' })
     try {
-      const exists = await window.api.pathExists(absolutePath)
+      const exists = await filesApi.pathExists(absolutePath)
       if (!exists) {
         setBrowserOpenState({
           kind: 'failed',

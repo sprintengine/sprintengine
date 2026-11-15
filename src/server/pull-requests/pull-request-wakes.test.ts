@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 
+import { randomUUID } from 'node:crypto'
+
 import { test } from 'vitest'
 
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import type { PullRequestWake } from './pull-request-watch'
+import { createPullRequestUntoldWakes, type PullRequestUntoldWakes } from './pull-request-untold'
 import { createPullRequestWakes, type PullRequestWakesDeps } from './pull-request-wakes'
 
 const CHAT = { workspaceId: 'ws-1', agentId: 'agent-1' }
@@ -38,7 +41,20 @@ const wake = (
   stop,
 })
 
-function setUp(overrides: Partial<PullRequestWakesDeps> = {}) {
+/** What the record keeps of untold news, in memory, under ids no two runs share. */
+function untoldSource(untold: PullRequestUntoldWakes): PullRequestWakesDeps['untold'] {
+  return {
+    chats: async () => untold.chats(),
+    next: async (key) => {
+      const message = untold.next(key, () => `pull-request-watch:${randomUUID()}`)
+      return message && { commandId: message.commandId, wakes: message.wakes }
+    },
+    told: (key, commandId) => void untold.told(key, commandId),
+    forget: (key) => void untold.forget(key),
+  }
+}
+
+function setUp(overrides: Partial<PullRequestWakesDeps> = {}, untold = createPullRequestUntoldWakes()) {
   let nowMs = NOW
   let seq = 0
   const timers = new Map<number, { at: number; run: () => void }>()
@@ -69,10 +85,17 @@ function setUp(overrides: Partial<PullRequestWakesDeps> = {}) {
       return seq
     },
     clearTimer: (handle) => void timers.delete(handle as number),
+    untold: untoldSource(untold),
     ...overrides,
   })
   return {
     wakes,
+    untold,
+    /** News the record found: kept as untold, then the wakes hear of it. */
+    tell(news: PullRequestWake) {
+      untold.add(CHAT, news)
+      wakes.deliver({ conversation: CHAT, wake: news })
+    },
     sent,
     gone,
     setSessions: (next: ConversationSessionSummary[]) => void (sessions = next),
@@ -100,27 +123,28 @@ function setUp(overrides: Partial<PullRequestWakesDeps> = {}) {
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
 test('news for an idle chat goes at once, as one Studio message', async () => {
-  const { wakes, sent } = setUp()
-  wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'behind' }]) })
+  const { tell, untold, sent } = setUp()
+  tell(wake(234, [{ kind: 'behind' }]))
   await settle()
   assert.equal(sent.length, 1)
   assert.match(sent[0].text, /^\[SprintEngine Studio\] Pull request #234 is behind main/)
   assert.match(sent[0].commandId, /^pull-request-watch:/)
-  assert.equal(wakes.pendingCount(CHAT), 0)
+  assert.deepEqual(untold.chats(), [], 'told, nothing is left to tell')
 })
 
 test('a running turn is waited out, and everything learned meanwhile goes as one message when it ends', async () => {
-  const { wakes, sent, setSessions, emit, advance } = setUp()
+  const { tell, untold, sent, setSessions, emit, advance } = setUp()
   setSessions([session({ status: 'active', phase: 'running' })])
-  wakes.deliver({
-    conversation: CHAT,
-    wake: wake(234, [{ kind: 'checks-failed', checks: [{ name: 'Build', outcome: 'FAILURE', url: null }] }]),
-  })
-  wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'behind' }]) })
-  wakes.deliver({ conversation: CHAT, wake: wake(240, [{ kind: 'conflicting' }]) })
+  tell(wake(234, [{ kind: 'checks-failed', checks: [{ name: 'Build', outcome: 'FAILURE', url: null }] }]))
+  tell(wake(234, [{ kind: 'behind' }]))
+  tell(wake(240, [{ kind: 'conflicting' }]))
   await settle()
   assert.equal(sent.length, 0, 'never into a running turn')
-  assert.equal(wakes.pendingCount(CHAT), 2)
+  assert.deepEqual(
+    [234, 240].map((number) => untold.of(`https://github.com/acme/app/pull/${number}`).length),
+    [1, 1],
+    'kept, one entry a pull request',
+  )
   setSessions([session()])
   emit({ type: 'turn_completed' })
   await advance(1_500)
@@ -134,9 +158,9 @@ test('a running turn is waited out, and everything learned meanwhile goes as one
 })
 
 test('a chat waiting on the person is not woken over the question', async () => {
-  const { wakes, sent, setSessions, advance } = setUp()
+  const { tell, sent, setSessions, advance } = setUp()
   setSessions([session({ status: 'awaiting_approval', phase: 'waiting_for_approval' })])
-  wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'behind' }]) })
+  tell(wake(234, [{ kind: 'behind' }]))
   await advance(60_000)
   assert.equal(sent.length, 0)
   setSessions([session()])
@@ -147,13 +171,13 @@ test('a chat waiting on the person is not woken over the question', async () => 
 test('a settled or deleted chat is never woken: its watches stop instead', async () => {
   const settled = setUp()
   settled.setChat({ settled: true })
-  settled.wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'merged' }], 'merged') })
+  settled.tell(wake(234, [{ kind: 'merged' }], 'merged'))
   await settle()
   assert.deepEqual(settled.sent, [])
   assert.deepEqual(settled.gone, ['agent-1'])
   const deleted = setUp()
   deleted.setChat(null)
-  deleted.wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'behind' }]) })
+  deleted.tell(wake(234, [{ kind: 'behind' }]))
   await settle()
   assert.deepEqual(deleted.sent, [])
   assert.deepEqual(deleted.gone, ['agent-1'])
@@ -161,10 +185,10 @@ test('a settled or deleted chat is never woken: its watches stop instead', async
 
 test('a usage limit holds the wake until a little after it resets', async () => {
   let limited = true
-  const { wakes, sent, advance } = setUp({
+  const { tell, sent, advance } = setUp({
     usageLimit: () => ({ limited, resetsAt: limited ? NOW + 10 * 60_000 : null }),
   })
-  wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'behind' }]) })
+  tell(wake(234, [{ kind: 'behind' }]))
   await settle()
   assert.equal(sent.length, 0)
   await advance(10 * 60_000)
@@ -174,22 +198,83 @@ test('a usage limit holds the wake until a little after it resets', async () => 
   assert.equal(sent.length, 1)
 })
 
-test('a send refused as busy goes again when the turn ends; news that came meanwhile rides along', async () => {
-  const { wakes, sent, setAnswer, setSessions, emit, advance } = setUp()
+test('a send refused as busy goes again, as it was and under the same id, when the turn ends; news that came meanwhile follows', async () => {
+  const { tell, sent, setAnswer, setSessions, emit, advance } = setUp()
   // A turn that started between the look and the send.
   setAnswer({ ok: false, code: 'busy' })
-  wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'behind' }]) })
+  tell(wake(234, [{ kind: 'behind' }]))
   await settle()
   assert.equal(sent.length, 1)
   setSessions([session({ status: 'active', phase: 'running' })])
-  wakes.deliver({ conversation: CHAT, wake: wake(234, [{ kind: 'conflicting' }]) })
+  tell(wake(234, [{ kind: 'conflicting' }]))
   await settle()
   assert.equal(sent.length, 1)
   setSessions([session()])
   setAnswer({ ok: true })
   emit({ type: 'turn_completed' })
   await advance(1_500)
-  assert.equal(sent.length, 2)
-  assert.match(sent[1].text, /- It is behind main[^\n]*\n- It conflicts with main/)
-  assert.notEqual(sent[0].commandId, sent[1].commandId, 'each send is its own command')
+  assert.equal(sent.length, 3)
+  assert.equal(sent[1].commandId, sent[0].commandId, 'the same message, so the chat takes it once')
+  assert.equal(sent[1].text, sent[0].text)
+  assert.match(sent[2].text, /conflicts with main/)
+  assert.doesNotMatch(sent[2].text, /behind main/)
+  assert.notEqual(sent[2].commandId, sent[1].commandId, 'the news after it is a command of its own')
+})
+
+test('news the last run did not get to tell goes at the next start, a message already sent under its own id', async () => {
+  const untold = createPullRequestUntoldWakes()
+  // The first run sends, and stops before the chat answers.
+  const first = setUp({ send: () => new Promise(() => undefined) }, untold)
+  first.tell(wake(234, [{ kind: 'behind' }]))
+  await settle()
+  untold.add(CHAT, wake(240, [{ kind: 'conflicting' }]))
+  first.wakes.dispose()
+
+  const next = setUp({}, untold)
+  await next.wakes.resume()
+  await settle()
+  await settle()
+  assert.equal(next.sent.length, 2)
+  assert.match(next.sent[0].commandId, /^pull-request-watch:/)
+  assert.match(next.sent[0].text, /behind main/)
+  assert.doesNotMatch(next.sent[0].text, /conflicts/, 'the message as the first run sent it, which its id names')
+  assert.match(next.sent[1].text, /conflicts with main/)
+  assert.notEqual(next.sent[1].commandId, next.sent[0].commandId, 'the news after it is a command of its own')
+  assert.deepEqual(untold.chats(), [])
+})
+
+test('a message whose id could not be written is not sent, and is tried again later', async () => {
+  const untold = createPullRequestUntoldWakes()
+  let writable = false
+  const source = untoldSource(untold)
+  const { tell, sent, advance } = setUp(
+    {
+      untold: {
+        ...source,
+        next: async (key) => {
+          if (!writable) throw new Error('disk full')
+          return source.next(key)
+        },
+      },
+    },
+    untold,
+  )
+  tell(wake(234, [{ kind: 'behind' }]))
+  await settle()
+  assert.deepEqual(sent, [], 'a send under an id the file does not hold could be told twice')
+  writable = true
+  await advance(60_000)
+  assert.equal(sent.length, 1)
+})
+
+test('at a start, a chat the records do not name yet keeps its news', async () => {
+  const untold = createPullRequestUntoldWakes()
+  untold.add(CHAT, wake(234, [{ kind: 'behind' }]))
+  const { wakes, sent, gone, setChat } = setUp({}, untold)
+  setChat(null)
+  await wakes.resume()
+  await settle()
+  assert.deepEqual(sent, [])
+  assert.deepEqual(gone, [], 'its watches are not stopped either')
+  assert.equal(untold.chats().length, 1)
 })

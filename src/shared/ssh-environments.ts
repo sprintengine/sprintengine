@@ -5,6 +5,7 @@
 //
 // Pure and shared: no fs, no electron.
 
+import type { StudioProtocolWindow } from '../../packages/studio-protocol/src/public'
 import type { HostGhStatus } from './host-gh'
 
 /** The channels, all owned by main (it holds the SSH sessions and their prompts). */
@@ -100,9 +101,17 @@ export type SshEnvironmentSummary = SavedSshEnvironment & {
   stateText: string
   /** Whether a step is running now (the working mark shows only then). */
   working: boolean
-  /** What can be done about it, when something can: Connect, Update, Use another folder. */
-  action: 'connect' | 'upgrade' | null
+  /**
+   * What can be done about it, when something can: Connect, Update (an older
+   * server started outside this app), or Retry an update that did not start.
+   */
+  action: 'connect' | 'upgrade' | 'retry-update' | null
   server: { version: string; origin: string; startedBy: string | null } | null
+  /**
+   * The server's Studio protocol window, as its record last said: what the
+   * environment list decides compatibility from. Null before one was read.
+   */
+  protocol?: StudioProtocolWindow | null
   /** Facts about the machine for Settings: its OS, and what keeps the server running. */
   notes: string[]
   /**

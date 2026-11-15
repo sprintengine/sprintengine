@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { bindTerminalClipboardHandlers, claudeImagePasteKey } from './terminalClipboard'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../studio/terminals.double'
+
+vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
 
 test('terminalClipboard', async () => {
   function mouseEvent(type: string, options: { button?: number; ctrlKey?: boolean } = {}): MouseEvent {
@@ -22,6 +25,9 @@ test('terminalClipboard', async () => {
     let selection = 'copied text'
     let clearedSelection = 0
 
+    terminalsDouble.writeTerminal = async (_sessionId: string, text: string) => {
+      writes.push(text)
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -30,9 +36,6 @@ test('terminalClipboard', async () => {
             clipboardText = text
           },
           clipboardReadText: async () => clipboardText,
-          terminalWrite: async (_sessionId: string, text: string) => {
-            writes.push(text)
-          },
         },
       },
     })
@@ -81,6 +84,9 @@ test('terminalClipboard', async () => {
     let clearedSelection = 0
     let writes = 0
 
+    terminalsDouble.writeTerminal = async () => {
+      writes += 1
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -89,9 +95,6 @@ test('terminalClipboard', async () => {
             clipboardText = text
           },
           clipboardReadText: async () => 'paste text',
-          terminalWrite: async () => {
-            writes += 1
-          },
         },
       },
     })
@@ -129,15 +132,15 @@ test('terminalClipboard', async () => {
     const container = new EventTarget() as HTMLElement
     const writes: string[] = []
 
+    terminalsDouble.writeTerminal = async (_sessionId: string, text: string) => {
+      writes.push(text)
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         api: {
           clipboardWriteText: async () => {},
           clipboardReadText: async () => 'trackpad paste',
-          terminalWrite: async (_sessionId: string, text: string) => {
-            writes.push(text)
-          },
         },
       },
     })
@@ -172,6 +175,9 @@ test('terminalClipboard', async () => {
     let copied = 0
     let clearedSelection = 0
 
+    terminalsDouble.writeTerminal = async (_sessionId: string, text: string) => {
+      writes.push(text)
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -181,9 +187,6 @@ test('terminalClipboard', async () => {
             clipboardText = text
           },
           clipboardReadText: async () => clipboardText,
-          terminalWrite: async (_sessionId: string, text: string) => {
-            writes.push(text)
-          },
         },
       },
     })
@@ -229,6 +232,9 @@ test('terminalClipboard', async () => {
     const writes: string[] = []
     let selection = 'remembered copy'
 
+    terminalsDouble.writeTerminal = async (_sessionId: string, text: string) => {
+      writes.push(text)
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
@@ -238,9 +244,6 @@ test('terminalClipboard', async () => {
           },
           clipboardReadText: async () => {
             throw new Error('clipboard read unavailable')
-          },
-          terminalWrite: async (_sessionId: string, text: string) => {
-            writes.push(text)
           },
         },
       },
@@ -296,15 +299,15 @@ test('terminalClipboard', async () => {
     const writes: string[] = []
     const ptyWrites: string[] = []
 
+    terminalsDouble.writeTerminal = async (_sessionId: string, text: string) => {
+      ptyWrites.push(text)
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         api: {
           clipboardWriteText: async () => {},
           clipboardReadText: async () => '',
-          terminalWrite: async (_sessionId: string, text: string) => {
-            ptyWrites.push(text)
-          },
         },
       },
     })
@@ -376,15 +379,15 @@ test('pasted text goes through xterm, never straight to the pty', async () => {
   const container = new EventTarget() as HTMLElement
   const pasted: string[] = []
   const ptyWrites: string[] = []
+  terminalsDouble.writeTerminal = async (_sessionId: string, text: string) => {
+    ptyWrites.push(text)
+  }
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
       api: {
         clipboardWriteText: async () => {},
         clipboardReadText: async () => '',
-        terminalWrite: async (_sessionId: string, text: string) => {
-          ptyWrites.push(text)
-        },
       },
     },
   })

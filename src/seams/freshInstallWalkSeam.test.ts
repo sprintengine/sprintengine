@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type {
   AgentCli,
   AgentCliAvailabilityMap,
@@ -242,7 +242,7 @@ test('freshInstallWalkSeam', async () => {
     })
     mockPty.spawnCalls = []
     try {
-      const result = await runtime.ipcHandlers.spawnTerminal(mockSender as unknown as WebContents, {
+      const result = await runtime.sessions.spawnTerminal(mockSender, {
         sessionId: input.sessionId,
         cols: 120,
         rows: 30,
@@ -258,7 +258,7 @@ test('freshInstallWalkSeam', async () => {
       const spawnCalls = [...mockPty.spawnCalls]
       const scriptPath = spawnCalls[0]?.args.at(-1)
       const startupScript = scriptPath === undefined ? null : await readFile(String(scriptPath), 'utf8')
-      if (result.ok) runtime.ipcHandlers.killTerminal(input.sessionId)
+      if (result.ok) runtime.sessions.killTerminal(input.sessionId)
       return { result, spawnCalls, startupScript }
     } finally {
       runtimeModule.__setAgentCliPreflightForTest(null)
@@ -375,7 +375,7 @@ test('freshInstallWalkSeam', async () => {
     assert.ok(/exit 127; fi;/.test(script), `the guard must exit rather than fall through: ${script}`)
   }
 
-  function createMockWebContents(): {
+  function createMockWebContents(): TerminalViewer & {
     isDestroyed(): boolean
     send(channel: string, payload: unknown): void
     sent: SentEvent[]
@@ -383,6 +383,8 @@ test('freshInstallWalkSeam', async () => {
     return {
       sent: [],
       isDestroyed: () => false,
+      isGone: () => false,
+      deliver: () => undefined,
       send(channel: string, payload: unknown): void {
         this.sent.push({ channel, payload })
       },

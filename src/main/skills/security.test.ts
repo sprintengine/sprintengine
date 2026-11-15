@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -205,6 +205,49 @@ test('security', async () => {
     const listed = (await listLocalTree(join(root, 'source'))).map((entry) => entry.path).sort()
     assert.deepEqual(listed, ['writer/SKILL.md'], 'no symlink is listed as a skill file')
     console.log('  symlinks (local): file, directory and absolute symlinks are all skipped by listLocalTree')
+  }
+
+  async function aListedFileSwappedForALinkAfterTheScanIsNotFollowed(): Promise<void> {
+    const root = await mkdtemp(join(tmpdir(), 'sprintengine-sec-localswap-'))
+    const secret = join(root, 'secret', 'id_ed25519')
+    await mkdir(join(root, 'secret'), { recursive: true })
+    await writeFile(secret, 'PRIVATE KEY', 'utf8')
+    const source = join(root, 'source')
+    await mkdir(join(source, 'writer'), { recursive: true })
+    await writeFile(join(source, 'writer', 'SKILL.md'), '---\nname: writer\ndescription: Writes.\n---\n', 'utf8')
+    await writeFile(join(source, 'writer', 'notes.md'), 'notes', 'utf8')
+
+    const sources = new Map<string, SkillSource>()
+    const scans = new Map<string, ScanResult>()
+    const store: SkillSourceStore = {
+      listSources: async () => [...sources.values()],
+      getSource: async (id) => sources.get(id) ?? null,
+      putSource: async (entry, scan) => {
+        sources.set(entry.id, entry)
+        if (scan) scans.set(entry.id, scan)
+      },
+      removeSource: async (id) => sources.delete(id),
+      getScan: async (id) => scans.get(id) ?? null,
+    }
+    const service = createSkillsService(
+      await mkdtemp(join(tmpdir(), 'sprintengine-sec-localswap-data-')),
+      { resolveToken: async () => '', listHarnesses: async () => ['claude'] },
+      store,
+    )
+    const added = await service.addLocalSource({ path: source })
+    assert.equal(added.ok, true, added.ok ? '' : added.message)
+    if (!added.ok) return
+    const read = { sourceId: added.source.id, skillId: 'writer', path: 'notes.md' }
+    const before = await service.readFile(read)
+    assert.ok(before.ok && before.content === 'notes', 'the listed file reads')
+
+    // After the scan, the listed file becomes a link to a key outside the folder.
+    await rm(join(source, 'writer', 'notes.md'))
+    await symlink(secret, join(source, 'writer', 'notes.md'))
+    const after = await service.readFile(read)
+    assert.equal(after.ok, false, 'a listed file that is now a link out of the source is refused')
+    assert.ok(!JSON.stringify(after).includes('PRIVATE KEY'))
+    console.log('  symlinks (local, after the scan): a listed file swapped for a link out is refused, not followed')
   }
 
   async function installOverAPreexistingSymlinkDoesNotEscape(): Promise<void> {
@@ -808,6 +851,7 @@ test('security', async () => {
     resolveStaysInsideOrReturnsNull()
     await symlinkEntriesNeverBecomeSkillFiles()
     await localSymlinksAreNotListedOrCopied()
+    await aListedFileSwappedForALinkAfterTheScanIsNotFollowed()
     await installOverAPreexistingSymlinkDoesNotEscape()
     allowlistIsClosed()
     await everyRequestTargetsAnAllowlistedHost()

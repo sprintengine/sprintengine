@@ -11,7 +11,7 @@ import { SessionDataProvider } from "./src/navigation/SessionDataProvider";
 import { ChatsProvider } from "./src/features/conversations/ChatsContext";
 import { NoticesProvider } from "./src/features/notices/NoticesContext";
 import { readTailnetIdentity, withTailnetScopes } from "./src/api/tailnetControlClient";
-import { withMachineMark, withTransportDeclaration } from "./src/api/tailnetTransport";
+import { withEnvironmentId, withMachineMark, withTransportDeclaration } from "./src/api/tailnetTransport";
 import { ToastProvider } from "./src/components/Toast";
 import { AppUpdateProvider } from "./src/features/updates/useAppUpdate";
 import { startSentPhotoCopies } from "./src/storage/sentPhotoCopies";
@@ -170,12 +170,14 @@ function AppShell() {
           if (!live || !identity.ok || !identity.data) return;
           const current = sessionsRef.current.find((entry) => entry.deviceId === candidate.deviceId);
           if (!current) return;
-          // The grant, the declaration, then how the desktop draws itself as a
-          // machine. Any may be unchanged; nothing is written when all are.
+          // The grant, the declaration, how the desktop draws itself as a
+          // machine, then which Studio it is, which chat links name it by. Any
+          // may be unchanged; nothing is written when all are.
           const granted = withTailnetScopes(current, identity.data.scopes) ?? current;
           const declared = withTransportDeclaration(granted, identity.data.transport) ?? granted;
           const marked = withMachineMark(declared, identity.data.machine) ?? declared;
-          if (marked !== current) applySessionList(await sessionListStore.updateSession(marked));
+          const identified = withEnvironmentId(marked, identity.data.environmentId) ?? marked;
+          if (identified !== current) applySessionList(await sessionListStore.updateSession(identified));
         },
       );
     };

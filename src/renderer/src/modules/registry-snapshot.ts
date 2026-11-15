@@ -124,6 +124,12 @@ export function startModuleRegistrySnapshotMirror(input: {
   push: (snapshot: ModuleRegistrySnapshot) => boolean | Promise<boolean>
   /** Fires when something the snapshot depends on changed. */
   subscribe: (onChange: () => void) => () => void
+  /**
+   * Fires when the receiver may have lost what it was sent (the window's
+   * Studio restarted and keeps the registry in memory): sent again, even if
+   * unchanged.
+   */
+  resendOn?: (resend: () => void) => () => void
 }): () => void {
   let lastSerialized = ''
   const send = (): void => {
@@ -139,5 +145,13 @@ export function startModuleRegistrySnapshotMirror(input: {
     })
   }
   send()
-  return input.subscribe(send)
+  const stopChanges = input.subscribe(send)
+  const stopResends = input.resendOn?.(() => {
+    lastSerialized = ''
+    send()
+  })
+  return () => {
+    stopChanges()
+    stopResends?.()
+  }
 }

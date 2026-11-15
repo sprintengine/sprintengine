@@ -9,77 +9,13 @@
 // call a landed pull request open for ever (decision 8c). A pull request on
 // another forge has no state the app can read: it is shown as opened.
 
-import { classifyPullRequestUrl, type PullRequestForge } from './pr-url'
-import type { PullRequestWatchView } from './pull-request-watch'
+import { classifyPullRequestUrl } from './pr-url'
 import { canonicalRepositoryKey } from '../repository-identity'
 
-export type PullRequestState = 'open' | 'merged' | 'closed'
+import type { BranchPullRequest, StudioPullRequestState } from '../../../packages/studio-protocol/src/public'
 
-export type BranchPullRequest = {
-  /** Canonical URL, as `classifyPullRequestUrl` (src/shared/git/pr-url.ts) normalises it. */
-  url: string
-  /**
-   * The repository the pull request is IN — `host/owner/name`, the key every
-   * clone of it shares (`canonicalRepositoryKey`). Not always the repository the
-   * conversation sits in: an agent can open a pull request in another
-   * repository, and the URL is what says where (decision 10).
-   */
-  repoKey: string
-  /** The repository's short name, for the rows and tooltips that must say which repo. */
-  repoName: string
-  number: number
-  title: string
-  state: PullRequestState
-  /** A draft is still `open`; this only changes the tooltip's word. */
-  isDraft: boolean
-  /** When its host says it was opened (until then, when it was recorded), ms epoch. */
-  openedAt: number
-  /** When `state` was last read from its host, ms epoch; 0 when it never has been. */
-  stateAt: number
-  /**
-   * When it merged, or closed without merging, as GitHub says, ms epoch.
-   * Absent while open, and on an entry read before this was kept. What says
-   * whether the person went on with the chat after it landed, which decides
-   * whether a merge settles the chat (`pullRequestsLanded`).
-   */
-  endedAt?: number
-  /**
-   * The forge the pull request is on, when it is not GitHub (GitHub Enterprise
-   * included). The app reads a pull request's state through `gh` only, so one
-   * on another forge is shown as opened, and its `state` stays `open`.
-   */
-  forge?: Exclude<PullRequestForge, 'github'>
-  /**
-   * The conversation that opened it (owner ruling 2026-10-04): its agent ran a
-   * create command or tool whose output named this pull request, or called the
-   * Studio gateway's `pull_request.link`. Written once, by the first
-   * conversation to claim it, and never by a branch lookup. A record written
-   * before the agent was known carries the workspace alone, and is worn by
-   * every conversation in it.
-   */
-  openedByWorkspaceId?: string
-  openedByAgentId?: string
-  /** The branch the pull request is from, once its host has said; the record stamps `onSessionBranch` from it. */
-  headRefName?: string
-  /** The commit its head was at, from a branch lookup; never stored on the record. */
-  headRefOid?: string
-  /**
-   * Set by the record's `forConversation` (`src/server/pull-requests/`): true
-   * when this pull request is from the branch the conversation's own checkout
-   * is on. A conversation may have opened pull requests from other branches
-   * and other repositories, and only the ones from its own branch may say
-   * anything about the state of that branch — the sidebar's "landed" reading
-   * (the-diff-an-agent-made decision 10) reads this and nothing else. Absent
-   * on any other entry and on a fixture-built snapshot.
-   */
-  onSessionBranch?: boolean
-  /**
-   * Present while the conversation's agent has Studio watching it
-   * (`pull_request.watch`): what it waits on, as the last read left it. Set
-   * by the record on what it answers, never stored on the entry itself.
-   */
-  watch?: PullRequestWatchView
-}
+export type { BranchPullRequest }
+export type PullRequestState = StudioPullRequestState
 
 /**
  * The tone a pull request's state inks with (decision 2): open takes the

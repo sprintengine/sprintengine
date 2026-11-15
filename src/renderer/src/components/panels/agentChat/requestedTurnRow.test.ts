@@ -43,3 +43,12 @@ test('the turn’s own line counts on from when it was asked for', () => {
   // A line that began earlier than the request is not this request's.
   expect(withRequestedTurn([user, working(500)], 900, false, cache).at(-1)).toMatchObject({ startedAt: 500 })
 })
+
+test('a message waiting for its machine to come back says so, with no time counting', () => {
+  const cache = { current: null as RequestedTurnRowCache }
+  const row = withRequestedTurn([user], 900, true, cache, 'dev@build-box').at(-1)
+  expect(row).toMatchObject({ kind: 'working', label: 'Waiting for dev@build-box…' })
+  expect((row as { startedAt?: number }).startedAt, 'no timer while nothing is thinking').toBeUndefined()
+  // Back, the line thinks again.
+  expect(withRequestedTurn([user], 900, true, cache).at(-1)).toMatchObject({ label: 'Thinking…', startedAt: 900 })
+})

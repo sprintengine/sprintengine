@@ -4,6 +4,7 @@ import { renderMarkdown } from '../../../../utils/markdown'
 import { maskMarkdownFrontmatter } from '../../../../utils/markdownFrontmatter'
 import { basename } from '../../../../utils/paths'
 import { CopyGlyphButton, InlineNotice, PanelHeader, Spinner } from '../../../ui'
+import { filesApi } from '../../../../studio/files'
 
 // A markdown file read in the workspace pane: a plan an agent proposed, opened
 // from its card in the conversation. Read-only, and rendered the way the
@@ -30,7 +31,7 @@ export function DocumentTab({ tab, active }: DocumentTabProps) {
   useEffect(() => {
     if (!active || !path) return
     let cancelled = false
-    window.api
+    filesApi
       .readfile(path)
       .then((content) => {
         if (!cancelled) setRead({ path, content })

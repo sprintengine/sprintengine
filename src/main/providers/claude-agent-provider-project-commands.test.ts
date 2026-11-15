@@ -6,6 +6,7 @@ import { afterEach, test } from 'vitest'
 
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import { CLAUDE_AGENT_PROVIDER_ID, createClaudeAgentProvider } from './claude-agent-provider'
+import { stagedPluginsDirectory } from '../claude-project-commands'
 import type { MockAdapterTurnInput } from './mock-conversation-provider'
 
 // A Claude chat loads the person's settings only, so a project's own
@@ -139,7 +140,7 @@ test('a project without commands starts its child with no plugin', async () => {
     await adapter.startSession(f.turn('turn_1'))
     await drain(await adapter.sendTurn(f.turn('turn_1')))
     assert.equal(spawns[0]?.plugins, undefined)
-    assert.deepEqual(await readdir(f.tempDir), [])
+    assert.deepEqual(await readdir(stagedPluginsDirectory(f.tempDir)), [])
   } finally {
     await adapter.disposeAll()
   }
@@ -150,9 +151,9 @@ test("the project's commands plugin is removed with its child", async () => {
   const { adapter } = harness(f.tempDir)
   await adapter.startSession(f.turn('turn_1'))
   await drain(await adapter.sendTurn(f.turn('turn_1')))
-  assert.equal((await readdir(f.tempDir)).length, 1)
+  assert.equal((await readdir(stagedPluginsDirectory(f.tempDir))).length, 1)
   await adapter.disposeAll()
-  assert.deepEqual(await readdir(f.tempDir), [])
+  assert.deepEqual(await readdir(stagedPluginsDirectory(f.tempDir)), [])
 })
 
 test('a command changed between messages is rewritten into the same child and reloaded', async () => {
@@ -205,7 +206,7 @@ test('a Claude Code that cannot reload its plugins is replaced with one that has
     const staged = pluginsOf(spawns[1])[0]!.path
     assert.equal(await readFile(join(staged, 'commands', 'deploy.md'), 'utf8'), 'Deploy to staging.')
     // The first child's folder went with it.
-    assert.equal((await readdir(f.tempDir)).length, 1)
+    assert.equal((await readdir(stagedPluginsDirectory(f.tempDir))).length, 1)
   } finally {
     await adapter.disposeAll()
   }

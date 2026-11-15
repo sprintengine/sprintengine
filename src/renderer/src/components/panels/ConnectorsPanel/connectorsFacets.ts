@@ -5,7 +5,7 @@
 // `storefrontView.ts`.
 //
 // One source feeds the grid: the marketplace registry
-// (`window.api.readMarketplaceRegistry`) — installable plugins that `provides`
+// (`extensionsApi.readMarketplaceRegistry`) — installable plugins that `provides`
 // mcp/skills. A second source fed it until the third-party retirement
 // (2026-09-08): the bundled MCP catalogue, sixteen servers nobody here
 // wrote, whose rows browsed beside the plugins and could launch before install

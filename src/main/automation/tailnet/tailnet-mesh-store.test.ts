@@ -16,6 +16,7 @@ import { test } from 'vitest'
 
 import { createSecretCipherStandIn as cipher } from '../../../../tests/stubs/secret-cipher'
 import { createTailnetMeshStore, LEGACY_TAILNET_MESH_FILENAME, TAILNET_MESH_FILENAME } from './tailnet-mesh-store'
+import { meshListChanged } from '../../../shared/tailnet-mesh'
 
 const stored = {
   id: 'tnc_1',
@@ -266,4 +267,86 @@ test('an invalid file that cannot be moved aside is left alone, and pairing stil
     assert.equal(store.list().length, 2, 'both pairings work for the session')
     assert.equal(readFileSync(path, 'utf8'), '{"version":1,"connections":[')
   })
+})
+
+test('the environment id a machine says is kept across a restart and a rename, and never erased by silence', () => {
+  withDir((dir) => {
+    const first = createTailnetMeshStore({ resolveUserDataDir: () => dir, cipher: cipher() })
+    const added = first.add(input)
+    assert.equal(added.environmentId, undefined)
+    const id = '6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b'
+    assert.equal(first.noteEnvironment(added.id, id), true)
+    assert.equal(first.noteEnvironment(added.id, id), false, 'the same id again is not news')
+    // An older build's identity says none: what a newer one said stays.
+    assert.equal(first.noteEnvironment(added.id, null), false)
+    assert.equal(first.noteEnvironment(added.id, 'not:an-id'), false)
+    assert.equal(first.list()[0]?.environmentId, id)
+
+    const second = createTailnetMeshStore({ resolveUserDataDir: () => dir, cipher: cipher() })
+    assert.equal(second.list()[0]?.environmentId, id)
+
+    // Reinstalled over there: the pairing now reaches another Studio.
+    const replaced = '0f8e2b1c-3a4d-4e5f-8a9b-1c2d3e4f5a6b'
+    assert.equal(second.noteEnvironment(added.id, replaced), true)
+    assert.equal(
+      createTailnetMeshStore({ resolveUserDataDir: () => dir, cipher: cipher() }).list()[0]?.environmentId,
+      replaced,
+    )
+    assert.equal(second.noteEnvironment('tnc_unknown', id), false)
+  })
+})
+
+test('a stored environment id that is not one is dropped on read, not trusted', () => {
+  withDir((dir) => {
+    writeFileSync(
+      join(dir, TAILNET_MESH_FILENAME),
+      JSON.stringify({ version: 1, connections: [{ ...stored, environmentId: '../../etc' }] }),
+    )
+    const store = createTailnetMeshStore({ resolveUserDataDir: () => dir, cipher: cipher() })
+    assert.equal(store.list()[0]?.environmentId, undefined)
+  })
+})
+
+test('the paired list is re-read after a pairing, a forgetting or a machine saying which Studio it is', () => {
+  const reachability = {
+    connectionId: 'tnc_1',
+    machineName: 'mac-mini',
+    unauthorized: false,
+    checkedAt: 1,
+    lastReachedAt: 1,
+    detail: null,
+  }
+  const connection = { ...stored, scopes: ['workspace:read' as const], pairedVia: 'link' as const }
+  assert.equal(meshListChanged({ kind: 'machine-paired', revision: 1, connection }), true)
+  assert.equal(
+    meshListChanged({ kind: 'machine-forgotten', revision: 1, connectionId: 'tnc_1', machineName: 'mac-mini' }),
+    true,
+  )
+  assert.equal(
+    meshListChanged({ kind: 'machine-identified', revision: 1, connectionId: 'tnc_1', environmentId: 'env-1' }),
+    true,
+  )
+  // An answer by itself changes nothing in the list: the id it carried is news only once.
+  assert.equal(
+    meshListChanged({ kind: 'machine-reachability', revision: 1, ...reachability, checking: false, reachable: true }),
+    false,
+  )
+  assert.equal(
+    meshListChanged({ kind: 'machine-reachability', revision: 1, ...reachability, checking: true, reachable: true }),
+    false,
+  )
+  assert.equal(
+    meshListChanged({ kind: 'machine-reachability', revision: 1, ...reachability, checking: false, reachable: false }),
+    false,
+  )
+  assert.equal(
+    meshListChanged({
+      kind: 'remote-changed',
+      revision: 1,
+      connectionId: 'tnc_1',
+      machineName: 'mac-mini',
+      what: 'workspaces',
+    }),
+    false,
+  )
 })

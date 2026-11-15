@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { connect, createServer, type Server } from 'node:net'
+import { createServer, type Server } from 'node:net'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -31,17 +31,6 @@ test('agent-state-service', async () => {
 
   const resolveSpec = (cli: string): PluginAgentStateSpec | null => bundledSpecs.get(cli) ?? null
 
-  function writeLine(socketPath: string, line: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const socket = connect(socketPath)
-      socket.on('error', reject)
-      socket.on('connect', () => {
-        socket.write(line, () => socket.end())
-      })
-      socket.on('close', () => resolve())
-    })
-  }
-
   async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
     const start = Date.now()
     while (!predicate()) {
@@ -61,47 +50,7 @@ test('agent-state-service', async () => {
       assert.match(resolveAgentStateSocketPath(long), /agent-state-[0-9a-f]{12}\.sock$/)
     }
 
-    // --- socket round-trip: valid frame in, malformed dropped --------------
     const userDataDir = await mkdtemp(join(tmpdir(), 'se-agent-state-svc-'))
-    const received: AgentStateFrame[] = []
-    const service = createAgentStateService({
-      resolveUserDataDir: () => userDataDir,
-      resolveAgentStateSpec: resolveSpec,
-      resolveReporterScriptPath: () => null,
-      resolveReporterTemplatePath: () => null,
-      onFrame: (frame) => received.push(frame),
-      now: () => 4242,
-    })
-    await service.initialize()
-    assert.equal(service.isRunning(), true)
-
-    const socketPath = service.getSocketPath()
-    // Malformed line is dropped silently; a valid frame is parsed and delivered.
-    await writeLine(socketPath, 'not json\n')
-    await writeLine(
-      socketPath,
-      JSON.stringify({
-        type: 'agent_state',
-        agentId: 'a1',
-        workspaceId: 'w1',
-        phase: 'tool_use',
-        event: 'PreToolUse',
-      }) + '\n',
-    )
-    await waitFor(() => received.length >= 1)
-    assert.equal(received.length, 1)
-    assert.equal(received[0].agentId, 'a1')
-    assert.equal(received[0].phase, 'tool_use')
-    // ts defaulted via the injected clock since the frame omitted it.
-    assert.equal(received[0].ts, 4242)
-
-    // A frame with an invalid phase is rejected by validation, not delivered.
-    await writeLine(socketPath, JSON.stringify({ type: 'agent_state', agentId: 'a1', phase: 'bogus' }) + '\n')
-    await new Promise((r) => setTimeout(r, 50))
-    assert.equal(received.length, 1)
-
-    await service.shutdown()
-    assert.equal(service.isRunning(), false)
 
     // --- install: serialized + run once per workspace ----------------------
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'se-agent-state-ws-'))
@@ -128,7 +77,6 @@ test('agent-state-service', async () => {
         lastTemplateName = template
         return opencodeReporterSrc
       },
-      onFrame: () => {},
     })
 
     // A CLI with no agentStateSpec installs nothing — it cannot report state.
@@ -174,7 +122,6 @@ test('agent-state-service', async () => {
       resolveAgentStateSpec: resolveSpec,
       resolveReporterScriptPath: () => reporterSrc,
       resolveReporterTemplatePath: () => null,
-      onFrame: () => {},
       logDiagnostic: (diagnostic) => wslWarnings.push(diagnostic.details ?? diagnostic.message),
     })
     await wslSvc.installForWorkspace(wslRoot, 'codex', { pathStyle: 'windows' })
@@ -184,9 +131,9 @@ test('agent-state-service', async () => {
     await wslSvc.installForWorkspace(wslRoot, 'codex', { pathStyle: 'wsl', hostId: 'wsl:Ubuntu', integration: null })
     assert.ok(
       (await readFile(join(wslRoot, '.codex', 'config.toml'), 'utf8')).includes(nativeLauncher),
-      'without the helper nothing is written for WSL',
+      "without the distribution's server nothing is written for WSL",
     )
-    assert.ok(wslWarnings.some((line) => line.includes('WSL helper was not running')))
+    assert.ok(wslWarnings.some((line) => line.includes('Studio server in WSL was not running')))
     const node = '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node'
     await wslSvc.installForWorkspace(wslRoot, 'codex', {
       pathStyle: 'wsl',
@@ -295,7 +242,6 @@ test('agent-state-service', async () => {
       },
       resolveReporterTemplatePath: () => opencodeReporterSrc,
       resolveLaunchInjectsPlugins: (cli) => cli === 'claude-code',
-      onFrame: () => {},
     })
     await injectedSvc.installForWorkspace(injectedRoot, 'claude-code')
     assert.equal(injectedResolveCalls, 0, 'a launch-injected CLI must not resolve a reporter')
@@ -330,7 +276,6 @@ test('agent-state-service', async () => {
       },
       resolveReporterTemplatePath: () => null,
       resolveHomeDir: () => userScopeHome,
-      onFrame: () => {},
     })
     await userScopeSvc.installForWorkspace(wsA, 'kimi-code')
     assert.equal(userScopeResolves, 1)
@@ -360,7 +305,6 @@ test('agent-state-service', async () => {
       resolveAgentStateSpec: resolveSpec,
       resolveReporterScriptPath: () => null,
       resolveReporterTemplatePath: () => null,
-      onFrame: () => {},
     })
     await noScriptSvc.installForWorkspace(noScriptWs, 'claude-code') // must not throw
     await noScriptSvc.installForWorkspace(noScriptWs, 'opencode') // must not throw

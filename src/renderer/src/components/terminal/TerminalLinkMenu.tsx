@@ -16,6 +16,7 @@ import {
   type TerminalLinkAction,
   type TerminalLinkTarget,
 } from '../../utils/terminalLinkActions'
+import { filesApi } from '../../studio/files'
 
 // The chooser a terminal link click opens. Clicking a link used to fire
 // one hard-wired action; now it asks. `terminalLinkActions` decides WHAT is on
@@ -136,7 +137,7 @@ export function TerminalLinkMenu({
               // point of the menu is that the destination is chosen per click, not
               // inherited from the openFilesInExternalWindow preference.
               const name = basename(target.resolvedPath)
-              const content = isImageFile(target.resolvedPath) ? '' : await window.api.readfile(target.resolvedPath)
+              const content = isImageFile(target.resolvedPath) ? '' : await filesApi.readfile(target.resolvedPath)
               useWorkspaceStore.getState().openFile(workspaceId, target.resolvedPath, name, content)
               focusOrAddFileTab(workspaceId, target.resolvedPath, name)
               dispatchEditorFocus(workspaceId, target.resolvedPath, line, column)

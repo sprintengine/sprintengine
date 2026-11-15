@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createGitPatch, gitPatchArgs } from './git-patch'
-import { bareFileName } from './ipc/git-ipc'
+import { bareFileName } from './ipc/git-shell-ipc'
 import { test } from 'vitest'
 
 test('git-patch', async () => {

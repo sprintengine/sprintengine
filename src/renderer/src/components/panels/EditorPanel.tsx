@@ -52,6 +52,8 @@ import {
   useConfirmDialog,
 } from '../ui'
 import { EditorDiskNotice, overwriteOnDiskConfirmation, type EditorDiskNoticeState } from './editor/EditorDiskNotice'
+import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
 
 // The editor's three non-content states, each in its own kit idiom so a failed
 // read never renders like an empty pane (principles.md → Accessibility;
@@ -224,7 +226,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
 
     const restoreOpenFile = async () => {
       try {
-        const content = await window.api.readfile(filePath)
+        const content = await filesApi.readfile(filePath)
         if (cancelled) return
         openFile(workspaceId, filePath, name, content)
       } catch (error) {
@@ -341,7 +343,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
       // the watch has not said so yet, or cannot (an SSH machine's folder) —
       // is not written over without asking.
       const unseen = unseenDiskContent(
-        await readFileOnDisk(window.api, file.path),
+        await readFileOnDisk(filesApi, file.path),
         getEditorDiskBaseline(workspaceId, file.path),
         getEditorBuffer(workspaceId, file.path, file.content ?? ''),
       )
@@ -360,7 +362,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
       try {
         // The project's folders, so the save does not follow a link out of them.
         const roots = ws ? [ws.folderPath, workspaceWorkingRoot(ws)].filter((root): root is string => !!root) : []
-        await window.api.writefile(file.path, content, { roots })
+        await filesApi.writefile(file.path, content, { roots })
       } catch (error) {
         if (previousBaseline !== undefined) setEditorDiskBaseline(workspaceId, file.path, previousBaseline)
         throw error
@@ -389,7 +391,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
 
     const loadRestoredContent = async () => {
       try {
-        const content = await window.api.readfile(activeFilePath)
+        const content = await filesApi.readfile(activeFilePath)
         if (cancelled || hasEditorBuffer(workspaceId, activeFilePath)) return
         setEditorBuffer(workspaceId, activeFilePath, content)
         setEditorDiskBaseline(workspaceId, activeFilePath, content)
@@ -469,7 +471,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
     const path = activeFilePath
     let disposed = false
     const check = oneAtATime(async () => {
-      const read = await readFileOnDisk(window.api, path)
+      const read = await readFileOnDisk(filesApi, path)
       if (!disposed) applyDiskReadRef.current(path, read)
     })
     const stop = watchFileOnDisk(path, check)
@@ -481,7 +483,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
   }, [activeFilePath, watchesDisk])
 
   const reloadFromDisk = async (path: string): Promise<void> => {
-    const read = await readFileOnDisk(window.api, path)
+    const read = await readFileOnDisk(filesApi, path)
     if (read.kind === 'content') takeDiskContent(path, read.content)
     else if (read.kind === 'missing') setDiskNotice({ path, kind: 'deleted' })
   }
@@ -505,7 +507,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
 
     const loadImage = async () => {
       try {
-        const url = await window.api.readImageDataUrl(activeFilePath)
+        const url = await filesApi.readImageDataUrl(activeFilePath)
         if (!cancelled) setImageDataUrl({ path: activeFilePath, url })
       } catch (error) {
         if (cancelled) return
@@ -646,12 +648,12 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
         return
       }
 
-      if (typeof window.api.getGitFileBase !== 'function') {
+      if (typeof gitApi.getGitFileBase !== 'function') {
         setGitBaseContent(null)
         return
       }
 
-      const result = await window.api.getGitFileBase(repoRoot, activeFilePath)
+      const result = await gitApi.getGitFileBase(repoRoot, activeFilePath)
       if (cancelled) return
 
       setGitBaseContent(result.ok ? { path: activeFilePath, content: result.content } : null)

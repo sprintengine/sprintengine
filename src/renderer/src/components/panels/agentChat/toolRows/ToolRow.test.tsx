@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   displayToolPath,
@@ -11,12 +11,28 @@ import {
 } from './ToolRow'
 import { ConversationLinkProvider } from '../conversationLinks'
 import type { TranscriptToolEntry } from '../conversationProjection'
+import type { ChatEnvironment, ConversationTransport } from '../conversationTransport'
 import { JSDOM } from 'jsdom'
 import {
   IncrementalCodeTokenizer,
   loadCodeLanguage,
   normalizeCodeLanguage,
 } from '../../../../lib/highlight/codeHighlight'
+import { installStudioLoopback, settleStudio } from '../../../../../../../tests/studio-chat-loopback'
+
+// A row of a chat on the window's own Studio, welcomed: its paths are read
+// and linked through the window's services. Only for the drawing itself, so
+// nothing else reads a window that is not a page.
+async function onWindowStudio<T>(draw: () => T): Promise<T> {
+  const win = { api: { platform: 'darwin' } as Record<string, unknown> }
+  vi.stubGlobal('window', win)
+  try {
+    await installStudioLoopback(win).welcomed()
+    return draw()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+}
 
 function tool(values: Partial<TranscriptToolEntry>): TranscriptToolEntry {
   return { kind: 'tool', id: 'tool', turnId: 'turn', name: 'Bash', status: 'done', ...values }
@@ -94,6 +110,7 @@ test('a press on the row ground goes through the label button, and a portalled c
     expect(button.getAttribute('aria-expanded')).toBe('false')
     const chevron = host.querySelector('[data-tool-kind] > div > svg:last-child')!
     await act(async () => chevron.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+    await settleStudio(act)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(guarded.at(-1)).toBe(button)
     // A click React bubbled up from a menu portalled elsewhere in the page.
@@ -119,9 +136,11 @@ test('a press on the row ground goes through the label button, and a portalled c
   }
 })
 
-test('collapsed file subtitles are independent links, never nested inside the disclosure button', () => {
-  const html = renderToStaticMarkup(
-    <ToolRow tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: 'src/app.ts' } })} />,
+test('collapsed file subtitles are independent links, never nested inside the disclosure button', async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ToolRow tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: 'src/app.ts' } })} />,
+    ),
   )
   const document = new JSDOM(html).window.document
   const link = document.querySelector('[aria-label="Open src/app.ts"]')
@@ -227,6 +246,7 @@ test('truncated output is fetched only on request and failures can be retried', 
       },
     },
   })
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -261,11 +281,14 @@ test('truncated output is fetched only on request and failures can be retried', 
     )
     expect(calls).toBe(0)
     await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    await settleStudio(act)
     expect(calls).toBe(0)
     await act(async () => click('Show full output'))
+    await settleStudio(act)
     expect(calls).toBe(1)
     expect(host.textContent).toContain('Temporarily unavailable')
     await act(async () => click('Retry'))
+    await settleStudio(act)
     expect(calls).toBe(2)
     expect(host.textContent).not.toContain('snippet')
     expect(host.textContent!.length).toBeGreaterThan(50_000)
@@ -294,6 +317,94 @@ test('truncated output is fetched only on request and failures can be retried', 
     expect(calls).toBe(2)
     expect(host.textContent).not.toContain('snippet')
     expect(host.textContent!.length).toBeGreaterThan(50_000)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+    for (const key of [
+      'window',
+      'document',
+      'navigator',
+      'HTMLElement',
+      'Node',
+      'MutationObserver',
+      'getComputedStyle',
+      'IS_REACT_ACT_ENVIRONMENT',
+    ]) {
+      if (previous[key]) Object.defineProperty(globalThis, key, previous[key])
+      else Reflect.deleteProperty(globalThis, key)
+    }
+  }
+})
+
+test('a change that crossed without its bodies is read whole when its row opens, and never drawn cut', async () => {
+  const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
+  const previous = Object.getOwnPropertyDescriptors(globalThis)
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    MutationObserver: dom.window.MutationObserver,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+    IS_REACT_ACT_ENVIRONMENT: true,
+  })
+  let calls = 0
+  let answer!: (value: unknown) => void
+  Object.assign(dom.window, {
+    api: {
+      platform: 'darwin',
+      conversationToolDetail: () => {
+        calls++
+        return new Promise((resolve) => (answer = resolve))
+      },
+    },
+  })
+  await installStudioLoopback(dom.window as never).welcomed()
+  const { act } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { ConversationLinkProvider } = await import('../conversationLinks')
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () =>
+      root.render(
+        <ConversationLinkProvider
+          workspaceId="cut-input-test"
+          workspaceRoot="/workspace/app"
+          cwd="/workspace/app"
+          agentId="agent"
+        >
+          <ToolRow
+            tool={tool({
+              id: 'cut-write',
+              name: 'Write',
+              toolKind: 'file_write',
+              input: { file_path: '/workspace/app/notes.md', content: 'first line only' },
+              inputTruncated: true,
+            })}
+          />
+        </ConversationLinkProvider>,
+      ),
+    )
+    expect(calls).toBe(0)
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+    await settleStudio(act)
+    expect(calls).toBe(1)
+    expect(host.textContent).not.toContain('first line only')
+    await act(async () =>
+      answer({
+        ok: true,
+        detail: {
+          input: { file_path: '/workspace/app/notes.md', content: 'first line only\nand the whole of the rest\n' },
+          output: '',
+          status: 'ok',
+        },
+      }),
+    )
+    expect(host.textContent).toContain('and the whole of the rest')
+    expect(calls).toBe(1)
   } finally {
     await act(async () => root.unmount())
     dom.window.close()
@@ -349,7 +460,8 @@ async function withToolDetailDom(
   detail: (toolUseId: string) => { output: string },
   run: (harness: {
     calls: string[]
-    show: (row: TranscriptToolEntry) => Promise<void>
+    /** Drawn under the window's own transport, or one naming `environment` in its place. */
+    show: (row: TranscriptToolEntry, environment?: ChatEnvironment) => Promise<void>
     hide: () => Promise<void>
     click: (label: string) => Promise<void>
     expand: () => Promise<void>
@@ -379,6 +491,7 @@ async function withToolDetailDom(
       },
     },
   })
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -386,12 +499,16 @@ async function withToolDetailDom(
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
   const workspaceId = `tool-detail-${Math.random()}`
+  const { ConversationTransportProvider, localConversationTransport } = await import('../conversationTransport')
+  // The window's transport, under another environment's name: its calls the same.
+  const elsewhere = (environment: ChatEnvironment): ConversationTransport =>
+    Object.defineProperty({ ...localConversationTransport }, 'environment', { value: environment })
   try {
     await run({
       calls,
-      show: (row) =>
-        act(async () =>
-          root.render(
+      show: (row, environment) =>
+        act(async () => {
+          const shown = (
             <ConversationLinkProvider
               workspaceId={workspaceId}
               workspaceRoot="/workspace/app"
@@ -399,9 +516,16 @@ async function withToolDetailDom(
               agentId="agent"
             >
               <ToolRow tool={row} />
-            </ConversationLinkProvider>,
-          ),
-        ),
+            </ConversationLinkProvider>
+          )
+          root.render(
+            environment ? (
+              <ConversationTransportProvider value={elsewhere(environment)}>{shown}</ConversationTransportProvider>
+            ) : (
+              shown
+            ),
+          )
+        }),
       hide: () => act(async () => root.render(<div />)),
       click: (label) =>
         act(async () => {
@@ -447,6 +571,31 @@ test('fetched output is cached by size: a few very large outputs push the oldest
       await show(truncatedCommand('first'))
       await click('Show full output')
       expect(calls).toEqual(['first', 'second', 'third', 'first'])
+    },
+  )
+})
+
+test('fetched output is kept per environment: the same ids in another Studio are another step', async () => {
+  await withToolDetailDom(
+    (id) => ({ output: `full output of ${id}` }),
+    async ({ calls, show, hide, click, expand }) => {
+      const other = { id: 'another-studio', label: 'mac-mini', route: null }
+      await show(truncatedCommand('shared'))
+      await expand()
+      await click('Show full output')
+      await hide()
+      expect(calls).toEqual(['shared'])
+      // The same workspace, agent and step ids, in another environment: not the step fetched.
+      await show(truncatedCommand('shared'), other)
+      await click('Show full output')
+      await hide()
+      expect(calls).toEqual(['shared', 'shared'])
+      // Each environment's is kept for its own next mount.
+      await show(truncatedCommand('shared'))
+      await hide()
+      await show(truncatedCommand('shared'), other)
+      await hide()
+      expect(calls).toHaveLength(2)
     },
   )
 })
@@ -501,11 +650,15 @@ test('an opened step sits in one contained panel with a copy action, not loose t
   expect(new JSDOM(search).window.document.querySelector('.rounded-sm.border')?.textContent).toContain('src/a.ts')
 })
 
-test('a row names its file relative to the workspace and keeps the full path as the link target', () => {
-  const html = renderToStaticMarkup(
-    <ConversationLinkProvider workspaceId="w" cwd="/Users/dev/project" workspaceRoot="/Users/dev/project">
-      <ToolRow tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: '/Users/dev/project/src/app.ts' } })} />
-    </ConversationLinkProvider>,
+test('a row names its file relative to the workspace and keeps the full path as the link target', async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ConversationLinkProvider workspaceId="w" cwd="/Users/dev/project" workspaceRoot="/Users/dev/project">
+        <ToolRow
+          tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: '/Users/dev/project/src/app.ts' } })}
+        />
+      </ConversationLinkProvider>,
+    ),
   )
   const document = new JSDOM(html).window.document
   // The label carries the file's name, so the link beside it names only the
@@ -780,6 +933,8 @@ test('a generated picture shows under its row unopened, opens in the system view
       showItemInFolder: async (path: string) => void revealed.push(path),
     },
   })
+  // A picture on this machine is read by the window's Studio, over the protocol.
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const host = dom.window.document.createElement('div')
@@ -807,6 +962,9 @@ test('a generated picture shows under its row unopened, opens in the system view
         </ConversationLinkProvider>,
       ),
     )
+    // Read over the window's Studio, a round trip away.
+    for (let tries = 0; tries < 200 && !host.querySelector('[data-generated-image] img'); tries++)
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
     const image = host.querySelector<HTMLImageElement>('[data-generated-image] img')
     expect(image?.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
     expect(image?.getAttribute('alt')).toBe('A flat orange circle')
@@ -851,19 +1009,28 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
     api: {
       platform: 'darwin',
       readImageDataUrl: async (path: string) => void local.push(path),
-      meshConversationToolImage: async (input: { key: unknown; toolUseId: string }) => {
-        asked.push(input)
-        return input.toolUseId === 'old-machine'
-          ? { ok: false, code: 'images_unsupported', message: 'This picture is on mac-mini.' }
-          : { ok: true, dataUrl: `data:image/png;base64,${input.toolUseId}` }
-      },
     },
   })
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
-  const { ConversationTransportProvider, createRemoteConversationTransport } = await import('../conversationTransport')
-  const key = { connectionId: 'mac-mini', workspaceId: 'remote-workspace', agentId: 'agent' }
-  const transport = createRemoteConversationTransport({ key, machineName: 'mac-mini', access: 'read' })
+  const { ConversationTransportProvider, localConversationTransport } = await import('../conversationTransport')
+  // A paired machine's chat's transport, as far as a step's picture goes: by
+  // the step's id, asked of that machine (`conversation.picture`).
+  const transport = Object.defineProperties(
+    {
+      ...localConversationTransport,
+      toolImage: async (input: { toolUseId: string }) => {
+        asked.push(input)
+        return input.toolUseId === 'old-machine'
+          ? { ok: false as const, unsupported: true, message: 'This picture is on mac-mini.' }
+          : { ok: true as const, src: `data:image/png;base64,${input.toolUseId}` }
+      },
+    },
+    {
+      capabilities: { get: () => localConversationTransport.capabilities },
+      environment: { get: () => ({ id: null, label: 'mac-mini', route: 'tailnet:mac-mini' }) },
+    },
+  )
   const host = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
@@ -890,22 +1057,19 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
     )
     expect(host.querySelector('[data-generated-image] img')?.getAttribute('src')).toBe('data:image/png;base64,ig_2')
     expect(host.textContent).not.toContain('Reveal in Finder')
-    expect(asked).toEqual([{ key, toolUseId: 'ig_2' }])
+    expect(asked).toEqual([{ toolUseId: 'ig_2' }])
     // A read of a picture, opened, shows it; a machine that does not share
     // pictures leaves it there, and says so.
     const openRead = async (id: string) => {
       await render(tool({ id, name: 'Read', toolKind: 'file_read', input: { path: 'shots/screen.png' } }))
       await act(async () => host.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      await settleStudio(act)
     }
     await openRead('read-shot')
     expect(host.querySelector('[data-tool-step-body] img')?.getAttribute('src')).toBe('data:image/png;base64,read-shot')
     await openRead('old-machine')
     expect(host.textContent).toContain('This image is on another machine.')
-    expect(asked).toEqual([
-      { key, toolUseId: 'ig_2' },
-      { key, toolUseId: 'read-shot' },
-      { key, toolUseId: 'old-machine' },
-    ])
+    expect(asked).toEqual([{ toolUseId: 'ig_2' }, { toolUseId: 'read-shot' }, { toolUseId: 'old-machine' }])
     expect(local, 'a remote path is never read off this disk').toEqual([])
   } finally {
     await act(async () => root.unmount())
@@ -917,18 +1081,20 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
   }
 })
 
-test("a step's returned pictures are drawn in its body, one preview each", () => {
-  const html = renderToStaticMarkup(
-    <ToolBody
-      tool={tool({
-        name: 'mcp__sprintengine-studio__browser_screenshot',
-        output: 'Captured 1280×800.',
-        images: [
-          '/Users/dev/Studio/conversation-images/s/shot-1.png',
-          '/Users/dev/Studio/conversation-images/s/shot-2.png',
-        ],
-      })}
-    />,
+test("a step's returned pictures are drawn in its body, one preview each", async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ToolBody
+        tool={tool({
+          name: 'mcp__sprintengine-studio__browser_screenshot',
+          output: 'Captured 1280×800.',
+          images: [
+            '/Users/dev/Studio/conversation-images/s/shot-1.png',
+            '/Users/dev/Studio/conversation-images/s/shot-2.png',
+          ],
+        })}
+      />,
+    ),
   )
   const pictures = new JSDOM(html).window.document.querySelector('[data-tool-images]')
   expect(pictures?.children).toHaveLength(2)
@@ -938,16 +1104,18 @@ test("a step's returned pictures are drawn in its body, one preview each", () =>
   )
 })
 
-test('a step called with nothing that answered only with a picture draws the picture alone, with no `{}`', () => {
-  const html = renderToStaticMarkup(
-    <ToolBody
-      tool={tool({
-        name: 'mcp__sprintengine-studio__browser_screenshot',
-        input: {},
-        output: '',
-        images: ['/Users/dev/Studio/conversation-images/c1/shot-1.png'],
-      })}
-    />,
+test('a step called with nothing that answered only with a picture draws the picture alone, with no `{}`', async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ToolBody
+        tool={tool({
+          name: 'mcp__sprintengine-studio__browser_screenshot',
+          input: {},
+          output: '',
+          images: ['/Users/dev/Studio/conversation-images/c1/shot-1.png'],
+        })}
+      />,
+    ),
   )
   expect(html).toContain('data-tool-images')
   expect(html).not.toContain('{}')

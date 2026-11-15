@@ -10,8 +10,9 @@
 import { DEFAULT_CLI_PERMISSION_PRESET, type CliPermissionPreset } from './cli-permission-preset'
 import type { ExecutionHostId } from './execution-host'
 
-/** An agent CLI runtime id (`claude`, `codex`, …). Open: plugins add their own. */
-export type AgentCli = string
+import type { AgentCli, AgentExecutionMode } from '../../packages/studio-protocol/src/public'
+
+export type { AgentCli, AgentExecutionMode }
 /**
  * A renderer agent record's id. One minted now (`newAgentId`) is unique across
  * workspaces, but a chat made before that may still hold a template's `agent-1`,
@@ -27,69 +28,16 @@ type AgentMessage = {
 
 type AgentStatus = 'idle' | 'running' | 'streaming' | 'error' | 'complete'
 
-export type AgentExecutionMode = 'current_workspace' | 'worktree'
-
-export type McpClientTarget = AgentCli
-type McpTransport = 'stdio' | 'http' | 'sse'
-export type McpScope = 'workspace' | 'user'
-// These MCP shapes are the twin of the ones in src/shared/electron-api.ts (the
-// renderer re-exports them from here, the IPC contract declares them there);
-// they are structurally identical on purpose and must be changed together.
-// 'source' — a server a source installed, owned by Sync — arrived with
-// backlog/2026-09-06-mcp-installs-carry-source-provenance.md.
-export type McpServerSource = 'bundled' | 'custom' | 'source'
-type McpRiskLevel = 'low' | 'network' | 'local-command' | 'secrets'
-
-export type McpServerSourceRef = {
-  sourceId: string
-  itemId: string
-  commitSha: string
-  /** Set by a sync that no longer found `itemId` in the source. */
-  missing?: boolean
-  /**
-   * Where the declaring plugin's own files landed, for a server whose command
-   * was `${CLAUDE_PLUGIN_ROOT}`-relative. Absent for every other server; the
-   * contract's copy in electron-api.ts carries the full reasoning.
-   *
-   * Added here on 2026-09-06. The field landed on the contract alone
-   * (b3b1c81a0) and this twin kept the shorter shape, which is exactly the
-   * drift `server-from-scanned.test.ts` guards — "a provenance field added to
-   * one and not the other is a config that loses its source somewhere between
-   * the two". The guard was right and had simply not been run: verify:app was
-   * halting 226 steps before it.
-   */
-  pluginRoot?: string
-}
-
-export type McpServerConfig = {
-  id: string
-  name: string
-  category?: string
-  description?: string
-  transport: McpTransport
-  command?: string
-  args?: string[]
-  url?: string
-  env?: Record<string, string>
-  envVarNames?: string[]
-  headers?: Record<string, string>
-  enabled: boolean
-  required?: boolean
-  clients: McpClientTarget[]
-  scope: McpScope
-  source: McpServerSource
-  /** Present exactly when `source` is 'source'; see McpServerSourceRef. */
-  sourceRef?: McpServerSourceRef
-  riskLevel: McpRiskLevel
-  auth?: string
-  capabilities?: string[]
-  sourceUrl?: string
-}
-
-export type McpSettings = {
-  syncEnabled: boolean
-  servers: Record<string, McpServerConfig>
-}
+// The MCP shapes are the Studio protocol's, as everywhere in the app.
+import type { McpSettings } from '../../packages/studio-protocol/src/public'
+export type {
+  McpClientTarget,
+  McpScope,
+  McpServerConfig,
+  McpServerSource,
+  McpServerSourceRef,
+  McpSettings,
+} from '../../packages/studio-protocol/src/public'
 
 export type AgentExecution = {
   mode: AgentExecutionMode

@@ -16,6 +16,7 @@ import { FolderTypeIcon } from '../../AppIcons'
 import { Field, Input, OutlineButton, SegmentedControl } from '../../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../../ui/Modal'
 import { ProjectMonogram } from '../ProjectMonogram'
+import { filesApi } from '../../../studio/files'
 
 // Choose a project's icon: the one detected in its repo (the default), an image
 // file of the person's, or a monogram generated from its name on one of the
@@ -107,7 +108,7 @@ function ProjectIconDialogBody({
   }, [])
 
   const readFile = React.useCallback(async (path: string) => {
-    const logo = await window.api.readProjectIconFile(path).catch(() => null)
+    const logo = await filesApi.readProjectIconFile(path).catch(() => null)
     if (!mounted.current) return
     setFile({ path, src: logo?.dataUrl ?? null })
     setFileError(logo ? null : REFUSED_FILE)

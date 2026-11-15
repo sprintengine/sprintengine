@@ -12,7 +12,6 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../../shared/ssh-environments'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { createAskpassBroker, type AskpassRequest } from './askpass'
 import { DOCKER_TESTS, prepareSshdImage, SSHD_IMAGE_BUILD_MS, startSshd } from './__fixtures__/docker-sshd'
 import { parseDestination, resolveDestination, spawnSshSession } from './ssh-command'
@@ -68,7 +67,7 @@ function machine(configFile: string, ask: (request: AskpassRequest) => string | 
           configFile,
           env: { PATH: process.env.PATH, HOME: process.env.HOME },
         }) as unknown as SessionProcess,
-      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version: VERSION, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),
@@ -121,7 +120,7 @@ test.skipIf(!DOCKER_TESTS)(
         ['host-key', 'host-key'],
         "the bastion's key and the target's, each checked",
       )
-      assert.ok(connection.backend.listSessions().ok)
+      assert.ok((await connection.owner.request('conversation.list', {})).conversations)
       // The server runs on the target, not on the bastion.
       assert.match(target.exec('cat /home/dev/.local/share/sprintengine-studio/data/run/server.json'), /"pid":/u)
       assert.equal(

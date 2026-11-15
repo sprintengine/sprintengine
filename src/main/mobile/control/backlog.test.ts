@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { readMobileBacklogWorkspaceSnapshot } from './backlog'
-import type { MobileControlBacklogItemSnapshot } from './protocol'
+import type { StudioBacklogItem } from '../../../../packages/studio-protocol/src/public'
 import { test } from 'vitest'
 
 test('backlog', async () => {
@@ -25,7 +25,7 @@ test('backlog', async () => {
     return root
   }
 
-  function bySource(items: MobileControlBacklogItemSnapshot[], relativePath: string): MobileControlBacklogItemSnapshot {
+  function bySource(items: StudioBacklogItem[], relativePath: string): StudioBacklogItem {
     const found = items.find((item) => item.relativePath === relativePath)
     assert.ok(found, `expected a snapshot item for ${relativePath}`)
     return found
@@ -193,4 +193,25 @@ test('backlog', async () => {
   })
 
   await suiteRun
+})
+
+test("the phone's backlog snapshot reads no file a link in the backlog points out of it", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'sprintengine-mobile-backlog-links-')))
+  const project = join(root, 'project')
+  const outside = join(root, 'private')
+  try {
+    await mkdir(join(project, 'backlog', 'epics'), { recursive: true })
+    await mkdir(outside)
+    await writeFile(join(outside, 'secret.md'), '# PRIVATE_CANARY\n\nPRIVATE_CANARY body.\n', 'utf-8')
+    await writeFile(join(project, 'backlog', 'kept.md'), '---\nepic: leak\n---\n# Kept\n', 'utf-8')
+    await symlink(join(outside, 'secret.md'), join(project, 'backlog', 'escape.md'))
+    await symlink(join(outside, 'secret.md'), join(project, 'backlog', 'epics', 'leak.md'))
+
+    const snapshot = await readMobileBacklogWorkspaceSnapshot(project, '2026-06-27T00:00:00.000Z')
+    assert.ok(snapshot)
+    assert.ok(snapshot.items.some((item) => item.relativePath === 'backlog/kept.md'))
+    assert.ok(!JSON.stringify(snapshot).includes('PRIVATE_CANARY'))
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
 })

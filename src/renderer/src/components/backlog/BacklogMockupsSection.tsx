@@ -22,13 +22,14 @@ import {
   resolveFirstMockupCandidate,
   type BacklogMockupEntry,
 } from '../../utils/backlogMockups'
+import { filesApi } from '../../studio/files'
 
 // Detail-pane "Mockups" surface, the attachment analog of
 // BacklogDependenciesSection. It renders the item's mockups — attached
 // (frontmatter `mockups:`, removable) and body-detected (read-only) — as live
 // scripts-off preview cards, plus an "Attach mockup…" popover so attachments can
 // be added without leaving the pane. Attach/remove is persisted only through the
-// item's `mockups:` frontmatter (onSetMockups → window.api.updateBacklogMockups
+// item's `mockups:` frontmatter (onSetMockups → backlogApi.updateBacklogMockups
 // → re-scan); nothing here holds disconnected local list state.
 //
 // The section renders for epics and leaf items alike (amendment 3: epics are
@@ -83,7 +84,7 @@ export function BacklogMockupsSection({
       for (const entry of entries) {
         const found = await resolveFirstMockupCandidate(entry.path, async (relativePath) => {
           const absolutePath = await backlogOrWorkspacePath(folderPath, relativePath)
-          return (await window.api.pathExists(absolutePath)) ? { relativePath, absolutePath } : null
+          return (await filesApi.pathExists(absolutePath)) ? { relativePath, absolutePath } : null
         })
         next.set(entry.path, found)
       }
@@ -296,7 +297,7 @@ function AttachMockupEditor({
       for (const dir of MOCKUP_DIRS) {
         let entries: Array<{ name: string; isDir: boolean }> = []
         try {
-          entries = await window.api.readdir(joinFilePath(folderPath, dir))
+          entries = await filesApi.readdir(joinFilePath(folderPath, dir))
         } catch {
           continue // a missing mockups dir is just no candidates from that root
         }

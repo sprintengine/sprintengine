@@ -1,10 +1,31 @@
-import { Terminal } from '@xterm/headless'
-import { SerializeAddon } from '@xterm/addon-serialize'
-import { Unicode11Addon } from '@xterm/addon-unicode11'
+import type * as XtermHeadless from '@xterm/headless'
+import type * as XtermSerialize from '@xterm/addon-serialize'
+import type * as XtermUnicode11 from '@xterm/addon-unicode11'
 
 import { TERMINAL_RECENT_SCROLLBACK_LINES } from '../shared/terminal-history'
 import { TERMINAL_CELL_GEOMETRY_OPTIONS, TERMINAL_UNICODE_VERSION } from '../shared/terminal-options'
 import { resyncTerminalReplayHead } from './terminal-session'
+
+// The headless terminal and its addons, loaded the first time a screen is
+// rendered rather than when this file is: the Studio server runs the
+// terminal runtime, and a server started without its node_modules must still
+// get as far as saying so (studio-server.ts `missingRuntimePackages`).
+type Xterm = {
+  Terminal: typeof XtermHeadless.Terminal
+  SerializeAddon: typeof XtermSerialize.SerializeAddon
+  Unicode11Addon: typeof XtermUnicode11.Unicode11Addon
+}
+let xterm: Xterm | null = null
+function loadXterm(): Xterm {
+  /* eslint-disable @typescript-eslint/no-require-imports -- loaded on first use, see above */
+  xterm ??= {
+    Terminal: (require('@xterm/headless') as typeof XtermHeadless).Terminal,
+    SerializeAddon: (require('@xterm/addon-serialize') as typeof XtermSerialize).SerializeAddon,
+    Unicode11Addon: (require('@xterm/addon-unicode11') as typeof XtermUnicode11).Unicode11Addon,
+  }
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  return xterm
+}
 
 // Blank-screen fix for suspended agent terminals.
 //
@@ -134,6 +155,7 @@ function renderAndSerialize(data: string, cols: number, rows: number): Promise<s
       resolve(value)
     }
 
+    const { Terminal, SerializeAddon, Unicode11Addon } = loadXterm()
     const term = new Terminal({
       // The same cell-geometry block the live panes are built with
       // (`createStudioTerminal.ts`). Shared rather than copied because a

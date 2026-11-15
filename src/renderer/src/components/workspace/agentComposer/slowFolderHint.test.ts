@@ -7,29 +7,25 @@ const UNC = '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo'
 
 test('a WSL chat on a Windows drive is told, in one short line, which machine is fast', () => {
   assert.equal(
-    slowFolderHint('wsl:Ubuntu', 'C:\\Users\\dev\\repo', true),
+    slowFolderHint('wsl:Ubuntu', 'C:\\Users\\dev\\repo'),
     'On C: — slow from Ubuntu. Run on This PC for full speed.',
   )
   assert.equal(
-    slowFolderHint('wsl:Debian', 'd:/work/repo', true),
+    slowFolderHint('wsl:Debian', 'd:/work/repo'),
     'On D: — slow from Debian. Run on This PC for full speed.',
     'the drive and the distribution are the real ones',
   )
-  assert.equal(slowFolderHint('wsl:Ubuntu', UNC, true), null, 'its own disk is the fast one')
-  assert.equal(slowFolderHint('local', 'C:\\Users\\dev\\repo', true), null)
-  assert.equal(slowFolderHint('wsl:Ubuntu', null, true), null)
-})
-
-test('a distribution whose chats run one process each sees New chat on a Windows drive as it was', () => {
-  assert.equal(slowFolderHint('wsl:Ubuntu', 'C:\\Users\\dev\\repo', false), null)
+  assert.equal(slowFolderHint('wsl:Ubuntu', UNC), null, 'its own disk is the fast one')
+  assert.equal(slowFolderHint('local', 'C:\\Users\\dev\\repo'), null)
+  assert.equal(slowFolderHint('wsl:Ubuntu', null), null)
 })
 
 test('This PC in a folder inside a distribution gets the mirror line', () => {
   const line = 'In Ubuntu — slow from Windows. Run on WSL: Ubuntu for full speed.'
-  assert.equal(slowFolderHint('local', UNC, false), line)
-  assert.equal(slowFolderHint('local', '\\\\wsl$\\Ubuntu\\home\\dev\\repo', true), line, 'either share spelling')
+  assert.equal(slowFolderHint('local', UNC), line)
+  assert.equal(slowFolderHint('local', '\\\\wsl$\\Ubuntu\\home\\dev\\repo'), line, 'either share spelling')
   assert.equal(
-    slowFolderHint('local', '//wsl.localhost/Ubuntu-24.04/home/dev/repo', true),
+    slowFolderHint('local', '//wsl.localhost/Ubuntu-24.04/home/dev/repo'),
     'In Ubuntu-24.04 — slow from Windows. Run on WSL: Ubuntu-24.04 for full speed.',
   )
 })

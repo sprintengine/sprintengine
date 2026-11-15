@@ -9,6 +9,8 @@ import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../../.
 import { extensionIconProps, pluginArtwork } from '../../../workspace/globalSurface/extensions/catalogue/pluginArtwork'
 import { summarizePluginInstall } from '../../../workspace/globalSurface/extensions/plugins/pluginsSurfaceModel'
 import { describeServer, initialSelection, PRESELECT_SKILLS_UP_TO, pluginReadWhole } from './pluginOfferModel'
+import { agentSetupApi } from '../../../../studio/agentSetup'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
 
 // The one step between an agent's offer and anything landing on disk: what
 // the plugin is, where it comes from, and the servers and skills it would
@@ -56,7 +58,7 @@ export function PluginInstallDialog({
   useEffect(() => {
     if (plugin) return
     let cancelled = false
-    window.api
+    agentSkillsApi
       .skillsScanLinkedPlugin({ sourceId: source.id, pluginId: offered.id })
       .then((read) => {
         if (cancelled) return
@@ -88,7 +90,7 @@ export function PluginInstallDialog({
     try {
       // Both lists, always, even empty: a chosen install is the one that never
       // brings a plugin's hooks along.
-      const result = await window.api.skillsInstallPlugin({
+      const result = await agentSkillsApi.skillsInstallPlugin({
         sourceId: source.id,
         pluginId: plugin.id,
         workspaceRoot,
@@ -105,8 +107,8 @@ export function PluginInstallDialog({
       // install puts them, and from there into this workspace's config.
       for (const server of result.mcpServers) upsertMcpServer(server)
       const settings = useWorkspaceStore.getState().appSettings.mcp
-      if (result.mcpServers.length > 0 && settings?.syncEnabled && typeof window.api.mcpSync === 'function') {
-        await window.api.mcpSync({ workspaceRoot, settings }).catch(() => {})
+      if (result.mcpServers.length > 0 && settings?.syncEnabled && typeof agentSetupApi.mcpSync === 'function') {
+        await agentSetupApi.mcpSync({ workspaceRoot, settings }).catch(() => {})
       }
       // What was copied, and what did not stop the install but will matter
       // (a skill that failed to copy, a server whose runtime is missing).

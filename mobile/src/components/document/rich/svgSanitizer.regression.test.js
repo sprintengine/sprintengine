@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build/mobile");
 const { sanitizeSvg, safeSvgValue, SVG_LIMITS } = require(path.join(buildRoot, "src/components/document/rich/svgSanitizer.js"));
 
 const wrap = (inner, attributes = 'width="100" height="50"') => `<svg xmlns="http://www.w3.org/2000/svg" ${attributes}>${inner}</svg>`;

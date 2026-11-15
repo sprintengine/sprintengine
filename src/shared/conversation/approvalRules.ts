@@ -2,7 +2,6 @@ import { inferConversationToolKind } from './toolKind'
 import type { ConversationToolKind } from '../conversation-runtime'
 import { STUDIO_MCP_SERVER_ID } from '../product-identity'
 
-export type ConversationApprovalDecision = 'once' | 'conversation' | 'always' | 'deny'
 export type ApprovalRuleRequest = {
   action: string
   input?: unknown
@@ -11,20 +10,9 @@ export type ApprovalRuleRequest = {
   defaultToNo?: boolean
   suppressAlwaysAllowRule?: boolean
 }
-/**
- * `subcommand` absent means any arguments to a program whose arguments are
- * data (`rg`, `ls`); an empty string means the bare program with no arguments.
- */
-type ApprovalCommandMatcher = { type: 'command'; program: string; subcommand?: string }
-export type ConversationApprovalRule = {
-  id: string
-  workspaceRoot: string
-  toolKind: ConversationToolKind
-  toolName: string
-  matcher: ApprovalCommandMatcher | { type: 'path'; prefix: string } | { type: 'mcp'; server: string; tool: string }
-  label: string
-  createdAt: number
-}
+import type { ConversationApprovalRule } from '../../../packages/conversation-protocol/src/public'
+export type { ConversationApprovalRule }
+type ApprovalCommandMatcher = Extract<ConversationApprovalRule['matcher'], { type: 'command' }>
 export function approvalInput(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }

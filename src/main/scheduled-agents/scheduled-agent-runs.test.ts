@@ -20,7 +20,7 @@ import {
   type ModuleConversationWorkspace,
 } from '../module-host/module-conversation-service'
 import { runScheduledAgent } from './runner'
-import { createScheduledAgentsScheduler } from './scheduler'
+import { schedulerWithRunRecords } from './scheduled-runs.test-helper'
 import { createScheduledAgentsModuleRegistry, createScheduledAgentsService } from './service'
 import { createScheduledAgentsStore } from './store'
 
@@ -147,6 +147,7 @@ test('a run carries the schedule’s owner and tag onto its chat, and names the 
       lastRun: null,
       lastFailureSeenAt: null,
     },
+    'scheduled-run:test',
     {
       launchConversation: async (request) => {
         requests.push(request)
@@ -178,7 +179,7 @@ test('onRun hears each run that started a chat, and an extension hears only its 
     let id = 0
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
     await store.load()
-    const scheduler = createScheduledAgentsScheduler({
+    const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w', agentId: 'a' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -224,7 +225,7 @@ test('runNow tells onRun too, through the scheduler’s report', async () => {
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
     await store.load()
     let service: ReturnType<typeof createScheduledAgentsService> | null = null
-    const scheduler = createScheduledAgentsScheduler({
+    const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w-run', agentId: 'agent-run' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -332,6 +333,7 @@ test('a scheduled run’s chat is the schedule owner’s: listed with its schedu
       lastRun: null,
       lastFailureSeenAt: null,
     },
+    'scheduled-run:test',
     {
       launchConversation: (request) => launch.launch(request),
       getRepoRoot: async () => null,

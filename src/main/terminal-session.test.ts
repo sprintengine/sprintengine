@@ -769,7 +769,7 @@ test('terminal-session', async () => {
     const visible = createSession({ startedAt, visible: true })
     assert.equal(isTerminalSessionStale(visible, wellPastStale), false)
 
-    const visibleButWindowGone = createSession({ startedAt, visible: true, senderDestroyed: true })
+    const visibleButWindowGone = createSession({ startedAt, visible: true, viewerGone: true })
     assert.equal(isTerminalSessionStale(visibleButWindowGone, wellPastStale), true)
 
     const hidden = createSession({ startedAt, visible: false })
@@ -854,7 +854,7 @@ test('terminal-session', async () => {
     startedAt: number
     idleTimer?: ReturnType<typeof setTimeout>
     visible?: boolean
-    senderDestroyed?: boolean
+    viewerGone?: boolean
   }): TerminalSession {
     const visible = input.visible ?? true
     return {
@@ -866,9 +866,7 @@ test('terminal-session', async () => {
         onData: () => ({ dispose: () => undefined }),
         onExit: () => ({ dispose: () => undefined }),
       } as unknown as TerminalSession['process'],
-      sender: {
-        isDestroyed: () => input.senderDestroyed ?? false,
-      } as TerminalSession['sender'],
+      viewer: { isGone: () => input.viewerGone ?? false, deliver: () => undefined },
       isReady: true,
       hasExited: false,
       exitedAt: null,

@@ -9,6 +9,7 @@ import {
   type HostsListResult,
 } from '../../../../shared/execution-host'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // Settings ▸ Agents lists ONE machine's agent CLIs at a time (owner ruling
 // 2026-09-24). Before, the CLIs were listed twice — this computer's on the
@@ -115,7 +116,7 @@ export function useMachineCliAvailability(
   } | null>(null)
 
   useEffect(() => {
-    if (!isWslHostId(hostId) || typeof window.api?.pluginsDetectAvailability !== 'function') {
+    if (!isWslHostId(hostId) || !windowHasStudio()) {
       setAvailability(null)
       lastProbe.current = null
       return
@@ -141,7 +142,7 @@ export function useMachineCliAvailability(
           .filter(Boolean)
           .map((cli) => [cli, { command: own[cli] ?? '', hostId }]),
       )
-      void window.api
+      void extensionsApi
         .pluginsDetectAvailability({ cliRuntimes })
         .then((result) => {
           if (cancelled) return

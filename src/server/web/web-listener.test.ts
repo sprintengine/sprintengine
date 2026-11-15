@@ -1,3 +1,4 @@
+import { createMcpHttpRoutes } from './mcp-http-routes'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import { connect } from 'node:net'
@@ -24,6 +25,8 @@ let connected: Array<{ stream: Duplex; who: unknown }>
 let tunnelled: string[]
 let pairRequests: PairRequests
 const MINT_KEY = 'mint-key-for-the-test-only-0123456789'
+// The names `studio-server mcp-token` asked a token for, through the listener's mint route.
+let mcpTokensMade: string[] = []
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'web-listener-'))
@@ -52,7 +55,26 @@ beforeEach(async () => {
     version: 'test',
     studio: { connect: (stream, who) => connected.push({ stream, who }) },
     tunnel: { attach: (client) => tunnelled.push(client.clientId), detach: () => undefined },
+    extraRoutes: [
+      createMcpHttpRoutes({
+        mintKey: MINT_KEY,
+        create: async (name) => {
+          mcpTokensMade.push(name)
+          const status = { running: true, url: 'http://127.0.0.1:1/mcp', clients: [], lastError: null }
+          return name === 'taken'
+            ? { ok: false, message: 'A client already has that name.', status }
+            : {
+                ok: true,
+                status,
+                client: { id: 'c1', name, createdAt: 1, lastUsedAt: null },
+                token: 'semcp_t',
+                url: status.url,
+              }
+        },
+      }),
+    ],
   })
+  mcpTokensMade = []
   port = (await listener.start()).port
 })
 
@@ -281,6 +303,26 @@ test('studio-server pair mints a link with the run file key, and a browser canno
   expect(fromPage.status).toBe(403)
   const wrongKey = await ask('/pair/mint', { method: 'POST', headers: { Authorization: 'Bearer nope-nope-nope-nope' } })
   expect(wrongKey.status).toBe(403)
+})
+
+test('studio-server mcp-token makes a token with the run file key, and a browser or a wrong key cannot', async () => {
+  const mint = (headers: Record<string, string>, body: unknown) =>
+    ask('/mcp-http/mint', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    })
+  const made = await mint({ Authorization: `Bearer ${MINT_KEY}` }, { name: ' editor ' })
+  expect(made.status).toBe(200)
+  expect(JSON.parse(made.body)).toMatchObject({ ok: true, token: 'semcp_t', url: 'http://127.0.0.1:1/mcp' })
+  expect(String(made.headers['cache-control'])).toBe('no-store')
+  expect((await mint({ Authorization: `Bearer ${MINT_KEY}`, Origin: own() }, { name: 'page' })).status).toBe(403)
+  expect((await mint({ Authorization: 'Bearer nope-nope-nope-nope' }, { name: 'guess' })).status).toBe(403)
+  expect((await mint({ Authorization: `Bearer ${MINT_KEY}` }, {})).status).toBe(400)
+  const refused = await mint({ Authorization: `Bearer ${MINT_KEY}` }, { name: 'taken' })
+  expect(refused.status).toBe(400)
+  expect(JSON.parse(refused.body)).toEqual({ ok: false, message: 'A client already has that name.' })
+  expect(mcpTokensMade).toEqual(['editor', 'taken'])
 })
 
 test('the session answers which web bundle is served now, so an older tab can offer a reload', async () => {

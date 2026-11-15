@@ -1,5 +1,5 @@
 /**
- * Pushes `appSettings.textGeneration` to main.
+ * Pushes `appSettings.textGeneration` to the window's Studio (`textGeneration.setSettings`).
  *
  * A chat is titled by the process that runs it, from the chat's own events,
  * so a chat a phone starts while no window is open or in front still gets a
@@ -13,10 +13,15 @@
  * value came from another window or from an import.
  */
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { agentSettingsApi, windowHasStudio } from '../studio/agentSettings'
+import { windowStudioIsAnotherMachine } from '../studio/windowStudioClient'
 
 export function initTextGenerationSettingsSync(): () => void {
-  const api = typeof window !== 'undefined' ? window.api : undefined
-  if (!api?.setTextGenerationSettings) return () => undefined
+  if (!windowHasStudio()) return () => undefined
+  // The desktop window's to push: a web tab's own settings start at the
+  // defaults, and its mount push would overwrite a choice made on the desktop.
+  if (windowStudioIsAnotherMachine(window.api)) return () => undefined
+  const api = agentSettingsApi
 
   // Compared by value: the setting is an object, and the store hands out a new
   // one whenever anything in it is written. `null` so the mount push always

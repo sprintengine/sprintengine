@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -7,7 +7,8 @@ import { afterEach, test } from 'vitest'
 import { CONVERSATION_STALE_SEND_MS } from '../../packages/conversation-protocol/src/public'
 import { ConversationRuntime } from './conversation-runtime'
 import { createMockConversationProvider } from './providers/mock-conversation-provider'
-import { workspaceStoreRoot } from './workspace-store'
+import { readConversationReceipts } from './conversation-command-receipts'
+import { workspaceStorePath } from './workspace-store'
 
 // A paired device's message says when it was written (`composedAt`). One
 // written longer ago than the lane's limit, and not confirmed by the person
@@ -45,10 +46,11 @@ async function chat() {
     assert.ok(transcript.ok)
     return transcript.events.filter((event) => event.type === 'user_message')
   }
-  const receipts = async () =>
-    (await readdir(workspaceStoreRoot(workspaceRoot), { recursive: true }).catch(() => [] as string[])).filter(
-      (entry) => entry.endsWith('.receipts.json'),
-    )
+  const receipts = async () => {
+    await runtime.flushTranscripts()
+    const log = workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
+    return [...(await readConversationReceipts(workspaceRoot, log)).keys()]
+  }
   return { runtime, sessionId: started.session.sessionId, clock, messages, receipts }
 }
 

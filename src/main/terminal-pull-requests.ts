@@ -1,5 +1,4 @@
-import { connect, type StudioClient } from '../../packages/agent-sdk/src/client'
-import type { StudioTransportFactory } from '../../packages/agent-sdk/src/transport'
+import { connect, type StudioClient, type StudioTransportFactory } from '../../packages/client-runtime/src/public'
 import type { StudioPullRequest, StudioPullRequestOwner } from '../../packages/studio-protocol/src/public'
 import {
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,

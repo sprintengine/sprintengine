@@ -284,6 +284,57 @@ test('a watch outlives a restart, stored on its pull request’s row', async () 
   reopened.dispose()
 })
 
+test('news its chat was not told is stored with the watch state that found it, and outlives a restart', async () => {
+  const first = await setUp()
+  await first.record.watch(CHAT, { url: PR })
+  await first.record.flush()
+  first.answer(watchRead({ checks: [check('Build', 'failed')] }))
+  await first.probe()
+  assert.equal(first.news.length, 1)
+  first.record.dispose()
+  const stored = JSON.parse(await readFile(pullRequestStorePath(first.userDataDir), 'utf8')) as {
+    pullRequests: Array<{ watch?: { view: { waitingOn: string } }; untold?: Array<{ wake: { news: unknown[] } }> }>
+  }
+  assert.equal(stored.pullRequests[0].watch?.view.waitingOn, 'checks-failed', 'the watch moved past it')
+  assert.equal(stored.pullRequests[0].untold?.[0]?.wake.news.length, 1, 'in the same file, the same write')
+
+  // The process went before the chat was told: the next one has it to tell.
+  const reopened = createPullRequestRecord({ ...first.options, loadStoredOnStart: true })
+  assert.deepEqual(await reopened.untoldWakes.chats(), [CHAT])
+  const message = await reopened.untoldWakes.next(CHAT)
+  assert.ok(message)
+  assert.match(message.commandId, /^pull-request-watch:/)
+  assert.deepEqual(
+    message.wakes.map((wake) => wake.news.map((item) => item.kind)),
+    [['checks-failed']],
+  )
+  reopened.dispose()
+
+  // Stamped before it went: a start after a send asks for it again under the same id.
+  const again = createPullRequestRecord({ ...first.options, loadStoredOnStart: true })
+  const repeated = await again.untoldWakes.next(CHAT)
+  assert.equal(repeated?.commandId, message.commandId)
+  again.untoldWakes.told(CHAT, message.commandId)
+  await again.flush()
+  assert.deepEqual(await again.untoldWakes.chats(), [], 'told, it leaves')
+  again.dispose()
+  const last = createPullRequestRecord({ ...first.options, loadStoredOnStart: true })
+  assert.deepEqual(await last.untoldWakes.chats(), [])
+  last.dispose()
+})
+
+test('a record closing while a message is stamped hands back nothing to send', async () => {
+  const { record, answer, probe } = await setUp()
+  await record.watch(CHAT, { url: PR })
+  await record.flush()
+  answer(watchRead({ checks: [check('Build', 'failed')] }))
+  await probe()
+  const asked = record.untoldWakes.next(CHAT)
+  // The quit: the stamp is never written, so nothing may go under it.
+  record.dispose()
+  assert.equal(await asked, null)
+})
+
 test('watching a pull request again does not repeat what the ended watch already told the chat', async () => {
   const { record, news, answer, probe, clock } = await setUp()
   answer(watchRead({ checks: [check('Build', 'passed')] }))

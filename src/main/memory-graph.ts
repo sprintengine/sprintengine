@@ -2,71 +2,18 @@ import { readdir, readFile, stat } from 'fs/promises'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import { MAX_IMAGE_DATA_URL_BYTES } from './filesystem-read-limits'
 
-type MemoryGraphNodeKind = 'markdown' | 'image' | 'text' | 'asset'
+// The graph's shapes are the Studio protocol's (`memory.*`).
+import type {
+  MemoryGraphEdge,
+  MemoryGraphIndexResult,
+  MemoryGraphNode,
+  MemoryGraphNodeKind,
+  MemoryPreviewResult,
+  MemoryRootStatus,
+  MemoryUnresolvedLink,
+} from '../shared/ipc/memory'
 
-type MemoryGraphNode = {
-  id: string
-  path: string
-  relativePath: string
-  name: string
-  kind: MemoryGraphNodeKind
-  extension: string
-  sizeBytes: number
-  degree: number
-  inboundDegree: number
-  group: string
-  /** Frontmatter title, falling back to first H1 in body, otherwise undefined. */
-  title?: string
-  /** Frontmatter type — used for graph color and the modal badge. */
-  type?: string
-  /** Frontmatter tags (string[] or comma-separated). */
-  tags?: string[]
-  /** Frontmatter `related` + `depends-on`, normalised to relative paths when resolvable. */
-  related?: string[]
-}
-
-type MemoryGraphEdge = {
-  id: string
-  source: string
-  target: string
-  sourcePath: string
-  targetPath: string
-}
-
-type MemoryUnresolvedLink = {
-  sourcePath: string
-  href: string
-  resolvedRelativePath: string | null
-  reason: 'missing' | 'outside-root'
-}
-
-export type MemoryRootStatus =
-  | { ok: true; rootPath: string; relativeRoot: string }
-  | {
-      ok: false
-      status: 'missing-workspace' | 'invalid-relative-path' | 'missing-memory-root' | 'inaccessible'
-      relativeRoot: string | null
-      message: string
-    }
-
-export type MemoryGraphIndexResult =
-  | {
-      ok: true
-      rootPath: string
-      relativeRoot: string
-      nodes: MemoryGraphNode[]
-      edges: MemoryGraphEdge[]
-      groups: string[]
-      unresolvedLinks: MemoryUnresolvedLink[]
-      indexedAt: number
-    }
-  | MemoryRootStatus
-
-export type MemoryPreviewResult =
-  | { ok: true; node: MemoryGraphNode; previewKind: 'markdown' | 'text'; content: string }
-  | { ok: true; node: MemoryGraphNode; previewKind: 'image'; dataUrl: string }
-  | { ok: true; node: MemoryGraphNode; previewKind: 'unsupported'; message: string }
-  | { ok: false; message: string }
+export type { MemoryGraphIndexResult, MemoryPreviewResult, MemoryRootStatus }
 
 const IMAGE_EXTENSIONS = new Set(['.apng', '.avif', '.bmp', '.gif', '.ico', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
 const TEXT_EXTENSIONS = new Set([

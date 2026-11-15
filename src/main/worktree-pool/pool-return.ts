@@ -395,6 +395,7 @@ export async function returnUnused(
 export async function release(
   ctx: PoolContext,
   leaseId: string,
+  options: { dropUnusedBranch?: boolean } = {},
 ): Promise<'returned' | 'held' | 'postponed' | 'busy' | 'not-found'> {
   const found = findLease(ctx, leaseId)
   if (!found) return 'not-found'
@@ -402,6 +403,32 @@ export async function release(
   // (another Studio judged it stale) must not move a slot that is now
   // someone else's.
   if (!(await ctx.ready(found.pool))) return 'busy'
+  // Read before the return, which moves the slot's base to where it stands.
+  const branch = found.slot.lease?.branch ?? null
+  const base = found.slot.baseSha
   const outcome = await returnSlot(ctx, found.pool, found.slot)
+  if (options.dropUnusedBranch && outcome === 'returned' && branch && base) {
+    await dropUnusedBranch(ctx, found.pool, branch, base)
+  }
   return outcome === 'skipped' ? 'busy' : outcome
+}
+
+/**
+ * A lease its window gives back as unused: a New chat that held a worktree
+ * while the person typed, then had Worktree turned off, moved to another
+ * project or closed. Its branch was made for the lease and still points where
+ * the lease began, so it holds nothing; deleting
+ * it now rather than at the next cleanup sweep keeps a stray `agent/chat-…`
+ * from showing in the branch list. A branch with a commit of its own is kept.
+ */
+async function dropUnusedBranch(ctx: PoolContext, pool: PoolRuntime, branch: string, base: string): Promise<void> {
+  const repoRoot = pool.record.repoRoot
+  const tip = await ctx.git(repoRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+  if (!tip.ok || tip.stdout.trim() !== base) return
+  const removed = await ctx.git(repoRoot, ['branch', '-D', '--quiet', branch])
+  ctx.log(
+    removed.ok
+      ? `deleted branch ${branch}: given back unused`
+      : `kept branch ${branch}: ${tail(removed.message ?? 'git branch -D failed')}`,
+  )
 }

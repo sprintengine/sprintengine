@@ -15,7 +15,7 @@ const test = require("node:test");
 // react-native.
 
 const repoRoot = path.resolve(__dirname, "../../..");
-const buildRoot = path.join(repoRoot, ".mobile-test-build");
+const buildRoot = path.join(repoRoot, ".mobile-test-build/mobile");
 const {
   LIFECYCLE_TONE,
   glyphSurfaces,

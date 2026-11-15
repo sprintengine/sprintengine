@@ -17,6 +17,8 @@ import { createSettledChatsSelector, type SettledChatEntry } from './settledChat
 import { remoteOriginChatWorkspaceId } from '../workspace/remoteBand/remoteSessionsModel'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useDeleteSettledChats } from '../../hooks/useDeleteSettledChats'
+import { settlePairedChat } from '../../studio/pairedChats'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
 
 const SETTLED_PAGE = 100
 
@@ -117,18 +119,17 @@ export function SettledChatsSettingsTab({
   const unsettle = useCallback(
     (id: WorkspaceId) => {
       const origin = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === id)?.remoteOrigin
-      const settle = window.api?.meshSettleConversation
-      if (!origin || typeof settle !== 'function') {
+      if (!origin || !environmentStudioAvailable()) {
         setWorkspaceSettled(id, false)
         return
       }
       const refused = (message: string) =>
         showToast({ tone: 'error', title: 'The chat was not brought back', description: message })
-      void settle({
-        connectionId: origin.connectionId,
-        workspaceId: remoteOriginChatWorkspaceId(origin),
-        settled: false,
-      })
+      void settlePairedChat(
+        { id: origin.connectionId, machineName: origin.machineName },
+        remoteOriginChatWorkspaceId(origin),
+        false,
+      )
         .then((answer) => {
           if (answer.ok || answer.code === 'lifecycle_unsupported') setWorkspaceSettled(id, false)
           else refused(answer.message)

@@ -11,13 +11,12 @@ import {
 import { type ReasoningSegment, type TranscriptEntry, type TranscriptToolEntry } from './conversationProjection'
 import { AttachmentThumbnail } from '../ComposerAttachmentStrip'
 import { ComposerFileChip } from './ComposerFileChip'
-import { clientSupports } from '../../../clientCapabilities'
 import {
   hasMacosPrivacyFolderHint,
   MACOS_PRIVACY_FOLDER_HINT,
 } from '../../../../../shared/conversation/macosPrivacyFolders'
 import { attachedFileName } from '../../../utils/attachedFiles'
-import { useConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { StoredAttachmentThumbnail } from './storedAttachments'
 import {
@@ -237,10 +236,10 @@ export const TimelineRow = React.memo(function TimelineRow({
 // side of the transport: a paired machine's file is a path on that machine.
 function HandoffTimelineRow({ entry }: { entry: Extract<TranscriptEntry, { kind: 'handoff' }> }) {
   const context = useConversationLinkContext()
-  const transport = useConversationTransport()
+  const { openDocument } = useShellReach()
   const workspaceId = context?.workspaceId
   const open =
-    transport.kind === 'local' && workspaceId
+    openDocument && workspaceId
       ? (path: string) =>
           useWorkspaceStore.getState().openPaneTab(workspaceId, {
             kind: 'document',
@@ -273,9 +272,9 @@ export function UserTimelineRow({
   if (entry.origin?.kind === 'studio') return <StudioNoticeRow entry={entry} />
   const attachments = entry.attachments ?? []
   const stored = attachments.length ? [] : (entry.storedAttachments ?? [])
-  const transport = useConversationTransport()
+  const { dragPaths } = useShellReach()
   const files = entry.files ?? []
-  const fileCards = transport.kind === 'local' && transport.capabilities.localFiles && clientSupports('drag-paths')
+  const fileCards = dragPaths
   const cards = fileCards ? files : []
   const named = fileCards ? [] : files
   const text = entry.text

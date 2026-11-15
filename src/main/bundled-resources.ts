@@ -51,8 +51,8 @@ export function getBundledStudioPluginRoot(): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
-// A directory the build ships under resources (`wsl-helper`, `hooks`,
-// `automation`), with the same packaged and dev lookups as the ones above.
+// A directory the build ships under resources (`hooks`, `automation`,
+// `builtin-skills`), with the same packaged and dev lookups as the ones above.
 export function getBundledResourceDir(name: string): string | null {
   if (app.isPackaged) {
     const packaged = join(process.resourcesPath, name)

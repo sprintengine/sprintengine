@@ -1,7 +1,7 @@
-import { presentToolItem } from "../../api/conversation-protocol/presentation";
-import type { AgentLane } from "./agentLogic";
+import { presentToolItem } from "../../../../packages/conversation-protocol/src/public";
 import { toolPicture, type ToolPicture } from "./conversationImageLogic";
-import { recordValue, stringValue, type ConversationRow, type MobileTool } from "./conversationLogic";
+import type { AgentLane, ConversationRow, RowTool } from "../../../../packages/conversation-timeline/src/public";
+import { recordValue, stringValue } from "./conversationLogic";
 import type { SentImage } from "./sentPhotos";
 
 // What the agent touched in one chat, read off the rows the phone already
@@ -14,7 +14,7 @@ import type { SentImage } from "./sentPhotos";
 export type ChatActivityKind = "changes" | "agents" | "browser" | "canvas" | "library";
 
 /** A picture a step made or read, as the transcript draws it. */
-export type StepPicture = { tool: MobileTool; picture: ToolPicture };
+export type StepPicture = { tool: RowTool; picture: ToolPicture };
 
 export type ChatActivity = {
   order: ChatActivityKind[];
@@ -43,12 +43,12 @@ const STUDIO_SERVER = "sprintengine-studio";
  * `sprintengine-studio.browser_open` both read `browser_open`. Null for any
  * other server's.
  */
-export function studioToolName(tool: Pick<MobileTool, "name" | "serverName">): string | null {
+export function studioToolName(tool: Pick<RowTool, "name" | "serverName">): string | null {
   if (tool.serverName !== STUDIO_SERVER && !tool.name.includes(STUDIO_SERVER)) return null;
   return tool.name.split(/__|[./]/u).at(-1) ?? tool.name;
 }
 
-function toolsOf(row: ConversationRow): MobileTool[] {
+function toolsOf(row: ConversationRow): RowTool[] {
   if (row.kind === "tools") return row.tools;
   if (row.kind === "fold") return row.parts.flatMap((part) => (part.kind === "tools" ? part.tools : []));
   return [];

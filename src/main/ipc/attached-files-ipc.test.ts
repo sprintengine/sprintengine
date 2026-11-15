@@ -17,6 +17,7 @@ function harness() {
   const files = {
     register: vi.fn(),
     preview: vi.fn(async () => ({ kind: 'file' as const, thumbnailDataUrl: null, openable: true })),
+    read: vi.fn(async () => ({ ok: true as const, name: 'report.pdf', dataBase64: 'JVBERg==' })),
     open: vi.fn(async () => undefined),
   }
   registerAttachedFilesIpc(
@@ -36,7 +37,9 @@ test('the app’s own window registers, previews and opens attached files', asyn
   await invoke('attached-files:register', { url: APP_URL }, '/Users/dev/report.pdf')
   await invoke('attached-files:preview', { url: APP_URL }, '/Users/dev/report.pdf')
   await invoke('attached-files:open', { url: APP_URL }, '/Users/dev/report.pdf')
+  await invoke('attached-files:read', { url: APP_URL }, '/Users/dev/report.pdf')
   expect(files.register).toHaveBeenCalledWith('/Users/dev/report.pdf')
+  expect(files.read).toHaveBeenCalledWith('/Users/dev/report.pdf')
   expect(files.preview).toHaveBeenCalledWith('/Users/dev/report.pdf')
   expect(files.open).toHaveBeenCalledWith('/Users/dev/report.pdf')
 })
@@ -50,7 +53,11 @@ test('an embedded page holding the preload can neither grow the list nor open fr
     await expect(async () => invoke('attached-files:open', sender, '/Users/dev/payload.pdf')).rejects.toThrow(
       'did not come from a SprintEngine Studio window',
     )
+    await expect(async () => invoke('attached-files:read', sender, '/Users/dev/payload.pdf')).rejects.toThrow(
+      'did not come from a SprintEngine Studio window',
+    )
   }
   expect(files.register).not.toHaveBeenCalled()
+  expect(files.read).not.toHaveBeenCalled()
   expect(files.open).not.toHaveBeenCalled()
 })

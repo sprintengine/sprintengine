@@ -20,8 +20,16 @@ import { expect, test } from 'vitest'
 // built on disk.
 type FakeFile = { bytes: Buffer; size?: number; mtimeMs?: number; isFile?: boolean }
 
-function createIo(files: Record<string, FakeFile>, options: { onDownscale?: () => void } = {}) {
+function createIo(
+  files: Record<string, FakeFile>,
+  options: {
+    onDownscale?: () => void
+    /** Paths that are links, to where they lead: followed by stat and read, as the disk's are. */
+    links?: Record<string, string>
+  } = {},
+) {
   const reads: string[] = []
+  const followed = (path: string) => options.links?.[path] ?? path
   const io: ProjectLogoIo = {
     async readdir(dirPath: string) {
       const prefix = `${dirPath}/`
@@ -32,7 +40,7 @@ function createIo(files: Record<string, FakeFile>, options: { onDownscale?: () =
       return names
     },
     async stat(filePath: string) {
-      const file = files[filePath]
+      const file = files[followed(filePath)]
       if (!file) throw new Error(`ENOENT: ${filePath}`)
       return {
         isFile: file.isFile ?? true,
@@ -41,10 +49,13 @@ function createIo(files: Record<string, FakeFile>, options: { onDownscale?: () =
       }
     },
     async readFile(filePath: string) {
-      const file = files[filePath]
+      const file = files[followed(filePath)]
       if (!file) throw new Error(`ENOENT: ${filePath}`)
       reads.push(filePath)
       return file.bytes
+    },
+    async realpath(filePath: string) {
+      return followed(filePath)
     },
     async downscaleRaster(bytes, mimeType) {
       options.onDownscale?.()
@@ -197,6 +208,40 @@ test('project-logo', async () => {
       const logo = await detectProjectLogo('/repo', failing)
       assert.equal(logo?.path, '/repo/favicon.ico', 'a failing downscale still yields the logo')
       assert.equal(decode(logo?.dataUrl ?? ''), 'ico-bytes', 'the original bytes are served when the resize fails')
+    }
+
+    {
+      // A candidate that is a link out of the project is no logo of it, and is
+      // never read: a repository could link `logo.png` to any picture on the
+      // disk. The next candidate inside the project is the logo.
+      const { io, reads } = createIo(
+        {
+          '/home/dev/Desktop/scan.png': { bytes: Buffer.from('private-scan') },
+          '/repo/favicon.ico': { bytes: Buffer.from('ico-bytes') },
+          '/repo/public/index.html': {
+            bytes: Buffer.from('<link rel="icon" href="/elsewhere.png">'),
+          },
+        },
+        {
+          links: {
+            '/repo/logo.png': '/home/dev/Desktop/scan.png',
+            '/repo/index.html': '/home/dev/Desktop/scan.png',
+          },
+        },
+      )
+      const listing: ProjectLogoIo = {
+        ...io,
+        async readdir(dirPath) {
+          return dirPath === '/repo' ? ['logo.png', 'favicon.ico', 'index.html'] : io.readdir(dirPath)
+        },
+      }
+      const logo = await detectProjectLogo('/repo', listing)
+      assert.equal(logo?.path, '/repo/favicon.ico', 'the link out is passed over for the next candidate')
+      assert.ok(
+        !reads.includes('/repo/logo.png') && !reads.includes('/home/dev/Desktop/scan.png'),
+        'the linked file is never read',
+      )
+      assert.ok(!reads.includes('/repo/index.html'), 'nor is a linked page')
     }
 
     {

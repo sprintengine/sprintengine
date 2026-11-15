@@ -24,6 +24,7 @@ import { NewProjectStep, type NewProjectRequest } from '../newWorkspace/NewProje
 import type { NewProjectResult } from '../../../../../shared/electron-api'
 import { basename } from '../../../utils/paths'
 import { isImeKey } from '../../../utils/imeKey'
+import { gitApi } from '../../../studio/git'
 
 // The New-chat project selector's body (remote-sessions-ux /
 // project-selector-sources): one surface that searches the projects, browses
@@ -141,7 +142,7 @@ export function ProjectSourceMenu({
   const loadRepos = React.useCallback(() => {
     const seq = ++repoRequestSeq.current
     setRepoList({ status: 'loading' })
-    void window.api
+    void gitApi
       .listGitHubRepos()
       .then((result) => {
         if (repoRequestSeq.current === seq) setRepoList(toRepoListState(result))
@@ -173,7 +174,7 @@ export function ProjectSourceMenu({
   const cloningId = cloning?.id ?? null
   React.useEffect(() => {
     if (!cloningId) return undefined
-    return window.api.onRepositoryCloneProgress?.((progress) => {
+    return gitApi.onRepositoryCloneProgress?.((progress) => {
       if (progress.cloneId !== cloningId) return
       setCloning((current) => (current?.id === cloningId ? { ...current, progress } : current))
     })
@@ -412,7 +413,7 @@ export function ProjectSourceMenu({
 
         <div className="flex items-center justify-end gap-1.5">
           {cloning ? (
-            <GhostButton size="sm" onClick={() => void window.api.cancelRepositoryClone?.(cloning.id)}>
+            <GhostButton size="sm" onClick={() => void gitApi.cancelRepositoryClone?.(cloning.id)}>
               Cancel
             </GhostButton>
           ) : null}

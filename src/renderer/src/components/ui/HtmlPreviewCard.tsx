@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { WarningIcon } from '../AppIcons'
 import { TruncatedText } from './TruncatedText'
 import { inertHtml } from '../../utils/inertHtml'
+import { filesApi } from '../../studio/files'
 
 // Shared card primitive: a small live render of one HTML file on disk + title +
 // mono path meta + click-through. The live render holds the same scripts-off
@@ -51,7 +52,7 @@ export function HtmlPreviewCard({ absolutePath, relativePath, title, onOpen, tab
     setState({ kind: 'loading' })
     void (async () => {
       try {
-        const content = await window.api.readfile(absolutePath)
+        const content = await filesApi.readfile(absolutePath)
         if (cancelled) return
         // An empty or unreadable file is the render-error state: the card stays
         // clickable so opening it shows the raw file, never a blank tile.

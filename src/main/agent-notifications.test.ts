@@ -28,6 +28,7 @@ function phase(overrides: Partial<AgentPhaseEvent>): AgentPhaseEvent {
 function harness(options: { mode?: AgentNotificationMode; focused?: boolean; label?: ChatLabel | null } = {}) {
   const shown: ShellNotice[] = []
   const notifier = createAgentNotifier({
+    environmentId: 'env-here',
     mode: () => options.mode ?? 'banner',
     isAnyWindowFocused: () => options.focused ?? false,
     chatLabel: () => (options.label === undefined ? { title: 'Pricing page polish' } : options.label),
@@ -45,7 +46,7 @@ test('a finished turn raises a silent banner that opens its chat', () => {
       title: 'Pricing page polish',
       body: 'Finished.',
       silent: true,
-      activate: { kind: 'chat', chatId: 'ws-1', agentId: 'agent-1' },
+      activate: { kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' },
     },
   ])
 })

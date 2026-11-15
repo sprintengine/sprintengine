@@ -6,7 +6,13 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'vitest'
 
 import { quotePromptPath } from '../../shared/prompt-path'
-import { createScheduledPromptImages, SCHEDULED_IMAGES_DIRNAME } from './prompt-images'
+import {
+  createScheduledPromptImages,
+  keepScheduledImage,
+  keptImagesIn,
+  respellPromptPath,
+  SCHEDULED_IMAGES_DIRNAME,
+} from './prompt-images'
 
 let scratch = ''
 let tempRoot = ''
@@ -62,4 +68,25 @@ test('a prompt naming no temp image is stored as written', async () => {
   const images = createScheduledPromptImages({ dataDir, tempRoot })
   for (const prompt of ['summarise the open issues', `read ${join(scratch, 'notes.png')}`])
     assert.equal(await images.keep(prompt), prompt)
+})
+
+test('a handed-over schedule names its kept pictures, and the machine keeps and names its own copies', async () => {
+  const images = createScheduledPromptImages({ dataDir, tempRoot })
+  const temp = join(tempRoot, 'image-Ab12Cd', 'pasted.png')
+  const kept = await images.keep(`Compare ${quotePromptPath(temp)} with the page`)
+  const named = await keptImagesIn(kept, dataDir)
+  assert.equal(named.length, 1)
+  assert.equal(named[0]!.name, 'pasted.png')
+  assert.equal(named[0]!.mediaType, 'image/png')
+  assert.ok(kept.includes(named[0]!.path))
+  assert.deepEqual(await keptImagesIn('No pictures here', dataDir), [])
+
+  // On the machine: the bytes kept under its own data directory, the prompt naming that copy.
+  const machineData = join(scratch, 'machine data')
+  const there = await keepScheduledImage(machineData, Buffer.from('png bytes'), 'pasted.png')
+  assert.ok(there.startsWith(join(machineData, SCHEDULED_IMAGES_DIRNAME)), there)
+  assert.equal(await readFile(there, 'utf8'), 'png bytes')
+  const respelled = respellPromptPath(kept, named[0]!.path, there)
+  assert.ok(respelled.includes(quotePromptPath(there)), respelled)
+  assert.ok(!respelled.includes(named[0]!.path), respelled)
 })

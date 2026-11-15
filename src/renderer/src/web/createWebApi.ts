@@ -9,7 +9,7 @@ import { pickServerFolder } from './FolderBrowserDialog'
 import { refuse } from './unsupported'
 import { ipc } from './webIpcRouter'
 import { randomId } from '../../../shared/random-id'
-import { createWebStudioPorts } from './webStudioPorts'
+import { webStudioTicket } from './webStudio'
 import { uploadFilesToServer } from './webUploads'
 import { webCanvasPaneApi } from './canvas/webCanvasPane'
 
@@ -111,18 +111,10 @@ const SIGNED_OUT: SprintEngineAuthState = {
  * the app reads cannot drift from what it gets.
  */
 const browserEmptyStates = {
-  terminalList: async () => [],
-  terminalTakeUndeliveredPrompts: async () => [],
-  setTerminalIdleSuspendMs: async () => undefined,
-  setTerminalKeepRecentAliveCount: async () => undefined,
-  setTerminalReapExempt: async () => undefined,
   getWindowState: async () => null,
   getWindowPlacement: async () => null,
   updateAppMenuAccelerators: async () => ({ ok: true as const }),
   authGetState: async () => SIGNED_OUT,
-  listDesignSystemArrivals: async () => ({ bundles: [] }),
-  cliVersionChecksSetEnabled: async () => ({ enabled: false }),
-  cliVersionAdvisories: async () => ({ ok: false as const, message: 'Version checks run in the desktop app.' }),
   editorRevealClaim: async () => null,
   // The desktop's browser pane; a tab shows previews instead, and has no pane to note.
   browserNoteActive: async () => undefined,
@@ -130,16 +122,6 @@ const browserEmptyStates = {
   listFolderOpenTargets: async () => [],
   setBackgroundMode: async () => undefined,
   setTelemetryEnabled: async () => undefined,
-  // The titles setting the server titles chats by is the desktop window's to
-  // push: a tab's own settings start at the defaults, and its mount push would
-  // overwrite a choice the person made on the desktop.
-  setTextGenerationSettings: async () => undefined,
-  // So are the Settled chats settings and the module run states main's rest
-  // sweep reads: a tab's settings start at the defaults, and a tab loads no
-  // third-party module, so its pushes would replace the desktop's choices and
-  // readings with defaults and blanks.
-  setSettledChatsSettings: async () => undefined,
-  setModuleRunStates: async () => undefined,
   // A browser tab has no quit to ask about, and no app to relaunch.
   restartApp: undefined,
   // Nor a file manager on the server's disk to open a module's folder in.
@@ -154,14 +136,6 @@ const browserEmptyStates = {
   getKeepAwake: async () => null,
   setKeepAwake: async () => null,
   // Nor the desktop's disk and credentials to publish an artifact with.
-  getArtifactsSettings: async () => null,
-  setUpArtifacts: async () => null,
-  // Third-party renderer modules are off on the web unless the owner turns
-  // them on for this server (R61); bundled modules load from the bundle.
-  listThirdPartyRendererEntries: async () => ({ entries: [], failures: {} }),
-  // The shell's copies of module state, which a tab has no shell to keep.
-  setModuleEnablement: async () => ({ ok: true }),
-  setModuleRegistrySnapshot: async () => ({ ok: true }),
   // The tab's own console is its diagnostics log.
   logDiagnostic: async (input) => {
     console.info('[diagnostics]', input)
@@ -182,9 +156,8 @@ export function createWebApi(): ElectronApi {
     isDiagnosticsEnabled: diagnosticsOnLoopback(),
     diagnosticsGetIpcStats: () => ({ sampledAt: Date.now(), channels: [] }),
 
-    // The chat over the Studio protocol, on the tab's own socket.
-    studioChatTransport: 'studio',
-    ...createWebStudioPorts(),
+    // The tab's own socket to its Studio.
+    studioWindowTicket: webStudioTicket,
 
     // The Canvas pane, over the canvas service the tab runs in the page.
     ...webCanvasPaneApi(),

@@ -139,7 +139,7 @@ export function sessionFromLegacyRecord(value: unknown): MobileSession | null {
     pairedAt: value.pairedAt,
     tailnetScopes,
   };
-  for (const key of ["tailnetTransportVersion", "tailnetCapabilities", "status", "lastSeenAt", "revokedAt"] as const) {
+  for (const key of ["tailnetTransportVersion", "status", "lastSeenAt", "revokedAt"] as const) {
     if (value[key] !== undefined) {
       candidate[key] = value[key];
     }

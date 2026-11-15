@@ -45,8 +45,12 @@ export type ChatPanelFacts = {
   modelLabel: string | null
   /** Where the chat runs, when that is not this computer. */
   machine: ChatPanelMachine | null
-  /** The chat runs on a paired machine, so its checkout and terminals are over there. */
-  remote: boolean
+  /**
+   * What the person calls the environment the chat runs in, where that is not
+   * the window's own Studio (a paired machine): its checkout and terminals are
+   * over there. Null for the window's own.
+   */
+  environmentLabel: string | null
   branch: ChatPanelBranch | null
   changes: ChatPanelChanges | null
   pullRequests: readonly BranchPullRequest[]

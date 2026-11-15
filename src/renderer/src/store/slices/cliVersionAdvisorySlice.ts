@@ -1,4 +1,5 @@
 import type { CliVersionAdvisoriesResult, CliVersionHostAdvisories } from '../../../../shared/electron-api'
+import { agentSettingsApi, windowHasStudio, type AgentSettingsApi } from '../../studio/agentSettings'
 
 // CLI version advisories as the renderer sees them: installed version against
 // the registry's newest, per CLI, per machine (this one and each WSL
@@ -25,12 +26,10 @@ export type CliVersionAdvisorySlice = CliVersionAdvisorySliceState & CliVersionA
 
 type CliVersionAdvisorySliceSet = (mutator: (state: CliVersionAdvisorySliceState) => void) => void
 
-type CliVersionApi = Pick<Window['api'], 'cliVersionAdvisories'>
+type CliVersionApi = Pick<AgentSettingsApi, 'cliVersionAdvisories'>
 
 function getCliVersionApi(): CliVersionApi | null {
-  if (typeof window === 'undefined') return null
-  const api = window.api
-  return api && typeof api.cliVersionAdvisories === 'function' ? api : null
+  return windowHasStudio() ? agentSettingsApi : null
 }
 
 export function createCliVersionAdvisorySlice(
@@ -82,7 +81,7 @@ export function createCliVersionAdvisorySlice(
 
 export function subscribeCliVersionAdvisoryChanges(
   apply: (result: CliVersionAdvisoriesResult) => void,
-  api: Pick<Window['api'], 'onCliVersionAdvisoriesChanged'> | null = typeof window === 'undefined' ? null : window.api,
+  api: Pick<AgentSettingsApi, 'onCliVersionAdvisoriesChanged'> | null = getCliVersionApi() && agentSettingsApi,
 ): () => void {
   if (!api || typeof api.onCliVersionAdvisoriesChanged !== 'function') return () => {}
   return api.onCliVersionAdvisoriesChanged(apply)

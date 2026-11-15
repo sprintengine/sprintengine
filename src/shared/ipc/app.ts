@@ -25,5 +25,4 @@ export type AppMenuAcceleratorUpdate = {
 }
 export type AppMenuAcceleratorUpdateResult = { ok: true }
 
-export type BacklogItemStatusPayload = 'idea' | 'ready' | 'in_progress' | 'needs_input' | 'completed' | 'archived'
-export type BacklogTypePayload = 'epic' | 'feature' | 'bug' | 'mockup' | 'spike'
+export type { BacklogItemStatusPayload, BacklogTypePayload } from '../../../packages/studio-protocol/src/backlog-types'

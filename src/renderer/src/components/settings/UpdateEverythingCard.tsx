@@ -6,6 +6,7 @@ import { hostPlatform } from '../../clientCapabilities'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { InlineNotice, OutlineButton } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
+import { agentSettingsApi } from '../../studio/agentSettings'
 
 // Settings ▸ Agents: Update everything. One press updates every agent CLI
 // with a newer version published, on this machine and on each WSL
@@ -62,11 +63,10 @@ export function UpdateEverythingCard() {
   }, [advisories])
 
   useEffect(() => {
-    if (!running || typeof window.api.onCliUpdateAllProgress !== 'function') return undefined
-    return window.api.onCliUpdateAllProgress(setItems)
+    if (!running) return undefined
+    return agentSettingsApi.onCliUpdateAllProgress(setItems)
   }, [running])
 
-  if (typeof window.api.cliUpdateAll !== 'function') return null
   if (outdated.count === 0 && items === null) return null
 
   const nameOf = (cli: string) => catalog.find((entry) => entry.id === cli)?.displayName ?? cli
@@ -75,7 +75,7 @@ export function UpdateEverythingCard() {
     setItems(null)
     setRunning(true)
     try {
-      const result = await window.api.cliUpdateAll()
+      const result = await agentSettingsApi.cliUpdateAll()
       if (result.ok) setItems(result.items)
       else setError(result.message)
     } catch (failure) {

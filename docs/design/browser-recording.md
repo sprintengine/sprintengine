@@ -65,7 +65,7 @@ reference (a file it wrote through `files.*`, or a URL) and a summary".
   agent in the distribution reads the same folder; the answer gives the file
   relative to the workspace and as a Linux path.
 - **An SSH machine.** Nothing on the desktop can write a file into a folder on
-  the machine yet: its server takes reads over the backend wire, and
+  the machine yet: its Studio is reached on the Studio protocol, and
   `files.write` writes canvas boards only, under roots its own (empty)
   workspace registry knows. A recording kept on the desktop would be a path the
   agent cannot open. So `browser.record_start` answers

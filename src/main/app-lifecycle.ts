@@ -1,14 +1,14 @@
 import { app, BrowserWindow, ipcMain, Menu, net, powerMonitor } from 'electron'
 import { createAppMenu, setChatWindowsForCloseChord } from './app-menu'
 import { sweepRetiredCheckpoints } from './checkpoint-sweep'
-import { createBootReveal } from './boot-reveal'
+import { createBootReveal, onRendererBootComplete } from './boot-reveal'
 import { DEEP_LINK_SCHEMES, withoutDeepLinks } from '../shared/deep-link-scheme'
 import { CHAT_LINK_OPEN_CHANNEL, chatLinkFromArgv, type ChatLink } from '../shared/deep-link'
 import { createChatLinkRouter } from './chat-link-router'
 import { registerChatLinkIpc, routeSecondLaunch } from './chat-link-ipc'
 import { registerLinuxUrlHandler, systemLinuxUrlHandlerDeps } from './linux-url-handler'
 import { BOOT_WORKSPACE_SYNC_BUDGET_MS, runBootDiscovery, settleWithin } from './boot-discovery'
-import { discoverAndBroadcastCliModels } from './ipc/cli-model-discovery-ipc'
+import { discoverAndBroadcastCliModels } from './model-discovery/discovery-pass'
 import { closeSplashWindow, createSplashWindow, sendSplashProgress } from './splash-window'
 import {
   createMainWindow,
@@ -37,8 +37,6 @@ import { createConversationAttentionListener } from './conversation-attention'
 import type { ConversationEvent } from '../shared/conversation-runtime'
 import { createHostedFeedPoller, type HostedFeedPoller } from './hosted-feed/poller'
 import { isCanvasWorkerWindow } from './canvas/canvas-worker-window'
-import { readHostedCardFeed } from './hosted-feed/card-feed-service'
-import { readHostedSourcesFeed } from './hosted-feed/sources-feed-service'
 import { detectCliMachines, readCliVersionAdvisories } from './cli-version-advisory-service'
 import { hostRegistry } from './hosts/host-registry'
 import { recordIntegrationWrite } from './integrations/ledger'
@@ -83,10 +81,9 @@ type RegisterAppLifecycleOptions = {
     start(): Promise<void>
     stop(): Promise<void>
   }
-  // Always-on (no setting gate): the reporter socket must be listening before
-  // any agent launches so the first lifecycle frame is captured.
+  // The reporter's installer: at quit it takes back out the user-scoped hook
+  // registrations this run wrote. The reporter's socket is the core's.
   agentStateService?: {
-    initialize(): Promise<void>
     shutdown(): Promise<void>
   }
   workspaceSyncService?: {
@@ -113,15 +110,17 @@ type RegisterAppLifecycleOptions = {
   canvasService?: {
     dispose(): Promise<void>
   }
-  // The worktree pool: a lease or return in flight finishes its write, and
-  // each pool's container lock is given up so another Studio can take the pool
-  // over.
+  // The worktree pool, the Studio core's (in process; out of process the
+  // server quits its own): a lease or return in flight finishes its write,
+  // and each pool's container lock is given up so another Studio can take the
+  // pool over.
   worktreePool?: {
     shutdown(options?: { waitMs?: number }): Promise<void>
   }
   // The dependency installs agent worktrees are running (worktree-pool/
-  // dependency-install.ts). Each runs detached, as a process group of its own,
-  // so nothing would end it with the app: the quit stops every one.
+  // dependency-install.ts), the core's beside its pool. Each runs detached, as
+  // a process group of its own, so nothing would end it with the app: the
+  // quit stops every one.
   dependencyInstaller?: {
     shutdown(options?: { waitMs?: number }): Promise<void>
   }
@@ -213,6 +212,8 @@ type RegisterAppLifecycleOptions = {
   agentKeepAwake?: Pick<AgentKeepAwake, 'onAgentPhase' | 'dispose'>
   /** The plugin-source update check (skills service); rides the hourly feed leg. */
   checkPluginSourceUpdates?: () => Promise<unknown>
+  /** Fetch the Studio's hosted feeds when due (the cards and the recommended sources); the hourly feed leg. */
+  refreshHostedFeeds: () => Promise<unknown>
   /**
    * Opens the gate on the boot jobs nothing on screen needs (the git probe and
    * the rest). Called once the main window reveals, so they never compete with
@@ -234,6 +235,10 @@ type RegisterAppLifecycleOptions = {
    */
   server?: Pick<DesktopServerHost, 'start' | 'shutdown' | 'log'> & {
     onAttentionPhase(listener: (event: AgentPhaseEvent) => void): void
+    /** Detect the CLIs on the machines named, where the version check is: the server's. */
+    detectClis(which: 'local' | 'wsl'): Promise<unknown>
+    /** Compare the installed CLI versions against the registry, in the server. */
+    refreshCliVersions(): Promise<unknown>
   }
 }
 
@@ -274,6 +279,7 @@ export function registerAppLifecycle({
   quitConfirmation,
   agentKeepAwake,
   checkPluginSourceUpdates,
+  refreshHostedFeeds,
   startDeferredBootJobs,
   prepareWorkspacesAtBoot,
   onAgentAttentionReady,
@@ -320,9 +326,10 @@ export function registerAppLifecycle({
     backgroundPresence.onWindowOpened()
   }
 
-  // A `sprintengine://chat/…` link (shared/deep-link.ts), held until the window
-  // it is for is listening, then opened there (chat-link-router.ts). It only
-  // ever selects a chat; the auth callback keeps its own path below.
+  // A `sprintengine://chat/…` link (packages/studio-protocol/src/chat-link.ts),
+  // held until the window it is for is listening, then opened there
+  // (chat-link-router.ts). It only ever selects a chat; the auth callback
+  // keeps its own path below.
   const chatLinks = createChatLinkRouter<BrowserWindow>({
     windows: listWorkspaceWindows,
     windowIdOf: workspaceWindowIdOf,
@@ -507,9 +514,7 @@ export function registerAppLifecycle({
       }
     })
 
-    // `once`: a renderer that reloads mid-boot (dev HMR) must not re-arm a
-    // reveal that has already happened.
-    ipcMain.once('app:boot-complete', () => {
+    onRendererBootComplete(ipcMain, () => {
       void workspacesPrepared.then(() => bootReveal.trigger())
     })
     // A renderer that dies before its first frame never sends the signal, and
@@ -527,9 +532,10 @@ export function registerAppLifecycle({
       // The one detection of this machine's CLIs a launch makes (Re-check in
       // Settings is the only other), with the commands the person set, so the
       // renderer's first read is answered from it. What it finds schedules the
-      // version check's comparison (app-services), which waits for a window to
+      // version check's comparison (the core's), which waits for a window to
       // say whether checks are on. WSL machines are detected after the reveal.
-      detectClis: () => detectCliMachines({ which: 'local' }),
+      // Out of process the CLIs and their version check are the server's.
+      detectClis: () => (server ? server.detectClis('local') : detectCliMachines({ which: 'local' })),
       // Not awaited, so this mark can (and usually does) land after the reveal —
       // which is the point: it shows how much of the boot the user never waits
       // for, and how much of the CLI probe the splash actually covered.
@@ -574,9 +580,11 @@ export function registerAppLifecycle({
       // the same reason — this is the ONLY thing in the app that ever fetches
       // the card feed, and without it a shipped machine serves the bundled seed
       // until the next release, which is the whole point of hosting the file.
-      // The sources feed rides it for the same reason again: its IPC
+      // The sources feed rides it for the same reason again: a client's read
       // only ever reads disk, so this leg is the only thing that refreshes the
-      // recommended list a machine offers.
+      // recommended list a machine offers. Both feeds are the Studio's
+      // (`cardFeed.get`, `sourcesFeed.get`): out of process the server
+      // fetches them when this leg asks.
       //
       // The tick is a heartbeat and not a schedule: every rider owns its own
       // window, so an hourly knock on a feed fetched forty minutes ago costs
@@ -591,8 +599,7 @@ export function registerAppLifecycle({
       // poller still reports the leg as failed.
       refreshFeed: async () => {
         const failures: unknown[] = []
-        await readHostedCardFeed().catch((error) => void failures.push(error))
-        await readHostedSourcesFeed().catch((error) => void failures.push(error))
+        await refreshHostedFeeds().catch((error: unknown) => void failures.push(error))
         await checkPluginSourceUpdates?.().catch(() => undefined)
         if (failures.length > 0) throw failures[0]
       },
@@ -600,7 +607,7 @@ export function registerAppLifecycle({
       // against the registry. No detection: nothing is spawned on any machine,
       // no WSL distribution is started, and a CLI that is not installed is
       // never asked about.
-      refreshVersions: () => readCliVersionAdvisories(),
+      refreshVersions: () => (server ? server.refreshCliVersions() : readCliVersionAdvisories()),
       isOnline: () => net.isOnline(),
     })
     hostedFeedPoller.start()
@@ -616,7 +623,7 @@ export function registerAppLifecycle({
       // so its CLI updates badge Settings without the person visiting its list.
       // After the reveal: asking may start the distribution's helper, which is
       // not something the first paint should wait behind.
-      void detectCliMachines({ which: 'wsl' }).catch(() => undefined)
+      void (server ? server.detectClis('wsl') : detectCliMachines({ which: 'wsl' })).catch(() => undefined)
       // One-shot cleanup of the retired checkpoint machinery
       // (the-diff-an-agent-made / remove-checkpoint-machinery). Deliberately not
       // awaited and deliberately after the window exists: it walks repos with
@@ -640,10 +647,6 @@ export function registerAppLifecycle({
           // The index survives a failure, so the next launch tries again.
         })
     }
-
-    // Always-on: start the agent-state reporter socket so launches that follow
-    // can install the hook against a live endpoint.
-    void agentStateService?.initialize()
 
     // An agent that finished or is waiting flashes the taskbar button or
     // bounces the dock; the window itself stays where the person left it.
@@ -726,14 +729,14 @@ export function registerAppLifecycle({
   //     once more for anything the legs above changed.
   //  5. The integrations the app writes into repositories, now that no agent
   //     it launched is left to run them (a cut-short removal resumes next quit).
-  //  6. What costs nothing if lost: the WSL helpers (they exit when this
-  //     process's end closes their stdin), telemetry's network send, and the
-  //     module kernel's own shutdown.
+  //  6. What costs nothing if lost: the machines' own hold on anything they
+  //     keep, telemetry's network send, and the module kernel's own shutdown.
   let shutdownRun: Promise<void> | null = null
   let leavingForUpdate = false
-  // The pool's wait for slot steps in flight, short when leaving for an
-  // update: its ten seconds also have to cover the Studio server's drain after
-  // it. A step cut short is recovered at the next start, as after a crash.
+  // The pool's wait for slot steps in flight (in process; out of process the
+  // server keeps the pool and waits within its own drain), short when leaving
+  // for an update. A step cut short is recovered at the next start, as after a
+  // crash.
   const poolShutdownOptions = () => (leavingForUpdate ? { waitMs: POOL_UPDATE_SHUTDOWN_WAIT_MS } : {})
   // Who hears about each leg as it finishes: "Restart to update" passes one in,
   // which drives the progress window and the diagnostics timings. Joined late
@@ -802,9 +805,8 @@ export function registerAppLifecycle({
       // writes them back, and the installer's time limit is better spent on
       // the legs after this one.
       ['integrations', () => (leavingForUpdate ? undefined : removeSessionIntegrations?.())],
-      // Each WSL helper is told to shut down (it would also go on its own when
-      // this process's end closes its stdin).
-      ['WSL helpers', () => hostRegistry().dispose()],
+      // Each machine lets go of what it keeps for itself.
+      ['machines', () => hostRegistry().dispose()],
       // Last of the app-owned legs: every service above has had its chance to
       // record, and a network round trip must not sit in front of anything
       // that still has state to persist.
@@ -829,11 +831,10 @@ export function registerAppLifecycle({
         },
       ],
       ['launch notices', () => launchNotices?.freeze()],
-      ['dependency installs', () => dependencyInstaller?.shutdown()],
       ['browser recordings', () => browserRecorder?.stopAll('app_quit')],
       // The canvas's last board write lands before the server stops serving.
+      // The worktree pool and its installs are the server's, which ends them.
       ['canvas', () => canvasService?.dispose()],
-      ['worktree pool', () => worktreePool?.shutdown(poolShutdownOptions())],
       ['desktop tools', () => desktopShell?.stop()],
       [
         'studio server (drain)',
@@ -858,7 +859,7 @@ export function registerAppLifecycle({
       ['pull requests (dispose)', () => pullRequestRecord?.dispose()],
       ['studio server', () => serverStopped],
       ['integrations', () => (leavingForUpdate ? undefined : removeSessionIntegrations?.())],
-      ['WSL helpers', () => hostRegistry().dispose()],
+      ['machines', () => hostRegistry().dispose()],
       ['telemetry', () => analytics?.shutdown()],
       ['modules', () => moduleKernel?.runShutdown()],
     ]

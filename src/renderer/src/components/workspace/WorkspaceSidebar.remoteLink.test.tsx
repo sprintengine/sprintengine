@@ -70,8 +70,10 @@ test('WorkspaceSidebar.remoteLink', async () => {
     pairedVia: 'request',
   }
 
-  // The chat over there, as that machine lists it.
+  // The chat over there, as that machine lists it: starred there, since that
+  // machine keeps its chats' marks (its Studio serves `chat-lifecycle`).
   const remoteChat = {
+    highlight: { starred: true },
     workspaceId: 'rw1',
     agentId: 'agent-1',
     title: 'sprintengine',
@@ -107,24 +109,17 @@ test('WorkspaceSidebar.remoteLink', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'conversation.list': () => ({ conversations: [remoteChat] }),
+    'workspaces.list': () => ({
       workspaces: [
         { id: 'rw1', name: 'sprintengine', mode: 'standard', folderPath: '/Users/mini/sprintengine', repository: null },
       ],
-      gaps: [],
     }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations: [remoteChat],
-      access: 'read',
-      modelSwitch: false,
-    }),
-  }
+  })
 
   async function main(): Promise<void> {
     const React = await import('react')
@@ -222,7 +217,7 @@ test('WorkspaceSidebar.remoteLink', async () => {
       // The reads (status, connections, browse) resolve off the event loop and
       // their setState lands through the scheduler, so settling has to yield a
       // macrotask inside `act` for the rows to render on them.
-      for (let i = 0; i < 4; i += 1) {
+      for (let i = 0; i < 8; i += 1) {
         await act(async () => {
           await new Promise((resolve) => dom.window.setTimeout(resolve, 0))
         })

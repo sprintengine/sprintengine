@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { PERMISSION_PRESET_OPTIONS, newChatWorktreeOffered, offeredPermissionPresets, readCliRuntimes } = require("../../../.mobile-test-build/src/features/conversations/launchLogic.js");
+const { PERMISSION_PRESET_OPTIONS, newChatWorktreeOffered, offeredPermissionPresets, readCliRuntimes } = require("../../../.mobile-test-build/mobile/src/features/conversations/launchLogic.js");
 
 test("cli.runtime.list is read strictly: only launchable CLIs, only named models", () => {
   const runtimes = readCliRuntimes({
@@ -86,7 +86,7 @@ test("a CLI's chat that cannot run a preset is not offered it where the desktop 
 });
 
 test("a started chat replaces the whole New flow, so Back returns to the list", () => {
-  const { routesAfterNewChat } = require("../../../.mobile-test-build/src/features/conversations/launchLogic.js");
+  const { routesAfterNewChat } = require("../../../.mobile-test-build/mobile/src/features/conversations/launchLogic.js");
   const chat = { name: "Conversation" };
   const names = (routes) => routes.map((route) => route.name);
   assert.deepEqual(
@@ -103,7 +103,7 @@ test("a started chat replaces the whole New flow, so Back returns to the list", 
 });
 
 test("a schedule made in New lands on the Scheduled list, once", () => {
-  const { routesAfterSchedule } = require("../../../.mobile-test-build/src/features/conversations/launchLogic.js");
+  const { routesAfterSchedule } = require("../../../.mobile-test-build/mobile/src/features/conversations/launchLogic.js");
   const names = (routes) => routes.map((route) => route.name);
   assert.deepEqual(
     names(routesAfterSchedule([{ name: "HomeOverview" }, { name: "ChooseProject" }, { name: "NewChat" }], { name: "Scheduled" })),

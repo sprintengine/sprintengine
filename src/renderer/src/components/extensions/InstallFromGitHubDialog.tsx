@@ -26,6 +26,7 @@ import { GhostButton, InlineNotice, Input, LinkButton, PrimaryButton, Spinner, T
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '../ui/Modal'
 import { ExtensionTrustReview, trustCodeRequired, trustReviewReady } from './ExtensionTrustReview'
 import { isImeKey } from '../../utils/imeKey'
+import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 
 type Phase =
   | { kind: 'idle' }
@@ -102,14 +103,14 @@ export function InstallFromGitHubDialog({
   const resolve = useCallback(async (): Promise<void> => {
     const value = url.trim()
     if (!value) return
-    if (typeof window.api.resolveGithubExtension !== 'function') {
+    if (!windowHasStudio()) {
       setPhase({ kind: 'failed', message: 'Installing from GitHub needs a newer app build. Update and restart.' })
       return
     }
     setPhase({ kind: 'resolving' })
     setTrustCode(false)
     try {
-      const result = await window.api.resolveGithubExtension({ url: value })
+      const result = await extensionsApi.resolveGithubExtension({ url: value })
       setPhase(
         result.ok
           ? { kind: 'review', preview: result.preview, trustToken: result.trustToken }
@@ -131,7 +132,7 @@ export function InstallFromGitHubDialog({
     setPhase({ kind: 'installing', preview })
     try {
       const result = await installAndActivateRendererModules(() =>
-        window.api.installGithubExtension({
+        extensionsApi.installGithubExtension({
           trustToken,
           ...(trustCode ? { trustCode: true } : {}),
           ...(workspaceRoot ? { workspaceRoot } : {}),

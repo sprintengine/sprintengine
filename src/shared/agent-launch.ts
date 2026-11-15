@@ -20,7 +20,8 @@
  *   Its lifetime is the session's: when the pty is gone, so is the record, and
  *   a window opened an hour later projects exactly the sessions still running.
  */
-import type { AgentCli, McpSettings, CliPermissionPreset } from './electron-api'
+import type { AgentLaunchCaller } from '../../packages/studio-protocol/src/public'
+import type { CliPermissionPreset } from './electron-api'
 import type { ExecutionHostId } from './execution-host'
 
 export type AgentLaunchRequest = {
@@ -90,43 +91,15 @@ export type AgentLaunchRequest = {
 }
 
 /** An agent of this app that asked for a launch: its chat (workspace) and, when it declared one, its own id. */
-export type AgentLaunchCaller = { workspaceId: string; agentId?: string }
 
 export type AgentDisposeRequest = {
   workspaceId: string
   agentId: string
 }
 
-/**
- * The launch-time decisions main made, in `AgentState` vocabulary.
- *
- * Everything here is something the renderer could not re-derive from the raw
- * session snapshot: the snapshot knows the cli and cwd, but not which permission
- * preset was rendered into the launch argv, or which connector config was
- * written into the worktree. A projection missing those fields would look right
- * and behave wrong on the first relaunch.
- */
-export type AgentLaunchRecord = {
-  agentId: string
-  name: string
-  cli: AgentCli
-  cliModel?: string
-  cliPermissionPreset: CliPermissionPreset
-  /** The CLI's own mode at that preset, when one other than the preset's own was chosen. */
-  cliPermissionMode?: string
-  connectorMcpSettings?: McpSettings
-  spawnSkillId?: string
-  /**
-   * The worktree the agent runs in, when the launch created or was handed one.
-   * Projected onto `AgentState.execution` so a reopened tab resolves the same
-   * cwd instead of falling back to the workspace root.
-   */
-  worktreePath?: string
-  /** The machine main launched on, so the agent resumes on the same one. */
-  hostId?: ExecutionHostId
-  /** The agent that asked for this launch through a tool, as the request named it. */
-  launchedBy?: AgentLaunchCaller
-}
+// What a launch decided (`AgentLaunchRecord`) is carried on the terminal
+// session's snapshot, so it is the Studio protocol's.
+export type { AgentLaunchCaller, AgentLaunchRecord } from '../../packages/studio-protocol/src/public'
 
 export type AgentLaunchResult =
   | {

@@ -19,8 +19,8 @@ up there first, with the app's own validators.
 | Needs trust / unsigned / signed | Not trusted yet — or trusted before the last rebuild | Trust it. Every `dev:install` changes the fingerprint |
 | Invalid / tampered | Files in the folder do not match `files`, or the manifest changed after signing | `npm run dev:install` (it rewrites `files` and signs again when it can). Never edit the installed copy |
 | Needs a newer Studio (`host_api_too_new`) | `engines.hostApi` is newer than this Studio | Update Studio, or build against the SDK version it ships |
-| Built for an older host (`host_api_too_old`) | The SDK the module was built with is too old | Update `@sprintengine/module-sdk`, rebuild |
-| No host API (`host_api_missing`) | `engines` missing or not an integer | Add `"engines": { "hostApi": 1 }` |
+| Built for an older host (`host_api_too_old`) | The SDK the module was built with is too old. Host API 1 (`registerIpc`, `host.invoke`) is no longer loaded | Update `@sprintengine/module-sdk` to 2, move `registerIpc` channels to `registerMethods` and `host.invoke` calls to `host.methods().read` / `.operate`, set `"engines": { "hostApi": 2 }`, rebuild |
+| No host API (`host_api_missing`) | `engines` missing or not an integer | Add `"engines": { "hostApi": 2 }` |
 | Disabled | `defaultEnabled: false` and never turned on, or a `dependsOn` module is off | Turn it on; turn on the dependency |
 | A load error | `registerRenderer`/`registerMain` threw, rejected or took over 10 s; or an id clash | Read the error text; `npm test` reproduces most registration failures |
 | Trusted, main entry not running | `entry.main` loads at startup only | Restart Studio |
@@ -36,13 +36,14 @@ up there first, with the app's own validators.
 | "…is provided by the host at runtime; mark it external" | The bundle inlined `./ui` or `./surface`; fix the esbuild `--external` flags |
 | Failed to resolve module specifier "@sprintengine/module-sdk" | The SDK root was left external in the renderer build; bundle it |
 | Cannot find module '…' from entry.main | A dependency left external in the main build; bundle it |
-| `invoke` rejects `permission_missing` | Declare `module:bridge` |
+| `registerMain` throws: needs the "module:bridge" permission | Declare `module:bridge` to declare methods |
 | Smoke test: "… needs "storage"" (or another permission) | The module resolves a service or calls a host method whose permission the manifest does not declare. Declare it (and in `plugin.json`) |
 | Smoke test: "… is resolved while registering, so "dependsOn" must include …" | Add that module to `dependsOn`, or resolve the service inside the handler that uses it |
 | Smoke test: `door "…" renders` fails | The component threw while rendering; the error follows the line. In tests a render is a server render, so `document`/`window` in render (not in an effect) and `useSyncExternalStore` without its third argument fail too |
 | A test cannot import `@sprintengine/module-sdk/ui` ("provided by the host at runtime") | Run it through `npm test`, which loads `@sprintengine/module-sdk/testing/register` first, or call `installTestingKit()` before importing the component |
-| `invoke` rejects `unknown_channel` | The main entry is not loaded (restart), or the channel name differs |
-| `invoke` rejects `not_bridgeable` | The channel does not start with `<moduleId>:` |
+| A call answers `module_unavailable` | The main entry is not running on that Studio: switched off, refused, failed to load (see Settings), or not loaded yet (restart) |
+| A call answers `module_method_unknown` | No method of that name, or it is declared with the other access (`read` vs `operate`) |
+| A call answers `invalid_params` | Your own params validator refused what was sent; the message is yours |
 | `openChat` → `permission_missing` | Declare `conversation:operate` |
 | `openChat` → `workspace_folder_missing` | Chats need a workspace with a folder |
 | `openChat` → `unavailable` | This window cannot open chats; try the main window |

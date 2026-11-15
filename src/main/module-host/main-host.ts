@@ -2,16 +2,26 @@ import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 
-import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-
-import { MODULE_BRIDGE_INVOKE_CHANNEL, type ModuleBridgeInvokeResult } from '../../shared/modules/bridge'
-import { MODULE_EVENTS_CHANNEL, validateModuleEventTopic, type ModuleEventEnvelope } from '../../shared/modules/events'
+import {
+  moduleEventPayloadProblem,
+  validateModuleEventTopic,
+  type ModuleEventEnvelope,
+} from '../../shared/modules/events'
 import type { CapabilityManifest, ModuleFileDigests } from '../../shared/modules/manifest'
+import {
+  isModuleMethodName,
+  type ModuleMethodAccess,
+  type ModuleMethodAnswer,
+  type ModuleMethodContext,
+  type ModuleMethodContract,
+  type ModuleMethodContracts,
+  type ModuleMethodRegistration,
+  type ModuleMethodRegistrations,
+} from '../../shared/modules/methods'
 import type { ModuleWorkspaceGitInfoResult } from '../../shared/modules/workspace-view'
 import { coreMcpToolConflict, mcpToolWireName, type McpToolRegistration } from '../../shared/modules/mcp-tools'
 import type { ModuleChatRuntimeOption } from '../../shared/modules/conversation-service'
 import {
-  MODULE_NOTIFICATIONS_RECENT_CHANNEL,
   validateModuleNotifyInput,
   type ModuleNotification,
   type ModuleNotificationDelivery,
@@ -30,16 +40,14 @@ import {
   unregisterModuleSkills,
 } from '../builtin-skills'
 import { resolveContainedPath, resolveModuleSkillDirectory } from '../modules/entry-containment'
-import { MODULE_HOST_SERVICE_CHANNEL } from '../../shared/modules/host-service-bridge'
-import { createModuleHostServiceDispatcher } from './module-host-service-ipc'
+import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
+import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 
 // Main-process host kernel. Replaces the static, central wiring in
 // app-services.ts / register-*-ipc.ts with registries that capability modules
 // register themselves into. Each module receives a scoped `MainHost` that
 // carries its own id but shares the kernel's registries, so cross-module
 // services and IPC ownership are tracked centrally.
-
-export type IpcInvokeHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown | Promise<unknown>
 
 type StartupHook = () => void | Promise<void>
 type ShutdownBeginHook = () => void | Promise<void>
@@ -157,9 +165,45 @@ export const THIRD_PARTY_SERVICE_KEYS: ReadonlySet<string> = new Set([
   'text-generation.module-service',
 ])
 
-// The declarations that open the renderer→module-main bridge for a module's
-// channels: its own scope, and the broad legacy one it was split out of.
-const BRIDGE_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
+// Those of them whose every method takes the calling module's id first (the
+// SDK's get*Service helpers close over `host.moduleId`). A third-party module
+// is handed each as itself: a call naming another module's id is refused, so
+// one extension cannot act with another's permissions, chats, secrets or
+// storage. `core.workspace` and `core.workspace-context` name no module.
+const MODULE_ID_FIRST_SERVICE_KEYS: ReadonlySet<string> = new Set(
+  [...THIRD_PARTY_SERVICE_KEYS].filter((key) => key !== 'core.workspace' && key !== 'core.workspace-context'),
+)
+
+/** Every member a service offers: its own and its class's, never Object's own. */
+function memberNames(target: object): PropertyKey[] {
+  const names = new Set<PropertyKey>()
+  for (
+    let level: object | null = target;
+    level && level !== Object.prototype && level !== Function.prototype;
+    level = Object.getPrototypeOf(level) as object | null
+  )
+    for (const name of Reflect.ownKeys(level)) if (name !== 'constructor') names.add(name)
+  return [...names]
+}
+
+/**
+ * What a call hands back that is a capability rather than data: an object
+ * literal (or one with no prototype) that carries a function. A class's
+ * instance (a Map, a Date) is passed as it is, as a caller relies on it being
+ * one; data is passed as it is.
+ */
+function isCapability(value: unknown): value is object {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value) as unknown
+  if (prototype !== Object.prototype && prototype !== null) return false
+  return Reflect.ownKeys(value).some(
+    (name) => typeof Reflect.getOwnPropertyDescriptor(value, name)?.value === 'function',
+  )
+}
+
+// The declarations that let a third-party module serve methods to clients:
+// its own scope, and the broad legacy one it was split out of.
+const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
 
 // The app-internal service behind `MainHost.listChatRuntimes` (the agent
 // runtime module provides it, as ChatRuntimesToken). A host method rather than
@@ -186,10 +230,24 @@ export type MainHost = {
    * when the agent runtime module provides no list.
    */
   listChatRuntimes(): Promise<ModuleChatRuntimeOption[]>
-  registerIpc(channel: string, handler: IpcInvokeHandler): void
+  /**
+   * Declare the methods this module serves its renderer half, and any client
+   * the person granted `modules:read` / `modules:operate`, over the Studio
+   * protocol's `module.read` and `module.operate`. Each names its access
+   * (`read` or `operate`, the only entry it is called through), a validator
+   * for its params and a handler; a handler's result must be JSON. Names are
+   * a lower-case letter, then letters, digits, dots and dashes: the module id
+   * is their namespace. The whole batch is validated before any of it lands,
+   * a name this module already declares is an error, and unloading the module
+   * takes its methods with it. A third-party module must declare
+   * `module:bridge` (or the broad `ipc:invoke`).
+   */
+  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
+    methods: ModuleMethodRegistrations<Cs>,
+  ): void
   /**
    * Contribute MCP tools to the always-on Studio gateway. Registrations are
-   * owned by this module's id exactly as IPC channels are: a name another
+   * owned by this module's id: a name another
    * module already holds — or a core gateway tool's (`coreMcpToolNames`) — is
    * a registration error, and the whole batch is
    * validated before any tool lands so a rejected batch registers nothing.
@@ -205,8 +263,8 @@ export type MainHost = {
   /**
    * Contribute agent skills this module ships. Each `sourceDir` is relative to
    * the module root and must stay inside it; a module with no root on disk
-   * passes an absolute path. Registrations are owned exactly as IPC channels
-   * and MCP tools are: an id a built-in skill or another module already holds
+   * passes an absolute path. Registrations are owned exactly as MCP tools
+   * are: an id a built-in skill or another module already holds
    * is a registration error, the whole batch is validated before any of it
    * lands, and unloading the module takes its skills with it.
    *
@@ -299,10 +357,10 @@ export type MainHost = {
    * Push an event to this module's renderer half — the subscribe verb the
    * request/response bridge does not have. The source module id is stamped
    * from this host's scope, so only this module's `RendererHost.subscribe`
-   * receives it; an empty or over-long topic throws. Fan-out reaches every open
-   * window, ordering is FIFO per module, and nothing is replayed to a window
-   * opened later: see the delivery contract in shared/modules/events.ts.
-   * The payload crosses IPC and must be structured-cloneable.
+   * receives it; an empty or over-long topic throws. It rides the Studio's
+   * `module.events` stream: fan-out reaches every client following it,
+   * ordering is FIFO per module, and nothing is replayed to a client that
+   * connects later (shared/modules/events.ts). The payload must be JSON.
    */
   emit(topic: string, payload?: unknown): void
 }
@@ -310,8 +368,22 @@ export type MainHost = {
 export type MainKernel = {
   /** A scoped host for the given module. Shares the kernel's registries. */
   hostFor(moduleId: string): MainHost
-  /** channel -> owning module id, for diagnostics and collision reports. */
-  ownedChannels(): ReadonlyMap<string, string>
+  /** The methods a module declares, in registration order. Empty for one that declares none or is not loaded. */
+  declaredMethods(moduleId: string): ReadonlyArray<{ name: string; access: ModuleMethodAccess }>
+  /**
+   * Call a module's declared method, as `module.read` / `module.operate` do:
+   * the module's answer (its result or its own refusal), or the host's
+   * refusal. Rejects when the handler throws or answers something not JSON.
+   */
+  callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
+  /**
+   * The host's services a module's window half calls on this server (the
+   * protocol's `moduleBacklog.*` and `moduleUsage.query`), for a module that
+   * runs here: its main half loaded, or its manifest alone. Each service
+   * checks the module's own permission on every call; one this Studio does
+   * not provide is null.
+   */
+  hostServicesFor(moduleId: string): ModuleHostServicesOutcome
   /** skill id -> owning module id, for diagnostics and collision reports. */
   ownedSkills(): ReadonlyMap<string, string>
   /** Module-contributed Studio gateway tools, in registration order. */
@@ -330,7 +402,7 @@ export type MainKernel = {
   runShutdownBegin(): Promise<void>
   /** Run all registered shutdown hooks (reverse registration order), isolating failures. */
   runShutdown(): Promise<void>
-  /** Run a module's shutdown hooks and remove its tracked services, sidecars, and IPC. */
+  /** Run a module's shutdown hooks and remove its tracked services, sidecars, methods and tools. */
   unregisterModule(moduleId: string): Promise<void>
   /** True once the app-level startup hook pipeline has run and before shutdown. */
   isStarted(): boolean
@@ -344,7 +416,7 @@ export type MainKernel = {
    */
   emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void
   /** Recent notifications (bounded), newest last. The kernel's diagnostics record. */
-  recentNotifications(): ReadonlyArray<ModuleNotification>
+  recentNotifications(): ReadonlyArray<ModuleNotificationDelivery>
   /**
    * Infrastructure-only event entry, the twin of `emitNotification`: stamps
    * `sourceModuleId` and `emittedAt`, then delivers. Module code never sees the
@@ -354,6 +426,34 @@ export type MainKernel = {
   emitModuleEvent(sourceModuleId: string, topic: string, payload?: unknown): void
 }
 
+/** One call of a module's method, as the Studio protocol carries it. */
+export type ModuleMethodCallRequest = {
+  moduleId: string
+  method: string
+  /** The entry it came through: `module.read` or `module.operate`. */
+  access: ModuleMethodAccess
+  /** What the client sent, for the method's validator. */
+  params: unknown
+  clientId: string
+  /** An operate's command id, already namespaced by the client. */
+  commandId?: string
+}
+
+/** The host's services a module's window half reaches, each null where this Studio does not provide it. */
+export type ModuleHostServices = {
+  backlog: Omit<ModuleBacklogRegistry, 'list'> | null
+  usage: Pick<ModuleUsageRegistry, 'query'> | null
+}
+
+/** A module's host services, or why it has none here. */
+export type ModuleHostServicesOutcome =
+  { ok: true; services: ModuleHostServices } | { ok: false; code: 'module_unavailable'; message: string }
+
+/** What a call came to: the module's answer, or why the host refused it before the module heard it. */
+export type ModuleMethodCallOutcome =
+  | { ok: true; answer: ModuleMethodAnswer<ModuleMethodContract> }
+  | { ok: false; code: 'module_unavailable' | 'module_method_unknown' | 'invalid_params'; message: string }
+
 export type MainKernelOptions = {
   /**
    * Whether a module's main half runs where `electron` can be required: true
@@ -361,7 +461,7 @@ export type MainKernelOptions = {
    * server out of process. What `host.supports('electron-main')` answers.
    */
   electronMain?: boolean
-  /** Sends one module event to every open renderer window. Absent in tests. */
+  /** Sends one module event to every client following `module.events`. Absent in tests. */
   deliverModuleEvent?: (event: ModuleEventEnvelope) => void
   /**
    * Sends one bell row to every attached client (shared/modules/notifications.ts).
@@ -372,12 +472,23 @@ export type MainKernelOptions = {
   /** Clock override for flood-bound tests. */
   now?: () => number
   /**
-   * Resolves a module id to its manifest, for the renderer→module-main bridge's
-   * source/permission checks. The kernel has no manifest knowledge of its own;
-   * load-modules passes its registry. Absent (or resolving to nothing) every
-   * bridge invoke is refused as not bridgeable.
+   * Resolves a module id to its manifest, for the permission checks a
+   * registration makes. The kernel has no manifest knowledge of its own;
+   * load-modules passes its registry.
    */
   resolveModuleManifest?: (moduleId: string) => CapabilityManifest | undefined
+  /**
+   * Whether a module's main half is loaded now, so a call to one that runs
+   * and declares nothing is told apart from a call to one that is not
+   * running. Absent, a module is running when it declares a method.
+   */
+  isModuleActive?: (moduleId: string) => boolean
+  /**
+   * Whether a module runs here at all: its main half loaded, or (a module
+   * with only a window half) its manifest. What a host-service call checks.
+   * Absent, a module runs when its manifest resolves.
+   */
+  isModulePresent?: (moduleId: string) => boolean
   /**
    * Resolves a module id to its root directory on disk, for containment-
    * checking the skill directories it registers. Third-party modules have one
@@ -438,6 +549,12 @@ type ServiceEntry = {
   value: unknown
 }
 
+/** One load of a module: the host it was handed, and whether switching it off has retired that host. */
+type ModuleLoad = { generation: number; retired: () => boolean }
+
+const switchedOff = (moduleId: string, what: string): string =>
+  `Module "${moduleId}" was switched off; the host it was given ${what}.`
+
 // The key the storage service is provided under (service-tokens.ts'
 // ModuleStorageToken, and the SDK's private token behind getModuleStorage).
 // Spelled out here because service-tokens.ts imports this file.
@@ -452,16 +569,11 @@ type ModuleAppStateReader = {
   subscribe(moduleId: string, listener: (values: Readonly<Record<string, unknown>>) => void): () => void
 }
 
-// One record per registered channel: ownership for collision reports and
-// teardown, plus the handler itself — ipcMain cannot be invoked in-process,
-// and the bridge dispatcher needs to call owned handlers directly. Reserved
-// event channels (owner '@host', no invoke handler) have no `handler`.
-type ChannelEntry = { owner: string; handler?: IpcInvokeHandler }
-
-export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = {}): MainKernel {
-  const channels = new Map<string, ChannelEntry>()
+export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
+  // Declared methods, per module, in registration order.
+  const methods = new Map<string, Map<string, ModuleMethodRegistration>>()
   // name -> owning module + registration; insertion order is the gateway's
-  // listing order, mirroring the channel map's ownership discipline.
+  // listing order.
   const mcpTools = new Map<string, { owner: string; registration: McpToolRegistration }>()
   const services = new Map<string, ServiceEntry>()
   let startupHooks: HookEntry<StartupHook>[] = []
@@ -490,70 +602,118 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
   const floodStateByModule = new Map<string, ModuleNotificationFloodState>()
   let started = false
 
-  // The module-events channel belongs to the host kernel; reserving it here
-  // makes a module's attempt to claim it a registration error.
-  channels.set(MODULE_EVENTS_CHANNEL, { owner: '@host' })
-
-  // The renderer→module-main bridge dispatcher. Routes an invoke to a channel
-  // a module registered via registerIpc, applying the bridgeability rules
-  // (owner prefix + `module:bridge` or `ipc:invoke`); every refusal is structured
-  // data (see bridge.ts). This is defense in depth for a contract, not a
-  // security boundary — the renderer-side host already validates the
-  // module-id prefix before IPC.
-  // Registered through the kernel's own registerIpc so the dispatcher channel
-  // shares every other channel's ownership tracking and lifecycle.
-  async function dispatchBridgeInvoke(event: IpcMainInvokeEvent, request: unknown): Promise<ModuleBridgeInvokeResult> {
-    const channel =
-      typeof (request as { channel?: unknown } | undefined)?.channel === 'string'
-        ? (request as { channel: string }).channel
-        : ''
-    const payload = (request as { payload?: unknown } | undefined)?.payload
-    const entry = channels.get(channel)
-    if (!entry?.handler) {
-      return {
-        ok: false,
-        code: 'unknown_channel',
-        message: `No module has registered the IPC channel "${channel}".`,
+  function registerMethods(moduleId: string, batch: ModuleMethodRegistrations): void {
+    if (
+      isThirdParty(moduleId) &&
+      !options.resolveModuleManifest?.(moduleId)?.permissions?.some((permission) => METHOD_PERMISSIONS.has(permission))
+    ) {
+      throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
+    }
+    if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
+      throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
+    }
+    const own = methods.get(moduleId)
+    const entries = Object.entries(batch)
+    for (const [name, registration] of entries) {
+      if (!isModuleMethodName(name)) {
+        throw new Error(
+          `Module "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most 100.`,
+        )
+      }
+      if (own?.has(name)) throw new Error(`Module "${moduleId}" already declares "${name}".`)
+      const access = (registration as { access?: unknown } | null)?.access
+      if (access !== 'read' && access !== 'operate') {
+        throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
+      }
+      if (typeof registration.params !== 'function') {
+        throw new Error(`Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`)
+      }
+      if (typeof registration.handler !== 'function') {
+        throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)
       }
     }
-    if (!channel.startsWith(`${entry.owner}:`)) {
-      return {
-        ok: false,
-        code: 'not_bridgeable',
-        message: `Channel "${channel}" is not bridgeable: bridged channels must be prefixed with their owning module's id ("${entry.owner}:").`,
-      }
-    }
-    const manifest = options.resolveModuleManifest?.(entry.owner)
-    if (!manifest) {
-      return {
-        ok: false,
-        code: 'not_bridgeable',
-        message: `Channel "${channel}" is not bridgeable: the owning module's manifest could not be resolved.`,
-      }
-    }
-    // `module:bridge` is the bridge's own scope; `ipc:invoke`, the broad scope
-    // it was split out of, keeps opening it for manifests from before the split.
-    if (!manifest.permissions?.some((permission) => BRIDGE_PERMISSIONS.has(permission))) {
-      return {
-        ok: false,
-        code: 'permission_missing',
-        message: `Module "${entry.owner}" does not declare the "module:bridge" permission, so its channels cannot be bridged.`,
-      }
-    }
-    return { ok: true, result: await entry.handler(event, payload) }
+    const next = own ?? new Map<string, ModuleMethodRegistration>()
+    for (const [name, registration] of entries) next.set(name, registration)
+    methods.set(moduleId, next)
   }
-  hostFor('@host').registerIpc(MODULE_BRIDGE_INVOKE_CHANNEL, dispatchBridgeInvoke)
-  // The renderer's door to the Backlog and usage services a module's main half
-  // reaches through the SDK (shared/modules/host-service-bridge.ts).
-  hostFor('@host').registerIpc(
-    MODULE_HOST_SERVICE_CHANNEL,
-    createModuleHostServiceDispatcher((key) => services.get(key)?.value),
-  )
-  // The bell's backlog for a window that boots after a notification was sent
-  // (a launch failure, an onStartup notify). Copies, oldest first.
-  hostFor('@host').registerIpc(MODULE_NOTIFICATIONS_RECENT_CHANNEL, () =>
-    recent.map((notification) => ({ ...notification })),
-  )
+
+  function hostServicesFor(moduleId: string): ModuleHostServicesOutcome {
+    const present = options.isModulePresent
+      ? options.isModulePresent(moduleId)
+      : options.resolveModuleManifest?.(moduleId) !== undefined
+    if (!present || moduleId.startsWith('@'))
+      return {
+        ok: false,
+        code: 'module_unavailable',
+        message: `Module "${moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+      }
+    const backlog = services.get('backlog.module-service')?.value as ModuleBacklogRegistry | undefined
+    const usage = services.get('usage.module-service')?.value as ModuleUsageRegistry | undefined
+    return {
+      ok: true,
+      services: {
+        backlog: typeof backlog?.create === 'function' ? backlog : null,
+        usage: typeof usage?.query === 'function' ? usage : null,
+      },
+    }
+  }
+
+  async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
+    const own = methods.get(request.moduleId)
+    const active = options.isModuleActive ? options.isModuleActive(request.moduleId) : own !== undefined
+    if (!active || request.moduleId.startsWith('@')) {
+      return {
+        ok: false,
+        code: 'module_unavailable',
+        message: `Module "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+      }
+    }
+    const registration = own?.get(request.method)
+    if (!registration) {
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${request.moduleId}" declares no method "${request.method}".`,
+      }
+    }
+    if (registration.access !== request.access) {
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+      }
+    }
+    const parsed = registration.params(request.params)
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        code: 'invalid_params',
+        message:
+          typeof parsed.message === 'string' && parsed.message
+            ? parsed.message
+            : `Module "${request.moduleId}" refused the params of "${request.method}".`,
+      }
+    }
+    const context: ModuleMethodContext = {
+      clientId: request.clientId,
+      ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
+    }
+    const answer = await registration.handler(parsed.params, context)
+    if (answer?.ok === true) {
+      const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
+      if (problem)
+        throw new Error(
+          `Module "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
+        )
+      return { ok: true, answer: { ok: true, result: answer.result ?? null } }
+    }
+    if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string') {
+      return { ok: true, answer: { ok: false, code: answer.code, message: answer.message } }
+    }
+    throw new Error(
+      `Module "${request.moduleId}" method "${request.method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+    )
+  }
 
   function emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void {
     const validated = validateModuleNotifyInput(input)
@@ -589,17 +749,14 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
       throw new Error(`Module "${sourceModuleId}" ${validated.message}`)
     }
     // A payload no client could receive is the module's mistake, and it hears
-    // about it here, from its own `emit`, as it did when the send to a window
-    // threw. Checked once, whether or not any client is attached, because the
-    // delivery that follows is best effort per client and swallows a failed send.
+    // about it here, from its own `emit`. Checked once, whether or not any
+    // client is following, because the delivery that follows is best effort
+    // per client and swallows a failed send.
     if (payload !== undefined) {
-      try {
-        structuredClone(payload)
-      } catch (error) {
+      const problem = moduleEventPayloadProblem(payload)
+      if (problem) {
         throw new Error(
-          `Module "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Module "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${problem}.`,
         )
       }
     }
@@ -744,6 +901,124 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     throw new Error(`Service "${key}" is not available to third-party modules.`)
   }
 
+  // Each service a third-party module was handed, by the object, its key, the
+  // module and the load: one view per load, so a module sees the same object each
+  // time, and the view one load kept stops when that load is switched off
+  // while the next load's works.
+  const callerViews = new WeakMap<object, Map<string, unknown>>()
+
+  /**
+   * The service as one load of `moduleId` reaches it: as is for a first-party
+   * module; for a third-party one, a facade of its own that cannot be written
+   * to, whose methods refuse every call once that load is switched off, and,
+   * for a service that names a module, a call naming any module but this one.
+   *
+   * A facade, not a view onto the service: a proxy forwards whatever it has no
+   * trap for, and `Object.getOwnPropertyDescriptor` on one handed back the
+   * service's own unguarded method. The facade holds no reference a module can
+   * reach but its guarded functions. What those hand back that can be called
+   * (a function, or a plain object of them, now or once a promise settles) is
+   * guarded the same way, as is an object the service holds as a member.
+   */
+  function asCaller<T>(moduleId: string, key: string, value: T, load: ModuleLoad): T {
+    if (!isThirdParty(moduleId)) return value
+    if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
+    const target = value as object
+    let views = callerViews.get(target)
+    if (!views) {
+      views = new Map()
+      callerViews.set(target, views)
+    }
+    const viewKey = `${key}\u0000${moduleId}\u0000${load.generation}`
+    const known = views.get(viewKey)
+    if (known !== undefined) return known as T
+    const view = guardedServiceView(moduleId, key, target, load, MODULE_ID_FIRST_SERVICE_KEYS.has(key))
+    views.set(viewKey, view)
+    return view as T
+  }
+
+  // A guarded stand-in for a service, or for what one hands back: every
+  // callable reached through it checks the load and, where `pinned`, that
+  // its first argument is the module itself.
+  function guardedServiceView(moduleId: string, key: string, root: object, load: ModuleLoad, pinned: boolean) {
+    const readOnly = (): never => {
+      throw new Error(`Module "${moduleId}" cannot change service "${key}".`)
+    }
+    // One guarded stand-in per member and the object it is called on, so a
+    // member read twice is the same one (a class's method is shared by every
+    // instance, and each instance's is its own); kept apart by whether its
+    // first argument is held to the module.
+    const guarded = new WeakMap<object, Map<boolean, WeakMap<object, unknown>>>()
+    const unbound = {}
+    const cacheFor = (self: unknown, pinFirst: boolean): WeakMap<object, unknown> => {
+      const owner = typeof self === 'object' && self !== null ? self : unbound
+      let byPinning = guarded.get(owner)
+      if (!byPinning) guarded.set(owner, (byPinning = new Map()))
+      let cache = byPinning.get(pinFirst)
+      if (!cache) byPinning.set(pinFirst, (cache = new WeakMap()))
+      return cache
+    }
+    const live = () => {
+      if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
+    }
+
+    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, pinFirst: boolean): unknown {
+      return (...args: unknown[]) => {
+        live()
+        if (pinFirst && args[0] !== moduleId) {
+          throw new Error(
+            `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
+          )
+        }
+        return guardResult(fn.apply(self, args))
+      }
+    }
+
+    // What a call hands back: a capability is guarded, data is passed through.
+    function guardResult(result: unknown): unknown {
+      if (result instanceof Promise) return result.then(guardResult)
+      if (typeof result === 'function') return guardMember(result, undefined, false)
+      if (isCapability(result)) return guardMember(result, undefined, false)
+      return result
+    }
+
+    function guardMember(member: unknown, self: unknown, pinFirst: boolean): unknown {
+      if (member === null || (typeof member !== 'object' && typeof member !== 'function')) return member
+      const cache = cacheFor(self, pinFirst)
+      const known = cache.get(member)
+      if (known !== undefined) return known
+      const made =
+        typeof member === 'function'
+          ? guardFunction(member as (...given: unknown[]) => unknown, self, pinFirst)
+          : facadeOf(member, false)
+      cache.set(member, made)
+      return made
+    }
+
+    function facadeOf(target: object, pinFirst: boolean): object {
+      const facade = Object.create(null) as Record<PropertyKey, unknown>
+      for (const property of memberNames(target)) {
+        Object.defineProperty(facade, property, {
+          enumerable: true,
+          get: () => {
+            const member: unknown = Reflect.get(target, property, target)
+            if (typeof member === 'function') return guardMember(member, target, pinFirst)
+            // An object the service holds is reached through a facade of its
+            // own, whatever it holds; a value or a list is read as it is now.
+            if (member !== null && typeof member === 'object' && !Array.isArray(member) && !ArrayBuffer.isView(member))
+              return guardMember(member, target, false)
+            return member
+          },
+          set: readOnly,
+        })
+      }
+      return Object.freeze(facade)
+    }
+
+    // A service that is itself a function is that function, guarded.
+    return typeof root === 'function' ? guardMember(root, undefined, pinned) : facadeOf(root, pinned)
+  }
+
   // A module asset by path: the same refusals `moduleAssetUrl` makes, then
   // only a verified file, held to the bytes it was verified with.
   function resolveAssetPath(moduleId: string, relativePath: string): string {
@@ -778,7 +1053,72 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     return real
   }
 
+  // A module's load, counted: switching a module off (`unregisterModule`)
+  // retires every host handed to its earlier loads. A main half that kept its
+  // host past its shutdown hooks (a timer, a watcher, a promise still
+  // settling) then says nothing more to clients and registers nothing more,
+  // so a module switched off is off; switched on again, it gets a new host.
+  // A retired host's every call to the host's services is refused too, and so
+  // is every call through a service it was handed before (`asCaller`).
+  const loadGenerations = new Map<string, number>()
+
   function hostFor(moduleId: string): MainHost {
+    const generation = loadGenerations.get(moduleId) ?? 0
+    const retired = (): boolean => (loadGenerations.get(moduleId) ?? 0) !== generation
+    const live = scopedHostFor(moduleId, { generation, retired })
+    const refuseRetired = (): void => {
+      if (retired()) throw new Error(switchedOff(moduleId, 'no longer takes registrations'))
+    }
+    const refuseUse = (): void => {
+      if (retired()) throw new Error(switchedOff(moduleId, "no longer reaches the host's services"))
+    }
+    const host: MainHost = {
+      ...live,
+      listChatRuntimes: async () => (refuseUse(), live.listChatRuntimes()),
+      ensureSkillInstalled: async (root, skillId) => (refuseUse(), live.ensureSkillInstalled(root, skillId)),
+      getSkillStatus: async (root, skillId) => (refuseUse(), live.getSkillStatus(root, skillId)),
+      getModuleDataDir: () => (refuseUse(), live.getModuleDataDir()),
+      getAssetPath: (relativePath) => (refuseUse(), live.getAssetPath(relativePath)),
+      getModuleAppState<T = unknown>(key: string): T | undefined {
+        refuseUse()
+        return live.getModuleAppState<T>(key)
+      },
+      getWorkspaceGitInfo: async (workspaceId) =>
+        retired()
+          ? { ok: false, code: 'unavailable', message: switchedOff(moduleId, "no longer reads a workspace's git") }
+          : live.getWorkspaceGitInfo(workspaceId),
+      // The factory is handed this host, as it always was: the guarded one.
+      provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T {
+        refuseRetired()
+        return live.provideService.call(host, token, factory) as T
+      },
+      getService<T>(token: ServiceToken<T>): T | undefined {
+        refuseUse()
+        return live.getService(token)
+      },
+      requireService<T>(token: ServiceToken<T>): T {
+        refuseUse()
+        return live.requireService(token)
+      },
+      registerMethods: (batch) => (refuseRetired(), live.registerMethods(batch)),
+      registerMcpTools: (tools) => (refuseRetired(), live.registerMcpTools(tools)),
+      registerSkills: (skills) => (refuseRetired(), live.registerSkills(skills)),
+      watchModuleAppState: (cb) => (refuseRetired(), live.watchModuleAppState(cb)),
+      onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
+      onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
+      onShutdown: (hook) => (refuseRetired(), live.onShutdown(hook)),
+      registerSidecar: (spec, lifecycle) => (refuseRetired(), live.registerSidecar(spec, lifecycle)),
+      notify: (input) => {
+        if (!retired()) live.notify(input)
+      },
+      emit: (topic, payload) => {
+        if (!retired()) live.emit(topic, payload)
+      },
+    }
+    return host
+  }
+
+  function scopedHostFor(moduleId: string, load: ModuleLoad): MainHost {
     return {
       moduleId,
       hostApiVersion: HOST_API_VERSION,
@@ -793,13 +1133,8 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
           (() => Promise<ModuleChatRuntimeOption[]>) | undefined
         return list ? list() : []
       },
-      registerIpc(channel, handler) {
-        const existing = channels.get(channel)
-        if (existing) {
-          throw new Error(`IPC channel "${channel}" is already registered by module "${existing.owner}".`)
-        }
-        channels.set(channel, { owner: moduleId, handler })
-        ipcMain.handle(channel, handler)
+      registerMethods(batch) {
+        registerMethods(moduleId, batch as unknown as ModuleMethodRegistrations)
       },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)
@@ -926,14 +1261,15 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
       },
       getService<T>(token: ServiceToken<T>): T | undefined {
         assertServiceVisible(moduleId, token.key)
-        return services.get(token.key)?.value as T | undefined
+        const value = services.get(token.key)?.value as T | undefined
+        return value === undefined ? undefined : asCaller(moduleId, token.key, value, load)
       },
       requireService<T>(token: ServiceToken<T>): T {
         assertServiceVisible(moduleId, token.key)
         if (!services.has(token.key)) {
           throw new Error(`Module "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
         }
-        return services.get(token.key)!.value as T
+        return asCaller(moduleId, token.key, services.get(token.key)!.value as T, load)
       },
       onStartup(hook) {
         startupHooks.push({ moduleId, hook })
@@ -1006,11 +1342,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     for (const [sidecarId, entry] of [...sidecarEntries]) {
       if (entry.moduleId === moduleId) sidecarEntries.delete(sidecarId)
     }
-    for (const [channel, entry] of [...channels]) {
-      if (entry.owner !== moduleId) continue
-      channels.delete(channel)
-      ipcMain.removeHandler(channel)
-    }
+    methods.delete(moduleId)
     for (const [toolName, entry] of [...mcpTools]) {
       if (entry.owner === moduleId) mcpTools.delete(toolName)
     }
@@ -1020,11 +1352,16 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     if (skillIdsByModule.delete(moduleId)) skillRegistry.unregister(moduleId)
     for (const stop of appStateWatches.get(moduleId) ?? []) stop()
     appStateWatches.delete(moduleId)
+    // After its hooks, which may still say goodbye through it.
+    loadGenerations.set(moduleId, (loadGenerations.get(moduleId) ?? 0) + 1)
   }
 
   return {
     hostFor,
-    ownedChannels: () => new Map([...channels].map(([channel, entry]) => [channel, entry.owner])),
+    declaredMethods: (moduleId) =>
+      [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
+    callModuleMethod,
+    hostServicesFor,
     ownedSkills: () =>
       new Map([...skillIdsByModule].flatMap(([owner, ids]) => [...ids].map((id) => [id, owner] as const))),
     mcpToolRegistrations: () =>

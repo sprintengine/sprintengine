@@ -36,7 +36,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildSync } from 'esbuild'
-import { test } from 'vitest'
+import { afterAll, beforeAll, test } from 'vitest'
 
 import { BUNDLED_MODULE_IDS, HOST_API_VERSION, KNOWN_CAPABILITY_PERMISSIONS } from '../src/index.js'
 import { checkHostApiCompatibility } from '../src/host-api.js'
@@ -53,7 +53,7 @@ import {
 const REPO = process.cwd()
 const SDK = join(REPO, 'packages/module-sdk')
 const TEMPLATES = join(SDK, 'templates')
-const SDK_VERSION = '1.0.0-beta.1'
+const SDK_VERSION = '2.0.0-beta.1'
 
 function walk(dir: string, prefix = ''): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -133,307 +133,317 @@ function typecheckAgainstSource(dir: string, env: NodeJS.ProcessEnv): void {
   rmSync(join(dir, 'tsconfig.scaffold-test.json'))
 }
 
-test('scaffold', async () => {
-  const work = mkdtempSync(join(tmpdir(), 'sprintengine-scaffold-'))
-  try {
-    // ── The templates on offer ─────────────────────────────────────────────────
-    const templates = listModuleTemplates(TEMPLATES)
-    const templateIds = templates.map((template) => template.id)
-    const dirs = readdirSync(TEMPLATES, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
-      .map((entry) => entry.name)
-    assert.deepEqual([...templateIds].sort(), [...dirs].sort(), 'every template folder is listed, once')
-    assert.equal(templateIds[0], 'blank', 'the empty starting point leads the picker')
-    for (const expected of [
-      'blank',
-      'panel',
-      'workspace-type',
-      'global-surface',
-      'top-bar-item',
-      'settings-section',
-      'mcp-tools',
-      'chat-companion',
-      'backlog-action',
-      'file-action',
-    ]) {
-      assert.ok(templateIds.includes(expected), `template "${expected}" is missing`)
-    }
+// One test per template, and one each for the composed projects and the
+// tarball, rather than one test for the lot: each template's dev loop is a
+// handful of real `tsc`, `npm` and `node` processes (a few seconds alone), and
+// summed over every template under one test's timeout they ran past it on a
+// loaded machine. Split, each test's budget covers one project's loop.
+const templates = listModuleTemplates(TEMPLATES)
+const base = { templateId: 'blank', displayName: 'X', sdkVersion: SDK_VERSION, templatesRoot: TEMPLATES }
+let work = ''
+let env: NodeJS.ProcessEnv = {}
 
-    // ── Copies that must not drift ─────────────────────────────────────────────
-    // A part that adds an entry builds it exactly as the templates do.
-    const partScripts = (id: string) =>
-      (
-        JSON.parse(readFileSync(join(TEMPLATES, '_parts', id, 'part.json'), 'utf8')) as {
-          scripts: Record<string, string>
-        }
-      ).scripts
-    const companionScripts = (
-      JSON.parse(readFileSync(join(TEMPLATES, 'chat-companion', 'package.json'), 'utf8')) as {
+beforeAll(() => {
+  work = mkdtempSync(join(tmpdir(), 'sprintengine-scaffold-'))
+  const nodeModules = sharedNodeModules(work)
+  const { SPRINTENGINE_SIGNING_KEY: _ownKey, ...inherited } = process.env
+  env = {
+    ...inherited,
+    PATH: `${join(nodeModules, '.bin')}:${process.env.PATH ?? ''}`,
+    // Keep the dev loop away from the real ~/.sprintengine: no key is found,
+    // and the install lands in a throwaway module root.
+    HOME: join(work, 'home'),
+    SPRINTENGINE_USER_MODULE_ROOT: join(work, 'installed'),
+    npm_config_update_notifier: 'false',
+  }
+})
+
+afterAll(() => {
+  if (work) rmSync(work, { recursive: true, force: true })
+})
+
+test('the templates on offer, the copies that must not drift, and the refusals', async () => {
+  // ── The templates on offer ─────────────────────────────────────────────────
+  const templateIds = templates.map((template) => template.id)
+  const dirs = readdirSync(TEMPLATES, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+    .map((entry) => entry.name)
+  assert.deepEqual([...templateIds].sort(), [...dirs].sort(), 'every template folder is listed, once')
+  assert.equal(templateIds[0], 'blank', 'the empty starting point leads the picker')
+  for (const expected of [
+    'blank',
+    'panel',
+    'workspace-type',
+    'global-surface',
+    'top-bar-item',
+    'settings-section',
+    'mcp-tools',
+    'chat-companion',
+    'backlog-action',
+    'file-action',
+  ]) {
+    assert.ok(templateIds.includes(expected), `template "${expected}" is missing`)
+  }
+
+  // ── Copies that must not drift ─────────────────────────────────────────────
+  // A part that adds an entry builds it exactly as the templates do.
+  const partScripts = (id: string) =>
+    (
+      JSON.parse(readFileSync(join(TEMPLATES, '_parts', id, 'part.json'), 'utf8')) as {
         scripts: Record<string, string>
       }
     ).scripts
-    assert.equal(partScripts('renderer')['build:renderer'], companionScripts['build:renderer'])
-    assert.equal(partScripts('main')['build:main'], companionScripts['build:main'])
-    assert.deepEqual(
-      listModuleParts(TEMPLATES).map((part) => part.id),
-      ['main', 'mcp', 'settings', 'door'],
-    )
-
-    // ── Refusals ───────────────────────────────────────────────────────────────
-    const base = { templateId: 'blank', displayName: 'X', sdkVersion: SDK_VERSION, templatesRoot: TEMPLATES }
-    const refused = async (options: Partial<Parameters<typeof scaffoldModuleProject>[0]>, code: string) => {
-      const result = await scaffoldModuleProject({ ...base, id: 'fine-id', dir: join(work, 'refused'), ...options })
-      assert.equal(result.ok, false)
-      if (!result.ok) assert.equal(result.code, code, result.message)
+  const companionScripts = (
+    JSON.parse(readFileSync(join(TEMPLATES, 'chat-companion', 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
     }
-    await refused({ id: 'Not_Kebab' }, 'invalid_id')
-    await refused({ id: BUNDLED_MODULE_IDS[0] }, 'invalid_id')
-    await refused({ templateId: 'no-such-template' }, 'unknown_template')
-    await refused({ templateId: '_shared' }, 'unknown_template')
-    mkdirSync(join(work, 'occupied'))
-    writeFileSync(join(work, 'occupied', 'keep.txt'), 'mine')
-    await refused({ dir: join(work, 'occupied') }, 'dir_not_empty')
-    const forced = await scaffoldModuleProject({ ...base, id: 'forced', dir: join(work, 'occupied'), force: true })
-    assert.ok(forced.ok)
-    assert.equal(readFileSync(join(work, 'occupied', 'keep.txt'), 'utf8'), 'mine', 'force leaves unrelated files')
+  ).scripts
+  assert.equal(partScripts('renderer')['build:renderer'], companionScripts['build:renderer'])
+  assert.equal(partScripts('main')['build:main'], companionScripts['build:main'])
+  assert.deepEqual(
+    listModuleParts(TEMPLATES).map((part) => part.id),
+    ['main', 'mcp', 'settings', 'door'],
+  )
 
-    assert.equal(sanitizeDisplayText(` Bob's  "Big" {tool} <x> \`$y\\ `), 'Bob’s Big tool x y')
+  // ── Refusals ───────────────────────────────────────────────────────────────
+  const refused = async (options: Partial<Parameters<typeof scaffoldModuleProject>[0]>, code: string) => {
+    const result = await scaffoldModuleProject({ ...base, id: 'fine-id', dir: join(work, 'refused'), ...options })
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.code, code, result.message)
+  }
+  await refused({ id: 'Not_Kebab' }, 'invalid_id')
+  await refused({ id: BUNDLED_MODULE_IDS[0] }, 'invalid_id')
+  await refused({ templateId: 'no-such-template' }, 'unknown_template')
+  await refused({ templateId: '_shared' }, 'unknown_template')
+  mkdirSync(join(work, 'occupied'))
+  writeFileSync(join(work, 'occupied', 'keep.txt'), 'mine')
+  await refused({ dir: join(work, 'occupied') }, 'dir_not_empty')
+  const forced = await scaffoldModuleProject({ ...base, id: 'forced', dir: join(work, 'occupied'), force: true })
+  assert.ok(forced.ok)
+  assert.equal(readFileSync(join(work, 'occupied', 'keep.txt'), 'utf8'), 'mine', 'force leaves unrelated files')
 
-    // ── Every template ─────────────────────────────────────────────────────────
-    const nodeModules = sharedNodeModules(work)
-    const { SPRINTENGINE_SIGNING_KEY: _ownKey, ...inherited } = process.env
-    const env = {
-      ...inherited,
-      PATH: `${join(nodeModules, '.bin')}:${process.env.PATH ?? ''}`,
-      // Keep the dev loop away from the real ~/.sprintengine: no key is found,
-      // and the install lands in a throwaway module root.
-      HOME: join(work, 'home'),
-      SPRINTENGINE_USER_MODULE_ROOT: join(work, 'installed'),
-      npm_config_update_notifier: 'false',
-    }
+  assert.equal(sanitizeDisplayText(` Bob's  "Big" {tool} <x> \`$y\\ `), 'Bob’s Big tool x y')
+})
 
-    for (const template of templates) {
-      const id = `demo-${template.id}`
-      const dir = join(work, template.id)
-      const idea = template.id === 'panel' ? '# My idea\n\nA scratchpad.' : undefined
-      const scaffolded = await scaffoldModuleProject({
-        dir,
-        templateId: template.id,
-        id,
-        displayName: `Demo's ${template.title}`,
-        publisher: 'Acme',
-        sdkVersion: SDK_VERSION,
-        templatesRoot: TEMPLATES,
-        ideaMarkdown: idea,
-      })
-      assert.ok(scaffolded.ok, scaffolded.ok ? '' : scaffolded.message)
-      if (!scaffolded.ok) continue
-
-      // The files, filled in.
-      const files = walk(dir)
-      assert.deepEqual(scaffolded.files, [...files].sort(), `${template.id}: the result lists what was written`)
-      for (const required of [
-        'package.json',
-        'tsconfig.json',
-        'plugin.json',
-        'module/manifest.json',
-        'IDEA.md',
-        'AGENTS.md',
-        'CLAUDE.md',
-        '.gitignore',
-        'test/smoke.test.mjs',
-        'test/module.test.ts',
-        'scripts/check-toolchain.mjs',
-        'scripts/dev-install.mjs',
-        'scripts/validate.mjs',
-      ]) {
-        assert.ok(files.includes(required), `${template.id}: ${required} is missing`)
-      }
-      assert.deepEqual(
-        files.filter((path) => path.includes('skills/')),
-        [],
-        `${template.id}: a project carries no skill; the extension guide is the SDK's and Studio's`,
-      )
-      for (const file of files) {
-        const text = readFileSync(join(dir, file), 'utf8')
-        assert.ok(!/\{\{\w+\}\}/.test(text), `${template.id}: ${file} still has a placeholder`)
-      }
-      assert.equal(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').trim(), '@AGENTS.md')
-      if (idea) assert.equal(readFileSync(join(dir, 'IDEA.md'), 'utf8'), `${idea}\n`)
-      const gitignore = readFileSync(join(dir, '.gitignore'), 'utf8')
-      for (const pattern of ['node_modules/', 'packed/', '*.key', '*.pem', '.DS_Store']) {
-        assert.ok(gitignore.includes(pattern), `${template.id}: .gitignore does not ignore ${pattern}`)
-      }
-      // A GitHub install reads the built module at a commit, so the build is
-      // committed: nothing may ignore module/dist.
-      const ignored = gitignore.split('\n').map((line) => line.trim())
-      for (const line of ignored.filter((entry) => entry && !entry.startsWith('#'))) {
-        assert.ok(!/(^|\/)dist\/?$/.test(line), `${template.id}: .gitignore ignores the built module (${line})`)
-      }
-
-      // The manifests, as the app reads them.
-      const raw = JSON.parse(readFileSync(join(dir, 'module/manifest.json'), 'utf8'))
-      const manifest = validateThirdPartyModuleManifest(raw)
-      assert.ok(manifest.ok, `${template.id}: ${JSON.stringify(manifest.ok ? [] : manifest.issues)}`)
-      assert.deepEqual(checkHostApiCompatibility(raw), { ok: true }, `${template.id}: host API`)
-      assert.equal(raw.engines.hostApi, HOST_API_VERSION)
-      assert.equal(raw.id, id)
-      assert.equal(raw.displayName, `Demo’s ${template.title}`)
-      assert.equal(raw.publisher, 'Acme')
-      assert.equal(raw.source, 'third-party')
-      assert.equal(raw.defaultEnabled, false)
-      assert.deepEqual(raw.permissions, template.permissions, `${template.id}: template.json permissions`)
-      for (const permission of raw.permissions) {
-        assert.ok(KNOWN_CAPABILITY_PERMISSIONS.includes(permission), `${template.id}: unknown permission ${permission}`)
-      }
-      const plugin = validateMarketplacePluginAuthoringManifest(
-        JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8')),
-      )
-      assert.ok(plugin.ok, `${template.id}: ${JSON.stringify(plugin.ok ? [] : plugin.issues)}`)
-      if (plugin.ok) {
-        assert.equal(plugin.manifest.id, id)
-        assert.deepEqual(plugin.manifest.permissions, raw.permissions, `${template.id}: plugin.json discloses the same`)
-        assert.deepEqual(plugin.manifest.components, { module: { path: 'module' } })
-      }
-      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-      assert.equal(pkg.devDependencies['@sprintengine/module-sdk'], `^${SDK_VERSION}`)
-      for (const script of ['typecheck', 'build', 'test', 'validate', 'check', 'dev:install', 'keygen']) {
-        assert.ok(pkg.scripts[script], `${template.id}: package.json has no "${script}" script`)
-      }
-
-      typecheckAgainstSource(dir, env)
-
-      // The project's own dev loop.
-      run('npm', ['run', 'build', '--silent'], dir, env)
-      // A rebuild of unchanged code leaves the committed manifest as it was.
-      const manifestPath = join(dir, 'module/manifest.json')
-      const firstBuild = { text: readFileSync(manifestPath, 'utf8'), mtime: statSync(manifestPath).mtimeMs }
-      assert.match(run('npm', ['run', 'build'], dir, env), /already describes module\//)
-      assert.equal(
-        readFileSync(manifestPath, 'utf8'),
-        firstBuild.text,
-        `${template.id}: a rebuild rewrote the manifest`,
-      )
-      assert.equal(statSync(manifestPath).mtimeMs, firstBuild.mtime, `${template.id}: a rebuild touched the manifest`)
-      // A build leaves the manifest describing module/ exactly, so the
-      // repository can be committed and installed from GitHub as it stands.
-      const built = JSON.parse(readFileSync(join(dir, 'module/manifest.json'), 'utf8'))
-      assert.deepEqual(
-        Object.keys(built.files ?? {}).sort(),
-        walk(join(dir, 'module'))
-          .filter((path) => path !== 'manifest.json')
-          .sort(),
-        `${template.id}: npm run build records the files digests`,
-      )
-      assert.doesNotMatch(
-        run('npm', ['run', 'validate', '--silent'], dir, env),
-        /changed since its "files" digests were written|no "files" digests/,
-        `${template.id}: validate finds the build's digests current`,
-      )
-      run('npm', ['test', '--silent'], dir, env)
-      run('npm', ['run', 'validate', '--silent'], dir, env)
-      const installed = run(process.execPath, ['scripts/dev-install.mjs'], dir, env)
-      assert.match(installed, new RegExp(`Installed ${id} v1 \\(unsigned`), installed)
-
-      const installedDir = join(work, 'installed', id)
-      const installedManifest = JSON.parse(readFileSync(join(installedDir, 'manifest.json'), 'utf8'))
-      const entryFiles = Object.values(raw.entry as Record<string, string>)
-      assert.deepEqual(
-        Object.keys(installedManifest.files).sort(),
-        walk(installedDir)
-          .filter((path) => path !== 'manifest.json')
-          .sort(),
-        `${template.id}: the files map lists exactly what was installed`,
-      )
-      for (const entry of entryFiles) assert.match(installedManifest.files[entry], /^[a-f0-9]{64}$/)
-      assert.equal(installedManifest.engines?.hostApi, HOST_API_VERSION)
-      // The source manifest now carries the same map, and still validates.
-      assert.deepEqual(
-        JSON.parse(readFileSync(join(dir, 'module/manifest.json'), 'utf8')).files,
-        installedManifest.files,
-      )
-      run('npm', ['run', 'validate', '--silent'], dir, env)
-    }
-
-    // ── Projects composed from parts ───────────────────────────────────────────
-    // Every part on the smallest template, and a door added to a project with
-    // no renderer at all: each runs the whole loop, its parts' tests included.
-    const composed = join(work, 'composed')
-    const scaffoldedComposed = await scaffoldModuleProject({
-      dir: composed,
-      templateId: 'blank',
-      id: 'demo-composed',
-      displayName: 'Composed',
+// ── Every template ─────────────────────────────────────────────────────────
+for (const template of templates) {
+  test(`template "${template.id}" scaffolds a project the app accepts, and its dev loop runs`, async () => {
+    const id = `demo-${template.id}`
+    const dir = join(work, template.id)
+    const idea = template.id === 'panel' ? '# My idea\n\nA scratchpad.' : undefined
+    const scaffolded = await scaffoldModuleProject({
+      dir,
+      templateId: template.id,
+      id,
+      displayName: `Demo's ${template.title}`,
+      publisher: 'Acme',
       sdkVersion: SDK_VERSION,
       templatesRoot: TEMPLATES,
-      parts: ['door', 'mcp', 'settings', 'main'],
+      ideaMarkdown: idea,
     })
-    assert.ok(scaffoldedComposed.ok, scaffoldedComposed.ok ? '' : scaffoldedComposed.message)
-    const toolsDir = join(work, 'mcp-tools')
-    const addedDoor = await addModuleParts({ dir: toolsDir, parts: ['door'], templatesRoot: TEMPLATES })
-    assert.ok(addedDoor.ok, addedDoor.ok ? '' : addedDoor.message)
-    assert.deepEqual(addedDoor.ok && addedDoor.added, ['renderer', 'door'])
-    for (const dir of [composed, toolsDir]) {
-      typecheckAgainstSource(dir, env)
-      run('npm', ['run', 'build', '--silent'], dir, env)
-      run('npm', ['test', '--silent'], dir, env)
-      run('npm', ['run', 'validate', '--silent'], dir, env)
-    }
-    const composedTests = run('npm', ['test'], composed, env)
-    for (const name of [
-      'the door renders',
-      'an agent can ask which extension this is',
-      'the section shows what was saved',
+    assert.ok(scaffolded.ok, scaffolded.ok ? '' : scaffolded.message)
+    if (!scaffolded.ok) return
+
+    // The files, filled in.
+    const files = walk(dir)
+    assert.deepEqual(scaffolded.files, [...files].sort(), `${template.id}: the result lists what was written`)
+    for (const required of [
+      'package.json',
+      'tsconfig.json',
+      'plugin.json',
+      'module/manifest.json',
+      'IDEA.md',
+      'AGENTS.md',
+      'CLAUDE.md',
+      '.gitignore',
+      'test/smoke.test.mjs',
+      'test/module.test.ts',
+      'scripts/check-toolchain.mjs',
+      'scripts/dev-install.mjs',
+      'scripts/validate.mjs',
     ]) {
-      assert.ok(composedTests.includes(name), `the composed project ran "${name}"`)
+      assert.ok(files.includes(required), `${template.id}: ${required} is missing`)
     }
-    assert.ok(composedTests.includes('door "demo-composed-door" renders'), 'the smoke test rendered the added door')
-    const refusedPart = await scaffoldModuleProject({
-      ...base,
-      id: 'twice',
-      dir: join(work, 'twice'),
-      templateId: 'chat-companion',
-      parts: ['main'],
-    })
-    assert.equal(!refusedPart.ok && refusedPart.code, 'already_present')
-    assert.equal(existsSync(join(work, 'twice')), false, 'a refused part leaves no half-made project')
+    assert.deepEqual(
+      files.filter((path) => path.includes('skills/')),
+      [],
+      `${template.id}: a project carries no skill; the extension guide is the SDK's and Studio's`,
+    )
+    for (const file of files) {
+      const text = readFileSync(join(dir, file), 'utf8')
+      assert.ok(!/\{\{\w+\}\}/.test(text), `${template.id}: ${file} still has a placeholder`)
+    }
+    assert.equal(readFileSync(join(dir, 'CLAUDE.md'), 'utf8').trim(), '@AGENTS.md')
+    if (idea) assert.equal(readFileSync(join(dir, 'IDEA.md'), 'utf8'), `${idea}\n`)
+    const gitignore = readFileSync(join(dir, '.gitignore'), 'utf8')
+    for (const pattern of ['node_modules/', 'packed/', '*.key', '*.pem', '.DS_Store']) {
+      assert.ok(gitignore.includes(pattern), `${template.id}: .gitignore does not ignore ${pattern}`)
+    }
+    // A GitHub install reads the built module at a commit, so the build is
+    // committed: nothing may ignore module/dist.
+    const ignored = gitignore.split('\n').map((line) => line.trim())
+    for (const line of ignored.filter((entry) => entry && !entry.startsWith('#'))) {
+      assert.ok(!/(^|\/)dist\/?$/.test(line), `${template.id}: .gitignore ignores the built module (${line})`)
+    }
 
-    // ── The smoke test catches what the old recording host let through ───────
-    // A door that throws while rendering, and a service used without its
-    // permission, both fail `npm test` now.
-    const doorPath = join(composed, 'src', 'door.tsx')
-    const door = readFileSync(doorPath, 'utf8')
-    writeFileSync(doorPath, door.replace('function Door() {', "function Door() {\n  throw new Error('door exploded')"))
-    run('npm', ['run', 'build', '--silent'], composed, env)
-    const exploded = spawnSync('node', ['--test', 'test/smoke.test.mjs'], { cwd: composed, env, encoding: 'utf8' })
-    assert.notEqual(exploded.status, 0)
-    assert.match(exploded.stdout, /door "demo-composed-door" renders[\s\S]*door exploded/)
-    writeFileSync(doorPath, door)
-    const manifestPath = join(composed, 'module', 'manifest.json')
-    const declared = readFileSync(manifestPath, 'utf8')
-    const withoutBridge = JSON.parse(declared) as { permissions: string[] }
-    withoutBridge.permissions = withoutBridge.permissions.filter((permission) => permission !== 'module:bridge')
-    writeFileSync(manifestPath, JSON.stringify(withoutBridge, null, 2))
-    run('npm', ['run', 'build', '--silent'], composed, env)
-    const unbridged = spawnSync('node', ['--test', 'test/smoke.test.mjs'], { cwd: composed, env, encoding: 'utf8' })
-    assert.notEqual(unbridged.status, 0)
-    assert.match(unbridged.stdout, /needs the "module:bridge" permission/)
-    writeFileSync(manifestPath, declared)
+    // The manifests, as the app reads them.
+    const raw = JSON.parse(readFileSync(join(dir, 'module/manifest.json'), 'utf8'))
+    const manifest = validateThirdPartyModuleManifest(raw)
+    assert.ok(manifest.ok, `${template.id}: ${JSON.stringify(manifest.ok ? [] : manifest.issues)}`)
+    assert.deepEqual(checkHostApiCompatibility(raw), { ok: true }, `${template.id}: host API`)
+    assert.equal(raw.engines.hostApi, HOST_API_VERSION)
+    assert.equal(raw.id, id)
+    assert.equal(raw.displayName, `Demo’s ${template.title}`)
+    assert.equal(raw.publisher, 'Acme')
+    assert.equal(raw.source, 'third-party')
+    assert.equal(raw.defaultEnabled, false)
+    assert.deepEqual(raw.permissions, template.permissions, `${template.id}: template.json permissions`)
+    for (const permission of raw.permissions) {
+      assert.ok(KNOWN_CAPABILITY_PERMISSIONS.includes(permission), `${template.id}: unknown permission ${permission}`)
+    }
+    const plugin = validateMarketplacePluginAuthoringManifest(
+      JSON.parse(readFileSync(join(dir, 'plugin.json'), 'utf8')),
+    )
+    assert.ok(plugin.ok, `${template.id}: ${JSON.stringify(plugin.ok ? [] : plugin.issues)}`)
+    if (plugin.ok) {
+      assert.equal(plugin.manifest.id, id)
+      assert.deepEqual(plugin.manifest.permissions, raw.permissions, `${template.id}: plugin.json discloses the same`)
+      assert.deepEqual(plugin.manifest.components, { module: { path: 'module' } })
+    }
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    assert.equal(pkg.devDependencies['@sprintengine/module-sdk'], `^${SDK_VERSION}`)
+    for (const script of ['typecheck', 'build', 'test', 'validate', 'check', 'dev:install', 'keygen']) {
+      assert.ok(pkg.scripts[script], `${template.id}: package.json has no "${script}" script`)
+    }
 
-    // ── A local SDK tarball instead of the npm release ─────────────────────────
-    const tarball = join(work, 'sprintengine-module-sdk-9.9.9.tgz')
-    writeFileSync(tarball, 'not really a tarball')
-    const local = await scaffoldModuleProject({
-      ...base,
-      id: 'local-sdk',
-      dir: join(work, 'local'),
-      sdkTarballPath: tarball,
-    })
-    assert.ok(local.ok)
-    assert.ok(existsSync(join(work, 'local/vendor/sprintengine-module-sdk-9.9.9.tgz')))
-    const localPkg = JSON.parse(readFileSync(join(work, 'local/package.json'), 'utf8'))
-    assert.equal(localPkg.devDependencies['@sprintengine/module-sdk'], 'file:vendor/sprintengine-module-sdk-9.9.9.tgz')
-  } finally {
-    rmSync(work, { recursive: true, force: true })
+    typecheckAgainstSource(dir, env)
+
+    // The project's own dev loop.
+    run('npm', ['run', 'build', '--silent'], dir, env)
+    // A rebuild of unchanged code leaves the committed manifest as it was.
+    const manifestPath = join(dir, 'module/manifest.json')
+    const firstBuild = { text: readFileSync(manifestPath, 'utf8'), mtime: statSync(manifestPath).mtimeMs }
+    assert.match(run('npm', ['run', 'build'], dir, env), /already describes module\//)
+    assert.equal(readFileSync(manifestPath, 'utf8'), firstBuild.text, `${template.id}: a rebuild rewrote the manifest`)
+    assert.equal(statSync(manifestPath).mtimeMs, firstBuild.mtime, `${template.id}: a rebuild touched the manifest`)
+    // A build leaves the manifest describing module/ exactly, so the
+    // repository can be committed and installed from GitHub as it stands.
+    const built = JSON.parse(readFileSync(join(dir, 'module/manifest.json'), 'utf8'))
+    assert.deepEqual(
+      Object.keys(built.files ?? {}).sort(),
+      walk(join(dir, 'module'))
+        .filter((path) => path !== 'manifest.json')
+        .sort(),
+      `${template.id}: npm run build records the files digests`,
+    )
+    assert.doesNotMatch(
+      run('npm', ['run', 'validate', '--silent'], dir, env),
+      /changed since its "files" digests were written|no "files" digests/,
+      `${template.id}: validate finds the build's digests current`,
+    )
+    run('npm', ['test', '--silent'], dir, env)
+    run('npm', ['run', 'validate', '--silent'], dir, env)
+    const installed = run(process.execPath, ['scripts/dev-install.mjs'], dir, env)
+    assert.match(installed, new RegExp(`Installed ${id} v1 \\(unsigned`), installed)
+
+    const installedDir = join(work, 'installed', id)
+    const installedManifest = JSON.parse(readFileSync(join(installedDir, 'manifest.json'), 'utf8'))
+    const entryFiles = Object.values(raw.entry as Record<string, string>)
+    assert.deepEqual(
+      Object.keys(installedManifest.files).sort(),
+      walk(installedDir)
+        .filter((path) => path !== 'manifest.json')
+        .sort(),
+      `${template.id}: the files map lists exactly what was installed`,
+    )
+    for (const entry of entryFiles) assert.match(installedManifest.files[entry], /^[a-f0-9]{64}$/)
+    assert.equal(installedManifest.engines?.hostApi, HOST_API_VERSION)
+    // The source manifest now carries the same map, and still validates.
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'module/manifest.json'), 'utf8')).files, installedManifest.files)
+    run('npm', ['run', 'validate', '--silent'], dir, env)
+  })
+}
+
+// ── Projects composed from parts ───────────────────────────────────────────
+test('projects composed from parts run the same loop, and the smoke test catches a broken door', async () => {
+  // The door is added to the mcp-tools project its template test above built.
+  assert.ok(existsSync(join(work, 'mcp-tools', 'module', 'manifest.json')), 'the mcp-tools template test ran first')
+  // Every part on the smallest template, and a door added to a project with
+  // no renderer at all: each runs the whole loop, its parts' tests included.
+  const composed = join(work, 'composed')
+  const scaffoldedComposed = await scaffoldModuleProject({
+    dir: composed,
+    templateId: 'blank',
+    id: 'demo-composed',
+    displayName: 'Composed',
+    sdkVersion: SDK_VERSION,
+    templatesRoot: TEMPLATES,
+    parts: ['door', 'mcp', 'settings', 'main'],
+  })
+  assert.ok(scaffoldedComposed.ok, scaffoldedComposed.ok ? '' : scaffoldedComposed.message)
+  const toolsDir = join(work, 'mcp-tools')
+  const addedDoor = await addModuleParts({ dir: toolsDir, parts: ['door'], templatesRoot: TEMPLATES })
+  assert.ok(addedDoor.ok, addedDoor.ok ? '' : addedDoor.message)
+  assert.deepEqual(addedDoor.ok && addedDoor.added, ['renderer', 'door'])
+  for (const dir of [composed, toolsDir]) {
+    typecheckAgainstSource(dir, env)
+    run('npm', ['run', 'build', '--silent'], dir, env)
+    run('npm', ['test', '--silent'], dir, env)
+    run('npm', ['run', 'validate', '--silent'], dir, env)
   }
+  const composedTests = run('npm', ['test'], composed, env)
+  for (const name of [
+    'the door renders',
+    'an agent can ask which extension this is',
+    'the section shows what was saved',
+  ]) {
+    assert.ok(composedTests.includes(name), `the composed project ran "${name}"`)
+  }
+  assert.ok(composedTests.includes('door "demo-composed-door" renders'), 'the smoke test rendered the added door')
+  const refusedPart = await scaffoldModuleProject({
+    ...base,
+    id: 'twice',
+    dir: join(work, 'twice'),
+    templateId: 'chat-companion',
+    parts: ['main'],
+  })
+  assert.equal(!refusedPart.ok && refusedPart.code, 'already_present')
+  assert.equal(existsSync(join(work, 'twice')), false, 'a refused part leaves no half-made project')
+
+  // ── The smoke test catches what the old recording host let through ───────
+  // A door that throws while rendering, and a service used without its
+  // permission, both fail `npm test` now.
+  const doorPath = join(composed, 'src', 'door.tsx')
+  const door = readFileSync(doorPath, 'utf8')
+  writeFileSync(doorPath, door.replace('function Door() {', "function Door() {\n  throw new Error('door exploded')"))
+  run('npm', ['run', 'build', '--silent'], composed, env)
+  const exploded = spawnSync('node', ['--test', 'test/smoke.test.mjs'], { cwd: composed, env, encoding: 'utf8' })
+  assert.notEqual(exploded.status, 0)
+  assert.match(exploded.stdout, /door "demo-composed-door" renders[\s\S]*door exploded/)
+  writeFileSync(doorPath, door)
+  const manifestPath = join(composed, 'module', 'manifest.json')
+  const declared = readFileSync(manifestPath, 'utf8')
+  const withoutBridge = JSON.parse(declared) as { permissions: string[] }
+  withoutBridge.permissions = withoutBridge.permissions.filter((permission) => permission !== 'module:bridge')
+  writeFileSync(manifestPath, JSON.stringify(withoutBridge, null, 2))
+  run('npm', ['run', 'build', '--silent'], composed, env)
+  const unbridged = spawnSync('node', ['--test', 'test/smoke.test.mjs'], { cwd: composed, env, encoding: 'utf8' })
+  assert.notEqual(unbridged.status, 0)
+  assert.match(unbridged.stdout, /needs the "module:bridge" permission/)
+  writeFileSync(manifestPath, declared)
+})
+
+test('a local SDK tarball stands in for the npm release', async () => {
+  const tarball = join(work, 'sprintengine-module-sdk-9.9.9.tgz')
+  writeFileSync(tarball, 'not really a tarball')
+  const local = await scaffoldModuleProject({
+    ...base,
+    id: 'local-sdk',
+    dir: join(work, 'local'),
+    sdkTarballPath: tarball,
+  })
+  assert.ok(local.ok)
+  assert.ok(existsSync(join(work, 'local/vendor/sprintengine-module-sdk-9.9.9.tgz')))
+  const localPkg = JSON.parse(readFileSync(join(work, 'local/package.json'), 'utf8'))
+  assert.equal(localPkg.devDependencies['@sprintengine/module-sdk'], 'file:vendor/sprintengine-module-sdk-9.9.9.tgz')
 })

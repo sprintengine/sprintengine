@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 
-import { isWslHostId } from '../shared/execution-host'
+import type { DistributionTerminalHost } from './wsl/distribution-terminal-host'
+import type { DistributionMachine } from './wsl/distribution-machine'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { resolveSocketPath } from '../main/automation/automation-service'
 import {
@@ -12,14 +13,19 @@ import {
 } from './core/studio-core'
 import { createStudioGateway, type StudioGateway } from './core/studio-gateway'
 import { createStudioRpc } from './core/studio-rpc'
+import { createStudioChatBackend } from '../main/studio-rpc/studio-chat-backend'
+import { createConversationService } from '../main/conversation-service'
+import { knownFolders } from './files/known-folders'
 import type { StudioRpcService } from '../main/studio-rpc/studio-rpc-service'
 import { readDataDirSecrets, restrictDataDir } from './core/data-dir'
 import { createNodeStudioPlatform, type NodeStudioPlatform } from './platform/platform'
 import { createUnavailableSecretCipher } from './platform/secret-cipher'
 import { SERVER_EXIT } from './bootstrap/envelope'
 import { runShutdownLegs, type ShutdownLegProgress } from './bootstrap/serve'
-import { readStudioEnvironmentId } from '../main/studio-rpc/studio-rpc-service'
+import { readStudioEnvironmentId } from './environment/environment-id'
 import type { WebFrontDoor, WebFrontDoorOptions } from './web/web-front-door'
+import type { StudioUpdates } from './update/studio-updates'
+import type { SignIns } from './machine/machine-sign-in'
 
 // A Studio server under plain Node: the core and its gateway, with nothing of
 // Electron. The `studio-server` entry (main.ts) runs it from a shell; a later
@@ -72,6 +78,26 @@ export type StudioServerOptions = {
    * WSL distribution, or one an SSH machine runs detached. `local` when not said.
    */
   hostKind?: 'local' | 'wsl' | 'ssh'
+  /**
+   * Bind the tailnet listener (when its settings turn it on) here rather than
+   * on this machine's Tailscale interface: loopback, for a test that drives
+   * the real listener with a paired desktop and the phone's own client
+   * (scripts/cross-client-gate.mjs). A library option only: the `serve` entry
+   * and the bootstrap envelope never set it.
+   */
+  tailnetBindAddress?: string
+  /** How this server is updated, as `update.status` tells clients; by hand when not said. */
+  updates?: StudioUpdates
+  /**
+   * A CLI's login on this machine with no terminal (`providers.signIn*`): a
+   * server a desktop reaches over its front door, where the person has no
+   * terminal of their own. Not served when not said.
+   */
+  signIns?: () => Promise<SignIns>
+  /** A WSL distribution's Studio: what it does for the desktop's WSL terminals (`distribution-terminal-host.ts`). */
+  terminalHost?: DistributionTerminalHost
+  /** A WSL distribution's Studio: what it does on its machine for the desktop (`distribution-machine.ts`). */
+  machine?: DistributionMachine
 }
 
 export type StudioServerReady = {
@@ -209,10 +235,8 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
       role: 'server',
       // A chat's agent (Claude Code, Codex, an ACP agent) is handed this
       // server's gateway: the stdio bridge, run by the Node this server runs
-      // on. A WSL machine is not this server's to reach; a server runs inside
-      // the distribution instead (phase 7).
-      resolveStudioMcpServer: async ({ hostId }) => {
-        if (isWslHostId(hostId)) return null
+      // on, the machine its CLI runs on.
+      resolveStudioMcpServer: async () => {
         await gateway?.whenGatewayReady()
         return {
           id: STUDIO_MCP_SERVER_ID,
@@ -239,9 +263,33 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
     throw error
   }
 
-  const started = createStudioGateway(core)
+  const started = createStudioGateway(
+    core,
+    options.tailnetBindAddress === undefined ? {} : { tailnetBindAddress: options.tailnetBindAddress },
+  )
   gateway = started
-  const rpc = createStudioRpc(core, started, options.hostKind ? { hostKind: options.hostKind } : {})
+  const rpc = createStudioRpc(core, started, {
+    ...(options.hostKind ? { hostKind: options.hostKind } : {}),
+    ...(options.updates ? { updates: options.updates } : {}),
+    ...(options.signIns ? { signIns: options.signIns } : {}),
+    ...(options.terminalHost ? { terminalHost: options.terminalHost } : {}),
+    ...(options.machine ? { machine: options.machine } : {}),
+  })
+  // The chat surface over this core's chats (`session.*`): what a window that
+  // follows and drives a chat here reaches it by, the desktop's window over
+  // its loopback route to an SSH machine included (design-wsl-ssh-direct PR
+  // 1d). No terminal handoff: a machine's terminals are not reached from
+  // another computer (owner ruling).
+  const conversationCommands = core.conversationCommands()
+  rpc.provideChat(
+    createStudioChatBackend({
+      conversation: createConversationService(core.conversations),
+      commandReceipt: (sessionId, commandId) => core.conversations.commandReceipt(sessionId, commandId),
+      readableRoots: () => knownFolders(core.workspaceRegistry, options.dataDir),
+      commands: (input) => conversationCommands.list(input),
+      onListChanged: (listener) => started.onListChanged(listener),
+    }),
+  )
   let status: Awaited<ReturnType<StudioGateway['initialize']>>
   try {
     if (options.listen === false) {

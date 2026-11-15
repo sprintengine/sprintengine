@@ -27,21 +27,14 @@
     }
   },
   "launch": {
-    "argv": [
-      "{{binary}}",
-      { "spreadIf": "permissionArgs" },
-      { "spreadIf": "files" }
-    ],
+    "argv": ["{{binary}}", { "spreadIf": "permissionArgs" }, { "spreadIf": "files" }],
     "env": {
       "AIDER_MODEL": "{{model}}"
     }
   },
   "resume": {
     "supported": true,
-    "argv": [
-      "{{binary}}",
-      { "spreadIf": "permissionArgs" }
-    ]
+    "argv": ["{{binary}}", { "spreadIf": "permissionArgs" }]
   },
   "promptInjection": {
     "mode": "send-after-ready",

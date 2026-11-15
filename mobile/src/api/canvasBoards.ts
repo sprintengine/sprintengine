@@ -1,32 +1,27 @@
-import { createGatewayToolResultCaller, type GatewayToolAnswer } from "./tailnetWorkspaces";
+import type { StudioCanvasBoard } from "../../../packages/studio-protocol/src/public";
+import { desktopStudio, studioFailure, type DesktopStudioOptions, type DesktopTarget } from "./desktopStudio";
+import type { ApiErrorCode } from "./types";
 
-// A paired desktop's Canvas boards, from the phone: the gateway's `canvas.list`
-// and `canvas.screenshot` over the same stateless JSON-RPC POST `workspace.list`
-// rides. Both only look, so both need `workspace:read` and nothing more; a
-// paired device is bound to no workspace, so it reads every board on the
-// machine and pictures one by its id without naming a project.
-//
-// A desktop that advertises `canvas-machine-boards` answers `scope: machine`
-// with every board there, each with its project (null for a removed project)
-// and the `id` the other canvas tools take. An older one is asked for one
-// project's boards at a time, with no `scope`, which it has always answered;
-// those rows carry no id, so a picture names its board by path, from that
-// project. A machine that offers no canvas tools (a server with no desktop
-// open) answers "Unknown tool".
+// A paired desktop's Canvas boards, from the phone: the desktop's `canvas.list`
+// and `canvas.picture` on its Studio protocol (desktopStudio.ts), answered by
+// the same canvas service and tools its own Canvas pane and its agents use.
+// Both only look, so both need `workspace:read` and nothing more; a paired
+// device is bound to no workspace, so it reads every board on the machine,
+// each with its project and the id that pictures it without naming a project.
 //
 // Reading an answer is pure and exported, so the regression suite reads the
 // same rules the screens run.
 
 const LIST_TIMEOUT_MS = 15_000;
-/** The picture is drawn in a hidden window over there; the tool's own wait, as the desktop's mesh caller allows. */
-const SCREENSHOT_TIMEOUT_MS = 45_000;
+/** The picture is drawn in a hidden window over there; the desktop's own wait for it. */
+const PICTURE_TIMEOUT_MS = 45_000;
 /** Big enough to pinch into on a phone, and the size a paired desktop asks for. */
 export const CANVAS_PICTURE_MAX_EDGE = 1600;
 
 /** One board as the phone lists it. */
 export interface PhoneCanvasBoard {
-  /** The board's id there (`canvas://ws_…/arch.excalidraw`); null from a machine that lists none. */
-  id: string | null;
+  /** The board's id there (`canvas://ws_…/arch.excalidraw`). */
+  id: string;
   /** Its path in its store or project (`arch.excalidraw`, `diagrams/flow.excalidraw`). */
   path: string;
   name: string;
@@ -41,7 +36,6 @@ export interface PhoneCanvasBoard {
   here: boolean;
   /** Epoch milliseconds; 0 when the machine did not say. */
   modifiedAt: number;
-  /** -1 when the machine did not say. */
   elementCount: number;
 }
 
@@ -60,52 +54,39 @@ export interface PhoneCanvasPicture {
 
 export type CanvasAnswer<T> =
   | { ok: true; data: T }
-  | { ok: false; message: string; code: string | null; errorCode: string };
+  | { ok: false; message: string; code: string | null; errorCode: ApiErrorCode };
 
-/**
- * `canvas.list`'s answer, read member by member: another machine's words are
- * not trusted to be the shape they claim. `workspaceId` is the project an
- * answer without `scope` was asked for, which is every row's.
- */
-export function readCanvasBoards(value: unknown, project: { workspaceId: string; name: string | null } | null): PhoneCanvasList {
+/** `canvas.list`'s answer, read member by member: another machine's words are not trusted to be the shape they claim. */
+export function readCanvasBoards(value: unknown): PhoneCanvasList {
   const record = isRecord(value) ? value : {};
   const boards = (Array.isArray(record.boards) ? record.boards : []).flatMap((entry): PhoneCanvasBoard[] => {
-    if (!isRecord(entry) || typeof entry.path !== "string" || !entry.path) return [];
-    const modifiedAt = typeof entry.modifiedAt === "string" ? Date.parse(entry.modifiedAt) : Number.NaN;
+    if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id || typeof entry.path !== "string" || !entry.path)
+      return [];
+    const row = entry as Partial<StudioCanvasBoard>;
     return [
       {
-        id: typeof entry.id === "string" && entry.id ? entry.id : null,
+        id: entry.id,
         path: entry.path,
-        name: typeof entry.name === "string" && entry.name ? entry.name : canvasBoardName(entry.path),
-        project: project ? project.name : typeof entry.project === "string" && entry.project ? entry.project : null,
-        workspaceId: project
-          ? project.workspaceId
-          : typeof entry.workspaceId === "string" && entry.workspaceId
-            ? entry.workspaceId
-            : null,
-        here: project ? true : entry.here === true,
-        modifiedAt: Number.isFinite(modifiedAt) ? modifiedAt : 0,
-        elementCount: typeof entry.elementCount === "number" ? entry.elementCount : -1,
+        name: typeof row.name === "string" && row.name ? row.name : canvasBoardName(entry.path),
+        project: typeof row.project === "string" && row.project ? row.project : null,
+        workspaceId: typeof row.workspaceId === "string" && row.workspaceId ? row.workspaceId : null,
+        here: row.here === true,
+        modifiedAt: typeof row.modifiedAt === "number" && Number.isFinite(row.modifiedAt) ? row.modifiedAt : 0,
+        elementCount: typeof row.elementCount === "number" ? row.elementCount : -1,
       },
     ];
   });
   return { boards, note: typeof record.note === "string" && record.note ? record.note : null };
 }
 
-/**
- * The picture in `canvas.screenshot`'s answer: its image block, never built
- * from anything but a PNG or a JPEG, and its size from the structured part.
- * Null when the answer carried no picture.
- */
-export function readCanvasPicture(answer: Extract<GatewayToolAnswer, { ok: true }>): PhoneCanvasPicture | null {
-  const image = answer.content.find((block) => block.type === "image");
-  if (!image || typeof image.data !== "string" || !image.data || typeof image.mimeType !== "string") return null;
-  if (!/^image\/(png|jpeg)$/u.test(image.mimeType)) return null;
-  const { width, height } = answer.structured;
+/** `canvas.picture`'s answer as an Image draws it: never built from anything but a PNG or a JPEG. Null when it carried none. */
+export function readCanvasPicture(value: unknown): PhoneCanvasPicture | null {
+  if (!isRecord(value) || typeof value.dataBase64 !== "string" || !value.dataBase64) return null;
+  if (typeof value.mimeType !== "string" || !/^image\/(png|jpeg)$/u.test(value.mimeType)) return null;
   return {
-    uri: `data:${image.mimeType};base64,${image.data}`,
-    width: typeof width === "number" && width > 0 ? width : 0,
-    height: typeof height === "number" && height > 0 ? height : 0,
+    uri: `data:${value.mimeType};base64,${value.dataBase64}`,
+    width: typeof value.width === "number" && value.width > 0 ? value.width : 0,
+    height: typeof value.height === "number" && value.height > 0 ? value.height : 0,
   };
 }
 
@@ -120,12 +101,12 @@ export function isCanvasBoardId(board: string): boolean {
   return /^canvas:\/\//iu.test(board.trim());
 }
 
-/** `canvas.screenshot`'s arguments: the board, the project it is read under where it needs one, and the theme. */
-export function buildCanvasScreenshotArgs(input: {
+/** `canvas.picture`'s params: the board, the project a path is read under, and the theme. */
+export function buildCanvasPictureParams(input: {
   board: string;
   workspaceId: string | null;
   dark: boolean;
-}): Record<string, unknown> {
+}): { board: string; workspaceId?: string; maxEdge: number; dark: boolean } {
   return {
     board: input.board,
     ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
@@ -134,40 +115,47 @@ export function buildCanvasScreenshotArgs(input: {
   };
 }
 
-/** What the Canvases screens need from the tools; the harness supplies a fake of the same shape. */
+/** What the Canvases screens need of a desktop; the harness supplies a fake of the same shape. */
 export interface CanvasBoardsApi {
-  /** Every board on the machine (`scope: machine`); `asker` marks the boards of that workspace's project as `here`. */
-  listMachine(asker: string | null): Promise<CanvasAnswer<PhoneCanvasList>>;
-  /** One project's boards, as every machine with canvas tools answers. */
-  listProject(project: { workspaceId: string; name: string | null }): Promise<CanvasAnswer<PhoneCanvasList>>;
+  /** Every board on the machine; `asker` marks the boards of that workspace's project as `here`. */
+  list(asker: string | null): Promise<CanvasAnswer<PhoneCanvasList>>;
   /** A picture of one board, drawn over there. */
   picture(input: { board: string; workspaceId: string | null; dark: boolean }): Promise<CanvasAnswer<PhoneCanvasPicture>>;
 }
 
-export function createCanvasBoardsApi(options: { baseUrl: string; deviceToken: string }): CanvasBoardsApi {
-  const call = createGatewayToolResultCaller(options);
-  const refused = (answer: Extract<GatewayToolAnswer, { ok: false }>) => ({
-    ok: false as const,
-    message: answer.message,
-    code: answer.code,
-    errorCode: answer.errorCode,
-  });
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("The desktop did not answer in time.")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+export function createCanvasBoardsApi(target: DesktopTarget, options: DesktopStudioOptions = {}): CanvasBoardsApi {
+  const refused = (error: unknown) => ({ ok: false as const, ...studioFailure(error) });
   return {
-    async listMachine(asker) {
-      const answer = await call("canvas.list", { scope: "machine", ...(asker ? { workspaceId: asker } : {}) }, LIST_TIMEOUT_MS);
-      return answer.ok ? { ok: true, data: readCanvasBoards(answer.structured, null) } : refused(answer);
-    },
-    async listProject(project) {
-      const answer = await call("canvas.list", { workspaceId: project.workspaceId }, LIST_TIMEOUT_MS);
-      return answer.ok ? { ok: true, data: readCanvasBoards(answer.structured, project) } : refused(answer);
+    async list(asker) {
+      try {
+        const client = await desktopStudio(target, options);
+        const listed = await withTimeout(client.request("canvas.list", asker ? { workspaceId: asker } : {}), LIST_TIMEOUT_MS);
+        return { ok: true, data: readCanvasBoards(listed) };
+      } catch (error) {
+        return refused(error);
+      }
     },
     async picture(input) {
-      const answer = await call("canvas.screenshot", buildCanvasScreenshotArgs(input), SCREENSHOT_TIMEOUT_MS);
-      if (!answer.ok) return refused(answer);
-      const picture = readCanvasPicture(answer);
-      return picture
-        ? { ok: true, data: picture }
-        : { ok: false, message: "", code: "no_picture", errorCode: "invalid_payload" };
+      try {
+        const client = await desktopStudio(target, options);
+        const answer = await withTimeout(client.request("canvas.picture", buildCanvasPictureParams(input)), PICTURE_TIMEOUT_MS);
+        const picture = readCanvasPicture(answer);
+        return picture
+          ? { ok: true, data: picture }
+          : { ok: false, message: "", code: "no_picture", errorCode: "invalid_payload" };
+      } catch (error) {
+        return refused(error);
+      }
     },
   };
 }

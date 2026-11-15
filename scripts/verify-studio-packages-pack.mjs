@@ -1,5 +1,5 @@
-// Exercise the Studio protocol's, the agent SDK's and the conversation
-// timeline's and view's tarballs the way a third party installs them: packed,
+// Exercise the Studio protocol's, the client runtime's, the agent SDK's and the
+// conversation timeline's and view's tarballs the way a third party installs them: packed,
 // installed together with the conversation protocol's tarball they depend on
 // (no registry, no network; React is this repository's own copy), and loaded
 // from both module systems, with Node16 declarations checked by a consumer
@@ -54,6 +54,7 @@ try {
   const tarballs = [
     'conversation-protocol',
     'studio-protocol',
+    'client-runtime',
     'agent-sdk',
     'conversation-timeline',
     'conversation-view',
@@ -79,7 +80,10 @@ try {
     assert.equal(loaded.STUDIO_PROTOCOL_VERSION, 1)
     // The conversation contract arrives through the dependency, not a copy.
     assert.equal(loaded.CONVERSATION_CAPABILITY, 'conversations')
-    assert.equal(loaded.parseConversationClientMessage({ type: 'hello', requestId: 'h-1' }).type, 'hello')
+    assert.equal(
+      loaded.parseConversationClientMessage({ type: 'command', commandId: 'c-0', command: { kind: 'interrupt' } }).type,
+      'command',
+    )
     assert.deepEqual(
       loaded.parseStudioMethodParams('conversation.send', {
         key: { workspaceId: 'w', agentId: 'a' },
@@ -94,6 +98,15 @@ try {
         .frame.seq,
       1,
     )
+  }
+  for (const loaded of await load('client-runtime')) {
+    assert.equal(typeof loaded.connect, 'function')
+    assert.equal(typeof loaded.ConnectionSupervisor, 'function')
+    assert.equal(
+      loaded.connectionRetryDelayMs(3, { baseMs: 1_000, maxMs: 60_000, jitter: 0 }, () => 0),
+      4_000,
+    )
+    assert.equal(new loaded.StudioError('busy', 'Busy.').code, 'busy')
   }
   for (const loaded of await load('agent-sdk')) {
     assert.equal(typeof loaded.connect, 'function')
@@ -126,6 +139,8 @@ try {
     assert.equal(loaded.themeStyle('dark')['--se-text'], '#ececec')
   }
   for (const [name, file, dependency] of [
+    ['client-runtime', 'protocol.js', '@sprintengine/studio-protocol'],
+    ['agent-sdk', 'runtime.js', '@sprintengine/client-runtime'],
     ['conversation-timeline', 'protocol.js', '@sprintengine/conversation-protocol'],
     ['conversation-view', 'timeline.js', '@sprintengine/conversation-timeline'],
   ]) {
@@ -148,6 +163,9 @@ const listed: StudioMethodResult<'conversation.list'> = { conversations: [] as C
 const welcome: StudioWelcomeFrame | null = null
 const event: ConversationEvent | null = null
 console.log(parseStudioServerFrame({}), STUDIO_METHODS['conversation.list'].scope, parseConversationServerFrame({}), listed, welcome, event)
+import { ConnectionSupervisor, type ConnectionState, connect as connectRuntime } from '@sprintengine/client-runtime'
+const supervised: ConnectionState | null = null
+console.log(ConnectionSupervisor, supervised, connectRuntime)
 import { connect, approvalRequestOf, StudioError, type StudioClient, type Conversation, type ConversationEventStream } from '@sprintengine/agent-sdk'
 import { connectToStudio, socketTransport } from '@sprintengine/agent-sdk/node'
 const client: StudioClient | null = null
@@ -184,7 +202,7 @@ console.log(createConversationFollower, row, followSource, ConversationView, pro
   )
   run(process.execPath, [compiler, '-p', join(fixture, 'tsconfig.json')])
   console.log(
-    'studio-protocol, agent-sdk, conversation-timeline and conversation-view pack verification passed (ESM, CommonJS, Node16 declarations)',
+    'studio-protocol, client-runtime, agent-sdk, conversation-timeline and conversation-view pack verification passed (ESM, CommonJS, Node16 declarations)',
   )
 } finally {
   // Only the directory created above is removed, never a caller-owned path.

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { InstalledPluginRecord } from '../../../../../../shared/ipc/skills'
 import {
@@ -12,10 +12,19 @@ import {
   type ScannedSkill,
   type SkillSource,
 } from '../../../../../../shared/skills'
+import { chatWelcome } from '../../../../../../../tests/chat-welcome'
 import { ConversationLinkProvider } from '../conversationLinks'
+import { ConversationTransportProvider, studioConversationTransport } from '../conversationTransport'
 import type { TranscriptToolEntry } from '../conversationProjection'
 import { PluginOfferCard, PluginOfferChatProvider, type PluginOfferChat } from './PluginOfferCard'
 import { PRESELECT_SKILLS_UP_TO } from './pluginOfferModel'
+vi.mock('../../../../studio/agentSkills', () => import('../../../../studio/agentSkills.double'))
+// Whether the window's own Studio runs the chat (`useShellReach().openDocument`):
+// the card reads and installs through it.
+const reach = vi.hoisted(() => ({ openDocument: true }))
+vi.mock('../shellReach', () => ({
+  useShellReach: () => ({ openDocument: reach.openDocument, sameDisk: false, dragPaths: false, revealInFolder: false }),
+}))
 
 // The card an agent's `plugin.offer` draws: one button that installs through
 // the dialog, signs this chat in once a server it added asks for that, and
@@ -109,6 +118,7 @@ let skills: ScannedSkill[]
 
 beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  reach.openDocument = true
   installs = []
   opened = []
   installed = []
@@ -142,11 +152,13 @@ afterEach(() => {
 async function render(chat: PluginOfferChat = { cli: 'claude', signIn: null }): Promise<void> {
   await act(async () =>
     root.render(
-      <ConversationLinkProvider workspaceId="ws" cwd="/Users/dev/app" workspaceRoot="/Users/dev/app">
-        <PluginOfferChatProvider value={chat}>
-          <PluginOfferCard tool={TOOL} fallback={<div>tool row</div>} />
-        </PluginOfferChatProvider>
-      </ConversationLinkProvider>,
+      <ConversationTransportProvider value={studioConversationTransport(() => chatWelcome())}>
+        <ConversationLinkProvider workspaceId="ws" cwd="/Users/dev/app" workspaceRoot="/Users/dev/app">
+          <PluginOfferChatProvider value={chat}>
+            <PluginOfferCard tool={TOOL} fallback={<div>tool row</div>} />
+          </PluginOfferChatProvider>
+        </ConversationLinkProvider>
+      </ConversationTransportProvider>,
     ),
   )
 }
@@ -180,6 +192,13 @@ test('an offered plugin shows its name and description, and Install opens the di
   expect(document.body.textContent).not.toContain('Install Sentry?')
   expect(host.textContent).toContain('Installed')
   expect(button('Manage')).toBeDefined()
+})
+
+test("a chat the window's own Studio does not run draws its tool row: that environment's plugins are its own", async () => {
+  reach.openDocument = false
+  await render()
+  expect(host.textContent).toContain('tool row')
+  expect(button('Install')).toBeUndefined()
 })
 
 test('a plugin with many skills starts with none of them ticked', async () => {

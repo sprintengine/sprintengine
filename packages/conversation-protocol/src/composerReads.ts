@@ -89,33 +89,6 @@ function words(value: unknown, max: number): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value.slice(0, max) : undefined
 }
 
-// A relative path inside the chat's folder, and nothing a client could read
-// as a path of its own.
-function relativePath(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= 4096 &&
-    !/[\u0000-\u001f\u007f]/u.test(value) &&
-    !value.startsWith('/') &&
-    !value.startsWith('\\') &&
-    !/^[A-Za-z]:/u.test(value) &&
-    !value.split(/[\\/]/u).includes('..')
-  )
-}
-
-/** A file search's answer, or null when it is not one. An entry that is not a relative path is dropped. */
-export function parseConversationFileSearchAnswer(value: unknown): ConversationFileSearchAnswer | null {
-  if (!record(value) || !Array.isArray(value.entries)) return null
-  const entries: ConversationFileSearchEntry[] = []
-  for (const entry of value.entries) {
-    if (entries.length >= CONVERSATION_MAX_FILE_SEARCH_RESULTS) break
-    if (!record(entry) || !relativePath(entry.path) || (entry.kind !== 'file' && entry.kind !== 'folder')) continue
-    entries.push({ path: entry.path, kind: entry.kind })
-  }
-  return { entries, truncated: value.truncated === true }
-}
-
 const COMMAND_SOURCES = new Set<ConversationWireCommandSource>(['cli', 'custom', 'skill'])
 const COMMAND_NAME = /^[^\s/][^\s]{0,199}$/u
 

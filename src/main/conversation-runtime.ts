@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readdir, stat } from 'fs/promises'
 import { basename, join } from 'node:path'
 import {
@@ -6,6 +7,12 @@ import {
   removeConversationStorage,
   writeConversationStorage,
 } from './conversation-persistence'
+import {
+  foldReceiptRecord,
+  readConversationReceipts,
+  receiptRecord,
+  type ConversationCommandReceipt,
+} from './conversation-command-receipts'
 
 import type {
   ConversationAttachmentResult,
@@ -46,6 +53,8 @@ import type {
   ConversationTranscriptResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationToolDetail,
   ConversationJsonValue,
   ConversationToolStatus,
@@ -61,6 +70,8 @@ import type {
   ConversationForkResult,
   ConversationImportTranscriptInput,
   ConversationImportTranscriptResult,
+  ConversationCommandReceiptState,
+  ConversationKey,
 } from '../shared/conversation-runtime'
 import {
   CONVERSATION_SESSION_NOT_FOUND,
@@ -72,8 +83,7 @@ import {
   isStaleConversationSend,
   type ConversationSideQuestionPayload,
 } from '../../packages/conversation-protocol/src/public'
-import { cliRuntimesOnPlatform, distroOfHostId, isWslHostId, type ExecutionHostId } from '../shared/execution-host'
-import { isWindowsPath, toWslPath, wslInputInRootSpelling } from '../shared/host-paths'
+import { chatCliRuntimes } from '../shared/execution-host'
 import { inferConversationToolKind } from '../shared/conversation/toolKind'
 import { isTurnlessSubagentStep, readSubagentStatus } from '../shared/conversation/subagents'
 import { readBackgroundTasks } from '../shared/conversation/backgroundTasks'
@@ -125,6 +135,7 @@ import { applyPromptCacheEvent } from '../shared/prompt-cache'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
 import { ConversationAttachmentStore } from './conversation-attachment-store'
 import { ConversationPlanStore } from './conversation-plan-store'
+import { ConversationOutbox } from './conversation-outbox'
 import { approvalRememberLabels, approvalRuleCandidate } from '../shared/conversation/approvalRules'
 import {
   looksLikePermissionSettingRefusal,
@@ -158,6 +169,7 @@ import {
   ConversationEventLog,
   type ConversationAppendOutcome,
   type ConversationEventLogOptions,
+  type ConversationLogRecord,
 } from './conversation-event-log'
 import {
   ConversationTranscriptReader,
@@ -266,6 +278,9 @@ type RuntimeSession = ConversationSessionSummary & {
   // The provider stream of the turn a send is running, once the provider has
   // been handed it; see ProviderTurn.
   providerTurn: ProviderTurn | null
+  // The chat's log refused a write, and the session is being stopped for it
+  // (`lostCommit`).
+  stoppingUnsaved?: boolean
 }
 
 /**
@@ -309,6 +324,12 @@ export type ConversationRuntimeOptions = {
     current: CliPermissionPreset | undefined
   }) => CliPermissionPreset | undefined
   approvalRules?: ConversationApprovalRuleStore
+  /**
+   * The chats whose turn may still be open (conversation-outbox.ts), so a
+   * start closes the turns the last run left open. Without one, a turn left
+   * open is closed when its chat is next opened.
+   */
+  outbox?: ConversationOutbox
   attachmentStore?: ConversationAttachmentStore
   /**
    * The folders files uploaded from a phone or a browser are kept in. One sent
@@ -335,9 +356,9 @@ export type ConversationRuntimeOptions = {
   // rewritten (TOOL_DETAIL_WRITE_WINDOW_MS); tests shorten it.
   toolDetailWriteWindowMs?: number
   // The app's own MCP gateway for a CLI chat (Claude Code, Codex, an ACP
-  // agent), on the machine its CLI runs on (a WSL host's, or this one's). Null
-  // leaves it out; the chat runs without Studio's tools rather than not at all.
-  resolveStudioMcpServer?: (input: { hostId?: ExecutionHostId }) => Promise<ConversationMcpServer | null>
+  // agent), on this machine, where its CLI runs. Null leaves it out; the chat
+  // runs without Studio's tools rather than not at all.
+  resolveStudioMcpServer?: () => Promise<ConversationMcpServer | null>
   // Asked before a session starts and before every turn: brings the chat's
   // folder back when the worktree pool gave it back while the chat sat idle
   // (worktree-pool/chat-folder-guard.ts), so the agent never runs in a folder
@@ -351,10 +372,6 @@ export type ConversationRuntimeOptions = {
     workspaceRoot: string
     fresh?: boolean
   }) => Promise<{ ok: true } | { ok: false; message: string }>
-  // The platform this runtime runs on; tests stand in for another. Off
-  // Windows a `wsl:` host id means nothing (a WSL server is handed the
-  // runtimes a Windows front door built), so it is dropped at the start.
-  platform?: NodeJS.Platform
   // The holds on worktree paths (worktree-leases.ts). A session start, a
   // turn's start and a revert hold the chat's folder shared until the chat
   // shows among the live folders (`liveConversationWorkspaceRoots`), so the
@@ -368,8 +385,6 @@ type ConversationRuntimeListener = (event: ConversationEvent) => void
 function chatWaitKey(kind: 'start' | 'revert', transcriptPath: string): string {
   return `${kind}:${transcriptPath}`
 }
-/** `lost`: highest sequence number published but not written; `recorded`: highest one on disk as such. */
-type NonDurableLog = { root: string; lost: number; recorded: number; recording: boolean }
 /** One running tool's preview cadence: when the last went out, what it showed, and the one waiting. */
 type ToolPreviewThrottle = {
   session: RuntimeSession
@@ -378,7 +393,33 @@ type ToolPreviewThrottle = {
   held: { event: ConversationEvent; options: EmitOptions } | null
   timer: NodeJS.Timeout | null
 }
-type EmitOptions = { turnId?: string; allowCanceledTurnId?: string | null; prepared?: boolean }
+type EmitOptions = {
+  turnId?: string
+  allowCanceledTurnId?: string | null
+  prepared?: boolean
+  // Lines committed in the same write as the event: a command's receipt.
+  records?: ConversationLogRecord[]
+}
+
+/**
+ * A command in flight: its id (the caller's, or one made for a caller that
+ * gave none) and what the caller said it was. A turn command commits its
+ * receipt with the message that opens its turn.
+ */
+type CommandInFlight = {
+  id: string
+  // The caller named the id (a message's `commandId` says it, for the caller
+  // to know its own message by); one made here is the receipt's only.
+  given: boolean
+  fingerprint?: string
+  // Set by a command that recorded nothing (a message the log never took):
+  // its answer is not kept, and the same id may be sent again.
+  unrecorded?: boolean
+}
+
+function commandKey(path: string, commandId: string): string {
+  return `${path}\0${commandId}`
+}
 /**
  * What a provider stream's emitted events came to, counted as they go by. A
  * long agentic turn is tens of thousands of deltas and tool outputs, and the
@@ -411,9 +452,6 @@ const TURN_BUSY_RETRY_MS = 1_000
  * is shown cut.
  */
 const LAST_ASSISTANT_TAIL_CHARS = 320
-
-const UNSAVED_NOTICE =
-  'This conversation could not be saved to disk. It carries on here, but messages from now on may be missing after the app restarts.'
 
 // Cap on how many persisted events a transcript replay returns to the
 // renderer; the JSONL on disk keeps everything.
@@ -479,19 +517,6 @@ function sessionNotFound(): ConversationSessionActionResult {
   return { ok: false, code: CONVERSATION_SESSION_NOT_FOUND, message: 'Conversation session is invalid.' }
 }
 
-/** The fingerprint a receipt was kept with, if it has one. */
-function receiptFingerprint(receipt: ConversationSessionActionResult): string | undefined {
-  const value = (receipt as { fingerprint?: unknown }).fingerprint
-  return typeof value === 'string' ? value : undefined
-}
-
-/** A receipt as its command's result: the fingerprint is the receipt's, not the answer's. */
-function withoutFingerprint(receipt: ConversationSessionActionResult): ConversationSessionActionResult {
-  if (receiptFingerprint(receipt) === undefined) return receipt
-  const { fingerprint: _fingerprint, ...result } = receipt as ConversationSessionActionResult & { fingerprint: string }
-  return result as ConversationSessionActionResult
-}
-
 export class ConversationRuntime {
   private readonly adapters = new Map<string, ConversationProviderAdapter>()
   private readonly secretStore: Pick<ProviderSecretStore, 'getStatus'> &
@@ -504,7 +529,6 @@ export class ConversationRuntime {
   private readonly transcriptLimits: ConversationTranscriptLimits
   private readonly now: () => number
   private readonly randomId: () => string
-  private readonly platform: NodeJS.Platform
   private readonly resolveSkills: ConversationSkillsResolver
   private readonly prepareChatFolder: NonNullable<ConversationRuntimeOptions['prepareChatFolder']>
   private readonly heldChatMode: ConversationRuntimeOptions['heldChatMode']
@@ -518,6 +542,7 @@ export class ConversationRuntime {
   private readonly attachmentStore: ConversationAttachmentStore
   private readonly uploadRoots: string[]
   private readonly planStore: ConversationPlanStore
+  private readonly outbox: ConversationOutbox
   private readonly sessions = new Map<string, RuntimeSession>()
   private readonly deletingTranscripts = new Set<string>()
   private readonly startingTranscripts = new Set<string>()
@@ -539,10 +564,13 @@ export class ConversationRuntime {
   private readonly forkedMcpServers = new Map<string, ConversationMcpServer[]>()
   // The side questions being answered, by session and the caller's request id.
   private readonly sideQuestions = new Map<string, AbortController>()
-  private readonly sequenceInitializations = new Map<string, Promise<void>>()
+  private readonly sequenceInitializations = new Map<string, Promise<boolean>>()
   private readonly listeners = new Set<ConversationRuntimeListener>()
   private readonly idleListeners = new Set<(summary: ConversationSessionSummary) => void>()
   private readonly sequences = new Map<string, number>()
+  // Logs a write was refused to this run, whose open turn is closed when the
+  // chat is next taken up (`lostCommit`, `initializeSequence`).
+  private readonly unclosedLogs = new Set<string>()
   // When each workspace's checkpoint refs were last expired this run.
   private readonly checkpointsExpiredAt = new Map<string, number>()
   // Housekeeping that must not delay the caller but must finish before shutdown.
@@ -552,17 +580,14 @@ export class ConversationRuntime {
   // after the workspace was closed or deleted would write its folder back.
   private readonly indexRefreshes = new Map<string, Promise<unknown>>()
   private readonly emissionTails = new Map<string, Promise<unknown>>()
-  private readonly receipts = new Map<string, Promise<Map<string, ConversationSessionActionResult>>>()
+  // Each chat's command receipts, folded from its log once per run and kept
+  // up to date as receipts are committed (conversation-command-receipts.ts).
+  private readonly receipts = new Map<string, Promise<Map<string, ConversationCommandReceipt>>>()
   private readonly pendingCommands = new Map<string, Promise<ConversationSessionActionResult>>()
+  private shutDown = false
   // What each command in flight was, by the same key, so a different command
   // under its id is refused while the first is still running too.
   private readonly pendingFingerprints = new Map<string, string | undefined>()
-  private readonly receiptWrites = new Map<string, Promise<void>>()
-  // Transcripts with a write that failed this run: a sequence number was
-  // published that is not on disk, so they never serve incremental catch-up.
-  // The highest such number is also recorded beside the transcript, so the
-  // next run numbers above it rather than reusing numbers a client has seen.
-  private readonly nonDurableLogs = new Map<string, NonDurableLog>()
   // Per tool detail path: the detail being built, its streamed output, and
   // its file's writes, in order, with the one still waiting that later
   // details join.
@@ -600,7 +625,6 @@ export class ConversationRuntime {
       this.adapters.set(adapter.id, adapter)
     }
     this.stat = options.stat ?? stat
-    this.platform = options.platform ?? process.platform
     this.eventLog = new ConversationEventLog({
       onError: (filePath, error) => {
         console.warn(
@@ -634,6 +658,7 @@ export class ConversationRuntime {
     this.attachmentStore = options.attachmentStore ?? new ConversationAttachmentStore()
     this.uploadRoots = options.uploadRoots ?? []
     this.planStore = options.planStore ?? new ConversationPlanStore()
+    this.outbox = options.outbox ?? new ConversationOutbox()
     // Startup-time epoch (not randomId — tests inject deterministic id
     // sequences that must not be consumed by construction).
     this.eventEpoch = this.now().toString(36)
@@ -662,6 +687,15 @@ export class ConversationRuntime {
   // finds it busy re-arms the announcement for its next rest.
   private noteSettled(session: RuntimeSession): void {
     this.noteWorkingStretch(session)
+    // Nothing open in the log any more: the chat leaves the outbox. Not while
+    // a write it refused may have left a turn open (`unclosedLogs`).
+    if (
+      !isSessionBusy(session) &&
+      !session.providerTurn &&
+      !session.stoppingUnsaved &&
+      !this.unclosedLogs.has(this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId))
+    )
+      this.runInBackground(this.outbox.settle(session))
     const settled =
       this.sessions.get(session.sessionId) === session &&
       (session.status === 'ready' || session.status === 'failed') &&
@@ -740,7 +774,7 @@ export class ConversationRuntime {
       return { ok: false, message: 'Conversation lifecycle operation is already in progress.' }
     const inherited = input.mcpServers === undefined ? this.forkedMcpServers.get(path) : undefined
     if (inherited) input = { ...input, mcpServers: inherited }
-    const cliRuntimes = cliRuntimesOnPlatform(input.cliRuntimes, this.platform)
+    const cliRuntimes = chatCliRuntimes(input.cliRuntimes)
     if (cliRuntimes !== input.cliRuntimes) input = { ...input, cliRuntimes }
     this.startingTranscripts.add(path)
     try {
@@ -793,6 +827,8 @@ export class ConversationRuntime {
     path: string,
   ): Promise<ConversationStartSessionResult | null> {
     const existing = this.liveSessionFor(path)
+    // One being stopped because its log refused a write is not handed out again.
+    if (existing?.stoppingUnsaved) return null
     if (!existing) return null
     if (isSessionBusy(existing)) return { ok: true, session: this.toSummary(existing) }
     if (existing.status === 'failed') return null
@@ -805,13 +841,13 @@ export class ConversationRuntime {
       const modelId = input.modelId.trim()
       const model =
         modelId && modelId !== existing.modelId
-          ? await this.setModel({ sessionId: existing.sessionId, modelId })
+          ? await this.setModelNow({ sessionId: existing.sessionId, modelId })
           : { ok: true }
       const preset =
         model.ok &&
         input.permissionPreset !== undefined &&
         (input.permissionPreset !== existing.permissionPreset || input.permissionMode !== existing.permissionMode)
-          ? await this.setPermission({
+          ? await this.setPermissionNow({
               sessionId: existing.sessionId,
               permissionPreset: input.permissionPreset,
               ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
@@ -820,7 +856,7 @@ export class ConversationRuntime {
       if (preset.ok && existing.status !== 'stopped') return { ok: true, session: this.toSummary(existing) }
     }
     if (existing.status !== 'stopped' && !isSessionBusy(existing))
-      await this.stopSession({ sessionId: existing.sessionId })
+      await this.stopSessionNow({ sessionId: existing.sessionId })
     return null
   }
 
@@ -855,7 +891,7 @@ export class ConversationRuntime {
       }
     }
     for (const stale of previous) {
-      if (stale.status !== 'stopped') await this.stopSession({ sessionId: stale.sessionId })
+      if (stale.status !== 'stopped') await this.stopSessionNow({ sessionId: stale.sessionId })
       this.sessions.delete(stale.sessionId)
     }
 
@@ -1026,27 +1062,35 @@ export class ConversationRuntime {
     }
   }
 
-  async sendTurn(
-    input: ConversationSendTurnInput & { sourceCommandId?: string },
+  /**
+   * Send a message: a turn command (`runCommand`). Accepted once its message
+   * and receipt are committed together; the provider turn is what it does
+   * then, and the send is answered when that turn ends, as every caller of it
+   * (the protocol, the SDK, a module's `send`, the window) is promised.
+   */
+  sendTurn(input: ConversationSendTurnInput): Promise<ConversationSessionActionResult> {
+    return this.runCommand(
+      input.sessionId,
+      input,
+      (command) => this.sendTurnNow(input, command),
+      // A send turned away busy runs nothing, so it is answered before
+      // anything is written: a phone tries again every second while a turn
+      // runs. A stale one is the same: nothing is recorded, and the same id
+      // confirmed by the person runs; only a sender that names its command
+      // says when it was written for that. Asked after the receipts, so a
+      // repeat of a send that already went is answered as it was, however old.
+      () => {
+        if (input.commandId && isStaleConversationSend(input, this.now())) return staleRefusal()
+        const session = this.sessions.get(input.sessionId)
+        return session && !input.steer && isSessionBusy(session) ? busyRefusal(session) : null
+      },
+    )
+  }
+
+  private async sendTurnNow(
+    input: ConversationSendTurnInput,
+    command?: CommandInFlight,
   ): Promise<ConversationSessionActionResult> {
-    if (input.commandId)
-      return this.runCommand(
-        input.sessionId,
-        input.commandId,
-        () => this.sendTurn({ ...input, sourceCommandId: input.commandId, commandId: undefined }),
-        input.commandFingerprint,
-        // A send turned away busy runs nothing, so it is answered before an
-        // intent is written: a phone tries again every second while a turn
-        // runs, and each try was a receipts write and then its removal. A
-        // stale one is the same: nothing is recorded, and the same id
-        // confirmed by the person runs. Asked after the receipts, so a repeat
-        // of a send that already went is answered as it was, however old.
-        () => {
-          if (isStaleConversationSend(input, this.now())) return staleRefusal()
-          const session = this.sessions.get(input.sessionId)
-          return session && !input.steer && isSessionBusy(session) ? busyRefusal(session) : null
-        },
-      )
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     if (this.revertingScopes.has(session.fileScope))
@@ -1088,10 +1132,10 @@ export class ConversationRuntime {
     const held = isSessionBusy(session)
       ? null
       : await this.holdChatFolder(session.sessionId, session.workspaceRoot, 'a turn is starting in it')
-    if (held && 'busy' in held) return { ok: false, message: held.busy }
+    if (held && 'busy' in held) return folderBusy(held)
     const folder = { hold: held }
     try {
-      return await this.sendTurnInFolder(session, input, { message, attachments, files }, folder)
+      return await this.sendTurnInFolder(session, input, command, { message, attachments, files }, folder)
     } finally {
       folder.hold?.release()
     }
@@ -1109,7 +1153,7 @@ export class ConversationRuntime {
     waitKey: string,
     workspaceRoot: string,
     reason: string,
-  ): Promise<WorktreeHold | WorktreeBusy> {
+  ): Promise<WorktreeHold | (WorktreeBusy & { abandoned?: true })> {
     const stop = new AbortController()
     let waits = this.folderWaits.get(waitKey)
     if (!waits) this.folderWaits.set(waitKey, (waits = new Set()))
@@ -1118,7 +1162,7 @@ export class ConversationRuntime {
       const held = await this.worktreeLeases.acquireShared(workspaceRoot, { reason, signal: stop.signal })
       if ('busy' in held || !stop.signal.aborted) return held
       held.release()
-      return { busy: 'Stopped before the worktree was free.' }
+      return { busy: 'Stopped before the worktree was free.', abandoned: true }
     } finally {
       waits.delete(stop)
       if (waits.size === 0 && this.folderWaits.get(waitKey) === waits) this.folderWaits.delete(waitKey)
@@ -1154,7 +1198,8 @@ export class ConversationRuntime {
   /** {@link sendTurn} once its checks have passed, under the folder's hold while the turn starts. */
   private async sendTurnInFolder(
     session: RuntimeSession,
-    input: ConversationSendTurnInput & { sourceCommandId?: string },
+    input: ConversationSendTurnInput,
+    command: CommandInFlight | undefined,
     {
       message,
       attachments,
@@ -1237,14 +1282,13 @@ export class ConversationRuntime {
     if (gone()) return { ok: false, message: 'Conversation is no longer available.' }
     // A steer is sent only over a turn that is still open; a send made as a
     // steer over a turn that has since ended is an ordinary send.
-    if (isSessionBusy(session) && !input.steer)
-      return { ok: false, message: 'Conversation turn is already in progress.' }
+    if (isSessionBusy(session) && !input.steer) return busyRefusal(session)
     // An ordinary send now, though it came in over a busy session: it starts
     // its turn as any send to a resting session does, under the folder's hold
     // and after the folder check (`sendTurn`).
     if (!isSessionBusy(session) && !folder.hold) {
       const held = await this.holdChatFolder(session.sessionId, session.workspaceRoot, 'a turn is starting in it')
-      if ('busy' in held) return { ok: false, message: held.busy }
+      if ('busy' in held) return folderBusy(held)
       folder.hold = held
       const prepared = await this.prepareChatFolder({
         workspaceId: session.workspaceId,
@@ -1291,7 +1335,7 @@ export class ConversationRuntime {
         providerMessage,
         attachments,
         localTurnId: input.localTurnId,
-        sourceCommandId: input.sourceCommandId,
+        command,
         skillIds: skills.ids,
         mentionRefs: mentions.refs,
         files,
@@ -1303,6 +1347,15 @@ export class ConversationRuntime {
     const turnId = `turn_${this.randomId()}`
     const requestId = `approval_${this.randomId()}`
     const turnAbort = new AbortController()
+    // What the session was before this turn, to go back to if its message
+    // never reaches the log.
+    const before = {
+      status: session.status,
+      phase: session.phase,
+      turnStartedAt: session.turnStartedAt,
+      workingStretch: session.workingStretch,
+      resting: session.resting,
+    }
     session.activeTurnId = turnId
     // Live from here (`liveConversationWorkspaceRoots`): the folder's hold has
     // done its part.
@@ -1329,21 +1382,35 @@ export class ConversationRuntime {
       try {
         await this.enableCheckpointsIfRepository(session)
         const storedAttachments = await this.saveAttachments(session, attachments)
-        const imagesContext = this.attachedImagesContext(session, storedAttachments)
+        const imagesContext = this.attachedImagesContext(storedAttachments)
         if (files.length > 0 && this.uploadRoots.length > 0)
           await noteUploadsSent(
             this.uploadRoots,
             files.map((file) => file.path),
             this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId),
           )
-        await this.emit(
+        // The turn this opens is the command's effect: the chat is listed
+        // before the message commits, so a start after a crash finds the
+        // turn and closes it (conversation-outbox.ts). A list that cannot be
+        // written is an aid lost, not a refusal: the turn is then closed when
+        // its chat is next opened.
+        await this.outbox.open(session).catch((error: unknown) => {
+          console.warn(
+            '[conversation-runtime] a turn starts unlisted in the outbox:',
+            error instanceof Error ? error.message : error,
+          )
+        })
+        // The command is accepted here: its message and its receipt are one
+        // write. A message the log does not take opened no turn, and nothing
+        // of the command is recorded, so the same id may be sent again.
+        const opened = await this.emit(
           session,
           this.eventForSession(session, 'user_message', {
             turnId,
             text: message,
             ...(storedAttachments.length ? { attachments: storedAttachments } : {}),
             ...(input.localTurnId ? { localTurnId: input.localTurnId } : {}),
-            ...(input.sourceCommandId ? { commandId: input.sourceCommandId } : {}),
+            ...(command?.given ? { commandId: command.id } : {}),
             ...(skills.ids.length ? { skills: skills.ids } : {}),
             ...(mentions.refs.length ? { mentions: mentions.refs } : {}),
             ...(files.length ? { files } : {}),
@@ -1351,8 +1418,28 @@ export class ConversationRuntime {
             ...(input.subagentMessage ? { subagentMessage: input.subagentMessage } : {}),
             ...composedAtOf(input),
           }),
-          { turnId },
+          { turnId, records: this.acceptTurn(command, turnId) },
         )
+        if (!opened) {
+          // Nothing of the command reached the log: the same id may come again.
+          if (command) command.unrecorded = true
+          // Stopped while its message waited to be written (a Stop, the
+          // session ending): that stop has already settled the session.
+          if (session.activeTurnId !== turnId || session.canceledTurnIds.has(turnId))
+            return { ok: false, message: 'The message was not sent: the conversation was stopped first.' }
+          // The log refused it: the turn never began, and the session is as it was.
+          session.activeTurnId = null
+          session.pendingRequestId = null
+          session.turnLockRequestId = null
+          session.activeTurnAbort = null
+          session.status = before.status
+          session.phase = before.phase
+          session.turnStartedAt = before.turnStartedAt
+          session.workingStretch = before.workingStretch
+          session.resting = before.resting
+          session.updatedAt = this.now()
+          return { ok: false, message: 'The message was not sent: the conversation could not be saved to disk.' }
+        }
         // The model sees prior completed turns plus this message, so it has memory.
         // Stateful providers own their history natively — replaying ours would
         // duplicate context and defeat resume, so they get only the new message.
@@ -1564,7 +1651,7 @@ export class ConversationRuntime {
       providerMessage: string
       attachments: ConversationImageAttachment[]
       localTurnId?: string
-      sourceCommandId?: string
+      command?: CommandInFlight
       skillIds: string[]
       mentionRefs: Awaited<ReturnType<typeof resolveConversationMentions>>['refs']
       files: ConversationAttachedFile[]
@@ -1603,7 +1690,7 @@ export class ConversationRuntime {
           // The work since the running turn's first file change is one change,
           // under that turn's number; a turn with none yet takes the new one.
           const checkpointTurnSeq = session.checkpointCapture ? session.checkpointTurnSeq : null
-          await this.emitNow(
+          const handedOver = await this.emitNow(
             session,
             this.eventForSession(session, 'turn_completed', {
               turnId: running.turnId,
@@ -1612,6 +1699,9 @@ export class ConversationRuntime {
             }),
             { turnId: running.turnId },
           )
+          // The log refused the running turn's end: the session is being
+          // stopped for it (`lostCommit`), and no new turn opens under it.
+          if (!handedOver || session.stoppingUnsaved) return running
           running.turnId = turnId
           session.activeTurnId = turnId
           session.updatedAt = this.now()
@@ -1622,7 +1712,7 @@ export class ConversationRuntime {
               text: input.message,
               ...(storedAttachments.length ? { attachments: storedAttachments } : {}),
               ...(input.localTurnId ? { localTurnId: input.localTurnId } : {}),
-              ...(input.sourceCommandId ? { commandId: input.sourceCommandId } : {}),
+              ...(input.command?.given ? { commandId: input.command.id } : {}),
               ...(input.skillIds.length ? { skills: input.skillIds } : {}),
               ...(input.mentionRefs.length ? { mentions: input.mentionRefs } : {}),
               ...(input.files.length ? { files: input.files } : {}),
@@ -1630,7 +1720,7 @@ export class ConversationRuntime {
               ...(input.subagentMessage ? { subagentMessage: input.subagentMessage } : {}),
               ...(input.composedAt !== undefined ? { composedAt: input.composedAt } : {}),
             }),
-            { turnId },
+            { turnId, records: this.acceptTurn(input.command, turnId) },
           )
           await this.emitNow(session, this.eventForSession(session, 'turn_started', { turnId }), { turnId })
           if (checkpointTurnSeq !== null) session.checkpointTurnSeq = checkpointTurnSeq
@@ -1658,18 +1748,14 @@ export class ConversationRuntime {
   // Where each image sent with a turn is kept, said after the words the way a
   // file attached by path is: the model sees the picture, and the agent can
   // also read its bytes off the disk to do something with it (attach it to a
-  // pull request, put it in the repository). Paths as the agent's own host
-  // spells them, so a chat whose CLI runs in WSL reads them there.
-  private attachedImagesContext(session: RuntimeSession, stored: ConversationStoredImageAttachment[]): string {
-    const wsl = isWslHostId(session.cliRuntimes?.[cliForConversationProvider(session.providerId) ?? '']?.hostId)
+  // pull request, put it in the repository).
+  private attachedImagesContext(stored: ConversationStoredImageAttachment[]): string {
     return stored
       .flatMap((image, index) => {
         const path = this.attachmentStore.pathFor(image.ref)
         if (!path) return []
         const name = image.name?.trim() || `image ${index + 1}`
-        return [
-          `Attached image ${JSON.stringify(name)} (shown above), saved at: ${wsl && isWindowsPath(path) ? toWslPath(path) : path}`,
-        ]
+        return [`Attached image ${JSON.stringify(name)} (shown above), saved at: ${path}`]
       })
       .join('\n')
   }
@@ -1701,84 +1787,61 @@ export class ConversationRuntime {
     session.updatedAt = this.now()
     const message = error instanceof Error ? error.message : 'Conversation turn failed.'
     const event = this.eventForSession(session, 'turn_failed', { turnId, reason: 'runtime', message })
-    try {
-      const stamped = await this.emit(session, event, { allowCanceledTurnId: turnId })
-      if (stamped) return { ok: false, message, event: stamped }
-    } catch {
-      // The transcript could not take it. Subscribers drop an event with no
-      // sequence number, so it gets the next one; the log can no longer vouch
-      // for its numbering, which sends its reconnects to a full snapshot.
-      const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-      event.id = `conv_evt_${this.eventEpoch}_${++this.eventSequence}`
-      event.seq = (this.sequences.get(path) ?? 0) + 1
-      event.createdAt = this.now()
-      this.sequences.set(path, event.seq)
-      this.markNonDurable(session.workspaceRoot, path, event.seq)
-      this.notify(event)
-    }
-    return { ok: false, message, event }
+    // Not written, it is not published either (`lostCommit`).
+    const stamped = await this.emit(session, event, { allowCanceledTurnId: turnId }).catch(() => null)
+    return stamped ? { ok: false, message, event: stamped } : { ok: false, message }
   }
 
   /**
-   * Hand a persisted event to listeners. A superseded tool preview is not
-   * published at all; the one that replaced it follows. A failed write is
-   * still published — the live chat must not stall on a broken disk — but the
-   * log can no longer vouch for its sequence numbers, so catch-up on it falls
-   * back to a full snapshot until the process restarts.
+   * An event the log could not take. It is not published: a client only ever
+   * holds what is on disk, so its cursor stays good after a restart. The log
+   * is no longer the whole of what the session has done, so the session is
+   * stopped (its agent with it) once what it is doing now has let go of the
+   * chat's emissions; its open turn is closed, as interrupted, when the chat
+   * is next taken up (`initializeSequence`). A send's message that never
+   * committed opened nothing: the send says it was not saved, and no session
+   * stops.
    */
-  private publish(root: string, path: string, event: ConversationEvent, outcome: ConversationAppendOutcome): void {
-    if (outcome === 'superseded') return
-    if (outcome === 'failed') {
-      // The first loss of the run is said once, on the event that was lost, so
-      // the person knows before a restart shows a gap.
-      if (!this.nonDurableLogs.has(path)) event = { ...event, payload: { ...event.payload, notice: UNSAVED_NOTICE } }
-      this.markNonDurable(root, path, event.seq ?? 0)
-    }
-    // The disk took a write again: record a lost number the first attempt could not.
-    else if (this.nonDurableLogs.has(path)) this.recordLostSequence(path)
-    this.notify(event)
-  }
-
-  private markNonDurable(root: string, path: string, seq: number): void {
-    const log = this.nonDurableLogs.get(path) ?? { root, lost: 0, recorded: 0, recording: false }
-    log.lost = Math.max(log.lost, seq)
-    this.nonDurableLogs.set(path, log)
-    this.recordLostSequence(path)
-  }
-
-  /**
-   * Keep the highest published-but-unwritten sequence number on disk. Without
-   * it a restart would resume numbering from the end of the file, reissue
-   * numbers a client already holds under the same log generation, and that
-   * client's catch-up would skip the new events carrying them.
-   */
-  private recordLostSequence(path: string): void {
-    const log = this.nonDurableLogs.get(path)
-    if (!log || log.recording || log.recorded >= log.lost) return
-    log.recording = true
-    const target = log.lost
-    this.runInBackground(
-      writeConversationStorage(log.root, lostSequencePath(path), JSON.stringify({ seq: target })).then(
-        () => {
-          log.recording = false
-          log.recorded = Math.max(log.recorded, target)
-          this.recordLostSequence(path)
-        },
-        () => {
-          // Still failing: the next successful append or failure tries again.
-          log.recording = false
-        },
-      ),
+  private lostCommit(session: RuntimeSession, event: ConversationEvent, options: EmitOptions = {}): void {
+    const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
+    // The reader's cached tail assumed the file only grows; a failed write was cut back.
+    this.transcripts.forget(path)
+    // The message a send opens its turn with: nothing runs yet (a steer's
+    // message joins a stream that does).
+    if (event.type === 'user_message' && !session.providerTurn) return
+    const turnId = typeof event.payload?.turnId === 'string' ? event.payload.turnId : (options.turnId ?? null)
+    if (!turnId && !session.activeTurnId) return
+    // Said before anything else: a quit or a deletion still leaves the turn
+    // to be closed when the chat is next taken up, and the chat listed.
+    this.unclosedLogs.add(path)
+    if (this.shutDown || this.deletingTranscripts.has(path)) return
+    if (session.status === 'stopped' || session.stoppingUnsaved) return
+    session.stoppingUnsaved = true
+    console.warn(
+      '[conversation-runtime] a conversation could not be saved to disk; its session is stopped:',
+      `${session.workspaceId}/${session.agentId}`,
     )
+    // Not awaited: this runs inside the chat's emissions, which the stop
+    // waits on.
+    this.runInBackground(this.stopSessionNow({ sessionId: session.sessionId }))
   }
 
-  private async readLostSequence(root: string, path: string): Promise<number> {
-    try {
-      const seq = JSON.parse((await readConversationStorage(root, lostSequencePath(path), 1024)).toString('utf8'))?.seq
-      return Number.isSafeInteger(seq) && seq > 0 ? seq : 0
-    } catch {
-      return 0
-    }
+  /**
+   * Hand a committed event to listeners. One the log did not take is never
+   * published, nor is a superseded tool preview (the one that replaced it
+   * follows). Whether it was published.
+   */
+  private publish(event: ConversationEvent, outcome: ConversationAppendOutcome): boolean {
+    if (outcome !== 'written') return false
+    this.notify(event)
+    return true
+  }
+
+  /** Append and publish an event outside any session's emissions, or fail saying the log did not take it. */
+  private async commitOrThrow(root: string, path: string, event: ConversationEvent): Promise<void> {
+    if (this.publish(event, await this.eventLog.append(path, event, root).catch(() => 'failed' as const))) return
+    this.transcripts.forget(path)
+    throw new Error('The conversation could not be saved to disk.')
   }
 
   private notify(event: ConversationEvent): void {
@@ -1791,14 +1854,12 @@ export class ConversationRuntime {
     }
   }
 
-  async respondToRequest(input: ConversationRespondToRequestInput): Promise<ConversationSessionActionResult> {
-    if (input.commandId)
-      return this.runCommand(
-        input.sessionId,
-        input.commandId,
-        () => this.respondToRequest({ ...input, commandId: undefined }),
-        input.commandFingerprint,
-      )
+  /** Answer a request the agent is waiting on: a control command (`runCommand`). */
+  respondToRequest(input: ConversationRespondToRequestInput): Promise<ConversationSessionActionResult> {
+    return this.runCommand(input.sessionId, input, () => this.respondNow(input))
+  }
+
+  private async respondNow(input: ConversationRespondToRequestInput): Promise<ConversationSessionActionResult> {
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     const requestIsPending =
@@ -1893,14 +1954,11 @@ export class ConversationRuntime {
   // An adapter that accepted the preset but cannot apply it to the turn already
   // running returns a `notice` — the change is recorded, and the sentence says
   // plainly when it starts applying.
-  async setPermission(input: ConversationSetPermissionInput): Promise<ConversationSessionActionResult> {
-    if (input.commandId)
-      return this.runCommand(
-        input.sessionId,
-        input.commandId,
-        () => this.setPermission({ ...input, commandId: undefined }),
-        input.commandFingerprint,
-      )
+  setPermission(input: ConversationSetPermissionInput): Promise<ConversationSessionActionResult> {
+    return this.runCommand(input.sessionId, input, () => this.setPermissionNow(input))
+  }
+
+  private async setPermissionNow(input: ConversationSetPermissionInput): Promise<ConversationSessionActionResult> {
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     const pending = (session.permissionChangeTail ?? Promise.resolve())
@@ -1952,20 +2010,6 @@ export class ConversationRuntime {
     return { ok: true, session: this.toSummary(session), ...(applied.notice ? { notice: applied.notice } : {}) }
   }
 
-  // The input approval checks place a request by. An agent running in WSL names
-  // files the Linux way and the workspace root is a Windows path, so its paths
-  // are respelled as the root spells them first — or every file in the
-  // workspace reads as outside it, and Auto and "always allow" answer nothing.
-  // Only for a session whose agent the provider runs in WSL; the event the
-  // person sees and the answer the agent gets keep the input as it was sent.
-  private approvalCheckInput(session: RuntimeSession, input: unknown): unknown {
-    const cli = this.getAdapterForProviderId(session.providerId)?.executionHostCli
-    // Only on Windows: a Linux server holding a stray `wsl:` id would respell
-    // its own paths into UNC ones, and Auto would approve nothing.
-    const distro = cli ? distroOfHostId(session.cliRuntimes?.[cli]?.hostId, this.platform) : null
-    return distro ? wslInputInRootSpelling(input, session.workspaceRoot, distro) : input
-  }
-
   // A mode chosen while requests wait answers the ones it covers, as it would
   // have had it been in force when they were asked; the rest keep waiting for
   // the person. One already answered (a click an instant before the switch,
@@ -1983,7 +2027,7 @@ export class ConversationRuntime {
       const unlabel = () => {
         if (session.automaticApprovals.get(requestId) === label) session.automaticApprovals.delete(requestId)
       }
-      void this.respondToRequest({ sessionId: session.sessionId, requestId, approved: true, decision: 'once' }).then(
+      void this.respondNow({ sessionId: session.sessionId, requestId, approved: true, decision: 'once' }).then(
         (answered) => {
           if (!answered.ok) unlabel()
         },
@@ -2008,14 +2052,11 @@ export class ConversationRuntime {
     return adapter.mcpServerAction({ ...session, serverId: input.serverId, action: input.action })
   }
 
-  async setModel(input: ConversationSetModelInput): Promise<ConversationSessionActionResult> {
-    if (input.commandId)
-      return this.runCommand(
-        input.sessionId,
-        input.commandId,
-        () => this.setModel({ ...input, commandId: undefined }),
-        input.commandFingerprint,
-      )
+  setModel(input: ConversationSetModelInput): Promise<ConversationSessionActionResult> {
+    return this.runCommand(input.sessionId, input, () => this.setModelNow(input))
+  }
+
+  private async setModelNow(input: ConversationSetModelInput): Promise<ConversationSessionActionResult> {
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     const pending = (session.modelChangeTail ?? Promise.resolve())
@@ -2046,14 +2087,14 @@ export class ConversationRuntime {
     return { ok: true, session: this.toSummary(session), ...(applied.notice ? { notice: applied.notice } : {}) }
   }
 
-  async interrupt(input: ConversationInterruptInput): Promise<ConversationSessionActionResult> {
-    if (input.commandId)
-      return this.runCommand(
-        input.sessionId,
-        input.commandId,
-        () => this.interrupt({ ...input, commandId: undefined }),
-        input.commandFingerprint,
-      )
+  /** Stop: a control command (`runCommand`). */
+  interrupt(input: ConversationInterruptInput): Promise<ConversationSessionActionResult> {
+    return this.runCommand(input.sessionId, input, () => this.interruptNow(input))
+  }
+
+  private async interruptNow(
+    input: Pick<ConversationInterruptInput, 'sessionId'>,
+  ): Promise<ConversationSessionActionResult> {
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     const adapter = this.getAdapterForProviderId(session.providerId)
@@ -2237,14 +2278,14 @@ export class ConversationRuntime {
     }
   }
 
-  async stopSession(input: ConversationStopSessionInput): Promise<ConversationSessionActionResult> {
-    if (input.commandId)
-      return this.runCommand(
-        input.sessionId,
-        input.commandId,
-        () => this.stopSession({ sessionId: input.sessionId }),
-        input.commandFingerprint,
-      )
+  /** End a chat's session: a control command (`runCommand`). */
+  stopSession(input: ConversationStopSessionInput): Promise<ConversationSessionActionResult> {
+    return this.runCommand(input.sessionId, input, () => this.stopSessionNow(input))
+  }
+
+  private async stopSessionNow(
+    input: Pick<ConversationStopSessionInput, 'sessionId'>,
+  ): Promise<ConversationSessionActionResult> {
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     // A turn (or a start of the same chat) still waiting for its folder is not started at all.
@@ -2295,6 +2336,8 @@ export class ConversationRuntime {
     session.pendingSkills = undefined
     session.invokedSkills = undefined
     session.updatedAt = this.now()
+    // Nothing of it runs any more: the chat leaves the outbox, if its log holds no turn open.
+    this.noteSettled(session)
     this.releaseTranscript(session)
     return { ok: true, session: this.toSummary(session) }
   }
@@ -2309,7 +2352,7 @@ export class ConversationRuntime {
     if (!session) return sessionNotFound()
     if (session.status === 'stopped') return { ok: true, session: this.toSummary(session) }
     if (session.activeTurnId) {
-      const interrupted = await this.interrupt({ sessionId: session.sessionId })
+      const interrupted = await this.interruptNow({ sessionId: session.sessionId })
       if (!interrupted.ok) return interrupted
     }
     // Also while the session is still starting, or a send is spawning its
@@ -2416,7 +2459,7 @@ export class ConversationRuntime {
     this.terminalHandoffs.add(session.sessionId)
     const turn = isSessionBusy(session)
     if (session.activeTurnId) {
-      const interrupted = await this.interrupt({ sessionId: session.sessionId })
+      const interrupted = await this.interruptNow({ sessionId: session.sessionId })
       // The turn can end by itself while it is being stopped; that is no failure.
       if (!interrupted.ok && session.activeTurnId) return interrupted
     }
@@ -2608,6 +2651,9 @@ export class ConversationRuntime {
   }
 
   async shutdown(): Promise<void> {
+    // A command still running when the logs close writes no answer after
+    // them: a retry finds its turn's receipt, or acts again.
+    this.shutDown = true
     this.stopIdleSweep()
     this.abandonFolderWaits()
     // All at once: each stop waits on its own child to go, and one after
@@ -2616,17 +2662,16 @@ export class ConversationRuntime {
     await Promise.allSettled(
       Array.from(this.sessions.values())
         .filter((session) => session.status !== 'stopped')
-        .map((session) => this.stopSession({ sessionId: session.sessionId })),
+        .map((session) => this.stopSessionNow({ sessionId: session.sessionId })),
     )
     await Promise.allSettled(Array.from(this.adapters.values(), async (adapter) => adapter.disposeAll?.()))
     this.dropToolPreviews()
     // A running tool's newest output still waiting out its write's window.
     await this.toolDetailWrites.flushAll()
-    // Housekeeping can queue more of itself as it settles (a lost sequence
-    // number recorded again after a newer one), so drain until none is left.
+    // Housekeeping can queue more of itself as it settles (the end of a turn
+    // the log lost, tried again), so drain until none is left.
     while (this.background.size) await Promise.allSettled(this.background)
     await this.eventLog.closeAll()
-    // The last writes can fail as they flush, and record their loss.
     while (this.background.size) await Promise.allSettled(this.background)
   }
 
@@ -2828,7 +2873,7 @@ export class ConversationRuntime {
     if (stamped.type === 'approval_requested' && typeof stamped.payload?.requestId === 'string') {
       const request: PermissionModeRequest = {
         action: String(stamped.payload.action ?? ''),
-        input: this.approvalCheckInput(session, stamped.payload.input),
+        input: stamped.payload.input,
         toolKind: stamped.payload.toolKind as PermissionModeRequest['toolKind'],
         requestKind: String(stamped.payload.kind ?? 'tool'),
         defaultToNo: stamped.payload.defaultToNo === true,
@@ -2884,23 +2929,34 @@ export class ConversationRuntime {
     // it lands, without holding the emission queue for the disk: the next token
     // is stamped while this one waits. Batches resolve in order and each
     // publication is registered before the next event is stamped, so listeners
-    // still see sequence order.
+    // still see sequence order. One the log does not take is never published.
     if (isStreamedEvent(stamped)) {
       this.persistEvent(session, stamped).then(
-        (outcome) => this.publish(session.workspaceRoot, path, stamped, outcome),
-        () => undefined,
+        (outcome) => {
+          if (outcome === 'failed') this.lostCommit(session, stamped, options)
+          else this.publish(stamped, outcome)
+        },
+        () => this.lostCommit(session, stamped, options),
       )
       return stamped
     }
-    const outcome = await this.persistEvent(session, stamped)
+    // A log that throws (its error reporter did) has not taken the event either.
+    const outcome = await this.persistEvent(session, stamped, options.records).catch(
+      (): ConversationAppendOutcome => 'failed',
+    )
     if (ends) await this.closeToolStreams(session)
+    if (outcome === 'failed') {
+      this.lostCommit(session, stamped, options)
+      return null
+    }
+    if (options.records?.length) this.noteReceipts(path, options.records)
     // Publish status at the same boundary as the terminal notification, after
     // persistence. Pollers and event-driven consumers must observe one state.
     if (session.status !== 'stopped' && ends) {
       session.status = stamped.type === 'turn_completed' ? 'ready' : 'failed'
       session.updatedAt = this.now()
     }
-    this.publish(session.workspaceRoot, path, stamped, outcome)
+    this.publish(stamped, outcome)
     // The thread index is a cache, and a listing brings a stale row up to date
     // itself: refreshing it after the turn's end is out never holds that end,
     // or the events queued behind it, back from the chat.
@@ -2915,7 +2971,7 @@ export class ConversationRuntime {
       this.runInBackground(refresh)
     }
     if (automaticRequestId)
-      void this.respondToRequest({
+      void this.respondNow({
         sessionId: session.sessionId,
         requestId: automaticRequestId,
         approved: true,
@@ -3057,107 +3113,120 @@ export class ConversationRuntime {
    * Whether a session's command id has a receipt, or is being carried out
    * now: a repeat of it is answered from that receipt rather than run. A
    * caller that would otherwise need what the first attempt carried (a
-   * picture it staged and has since let go of) asks this first.
+   * picture it staged and has since let go of) asks this first. A session
+   * this runtime does not hold (its server restarted since, or the chat
+   * started another) is said as such, not as a command never seen: the
+   * caller is answered "session not found", starts the chat again, and asks
+   * again on that session, where the chat's log has the receipt.
    */
-  async hasCommandReceipt(sessionId: string, commandId: string): Promise<boolean> {
+  async commandReceipt(sessionId: string, commandId: string): Promise<ConversationCommandReceiptState> {
     const session = this.sessions.get(sessionId)
-    if (!session) return false
-    const path = this.receiptsPath(session)
-    if (this.pendingCommands.has(`${path}:${commandId}`)) return true
+    if (!session) return 'no_session'
+    return (await this.hasChatCommandReceipt(session, commandId)) ? 'kept' : 'none'
+  }
+
+  /**
+   * Whether a chat's log holds a receipt for a command id, or that command is
+   * being carried out now, live session or none: a server restarted since the
+   * command went still finds it.
+   */
+  async hasChatCommandReceipt(key: ConversationKey, commandId: string): Promise<boolean> {
+    if (!key?.workspaceRoot?.trim() || !key.workspaceId?.trim() || !key.agentId?.trim()) return false
+    const path = this.transcriptPath(key.workspaceRoot, key.workspaceId, key.agentId)
+    if (this.pendingCommands.has(commandKey(path, commandId))) return true
     try {
-      return (await this.loadReceipts(session.workspaceRoot, path)).has(commandId)
+      return (await this.loadReceipts(key.workspaceRoot, path)).has(commandId)
     } catch {
       return false
     }
   }
 
-  private receiptsPath(session: { workspaceRoot: string; workspaceId: string; agentId: string }): string {
-    return this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId).replace(
-      /\.jsonl$/,
-      '.receipts.json',
-    )
-  }
-
+  /**
+   * Every command a client sends a chat comes through here, whichever way it
+   * came (the window, the Studio protocol, a paired device, an agent's tool, a
+   * module, a schedule, a pull-request wake): under the caller's id, or one
+   * made for a caller that gave none. A command id names one command: met
+   * again, it is answered from the chat's log (its receipt) or joins the
+   * attempt still running, and never runs twice; another command under it
+   * (by `fingerprint`) is refused.
+   *
+   * What the log keeps (conversation-command-receipts.ts): a turn command
+   * commits its receipt with the message that opens its turn, in one write
+   * (`acceptTurn`); every command's answer is written once it has one. A
+   * crash before a turn command's message is committed leaves no trace, and
+   * a retry runs it; after, a retry is answered without running it again. A
+   * control command acts on the live agent process, which goes with Studio: a
+   * retry after a crash that came before its answer was written acts again,
+   * on the chat as it is then.
+   */
   private runCommand(
     sessionId: string,
-    commandId: string,
-    action: () => Promise<ConversationSessionActionResult>,
-    fingerprint?: string,
+    input: { commandId?: string; commandFingerprint?: string },
+    action: (command: CommandInFlight) => Promise<ConversationSessionActionResult>,
     /**
      * A refusal known before anything runs, asked once a retry of a command
      * already carried out has been answered from its receipt: a command it
-     * turns away is answered without an intent written for it.
+     * turns away is answered without anything written for it.
      */
     refuseEarly?: () => ConversationSessionActionResult | null,
   ): Promise<ConversationSessionActionResult> {
     const session = this.sessions.get(sessionId)
     if (!session) return Promise.resolve(sessionNotFound())
-    const path = this.receiptsPath(session)
-    const key = `${path}:${commandId}`
+    const command: CommandInFlight = {
+      id: input.commandId || `cmd_${randomUUID()}`,
+      given: Boolean(input.commandId),
+      ...(input.commandFingerprint ? { fingerprint: input.commandFingerprint } : {}),
+    }
+    const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
+    const key = commandKey(path, command.id)
     // A command id is the client's promise that it names one command. The
     // same id for a different command (by its fingerprint, where the caller
     // gave one) is refused, never answered with the first command's result.
-    const conflict = (known: string | undefined) => Boolean(fingerprint && known && known !== fingerprint)
+    const conflict = (known: string | undefined) =>
+      Boolean(command.fingerprint && known && known !== command.fingerprint)
     const pending = this.pendingCommands.get(key)
     if (pending) return conflict(this.pendingFingerprints.get(key)) ? Promise.resolve(commandIdConflict()) : pending
     const result = (async (): Promise<ConversationSessionActionResult> => {
-      let receipts: Map<string, ConversationSessionActionResult>
+      let receipts: Map<string, ConversationCommandReceipt>
       try {
         receipts = await this.loadReceipts(session.workspaceRoot, path)
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : 'Command receipts are unavailable.' }
       }
-      const prior = receipts.get(commandId)
-      if (prior) return conflict(receiptFingerprint(prior)) ? commandIdConflict() : withoutFingerprint(prior)
+      const prior = receipts.get(command.id)
+      if (prior) return conflict(prior.fingerprint) ? commandIdConflict() : this.answerFromReceipt(session, prior)
       const refused = refuseEarly?.()
       if (refused) return refused
-      const persist = async () => {
-        while (receipts.size > 256) receipts.delete(receipts.keys().next().value!)
-        const serialized = JSON.stringify(Array.from(receipts))
-        const write = (this.receiptWrites.get(path) ?? Promise.resolve())
-          .catch(() => undefined)
-          .then(() => writeConversationStorage(session.workspaceRoot, path, serialized))
-        this.receiptWrites.set(path, write)
-        await write
-      }
-      // The fingerprint is kept inside the receipt, so the file keeps its
-      // shape and one written before fingerprints reads as it always has.
-      const stamped = (value: ConversationSessionActionResult): ConversationSessionActionResult =>
-        fingerprint ? Object.assign({}, value, { fingerprint }) : value
-      // Write the intent before an adapter can do work. If the process dies
-      // before completion, replay this uncertainty instead of executing twice.
-      receipts.set(
-        commandId,
-        stamped({
-          ok: false,
-          message:
-            'This command started before the connection was interrupted. Check the conversation before sending a new command.',
-        }),
-      )
+      // A command that throws has still finished, so its failure is its answer.
+      let answer: ConversationSessionActionResult
       try {
-        await persist()
+        answer = JSON.parse(JSON.stringify(await action(command))) as ConversationSessionActionResult
       } catch (error) {
-        // Nothing ran: a retry may execute it.
-        receipts.delete(commandId)
-        return { ok: false, message: error instanceof Error ? error.message : 'Command could not be recorded.' }
-      }
-      // A command that throws has still finished, so its failure is its result:
-      // a retry is answered with it rather than with the crash-era uncertainty.
-      let receipt: ConversationSessionActionResult
-      try {
-        receipt = JSON.parse(JSON.stringify(await action())) as ConversationSessionActionResult
-      } catch (error) {
-        receipt = { ok: false, message: error instanceof Error ? error.message : 'Conversation command failed.' }
+        answer = { ok: false, message: error instanceof Error ? error.message : 'Conversation command failed.' }
       }
       // A `busy` refusal ran nothing, and is no answer to keep: a retry under
-      // the same id, once the turn in its way is over, runs the command.
-      if (!receipt.ok && receipt.code === 'busy') receipts.delete(commandId)
-      else receipts.set(commandId, stamped(receipt))
-      await persist().catch(() => undefined)
-      return receipt
+      // the same id, once the turn in its way is over, runs the command. Nor
+      // is a message the log never took: nothing of it was recorded.
+      if ((!answer.ok && answer.code === 'busy') || command.unrecorded) return answer
+      const record = receiptRecord(command.id, this.now(), {
+        ...(command.fingerprint ? { fingerprint: command.fingerprint } : {}),
+        answer,
+      })
+      // The answer stands whether or not its line is written: a retry finds
+      // the turn's own receipt, or, for a control command, acts again.
+      // Nor once the logs are closing, or the chat is gone: an answer written
+      // after a deletion would bring its transcript back.
+      if (this.shutDown || this.sessions.get(sessionId) !== session || this.deletingTranscripts.has(path)) return answer
+      if ((await this.eventLog.appendRecord(path, record, session.workspaceRoot).catch(() => 'failed')) === 'written')
+        this.noteReceipts(path, [record])
+      // A chat the command stopped, or one at rest, keeps no stream open: the
+      // answer was its last write until it is spoken to again.
+      const live = this.liveSessionFor(path)
+      if (!live || live.resting) await this.eventLog.close(path)
+      return answer
     })()
     this.pendingCommands.set(key, result)
-    this.pendingFingerprints.set(key, fingerprint)
+    this.pendingFingerprints.set(key, command.fingerprint)
     void result
       .finally(() => {
         this.pendingCommands.delete(key)
@@ -3167,47 +3236,54 @@ export class ConversationRuntime {
     return result
   }
 
+  /** The receipt line a turn command commits with the message that opens `turnId`. */
+  private acceptTurn(command: CommandInFlight | undefined, turnId: string): ConversationLogRecord[] {
+    if (!command) return []
+    return [
+      receiptRecord(command.id, this.now(), {
+        ...(command.fingerprint ? { fingerprint: command.fingerprint } : {}),
+        turnId,
+      }),
+    ]
+  }
+
   /**
-   * The receipts for one conversation, read once per run. A failed read is not
-   * remembered, so the next command tries again instead of every command
-   * failing until restart. A receipts file that does not parse is moved aside
-   * and replaced by an empty one: losing old receipts only means a very late
-   * retry could run again, while refusing every command locks the chat.
+   * A repeat of a command the log has a receipt for. A turn command whose
+   * answer was never written was running its turn when the process that ran
+   * it stopped: its message is in the chat, and reopening the chat closed the
+   * turn, so it is answered as sent.
    */
-  private loadReceipts(root: string, path: string): Promise<Map<string, ConversationSessionActionResult>> {
+  private answerFromReceipt(
+    session: RuntimeSession,
+    receipt: ConversationCommandReceipt,
+  ): ConversationSessionActionResult {
+    const answer = receipt.answer ?? { ok: true }
+    if (!answer.ok) return { ...answer }
+    return { ok: true, session: this.toSummary(session), ...(answer.notice ? { notice: answer.notice } : {}) }
+  }
+
+  /** Receipts the log has just taken, folded into the chat's receipts if they have been read this run. */
+  private noteReceipts(path: string, records: ConversationLogRecord[]): void {
+    const loaded = this.receipts.get(path)
+    if (!loaded) return
+    void loaded.then(
+      (receipts) => {
+        for (const record of records) foldReceiptRecord(receipts, record)
+      },
+      () => undefined,
+    )
+  }
+
+  /**
+   * One chat's receipts, folded from its log once per run. A failed read is
+   * not remembered, so the next command tries again instead of every command
+   * failing until restart. Read after the writes queued for the log have
+   * landed, so a receipt still in a batch is not missed.
+   */
+  private loadReceipts(root: string, path: string): Promise<Map<string, ConversationCommandReceipt>> {
     const cached = this.receipts.get(path)
     if (cached) return cached
-    const loading = (async () => {
-      let raw: Buffer
-      try {
-        raw = await readConversationStorage(root, path, MAX_CONVERSATION_METADATA_BYTES)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-          return new Map<string, ConversationSessionActionResult>()
-        throw error
-      }
-      try {
-        const entries = JSON.parse(raw.toString('utf8')) as unknown
-        if (
-          Array.isArray(entries) &&
-          entries.every(
-            (entry) =>
-              Array.isArray(entry) &&
-              entry.length === 2 &&
-              typeof entry[0] === 'string' &&
-              entry[1] &&
-              typeof entry[1] === 'object' &&
-              typeof entry[1].ok === 'boolean',
-          )
-        )
-          return new Map<string, ConversationSessionActionResult>(entries)
-      } catch {
-        // Quarantined below.
-      }
-      console.warn(`[conversation-runtime] command receipts at ${path} are corrupt; moved aside`)
-      await writeConversationStorage(root, `${path}.corrupt`, raw.toString('utf8')).catch(() => undefined)
-      return new Map<string, ConversationSessionActionResult>()
-    })()
+    const loading = this.eventLog.flush(path).then(() => readConversationReceipts(root, path))
     this.receipts.set(path, loading)
     loading.catch(() => {
       if (this.receipts.get(path) === loading) this.receipts.delete(path)
@@ -3317,6 +3393,9 @@ export class ConversationRuntime {
       session.resting = undefined
       // From here a steer can join it, as it joins a send's turn.
       session.providerTurn = openProviderTurn(turnId, true)
+      // Listed before its start is written, as a send's turn is; the agent
+      // already began it, so a list that cannot be written does not stop it.
+      await this.outbox.open(session).catch(() => undefined)
     }
     await this.emit(session, event, streamTurnId ? { turnId: streamTurnId } : {})
     // Looked up again: a steer can have landed while the event waited its turn to be written.
@@ -3396,11 +3475,16 @@ export class ConversationRuntime {
     session.updatedAt = this.now()
   }
 
-  private persistEvent(session: RuntimeSession, event: ConversationEvent): Promise<ConversationAppendOutcome> {
+  private persistEvent(
+    session: RuntimeSession,
+    event: ConversationEvent,
+    records?: ConversationLogRecord[],
+  ): Promise<ConversationAppendOutcome> {
     return this.eventLog.append(
       this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId),
       redactEvent(event),
       session.workspaceRoot,
+      records,
     )
   }
 
@@ -3429,6 +3513,36 @@ export class ConversationRuntime {
     await this.toolStreams.get(path)?.settled()
     await this.toolDetailWrites.flush(path)
     return readToolDetail(input.workspaceRoot, path)
+  }
+
+  /**
+   * One event as the chat's log stores it, by the sequence and id a wire sent
+   * it under (`ConversationEventReadInput`): the whole of one that crossed
+   * cut to fit. Events still waiting in the log's buffer are written first.
+   */
+  async readConversationEvent(input: ConversationEventReadInput): Promise<ConversationEventReadResult> {
+    if (
+      !input.workspaceRoot?.trim() ||
+      !input.workspaceId?.trim() ||
+      !input.agentId?.trim() ||
+      !Number.isSafeInteger(input.seq) ||
+      input.seq < 1 ||
+      typeof input.id !== 'string' ||
+      !input.id
+    )
+      return { ok: false, code: 'invalid_input', message: 'Conversation and event identity are required.' }
+    const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
+    try {
+      await this.eventLog.flush(path)
+      const event = await this.transcripts.eventAt(input.workspaceRoot, path, input.seq, input.id)
+      return event ? { ok: true, event } : { ok: false, code: 'not_found', message: 'This chat has no such event.' }
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: error instanceof Error ? error.message : 'Conversation transcript is unavailable.',
+      }
+    }
   }
 
   /**
@@ -3558,7 +3672,7 @@ export class ConversationRuntime {
             payload: { conversationTitle: title, titleSource },
           }
           this.sequences.set(path, event.seq!)
-          this.publish(input.workspaceRoot, path, event, await this.eventLog.append(path, event, input.workspaceRoot))
+          await this.commitOrThrow(input.workspaceRoot, path, event)
         })
       this.emissionTails.set(path, pending)
       await pending
@@ -3591,7 +3705,7 @@ export class ConversationRuntime {
     this.deletingTranscripts.add(path)
     try {
       for (const session of matching)
-        if (session.status !== 'stopped') await this.stopSession({ sessionId: session.sessionId })
+        if (session.status !== 'stopped') await this.stopSessionNow({ sessionId: session.sessionId })
       await this.emissionTails.get(path)
       for (const session of matching) await session.continuationTail
       await this.threadIndex.delete(input)
@@ -3599,15 +3713,14 @@ export class ConversationRuntime {
       await this.attachmentStore.deleteConversation(input)
       await this.planStore.deleteConversation(input)
       await this.deleteHandoffFiles(input)
-      const receiptsPath = path.replace(/\.jsonl$/, '.receipts.json')
-      await this.receiptWrites.get(receiptsPath)
-      await removeConversationStorage(input.workspaceRoot, receiptsPath)
-      await removeConversationStorage(input.workspaceRoot, `${receiptsPath}.corrupt`)
-      await removeConversationStorage(input.workspaceRoot, lostSequencePath(path))
-      this.receipts.delete(receiptsPath)
+      // Files an older build kept beside the transcript: receipts now live in
+      // the log, and nothing unwritten is published to need a lost number.
+      for (const sidecar of ['.receipts.json', '.receipts.json.corrupt', '.lost-seq.json'])
+        await removeConversationStorage(input.workspaceRoot, path.replace(/\.jsonl$/, sidecar))
+      this.receipts.delete(path)
       this.transcripts.forget(path)
-      this.nonDurableLogs.delete(path)
       this.sequences.delete(path)
+      this.unclosedLogs.delete(path)
       this.emissionTails.delete(path)
       this.forkedMcpServers.delete(path)
       for (const session of matching) this.sessions.delete(session.sessionId)
@@ -3907,21 +4020,21 @@ export class ConversationRuntime {
    */
   private releaseTranscript(session: RuntimeSession): void {
     const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-    const receiptsPath = path.replace(/\.jsonl$/, '.receipts.json')
     this.transcripts.forget(path)
     const tail = this.emissionTails.get(path)
-    const receiptWrite = this.receiptWrites.get(receiptsPath)
     this.runInBackground(
-      Promise.allSettled([tail, receiptWrite, session.continuationTail]).then(() => {
+      Promise.allSettled([tail, session.continuationTail]).then(() => {
         if (this.emissionTails.get(path) === tail) this.emissionTails.delete(path)
-        const live = this.liveSessionFor(path) !== undefined
-        const commandPending = Array.from(this.pendingCommands.keys()).some((key) => key.startsWith(`${receiptsPath}:`))
-        if (!commandPending && this.receiptWrites.get(receiptsPath) === receiptWrite) {
-          this.receiptWrites.delete(receiptsPath)
-          if (!live) this.receipts.delete(receiptsPath)
-        }
+        if (this.liveSessionFor(path) === undefined && this.commandsPendingOn(path).length === 0)
+          this.receipts.delete(path)
       }),
     )
+  }
+
+  /** The commands in flight on one chat's log. */
+  private commandsPendingOn(path: string): Promise<ConversationSessionActionResult>[] {
+    const prefix = commandKey(path, '')
+    return [...this.pendingCommands].filter(([key]) => key.startsWith(prefix)).map(([, pending]) => pending)
   }
 
   /**
@@ -3952,10 +4065,7 @@ export class ConversationRuntime {
   ): Promise<({ ok: true } & TranscriptSyncResult) | { ok: false; message: string }> {
     const path = this.transcriptPath(key.workspaceRoot, key.workspaceId, key.agentId)
     try {
-      const result = await this.transcripts.sync(key.workspaceRoot, path, {
-        ...input,
-        forceSnapshot: this.nonDurableLogs.has(path),
-      })
+      const result = await this.transcripts.sync(key.workspaceRoot, path, input)
       return { ok: true, ...result }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Conversation transcript is unavailable.' }
@@ -3975,28 +4085,65 @@ export class ConversationRuntime {
     }
   }
 
+  /**
+   * Close every turn the last run left open, at start: the turns of the
+   * chats the outbox lists, each ended in its log as interrupted
+   * (`initializeSequence`), so a client waiting on a send, a schedule's run
+   * and the chat list hear the end without anyone opening the chat. A chat
+   * stays listed while its log cannot be written, for the next start.
+   */
+  recoverInterruptedTurns(): Promise<void> {
+    // Waited for by a quit, so nothing is appended after the logs close.
+    const recovering = this.recoverInterruptedTurnsNow()
+    this.runInBackground(recovering)
+    return recovering
+  }
+
+  private async recoverInterruptedTurnsNow(): Promise<void> {
+    for (const chat of await this.outbox.pending()) {
+      if (this.shutDown) return
+      if (this.liveSessionFor(this.transcriptPath(chat.workspaceRoot, chat.workspaceId, chat.agentId))) continue
+      const closed = await this.initializeSequence(chat).catch((error: unknown) => {
+        console.warn(
+          '[conversation-runtime] a turn left open could not be closed:',
+          error instanceof Error ? error.message : error,
+        )
+        return false
+      })
+      if (closed) await this.outbox.settle(chat)
+    }
+  }
+
   async recoverTranscript(input: ConversationTranscriptInput): Promise<void> {
     if (this.deletingTranscripts.has(this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)))
       throw new Error('Conversation is being deleted.')
     await this.initializeSequence(input)
   }
 
-  private async initializeSequence(input: ConversationTranscriptInput): Promise<void> {
+  /**
+   * Take up a chat's log for this run: its last sequence number, and an end
+   * written for any turn the last run left open, unless a session here is
+   * running it. Whether the log now leaves no turn open that nothing runs.
+   */
+  private async initializeSequence(input: ConversationTranscriptInput): Promise<boolean> {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
     const existing = this.sequenceInitializations.get(path)
     if (existing) return existing
     const pending = this.initializeSequenceNow(input)
     this.sequenceInitializations.set(path, pending)
     try {
-      await pending
+      return await pending
     } finally {
       if (this.sequenceInitializations.get(path) === pending) this.sequenceInitializations.delete(path)
     }
   }
 
-  private async initializeSequenceNow(input: ConversationTranscriptInput): Promise<void> {
+  private async initializeSequenceNow(input: ConversationTranscriptInput): Promise<boolean> {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
-    if (this.sequences.has(path)) return
+    const known = this.sequences.get(path)
+    // Taken up already this run, unless a write it refused may have left a
+    // turn open in it since (`lostCommit`).
+    if (known !== undefined && !this.unclosedLogs.has(path)) return true
     await this.eventLog.flush(path)
     // Only the last turn can still be open, so the end of the log is all this
     // needs: its last sequence number and any turn it left unfinished.
@@ -4008,13 +4155,25 @@ export class ConversationRuntime {
         session.agentId === input.agentId &&
         session.status !== 'stopped',
     )
-    const floor = Math.max(sync.head, await this.readLostSequence(input.workspaceRoot, path))
-    const closures = sync.kind === 'snapshot' && !live ? syntheticTurnClosures(sync.page.events, floor) : []
-    for (const event of closures) await this.eventLog.append(path, event, input.workspaceRoot)
+    const floor = Math.max(sync.head, known ?? 0)
+    const closures = (sync.kind === 'snapshot' && !live ? syntheticTurnClosures(sync.page.events, floor) : []).map(
+      (event) => ({ ...event, id: `conv_evt_${this.eventEpoch}_${++this.eventSequence}` }),
+    )
+    let closed = true
+    for (const event of closures)
+      closed =
+        this.publish(
+          event,
+          await this.eventLog.append(path, event, input.workspaceRoot).catch(() => 'failed' as const),
+        ) && closed
+    if (closed && !live) this.unclosedLogs.delete(path)
+    // A session here still running the log (one being stopped included) is
+    // what ends its turn; this took up nothing it could close.
+    if (live) closed = false
     this.sequences.set(path, closures.at(-1)?.seq ?? floor)
     // Expiry lists every thread in the workspace; opening a conversation must not wait on it.
     const expiredAt = this.checkpointsExpiredAt.get(input.workspaceRoot)
-    if (expiredAt !== undefined && this.now() - expiredAt < CHECKPOINT_EXPIRY_INTERVAL_MS) return
+    if (expiredAt !== undefined && this.now() - expiredAt < CHECKPOINT_EXPIRY_INTERVAL_MS) return closed
     this.checkpointsExpiredAt.set(input.workspaceRoot, this.now())
     this.runInBackground(
       this.threadIndex
@@ -4027,6 +4186,7 @@ export class ConversationRuntime {
           ]),
         ),
     )
+    return closed
   }
 
   /**
@@ -4138,7 +4298,7 @@ export class ConversationRuntime {
               if (session.workspaceId === input.key.workspaceId && session.agentId === input.key.agentId)
                 this.updateExcerpts(session, event)
             }
-            this.publish(input.key.workspaceRoot, path, event, outcome)
+            this.publish(event, outcome)
           })
         this.emissionTails.set(path, pending)
         await pending
@@ -4230,8 +4390,7 @@ export class ConversationRuntime {
             },
           }
           this.sequences.set(path, event.seq!)
-          const outcome = await this.eventLog.append(path, event, key.workspaceRoot)
-          this.publish(key.workspaceRoot, path, event, outcome)
+          await this.commitOrThrow(key.workspaceRoot, path, event)
         })
       this.emissionTails.set(path, pending)
       await pending
@@ -4350,8 +4509,7 @@ export class ConversationRuntime {
               payload,
             }
             this.sequences.set(path, event.seq!)
-            const outcome = await this.eventLog.append(path, event, key.workspaceRoot)
-            this.publish(key.workspaceRoot, path, event, outcome)
+            await this.commitOrThrow(key.workspaceRoot, path, event)
           })
         this.emissionTails.set(path, pending)
         await pending
@@ -4987,6 +5145,16 @@ function steerBusy(message: string): ConversationSessionActionResult {
   return { ok: false, code: 'busy', retryAfterMs: TURN_BUSY_RETRY_MS, message }
 }
 
+// A send that found the chat's folder held (a worktree being put back, a
+// revert, another start) ran nothing either: busy, so a retry under the same
+// command id runs once the folder is free, rather than being answered from a
+// receipt of this refusal and the message lost. One the person stopped while
+// it waited is answered as stopped, and kept so: a retry does not send it.
+function folderBusy(held: WorktreeBusy & { abandoned?: true }): ConversationSessionActionResult {
+  if (held.abandoned) return { ok: false, message: held.busy }
+  return { ok: false, code: 'busy', retryAfterMs: TURN_BUSY_RETRY_MS, message: held.busy }
+}
+
 function isSessionBusy(session: RuntimeSession): boolean {
   return session.activeTurnId !== null || session.pendingRequestId !== null
 }
@@ -5297,11 +5465,6 @@ function forkedPayload(event: ConversationEvent): ConversationEvent['payload'] {
     ...rest
   } = event.payload
   return rest
-}
-
-/** Beside the transcript: the highest sequence number published that may not be in it. */
-function lostSequencePath(transcriptPath: string): string {
-  return transcriptPath.replace(/\.jsonl$/, '.lost-seq.json')
 }
 
 // Events a turn opens with before its runtime has done anything with it. A

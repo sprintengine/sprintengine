@@ -1,3 +1,5 @@
+export type { RepositoryIdentity, RepositoryIdentityRead } from '../../packages/studio-protocol/src/public'
+import type { RepositoryIdentity } from '../../packages/studio-protocol/src/public'
 // One repository across machines (one-project-across-machines).
 //
 // Two clones of the same repository — on this disk, on a paired machine's —
@@ -10,18 +12,6 @@
 // Pure and node-free, so the renderer (sidebar grouping, the launch panel's
 // machine filter) and main (the `workspace.list` projection) derive the same
 // key from the same string.
-
-export type RepositoryIdentity = {
-  /** `host/owner/name` (or the normalised URL when it has no such path): equal for every clone of one repository. */
-  canonicalKey: string
-  /** The remote URL as `git remote` reported it, for display and diagnosis. */
-  remoteUrl: string
-  /**
-   * The repository's last path segment as the remote spells it — `SprintEngine`
-   * for `git@github.com:Acme/SprintEngine.git` — for display. Compare keys, not names.
-   */
-  name: string
-}
 
 /**
  * The key two clones share. Lower-cased and stripped of `.git`, trailing
@@ -147,26 +137,6 @@ export function parseRemoteFetchUrls(stdout: string): Map<string, string> {
     remotes.set(name, url)
   }
   return remotes
-}
-
-/**
- * What a read of a folder's identity actually answered.
- *
- * `settled` is the difference between "asked, and this folder has no remote"
- * and "could not ask" — a read that timed out on a spun-down volume, or that
- * threw. Both used to arrive as a bare `null`, which made a folder on a sleeping
- * disk indistinguishable from a folder with no remote. That is fine for
- * GROUPING, where either way the folder groups by its path, and wrong for
- * anything that writes the answer down: one-colour-per-project (2026-09-09)
- * would spend a hue on the folder's PATH key and then a second on its
- * repository key the next time the volume was awake, so one project would end
- * up wearing two of the six colours. A caller that persists anything derived
- * from an identity must wait for `settled`.
- */
-export type RepositoryIdentityRead = {
-  identity: RepositoryIdentity | null
-  /** The read completed and this IS the answer — including "no remote". */
-  settled: boolean
 }
 
 /**

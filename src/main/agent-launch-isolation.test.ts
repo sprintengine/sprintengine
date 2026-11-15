@@ -192,7 +192,6 @@ test('a launch-injected CLI tidies the workspace instead of installing into it',
     resolveHomeDir: () => home,
     resolveLaunchInjectsPlugins: () => true,
     listAgentStateSpecs: () => [claude],
-    onFrame: () => undefined,
     logDiagnostic: (diagnostic) => diagnostics.push(`${diagnostic.level}: ${diagnostic.title}`),
   })
 

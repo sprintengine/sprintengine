@@ -1,61 +1,61 @@
 import {
   connect,
+  webSocketTransport,
   type StudioClient,
-  type StudioTransport,
   type StudioTransportFactory,
-} from '../../../../packages/agent-sdk/src/index'
+  type StudioWebSocketConstructor,
+} from '../../../../packages/client-runtime/src/public'
+import type { StudioWelcomeFrame } from '../../../../packages/studio-protocol/src/public'
 import type { ElectronApi } from '../../../shared/electron-api'
 
 // This window's client of the Studio RPC: the same `@sprintengine/agent-sdk`
-// client a script or a web page uses, over the connection main brokers for the
-// window. The preload keeps the port; the page holds a connection id and,
-// for one hello, the ticket main minted for it. Each reconnect asks main for a
-// fresh connection and ticket, and the client resumes its streams from their
-// cursors and resends what was unanswered.
-//
-// When the server moves out of main, main brokers the same channel to it and
-// nothing here changes.
+// client a script or a web page uses, over a WebSocket to the window listener
+// of the Studio server that holds this machine's chats. Before each
+// connection, reconnects included, it asks for a ticket: main mints a desktop
+// window's (good once, for thirty seconds, from this window's origin); a web
+// tab's is its session cookie, which its socket's upgrade carries. The client
+// resumes its streams from their cursors and resends what was unanswered.
 
-type PortApi = Pick<ElectronApi, 'studioConnect' | 'studioPortSend' | 'studioPortListen' | 'studioPortClose'>
+type TicketApi = Pick<ElectronApi, 'studioWindowTicket'>
 
-/** A transport over one window connection at a time, asking main for a new one on each call. */
-export function windowPortTransport(api: PortApi): StudioTransportFactory {
-  return async () => {
-    const { connectionId, ticket } = await api.studioConnect()
-    const messageListeners: Array<(frame: string) => void> = []
-    const closeListeners: Array<(error?: Error) => void> = []
-    let closed = false
-    const end = () => {
-      if (closed) return
-      closed = true
-      // Heard after the current frame, as a socket's close is: the client
-      // reads a close inside its own `close()` call no differently.
-      queueMicrotask(() => {
-        for (const listener of closeListeners.splice(0)) listener()
-      })
-    }
-    api.studioPortListen(
-      connectionId,
-      (frame) => {
-        if (!closed) for (const listener of messageListeners) listener(frame)
-      },
-      end,
-    )
-    const transport: StudioTransport = {
-      credential: { token: ticket },
-      send: (frame) => {
-        if (!closed) api.studioPortSend(connectionId, frame)
-      },
-      close: () => {
-        if (closed) return
-        api.studioPortClose(connectionId)
-        end()
-      },
-      onMessage: (listener) => void messageListeners.push(listener),
-      onClose: (listener) => void closeListeners.push(listener),
-    }
-    return transport
-  }
+/** How one page's connections are made, beyond the ticket: set once, by the page that knows. */
+export type WindowStudioSetup = {
+  /**
+   * The Studio is on another machine (a web tab's socket to the server that
+   * served it): the device being offline does say it cannot be reached, and
+   * the client parks until the network is back.
+   */
+  anotherMachine?: boolean
+  /** Hears each socket's close code (a revoked web session's, say). */
+  onSocketClose?: (code: number) => void
+  /** A WebSocket other than the global one (tests). */
+  WebSocket?: StudioWebSocketConstructor
+}
+
+const setups = new WeakMap<object, WindowStudioSetup>()
+
+/** Whether this page reaches a Studio at all: a desktop window or a web tab does. */
+export function windowHasStudio(): boolean {
+  return typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
+}
+
+/** Whether this page's Studio is on another machine: a web tab's, rather than a desktop window's own. */
+export function windowStudioIsAnotherMachine(api: object = window.api): boolean {
+  return setups.get(api)?.anotherMachine === true
+}
+
+/** Say how this page's connections are made, over what was said before; read when a client is made. */
+export function configureWindowStudio(api: object, setup: WindowStudioSetup): void {
+  setups.set(api, { ...setups.get(api), ...setup })
+}
+
+/** A transport over a fresh WebSocket per connection, each with a fresh ticket. */
+export function windowSocketTransport(api: TicketApi, setup: WindowStudioSetup = {}): StudioTransportFactory {
+  return webSocketTransport({
+    ticket: () => api.studioWindowTicket(),
+    ...(setup.WebSocket ? { WebSocket: setup.WebSocket } : {}),
+    ...(setup.onSocketClose ? { onSocketClose: setup.onSocketClose } : {}),
+  })
 }
 
 /**
@@ -86,14 +86,42 @@ export function watchWindowStudio(api: object, listener: () => void): () => void
   return () => set.delete(listener)
 }
 
-// The `studioConnect` of a page whose Studio is on another machine (a web
-// tab's socket to the server that served it): there, the device being offline
-// does say the Studio cannot be reached, and the client parks until it is back.
-const connectsToAnotherMachine = new WeakSet<object>()
+const welcomes = new WeakMap<object, StudioWelcomeFrame>()
+const welcomeWatchers = new WeakMap<object, Set<() => void>>()
 
-/** Says a port API's connections reach a Studio on another machine. */
-export function markStudioOnAnotherMachine(studioConnect: PortApi['studioConnect']): void {
-  connectsToAnotherMachine.add(studioConnect)
+/**
+ * The latest welcome this window's Studio gave it: what it serves and what
+ * this window may do there. Null before the first. A reconnect's welcome
+ * replaces it (a grant may have changed meanwhile).
+ */
+export function windowStudioWelcome(api: object = window.api): StudioWelcomeFrame | null {
+  return welcomes.get(api) ?? null
+}
+
+/**
+ * The environment this page's shell runs beside: the Studio a desktop
+ * window's shell started, by its id, which its windows reach. Null for a page
+ * whose Studio is on another machine (a web tab) and before the first
+ * welcome. A chat in this environment has its files on the shell's own disk.
+ */
+export function windowShellEnvironmentId(api: object = window.api): string | null {
+  if (windowStudioIsAnotherMachine(api)) return null
+  return welcomes.get(api)?.environment.id ?? null
+}
+
+/** Hear the window's welcome change. Returns the unsubscriber. */
+export function watchWindowStudioWelcome(api: object, listener: () => void): () => void {
+  let set = welcomeWatchers.get(api)
+  if (!set) welcomeWatchers.set(api, (set = new Set()))
+  set.add(listener)
+  return () => set.delete(listener)
+}
+
+function noteWelcome(api: object, client: StudioClient | undefined): void {
+  const welcome = client?.welcome
+  if (!welcome || welcomes.get(api) === welcome) return
+  welcomes.set(api, welcome)
+  for (const watcher of welcomeWatchers.get(api) ?? []) watcher()
 }
 
 const clients = new WeakMap<object, Promise<StudioClient>>()
@@ -112,7 +140,7 @@ const environments = new WeakMap<object, string>()
  * by a refused ticket or by being offline tries to connect now, and one that
  * closed for good (a version outside the window, another Studio) is replaced.
  */
-export function windowStudioClient(api: PortApi = window.api): Promise<StudioClient> {
+export function windowStudioClient(api: TicketApi = window.api): Promise<StudioClient> {
   const known = clients.get(api)
   const client = settled.get(api)
   if (known && client?.state !== 'closed') {
@@ -122,19 +150,24 @@ export function windowStudioClient(api: PortApi = window.api): Promise<StudioCli
   settled.delete(api)
   const bound = environments.get(api)
   if (states.get(api) !== 'reconnecting') setWindowState(api, 'connecting')
+  const setup = setups.get(api) ?? {}
   const connecting = connect({
-    transport: windowPortTransport(api),
+    // Read through the api at each connection, so a page that swaps its
+    // ticket call (a test) is heard on the next one.
+    transport: windowSocketTransport(api, setup),
     client: { name: 'Studio window' },
     // A window and the Studio it belongs to come and go together; a short
     // ceiling brings a window back quickly after a restart of the server.
     reconnect: { initialDelayMs: 100, maxDelayMs: 5_000 },
     // A desktop window's Studio is on this machine: an offline laptop still
     // reaches it. A web tab's is not, and waits for the network.
-    parkWhenOffline: connectsToAnotherMachine.has(api.studioConnect),
+    parkWhenOffline: setup.anotherMachine === true,
     ...(bound === undefined ? {} : { environmentId: bound }),
     onStateChange: (state) => {
       if (clients.get(api) !== connecting) return
       setWindowState(api, state === 'closed' ? 'unavailable' : state)
+      // A reconnect is welcomed again before it opens.
+      if (state === 'open') noteWelcome(api, settled.get(api))
     },
   })
   clients.set(api, connecting)
@@ -144,7 +177,10 @@ export function windowStudioClient(api: PortApi = window.api): Promise<StudioCli
     setWindowState(api, 'unavailable')
   }
   void connecting.then((connected) => {
-    if (clients.get(api) === connecting) settled.set(api, connected)
+    if (clients.get(api) === connecting) {
+      settled.set(api, connected)
+      noteWelcome(api, connected)
+    }
     if (!environments.has(api)) environments.set(api, connected.welcome.environment.id)
     connected.closed.then(forget, forget)
   }, forget)

@@ -2,7 +2,26 @@
 
 ## Unreleased
 
+### Changed
+
+- The client (`connect`, the conversation handles, client tools and
+  `StudioError`) lives in `@sprintengine/client-runtime`, a new dependency,
+  and is re-exported here under the same names: an app that calls them has
+  nothing to change.
+- `client.wake()` on an open client asks Studio whether the connection still
+  answers and makes it again if not, for an app that hears its machine woke.
+  Reconnects follow the client runtime's connection supervisor: a connection
+  that drops as soon as it opens backs off rather than retrying at the
+  shortest delay each time.
+
 ### Changed (contract)
+
+- `client.list()` leaves out the chats settled in Studio, and lists the rest
+  in the order its sidebar draws them, as every client does. A settled chat
+  is still reached by its key: `client.conversation(ref)`.
+
+- `StudioClient` gains `rpc`, one call per protocol method. Code that builds
+  its own object typed `StudioClient` (a test double, say) must add it.
 
 - `request` is `StudioRequest`, typed by the protocol's method table, and
   `subscribe` is typed by topic: it takes push topics only (`StudioPushTopic`),
@@ -11,6 +30,20 @@
 
 ### Added
 
+- **An event whole.** `conversations.event(ref, seq, id)` reads the whole of
+  an event that crossed cut to fit one frame (its payload says
+  `wireClipped: true`), by the sequence and id it came under.
+- **A WebSocket transport.** `webSocketTransport({ ticket })` opens a fresh
+  WebSocket for each connection, asking `ticket()` first for its URL and the
+  credential its hello presents, so a ticket good once is never presented
+  twice and a Studio that moved is found again. It uses the global
+  `WebSocket` unless given one, and gives up on a socket that has not opened
+  within ten seconds. Studio's own windows connect with it.
+- **Reach a Studio this client cannot talk to.** `openStudioUpdateSession`
+  opens one connection that asks to be kept (`update-session`) when the
+  protocol windows do not meet: it says which side is behind (`compatibility`,
+  the `incompatible` frame), how the Studio is updated (`status()`), and asks
+  one that updates itself to do so (`start()`).
 - **Tools for agents.** `client.tools.offer(toolset)` gives Studio's agents
   tools that run in your program, offered again on every connection;
   `withdraw()`, `focus()` and `catalog()` beside it. A handler gets the calling

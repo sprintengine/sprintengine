@@ -1,6 +1,9 @@
-import { connect, type StudioClient } from '../../packages/agent-sdk/src/client'
-import type { StudioTransportFactory } from '../../packages/agent-sdk/src/transport'
-import type { OfferedToolset } from '../../packages/agent-sdk/src/tools'
+import {
+  connect,
+  type StudioClient,
+  type StudioTransportFactory,
+  type OfferedToolset,
+} from '../../packages/client-runtime/src/public'
 import type { McpToolRegistration } from '../shared/modules/mcp-tools'
 import { offerGatewayTools } from './automation/offer-gateway-tools'
 

@@ -73,7 +73,7 @@ disclosure, not a runtime sandbox. See
 [`docs/module-authors/permissions.md`](../module-authors/permissions.md).
 
 A `module` component is a capability module folder. Its `manifest.json` must
-declare `"engines": { "hostApi": 1 }` and carry a `files` map (every file's
+declare `"engines": { "hostApi": 2 }` and carry a `files` map (every file's
 sha256, written by `sprintengine-module sign`); sign the module before you sign
 the bundle, because signing the module rewrites its manifest and the bundle's
 digests cover it. A bundle whose signed module has no `files` is refused.

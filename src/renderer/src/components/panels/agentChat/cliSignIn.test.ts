@@ -1,4 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
+import { terminalsDouble } from '../../../studio/terminals.double'
+
+vi.mock('../../../studio/terminals', () => import('../../../studio/terminals.double'))
 
 const openedTabs: Array<{ workspaceId: string; terminalId: string; name?: string }> = []
 vi.mock('../../../utils/modelRegistry', () => ({
@@ -9,6 +12,7 @@ vi.mock('../../../utils/modelRegistry', () => ({
 }))
 
 import { openCliSignInTerminal } from './cliSignIn'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 type Calls = { spawns: unknown[][]; writes: Array<{ sessionId: string; data: string }>; signIns: unknown[] }
 
@@ -17,6 +21,15 @@ function installApi(input: {
   spawnFails?: string
 }): Calls {
   const calls: Calls = { spawns: [], writes: [], signIns: [] }
+  terminalsDouble.openTerminal = async (...args: unknown[]) => {
+    calls.spawns.push(args)
+    return input.spawnFails
+      ? { ok: false as const, sessionId: String(args[0]), message: input.spawnFails, exitCode: 1 }
+      : { ok: true as const, sessionId: String(args[0]) }
+  }
+  terminalsDouble.writeTerminal = async (sessionId: string, data: string) => {
+    calls.writes.push({ sessionId, data })
+  }
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -32,18 +45,11 @@ function installApi(input: {
             }
           )
         },
-        terminalSpawn: async (...args: unknown[]) => {
-          calls.spawns.push(args)
-          return input.spawnFails
-            ? { ok: false as const, sessionId: String(args[0]), message: input.spawnFails, exitCode: 1 }
-            : { ok: true as const, sessionId: String(args[0]) }
-        },
-        terminalWrite: async (sessionId: string, data: string) => {
-          calls.writes.push({ sessionId, data })
-        },
       },
     },
   })
+  // The sign-in is asked of the window's Studio, over the protocol.
+  installStudioLoopback(globalThis.window as never)
   return calls
 }
 

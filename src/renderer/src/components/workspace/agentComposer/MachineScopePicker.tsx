@@ -31,17 +31,18 @@ function TriggerMachineMark({ machine }: { machine: MachineRef }) {
 }
 
 /**
- * The machine a scheduled agent being edited runs on, as a line and not a
- * choice: a schedule stays on the machine it was saved on. Drawn as the
- * trigger is, its mark and its name, so the strip reads the same.
+ * The machine a scheduled agent runs on, as a line and not a choice: one
+ * being edited stays on the machine it was saved on, and one made in a
+ * project on an SSH machine runs on that machine. Drawn as the trigger is,
+ * its mark and its name, so the strip reads the same.
  */
-export function FixedMachineLine({ machineName }: { machineName: string }) {
+export function FixedMachineLine({ machineName, machine }: { machineName: string; machine?: MachineRef }) {
   return (
     <span
       data-machine-line="true"
       className="inline-flex h-control-xs min-w-0 items-center gap-1.5 px-2 text-meta text-[color:var(--text-subtle)]"
     >
-      <TriggerMachineMark machine={{ kind: 'paired', name: machineName }} />
+      <TriggerMachineMark machine={machine ?? { kind: 'paired', name: machineName }} />
       <span className="min-w-0 truncate">{machineName}</span>
     </span>
   )

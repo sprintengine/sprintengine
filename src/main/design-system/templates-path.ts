@@ -1,15 +1,14 @@
-import { app } from 'electron'
-import { join } from 'path'
+import { join } from 'node:path'
 
-// Resolves resources/design-system/templates for the running app. Packaged
+import type { StudioPaths } from '../../server/platform/studio-paths'
+
+// Resolves resources/design-system/templates for the running Studio. Packaged
 // builds carry the folder as an extraResource (`design-system/templates`
-// under process.resourcesPath — see package.json `build.extraResources`);
-// dev builds read it straight from the repo. Kept separate from
-// bundle-scaffold.ts so the scaffold service stays electron-free and testable
-// under plain node.
-export function resolveDesignSystemTemplatesDir(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'design-system', 'templates')
-  }
-  return join(app.getAppPath(), 'resources', 'design-system', 'templates')
+// under the resources directory; see package.json `build.extraResources`);
+// a source checkout reads it from the repository. Kept separate from
+// bundle-scaffold.ts so the scaffold service stays testable under plain Node.
+export function resolveDesignSystemTemplatesDir(paths: StudioPaths): string {
+  const resources = paths.resourcesDir()
+  if (paths.isPackaged() && resources) return join(resources, 'design-system', 'templates')
+  return join(paths.appRoot() ?? process.cwd(), 'resources', 'design-system', 'templates')
 }

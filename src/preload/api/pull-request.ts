@@ -12,7 +12,7 @@ import type { ElectronApi } from '../../shared/electron-api'
  * about — false for a session main cannot name or whose checkout has not
  * resolved yet, so a caller with one shot to spend does not spend it on a
  * question that was never put. The refreshed list itself arrives on the
- * `terminal:sessions-delta` snapshot the renderer already subscribes to.
+ * `terminal.sessions` snapshot the renderer already subscribes to.
  */
 type PullRequestIpcRenderer = {
   invoke(channel: 'pullRequest:refreshForSession', sessionId: string): Promise<boolean>

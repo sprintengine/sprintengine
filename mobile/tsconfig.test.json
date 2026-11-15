@@ -4,15 +4,23 @@
 // load as entry points; TypeScript pulls in their transitive imports.
 //
 // `npm run typecheck` still type-checks the whole app, navigators included.
+//
+// The protocol packages it imports live beside it, in the repository's
+// `packages/`, so the build's root is the repository: the phone's files land
+// under `.mobile-test-build/mobile/` and the packages' under
+// `.mobile-test-build/packages/`. The packages are ESM with NodeNext `.js`
+// specifiers; built as CommonJS here, with Node's classic resolution, those
+// specifiers find their `.ts` sources and every file emits as CommonJS.
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "Node16",
-    "moduleResolution": "node16",
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+    "customConditions": null,
     "jsx": "react-jsx",
     "noEmit": false,
     "outDir": ".mobile-test-build",
-    "rootDir": "."
+    "rootDir": ".."
   },
   "include": [
     "src/api/tailnetControlClient.ts",
@@ -22,11 +30,12 @@
     "src/features/conversations/chatPanelLogic.ts",
     "src/features/conversations/photoPicks.ts",
     "src/api/tailnetTransport.ts",
-    "src/api/conversationWire.ts",
-    "src/api/tailnetConversations.ts",
+    "src/api/desktopConversations.ts",
+    "src/api/chatOffers.ts",
+    "src/features/conversations/sendRules.ts",
     "src/api/conversationLaunch.ts",
-    "src/api/conversationImages.ts",
-    "src/api/conversationLifecycle.ts",
+    "src/api/desktopStudio.ts",
+    "src/__verify__/fakeDesktopStudio.ts",
     "src/api/pullRequests.ts",
     "src/features/pullRequests/pullRequestView.ts",
     "src/api/scheduledAgents.ts",
@@ -97,7 +106,6 @@
     "src/features/pairing/pairingSession.ts",
     "src/navigation/sessionFlow.ts",
     "src/navigation/readEach.ts",
-    "src/shared/mobile-control/protocol.ts",
     "src/storage/relayCleanup.ts",
     "src/storage/sessionStore.ts",
     "src/storage/conversationCacheModel.ts",

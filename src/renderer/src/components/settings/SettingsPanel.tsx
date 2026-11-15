@@ -118,6 +118,9 @@ import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { sourceUpdateCadenceLine, type SkillRepoTransport } from '../../../../shared/skills'
 import { clientSupports, hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
+import { agentSetupApi } from '../../studio/agentSetup'
+import { agentSkillsApi } from '../../studio/agentSkills'
+import { gitApi } from '../../studio/git'
 
 interface Props {
   onClose: () => void
@@ -141,7 +144,7 @@ interface Props {
   chrome?: 'panel' | 'overlay' | 'door'
 }
 
-type GitHubTokenUiStatus = Awaited<ReturnType<typeof window.api.getGitHubTokenStatus>>
+type GitHubTokenUiStatus = Awaited<ReturnType<typeof gitApi.getGitHubTokenStatus>>
 
 const EMPTY_PROJECT_KNOWLEDGE_ROOTS: Record<string, string | null> = {}
 const NO_UPDATE_BADGE_CLIS: ReadonlySet<string> = new Set()
@@ -528,7 +531,7 @@ export function VersionControlSections({ githubToken }: { githubToken: React.Rea
   const platform = hostPlatform()
 
   const runProbe = useCallback(async () => {
-    if (typeof window.api.probeVersionControlProviders !== 'function') {
+    if (typeof gitApi.probeVersionControlProviders !== 'function') {
       // An older preload than this renderer. Named as the missing capability it
       // is, rather than letting the call throw a TypeError whose message would
       // reach the screen as "… is not a function".
@@ -538,7 +541,7 @@ export function VersionControlSections({ githubToken }: { githubToken: React.Rea
     }
     setChecking(true)
     try {
-      const results = await window.api.probeVersionControlProviders()
+      const results = await gitApi.probeVersionControlProviders()
       // Replace rather than merge: a re-check is a fresh reading of the machine,
       // so a provider that disappeared must not keep its old version line.
       setProbes(Object.fromEntries(results.filter((result) => !result.machine).map((result) => [result.id, result])))
@@ -717,11 +720,9 @@ export default function SettingsPanel({
   )
   const visibleSettingsTabs = useMemo(
     (): SettingsTabDescriptor[] => [
-      // The server's machine on Windows: its WSL distributions. Any platform
-      // with the SSH machines preview on: the SSH machines (phase 8).
-      ...settingsTabs.filter(
-        (tab) => tab.id !== 'machines' || hostPlatform() === 'win32' || window.api.sshMachinesEnabled === true,
-      ),
+      // Machines is on every platform: every machine this desktop knows is
+      // listed there, this one and the paired desktops included (design-environments).
+      ...settingsTabs,
       ...moduleSections.map((section) => ({
         id: moduleSectionTabId(section.id),
         label: section.label,
@@ -900,7 +901,7 @@ export default function SettingsPanel({
       setActivityInstalled(false)
       return
     }
-    void window.api.memoryActivityIsInstalled({ workspaceRoot: activeProjectRoot }).then((installed) => {
+    void agentSetupApi.memoryActivityIsInstalled({ workspaceRoot: activeProjectRoot }).then((installed) => {
       if (!cancelled) setActivityInstalled(installed)
     })
     return () => {
@@ -942,7 +943,7 @@ export default function SettingsPanel({
       setActivityMessage(null)
       try {
         if (next) {
-          const result = await window.api.memoryActivityInstall({
+          const result = await agentSetupApi.memoryActivityInstall({
             workspaceRoot: activeProjectRoot,
             memoryRelativeRoot: memoryRoot,
           })
@@ -952,7 +953,7 @@ export default function SettingsPanel({
             setActivityMessage(result.message)
           }
         } else {
-          const result = await window.api.memoryActivityUninstall({
+          const result = await agentSetupApi.memoryActivityUninstall({
             workspaceRoot: activeProjectRoot,
           })
           if (result.ok) {
@@ -972,7 +973,7 @@ export default function SettingsPanel({
 
   useEffect(() => {
     let cancelled = false
-    void window.api.getGitHubTokenStatus().then((status) => {
+    void gitApi.getGitHubTokenStatus().then((status) => {
       if (!cancelled) setGithubTokenStatus(status)
     })
     return () => {
@@ -981,9 +982,9 @@ export default function SettingsPanel({
   }, [])
 
   useEffect(() => {
-    if (typeof window.api.skillsListSources !== 'function') return
+    if (typeof agentSkillsApi.skillsListSources !== 'function') return
     let cancelled = false
-    void window.api
+    void agentSkillsApi
       .skillsListSources()
       .then((result) => {
         if (!cancelled && result.ok) setSkillRepoTransport(result.transport ?? 'api')
@@ -1103,7 +1104,7 @@ export default function SettingsPanel({
     setGithubTokenPending(true)
     setGithubTokenMessage('')
     try {
-      const status = await window.api.setGitHubToken(token)
+      const status = await gitApi.setGitHubToken(token)
       setGithubTokenStatus(status)
       setGithubTokenDraft('')
       setGithubTokenEditing(false)
@@ -1119,7 +1120,7 @@ export default function SettingsPanel({
     setGithubTokenPending(true)
     setGithubTokenMessage('')
     try {
-      const status = await window.api.clearGitHubToken()
+      const status = await gitApi.clearGitHubToken()
       setGithubTokenStatus(status)
       setGithubTokenDraft('')
       setGithubTokenEditing(false)
@@ -1643,6 +1644,10 @@ export default function SettingsPanel({
             selectAgentsMachine(id)
             setActiveSettingsTab('agents')
             window.requestAnimationFrame(() => tabRefs.current.agents?.focus())
+          }}
+          onOpenRemoteSettings={() => {
+            setActiveSettingsTab('remote')
+            window.requestAnimationFrame(() => tabRefs.current.remote?.focus())
           }}
         />
       ) : null}

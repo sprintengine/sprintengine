@@ -13,8 +13,17 @@
 //
 // Bundle format contract: resources/design-system/templates/USAGE.md.
 
-import type { DesignSystemManifest } from './manifest'
-
+import type {
+  DesignSystemLibraryEntry,
+  DesignSystemManifest,
+  DesignSystemSourceState,
+} from '../../../packages/studio-protocol/src/public'
+export type {
+  DesignSystemLibraryEntry,
+  DesignSystemLibraryListResult,
+  DesignSystemRegisterResult,
+  DesignSystemSourceState,
+} from '../../../packages/studio-protocol/src/public'
 /** Registry schema version, so a future shape change has a migration point. */
 export const DESIGN_SYSTEM_REGISTRY_SCHEMA_VERSION = 1
 
@@ -56,44 +65,9 @@ export interface DesignSystemRegistryFile {
   adoptedLegacyCopies?: boolean
 }
 
-/**
- * Why a registered folder cannot be read right now.
- *
- * Distinct states, because a folder that moved, a folder that never was a
- * bundle, a bundle whose manifest broke, and a folder we lack permission for are
- * four different problems with four different fixes. A row shows which one it
- * is, with its path — never a disappeared row and never a generic error.
- */
-export type DesignSystemSourceState = 'ok' | 'missing' | 'no-manifest' | 'invalid-manifest' | 'unreadable'
-
-/** One design system in the library, as the rail lists it. */
-export interface DesignSystemLibraryEntry {
-  /** The registration id — the entry's stable identity. */
-  id: string
-  /** Absolute path of the bundle directory. */
-  path: string
-  /** From the manifest when readable, else the last cached value, else null. */
-  name: string | null
-  version: string | null
-  summary: string
-  /** The bundle manifest's own `provenance.releasedAt`, when it carries one.
-   *  A field of the bundle format we read, not an app-owned release record. */
-  releasedAt: string | null
-  /** Whether this folder can be read, and if not, how it is broken. */
-  sourceState: DesignSystemSourceState
-  addedAt: string
-}
-
-export interface DesignSystemLibraryListResult {
-  /** Sorted by display name (cached for a broken entry), then by path. */
-  entries: DesignSystemLibraryEntry[]
-}
-
 export type DesignSystemLibraryReadResult =
   | { ok: true; entry: DesignSystemLibraryEntry; manifest: DesignSystemManifest }
   | { ok: false; message: string; sourceState: DesignSystemSourceState }
-
-export type DesignSystemRegisterResult = { ok: true; entry: DesignSystemLibraryEntry } | { ok: false; message: string }
 
 /**
  * FNV-1a over the normalised path — the same hashing the Backlog object ids use.

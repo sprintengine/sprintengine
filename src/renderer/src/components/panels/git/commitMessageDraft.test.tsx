@@ -4,7 +4,10 @@ import { JSDOM } from 'jsdom'
 import { afterAll, beforeAll, test, vi } from 'vitest'
 
 import type { CommitMessageResult } from '../../../../../shared/text-generation/contract'
+import { agentSettingsDouble } from '../../../studio/agentSettings.double'
 import { commitMessageDraftUnavailableReason, runCommitMessageDraft } from './commitMessageDraft'
+
+vi.mock('../../../studio/agentSettings', () => import('../../../studio/agentSettings.double'))
 
 // "Write commit message": when it can draft, and what a draft does to the box
 // — fills an empty one, asks before replacing a written one, and leaves it as
@@ -220,13 +223,13 @@ afterAll(() => {
 test('the hook drafts with the stored style and engine, says it is working, and fills the box', async () => {
   const requests: unknown[] = []
   let answer: (result: CommitMessageResult) => void = () => {}
-  ;(dom.window as unknown as { api: unknown }).api = {
+  Object.assign(agentSettingsDouble, {
     draftCommitMessage: (request: unknown) => {
       requests.push(request)
       return new Promise<CommitMessageResult>((resolve) => (answer = resolve))
     },
     cancelCommitMessageDraft: async () => undefined,
-  }
+  })
   const { useWorkspaceStore } = await import('../../../store/workspaceStore')
   useWorkspaceStore.setState((state) => ({
     ...state,
@@ -297,7 +300,7 @@ test('the hook drafts with the stored style and engine, says it is working, and 
 test('the hook stops a running draft by its id when asked, and when the panel moves on', async () => {
   const cancelled: string[] = []
   const ids: string[] = []
-  ;(dom.window as unknown as { api: unknown }).api = {
+  Object.assign(agentSettingsDouble, {
     draftCommitMessage: (request: { draftId: string }) => {
       ids.push(request.draftId)
       return new Promise<CommitMessageResult>(() => {})
@@ -305,7 +308,7 @@ test('the hook stops a running draft by its id when asked, and when the panel mo
     cancelCommitMessageDraft: async (draftId: string) => {
       cancelled.push(draftId)
     },
-  }
+  })
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useCommitMessageDraft } = await import('./commitMessageDraft')

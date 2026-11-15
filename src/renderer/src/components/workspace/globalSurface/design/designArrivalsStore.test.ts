@@ -8,7 +8,8 @@ import {
   resetDesignArrivalsForTests,
   subscribeDesignArrivals,
 } from './designArrivalsStore'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+vi.mock('../../../../studio/agentSkills', () => import('../../../../studio/agentSkills.double'))
 
 test('designArrivalsStore', async () => {
   // The Design row's arrival dates, held outside the door. What matters here is

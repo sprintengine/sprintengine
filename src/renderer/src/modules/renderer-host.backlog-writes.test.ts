@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict'
-import { afterEach, test } from 'vitest'
+import { test } from 'vitest'
 
 import type { CapabilityManifest } from '../../../shared/modules/manifest'
-import type { ModuleHostServiceRequest } from '../../../shared/modules/host-service-bridge'
 import type { BacklogScanSnapshot } from '../hooks/useSharedBacklogScan'
 import type { BacklogItem, BacklogScanResult } from '../utils/backlog'
 import { createBacklogReader } from './backlog-reader'
-import { createRendererHost } from './renderer-host'
+import {
+  createRendererHost,
+  moduleServiceRefusal,
+  type ModuleServiceCaller,
+  type ModuleServiceMethod,
+} from './renderer-host'
 
 // The Backlog write methods, `queryUsage`, the `backlog.read` check and the
 // watch's error channel on the renderer host.
@@ -22,28 +26,25 @@ const thirdParty = (permissions: string[]): CapabilityManifest => ({
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
-function withApi(invoke: (request: ModuleHostServiceRequest) => Promise<unknown>): ModuleHostServiceRequest[] {
-  const calls: ModuleHostServiceRequest[] = []
-  ;(globalThis as { window?: unknown }).window = {
-    api: {
-      moduleHostServiceInvoke: (request: ModuleHostServiceRequest) => {
-        calls.push(request)
-        return invoke(request)
-      },
-    },
+type Sent = { method: ModuleServiceMethod; params: unknown }
+
+/** A renderer host whose host-service calls are answered by `answer`, each one recorded. */
+function hostWithServices(answer: (sent: Sent) => Promise<unknown>) {
+  const calls: Sent[] = []
+  const kernel = createRendererHost()
+  const caller: ModuleServiceCaller = async (method, params) => {
+    calls.push({ method, params })
+    return (await answer({ method, params })) as never
   }
-  return calls
+  kernel.setModuleServiceCaller(caller)
+  return { kernel, calls }
 }
 
-afterEach(() => {
-  delete (globalThis as { window?: unknown }).window
-})
-
-test('each Backlog write goes to main with the calling module id and answers what main answered', async () => {
-  const calls = withApi(async (request) =>
-    request.method === 'create' ? { ok: true, id: 'backlog/unfiled/x.md', numericId: 3 } : { ok: true },
+test('each Backlog write is its protocol method, naming the calling module, and answers what the server answered', async () => {
+  const { kernel, calls } = hostWithServices(async ({ method }) =>
+    method === 'moduleBacklog.create' ? { ok: true, id: 'backlog/unfiled/x.md', numericId: 3 } : { ok: true },
   )
-  const host = createRendererHost().hostFor('task-board', thirdParty(['backlog.write']))
+  const host = kernel.hostFor('task-board', thirdParty(['backlog.write']))
   const link = { id: 'l', type: 'external' as const, label: 'L', target: { kind: 'url', id: 'u' } }
   assert.deepEqual(await host.createBacklogItem('ws-1', { title: 'X' }), {
     ok: true,
@@ -55,29 +56,21 @@ test('each Backlog write goes to main with the calling module id and answers wha
   await host.addBacklogLink('ws-1', 'backlog/a.md', link)
   await host.updateBacklogModuleMetadata('ws-1', 'backlog/a.md', { lane: 1 })
   await host.getBacklogLocation('ws-1')
+  const at = { moduleId: 'task-board', workspaceId: 'ws-1' }
+  const item = { ...at, itemId: 'backlog/a.md' }
   assert.deepEqual(calls, [
-    { moduleId: 'task-board', service: 'backlog', method: 'create', args: ['ws-1', { title: 'X' }] },
-    { moduleId: 'task-board', service: 'backlog', method: 'updateStatus', args: ['ws-1', 'backlog/a.md', 'ready'] },
-    {
-      moduleId: 'task-board',
-      service: 'backlog',
-      method: 'updateTriage',
-      args: ['ws-1', 'backlog/a.md', { risk: null }],
-    },
-    { moduleId: 'task-board', service: 'backlog', method: 'addLink', args: ['ws-1', 'backlog/a.md', link] },
-    {
-      moduleId: 'task-board',
-      service: 'backlog',
-      method: 'updateModuleMetadata',
-      args: ['ws-1', 'backlog/a.md', { lane: 1 }],
-    },
-    { moduleId: 'task-board', service: 'backlog', method: 'getLocation', args: ['ws-1'] },
+    { method: 'moduleBacklog.create', params: { ...at, input: { title: 'X' } } },
+    { method: 'moduleBacklog.updateStatus', params: { ...item, status: 'ready' } },
+    { method: 'moduleBacklog.updateTriage', params: { ...item, triage: { risk: null } } },
+    { method: 'moduleBacklog.addLink', params: { ...item, link } },
+    { method: 'moduleBacklog.updateModuleMetadata', params: { ...item, value: { lane: 1 } } },
+    { method: 'moduleBacklog.location', params: at },
   ])
 })
 
-test('queryUsage goes to the usage service', async () => {
-  const calls = withApi(async () => ({ ok: true, rows: [], scannedAt: 1, sources: [] }))
-  const host = createRendererHost().hostFor('insights', thirdParty(['usage:read']))
+test('queryUsage is moduleUsage.query', async () => {
+  const { kernel, calls } = hostWithServices(async () => ({ ok: true, rows: [], scannedAt: 1, sources: [] }))
+  const host = kernel.hostFor('insights', thirdParty(['usage:read']))
   assert.deepEqual(await host.queryUsage({ from: 0, to: 10, groupBy: ['day'] }), {
     ok: true,
     rows: [],
@@ -85,26 +78,42 @@ test('queryUsage goes to the usage service', async () => {
     sources: [],
   })
   assert.deepEqual(calls, [
-    { moduleId: 'insights', service: 'usage', method: 'query', args: [{ from: 0, to: 10, groupBy: ['day'] }] },
+    { method: 'moduleUsage.query', params: { moduleId: 'insights', query: { from: 0, to: 10, groupBy: ['day'] } } },
   ])
 })
 
-test('a write answers a result, never a throw, when there is no door or the call fails', async () => {
+test('a call answers in the service’s words, never a throw, with no caller wired', async () => {
   const host = createRendererHost().hostFor('task-board', thirdParty(['backlog.write']))
-  const noApi = await host.updateBacklogStatus('ws-1', 'backlog/a.md', 'ready')
-  assert.equal(noApi.ok ? null : noApi.code, 'backlog_unavailable')
-  withApi(async () => {
-    throw new Error('ipc gone')
-  })
-  const thrown = await host.updateBacklogStatus('ws-1', 'backlog/a.md', 'ready')
-  assert.deepEqual(thrown, { ok: false, code: 'backlog_unavailable', message: 'ipc gone' })
+  const noCaller = await host.updateBacklogStatus('ws-1', 'backlog/a.md', 'ready')
+  assert.equal(noCaller.ok ? null : noCaller.code, 'backlog_unavailable')
   const usage = await host.queryUsage({ from: 0, to: 1 })
   assert.equal(usage.ok ? null : usage.code, 'unavailable')
 })
 
-test('a disabled Backlog module refuses writes without asking main', async () => {
-  const calls = withApi(async () => ({ ok: true }))
-  const kernel = createRendererHost()
+test('a protocol refusal is the service’s own code: its params refused are invalid_input, the rest unavailable', () => {
+  assert.deepEqual(
+    moduleServiceRefusal('moduleBacklog.create', 'invalid_params', '"input.title" is the item\'s title.'),
+    {
+      ok: false,
+      code: 'invalid_input',
+      message: '"input.title" is the item\'s title.',
+    },
+  )
+  assert.equal(moduleServiceRefusal('moduleBacklog.create', 'module_unavailable', 'gone').ok, false)
+  assert.deepEqual(moduleServiceRefusal('moduleBacklog.addLink', 'module_unavailable', 'gone'), {
+    ok: false,
+    code: 'backlog_unavailable',
+    message: 'gone',
+  })
+  assert.deepEqual(moduleServiceRefusal('moduleUsage.query', 'scope_required', 'no grant'), {
+    ok: false,
+    code: 'unavailable',
+    message: 'no grant',
+  })
+})
+
+test('a disabled Backlog module refuses writes without asking the server', async () => {
+  const { kernel, calls } = hostWithServices(async () => ({ ok: true }))
   kernel.hostFor('backlog').provideBacklogReader({ list: async () => [], watch: () => () => {} })
   kernel.setModuleEnablementResolver((moduleId) => moduleId !== 'backlog')
   const result = await kernel.hostFor('task-board', thirdParty(['backlog.write'])).createBacklogItem('ws-1', {

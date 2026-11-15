@@ -1,3 +1,4 @@
+import { STUDIO_CHAT_NAME_MAX_CHARS } from '../../../packages/studio-protocol/src/public'
 import type { WorkspaceRegistryActor, WorkspaceRegistryRecord } from '../../shared/workspace-registry'
 import type { WorkspaceFieldsPatch, WorkspaceSyncCommandResult, WorkspaceSyncEvent } from '../../shared/workspace-sync'
 import {
@@ -148,8 +149,8 @@ export type ConversationRenameResult = { ok: true; workspaceId: string; name: st
 export type ConversationAutoCompactResult =
   { ok: true; workspaceId: string; autoCompact: boolean } | ConversationLifecycleFailure
 
-/** The longest name a chat takes from a paired device: the sidebar shows far less. */
-export const MAX_CHAT_NAME_LENGTH = 500
+/** The longest name a chat takes from another device: the sidebar shows far less. */
+const MAX_CHAT_NAME_LENGTH = STUDIO_CHAT_NAME_MAX_CHARS
 
 export type ConversationLifecycle = ReturnType<typeof createConversationLifecycle>
 

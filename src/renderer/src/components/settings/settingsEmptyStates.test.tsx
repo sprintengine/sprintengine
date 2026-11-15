@@ -39,8 +39,7 @@ test('Knowledge graph with no workspace open is the kit empty state', () => {
 
 test('Providers still loading is the kit loading state, announced', () => {
   const pending = new Promise(() => {})
-  const status = render(<ProviderSettingsTab />, { conversationProvidersList: () => pending }).querySelector(
-    '[role="status"]',
-  )
+  // A window with a Studio to ask, which has not answered.
+  const status = render(<ProviderSettingsTab />, { studioWindowTicket: () => pending }).querySelector('[role="status"]')
   expect(status?.textContent).toBe('Loading providers…')
 })

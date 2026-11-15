@@ -9,6 +9,7 @@ import {
   projectCommandsFingerprint,
   readProjectCommands,
   stageProjectCommands,
+  stagedPluginsDirectory,
   withoutPermissionKeys,
   writeProjectCommandsPlugin,
 } from './claude-project-commands'
@@ -163,7 +164,7 @@ test('staging writes a plugin named project outside the project, and nothing int
   const before = await readdir(workspace, { recursive: true })
   const staged = await stageProjectCommands(tempDir, workspace)
   assert.ok(staged)
-  assert.ok(staged.dir.startsWith(join(tempDir, `sprintengine-claude-skills-${process.pid}-`)))
+  assert.ok(staged.dir.startsWith(join(stagedPluginsDirectory(tempDir), `${process.pid}-`)))
   assert.deepEqual(
     JSON.parse(await readFile(join(staged.dir, '.claude-plugin', 'plugin.json'), 'utf8')).name,
     'project',

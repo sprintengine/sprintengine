@@ -1,5 +1,5 @@
 import { quotesToReadableMarkdown } from "../../shared/quotes/chat-quotes";
-import type { ConversationRow } from "./conversationLogic";
+import type { ConversationRow } from "../../../../packages/conversation-timeline/src/public";
 
 // What Copy puts on the clipboard from a chat, worked out here rather than in
 // the rows that offer it, so what is copied is decided in one place and read

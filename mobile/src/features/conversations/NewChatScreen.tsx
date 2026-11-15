@@ -7,17 +7,12 @@ import {
   threadFromLaunch,
   type LaunchedConversation,
 } from "../../api/conversationLaunch";
-import { CONVERSATION_MAX_IMAGES, type ConversationThread } from "../../api/conversationWire";
-import { createTailnetConversationsApi } from "../../api/tailnetConversations";
 import {
-  declaresCliRuntimeCatalog,
-  declaresImageDownscale,
-  declaresMessageFiles,
-  declaresNewChatEffort,
-  declaresNewChatWorktree,
-  declaresPermissionModes,
-  declaresScheduledAgents,
-} from "../../api/tailnetTransport";
+  CONVERSATION_MAX_IMAGES,
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
+import { useChatOffers } from "../../api/chatOffers";
+import { createDesktopConversationsApi } from "../../api/desktopConversations";
 import type { WorkspaceCheckout } from "../../api/tailnetWorkspaces";
 import type { MobileSession } from "../../api/types";
 import { BottomSheet } from "../../components/BottomSheet";
@@ -43,7 +38,7 @@ import { ComposerStrip, STRIP_ITEM_HEIGHT, type ComposerStripEntry } from "./Com
 import { STRIP_DROP_ORDER } from "./composerStripLogic";
 import { useChats } from "./ChatsContext";
 import {
-  chatImageMaxBytes,
+  CHAT_IMAGE_MAX_BYTES,
   composerOptions,
   PHONE_START_AS,
   type AttachSource,
@@ -68,6 +63,7 @@ import {
 } from "./modelPickerLogic";
 import { dictatedDraft, dictationPlaceholder, joinDictation, messageWithDictation } from "../dictation/dictationLogic";
 import { useDictation } from "../dictation/useDictation";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * How long the list may take to answer after a launch before the chat opens
@@ -160,10 +156,13 @@ export function NewChatScreen({
   const [target, setTarget] = useState({ deviceId, desktopName, workspaceId, projectName });
   const api = apiFor(target.deviceId);
   const session = sessions.find((candidate) => candidate.deviceId === target.deviceId) ?? null;
-  const availability = chatLaunchAvailability(session, { machineName: target.desktopName });
+  // What the desktop's Studio lets this pairing do there, from its welcome.
+  const offers = useChatOffers(session);
+  const availability = chatLaunchAvailability(offers, { machineName: target.desktopName });
   const scheduleOffered = !!onScheduled && !!session && canOperateSchedules(session);
   // A one-time run is `schedule.create`'s `once`, which an older desktop refuses.
-  const onceOffered = !!session && declaresScheduledAgents(session);
+  // Every desktop that takes a schedule from the phone takes a one-time one.
+  const onceOffered = scheduleOffered;
 
   const [prompt, setPrompt] = useState("");
   // The prompt is a draft until Start, so dictation can fill it; the words are
@@ -274,10 +273,10 @@ export function NewChatScreen({
     };
   }, [api, target.workspaceId]);
 
-  // The picker's rail, as the desktop's own: its catalog where it lists one,
-  // and effort levels only where it takes an effort.
-  const catalogListed = session ? declaresCliRuntimeCatalog(session) : false;
-  const effortTaken = session ? declaresNewChatEffort(session) : false;
+  // The picker's rail, as the desktop's own: its catalog and the CLI's effort
+  // levels, which every Studio that starts chats from here lists and takes.
+  const catalogListed = !!session;
+  const effortTaken = !!session;
   const providers = useMemo(
     () => newChatProviders(runtimes, { catalog: catalogListed, effort: effortTaken }),
     [runtimes, catalogListed, effortTaken],
@@ -286,7 +285,7 @@ export function NewChatScreen({
   // A level is the CLI's: one picked on another CLI is not sent.
   const pickedEffort = keptEffort(provider?.levels ?? [], effort);
   const worktreeOffered = newChatWorktreeOffered({
-    advertised: session ? declaresNewChatWorktree(session) : false,
+    advertised: !!session,
     folderPath: place.folderPath,
     git: place.git,
   });
@@ -294,7 +293,7 @@ export function NewChatScreen({
   // desktop gives one. With no CLI chosen the desktop's default CLI is not
   // known here, so every preset the machine runs is offered.
   const presetOptions = offeredPermissionPresets({
-    fourPresets: session ? declaresPermissionModes(session) : false,
+    fourPresets: offers.permissionModes,
     listed: selection.cli ? runtimes.find((runtime) => runtime.id === selection.cli)?.permissionPresets : undefined,
     cli: selection.cli ?? undefined,
   });
@@ -331,7 +330,7 @@ export function NewChatScreen({
       held: images.length,
       max: CONVERSATION_MAX_IMAGES,
       busy: picking,
-      files: !!session && declaresMessageFiles(session),
+      files: offers.attachFiles,
     },
     schedule: scheduleOffered ? { on: scheduled !== null, busy: picking, repeats: true } : null,
   });
@@ -361,7 +360,7 @@ export function NewChatScreen({
       setState({ status: "error", message: "That time has passed. Pick one ahead." });
       return;
     }
-    const api = createScheduledAgentsApi({ baseUrl: paired.baseUrl, deviceToken: paired.deviceToken });
+    const api = createScheduledAgentsApi(studioTargetOf(paired));
     const result = await api.create({
       workspaceId: target.workspaceId,
       prompt: draft,
@@ -386,7 +385,7 @@ export function NewChatScreen({
   const startChat = async (paired: MobileSession, draft: string, options: { worktree: boolean }) => {
     const text = draft.trim();
     const carrying = images;
-    const launchTarget = { baseUrl: paired.baseUrl, deviceToken: paired.deviceToken, machineName: target.desktopName };
+    const launchTarget = { ...studioTargetOf(paired), machineName: target.desktopName };
     const launchInput = {
       workspaceId: target.workspaceId,
       newChat: true,
@@ -409,7 +408,7 @@ export function NewChatScreen({
       // With pictures the chat starts bare, the pictures go to its session
       // from here, and the chat sends them with these words once it is live.
       // Anything that fails leaves the words and every picture in New.
-      const conversations = createTailnetConversationsApi({ baseUrl: paired.baseUrl, deviceToken: paired.deviceToken });
+      const conversations = createDesktopConversationsApi(studioTargetOf(paired));
       const launched = await launchWithPhotos(
         {
           target: { deviceId: target.deviceId, workspaceId: target.workspaceId, machineName: target.desktopName },
@@ -418,8 +417,8 @@ export function NewChatScreen({
         },
         {
           create: () => createConversation(launchTarget, launchInput),
-          upload: async (sessionId, image) => {
-            const upload = { sessionId, uri: image.uri, name: image.name, mediaType: image.mediaType };
+          upload: async (_sessionId, image) => {
+            const upload = { uri: image.uri, name: image.name, mediaType: image.mediaType };
             if (image.file) {
               const id = await conversations.uploadFile(upload);
               // The chat's first message draws it as a file by this name.
@@ -510,7 +509,7 @@ export function NewChatScreen({
           ? await pickChatFile().then((file) => (file ? { images: [{ ...file, file: true as const }], problem: null } : null))
           : await pickChatImages(
               source === "camera",
-              chatImageMaxBytes(!!session && declaresImageDownscale(session)),
+              CHAT_IMAGE_MAX_BYTES,
               CONVERSATION_MAX_IMAGES - images.length,
             );
       if (!picked) return;
@@ -956,7 +955,7 @@ async function listedThread(
   session: MobileSession,
   conversation: LaunchedConversation,
 ): Promise<ConversationThread | null> {
-  const api = createTailnetConversationsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken });
+  const api = createDesktopConversationsApi(studioTargetOf(session));
   let timer: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), LISTED_THREAD_WAIT_MS);

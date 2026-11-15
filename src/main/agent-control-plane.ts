@@ -496,8 +496,8 @@ export class AgentControlPlane {
     const session = resolution.session
     if (session.transport === 'conversation') {
       // The conversation transport streams structured events into a JSONL
-      // transcript; there is no scrollback to tail. Reading one is its own
-      // surface (`conversationTranscript`), not this API pretending to have it.
+      // transcript; there is no scrollback to tail. Reading one is the
+      // conversation's own surface, not this API pretending to have it.
       return {
         ok: false,
         sessionId: session.sessionId,

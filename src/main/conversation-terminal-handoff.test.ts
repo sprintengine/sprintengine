@@ -303,7 +303,7 @@ test('a session started for a handoff that is then refused is put back to rest; 
   assert.deepEqual(started, [], 'nothing was started for a CLI a terminal cannot resume')
 })
 
-test("a chat's start for a handoff is its record's: worktree, engine, preset and the WSL machine's CLI", () => {
+test("a chat's start for a handoff is its record's: worktree, engine, preset and the WSL machine's command", () => {
   const agent = {
     ...defaultAgent('chat-1', 'Atlas'),
     runtimeKind: 'conversation' as const,
@@ -319,7 +319,8 @@ test("a chat's start for a handoff is its record's: worktree, engine, preset and
   assert.equal(start?.modelId, 'opus')
   assert.equal(start?.permissionPreset, 'auto')
   assert.equal(start?.permissionMode, 'acceptEdits')
-  assert.equal(start?.cliRuntimes?.['claude-code']?.hostId, 'wsl:Ubuntu')
+  // The distribution's command, with no host id: its Studio runs the CLI as its own.
+  assert.deepEqual(start?.cliRuntimes?.['claude-code'], { command: '' })
   // A terminal agent, or a chat the record no longer has, is no chat to start.
   assert.equal(chatHandoffStart(workspace, 'missing', {}), null)
   assert.equal(

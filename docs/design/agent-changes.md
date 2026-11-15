@@ -339,7 +339,7 @@ Follow-ups:
    run in the server in both modes.
 2. **A pull request opened another way is not attributed** unless the agent
    links it (`pull_request.link`): `tea`, Forgejo's CLI, `az repos pr
-   create`, `curl` or `gh api`, or by hand. That is the rule, not a gap: a
+create`, `curl` or `gh api`, or by hand. That is the rule, not a gap: a
    pull request nobody's agent opened belongs to no conversation.
 3. **A row with a live terminal shows only that terminal's pull requests,** not
    the ones the rest of the conversation's agents worked on. Unchanged.
@@ -367,9 +367,10 @@ holds in a git folder, and both pass with the server in process and out of
 process (a seam test in each mode).
 
 **P2 — The shell forwards terminal edits; the Git panel reads the record.**
-The shell keeps the agent-state socket (terminals are the shell's in v1) and
-forwards each `fileChange` to the server's record. In process this is a direct
-call; out of process it is a shell-only method on the control channel. The Git
+The agent-state socket is the server's, beside the terminals
+(studio-agent-terminals.ts, since design-terminal-service), so each
+`fileChange` reaches the server's record where it is heard; until then the
+shell's changelist feed hears terminal edits in process only. The Git
 panel's per-agent lists become a view over the record, and existing
 `git-changelists/` files are read once into it. Done when there is one store,
 the Git panel lists chat agents beside terminal agents, and the person's own

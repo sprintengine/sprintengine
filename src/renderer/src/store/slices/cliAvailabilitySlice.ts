@@ -2,6 +2,7 @@ import { isDraft, original } from 'immer'
 
 import type { AgentCli, AgentCliAvailabilityMap, CliRuntimeSettings } from '../../../../shared/electron-api'
 import { reuseUnchanged } from '../../utils/reuseUnchanged'
+import { extensionsApi, type ExtensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // Whether the detected-availability map is trustworthy yet. Pickers only filter
 // out uninstalled CLIs once this is `ready` with at least one installed entry;
@@ -43,12 +44,10 @@ export type CliAvailabilitySlice = CliAvailabilitySliceState & CliAvailabilitySl
 
 type CliAvailabilitySliceSet = (mutator: (state: CliAvailabilitySliceState) => void) => void
 
-type CliAvailabilityApi = Pick<Window['api'], 'pluginsDetectAvailability'>
+type CliAvailabilityApi = Pick<ExtensionsApi, 'pluginsDetectAvailability'>
 
 function getCliAvailabilityApi(): CliAvailabilityApi | null {
-  if (typeof window === 'undefined') return null
-  const api = window.api
-  return api && typeof api.pluginsDetectAvailability === 'function' ? api : null
+  return windowHasStudio() ? extensionsApi : null
 }
 
 function formatError(error: unknown): string {

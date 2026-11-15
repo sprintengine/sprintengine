@@ -9,6 +9,7 @@ import {
 } from '../../../../shared/host-gh'
 import { ProviderRow, ProviderStateId } from '../ui'
 import { SettingCard } from './SettingsAtoms'
+import { gitApi } from '../../studio/git'
 
 // GitHub CLI on a WSL distribution or an SSH machine: listed beside that
 // machine's agent CLIs, installed or missing, and whether it is signed in.
@@ -118,13 +119,13 @@ function GhStateLine({
 export function useWslGh(hostId: string | null, recheck: number): HostGhStatus | null | 'loading' {
   const [status, setStatus] = React.useState<HostGhStatus | null | 'loading'>('loading')
   React.useEffect(() => {
-    if (!hostId || typeof window.api?.probeHostGh !== 'function') {
+    if (!hostId || typeof gitApi.probeHostGh !== 'function') {
       setStatus(null)
       return
     }
     let cancelled = false
     setStatus('loading')
-    void window.api
+    void gitApi
       .probeHostGh(hostId)
       .then((next) => {
         if (!cancelled) setStatus(next ?? null)

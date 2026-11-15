@@ -399,7 +399,6 @@ export function ConversationsScreen({
               state={chatRowState(item.thread, {
                 now,
                 openedAt: openedAt[chatOpenedKey(item.deviceId, item.thread.agentId)] ?? null,
-                lifecycle: item.lifecycle,
               })}
               time={
                 asleep && item.thread.snoozedUntil !== undefined

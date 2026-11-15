@@ -1,7 +1,7 @@
 import { connect as connectTcp, type Socket } from 'node:net'
 import { Duplex, PassThrough } from 'node:stream'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
 import { FRONT_DOOR_LOOPBACK_HOST } from './front-door-listener'
 
 // The Windows side's two ways to a WSL server's front door, each a plain byte
@@ -64,7 +64,7 @@ export async function connectLoopback(port: number, options: ConnectLoopbackOpti
  * reading, then the socket path, then the bytes of whatever runs over it.
  */
 export function openBridge(
-  spawn: () => HelperProcess,
+  spawn: () => WslStdioProcess,
   script: string,
   socketPath: string,
   options: { readyTimeoutMs?: number } = {},
@@ -119,7 +119,7 @@ export function openBridge(
 }
 
 /** The relay's stdout (after the ready line) and stdin as one duplex, which ends with the process. */
-function bridgeStream(child: HelperProcess, first: Buffer): Duplex {
+function bridgeStream(child: WslStdioProcess, first: Buffer): Duplex {
   const readable = new PassThrough()
   if (first.length > 0) readable.write(first)
   child.stdout.pipe(readable)

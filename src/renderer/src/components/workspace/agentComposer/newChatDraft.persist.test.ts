@@ -148,3 +148,11 @@ test("a draft's line is its first words, or what it carries", () => {
     }),
   ).toBe('1 image')
 })
+
+test("a scheduled agent's draft keeps its schedule across a reload; a malformed one is a chat's", () => {
+  writeNewChatDraft('window-1', { prompt: 'Sweep for dead code', schedule: { cron: '0 21 * * 0', once: null } })
+  writeNewChatDraft('window-2', { prompt: 'Broken', schedule: { cron: '', once: 5 } })
+  reload()
+  expect(readNewChatDraft('window-1')?.schedule).toEqual({ cron: '0 21 * * 0', once: null })
+  expect(readNewChatDraft('window-2')?.schedule).toBeNull()
+})

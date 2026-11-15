@@ -1,30 +1,26 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type {
-  MobileControlBacklogItemCriticality,
-  MobileControlBacklogItemDifficulty,
-  MobileControlBacklogItemType,
-} from "../../shared/mobile-control";
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+  StudioBacklogItemCriticality,
+  StudioBacklogItemDifficulty,
+  StudioBacklogItemType,
+} from "../../../../packages/studio-protocol/src/public";
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { cardSurface } from "../../components/Card";
 import { BacklogTypeGlyph, FilterIcon, iconSize, SearchIcon } from "../../components/glyphs";
 import { IconButton } from "../../components/IconButton";
-import { useReducedMotion } from "../../components/motion";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../components/Screen";
 import { SkeletonRows } from "../../components/Skeleton";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, typography, withAlpha, type Theme, fontWeight } from "../../theme/tokens";
 import { ProjectControl } from "../projects/ProjectControl";
-import { BacklogCreateForm, type BacklogCreateInput, type BacklogCreateResult } from "./BacklogCreateForm";
 import { BacklogFilterSheet, type BacklogFilterState } from "./BacklogFilterSheet";
 import { BacklogRow } from "./BacklogRow";
 import {
   epicBandHexByTheme,
   groupBacklogByEpic,
   normalizeBacklogWorkspaces,
-  selectBacklogCreateWorkspaces,
   selectBacklogEmptyState,
   selectBacklogRows,
   type BacklogEpicGroup,
@@ -38,9 +34,9 @@ export interface BacklogUpdateInput {
   // Every axis is optional: the wire treats an omitted field as "leave it alone",
   // so a triage edit sends only the axis it changed.
   status?: "idea" | "ready";
-  type?: MobileControlBacklogItemType;
-  difficulty?: MobileControlBacklogItemDifficulty;
-  criticality?: MobileControlBacklogItemCriticality;
+  type?: StudioBacklogItemType;
+  difficulty?: StudioBacklogItemDifficulty;
+  criticality?: StudioBacklogItemCriticality;
 }
 
 export interface BacklogCommandCapabilities {
@@ -60,7 +56,6 @@ interface BacklogScreenProps {
   errorMessage?: string | null;
   onRefresh?: () => void;
   onOpenItem?: (item: BacklogRowItem) => void;
-  onCreateItem?: ((input: BacklogCreateInput) => Promise<BacklogCreateResult>) | null;
 }
 
 // A row is either a real item or a group header, so one FlatList renders both.
@@ -77,7 +72,6 @@ export function BacklogScreen({
   errorMessage,
   onRefresh,
   onOpenItem,
-  onCreateItem,
 }: BacklogScreenProps) {
   const styles = useThemedStyles(createStyles);
   const contentStyle = useListContentStyle(space.md);
@@ -88,7 +82,6 @@ export function BacklogScreen({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<BacklogFilterState>(DEFAULT_FILTER);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [createPanel, setCreatePanel] = useState<CreateFormPanel>("none");
 
   // The project is the app's, not this screen's. The local `useState` that used
   // to own it — defaulted by a "first workspace with items" heuristic and thrown
@@ -151,11 +144,6 @@ export function BacklogScreen({
           {/* One signal for "filters active": the dot. */}
           {filterActive ? <View style={styles.filterDot} /> : null}
         </View>
-        <PrimaryButton
-          accessibilityLabel="New backlog item"
-          label="New"
-          onPress={() => setCreatePanel("backlog")}
-        />
       </View>
     </View>
   );
@@ -203,17 +191,6 @@ export function BacklogScreen({
       />
 
       <BacklogFilterSheet onChange={setFilter} onClose={() => setFilterOpen(false)} value={filter} visible={filterOpen} />
-
-      {/* The form opens on the project the user is already in — it used to start
-          at null and make the user pick a workspace they had just chosen. */}
-      <CreateFormSheets
-        backlog={backlog}
-        currentWorkspacePath={currentWorkspacePath}
-        isLoading={isLoading}
-        onClose={() => setCreatePanel("none")}
-        onCreateItem={onCreateItem}
-        panel={createPanel}
-      />
     </ScreenFrame>
   );
 }
@@ -291,79 +268,6 @@ function EpicGroupHeader({ group, onOpenEpic }: { group: BacklogEpicGroup; onOpe
       </Text>
       {rollup ? <Text style={styles.groupRollup}>{rollup}</Text> : null}
     </View>
-  );
-}
-
-/** Which create form is showing. */
-export type CreateFormPanel = "none" | "backlog";
-
-/**
- * The create sheet and its prefill rule, used by the Backlog and Home surfaces
- * so the app's create entry points can never drift apart. Only a workspace the
- * create picker actually offers is prefilled: the create list comes from the
- * `backlog` collection, so a project with no backlog/ directory is not in it —
- * seeding its path would leave the picker showing no selection while the form
- * quietly held one.
- */
-export function CreateFormSheets({
-  backlog,
-  currentWorkspacePath = null,
-  isLoading,
-  panel,
-  onClose,
-  onCreateItem,
-}: {
-  backlog?: unknown;
-  currentWorkspacePath?: string | null;
-  isLoading: boolean;
-  panel: CreateFormPanel;
-  onClose: () => void;
-  onCreateItem?: ((input: BacklogCreateInput) => Promise<BacklogCreateResult>) | null;
-}) {
-  const createWorkspaces = useMemo(() => selectBacklogCreateWorkspaces(backlog), [backlog]);
-  const defaultWorkspacePath = useMemo(
-    () =>
-      createWorkspaces.some((workspace) => workspace.workspacePath === currentWorkspacePath)
-        ? currentWorkspacePath
-        : null,
-    [createWorkspaces, currentWorkspacePath],
-  );
-
-  return (
-    <CreateFormModal onClose={onClose} visible={panel === "backlog"}>
-      <BacklogCreateForm
-        defaultWorkspacePath={defaultWorkspacePath}
-        isLoading={isLoading}
-        onClose={onClose}
-        onCreate={onCreateItem ?? null}
-        workspaces={createWorkspaces}
-      />
-    </CreateFormModal>
-  );
-}
-
-function CreateFormModal({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: ReactNode }) {
-  const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
-  const reducedMotion = useReducedMotion();
-
-  return (
-    <Modal
-      animationType={reducedMotion ? "none" : "slide"}
-      onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      visible={visible}
-    >
-      <SafeAreaView edges={["top", "bottom"]} style={[styles.modalRoot, { backgroundColor: colors.bgApp }]}>
-        <FlatList
-          data={[0]}
-          keyExtractor={() => "form"}
-          keyboardShouldPersistTaps="handled"
-          renderItem={() => <View style={styles.modalBody}>{children}</View>}
-          showsVerticalScrollIndicator={false}
-        />
-      </SafeAreaView>
-    </Modal>
   );
 }
 
@@ -493,13 +397,6 @@ const createStyles = ({ colors, ...theme }: Theme) =>
       fontWeight: fontWeight.regular,
       color: colors.textSubtle,
       fontVariant: ["tabular-nums"],
-    },
-    modalRoot: {
-      flex: 1,
-    },
-    modalBody: {
-      padding: space["2xl"],
-      gap: space.lg,
     },
     // Empty states are text-first: state, then next action — no box fence.
     emptyPanel: {

@@ -1,18 +1,17 @@
-import { unauthorizedResult } from "./tailnetControlClient";
 import type { ApiResult } from "./types";
+import { desktopStudio, studioFailure, type DesktopStudioOptions } from "./desktopStudio";
+import type { StudioClient } from "../../../packages/client-runtime/src/public";
 import { readCliRuntimes, type CliRuntime } from "../features/conversations/launchLogic";
 import { isProjectHue } from "../theme/projectHue";
 import { comparablePath, lastPathSegment, workspaceProject } from "../features/projects/worktreeProjectLogic";
 
-// The phone's client for the desktop gateway's two reads a chat needs beside
-// the conversation lane itself: `workspace.list`, which names the projects a
-// desktop has open (the chat's project pill, and step one of New), and
-// `cli.runtime.list`, which names the CLIs and models New may offer. JSON-RPC
-// tools over the same stateless POST the snapshot uses. Never sends an Origin
-// header: React Native's fetch is a native stack, which is the whole reason
-// this can talk to the gateway at all.
+// The phone's reads of what a desktop holds, before and beside a chat: the
+// projects it has open (`workspaces.list`: the chat's project pill, and step
+// one of New), the CLIs and models New may offer (`cliRuntimes.list`), and a
+// project's checkout (`workspaces.checkout`). Asked over the desktop's Studio
+// protocol (desktopStudio.ts), which answers them from the same services its
+// gateway tools do.
 
-const TAILNET_MCP_PATH = "/tailnet/v1/mcp";
 const READ_TIMEOUT_MS = 10_000;
 
 /** One project the desktop has open, as `workspace.list` reports it. */
@@ -126,154 +125,103 @@ export function readWorkspaceCheckout(data: unknown, folderPath: string | null):
 }
 
 /**
- * One gateway tool's whole answer: its structured content, and the content
- * blocks beside it, which is where a picture rides (`canvas.screenshot`). A
- * refusal keeps the tool's own `code` where it gave one, and `unknown_tool`
- * for a desktop that has no such tool (an older Studio, or a server with no
- * desktop open), so a caller can say what to do rather than pass on the
- * gateway's sentence.
+ * One read over the desktop's Studio, answered or failed in the phone's words.
+ * A read that has not answered in `READ_TIMEOUT_MS` fails as unavailable; the
+ * connection itself stays, to answer the next.
  */
-export type GatewayToolAnswer =
-  | { ok: true; structured: Record<string, unknown>; content: Record<string, unknown>[] }
-  | { ok: false; errorCode: NonNullable<ApiResult<never>["errorCode"]>; message: string; code: string | null };
-
-export function createGatewayToolResultCaller(options: { baseUrl: string; deviceToken: string }) {
-  let requestCounter = 0;
-  return async function callToolResult(
-    name: string,
-    args: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<GatewayToolAnswer> {
-    let response: Response;
-    try {
-      response = await fetchWithTimeout(
-        `${options.baseUrl}${TAILNET_MCP_PATH}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${options.deviceToken}` },
-          body: JSON.stringify({ jsonrpc: "2.0", id: `ws-${++requestCounter}`, method: "tools/call", params: { name, arguments: args } }),
-        },
-        timeoutMs,
-      );
-    } catch {
-      return { ok: false, errorCode: "desktop_unavailable", message: "The desktop did not answer. Is Tailscale up on both devices?", code: null };
-    }
-    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (response.status === 401) {
-      const refused = unauthorizedResult(body);
-      return { ok: false, errorCode: refused.errorCode ?? "unauthenticated", message: refused.message ?? "", code: null };
-    }
-    if (!response.ok || !body) {
-      return { ok: false, errorCode: "desktop_unavailable", message: `The desktop answered ${response.status}.`, code: null };
-    }
-    if (isRecord(body.error)) {
-      const message = typeof body.error.message === "string" ? body.error.message : "The desktop refused the call.";
-      return { ok: false, errorCode: "invalid_payload", message, code: /Unknown tool/u.test(message) ? "unknown_tool" : null };
-    }
-    const result = isRecord(body.result) ? body.result : null;
-    const structured = result && isRecord(result.structuredContent) ? result.structuredContent : null;
-    if (result?.isError === true || structured?.ok === false) {
-      const error = structured && isRecord(structured.error) ? structured.error : null;
-      const code = typeof error?.code === "string" ? error.code : "tool_error";
-      const message = typeof error?.message === "string" ? error.message : "The desktop refused the call.";
-      return { ok: false, errorCode: code === "tailnet_scope_required" ? "unauthorized" : "invalid_payload", message, code };
-    }
-    if (!structured) {
-      return { ok: false, errorCode: "invalid_payload", message: "The desktop returned no structured result.", code: null };
-    }
-    const content = Array.isArray(result?.content) ? result.content.filter(isRecord) : [];
-    return { ok: true, structured, content };
-  };
+async function ask<T>(
+  options: { baseUrl: string; deviceToken: string },
+  read: (client: StudioClient) => Promise<T>,
+  studio: DesktopStudioOptions,
+): Promise<ApiResult<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answer = await Promise.race([
+      desktopStudio(options, studio).then(read),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("The desktop did not answer in time.")), READ_TIMEOUT_MS);
+      }),
+    ]);
+    return { ok: true, data: answer };
+  } catch (error) {
+    const failed = studioFailure(error);
+    return { ok: false, errorCode: failed.errorCode, message: failed.message };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-/**
- * Calls one gateway tool and answers its structured content, or the failure in
- * the app's words. Both reads need `workspace:read`; a pairing without it is
- * refused as `unauthorized`.
- */
-export function createGatewayToolCaller(options: { baseUrl: string; deviceToken: string }) {
-  const callToolResult = createGatewayToolResultCaller(options);
-  return async function callTool(
-    name: string,
-    args: Record<string, unknown>,
-    timeoutMs: number,
-  ): Promise<ApiResult<Record<string, unknown>>> {
-    const answer = await callToolResult(name, args, timeoutMs);
-    return answer.ok
-      ? { ok: true, data: answer.structured }
-      : { ok: false, errorCode: answer.errorCode, message: answer.message };
-  };
+/** The desktop's projects, from `workspaces.list`'s rows: what the picker and the chat's pill show. */
+export function readDesktopWorkspaces(rows: readonly unknown[]): DesktopWorkspace[] {
+  const workspaces: DesktopWorkspace[] = [];
+  for (const entry of rows) {
+    if (!isRecord(entry)) continue;
+    const workspaceId = typeof entry.id === "string" ? entry.id : null;
+    if (!workspaceId) continue;
+    const folderPath = typeof entry.folderPath === "string" && entry.folderPath ? entry.folderPath : null;
+    const name = typeof entry.name === "string" && entry.name ? entry.name : workspaceId;
+    // The picker lists the PROJECT, not the desktop's window name: those are
+    // two vocabularies ("Chat" vs "mobile") and the person picking
+    // a project is thinking of the folder. The window name is the fallback
+    // when a workspace has no folder at all.
+    const repository = isRecord(entry.repository) ? entry.repository : null;
+    const canonicalKey =
+      typeof repository?.canonicalKey === "string" && repository.canonicalKey.trim()
+        ? repository.canonicalKey.trim().toLowerCase()
+        : null;
+    // A worktree's folder files under the project it was cut from. The
+    // desktop's own record wins where it sends one.
+    const recorded = isRecord(entry.worktree) && typeof entry.worktree.repoRoot === "string" ? entry.worktree.repoRoot : null;
+    const project = workspaceProject({ folderPath, recordedRoot: recorded });
+    // "No project" is one group per desktop, and not a project: no hue.
+    const projectKey = project.projectless
+      ? PROJECTLESS_PROJECT_KEY
+      : canonicalKey
+        ? `repo:${canonicalKey}`
+        : project.projectFolder
+          ? `folder:${comparablePath(project.projectFolder)}`
+          : null;
+    const projectHue = !project.projectless && isProjectHue(entry.projectHue) ? entry.projectHue : null;
+    const lastUsedAt = typeof entry.projectLastUsedAt === "string" ? Date.parse(entry.projectLastUsedAt) : NaN;
+    const settledAt = readSettledAt(entry.settledAt);
+    workspaces.push({
+      workspaceId,
+      name,
+      projectName: project.projectName ?? name,
+      folderPath,
+      projectFolder: project.projectFolder,
+      worktree: project.worktree,
+      ...(project.projectless ? { projectless: true } : {}),
+      projectKey,
+      projectHue,
+      ...(typeof entry.projectFrecency === "number" && Number.isFinite(entry.projectFrecency) && entry.projectFrecency >= 0
+        ? { projectFrecency: entry.projectFrecency, projectLastUsedAt: Number.isFinite(lastUsedAt) ? lastUsedAt : null }
+        : {}),
+      ...(settledAt !== null ? { settledAt } : {}),
+    });
+  }
+  return oneHuePerProject(workspaces);
 }
 
-export function createTailnetWorkspacesApi(options: { baseUrl: string; deviceToken: string }): WorkspacesApi {
-  const callTool = createGatewayToolCaller(options);
-
+export function createTailnetWorkspacesApi(
+  options: { baseUrl: string; deviceToken: string },
+  studio: DesktopStudioOptions = {},
+): WorkspacesApi {
   return {
-    async listCliRuntimes() {
-      const result = await callTool("cli.runtime.list", {}, READ_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      return { ok: true as const, data: readCliRuntimes(result.data) };
-    },
-
-    async listWorkspaces() {
-      const result = await callTool("workspace.list", {}, READ_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      const rows = Array.isArray(result.data?.workspaces) ? result.data.workspaces : [];
-      const workspaces: DesktopWorkspace[] = [];
-      for (const entry of rows) {
-        if (!isRecord(entry)) continue;
-        const workspaceId = typeof entry.id === "string" ? entry.id : null;
-        if (!workspaceId) continue;
-        const folderPath = typeof entry.folderPath === "string" && entry.folderPath ? entry.folderPath : null;
-        const name = typeof entry.name === "string" && entry.name ? entry.name : workspaceId;
-        // The picker lists the PROJECT, not the desktop's window name: those are
-        // two vocabularies ("Chat" vs "mobile") and the person picking
-        // a project is thinking of the folder. The window name is the fallback
-        // when a workspace has no folder at all.
-        const repository = isRecord(entry.repository) ? entry.repository : null;
-        const canonicalKey =
-          typeof repository?.canonicalKey === "string" && repository.canonicalKey.trim()
-            ? repository.canonicalKey.trim().toLowerCase()
-            : null;
-        // A worktree's folder files under the project it was cut from. The
-        // desktop's own record wins where it sends one.
-        const recorded = isRecord(entry.worktree) && typeof entry.worktree.repoRoot === "string" ? entry.worktree.repoRoot : null;
-        const project = workspaceProject({ folderPath, recordedRoot: recorded });
-        // "No project" is one group per desktop, and not a project: no hue.
-        const projectKey = project.projectless
-          ? PROJECTLESS_PROJECT_KEY
-          : canonicalKey
-            ? `repo:${canonicalKey}`
-            : project.projectFolder
-              ? `folder:${comparablePath(project.projectFolder)}`
-              : null;
-        const projectHue = !project.projectless && isProjectHue(entry.projectHue) ? entry.projectHue : null;
-        const lastUsedAt = typeof entry.projectLastUsedAt === "string" ? Date.parse(entry.projectLastUsedAt) : NaN;
-        const settledAt = readSettledAt(entry.settledAt);
-        workspaces.push({
-          workspaceId,
-          name,
-          projectName: project.projectName ?? name,
-          folderPath,
-          projectFolder: project.projectFolder,
-          worktree: project.worktree,
-          ...(project.projectless ? { projectless: true } : {}),
-          projectKey,
-          projectHue,
-          ...(typeof entry.projectFrecency === "number" && Number.isFinite(entry.projectFrecency) && entry.projectFrecency >= 0
-            ? { projectFrecency: entry.projectFrecency, projectLastUsedAt: Number.isFinite(lastUsedAt) ? lastUsedAt : null }
-            : {}),
-          ...(settledAt !== null ? { settledAt } : {}),
-        });
-      }
-      return { ok: true as const, data: oneHuePerProject(workspaces) };
-    },
-
-    async readCheckout(workspace) {
-      const result = await callTool("workspace.checkout", { workspaceId: workspace.workspaceId }, READ_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      return { ok: true as const, data: readWorkspaceCheckout(result.data, workspace.folderPath) };
-    },
+    listCliRuntimes: () =>
+      ask(options, async (client) => readCliRuntimes(await client.rpc["cliRuntimes.list"]({})), studio),
+    listWorkspaces: () =>
+      ask(options, async (client) => readDesktopWorkspaces((await client.rpc["workspaces.list"]({})).workspaces), studio),
+    readCheckout: (workspace) =>
+      ask(
+        options,
+        async (client) =>
+          readWorkspaceCheckout(
+            await client.rpc["workspaces.checkout"]({ workspaceId: workspace.workspaceId }),
+            workspace.folderPath,
+          ),
+        studio,
+      ),
   };
 }
 
@@ -316,12 +264,6 @@ export function oneHuePerProject<W extends Pick<DesktopWorkspace, "projectKey" |
  */
 export function readSettledAt(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

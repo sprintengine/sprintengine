@@ -228,9 +228,13 @@ function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.trim() !== '')
 }
 
-// A module's own id for a mutating call: what the wire takes for a commandId.
+// A module's own id for a mutating call. Room for what a declared method's
+// handler is handed and passes on: the client's id of up to 200 characters,
+// namespaced by the client (`owner:<id>`, `client:<clientId>:<id>`).
+const MAX_COMMAND_ID_CHARS = 1000
+
 function isCommandId(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 200
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_COMMAND_ID_CHARS
 }
 
 // A question's answers, bounded as the wire bounds them.
@@ -265,7 +269,7 @@ function isAttachmentList(value: unknown): value is ModuleConversationImageAttac
 }
 
 function badCommandId(): Failure {
-  return failure('invalid_input', '"commandId" must be a string of 1 to 200 characters.')
+  return failure('invalid_input', `"commandId" must be a string of 1 to ${MAX_COMMAND_ID_CHARS} characters.`)
 }
 
 /** A follow's cursor as the session API takes it, or why it is not one. */

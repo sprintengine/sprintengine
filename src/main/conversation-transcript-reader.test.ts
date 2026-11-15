@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ConversationTranscriptReader } from './conversation-transcript-reader'
-import type { ConversationEvent } from '../shared/conversation-runtime'
+import type { ConversationEvent, ConversationPage } from '../shared/conversation-runtime'
+import { boundConversationPage } from '../server/conversation-stream-shaping'
 
 let root: string
 let path: string
@@ -141,4 +142,83 @@ test('the parsed tails stay within their budget', async () => {
   const read = parses()
   expect(await reader.sync(root, path, { turnLimit: 100 })).toEqual(snapshot)
   expect(parses() - read, 'only the record past the budget, which says there is more').toBeLessThanOrEqual(1)
+})
+
+test('paging back from where a wire cut each page seeks near the cursor, so every page costs about the same', async () => {
+  // About 2.4 MB, thirty times the parsed tail of a reader with 64 KiB pages,
+  // as a long chat is to the default's: past the tail, a cursor this reader
+  // never gave out used to mean parsing down to it from the tail's edge.
+  const lines: string[] = []
+  let seq = 0
+  for (let turn = 0; turn < 150; turn++) {
+    lines.push(record(++seq, 'user_message', { turnId: `t${turn}`, text: 'go' }))
+    for (let step = 0; step < 20; step++)
+      lines.push(record(++seq, 'tool_output', { turnId: `t${turn}`, toolUseId: `u${seq}`, preview: 'o'.repeat(700) }))
+  }
+  await writeFile(path, lines.join(''))
+  const reader = new ConversationTranscriptReader({ pageBytes: 64 * 1024 })
+  // As the wire sends each page: the newest 16 KiB of it, from a turn's start.
+  const cut = (page: ConversationPage) => boundConversationPage(page, 16 * 1024).page
+  const synced = await reader.sync(root, path, { turnLimit: 10 })
+  if (synced.kind !== 'snapshot') throw new Error('expected a snapshot')
+  let page = cut(synced.page)
+  const parses: number[] = []
+  while (page.hasMore && page.beforeCursor !== null && parses.length < 120) {
+    const parsed = countParses()
+    const read = await reader.before(root, path, page.beforeCursor, 10)
+    parses.push(parsed())
+    vi.restoreAllMocks()
+    expect(read.events.at(-1)!.seq).toBe(page.beforeCursor - 1)
+    page = cut(read)
+  }
+  expect(parses.length).toBeGreaterThan(60)
+  const early = Math.max(...parses.slice(0, 5))
+  expect(Math.max(...parses.slice(-20))).toBeLessThan(early * 2)
+})
+
+test('an event is read back whole by the sequence and id it was sent under, a merged run as the span given out', async () => {
+  const run =
+    JSON.stringify({
+      id: 'delta-2',
+      seq: 2,
+      sessionId: 'session',
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      providerId: 'mock',
+      modelId: 'mock',
+      createdAt: 2,
+      type: 'content_delta',
+      payload: { turnId: 't', text: 'onetwothree' },
+      parts: [
+        ['delta-2', 2, 3, 2],
+        ['delta-3', 3, 3, 3],
+        ['delta-4', 4, 5, 4],
+      ],
+    }) + '\n'
+  await writeFile(path, record(1, 'user_message', { turnId: 't', text: 'go' }) + run + record(5, 'turn_completed'))
+  const reader = new ConversationTranscriptReader()
+  const read = (seq: number, id: string) => reader.eventAt(root, path, seq, id)
+  // As a snapshot gave it out: the whole run, numbered with its last delta.
+  expect(await read(4, 'delta-2')).toMatchObject({ id: 'delta-2', seq: 4, payload: { text: 'onetwothree' } })
+  // As a catch-up whose cursor fell inside the run gave it out: from that delta on.
+  expect(await read(4, 'delta-3')).toMatchObject({ id: 'delta-3', seq: 4, createdAt: 3, payload: { text: 'twothree' } })
+  // As the live stream gave out one of its deltas.
+  expect(await read(3, 'delta-3')).toMatchObject({ id: 'delta-3', seq: 3, payload: { text: 'two' } })
+  expect(await read(5, 'event-5')).toMatchObject({ type: 'turn_completed', seq: 5 })
+  expect((await read(4, 'delta-2'))?.payload).not.toHaveProperty('parts')
+  expect(await read(5, 'another')).toBeUndefined()
+  expect(await read(9, 'event-9')).toBeUndefined()
+  expect(await read(2, 'delta-4')).toBeUndefined()
+})
+
+test('the offsets kept for paging are the most recently paged chats’, within a bound', async () => {
+  const reader = new ConversationTranscriptReader({ pageBytes: 4 * 1024 })
+  for (let chat = 0; chat < 40; chat++) {
+    const other = join(root, 'conversations', `chat-${chat}.jsonl`)
+    await writeFile(other, turns(1, 30))
+    await reader.sync(root, other, {})
+  }
+  const offsets = (reader as unknown as { offsets: Map<string, unknown> }).offsets
+  expect(offsets.size).toBe(32)
+  expect([...offsets.keys()].at(-1)).toBe(join(root, 'conversations', 'chat-39.jsonl'))
 })

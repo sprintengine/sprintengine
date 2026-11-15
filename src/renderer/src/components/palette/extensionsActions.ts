@@ -27,7 +27,7 @@
 // (skills-everywhere review, 2026-09-10).
 //
 // Store-free and DOM-free: the deep link arrives as a callback, so the whole
-// decision is testable against a fake `window.api`.
+// decision is testable against a fake api.
 
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
 import type { ShowToastInput } from '../../store/toastStore'
@@ -42,6 +42,7 @@ import {
   type SkillCliEntry,
 } from '../../utils/useSkillInAgent'
 import type { ExtensionPluginRow, ExtensionSkillRow } from './extensionsProvider'
+import { agentSkillsApi, type AgentSkillsApi } from '../../studio/agentSkills'
 
 /** The plugin installed, but nothing it shipped is a skill an agent can run. */
 export const PLUGIN_HAS_NO_SKILL_MESSAGE = 'That plugin ships no skill an agent can run.'
@@ -52,7 +53,7 @@ export type ExtensionActionOutcome = { ok: true; toast: ShowToastInput | null } 
 export type ResolvedSkillOutcome = { ok: true; skill: WorkspaceSkill } | { ok: false; message: string }
 
 /** Only the calls these actions make, so a test hands over two functions. */
-export type ExtensionsActionApi = Pick<typeof window.api, 'skillsInstall' | 'skillsInstallPlugin'>
+export type ExtensionsActionApi = Pick<AgentSkillsApi, 'skillsInstall' | 'skillsInstallPlugin'>
 
 export type SkillRowInput = {
   row: ExtensionSkillRow
@@ -71,7 +72,7 @@ export type SkillRowInput = {
 export async function installSkillRow(input: SkillRowInput): Promise<ResolvedSkillOutcome> {
   const { row, workspaceRoot } = input
   if (!workspaceRoot) return { ok: false, message: NO_WORKSPACE_FOLDER_MESSAGE }
-  const api = input.api ?? window.api
+  const api = input.api ?? agentSkillsApi
 
   let dirName = row.dirName
   if (!row.installed) {
@@ -221,7 +222,7 @@ export type PluginRowInput = {
 export async function installPluginRow(input: PluginRowInput): Promise<ResolvedSkillOutcome> {
   const { row, workspaceRoot } = input
   if (!workspaceRoot) return { ok: false, message: NO_WORKSPACE_FOLDER_MESSAGE }
-  const api = input.api ?? window.api
+  const api = input.api ?? agentSkillsApi
   const installed = await api.skillsInstallPlugin({
     sourceId: row.sourceId,
     pluginId: row.pluginId,

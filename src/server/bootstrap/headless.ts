@@ -1,18 +1,25 @@
-import { readFileSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
-import { readStudioEnvironmentId } from '../../main/studio-rpc/studio-rpc-service'
-import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
+import { captureLoginEnv } from '../wsl/distribution/login-env.mjs'
+import { readStudioEnvironmentId } from '../environment/environment-id'
+import { readDriveMountRoot } from '../wsl/drive-mount-root'
 import { chatsAreWorking } from '../core/chats-working'
+import { backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
+import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
-import { BACKEND_WIRE_VERSION, serveConversationBackend } from '../wsl/backend-wire'
 import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
+import { createAgentStateRelay, type AgentStateRelay } from '../wsl/agent-state-relay'
+import { createDistributionTerminalHost, type DistributionTerminalHost } from '../wsl/distribution-terminal-host'
+import { createDistributionMachine } from '../wsl/distribution-machine'
+import { createAgentStateListener, type AgentStateListener } from '../terminals/agent-state-listener'
+import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
 import { SERVER_EXIT, type FrontDoorReady, type ServerBootstrapEnvelope } from './envelope'
 import { runShutdownLegs, type ServerStart } from './serve'
 import { readHostId, writeServerRecord } from './server-record'
+import { STUDIO_PROTOCOL_MIN_SUPPORTED, STUDIO_PROTOCOL_VERSION } from '../../../packages/studio-protocol/src/public'
 import type { Duplex } from 'node:stream'
 
 // A headless server's start from its envelope: the same core, gateway and
@@ -25,7 +32,8 @@ import type { Duplex } from 'node:stream'
 // the mutual proof. An admitted connection asks for the conversation backend
 // the Windows side routes this distribution's chats to, or for a Studio
 // protocol connection with the shell role, over which the Windows side offers
-// the toolsets its own shell offers it.
+// the toolsets its own shell offers it. It also relays what the desktop's WSL
+// terminal agents report from inside the distribution (`agent-state`).
 
 export function headlessServerOptions(
   envelope: ServerBootstrapEnvelope,
@@ -41,23 +49,62 @@ export function headlessServerOptions(
     listen: envelope.listeners.gateway,
     // A detached server is an SSH machine's: one the desktop reaches over SSH.
     hostKind: envelope.wsl ? 'wsl' : envelope.detached ? 'ssh' : 'local',
+    updates: headlessUpdates(envelope),
+    // Where the desktop holds this server, its people have no terminal here.
+    ...(envelope.wsl || envelope.detached ? { signIns: signInsLoaded } : {}),
     log,
   }
 }
 
-/** Where this distribution mounts the Windows drives: what is mounted, else what wsl.conf asks for. */
-export function readDriveMountRoot(read: (path: string) => string | null = readText): string | null {
-  const mounts = read('/proc/mounts')
-  const mounted = mounts ? driveMountRootFromMounts(mounts) : null
-  return mounted ?? driveMountRootFromWslConf(read('/etc/wsl.conf'))
+/**
+ * Inside WSL: what this Studio does for the desktop's WSL terminals (their
+ * launch files and the processes they leave). Its directories must be this
+ * user's alone; where they cannot be, there is none, and a WSL terminal's
+ * launch says so.
+ */
+function distributionTerminals(
+  envelope: ServerBootstrapEnvelope & { wsl: NonNullable<ServerBootstrapEnvelope['wsl']> },
+  log: (message: string) => void,
+): { terminalHost?: DistributionTerminalHost } {
+  try {
+    return {
+      terminalHost: createDistributionTerminalHost({
+        profile: envelope.wsl.profile,
+        plugin: {
+          resourcesDir: envelope.paths.resourcesDir,
+          dataDir: envelope.dataDir,
+          agentStateSocketPath: resolveAgentStateSocketPath(envelope.dataDir),
+        },
+      }),
+    }
+  } catch (error) {
+    log(`WSL terminals cannot start here: ${error instanceof Error ? error.message : String(error)}`)
+    return {}
+  }
 }
 
-function readText(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
+/**
+ * How a headless server is updated. One a desktop installed (inside WSL, or
+ * started over SSH) is replaced by that desktop's bootstrap when it next
+ * connects, from the server the desktop carries; one started by hand is
+ * updated by hand.
+ */
+export function headlessUpdates(envelope: Pick<ServerBootstrapEnvelope, 'wsl' | 'detached'>): StudioUpdates {
+  if (envelope.wsl)
+    return externalStudioUpdates(
+      'bootstrap',
+      'This Studio server runs inside WSL, and SprintEngine Studio on the Windows PC that started it updates it. Update the app on that PC, and it starts the new server.',
+    )
+  if (!envelope.detached) return externalStudioUpdates('manual', MANUAL_UPDATE_WORDS)
+  if (envelope.detached.origin !== 'bootstrap')
+    return externalStudioUpdates(
+      'manual',
+      `This Studio server was started by ${envelope.detached.origin}. Update SprintEngine Studio on its machine and restart that service, or stop it and let a desktop start its own.`,
+    )
+  return externalStudioUpdates(
+    'bootstrap',
+    'This Studio server was installed over SSH by SprintEngine Studio on a desktop. Update the app on that desktop, and it updates this server when it next connects.',
+  )
 }
 
 // Loaded on first use, not at start: the desktop's bundle loads its
@@ -69,26 +116,27 @@ const signInsLoaded = (): Promise<SignIns> =>
     ({ createSignIns, resolveOnPath }) => (signInTable ??= createSignIns({ resolve: resolveOnPath })),
   )
 
-// Made once, on first use: a server whose clients never ask reads nothing.
-let machineTable: Promise<(channel: string, args: unknown[]) => Promise<unknown>> | null = null
-const machineChannels = (channel: string, args: unknown[]): Promise<unknown> =>
-  (machineTable ??= import('../machine/machine-channels').then(({ createMachineChannels }) =>
-    createMachineChannels(),
-  )).then((answer) => answer(channel, args))
+/** What a WSL distribution's Studio relays to the desktop that holds it, beside its Studio. */
+export type DistributionRelays = { agentState: AgentStateRelay }
 
 /** Hand an admitted front-door connection to what it asked for. */
 export function serveFrontDoorPurpose(
   server: Pick<StudioServer, 'core' | 'rpc'>,
   purpose: FrontDoorPurpose,
   stream: Duplex,
-  log: (message: string) => void,
+  relays: DistributionRelays | null = null,
 ): void {
-  if (purpose === 'backend') {
-    serveConversationBackend(server.core.conversations, stream, {
-      log,
-      machine: machineChannels,
-      signIns: signInsLoaded,
-    })
+  // A window's socket: the window listener admits it, or not, by the ticket
+  // it minted for it.
+  if (purpose === 'ws') {
+    server.rpc.acceptWindowStream(stream)
+    return
+  }
+  // The desktop's WSL terminal agents' reports. Only a distribution's Studio
+  // relays them; anywhere else the stream is ended at once.
+  if (purpose === 'agent-state') {
+    if (relays) relays.agentState.attach(stream)
+    else stream.destroy()
     return
   }
   // The ticket goes first, on its own line, before the Studio protocol starts:
@@ -100,7 +148,7 @@ export function serveFrontDoorPurpose(
 /**
  * Inside WSL the server was started by `wsl.exe --exec` with almost no
  * environment: no profile has run, so PATH lacks where the person's CLIs live.
- * The helper's capture is read once here, the same fixed list of variables,
+ * The login shell's capture (`wsl/distribution/login-env.mjs`) is read once here, a fixed list of variables,
  * and laid over this process's environment before any chat can spawn.
  */
 async function adoptLoginEnvironment(log: (message: string) => void): Promise<void> {
@@ -114,7 +162,10 @@ async function adoptLoginEnvironment(log: (message: string) => void): Promise<vo
 
 /**
  * A detached server's idle rule (decision R32): it stops once no client has
- * been connected for `idleMs` and no chat is working, and never while one is.
+ * been connected for `idleMs` and it has no work, and never while it has.
+ * Work is a chat working, and the work it does on its own (background-work.ts):
+ * a schedule with a run to come, a pull request watch, a message kept to send
+ * later, a resume after a usage limit. Stopping would end those unseen.
  */
 export function createIdleRule(input: { idleMs: number; working: () => boolean; stop: (reason: string) => void }): {
   connections(count: number): void
@@ -129,7 +180,7 @@ export function createIdleRule(input: { idleMs: number; working: () => boolean; 
         arm()
         return
       }
-      input.stop(`No client for ${Math.round(input.idleMs / 60_000)} minutes and no chat working; stopping.`)
+      input.stop(`No client for ${Math.round(input.idleMs / 60_000)} minutes and no work to do; stopping.`)
     }, input.idleMs)
     timer.unref?.()
   }
@@ -154,8 +205,15 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
   // PATH lacks where the person's CLIs live.
   const loginEnvironment =
     envelope.wsl || envelope.detached ? adoptLoginEnvironment(log).catch(() => undefined) : Promise.resolve()
-  const server = await startStudioServer({
+  // Made here, not with the options: it makes its private directories.
+  const serverOptions = {
     ...headlessServerOptions(envelope, log),
+    ...(envelope.wsl ? distributionTerminals({ ...envelope, wsl: envelope.wsl }, log) : {}),
+    // Inside WSL: git and the home for the desktop that holds this Studio.
+    ...(envelope.wsl ? { machine: createDistributionMachine() } : {}),
+  }
+  const server = await startStudioServer({
+    ...serverOptions,
     // The desktop opened this directory and took its lock: it is the one
     // writer now, and this server leaves saying so.
     onDataDirLost: () =>
@@ -164,12 +222,27 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
 
   let doors: FrontDoorListeners | null = null
   let frontDoor: FrontDoorReady | undefined
+  // Inside WSL: the socket the desktop's WSL terminal agents report to, each
+  // valid line relayed to the desktop. This Studio runs no terminals of its
+  // own (its tree carries no pty), so the socket is free for them.
+  const agentStateRelay = envelope.wsl ? createAgentStateRelay() : null
+  let agentStateListener: AgentStateListener | null = null
+  if (agentStateRelay && !server.core.agentTerminals) {
+    const listener = createAgentStateListener({
+      socketPath: resolveAgentStateSocketPath(envelope.dataDir),
+      onFrame: (_frame, line) => agentStateRelay.send(line),
+      logDiagnostic: (diagnostic) => log(`${diagnostic.title}: ${diagnostic.details ?? diagnostic.message}`),
+    })
+    await listener.start()
+    if (listener.isRunning()) agentStateListener = listener
+  }
+  const relays: DistributionRelays | null = agentStateRelay ? { agentState: agentStateRelay } : null
   const detached = envelope.detached
   const idle =
     detached && detached.idleMs !== null
       ? createIdleRule({
           idleMs: detached.idleMs,
-          working: () => chatsAreWorking(server.core.conversations),
+          working: () => chatsAreWorking(server.core.conversations) || hasBackgroundWork(backgroundWorkOf(server.core)),
           stop: (reason) => requestExit(SERVER_EXIT.ok, reason),
         })
       : null
@@ -180,12 +253,14 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
         tokenHash: envelope.owner.tokenHash,
         runDir: envelope.runDir,
         loopback: door.loopback,
-        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream, log),
+        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream, relays),
         ...(idle ? { onOpenCount: (count: number) => idle.connections(count) } : {}),
         log,
       })
     } catch (error) {
       idle?.dispose()
+      agentStateRelay?.close()
+      await agentStateListener?.stop()
       await server.stop()
       throw error
     }
@@ -193,9 +268,14 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       port: doors.port,
       socketPath: doors.socketPath,
       driveMountRoot: envelope.wsl ? readDriveMountRoot() : null,
+      agentStateSocket: agentStateListener?.socketPath ?? null,
+      sessionDir: serverOptions.terminalHost?.sessionDir ?? null,
+      pidDir: serverOptions.terminalHost?.pidDir ?? null,
     }
     if (doors.port === null && doors.socketPath === null) {
       await doors.close()
+      agentStateRelay?.close()
+      await agentStateListener?.stop()
       await server.stop()
       throw Object.assign(
         new Error('Neither of the front door’s ways in could open, so Windows cannot reach this server.'),
@@ -223,7 +303,8 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       hostId: readHostId(),
       environmentId,
       socketPath: frontDoor.socketPath,
-      backendWire: BACKEND_WIRE_VERSION,
+      protocolVersion: STUDIO_PROTOCOL_VERSION,
+      minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED,
       dataDir: envelope.dataDir,
     })
   }
@@ -239,6 +320,9 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       if (detached) rmSync(join(envelope.runDir, 'server.json'), { force: true })
       // The front door first, so nothing new arrives while the core closes.
       if (doors) await runShutdownLegs([['front door', () => doors?.close()]], onLeg)
+      agentStateRelay?.close()
+      await agentStateListener?.stop()
+      serverOptions.machine?.close()
       await server.stop(onLeg)
     },
   }

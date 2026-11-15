@@ -108,19 +108,14 @@ function askingProvider() {
   return { adapter, answers, presets, started, ask, finish }
 }
 
-async function setup(
-  permissionPreset: ConversationPermissionPreset,
-  options: { platform?: NodeJS.Platform; hostId?: 'wsl:Ubuntu' } = {},
-) {
+async function setup(permissionPreset: ConversationPermissionPreset, options: { hostId?: 'wsl:Ubuntu' } = {}) {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-modes-'))
   roots.add(workspaceRoot)
   const provider = askingProvider()
-  if (options.hostId) provider.adapter.executionHostCli = 'asking'
   const runtime = new ConversationRuntime({
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     secretStore: { getStatus: async () => ({ ok: false, message: 'unused' }) },
-    ...(options.platform ? { platform: options.platform } : {}),
   })
   runtimes.add(runtime)
   const started = await runtime.startSession({
@@ -324,27 +319,14 @@ test('an answer that names the kind it answers is refused for a request of anoth
   await chat.done()
 })
 
-test('on a Linux server a stray WSL host id means nothing: the CLI runs here, and Auto still places the edit', async () => {
-  // A WSL server is handed the runtimes a Windows front door built. Had the id
-  // survived, the provider would look for wsl.exe, and the approval check
-  // would respell /home/… into //wsl.localhost/…, outside the workspace.
-  const chat = await setup('auto', { platform: 'linux', hostId: 'wsl:Ubuntu' })
+test('a WSL host id means nothing to a chat: the CLI runs here, and Auto still places the edit', async () => {
+  // A chat's CLI runs where its Studio runs; a WSL chat is the distribution's
+  // Studio's. Had the id survived, the provider's lookup would go looking in
+  // a distribution, or for wsl.exe on Linux.
+  const chat = await setup('auto', { hostId: 'wsl:Ubuntu' })
   assert.equal(chat.provider.started[0]?.cliRuntimes?.asking?.hostId, undefined)
   await chat.ask('edit', editIn(chat.workspaceRoot))
   await until(() => Boolean(chat.resolved('edit')), 'the edit to be answered')
   assert.equal(chat.requested('edit')?.payload?.autoApproved, true)
-  await chat.done()
-})
-
-test('on Windows a WSL host id is kept, and the approval check respells the agent’s Linux paths', async () => {
-  const chat = await setup('auto', { platform: 'win32', hostId: 'wsl:Ubuntu' })
-  assert.equal(chat.provider.started[0]?.cliRuntimes?.asking?.hostId, 'wsl:Ubuntu')
-  await chat.ask('edit', editIn(chat.workspaceRoot))
-  await tick()
-  await tick()
-  // The POSIX temp root is not a Windows spelling, so the respelled path
-  // lands outside it: nothing answers on its own here.
-  assert.equal(chat.requested('edit')?.payload?.autoApproved, undefined)
-  await chat.runtime.respondToRequest({ sessionId: chat.sessionId, requestId: 'edit', approved: true })
   await chat.done()
 })

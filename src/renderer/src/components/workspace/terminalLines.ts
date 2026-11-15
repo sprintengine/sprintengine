@@ -12,7 +12,10 @@ import type { RemoteSessionRow } from './remoteBand/remoteSessionsModel'
 import { chatLineText } from './sidebar/conversationLines'
 import { checkoutPathFor } from './useSidebarGitSummaries'
 import type { PromptCacheReading } from '../../../../shared/prompt-cache'
-import type { ConversationWireChanges } from '../../../../../packages/conversation-protocol/src/public'
+import {
+  readableConversationPhase,
+  type ConversationWireChanges,
+} from '../../../../../packages/conversation-protocol/src/public'
 
 // The sidebar row's terminal lines (sidebar-lists-every-terminal): one line
 // per live terminal under the row's title — its CLI mark (whose tooltip
@@ -519,7 +522,7 @@ export function lineOfRemoteRow(row: RemoteSessionRow): TerminalLine {
     kind: 'remote',
     cli: row.cli,
     name: row.title,
-    text: chatLineText(row.phase, { lastAssistantText: row.replyPreview }),
+    text: chatLineText(readableConversationPhase(row.phase), { lastAssistantText: row.replyPreview }),
     machineName: null,
     // The branch its machine names for the chat's folder, which is on that
     // machine's disk: drawn as a local line draws its own, with no path to

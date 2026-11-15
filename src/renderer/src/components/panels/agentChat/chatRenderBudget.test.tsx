@@ -8,6 +8,7 @@ import type {
   ConversationSubscribeInput,
 } from '../../../../../shared/conversation-runtime'
 import { installRenderCounter, type RenderCounter } from '../../../../../../tests/render-counter'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 // What a streamed token costs a mounted chat, counted: React commits and
 // component renders (tests/render-counter.ts), DOM mutations, and characters
@@ -230,6 +231,8 @@ async function mountChat(events: ConversationEvent[]) {
       conversationThreads: async () => ({ ok: true, threads: [] }),
     },
   })
+  // The providers and the history are the window's Studio's, over the protocol.
+  installStudioLoopback(dom.window as never)
   // The counter walks every fiber on every commit, so a timed run goes
   // without. React reads the hook once, as it loads, so one serves the file.
   if (!PROD) installedCounter ??= installRenderCounter()

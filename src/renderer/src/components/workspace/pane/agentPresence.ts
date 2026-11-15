@@ -1,6 +1,8 @@
 import { useMemo, useSyncExternalStore } from 'react'
 
+import { onPairedCanvasPush } from '../../../studio/pairedCanvas'
 import type { BrowserController } from '../../../../../shared/browser'
+import type { CanvasBoardRef, CanvasPresence } from '../../../../../shared/canvas/types'
 import type { WorkspacePaneTab } from '../../../types/workspace'
 import { normalizePathKey } from '../../../hooks/useGitStatus'
 import { AGENT_TRAIL_LINGER_MS } from '../../panels/agentFileTrail'
@@ -113,6 +115,11 @@ function feedFromMain(): void {
   window.api.onCanvasPresence?.((presence) =>
     agentPresence.observe(canvasPresenceKey(presence.workspaceId, presence.path, presence.store), presence.controller),
   )
+  // …and this window's paired boards, which the window reads of their machine's Studio itself.
+  onPairedCanvasPush('canvas:presence', (pushed) => {
+    const presence = pushed as CanvasBoardRef & CanvasPresence
+    agentPresence.observe(canvasPresenceKey(presence.workspaceId, presence.path, presence.store), presence.controller)
+  })
 }
 
 function subscribe(listener: () => void): () => void {

@@ -9,7 +9,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { createRequire } = require("node:module");
 const { test } = require("node:test");
-const compiled = path.resolve(__dirname, "../../../.mobile-test-build/src/features/conversations/ChatsContext.js");
+const compiled = path.resolve(__dirname, "../../../.mobile-test-build/mobile/src/features/conversations/ChatsContext.js");
 const localRequire = createRequire(compiled);
 const { createDeviceNotesStore } = localRequire("../../storage/sessionStore.js");
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -24,7 +24,6 @@ const desktop = (deviceId) => ({
   deviceToken: `token-${deviceId}`,
   pairedAt: "2026-01-01T00:00:00.000Z",
   tailnetScopes: ["workspace:read", "conversation:operate"],
-  tailnetCapabilities: ["conversations"],
 });
 
 function harness({ chatsPerDesktop = 3, threads = null } = {}) {
@@ -111,8 +110,22 @@ function harness({ chatsPerDesktop = 3, threads = null } = {}) {
               return null;
             },
           };
-        if (name.endsWith("/tailnetConversations"))
-          return { createTailnetConversationsApi: ({ baseUrl }) => conversationsApi(new URL(baseUrl).hostname.split(".")[0]) };
+        if (name.endsWith("/desktopConversations"))
+          return { createDesktopConversationsApi: ({ baseUrl }) => conversationsApi(new URL(baseUrl).hostname.split(".")[0]) };
+        // What each desktop's welcome says, read from the case's pairing: its
+        // Studio keeps its chats' rest where the case says `chat-lifecycle`.
+        if (name.endsWith("/chatOffers")) {
+          const real = localRequire("../../api/chatOffers.js");
+          const offersOf = (target) => {
+            const session = props.sessions.find((entry) => entry.baseUrl === target.baseUrl);
+            return real.phoneChatOffers({
+              capabilities: ["conversations", "conversation-sessions", ...(session?.studioCapabilities ?? [])],
+              conversation: { protocolVersion: 1, minProtocolVersion: 1, capabilities: [] },
+              grant: { clientId: "c", name: "phone", owner: false, scopes: ["conversation:read", "conversation:operate"], ceiling: "bypass" },
+            });
+          };
+          return { ...real, chatOffersNow: offersOf, useChatOffersOf: () => offersOf };
+        }
         if (name.endsWith("/tailnetWorkspaces")) return { createTailnetWorkspacesApi: () => workspacesApi };
         if (name.endsWith("/components/Toast"))
           return {
@@ -247,7 +260,7 @@ test("until the first read for the stored pairings answers, the list is still lo
 const MIN = 60_000;
 const markUnreadDesktop = () => ({
   ...desktop("one"),
-  tailnetCapabilities: ["conversations", "conversation-lifecycle", "chat-mark-unread"],
+  studioCapabilities: ["chat-lifecycle"],
 });
 const finishedChat = (now, overrides = {}) => ({
   workspaceId: "w",
@@ -347,10 +360,10 @@ test("a refused mark unread leaves the row as it was and says why in a toast", a
   assert.equal(rowState(h, Date.now()), "idle");
 });
 
-test("a desktop without chat-mark-unread offers none, and its clock going back is not read as a mark", async () => {
+test("a desktop that keeps no rest offers no Mark unread, and its clock going back is not read as a mark", async () => {
   const now = Date.now();
   const h = harness({ threads: [finishedChat(now)] });
-  const session = { ...desktop("one"), tailnetCapabilities: ["conversations", "conversation-lifecycle"] };
+  const session = { ...desktop("one") };
   h.render({ sessions: [session], activeDeviceId: "one", lifecycleApiOverride: { markUnread: async () => assert.fail("not offered") } });
   await settle(h);
   assert.equal(h.value().chats[0].canMarkUnread, false);
@@ -422,7 +435,7 @@ test("a mark unread made on the desktop after this phone's own visit wins, thoug
 // Settle and Snooze from the list, with the Undo their toasts offer.
 const rowMenuDesktop = () => ({
   ...desktop("one"),
-  tailnetCapabilities: ["conversations", "conversation-lifecycle", "chat-row-menu"],
+  studioCapabilities: ["chat-lifecycle"],
 });
 async function lifecycleHarness(now = Date.now()) {
   const h = harness({ threads: [finishedChat(now)] });
@@ -490,10 +503,10 @@ test("a snooze moves the row to the shelf at once, and Undo wakes it; a refusal 
   assert.equal(h.toasts.at(-1).message, lifecycle.refuse);
 });
 
-test("a desktop without chat-row-menu offers no Snooze", async () => {
+test("a desktop that keeps no rest offers no Snooze", async () => {
   const h = harness({ threads: [finishedChat(Date.now())] });
   h.render({
-    sessions: [{ ...desktop("one"), tailnetCapabilities: ["conversations", "conversation-lifecycle"] }],
+    sessions: [{ ...desktop("one") }],
     activeDeviceId: "one",
   });
   await settle(h);

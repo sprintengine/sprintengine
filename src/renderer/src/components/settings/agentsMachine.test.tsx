@@ -4,6 +4,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { ExecutionHostId, HostsListResult } from '../../../../shared/execution-host'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 const fixtures = vi.hoisted(() => ({
   state: { appSettings: { hosts: {} as Record<string, unknown> } },

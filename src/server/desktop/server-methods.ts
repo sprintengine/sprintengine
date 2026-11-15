@@ -1,5 +1,6 @@
 import type { AgentLaunchSettings, AgentLaunchSettingsRecord } from '../../shared/launch-settings'
 import type { WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
+import type { MeshConnection, MeshMachineReachability } from '../../shared/tailnet-mesh'
 
 // What the shell and its out-of-process server say to each other on the
 // control channel beyond the bootstrap frames and the ShellBridge (phase 6
@@ -13,48 +14,99 @@ export const SERVER_METHODS = {
   mirrorSnapshot: 'mirror.snapshot',
   /** `{ workspaceId, agentId, patch, actor, stamp? }` → the sync service's result. */
   updateWorkspaceAgent: 'workspace.update-agent',
-  /** `{ cli }` → `ProviderSecretValueResult`: a terminal launch's credential, for the shell only. */
-  resolveSecretForLaunch: 'secrets.resolve-for-launch',
   /** `{ op, token? }` → the GitHub token store's answer. */
   githubToken: 'github.token',
   /** `{ sessionId }` → the peek card's events, or null for a session the server does not have. */
   conversationPeekEvents: 'conversations.peek-events',
-  /**
-   * `{ workspaceRoot, workspaceId, agentId }` → `{ ok, source }` (`ChatExportSourceWire`) or
-   * `{ ok: false, message }`: a chat's whole transcript and its pictures, for Export chat.
-   */
-  conversationExportSource: 'conversations.export-source',
   /** → the folders the chats live in, for diagnostics. */
   conversationRoots: 'conversations.live-roots',
-  /** → the folders chats are working in now, which the shell's worktree cleanup never removes. */
-  conversationWorkspaceRoots: 'conversations.live-workspace-roots',
-  /** → how many chats have a turn in progress, which a quit would stop. */
-  conversationsWorking: 'conversations.working',
-  /** `{ overrides }` → the module enablement result: the shell wrote the file, the server applies it live. */
-  applyModuleEnablement: 'modules.apply-enablement',
-  /** → `ThirdPartyLaunchSessionWire`: which third-party main halves loaded here, and what they registered. */
-  thirdPartyLaunchSession: 'modules.third-party-launch-session',
-  /** `{ clientId }` → `{ connectionId, ticket }`: a chat view's protocol connection, its port already attached. */
-  studioConnect: 'studio.connect',
+  /**
+   * `{ workspaceRoot, name, baseRef? }` → `{ worktreePath, branch, dependencyInstall? }` or
+   * `{ error }`: an agent-at-launch worktree for the shell's `agent.launch`, cut
+   * from the server's pool, with its install's view as it started.
+   */
+  createAgentWorktree: 'worktree-pool.create-agent-worktree',
+  /** `{ id }` → the install's view once it ended, or null when quitting: answered when it ends. */
+  dependencyInstallSettled: 'worktree-install.settled',
+  /**
+   * → `QuitStopping` without the shell's terminals: how many chats have a
+   * turn in progress, and by name the schedules and pull request watches this
+   * server and its WSL servers run, all of which a quit would stop.
+   */
+  quitStops: 'quit.stops',
+  /** → nothing once tried: the hourly refresh of the hosted feeds, which the shell times and the server runs. */
+  hostedFeedsRefresh: 'hosted-feeds.refresh',
+  /**
+   * `{ windowKey, origin }` → `StudioWindowTicket`: a ticket for one connection
+   * of one of the app's windows to the window listener, which starts on the first.
+   */
+  windowTicket: 'studio.window-ticket',
+  /** `{ windowKey }`: that window has gone; its tickets are void and its connections end. */
+  windowRevoke: 'studio.window-revoke',
   /**
    * `{ clientId }` → `{ connectionId, ticket }`: the shell's own Studio
    * connection, with the shell role, over which it offers its toolsets (6.3).
    */
   shellConnect: 'studio.connect-shell',
-  /** `CliModelDiscoveryInput` → its result: the pass after an install, run where the catalog cache lives. */
-  discoverModels: 'models.discover',
   /** → `ServerInfo`. */
   info: 'server.info',
+  /**
+   * `AgentLaunchRequest` → `AgentLaunchResult`: a terminal agent the shell
+   * starts (a tour's new author), through the server's launch service. The
+   * ptys are the server's (studio-agent-terminals.ts).
+   */
+  agentLaunch: 'agents.launch',
+  /** `{ sessionId, data }` → nothing: typed into one of the server's terminals (a tour's question). */
+  terminalWrite: 'terminals.write',
+  /** `{ sessionId }` → `AgentCompactResult`: Compact on an agent tab, typed through the server's control plane. */
+  agentCompact: 'agents.compact',
+  /** `{ sessionId }` → `ConversationPeekSessionState | null`: what the peek card reads of a terminal agent. */
+  terminalPeekState: 'terminals.peek-state',
+  /** `{ sessionId }` → whether a fresh read of the session's pull requests was asked for (a hover). */
+  terminalPullRequestsRefresh: 'terminals.pull-requests-refresh',
+  /** `{ connectionId }` → nothing, once the check is done: ask a paired desktop now whether it answers (the mesh is this process's). */
+  meshCheckReachability: 'mesh.check-reachability',
+  /**
+   * `{ connectionId, origin }` → `EnvironmentTicketResult`: a desktop window's
+   * ticket for one connection to a paired desktop's Studio, bought with the
+   * device token the mesh keeps (the window never holds it).
+   */
+  meshWindowTicket: 'mesh.window-ticket',
+  /**
+   * `{ distro, windowKey, origin }` → `EnvironmentTicketResult`: a desktop
+   * window's ticket for one connection to a WSL distribution's own Studio,
+   * minted there over the owner connection this process holds, with this
+   * process's loopback route to it as the URL.
+   */
+  wslWindowTicket: 'wsl.window-ticket',
+  /** `{ windowKey }` → nothing: that window's document has gone; each distribution it reached ends its connections. */
+  wslRevokeWindow: 'wsl.revoke-window',
+  /**
+   * `{ distro, method: 'git' | 'run', ask }` → the run's outcome, `{ distro,
+   * method: 'home' }` → the home, `{ distro, method: 'detectClis', ask: {
+   * requests, force } }` → the answers: the shell's uses of a WSL
+   * distribution, asked of its own Studio over the owner connection this
+   * process holds (`WslMachineAccess`). Nothing else is forwarded.
+   */
+  wslMachine: 'wsl.machine',
+  /**
+   * `{ which: 'local' | 'wsl' }` → how many machines were asked: the boot's
+   * detection of the agent CLIs, which the shell times and the server runs
+   * (the CLIs and their version check are the core's).
+   */
+  cliDetect: 'cli.detect',
+  /** → the advisories: the hourly comparison of the installed CLI versions against the registry. */
+  cliVersionsRefresh: 'cli-versions.refresh',
+  /** → the check's result: the hourly check of the skill sources, which the shell times and the server runs. */
+  skillSourcesCheck: 'skill-sources.check',
 } as const
 
-/** Server → shell requests: the shell's own caches the gateway's tools read. */
+/** Server → shell requests: what only the shell holds. */
 export const SHELL_METHODS = {
-  /** `MarketplaceRegistryReadInput` → its result. */
-  marketplaceRead: 'shell.marketplace.read',
-  /** → the installed third-party modules with trust and launch readiness. */
-  thirdPartyModules: 'shell.modules.third-party-list',
+  /** `{ workspaceRoot }` → `StudioPluginStatus`: Studio's own plugin in a workspace, which the shell installs. */
+  studioPluginStatus: 'shell.studio-plugin.status',
   /**
-   * → every live launch token the shell's terminals were issued, by digest
+   * → every live launch token the shell issued (its WSL terminal agents'), by digest
    * (`LaunchTokenChange[]`, decision R87). Asked before the gateway listens,
    * so a bridge that reconnects the moment the socket is back is proven.
    */
@@ -66,10 +118,24 @@ export const SHELL_METHODS = {
    */
   sshOpen: 'shell.ssh.open',
   /**
-   * `{ workspaceId }` → nothing: the server's rest sweep settled the chat, and
-   * its terminals, which the shell holds, end with it (studio-settlement.ts).
+   * `{ targetVersion? }` → `StudioUpdateStart`: a client asked this desktop to
+   * update itself (`update.start`); the app updater is the shell's.
    */
-  endWorkspaceTerminals: 'shell.terminals.end-workspace',
+  updateStart: 'shell.update.start',
+  /** `{ path }` → nothing once moved: a removed skill's folder to this computer's Trash. */
+  trash: 'shell.trash',
+  /**
+   * `{ file, width, height }` → `{ png }` (base64) or null: a picture of a page
+   * about to be published, for its card, drawn in a hidden window of the
+   * app's Chromium, which only the shell has.
+   */
+  artifactThumbnail: 'shell.artifact-thumbnail',
+  /**
+   * `{ id, question }` → whether the person said yes: an agent's artifacts
+   * set-up asked natively, when no window is showing to ask in. Closed early by
+   * `SERVER_EVENTS.artifactsSetupConsentClosed`.
+   */
+  artifactsSetupConsent: 'shell.artifacts-setup-consent',
 } as const
 
 /** One-way, either direction. */
@@ -80,38 +146,60 @@ export const SERVER_EVENTS = {
   mirrorWorkspaceEvent: 'mirror.workspace-event',
   /** Server → shell: the launch settings changed. `{ settings, record }`. */
   mirrorLaunchSettings: 'mirror.launch-settings',
-  /** Server → shell: a chat's phase moved; the shell's dock badge and taskbar flash follow it. */
+  /**
+   * Server → shell: the desktops this one is paired with changed (paired,
+   * forgotten, or one answered and said its environment id). `MeshConnection[]`,
+   * whole, without credentials: the shell's environment registry lists them.
+   */
+  mirrorMeshConnections: 'mirror.mesh-connections',
+  /**
+   * Server → shell: whether each paired desktop answers changed.
+   * `MeshMachineReachability[]`, whole: the shell's environment registry
+   * reads each one's connection from it.
+   */
+  mirrorMeshReachability: 'mirror.mesh-reachability',
+  /** Server → shell: a chat's or a terminal agent's phase moved; the dock badge, banners, keep-awake and tours follow it. */
   attentionPhase: 'attention.agent-phase',
-  /** Shell → server: the renderer's module registry, mirrored. */
-  moduleRegistrySnapshot: 'modules.registry-snapshot',
   /** Shell → server: the idle threshold shared with terminals. */
   conversationIdleThreshold: 'conversations.idle-threshold',
   /**
-   * Shell → server: the terminal sessions the shell runs, as the gateway reads
-   * them (`backlog.work`'s confirmation, the launch cap). Sent whole on every
-   * change, and again to a restarted server.
+   * Server → shell: the server's terminal sessions (`TerminalSessionSnapshot[]`),
+   * whole, on every change and once the shell is linked: what the shell's
+   * own readers see (tours, keep-awake, the tray, the quit's count).
    */
   terminalSessions: 'terminals.sessions',
   /**
-   * Shell → server: the gateway launch tokens the shell's terminal launches
-   * were issued, by digest (decision R87). `{ reset, changes }`: `reset` says
+   * Server → shell: the area skills the person opted into
+   * (`StudioAreaSkillChoices`), on every change: the shell's plugin copies
+   * and workspace installs read them.
+   */
+  mirrorAreaSkills: 'mirror.area-skills',
+  /**
+   * Shell → server: the gateway launch tokens the shell issued, by digest
+   * (decision R87). `{ reset, changes }`: `reset` says
    * the list is every live one, sent to a server that has just started.
    */
   launchTokens: 'gateway.launch-tokens',
   /**
-   * Shell → server: a Claude terminal's status-line usage windows
-   * `{ rateLimits, at }`. The shell runs the terminals; the server keeps the
-   * usage-limit store its IPC draws from and its resumes ask.
+   * Shell → server: where the app's own update stands (`StudioUpdateSide`),
+   * whole, on every change and to a server that has just started; what
+   * `update.status` answers.
    */
-  usageStatusLine: 'usage-limits.status-line',
+  updateState: 'update.state',
   /** Shell → server: an SSH machine connected or reconnected `{ key }`; the server follows its chats (phase 8). */
   sshConnected: 'ssh.connected',
+  /** Server → shell: `{ id }`, a natively asked artifacts set-up question is no longer wanted (its call was cancelled). */
+  artifactsSetupConsentClosed: 'artifacts.setup-consent-closed',
   /** Shell → server hints (6.3). */
   hintPower: 'hint.power',
+  /** `{ anyWindowVisible, workspaceWindowVisible }`: whether any app window, and whether a workspace window, shows. */
   hintVisibility: 'hint.visibility',
   hintFocus: 'hint.focus',
   hintOnline: 'hint.online',
 } as const
+
+/** What `shellConnect` answers: the shell's connection, and the ticket its hello presents. */
+export type ShellConnectResult = { connectionId: string; ticket: string }
 
 export type ServerMirrorRegistry = {
   state: WorkspaceSyncState
@@ -121,7 +209,13 @@ export type ServerMirrorRegistry = {
 
 export type ServerMirrorLaunchSettings = { settings: AgentLaunchSettings; record: AgentLaunchSettingsRecord | null }
 
-export type ServerMirrorState = ServerMirrorRegistry & { launchSettings: ServerMirrorLaunchSettings }
+export type ServerMirrorState = ServerMirrorRegistry & {
+  launchSettings: ServerMirrorLaunchSettings
+  /** The paired desktops (`mirrorMeshConnections`); absent from a server with no mesh. */
+  meshConnections?: MeshConnection[]
+  /** Whether each answers (`mirrorMeshReachability`); absent from a server with no mesh. */
+  meshReachability?: MeshMachineReachability[]
+}
 
 export type PowerHint = 'suspend' | 'resume' | 'lock' | 'unlock' | 'battery' | 'ac'
 

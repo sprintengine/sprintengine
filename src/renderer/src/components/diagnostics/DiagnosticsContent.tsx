@@ -47,6 +47,7 @@ import { diffIpcSnapshots, type IpcThroughput } from '../../utils/diagnostics/ip
 import { getTerminalWriteSamples, summarizeTerminalThroughput } from '../../utils/diagnostics/terminalThroughputStore'
 import { collectScrollbackFootprint } from '../../utils/diagnostics/terminalInstanceRegistry'
 import type { IpcStatsSnapshot } from '../../../../shared/electron-api'
+import { workspaceSyncApi } from '../../studio/workspaceSync'
 
 // Poll process metrics once a second while the panel is mounted. Both surfaces
 // (overlay + standalone window) mount this only while visible, so this interval
@@ -209,7 +210,7 @@ function useWorkspaceSyncContext(): SyncContext {
   useEffect(() => {
     let cancelled = false
     const refresh = () => {
-      window.api
+      workspaceSyncApi
         .workspaceSyncGetSnapshot()
         .then((snapshot) => {
           if (cancelled) return
@@ -225,8 +226,12 @@ function useWorkspaceSyncContext(): SyncContext {
     }
     refresh()
     // Workspace sync events are infrequent (window/workspace lifecycle, active
-    // switches); refetch the compact snapshot on each rather than diffing.
-    const unsubscribe = window.api.onWorkspaceSyncEvent(() => refresh())
+    // switches); refetch the compact snapshot on each rather than diffing, and
+    // on each reconnect, which may be to a Studio that restarted.
+    const unsubscribe = workspaceSyncApi.onWorkspaceSyncEvent(
+      () => refresh(),
+      () => refresh(),
+    )
     return () => {
       cancelled = true
       unsubscribe()

@@ -5,7 +5,7 @@ status: completed
 difficulty: s
 criticality: low
 id: 1004
-title: "Fix: the ordering bug"
+title: 'Fix: the ordering bug'
 
 updated: 2026-01-09T16:45:00.000Z
 ---

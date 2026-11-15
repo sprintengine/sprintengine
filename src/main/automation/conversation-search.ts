@@ -1,12 +1,14 @@
-import type { ConversationSearchHit, ConversationSearchResult } from '../../shared/conversation-index'
+import type { StudioChatSearchAnswer } from '../../../packages/studio-protocol/src/public'
+import type { ConversationSearchResult } from '../../shared/conversation-index'
 
-// What a paired desktop's palette finds in this machine's chats: what was
-// said, chat by chat, as this machine's own palette searches its own
-// (conversationHistoryProvider.ts) — the chats its sidebar lists, most
-// recently spoken in first, each one's transcripts through the runtime's own
-// search. One answer for the whole question, bounded so a far machine's
-// answer stays one tool call: so many chats with a match, so many matches of
-// each, and a time past which the answer says it stopped early.
+// What a phone's or a paired desktop's palette finds in this machine's
+// chats (`conversation.searchChats`): what was said, chat by chat, as this
+// machine's own palette searches its own (conversationHistoryProvider.ts) —
+// the chats its sidebar lists, most recently spoken in first, each one's
+// transcripts through the runtime's own search. One answer for the whole
+// question, bounded so a far machine's answer stays one request: so many
+// chats with a match, so many matches of each, and a time past which the
+// answer says it stopped early.
 
 /** The most chats one answer names, as this machine's palette lists at most. */
 export const CHAT_SEARCH_CHAT_LIMIT = 50
@@ -14,16 +16,10 @@ export const CHAT_SEARCH_CHAT_LIMIT = 50
 export const CHAT_SEARCH_HIT_LIMIT = 20
 /** How long one answer reads before it says it stopped early. */
 export const CHAT_SEARCH_BUDGET_MS = 8_000
-/** A question past this is not one a person typed into a palette. */
-export const CHAT_SEARCH_MAX_QUERY = 200
-
 export type SearchableChatHere = { workspaceId: string; workspaceRoot: string; chatTitle: string }
 
-export type ChatSearchAnswer = {
-  chats: Array<{ workspaceId: string; chatTitle: string; hits: ConversationSearchHit[]; count: number }>
-  /** The answer stopped early, at the limit or the time; a narrower question finds the rest. */
-  truncated: boolean
-}
+/** One answer for the whole question (`conversation.searchChats`). */
+export type ChatSearchAnswer = StudioChatSearchAnswer
 
 export async function searchChatsHere(
   query: string,

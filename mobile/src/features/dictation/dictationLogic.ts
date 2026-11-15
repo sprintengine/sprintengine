@@ -4,7 +4,7 @@
 // A composer is a draft: nothing reaches the agent until the person presses
 // send, so a recogniser's revisions can land in it safely.
 
-import { plainLineBreaks } from "../../api/conversationWire";
+import { plainLineBreaks } from "../conversations/sendRules";
 
 /**
  * The draft with what was just said added to it. A new utterance is a new

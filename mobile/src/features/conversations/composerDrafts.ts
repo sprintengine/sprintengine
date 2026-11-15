@@ -8,7 +8,9 @@
 // Only the words: pictures are uploads tied to the session they were made
 // for, and are not worth holding past it.
 
-import { CONVERSATION_MAX_MESSAGE_CHARS } from "../../api/conversationWire";
+import {
+  CONVERSATION_MAX_MESSAGE_CHARS,
+} from "../../../../packages/conversation-protocol/src/public";
 
 export type ComposerDraft = { text: string; at: number };
 export type ComposerDrafts = Record<string, ComposerDraft>;

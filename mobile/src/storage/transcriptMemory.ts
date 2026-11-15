@@ -1,4 +1,6 @@
-import type { ConversationEvent } from "../api/conversationWire";
+import {
+  type ConversationWireEvent as ConversationEvent,
+} from "../../../packages/conversation-protocol/src/public";
 
 /**
  * A chat's transcript as its screen last held it: every event applied and the

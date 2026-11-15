@@ -11,6 +11,7 @@ import {
   toTreeEntries,
   type FileTreeEntry,
 } from './fileTreeEntries'
+import { filesApi } from '../studio/files'
 
 // The data side of a file tree, one per ROOT and shared by every view of that
 // root in this window: the directory listings read so far, one watch on the
@@ -438,7 +439,7 @@ function createFileTreeModel(rootPath: string, api: FileTreeModelApi): Holder {
  */
 export function acquireFileTreeModel(
   rootPath: string,
-  api: FileTreeModelApi = window.api,
+  api: FileTreeModelApi = filesApi,
 ): { model: FileTreeModel; release: () => void } {
   const key = modelKey(rootPath)
   let holder = registry.get(key)

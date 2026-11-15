@@ -1,6 +1,7 @@
-// A chat's prompt cache, folded from its events the way the desktop folds it
-// (studio shared/prompt-cache.ts and workspace/promptCacheState.ts), so the
-// phone and the desk say the same thing about the same conversation.
+// A chat's prompt cache as the phone says it. The reading is folded from the
+// chat's events by the shared projection (`conversation-timeline`'s
+// promptCache.ts), the one the desktop folds, so the phone and the desk say the
+// same thing about the same conversation; this file says it.
 //
 // The API keeps a conversation's prefix cached for a fixed lifetime after the
 // last request that touched it: five minutes by default, an hour when asked
@@ -12,24 +13,13 @@
 // The reading is derived from events and a clock and never stored, so a chat
 // whose desktop went quiet still goes cold on time.
 
-export type PromptCacheTtl = "5m" | "1h";
-export type PromptCacheReading = {
-  /** The cached prefix's lifetime; null when the source has not said. */
-  ttl: PromptCacheTtl | null;
-  /** When it goes cold, in epoch ms; null when nothing is cached. */
-  expiresAt: number | null;
-  /** What the next request re-caches once cold: the conversation's size. Null when unknown. */
-  recacheTokens: number | null;
-};
+import type { PromptCacheReading, PromptCacheTtl } from "../../../../packages/conversation-protocol/src/public";
+
 export type PromptCacheState =
   | { kind: "warm"; remainingMs: number; recacheTokens: number | null }
   | { kind: "expiring"; remainingMs: number; recacheTokens: number | null }
   | { kind: "cold"; expiredAt: number | null; recacheTokens: number | null };
 
-const TTL_MS: Readonly<Record<PromptCacheTtl, number>> = {
-  "5m": 5 * 60_000,
-  "1h": 60 * 60_000,
-};
 // Long enough before it goes cold to act on: a five-minute cache would be
 // "expiring" for most of its life, so only its last two minutes count.
 const EXPIRING_WITHIN_MS: Readonly<Record<PromptCacheTtl, number>> = {
@@ -38,67 +28,6 @@ const EXPIRING_WITHIN_MS: Readonly<Record<PromptCacheTtl, number>> = {
 };
 /** Below this, re-caching is cheap enough not to mention. */
 export const PROMPT_CACHE_NOTICE_TOKENS = 50_000;
-// Bounds for numbers off an untrusted event: far past any context window, and
-// no cache outlives its longest lifetime by more than a day.
-const MAX_RECACHE_TOKENS = 100_000_000;
-const MAX_EXPIRY_AHEAD_MS = 24 * 60 * 60_000;
-
-function parseReading(
-  raw: { ttl: unknown; expiresAt: unknown; recacheTokens: unknown },
-  now: number,
-): PromptCacheReading {
-  const ttl = raw.ttl === "5m" || raw.ttl === "1h" ? raw.ttl : null;
-  const expiresAt =
-    typeof raw.expiresAt === "number" &&
-    Number.isFinite(raw.expiresAt) &&
-    raw.expiresAt > 0 &&
-    raw.expiresAt <= now + MAX_EXPIRY_AHEAD_MS
-      ? Math.floor(raw.expiresAt)
-      : null;
-  const recacheTokens =
-    typeof raw.recacheTokens === "number" &&
-    Number.isFinite(raw.recacheTokens) &&
-    raw.recacheTokens >= 0
-      ? Math.min(Math.floor(raw.recacheTokens), MAX_RECACHE_TOKENS)
-      : null;
-  return { ttl, expiresAt, recacheTokens };
-}
-
-/**
- * Fold one event into the reading. A request's report goes cold one lifetime
- * after the event that carried it, read off the event's own time so replayed
- * history restores when it really went cold. A compaction rewrites the
- * conversation, so its size is unknown until the next request reports it and
- * the chat is not offered compacting again meanwhile.
- */
-export function applyPromptCacheEvent(
-  previous: PromptCacheReading | null,
-  event: { type: string; createdAt: number; payload?: Record<string, unknown> },
-): PromptCacheReading | null {
-  if (event.type === "usage_updated") {
-    const report = event.payload?.promptCache;
-    if (!report || typeof report !== "object" || Array.isArray(report)) return previous;
-    const { ttl: rawTtl, cached, recacheTokens } = report as Record<string, unknown>;
-    // A read-only request says nothing of the lifetime: the last write's
-    // stands, and one never reported is the API's default, the shorter guess.
-    const reported = rawTtl === "5m" || rawTtl === "1h" ? rawTtl : null;
-    const ttl = reported ?? previous?.ttl ?? (cached === true ? "5m" : null);
-    return parseReading(
-      {
-        ttl,
-        expiresAt: cached === true && ttl ? event.createdAt + TTL_MS[ttl] : null,
-        recacheTokens,
-      },
-      event.createdAt,
-    );
-  }
-  if (event.type === "context_compacted" && previous)
-    return { ttl: previous.ttl, expiresAt: null, recacheTokens: null };
-  // A handoff lets the session go: the new one caches nothing of the old.
-  if (event.type === "context_handed_off" && previous)
-    return { ttl: previous.ttl, expiresAt: null, recacheTokens: null };
-  return previous;
-}
 
 export function promptCacheState(
   reading: PromptCacheReading | null | undefined,

@@ -12,10 +12,6 @@ import type {
   CanvasExportResult,
   CanvasMachineListing,
   CanvasPresence,
-  CanvasRemoteAccess,
-  CanvasRemoteBoardRef,
-  CanvasRemoteLink,
-  CanvasRemoteOpenRequest,
   CanvasResult,
   CanvasScenePush,
 } from '../../shared/canvas/types'
@@ -67,34 +63,13 @@ export const canvasApi = {
   onCanvasPresence: (cb: (presence: CanvasBoardRef & CanvasPresence) => void): (() => void) =>
     subscribe('canvas:presence', cb),
   onCanvasOpenRequest: (cb: (ref: CanvasBoardRef) => void): (() => void) => subscribe('canvas:open-request', cb),
-  canvasRemoteAccess: (connectionId: string): Promise<CanvasRemoteAccess> =>
-    ipcRenderer.invoke('canvas:remote-access', connectionId),
-  canvasRemoteOpen: (
-    input: CanvasRemoteBoardRef & { create?: boolean },
-  ): Promise<CanvasResult<CanvasBoardState & { canEdit: boolean }>> => ipcRenderer.invoke('canvas:remote-open', input),
-  canvasRemoteClose: (input: CanvasRemoteBoardRef): Promise<void> => ipcRenderer.invoke('canvas:remote-close', input),
-  canvasRemoteCommit: (
-    input: CanvasRemoteBoardRef & {
-      baseRevision: number
-      elements: CanvasElement[]
-      appState: Record<string, unknown>
-      files: Record<string, unknown>
-    },
-  ): Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>> =>
-    ipcRenderer.invoke('canvas:remote-commit', input),
-  canvasRemoteNoteHumanInput: (input: CanvasRemoteBoardRef): void => {
-    ipcRenderer.send('canvas:remote-note-human-input', input)
-  },
-  canvasRemoteExport: (
-    input: CanvasRemoteBoardRef & { images?: CanvasExportImages },
-  ): Promise<CanvasResult<CanvasExportResult>> => ipcRenderer.invoke('canvas:remote-export', input),
-  canvasRemoteWatch: (input: { connectionId: string; workspaceId: string }): Promise<void> =>
-    ipcRenderer.invoke('canvas:remote-watch', input),
-  canvasRemoteUnwatch: (input: { connectionId: string; workspaceId: string }): Promise<void> =>
-    ipcRenderer.invoke('canvas:remote-unwatch', input),
-  onCanvasRemoteLink: (cb: (link: CanvasRemoteLink) => void): (() => void) => subscribe('canvas:remote-link', cb),
-  onCanvasRemoteOpenRequest: (cb: (request: CanvasRemoteOpenRequest) => void): (() => void) =>
-    subscribe('canvas:remote-open-request', cb),
+  canvasExportScene: (input: {
+    name: string
+    elements: CanvasElement[]
+    appState: Record<string, unknown>
+    files: Record<string, unknown>
+    images?: CanvasExportImages
+  }): Promise<CanvasResult<CanvasExportResult>> => ipcRenderer.invoke('canvas:export-scene', input),
   canvasWorkerReady: (report: CanvasWorkerReport): void => {
     ipcRenderer.send('canvas-worker:ready', report)
   },
@@ -117,16 +92,7 @@ export const canvasApi = {
   | 'onCanvasScene'
   | 'onCanvasPresence'
   | 'onCanvasOpenRequest'
-  | 'canvasRemoteAccess'
-  | 'canvasRemoteOpen'
-  | 'canvasRemoteClose'
-  | 'canvasRemoteCommit'
-  | 'canvasRemoteNoteHumanInput'
-  | 'canvasRemoteExport'
-  | 'canvasRemoteWatch'
-  | 'canvasRemoteUnwatch'
-  | 'onCanvasRemoteLink'
-  | 'onCanvasRemoteOpenRequest'
+  | 'canvasExportScene'
   | 'canvasWorkerReady'
   | 'onCanvasWorkerRequest'
   | 'canvasWorkerRespond'

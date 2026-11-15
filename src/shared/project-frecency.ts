@@ -27,7 +27,11 @@
 // incoming order too, so the sort is stable and the same inputs always list
 // the same way.
 
+import type { ProjectUsage, ProjectUsageMap } from '../../packages/studio-protocol/src/public'
 import { normalizeFolderKey } from './project-hue'
+
+/** One project's uses, folded into a running score; and usage by `projectUsageKey`. */
+export type { ProjectUsage, ProjectUsageMap }
 
 /** A use's weight halves every week. */
 export const PROJECT_USE_HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000
@@ -38,21 +42,6 @@ export const PROJECT_USE_HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000
  * long enough to be the hundredth-most-used one practically is.
  */
 export const PROJECT_USAGE_LIMIT = 100
-
-/** One project's uses, folded into a running score. */
-export type ProjectUsage = {
-  /** The decayed sum of every use, as of `scoredAt`. */
-  score: number
-  /** The moment `score` is measured at: the latest use, in epoch milliseconds. */
-  scoredAt: number
-  /** The latest use, in epoch milliseconds. */
-  lastUsedAt: number
-  /** How many uses were ever recorded. Not decayed; the wire carries it for a reader that wants it. */
-  useCount: number
-}
-
-/** Usage by `projectUsageKey`. */
-export type ProjectUsageMap = Record<string, ProjectUsage>
 
 /**
  * The key a project's usage is kept under: its folder, spelled the way every

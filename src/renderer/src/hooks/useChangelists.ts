@@ -18,6 +18,7 @@ import {
   type Changelist,
 } from '../../../shared/git/changelists'
 import { normalizePathKey, useGitTreeRevision } from './useGitStatus'
+import { gitApi } from '../studio/git'
 
 type ChangelistSubscriber = (lists: Changelist[]) => void
 
@@ -77,7 +78,7 @@ async function runChangelistCall(
   repoRoot: string | null,
   call: (root: string) => Promise<Changelist[]>,
 ): Promise<ChangelistCallResult> {
-  if (!repoRoot || typeof window.api.getGitChangelists !== 'function') {
+  if (!repoRoot || typeof gitApi.getGitChangelists !== 'function') {
     // No repository, or a preload that predates changelists. Not an error to
     // report — there was nothing to act on — but not a success to announce
     // either, so nothing is claimed.
@@ -98,14 +99,13 @@ async function runChangelistCall(
 /** Re-read from the store — after a commit, a discard, or anything else that
  *  changes which paths git reports. */
 export function refreshChangelists(repoRoot: string | null): Promise<Changelist[]> {
-  if (!repoRoot || typeof window.api.getGitChangelists !== 'function')
-    return Promise.resolve(createDefaultChangelists())
+  if (!repoRoot || typeof gitApi.getGitChangelists !== 'function') return Promise.resolve(createDefaultChangelists())
   const subscription = getSubscription(repoRoot)
   // Coalesce: a burst of watch ticks must not become a burst of git spawns.
   if (subscription.inFlight) return subscription.inFlight
   // A READ, not a mutation: it announces nothing, so a failed one legitimately
   // resolves to the last good lists rather than to a signal somebody must read.
-  const promise = runChangelistCall(repoRoot, (root) => window.api.getGitChangelists(root))
+  const promise = runChangelistCall(repoRoot, (root) => gitApi.getGitChangelists(root))
     .then((result) => result.changelists)
     .finally(() => {
       subscription.inFlight = null
@@ -115,14 +115,14 @@ export function refreshChangelists(repoRoot: string | null): Promise<Changelist[
 }
 
 export function setActiveChangelistFor(repoRoot: string | null, id: string): Promise<ChangelistCallResult> {
-  return runChangelistCall(repoRoot, (root) => window.api.setActiveGitChangelist(root, id))
+  return runChangelistCall(repoRoot, (root) => gitApi.setActiveGitChangelist(root, id))
 }
 
 export function createChangelistFor(
   repoRoot: string | null,
   input: { name: string; comment?: string; activate?: boolean; paths?: string[] },
 ): Promise<ChangelistCallResult> {
-  return runChangelistCall(repoRoot, (root) => window.api.createGitChangelist(root, input))
+  return runChangelistCall(repoRoot, (root) => gitApi.createGitChangelist(root, input))
 }
 
 export function renameChangelistFor(
@@ -130,11 +130,11 @@ export function renameChangelistFor(
   id: string,
   input: { name: string; comment?: string },
 ): Promise<ChangelistCallResult> {
-  return runChangelistCall(repoRoot, (root) => window.api.renameGitChangelist(root, id, input))
+  return runChangelistCall(repoRoot, (root) => gitApi.renameGitChangelist(root, id, input))
 }
 
 export function deleteChangelistFor(repoRoot: string | null, id: string): Promise<ChangelistCallResult> {
-  return runChangelistCall(repoRoot, (root) => window.api.deleteGitChangelist(root, id))
+  return runChangelistCall(repoRoot, (root) => gitApi.deleteGitChangelist(root, id))
 }
 
 export function moveChangelistPathsFor(
@@ -142,7 +142,7 @@ export function moveChangelistPathsFor(
   id: string,
   paths: string[],
 ): Promise<ChangelistCallResult> {
-  return runChangelistCall(repoRoot, (root) => window.api.moveGitChangelistPaths(root, id, paths))
+  return runChangelistCall(repoRoot, (root) => gitApi.moveGitChangelistPaths(root, id, paths))
 }
 
 export type UseChangelistsResult = {
@@ -190,9 +190,9 @@ export function useChangelists(repoRoot: string | null): UseChangelistsResult {
   // repository, which is why the root is compared here. `refreshChangelists`
   // coalesces, so a burst of writes costs one read.
   useEffect(() => {
-    if (!repoRoot || typeof window.api.onGitChangelistsChanged !== 'function') return
+    if (!repoRoot || typeof gitApi.onGitChangelistsChanged !== 'function') return
     const key = normalizePathKey(repoRoot)
-    return window.api.onGitChangelistsChanged((event) => {
+    return gitApi.onGitChangelistsChanged((event) => {
       if (!event?.repoRoot || normalizePathKey(event.repoRoot) !== key) return
       void refreshChangelists(repoRoot)
     })

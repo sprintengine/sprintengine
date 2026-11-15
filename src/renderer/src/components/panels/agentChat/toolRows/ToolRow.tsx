@@ -33,6 +33,7 @@ import { formatMessageDateTime, formatMessageTime, LiveElapsed } from '../liveEl
 import { useClockFormat } from '../../../../utils/clockFormat'
 import { formatStepDuration } from '../stepDuration'
 import { useConversationTransport } from '../conversationTransport'
+import { useShellReach } from '../shellReach'
 import { isPreviewableImagePath, useToolImage } from '../useLocalImage'
 import { treeRelativePath } from '../../../../utils/fileTreeEntries'
 import { revealLabel } from '../../../../utils/revealLabel'
@@ -259,8 +260,12 @@ export function ToolBody({ tool, detail }: { tool: TranscriptToolEntry; detail?:
       <ReadOutput output={output} path={path} />
     )
   }
-  if (kind === 'file_edit' || kind === 'file_write')
+  if (kind === 'file_edit' || kind === 'file_write') {
+    // A change whose bodies were left off the wire would read as a different
+    // change: it is drawn once its detail is here, which opening the row reads.
+    if (tool.inputTruncated && !detail) return null
     return <EditBody input={detail?.input ?? tool.input} toolUseId={tool.id} subject={path} />
+  }
   if (kind === 'todo') {
     const todos = Array.isArray(input.todos) ? input.todos : []
     return (
@@ -334,9 +339,9 @@ export function ToolBody({ tool, detail }: { tool: TranscriptToolEntry; detail?:
 // device names files over there, which nothing serves by name, so it says
 // how many there are instead.
 function ToolImages({ images, toolUseId }: { images: readonly string[] | undefined; toolUseId: string }) {
-  const transport = useConversationTransport()
+  const { openDocument } = useShellReach()
   if (!images?.length) return null
-  if (!transport.capabilities.localFiles)
+  if (!openDocument)
     return (
       <p className="mt-2 text-[color:var(--text-muted)]">
         {images.length === 1 ? 'This step returned a picture' : `This step returned ${images.length} pictures`}, on the
@@ -448,8 +453,8 @@ function EditBody({
   subject: string
 }) {
   const context = useConversationLinkContext()
-  // The diff window reads this machine's checkpoints; a remote edit has none here.
-  const openable = useConversationTransport().capabilities.localFiles
+  // The diff window reads the window's Studio's checkpoints; another machine's edit has none there.
+  const openable = useShellReach().openDocument
   const edits = useMemo(() => deriveEditHunks(input).map(withoutNoNewlineMarkers), [input])
   return (
     <>
@@ -686,7 +691,9 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
   const context = useConversationLinkContext()
   const transport = useConversationTransport()
   const key = `${context?.workspaceId ?? ''}:${context?.agentId ?? ''}`
-  const detailKey = `${transport.kind === 'remote' ? `remote:${transport.machineName}:` : ''}${key}:${tool.id}`
+  // Kept per environment: two Studios' chats may share ids.
+  const { environment } = transport
+  const detailKey = `${environment.id ?? environment.route ?? ''}:${key}:${tool.id}`
   const [open, setOpen] = useConversationDisclosure(key, `tool:${tool.id}`, false)
   const [detail, setDetail] = useState<ConversationToolDetail | undefined>(() => cachedDetail(detailKey))
   // Output fetched while the tool was still running is a snapshot of a moving
@@ -747,6 +754,19 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
       setLoading(false)
     }
   }
+  // A step whose input came cut (its file-change bodies left off the wire, or
+  // an input too large to store) reads the whole when it is opened, as the
+  // phone's row does: the panel draws from the input, and the cut one is not
+  // the step that ran.
+  // Output cut to its preview stays behind "Show full output", which can be
+  // megabytes to draw.
+  const fetchOnOpen = open && expandable && tool.inputTruncated === true && !running && !detail
+  useEffect(() => {
+    if (fetchOnOpen && !loading && !error) void fetchDetail()
+    // Only opening the row (or the step finishing while open) asks; a failed
+    // read waits for Retry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchOnOpen])
   const label = (
     <>
       <span data-tone={tone === 'error' ? 'error' : undefined} className={`flex shrink-0 ${toolGlyphInk(tone)}`}>

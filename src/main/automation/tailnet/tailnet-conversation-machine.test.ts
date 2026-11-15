@@ -13,7 +13,7 @@ import type { StudioPullRequest } from '../../../../packages/studio-protocol/src
 import { defaultMachineColour } from '../../../shared/machine-identity'
 import { ConversationRuntime } from '../../conversation-runtime'
 import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type ConversationListMarks } from './tailnet-conversation-host'
+import { createConversationGatewayHost, type ConversationListMarks } from '../../../server/core/conversation-host'
 import {
   conversationBranchesOf,
   conversationHostOf,
@@ -473,16 +473,6 @@ function call(port: number, path: string, options: { method?: string; token?: st
 async function identityRead(machine: (() => { kind: string; color: string } | null) | undefined) {
   const devicesDir = mkdtempSync(join(tmpdir(), 'conversation-machine-devices-'))
   const devices = createTailnetDeviceStore({ resolveUserDataDir: () => devicesDir })
-  const conversations = {
-    list: async () => [],
-    resolveKey: () => null,
-    subscribe: () => ({ dispose() {}, ready: Promise.resolve() }),
-    loadEarlier: async () => ({ ok: false as const, message: 'none' }),
-    getToolDetail: async () => ({ ok: false as const, message: 'none' }),
-    getTurnDiff: async () => ({ ok: false as const, message: 'none' }),
-    command: async () => ({ ok: false, message: 'none' }),
-    ...(machine ? { machine } : {}),
-  } as unknown as Parameters<typeof createTailnetGatewayServer>[0]['conversations']
   const server = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
     port: 0,
@@ -491,7 +481,7 @@ async function identityRead(machine: (() => { kind: string; color: string } | nu
     resolveTools: () => [],
     isMutation: () => false,
     devices,
-    conversations,
+    ...(machine ? { machine } : {}),
     peers: createTailnetPeerResolver({ runWhois: async () => null }),
   })
   await server.start()
@@ -518,7 +508,6 @@ test('the identity read names this desktop’s kind and colour beside what it al
   // An older phone reads the members it always read, unchanged.
   assert.equal(typeof identity.deviceId, 'string')
   assert.equal(identity.deviceName, 'android-phone')
-  assert.ok(Array.isArray(identity.capabilities))
 })
 
 test('a desktop that cannot say what it is leaves `machine` out rather than sending a guess', async () => {

@@ -13,61 +13,13 @@ import { BUNDLED_MODULE_IDS } from './modules/manifest'
  */
 export const EXTENSION_START_TEMPLATE_ID = 'blank'
 
-/**
- * What is at the extension's folder right now, asked while the name is typed:
- * `free` (nothing there, or an empty folder), `extension` (a project with a
- * module manifest, which the chat opens and carries on), `taken` (anything
- * else, which is never written over), `installed` (the folder is free, but an
- * extension with that id is already installed on this computer, and the new
- * project's dev install would replace it), or `no_parent` (the project folder
- * is gone or not a folder).
- */
-export type ExtensionScaffoldTargetState = 'free' | 'extension' | 'taken' | 'installed' | 'no_parent'
-
-export type ExtensionScaffoldTargetInput = {
-  /**
-   * The extension's own folder, picked by the person: filled when it is
-   * empty, carried on when it holds an extension. Its name is the id.
-   */
-  folder?: string
-  /**
-   * The folder a new `<parentDir>/<id>` is made inside. With neither this nor
-   * `folder`, the extension gets a new folder in this computer's extensions
-   * home (`extensionScaffoldHome`), which is made the first time it is needed.
-   */
-  parentDir?: string
-  /** The extension's name as the chip holds it: the module id, and the new folder's name. */
-  id: string
-}
-
-export type ExtensionScaffoldTarget = { state: ExtensionScaffoldTargetState; folder: string }
-
-export type ExtensionScaffoldCreateInput = ExtensionScaffoldTargetInput & {
-  /** Written as the project's IDEA.md in place of the template's placeholder. */
-  ideaMarkdown?: string
-}
-
-export type ExtensionScaffoldCreateResult =
-  /**
-   * `existing`: the folder already held an extension, and nothing was written.
-   * `notes`: steps the scaffolder left to do by hand (a part it could not wire in).
-   */
-  | { ok: true; folder: string; existing: boolean; notes?: string[] }
-  | {
-      ok: false
-      code:
-        | 'invalid_input'
-        | 'invalid_id'
-        | 'no_parent'
-        | 'dir_not_empty'
-        | 'installed'
-        | 'unknown_template'
-        | 'io_error'
-        // The scaffolder's refusals of a part (`init --with`); the app adds none today.
-        | 'unknown_part'
-        | 'already_present'
-      message: string
-    }
+export type {
+  ExtensionScaffoldCreateInput,
+  ExtensionScaffoldCreateResult,
+  ExtensionScaffoldTarget,
+  ExtensionScaffoldTargetInput,
+  ExtensionScaffoldTargetState,
+} from '../../packages/studio-protocol/src/public'
 
 /**
  * A module id from a name as a person types it: lowercase letters, digits and

@@ -4,8 +4,10 @@
 // scan with the same rule as a repository — walk to SKILL.md, take the
 // directory whole — just over a filesystem listing instead of a git tree.
 
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
+
+import { isPathInsideOrEqual } from '../path-containment'
 
 import { parseSkillFrontmatter, SKILL_ENTRY_FILE, type ScanResult } from '../../shared/skills'
 import { scanSkillTree, SKILL_MARKETPLACE_MANIFEST_PATH, type SkillTreeEntry } from './scan'
@@ -31,6 +33,19 @@ class LocalSourceTooLargeError extends Error {
 }
 const IGNORED_DIR_NAMES = new Set(['.git', 'node_modules'])
 const ENTRY_READ_CONCURRENCY = 16
+
+/**
+ * A file of a local source, read where it really is and only when that is
+ * inside the source's real folder. The walk lists no links, but a listed file
+ * can be swapped for one after the scan; a file that is now a link out of the
+ * folder (to a key in the home folder, say) is refused, not followed.
+ */
+export async function readFileInside(root: string, path: string): Promise<Buffer> {
+  const [realRoot, real] = await Promise.all([realpath(root), realpath(path)])
+  if (!isPathInsideOrEqual(realRoot, real))
+    throw Object.assign(new Error(`${path} is a link out of ${root}.`), { code: 'EACCES' })
+  return readFile(real)
+}
 
 /**
  * List a directory as tree entries the scan rule can read. Local files have no
@@ -98,7 +113,9 @@ export async function scanLocalSkillSource(
 ): Promise<ScanResult> {
   const entries = await listLocalTree(root, options.maxEntries ?? MAX_LOCAL_ENTRIES)
   const manifest = entries.some((entry) => entry.path === SKILL_MARKETPLACE_MANIFEST_PATH)
-    ? await readFile(join(root, ...SKILL_MARKETPLACE_MANIFEST_PATH.split('/')), 'utf8').catch(() => null)
+    ? await readFileInside(root, join(root, ...SKILL_MARKETPLACE_MANIFEST_PATH.split('/')))
+        .then((bytes) => bytes.toString('utf8'))
+        .catch(() => null)
     : null
   const scanned = scanSkillTree({ entries, commitSha: '', marketplaceManifest: manifest })
 
@@ -118,7 +135,9 @@ export async function scanLocalSkillSource(
       const entryPath = join(root, ...skills[index].id.split('/').filter(Boolean), SKILL_ENTRY_FILE)
       // null is "not read"; '' is a zero-byte SKILL.md, which exists and
       // declares no description.
-      const raw = await readFile(entryPath, 'utf8').catch(() => null)
+      const raw = await readFileInside(root, entryPath)
+        .then((bytes) => bytes.toString('utf8'))
+        .catch(() => null)
       if (raw === null) continue
       const frontmatter = parseSkillFrontmatter(raw)
       if (frontmatter.description === '') {
@@ -166,5 +185,7 @@ async function readLocalFile(root: string, path: string): Promise<string | null>
   const full = resolve(root, ...path.split('/'))
   const base = resolve(root)
   if (full !== base && !full.startsWith(`${base}${sep}`)) return null
-  return readFile(full, 'utf8').catch(() => null)
+  return readFileInside(base, full)
+    .then((bytes) => bytes.toString('utf8'))
+    .catch(() => null)
 }

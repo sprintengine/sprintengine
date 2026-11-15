@@ -29,7 +29,7 @@ export type ScheduledRunOutcomesDeps = {
 
 export type ScheduledRunOutcomes = {
   /** The scheduler's `recordRun`: a start whose first message was already refused is recorded as that failure. */
-  recordRun(id: string, run: ScheduledAgentLastRun): Promise<void>
+  recordRun(id: string, run: ScheduledAgentLastRun, commandId?: string): Promise<void>
   /** The scheduler's `onRan`. */
   onRan(agent: ScheduledAgent, run: ScheduledAgentLastRun): void
   /** The chat a run started in refused its first message. */
@@ -51,11 +51,11 @@ export function createScheduledRunOutcomes(deps: ScheduledRunOutcomesDeps): Sche
   }
 
   return {
-    recordRun(id, run) {
+    recordRun(id, run, commandId) {
       const refused = run.ok ? refusedBeforeRecorded.get(run.workspaceId) : undefined
-      if (refused === undefined || !run.ok) return deps.store.recordRun(id, run)
+      if (refused === undefined || !run.ok) return deps.store.recordRun(id, run, commandId)
       refusedBeforeRecorded.delete(run.workspaceId)
-      return deps.store.recordRun(id, { at: run.at, ok: false, message: refused })
+      return deps.store.recordRun(id, { at: run.at, ok: false, message: refused }, commandId)
     },
     onRan(agent, run) {
       // Told first, so a one-time schedule's run is heard before the

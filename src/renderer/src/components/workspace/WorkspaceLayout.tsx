@@ -12,6 +12,7 @@ import {
   type ITabSetRenderValues,
   type NodeMouseEvent,
 } from 'flexlayout-react'
+import { closeTerminal } from '../../studio/terminals'
 // combined.css carries the structural FlexLayout CSS — its theme variables
 // are scoped under `.flexlayout__theme_*` classes that we never apply. Our own
 // `.flexlayout__layout { --fl-*: var(--bg-*) }` block in
@@ -49,6 +50,7 @@ import {
   ensureStandInPane,
   holdsMeshConversationPane,
   registerModel,
+  removeGitConflictTab,
   restoreRailWidthFractions,
   unregisterModel,
 } from '../../utils/modelRegistry'
@@ -108,6 +110,7 @@ import {
 import { remoteConversationFactsKey, useRemoteConversationFacts } from './remoteBand/remoteConversationFacts'
 import { isImeKey } from '../../utils/imeKey'
 import { agentPanelChunk } from '../panels/agentPanelChunks'
+import { filesApi } from '../../studio/files'
 
 const EMPTY_LAYOUT_MODEL: IJsonModel = { global: {}, borders: [], layout: { type: 'row', children: [] } }
 
@@ -540,7 +543,7 @@ function WorkspaceLayoutBody({
     }
     let cancelled = false
     const check = (): void => {
-      void window.api.pathExists(worktreeGitRoot).then((exists) => {
+      void filesApi.pathExists(worktreeGitRoot).then((exists) => {
         if (!cancelled) setWorktreeMissing(!exists)
       })
     }
@@ -783,7 +786,11 @@ function WorkspaceLayoutBody({
           return gitEnabled && config?.repoRoot && config.filePath
             ? timedPanel(
                 'GitConflictResolverPanel',
-                <GitConflictResolverPanel repoRoot={config.repoRoot} filePath={config.filePath} />,
+                <GitConflictResolverPanel
+                  repoRoot={config.repoRoot}
+                  filePath={config.filePath}
+                  onFinished={() => removeGitConflictTab(workspaceId, config.repoRoot!, config.filePath!)}
+                />,
               )
             : DISABLED_SURFACE
         case 'terminal':
@@ -913,7 +920,7 @@ function WorkspaceLayoutBody({
           .forEach((session) => sessionIds.add(session.sessionId))
         sessionIds.forEach((sessionId) => {
           killOnUnmountSessionIdsRef.current.add(sessionId)
-          void window.api.terminalKill(sessionId).catch(() => {})
+          void closeTerminal(sessionId).catch(() => {})
         })
         if (agent) {
           updateAgent(workspaceId, agentId, {
@@ -938,7 +945,7 @@ function WorkspaceLayoutBody({
           .forEach((session) => sessionIds.add(session.sessionId))
         sessionIds.forEach((sessionId) => {
           killOnUnmountSessionIdsRef.current.add(sessionId)
-          void window.api.terminalKill(sessionId).catch(() => {})
+          void closeTerminal(sessionId).catch(() => {})
         })
       }
     },

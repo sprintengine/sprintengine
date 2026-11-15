@@ -2,7 +2,7 @@ import '../../assets/index.css'
 import React, { useCallback, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 
-import type { StudioClient } from '../../../../../packages/agent-sdk/src/index'
+import type { StudioClient } from '../../../../../packages/client-runtime/src/public'
 import { prefersReducedMotion } from '../../components/panels/agentChat/reducedMotion'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { RootErrorBoundary } from '../../components/workspace/RootErrorBoundary'

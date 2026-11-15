@@ -16,7 +16,9 @@ export type RelayReady = {
     pid: number | null
     version: string | null
     origin: string | null
-    backendWire: number | null
+    /** The server's Studio protocol window; absent from a relay or a record older than the window. */
+    protocolVersion?: number | null
+    minProtocolVersion?: number | null
     environmentId: string | null
     hostId: string | null
     startedBy: string | null

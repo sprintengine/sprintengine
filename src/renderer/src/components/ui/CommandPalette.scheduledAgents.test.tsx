@@ -40,6 +40,7 @@ vi.mock('../workspace/useConversationPullRequests', () => ({ useConversationPull
 
 import CommandPalette from './CommandPalette'
 import { resetScheduledAgentsStoreForTests } from '../../store/scheduledAgentsStore'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 const workspace = {
   id: 'ws-1',

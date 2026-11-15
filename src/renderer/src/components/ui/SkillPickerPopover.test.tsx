@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
 import { InlineSkillPicker, SkillPickerPopover } from './SkillPickerPopover'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 type ListResult = { ok: true; skills: WorkspaceSkill[] }
 

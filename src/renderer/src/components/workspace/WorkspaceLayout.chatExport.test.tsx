@@ -1,10 +1,39 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { afterAll, beforeAll, test } from 'vitest'
+import { afterAll, beforeAll, test, vi } from 'vitest'
 
 import type { ChatExportInput } from '../../../../shared/chat-export'
 import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
+
+// The window's Studio, as far as an export reads it: one page, the chat asked for.
+const studioAsked = vi.hoisted(() => [] as Array<{ key: unknown; offset: number }>)
+vi.mock('../../studio/windowStudioClient', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  windowStudioClient: async () => ({
+    supports: () => true,
+    state: 'open',
+    // The strip's chats and terminals follow their topics; none of them sends anything.
+    subscribe: () => () => {},
+    // Everything else the strip asks of its Studio stays pending.
+    request: async (method: string, params: { key: unknown; offset: number }) => {
+      if (method !== 'conversation.exportPage') return new Promise(() => {})
+      studioAsked.push(params)
+      return {
+        chat: {
+          title: 'Release notes',
+          project: null,
+          providerId: 'claude-agent',
+          modelId: null,
+          workspaceRoot: '/Users/dev/app',
+        },
+        events: [],
+        attachments: {},
+        nextOffset: null,
+      }
+    },
+  }),
+}))
 
 // A chat tab's right-click menu carries Export chat beside Replay
 // conversation: a flyout of the two copies and the three files. A terminal's
@@ -48,13 +77,13 @@ async function setup() {
   anyGlobal.ResizeObserver = NoopResizeObserver
   dom.window.ResizeObserver = NoopResizeObserver as unknown as typeof dom.window.ResizeObserver
 
-  // What the menu asks of main: the export, answered as a copy that landed.
+  // What the menu asks of this shell: the export's writing, answered as a copy that landed.
   // Everything else the strip asks stays pending.
   const exports: ChatExportInput[] = []
   domWindow.api = new Proxy(
     {
       platform: 'darwin',
-      exportChat: async (input: ChatExportInput) => {
+      saveChatExport: async (input: ChatExportInput) => {
         exports.push(input)
         return { ok: true, kind: 'copied' }
       },
@@ -227,7 +256,7 @@ test('a chat’s menu has Export chat right after Replay conversation, and it op
   await closeMenu()
 })
 
-test('choosing a row closes the menu and asks main for that export of that chat', async () => {
+test('choosing a row closes the menu, reads that chat from its Studio and asks the shell for that export', async () => {
   const { dom, act, settle, openMenu, exportRow, exports, useToastStore } = strip
   const menu = await openMenu('Release notes')
   act(() => exportRow(menu)!.click())
@@ -238,7 +267,13 @@ test('choosing a row closes the menu and asks main for that export of that chat'
   )!
   act(() => copy.click())
   await settle()
-  assert.deepEqual(exports, [{ workspaceId: 'w1', agentId: 'chat-1', action: 'copy' }])
+  assert.deepEqual(
+    studioAsked.map(({ key, offset }) => [key, offset]),
+    [[{ workspaceId: 'w1', agentId: 'chat-1' }, 0]],
+  )
+  assert.equal(exports.length, 1)
+  assert.equal(exports[0]!.action, 'copy')
+  assert.equal(exports[0]!.source.title, 'Release notes')
   assert.equal(dom.window.document.querySelector('[role="menu"]'), null, 'the menu closed')
   assert.ok(useToastStore.getState().toasts.some((toast) => toast.title === 'Chat copied'))
 })
@@ -294,7 +329,7 @@ test('a paired machine’s chat replays and exports from its tab, through its pa
     act(() => copy.click())
     await settle()
     assert.deepEqual(asked, ['copy-markdown'], 'the pane carried it out')
-    assert.equal(exports.length, before, 'and main was not asked for a transcript it does not have')
+    assert.equal(exports.length, before, 'the menu itself read and wrote nothing: the pane reads it from that machine')
   } finally {
     unregister()
     await closeMenu()

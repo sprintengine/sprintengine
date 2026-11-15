@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('UseSkillInAgentMenu', async () => {
   // What matters about this menu is timing no markup snapshot can reach: a second
@@ -63,12 +66,11 @@ test('UseSkillInAgentMenu', async () => {
     }
   }
 
-  // The flow module reads `window.api.terminalList()`; the menu reads nothing
+  // The flow module reads `listTerminals()`; the menu reads nothing
   // else of the bridge.
   function stubSessions(sessions: Record<string, unknown>[]): void {
-    ;(dom.window as unknown as { api: unknown }).api = {
-      terminalList: async () => sessions,
-    }
+    terminalsDouble.listTerminals = async () => sessions
+    ;(dom.window as unknown as { api: unknown }).api = {}
   }
 
   const flush = async (): Promise<void> => {

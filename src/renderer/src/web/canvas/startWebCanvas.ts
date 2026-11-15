@@ -1,8 +1,8 @@
-import { connect } from '../../../../../packages/agent-sdk/src/index'
-import { windowPortTransport } from '../../studio/windowStudioClient'
+import { connect } from '../../../../../packages/client-runtime/src/public'
+import { windowSocketTransport } from '../../studio/windowStudioClient'
 import { isWindowVisible, onWindowVisibilityChange } from '../../utils/windowActivity'
 import { webPageUrl } from '../webLocation'
-import { createWebStudioPorts } from '../webStudioPorts'
+import { WEB_STUDIO_SETUP, webStudioTicket } from '../webStudio'
 import { createFrameWorkerTransport } from './frameWorkerTransport'
 import { createWebCanvasTools } from './webCanvasTools'
 import { startWebCanvasToolset } from './webCanvasToolset'
@@ -27,7 +27,7 @@ export function startWebCanvas(): void {
     isOwnerSession: ownerSession,
     connect: () =>
       connect({
-        transport: windowPortTransport(createWebStudioPorts()),
+        transport: windowSocketTransport({ studioWindowTicket: webStudioTicket }, WEB_STUDIO_SETUP),
         client: { name: 'Studio web', kind: 'web' },
         reconnect: { initialDelayMs: 250, maxDelayMs: 10_000 },
         // Back after a drop: every watched board folder is read once more.

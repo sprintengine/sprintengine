@@ -30,6 +30,7 @@ function harness(platform = 'darwin', focused = false) {
   })
   const notices: ShellNotice[] = []
   const notifier = createAgentNotifier({
+    environmentId: 'env-here',
     mode: () => 'banner',
     isAnyWindowFocused: () => focused,
     chatLabel: () => ({ title: 'Chat' }),

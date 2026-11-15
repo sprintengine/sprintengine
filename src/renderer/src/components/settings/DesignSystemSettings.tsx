@@ -13,6 +13,7 @@ import {
   resolveBundleOrigin,
   type DesignSystemBundleOrigin,
 } from './designSystemSettingsModel'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 // The Settings design-system section (item 1950): the after-creation half of
 // what newWorkspace/DesignSystemAttachStep starts. State derives from disk —
@@ -52,7 +53,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
     let cancelled = false
     setBundle({ kind: 'probing' })
     if (!workspaceRoot) return
-    void window.api
+    void agentSkillsApi
       .readDesignSystemBundle(pathJoin(workspaceRoot, DESIGN_SYSTEM_BUNDLE_DIRECTORY_NAME))
       .then((result) => {
         if (cancelled) return
@@ -86,7 +87,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
 
   useEffect(() => {
     let cancelled = false
-    void window.api
+    void agentSkillsApi
       .listDesignSystemLibrary()
       .then((result) => {
         if (!cancelled) setLibraryEntries(result.entries)
@@ -113,7 +114,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
       setPending('detach')
       setMessage(null)
       try {
-        const result = await window.api.detachDesignSystemBundle(workspaceRoot)
+        const result = await agentSkillsApi.detachDesignSystemBundle(workspaceRoot)
         if (!result.ok) {
           setMessage(result.message)
           return false
@@ -160,7 +161,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
       setPending(action)
       setMessage(null)
       try {
-        const result = await window.api.attachDesignSystemBundle(source, workspaceRoot)
+        const result = await agentSkillsApi.attachDesignSystemBundle(source, workspaceRoot)
         if (result.ok) {
           setPickerOpen(false)
           setPickerSelection(null)
@@ -191,7 +192,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
       setPending('update')
       setMessage(null)
       try {
-        const detached = await window.api.detachDesignSystemBundle(workspaceRoot)
+        const detached = await agentSkillsApi.detachDesignSystemBundle(workspaceRoot)
         if (!detached.ok) {
           setMessage(detached.message)
           return

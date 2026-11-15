@@ -159,6 +159,7 @@ export function posixInstallFunctions(): string[] {
 /** What each kind of install may prune: its own older trees, and nothing else. */
 export const PRUNE_GLOBS = {
   node: '"$base"/runtime/node-*',
+  /** The retired WSL helper's `<appVersion>/` trees, which a server's install prunes. */
   app: '"$base"/[0-9]*',
   server: '"$base"/server-*',
 } as const
@@ -260,6 +261,11 @@ export type StreamInstallInput = {
    * `uname` (an SSH connect, which learns the target only as it runs).
    */
   nodeDigest: string | { shellVar: string }
+  /**
+   * A shell word naming a server tree no prune may remove (an SSH machine's
+   * previous tree while a failed update leaves it the one to fall back to).
+   */
+  keepServer?: string
 }
 
 /**
@@ -314,7 +320,7 @@ export function streamInstallLines(input: StreamInstallInput & { beforeUnpack?: 
     }).map((line) => `  ${line}`),
     `  printf '%s' '${serverDigest}' > "$stage/${server}/.ready" || fail marker`,
     `  place "$stage/${server}" "$final" || fail "move server"`,
-    ...pruneLines(PRUNE_GLOBS.server).map((line) => `  ${line}`),
+    ...pruneLines(PRUNE_GLOBS.server, input.keepServer).map((line) => `  ${line}`),
     'fi',
     'rm -rf "$stage"',
     'lock_drop',

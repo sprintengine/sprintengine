@@ -3,25 +3,22 @@ import { createTicketAuthenticator, framePortStream, mintStudioTicket } from '..
 import { createStudioRpcServer, type StudioRpcServer } from '../src/server/rpc/studio-rpc-server'
 import type { StudioPullRequests } from '../src/server/pull-requests/pull-request-domain'
 import type { StudioConversationBackend } from '../src/server/rpc/studio-rpc-types'
+import type { StudioFileSystem } from '../src/server/files/studio-file-system'
 import type { ConversationSessionFrame } from '../src/shared/conversation-runtime'
+import { configureWindowStudio, windowStudioClient } from '../src/renderer/src/studio/windowStudioClient'
 import { createMemoryChannel, type MemoryChannelEnd } from './memory-channel'
+import { memoryWebSocketClass } from './memory-websocket'
 
-// The chat view's own tests, run a second time with the window on the Studio
-// protocol. A test stubs `window.api` with the conversation IPC it means to
-// script, as it always has; this puts a real Studio RPC between the view and
-// that stub: the window's client and transport, a port, the connection and
-// router, and main's chat backend with its input checks, all answered in the
-// end by the same stubbed IPC members. A test that passes both ways shows the
-// protocol path changes nothing the view does.
-//
-// The `chat-over-studio` Vitest project sets STUDIO_CHAT_TRANSPORT_UNDER_TEST;
-// in every other run this does nothing.
+// The chat view's tests on the Studio protocol, which is the only way the
+// window reaches its chats. The window's client and transport, a socket, the
+// real connection and router, and main's chat backend with its input checks
+// run between the view and a fake conversation service. A test writes that
+// fake's members on `window.api` under the names the window's IPC once had
+// (`conversationSessionStart`, `onConversationSession`, ...): no preload has
+// them, and nothing in the window calls them; they are this harness's names
+// for the service the router reaches.
 
 type Api = Record<string, unknown>
-
-export function chatOverStudioUnderTest(): boolean {
-  return process.env.STUDIO_CHAT_TRANSPORT_UNDER_TEST === 'studio'
-}
 
 /** A stubbed IPC member, read when it is called so a test may swap it mid-way. */
 function call(api: Api, name: string, ...args: unknown[]): Promise<never> {
@@ -30,6 +27,15 @@ function call(api: Api, name: string, ...args: unknown[]): Promise<never> {
   return Promise.resolve((member as (...values: unknown[]) => unknown)(...args)) as Promise<never>
 }
 const has = (api: Api, name: string) => typeof api[name] === 'function'
+/** A stubbed IPC member taking one input, or undefined where the test stubs none. */
+const optional = (api: Api, name: string) =>
+  has(api, name) ? (input: unknown): Promise<never> => call(api, name, input) : undefined
+/** A stubbed IPC subscription, or one that hears nothing where the test stubs none. */
+function subscribeTo<T>(api: Api, name: string, listener: (value: T) => void): () => void {
+  const subscribe = api[name] as ((cb: (value: T) => void) => unknown) | undefined
+  const stop = typeof subscribe === 'function' ? subscribe(listener) : undefined
+  return () => (typeof stop === 'function' ? stop() : undefined)
+}
 
 function conversationsOver(api: Api): StudioConversationBackend {
   return {
@@ -45,14 +51,38 @@ function conversationsOver(api: Api): StudioConversationBackend {
     loadEarlier: (key, beforeCursor, turnLimit) =>
       call(api, 'conversationLoadEarlier', { key, beforeCursor, turnLimit }),
     toolDetail: (key, toolUseId) => call(api, 'conversationToolDetail', { ...key, toolUseId }),
+    event: (key, seq, id) => call(api, 'conversationEvent', { ...key, seq, id }),
     turnDiff: (key, turnSeq, path) => call(api, 'conversationTurnDiff', { key, turnSeq, path }),
-    command: async () => ({ ok: false, code: 'unavailable', message: 'A window drives a chat by its session.' }),
+    // A keyed command (a held or scheduled message, a resume) reaches the
+    // test's `conversationCommand` where it stubs one.
+    command: async (key, _clientId, commandId, command) =>
+      has(api, 'conversationCommand')
+        ? call(api, 'conversationCommand', { key, commandId, command })
+        : { ok: false, code: 'unavailable', message: 'A window drives a chat by its session.' },
     stop: async () => ({ ok: true }),
     permissionOf: () => 'bypass',
     findCreated: () => null,
     create: async () => ({ ok: false, code: 'unavailable', message: 'A window starts a chat by its session.' }),
     redact: (value) => value,
+    // What the Studio holds and keeps for a chat, where the test stubs it:
+    // `onConversationQueued` and `onConversationScheduled` hear the chat and
+    // a listener, and say the list whole.
+    ...(has(api, 'onConversationQueued') || has(api, 'onConversationScheduled')
+      ? {
+          followed: {
+            watchQueued: (chat, listener) => watchFor(api, 'onConversationQueued', chat, listener),
+            watchScheduled: (chat, listener) => watchFor(api, 'onConversationScheduled', chat, listener),
+          },
+        }
+      : {}),
   }
+}
+
+/** A stubbed per-chat watch, or one that hears nothing where the test stubs none. */
+function watchFor<T>(api: Api, name: string, chat: unknown, listener: (value: T) => void): () => void {
+  const watch = api[name] as ((chat: unknown, cb: (value: T) => void) => unknown) | undefined
+  const stop = typeof watch === 'function' ? watch(chat, listener) : undefined
+  return () => (typeof stop === 'function' ? stop() : undefined)
 }
 
 type Commanded = { sessionId: string; commandId?: string; commandFingerprint?: string }
@@ -86,7 +116,8 @@ function receiptsKeeper() {
       kept.set(key, { fingerprint: commandFingerprint, result })
       return result
     },
-    has: async (sessionId: string, commandId: string) => kept.has(keyOf(sessionId, commandId)),
+    receipt: async (sessionId: string, commandId: string) =>
+      kept.has(keyOf(sessionId, commandId)) ? ('kept' as const) : ('none' as const),
   }
 }
 
@@ -118,11 +149,6 @@ function chatOver(api: Api) {
       get handoffConversation() {
         return has(api, 'conversationHandoff') ? (input: unknown) => call(api, 'conversationHandoff', input) : undefined
       },
-      get forkAtTurn() {
-        return has(api, 'conversationForkAtTurn')
-          ? (input: unknown) => call(api, 'conversationForkAtTurn', input)
-          : undefined
-      },
       get readAttachment() {
         return has(api, 'conversationAttachment')
           ? (ref: string) => call(api, 'conversationAttachment', { ref })
@@ -136,25 +162,60 @@ function chatOver(api: Api) {
       listProviders: (input) => call(api, 'conversationProvidersList', input),
       listProviderModels: (input) => call(api, 'conversationProviderModels', input),
       getSecretStatus: (input) => call(api, 'conversationSecretStatus', input),
-    },
-    files: {
-      searchFiles: (_slot, input) =>
-        call(api, 'searchFiles', input.rootPath, input.query, {
-          ...(input.limit === undefined ? {} : { limit: input.limit }),
-          ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
-          ...(input.channel === undefined ? {} : { channel: input.channel }),
-          ...(input.recentAt === undefined ? {} : { recentAt: input.recentAt }),
-        }),
-      cancelActiveFileSearch: (_slot, channel) => {
-        if (has(api, 'cancelFileSearch')) void call(api, 'cancelFileSearch', channel).catch(() => undefined)
+      setSecret: (input) => call(api, 'conversationSecretSet', input),
+      clearSecret: (input) => call(api, 'conversationSecretClear', input),
+      get resolveSignIn() {
+        return optional(api, 'conversationProviderSignIn')
       },
-      cancelAllFileSearches: () => undefined,
-      statPath: (path) => call(api, 'statPath', path),
-      readImageDataUrl: (path) => call(api, 'readImageDataUrl', path),
+      stopSession: (input) => receipts.run(input, (rest) => call(api, 'conversationSessionStop', rest)),
+      // The IPC answers it as a promise; the runtime's own is synchronous.
+      listSessions: (input) => call(api, 'conversationSessionsList', input) as never,
+      get suspendSession() {
+        return optional(api, 'conversationSessionSuspend')
+      },
+      get mcpServerAction() {
+        return optional(api, 'conversationSessionMcpAction')
+      },
+      get stopSubagent() {
+        return optional(api, 'conversationSessionStopSubagent')
+      },
+      get messageSubagent() {
+        return optional(api, 'conversationSessionMessageSubagent')
+      },
+      get askSideQuestion() {
+        return optional(api, 'conversationSessionAskSideQuestion')
+      },
+      get cancelSideQuestion() {
+        return optional(api, 'conversationSessionCancelSideQuestion')
+      },
+      get readContextBreakdown() {
+        return optional(api, 'conversationSessionContextBreakdown')
+      },
+      get terminalHandoff() {
+        return optional(api, 'conversationSessionTerminalHandoff')
+      },
+      get listThreads() {
+        return optional(api, 'conversationThreads')
+      },
+      // The stub hears the search's abort signal, as the runtime does.
+      get searchThreads() {
+        return has(api, 'conversationSearch')
+          ? (input: unknown, options: unknown) => call(api, 'conversationSearch', input, options)
+          : undefined
+      },
+      get listApprovalRules() {
+        return has(api, 'conversationApprovalRules') ? () => call(api, 'conversationApprovalRules') : undefined
+      },
+      get revokeApprovalRule() {
+        return has(api, 'conversationRevokeApprovalRule')
+          ? (ruleId: string) => call(api, 'conversationRevokeApprovalRule', { ruleId })
+          : undefined
+      },
+      // The window's all-chats stream is already its lifecycle, each event an envelope.
+      onEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
+      onLifecycleEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
     },
-    repoRoot: (folderPath, hostId) =>
-      hostId === undefined ? call(api, 'getGitRepoRoot', folderPath) : call(api, 'getGitRepoRoot', folderPath, hostId),
-    hasReceipt: receipts.has,
+    commandReceipt: receipts.receipt,
     // The chat suites name files on a stubbed disk; nothing here is confined but by the stubs.
     readableRoots: () => ['/'],
     commands: (input) => call(api, 'conversationCommands', input),
@@ -162,7 +223,6 @@ function chatOver(api: Api) {
       const subscribe = api.onConversationCommandsChanged as ((cb: typeof listener) => () => void) | undefined
       return typeof subscribe === 'function' ? subscribe(listener) : () => undefined
     },
-    workspaces: () => [],
   })
 }
 
@@ -172,20 +232,75 @@ export type StudioLoopback = {
   drop(): void
   /** How many connections the window has opened so far. */
   connections(): number
+  /**
+   * Connect the window now, and resolve once its Studio has welcomed it: what
+   * a chat here may do is read off that welcome, as the app's window has it
+   * before it draws a chat.
+   */
+  welcomed(): Promise<void>
 }
 
 /**
- * Put a stubbed window's chat view on the Studio protocol, when this run is
- * the `chat-over-studio` one. Call it after `window.api` is stubbed; members
- * the test changes later are read when they are called.
+ * The files by path over the same stubs, under the names the window's IPC
+ * once had (`searchFiles`, `statPath`, `readfile`, ...). The suites name files
+ * on a stubbed disk, so nothing here is confined but by the stubs.
+ */
+function fileSystemOver(api: Api): StudioFileSystem {
+  const quiet = (name: string, ...args: unknown[]) => {
+    if (has(api, name)) void call(api, name, ...args).catch(() => undefined)
+  }
+  return {
+    readableRoots: async () => ['/'],
+    writableRoots: async () => ['/'],
+    listDirectory: (path) => call(api, 'readdir', path),
+    readText: (path) => call(api, 'readfile', path),
+    readImage: (path) => call(api, 'readImageDataUrl', path),
+    exists: (path) => call(api, 'pathExists', path),
+    stat: (path) => call(api, 'statPath', path),
+    checkWorkspaceFolder: (path) => call(api, 'checkWorkspaceFolder', path),
+    projectLogo: (folderPath) =>
+      has(api, 'detectProjectLogo') ? call(api, 'detectProjectLogo', folderPath) : Promise.resolve(null),
+    projectIcon: (path) => call(api, 'readProjectIconFile', path),
+    repoRoot: (folderPath, hostId) =>
+      hostId === undefined ? call(api, 'getGitRepoRoot', folderPath) : call(api, 'getGitRepoRoot', folderPath, hostId),
+    searchFiles: (_slot, input) =>
+      call(api, 'searchFiles', input.rootPath, input.query, {
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+        ...(input.channel === undefined ? {} : { channel: input.channel }),
+        ...(input.recentAt === undefined ? {} : { recentAt: input.recentAt }),
+      }),
+    cancelFileSearch: (_slot, channel) => quiet('cancelFileSearch', channel),
+    searchContent: (_slot, input) =>
+      call(api, 'searchContent', input.rootPath, input.query, input.limit === undefined ? {} : { limit: input.limit }),
+    cancelContentSearch: () => quiet('cancelContentSearch'),
+    releaseSlot: () => undefined,
+    defaultWorkspaceParent: () => null,
+    writeText: (path, text, roots) => call(api, 'writefile', path, text, { roots }),
+    saveDroppedImage: (input) => call(api, 'saveDroppedImage', input),
+    createFile: (parentPath, name) => call(api, 'createFile', parentPath, name),
+    createDirectory: (parentPath, name, existing) =>
+      call(api, existing === 'keep' ? 'ensureDir' : 'createDir', parentPath, name),
+    rename: (path, name) => call(api, 'renamePath', path, name),
+    copy: (path, toFolder, onConflict) =>
+      onConflict === 'rename'
+        ? call(api, 'copyPath', path, toFolder)
+        : call(api, 'copyPathInto', path, toFolder, { overwrite: onConflict === 'overwrite' }),
+    move: (path, toFolder) => call(api, 'movePath', path, toFolder),
+    trash: (path) => call(api, 'deletePath', path),
+    watch: async () => ({ ok: true, dispose: () => undefined }),
+  }
+}
+
+/**
+ * Put a stubbed window on a Studio over the protocol: its chat view and its
+ * chat services. Call it after `window.api` is stubbed; members the test
+ * changes later are read when they are called.
  */
 export function installStudioLoopback(
   win: { api?: Api },
   options: { environmentId?: string; pullRequests?: StudioPullRequests } = {},
-): StudioLoopback | null {
-  // Pull requests are served only over the protocol, so a test of them puts
-  // the window on it in every run.
-  if (!chatOverStudioUnderTest() && !options.pullRequests) return null
+): StudioLoopback {
   const api = (win.api ??= {})
   // One chat surface for the window's life, as main provides one: its receipts
   // outlive a dropped connection. Its members still read the stubs when called.
@@ -196,39 +311,32 @@ export function installStudioLoopback(
     environmentId: options.environmentId ?? 'studio-loopback',
     backend: conversationsOver(api),
     chat: () => chat,
+    fileSystem: fileSystemOver(api),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     // The socket is never started; windows say hello with their tickets.
     authenticator: createTicketAuthenticator(mintStudioTicket()),
   })
-  const windowEnds = new Map<string, MemoryChannelEnd>()
+  // The window's sockets, each admitted as the window listener admits one: by
+  // the ticket its URL names, which its hello must then present.
+  const windowEnds = new Set<MemoryChannelEnd>()
   let opened = 0
-  Object.assign(api, {
-    studioChatTransport: 'studio',
-    studioConnect: async () => {
+  configureWindowStudio(api, {
+    WebSocket: memoryWebSocketClass((url) => {
+      const ticket = new URL(url).searchParams.get('ticket')
+      if (!ticket) return null
       const [mainEnd, windowEnd] = createMemoryChannel()
-      const ticket = mintStudioTicket()
-      const connection = server.attach(framePortStream(mainEnd), {
-        authenticator: createTicketAuthenticator(ticket),
-        ownWindow: true,
-      })
-      windowEnds.set(connection.connectionId, windowEnd)
+      server.attach(framePortStream(mainEnd), { authenticator: createTicketAuthenticator(ticket), ownWindow: true })
+      windowEnds.add(windowEnd)
+      windowEnd.onClose(() => windowEnds.delete(windowEnd))
       opened++
-      return { connectionId: connection.connectionId, ticket }
+      return windowEnd
+    }),
+  })
+  Object.assign(api, {
+    studioWindowTicket: async () => {
+      const ticket = mintStudioTicket()
+      return { url: `ws://127.0.0.1:1/ws?ticket=${encodeURIComponent(ticket)}`, token: ticket }
     },
-    studioPortSend: (connectionId: string, frame: string) => windowEnds.get(connectionId)?.post(frame),
-    studioPortListen: (connectionId: string, onFrame: (frame: string) => void, onClose: () => void) => {
-      const end = windowEnds.get(connectionId)
-      if (!end) {
-        onClose()
-        return
-      }
-      end.onFrame(onFrame)
-      end.onClose(() => {
-        windowEnds.delete(connectionId)
-        onClose()
-      })
-    },
-    studioPortClose: (connectionId: string) => windowEnds.get(connectionId)?.close(),
   })
   return {
     server,
@@ -236,5 +344,19 @@ export function installStudioLoopback(
       for (const end of [...windowEnds.values()]) end.close()
     },
     connections: () => opened,
+    welcomed: async () => {
+      await windowStudioClient(api as Parameters<typeof windowStudioClient>[0])
+    },
   }
+}
+
+/**
+ * Let a call the view just made cross the loopback and its answer come back
+ * and be drawn: a protocol call takes a few turns of the event loop where the
+ * window's IPC took one.
+ */
+export async function settleStudio(act: (work: () => Promise<void>) => Promise<void>): Promise<void> {
+  await act(async () => {
+    for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 }

@@ -31,6 +31,7 @@ import {
   resolveSkillLink,
   stripSkillFrontmatter,
 } from './skillsSurfaceModel'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -243,7 +244,7 @@ function useSkillFile(
       setRead({ status: 'ready', content: cached })
       return
     }
-    if (!readFile && typeof window.api.skillsReadFile !== 'function') {
+    if (!readFile && typeof agentSkillsApi.skillsReadFile !== 'function') {
       setRead({ status: 'error', message: MISSING_API_MESSAGE })
       return
     }
@@ -251,7 +252,7 @@ function useSkillFile(
     setRead({ status: 'loading' })
     const request = readFile
       ? readFile(path).then((content) => ({ ok: true as const, content }))
-      : window.api.skillsReadFile({ sourceId, skillId, path })
+      : agentSkillsApi.skillsReadFile({ sourceId, skillId, path })
     void request
       .then((result) => {
         if (cancelled) return

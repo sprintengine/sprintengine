@@ -2,6 +2,7 @@ import { mkdir, readFile, realpath, rename, writeFile } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import { STUDIO_MCP_SERVER_ID } from '../shared/product-identity'
+import type { ConversationApprovalDecision } from '../shared/conversation-runtime'
 import {
   approvalFilePath,
   approvalRuleCandidate,
@@ -61,7 +62,7 @@ export class ConversationApprovalRuleStore {
     workspaceRoot: string,
     sessionId: string,
     request: ApprovalRuleRequest,
-    scope: 'conversation' | 'always',
+    scope: Extract<ConversationApprovalDecision, 'conversation' | 'always'>,
   ): Promise<ConversationApprovalRule> {
     await this.load()
     const candidate = approvalRuleCandidate(request, workspaceRoot)
@@ -81,6 +82,23 @@ export class ConversationApprovalRuleStore {
       ])
     }
     return rule
+  }
+  /**
+   * Keep a saved rule as another Studio kept it (a desktop handing over the
+   * chats it ran in this machine's folders), held to what a rule saved here
+   * may be. One whose id is here already is left as this store has it.
+   */
+  async adopt(value: unknown): Promise<{ ok: true } | { ok: false; reason: string; exists?: true }> {
+    await this.load()
+    if (!this.userDataDir) return { ok: false, reason: 'Persistent conversation permissions are unavailable.' }
+    const rule = migrateConversationApprovalRule(value)
+    // Kept only as it was given: one this build would narrow comes back as
+    // another object (as `load` reads it), and is not this rule.
+    if (!rule || rule !== value) return { ok: false, reason: 'It is not a rule this Studio keeps.' }
+    if (this.persistent.some((entry) => entry.id === rule.id))
+      return { ok: false, reason: 'A rule with that id is already here.', exists: true }
+    await this.mutate((rules) => (rules.some((entry) => entry.id === rule.id) ? rules : [...rules, rule]))
+    return { ok: true }
   }
   async revoke(id: string): Promise<void> {
     await this.load()

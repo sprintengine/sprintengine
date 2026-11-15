@@ -21,21 +21,23 @@ let host: HTMLDivElement
 let status: McpHttpStatus
 const clipboard = vi.fn(async (_text: string) => undefined)
 const revoke = vi.fn(async (_id: string) => off)
+const create = vi.fn(async (name: string) => ({
+  ok: true,
+  status: on,
+  client: { id: 'c1', name, createdAt: 1, lastUsedAt: null },
+  token: 'semcp_secret',
+  url: on.url,
+}))
 
 beforeEach(() => {
   status = off
   clipboard.mockClear()
   revoke.mockClear()
+  create.mockClear()
   Object.assign(window, {
     api: {
       mcpHttpStatus: vi.fn(async () => status),
-      mcpHttpCreate: vi.fn(async (name: string) => ({
-        ok: true,
-        status: on,
-        client: { id: 'c1', name, createdAt: 1, lastUsedAt: null },
-        token: 'semcp_secret',
-        url: on.url,
-      })),
+      mcpHttpCreate: create,
       mcpHttpRevoke: revoke,
       clipboardWriteText: clipboard,
     },
@@ -77,7 +79,7 @@ test('Copy MCP URL names the client, then copies the URL with its token as a cli
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
   await act(async () => button('Copy MCP URL').click())
-  expect(window.api.mcpHttpCreate).toHaveBeenCalledWith('editor')
+  expect(create).toHaveBeenCalledWith('editor')
   const copied = JSON.parse(clipboard.mock.calls[0]![0])
   expect(copied).toEqual({
     mcpServers: {
@@ -103,4 +105,16 @@ test('a client is revoked after asking', async () => {
   await act(async () => confirm.click())
   expect(revoke).toHaveBeenCalledWith('c1')
   expect(host.textContent).not.toContain('editor')
+})
+
+test('a web tab lists and revokes the clients, and is not offered a token', async () => {
+  status = on
+  Object.assign(window.api, { clientCapabilities: [] })
+  await render()
+  expect(host.textContent).toContain('editor')
+  expect(host.textContent).toContain(
+    'A new MCP URL is made in the desktop app, or on this server’s machine with studio-server mcp-token --name <client>.',
+  )
+  expect(() => button('Copy MCP URL')).toThrow()
+  expect(create).not.toHaveBeenCalled()
 })

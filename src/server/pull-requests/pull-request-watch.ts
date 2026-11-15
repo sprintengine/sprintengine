@@ -286,11 +286,20 @@ export function evaluatePullRequestWatch(
 export function notePullRequestWatchReadFailed(
   previous: PullRequestWatchState,
   reason: Extract<PullRequestWatchRead, { settled: false }>['reason'],
+  /** What this machine lacks for the read (`gh` not installed or not signed in): the watch holds, saying so. */
+  waiting?: string | null,
 ): { state: PullRequestWatchState; stop: PullRequestWatchStop | null } {
   if (reason === 'rate-limited') return { state: previous, stop: null }
+  // Not a failed read but a machine that cannot read yet: nothing is counted
+  // toward the stop, and the watch says what it waits for.
+  if (waiting) {
+    if (previous.view.waiting === waiting) return { state: previous, stop: null }
+    return { state: { ...previous, view: { ...previous.view, waiting } }, stop: null }
+  }
   const failedReads = previous.failedReads + 1
+  const { waiting: _held, ...view } = previous.view
   return {
-    state: { ...previous, failedReads },
+    state: { ...previous, view, failedReads },
     stop: failedReads >= WATCH_FAILED_READ_LIMIT ? 'unreadable' : null,
   }
 }
@@ -393,6 +402,9 @@ export function parsePullRequestWatchState(raw: unknown): PullRequestWatchState 
       ...(view.autoMerge === true ? { autoMerge: true as const } : {}),
       ...(typeof view.base === 'string' && view.base.length > 0 && view.base.length <= 255 ? { base: view.base } : {}),
       ...(count(view.failedChecks) > 0 ? { failedChecks: count(view.failedChecks) } : {}),
+      ...(typeof view.waiting === 'string' && view.waiting.length > 0 && view.waiting.length <= 300
+        ? { waiting: view.waiting }
+        : {}),
     },
   }
 }

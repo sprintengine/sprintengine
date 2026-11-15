@@ -290,7 +290,7 @@ export const runWslScript: WslScriptRunner = (distro, script, options) =>
 //
 // The file is named after the startup script, which is unique per launch, so
 // a relaunch never reads a pid from the session it replaced. It goes into the
-// directory the helper made for it beside its sockets (`pidDir` in its hello:
+// directory the distribution's Studio server made for it (`pidDir` in its `ready`:
 // under `$XDG_RUNTIME_DIR`, or a `/tmp` directory it checked is its own), never
 // a shared one another user could have created first.
 

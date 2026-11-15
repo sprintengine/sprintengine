@@ -604,7 +604,7 @@ test('Copy path on a Windows worktree copies it with backslashes, not as git pri
     ...inventory,
     projects: [{ ...project, worktrees: [{ ...project.worktrees[0]!, path: 'C:/code/by-hand' }] }],
   }
-  window.api.getWorktreeInventory = async () => windows
+  Object.assign(window.api, { getWorktreeInventory: async () => windows })
   const copied: string[] = []
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,

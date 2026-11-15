@@ -269,6 +269,11 @@ export type ConversationToolStartedPayload = {
   kind?: ConversationToolKind
   name?: string
   input?: ConversationJsonValue
+  /**
+   * The input is not whole: it was too large to store, or it crossed a wire
+   * without its file-change bodies (each cut to its head). `toolDetail` reads
+   * it whole.
+   */
   inputTruncated?: boolean
   turnId?: string
   toolCallId?: string
@@ -314,6 +319,11 @@ export type ConversationToolOutputPayload = {
   partial?: boolean
   clipped?: boolean
   toolUseId?: string
+  /**
+   * The result's text as a reader draws it before opening the step: at most
+   * the runtime's preview, and `truncated` when the whole is longer.
+   * `toolDetail` reads it whole. Read before `output`.
+   */
   preview?: string
   totalBytes?: number
   truncated?: boolean
@@ -322,7 +332,11 @@ export type ConversationToolOutputPayload = {
   mime?: string
   turnId?: string
   toolCallId?: string
-  output: string
+  /**
+   * The result as the adapter gave it. On a wire it is left out where it
+   * would only repeat `preview`, so a reader reads `preview` first.
+   */
+  output?: string
   isError: boolean
   parentToolUseId?: string
   /**

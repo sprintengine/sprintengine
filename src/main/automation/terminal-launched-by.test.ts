@@ -5,7 +5,7 @@ import type { AgentLaunchRequest } from '../../shared/agent-launch'
 import { emptyAgentLaunchSettings } from '../../shared/launch-settings'
 import type { McpConnectionMetadata, McpToolRegistration } from '../../shared/modules/mcp-tools'
 import { createAgentLaunchService } from '../agent-launch-service'
-import type { TerminalSpawnPayload } from '../ipc/terminal-ipc'
+import type { TerminalSpawnPayload } from '../terminal-spawn-payload'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
 
 // The terminal tools show an agent the terminals it or its chat started, so

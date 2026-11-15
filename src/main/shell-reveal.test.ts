@@ -22,8 +22,8 @@ test('a chat target opens the chat through the link router', () => {
     revealMainWindow: (win) => revealed.push(win),
     openChat: () => (link) => opened.push(link),
   })
-  assert.equal(reveal({ kind: 'chat', chatId: 'ws-1', agentId: 'agent-1' }), true)
-  assert.deepEqual(opened, [{ kind: 'chat', chatId: 'ws-1', agentId: 'agent-1' }])
+  assert.equal(reveal({ kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' }), true)
+  assert.deepEqual(opened, [{ kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' }])
   assert.equal(revealed.length, 0, 'the router raises the window that holds the chat')
 })
 
@@ -35,6 +35,6 @@ test('before the router exists, a chat target brings the app forward', () => {
     revealMainWindow: (win) => revealed.push(win),
     openChat: () => null,
   })
-  assert.equal(reveal({ kind: 'chat', chatId: 'ws-1' }), true)
+  assert.equal(reveal({ kind: 'chat', environmentId: 'env-here', chatId: 'ws-1' }), true)
   assert.equal(revealed.length, 1)
 })

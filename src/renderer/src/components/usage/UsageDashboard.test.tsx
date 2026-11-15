@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type {
   UsageReport,
@@ -9,7 +9,10 @@ import type {
   UsageReportRequest,
   UsageReportResult,
 } from '../../../../shared/usage-report'
+import { chatStoresDouble, resetChatStoresDouble } from '../../studio/chatStores.double'
 import UsageDashboard from './UsageDashboard'
+
+vi.mock('../../studio/chatStores', () => import('../../studio/chatStores.double'))
 
 // The dashboard as a person opens it: one request for the range on show,
 // the total and each agent's share of it, and every model in the breakdown,
@@ -63,11 +66,10 @@ beforeEach(() => {
   requests.length = 0
   answer = { ok: true, report: REPORT }
   answers = {}
-  ;(window as unknown as { api: unknown }).api = {
-    usageReport: async (request: UsageReportRequest) => {
-      requests.push(request)
-      return answers[request.peers ?? 'cached']?.() ?? answer
-    },
+  resetChatStoresDouble()
+  chatStoresDouble.usageReport = async (request: UsageReportRequest) => {
+    requests.push(request)
+    return answers[request.peers ?? 'cached']?.() ?? answer
   }
 })
 

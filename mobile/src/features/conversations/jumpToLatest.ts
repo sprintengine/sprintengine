@@ -1,4 +1,5 @@
-import { drawnAsReply, rowStreaming, type ConversationRow } from "./conversationLogic";
+import type { ConversationRow } from "../../../../packages/conversation-timeline/src/public";
+import { drawnAsReply, rowStreaming } from "./conversationLogic";
 
 // "Jump to latest": the way back to the end of a chat the reader has scrolled
 // away from, and how many replies finished while they were up there. The

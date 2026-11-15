@@ -2,6 +2,7 @@ import type { ProjectLogo } from '../shared/electron-api'
 import { imageMimeType } from './filesystem-image'
 import { extractIcnsPng } from './project-logo-icns'
 import { imageWithinDecodeLimits } from '../shared/image-dimensions'
+import { isPathInsideOrEqual } from './path-containment'
 
 // A project's own logo, read off the top level of its repo, the page its web
 // app links as its icon, the folders a web project serves its favicon from,
@@ -88,6 +89,8 @@ export type ProjectLogoIo = {
   readdir(dirPath: string): Promise<string[]>
   stat(filePath: string): Promise<ProjectLogoStat>
   readFile(filePath: string): Promise<Buffer>
+  /** Where a path really is, links resolved. Rejects when it is not there. */
+  realpath(filePath: string): Promise<string>
   /**
    * Downscale a raster candidate to at most `maxPx` on its longest edge,
    * preserving aspect ratio. Returning the input unchanged is always valid —
@@ -217,7 +220,12 @@ function toDataUrl(bytes: Buffer, mimeType: string): string {
  */
 export async function detectProjectLogo(folderPath: string, io: ProjectLogoIo): Promise<ProjectLogo | null> {
   let entries: string[]
+  // Every candidate is read where it really is, and only when that is inside
+  // the project's real folder: a repository is anyone's to write, and a
+  // `logo.png` that links to a picture elsewhere on the disk is no logo of it.
+  let root: string
   try {
+    root = await io.realpath(folderPath)
     entries = await io.readdir(folderPath)
   } catch {
     // A missing or unreadable project folder is not this feature's problem to
@@ -230,7 +238,7 @@ export async function detectProjectLogo(folderPath: string, io: ProjectLogoIo): 
   // candidate before it missed.
   const lists: Array<() => Promise<string[]>> = [
     async () => rankProjectLogoCandidates(entries).map((name) => io.join(folderPath, name)),
-    () => pageIconCandidates(folderPath, io),
+    () => pageIconCandidates(folderPath, root, io),
     ...PROJECT_LOGO_FOLDERS.map((folder) => async () => {
       const inside = await io.readdir(io.join(folderPath, folder)).catch(() => [] as string[])
       return rankProjectLogoCandidates(inside).map((name) => io.join(io.join(folderPath, folder), name))
@@ -242,7 +250,7 @@ export async function detectProjectLogo(folderPath: string, io: ProjectLogoIo): 
     for (const filePath of await list()) {
       if (tried.has(filePath)) continue
       tried.add(filePath)
-      const logo = await logoFrom(filePath, io)
+      const logo = await logoFrom(filePath, io, root)
       if (logo) return logo
     }
   }
@@ -250,11 +258,12 @@ export async function detectProjectLogo(folderPath: string, io: ProjectLogoIo): 
 }
 
 // The icons the project's entry page links, each a path in the project.
-async function pageIconCandidates(folderPath: string, io: ProjectLogoIo): Promise<string[]> {
+async function pageIconCandidates(folderPath: string, root: string, io: ProjectLogoIo): Promise<string[]> {
   const found: string[] = []
   for (const page of PROJECT_LOGO_PAGES) {
-    const pagePath = io.join(folderPath, page)
     try {
+      const pagePath = await realInside(root, io.join(folderPath, page), io)
+      if (!pagePath) continue
       const stats = await io.stat(pagePath)
       if (!stats.isFile || stats.size > PROJECT_LOGO_PAGE_MAX_BYTES) continue
       const html = (await io.readFile(pagePath)).toString('utf-8')
@@ -267,13 +276,21 @@ async function pageIconCandidates(folderPath: string, io: ProjectLogoIo): Promis
   return found
 }
 
-// One candidate file as the logo, or null for one that is not usable.
-async function logoFrom(filePath: string, io: ProjectLogoIo): Promise<ProjectLogo | null> {
+/** Where `filePath` really is, when that is inside `root` (itself a real path); null when it is not. */
+async function realInside(root: string, filePath: string, io: ProjectLogoIo): Promise<string | null> {
+  const real = await io.realpath(filePath)
+  return isPathInsideOrEqual(root, real) ? real : null
+}
+
+// One candidate file as the logo, or null for one that is not usable. A
+// detected one is held to the project's real folder (`root`); a file the
+// person chose is read where they chose it.
+async function logoFrom(filePath: string, io: ProjectLogoIo, root: string | null): Promise<ProjectLogo | null> {
   // Only the io calls are caught. A candidate a user's disk will not give us
   // is an ordinary miss and falls through to the next-ranked one; a throw out
   // of the ranking, the sanitizer, or the encoding below is a bug in this
   // module and must surface rather than quietly degrade to the glyph.
-  const read = await readCandidate(filePath, io)
+  const read = await readCandidate(filePath, io, root)
   if (!read) return null
 
   const { stats, raw, mimeType } = read
@@ -306,9 +323,11 @@ type ReadCandidate = { stats: ProjectLogoStat; raw: Buffer; mimeType: string }
 // Stat + read one candidate, applying the guards. Null means "not a usable
 // candidate" for every reason a disk can produce: gone, not a file, oversized,
 // or an extension we do not serve.
-async function readCandidate(filePath: string, io: ProjectLogoIo): Promise<ReadCandidate | null> {
+async function readCandidate(filePath: string, io: ProjectLogoIo, root: string | null): Promise<ReadCandidate | null> {
   try {
-    const stats = await io.stat(filePath)
+    const real = root === null ? filePath : await realInside(root, filePath, io)
+    if (!real) return null
+    const stats = await io.stat(real)
     if (!stats.isFile) return null
     const icns = filePath.toLowerCase().endsWith('.icns')
     if (stats.size > (icns ? PROJECT_LOGO_ICNS_MAX_BYTES : PROJECT_LOGO_MAX_BYTES)) return null
@@ -318,7 +337,7 @@ async function readCandidate(filePath: string, io: ProjectLogoIo): Promise<ReadC
     const mimeType = icns ? ICNS_MIME_TYPE : imageMimeType(filePath)
     if (!mimeType) return null
 
-    return { stats, raw: await io.readFile(filePath), mimeType }
+    return { stats, raw: await io.readFile(real), mimeType }
   } catch {
     return null
   }
@@ -346,7 +365,7 @@ async function downscaleCandidate(
  */
 export function readProjectIconFile(filePath: string, io: ProjectLogoIo): Promise<ProjectLogo | null> {
   if (!filePath) return Promise.resolve(null)
-  return logoFrom(filePath, io)
+  return logoFrom(filePath, io, null)
 }
 
 export type ProjectLogoResolver = {

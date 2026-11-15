@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.messageOrder', async () => {
   // Every list in the sidebar orders by when the person last sent a message into
@@ -55,21 +58,21 @@ test('WorkspaceSidebar.messageOrder', async () => {
   // Bravo's agent is alive and hook-reported idle: the "genuinely finished, not
   // killed" shape that earns the green mark when its working clock stops. The
   // mark is what used to move the row; here it must only recolour it.
+  terminalsDouble.listTerminals = async () => [
+    {
+      sessionId: 's2',
+      workspaceId: 'w2',
+      processAlive: true,
+      kind: 'agent',
+      cli: 'claude-code',
+      activity: { kind: 'idle', since: 1 },
+      agentState: { phase: 'idle', since: 1, source: 'hook' },
+    },
+  ]
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [
-      {
-        sessionId: 's2',
-        workspaceId: 'w2',
-        processAlive: true,
-        kind: 'agent',
-        cli: 'claude-code',
-        activity: { kind: 'idle', since: 1 },
-        agentState: { phase: 'idle', since: 1, source: 'hook' },
-      },
-    ],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
   }
 

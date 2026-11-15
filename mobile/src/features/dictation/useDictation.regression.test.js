@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const { createRequire } = require("node:module");
 const { test } = require("node:test");
 
-const compiled = path.resolve(__dirname, "../../../.mobile-test-build/src/features/dictation/useDictation.js");
+const compiled = path.resolve(__dirname, "../../../.mobile-test-build/mobile/src/features/dictation/useDictation.js");
 const localRequire = createRequire(compiled);
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const { joinDictation, messageWithDictation, SEND_FINISH_MS } = localRequire("./dictationLogic");

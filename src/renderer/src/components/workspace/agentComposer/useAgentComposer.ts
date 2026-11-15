@@ -1,6 +1,7 @@
 import React from 'react'
 import type { AgentCliAvailabilityMap } from '../../../../../shared/electron-api'
-import type { CredentialSecretStatusResult } from '../../../../../shared/electron-api'
+import type { ConversationSecretStatusResult } from '../../../../../shared/electron-api'
+import { windowChatServices } from '../../panels/agentChat/windowChat'
 import type { AgentCli } from '../../../types/workspace'
 import type { WorkspaceSkill } from '../../../../../shared/electron-api'
 import {
@@ -166,7 +167,7 @@ type UseAgentComposerOptions = {
 }
 
 /** Whether a key status leaves a runtime in the pickers: only a clear "none" takes it out. */
-export function keyMayBeSet(result: CredentialSecretStatusResult): boolean {
+export function keyMayBeSet(result: ConversationSecretStatusResult): boolean {
   return !result.ok || result.status.configured
 }
 
@@ -178,8 +179,9 @@ export function keyMayBeSet(result: CredentialSecretStatusResult): boolean {
 function useCliIdsWithKey(ids: string): ReadonlySet<string> | null {
   const [withKey, setWithKey] = React.useState<ReadonlySet<string> | null>(null)
   React.useEffect(() => {
-    const read = window.api?.credentialSecretStatus
-    if (typeof read !== 'function') return
+    // Only a page that reaches a Studio can read a key's status.
+    if (typeof window.api?.studioWindowTicket !== 'function') return
+    const read = ({ id }: { id: string }) => windowChatServices().providers.secretStatus({ providerId: id })
     let cancelled = false
     const wanted = ids ? ids.split('\u0000') : []
     const readAll = () =>

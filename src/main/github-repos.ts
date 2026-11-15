@@ -22,7 +22,9 @@ const MAX_PAGES = 3
  * Never throws — the picker renders each failure reason differently (connect
  * hint vs. bad token vs. retry), so the reason travels in the result.
  */
-export async function listGitHubRepos(tokenStore: GitHubTokenStore): Promise<GitHubRepoListResult> {
+export async function listGitHubRepos(
+  tokenStore: Pick<GitHubTokenStore, 'resolveToken'>,
+): Promise<GitHubRepoListResult> {
   const token = await tokenStore.resolveToken()
   if (!token) {
     return { ok: false, reason: 'no_token', message: 'No GitHub token is configured.' }

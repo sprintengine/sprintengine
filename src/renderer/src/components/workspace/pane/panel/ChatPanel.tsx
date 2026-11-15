@@ -142,9 +142,9 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
   // cannot be opened from here. Its changes can, read from that machine, where
   // it reads them for this window (`conversation-changes`); an older one keeps
   // the row as its count.
-  const farMachine = facts?.remote ? shortMachineName(facts.machine?.name ?? 'the other machine') : null
+  const farMachine = facts?.environmentLabel ? shortMachineName(facts.environmentLabel) : null
   const onFarMachine = farMachine ? `On ${farMachine}` : null
-  const pairedChanges = usePairedChanges(workspaceId, facts?.remote ? agentId : null)
+  const pairedChanges = usePairedChanges(workspaceId, farMachine ? agentId : null)
   const changesOpen = !farMachine || (pairedChanges !== null && gitEnabled)
 
   const record = agentId ? workspace?.agents?.[agentId] : undefined

@@ -36,6 +36,7 @@ import { addedRepoKeys } from './discoverModel'
 import { SkillsDiscover } from './SkillsDiscover'
 import { pluralSkills } from './skillsSurfaceModel'
 import { isImeKey } from '../../../../../utils/imeKey'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 type AddPhase =
   | { kind: 'idle' }
@@ -102,7 +103,7 @@ export function AddSkillSourceModal({
   const scan = async (): Promise<void> => {
     const value = repo.trim()
     if (value.length === 0) return
-    if (typeof window.api.skillsAddSource !== 'function') {
+    if (typeof agentSkillsApi.skillsAddSource !== 'function') {
       setPhase({ kind: 'failed', message: 'Skills need an app restart before they are available.' })
       return
     }
@@ -110,7 +111,7 @@ export function AddSkillSourceModal({
     try {
       // `replace` re-scans a repository already in the list rather than
       // refusing it, which is what a user who pastes it twice means.
-      const result = await window.api.skillsAddSource({ repo: value, replace: true })
+      const result = await agentSkillsApi.skillsAddSource({ repo: value, replace: true })
       if (!result.ok) {
         setPhase({ kind: 'failed', message: result.message })
         return
@@ -128,9 +129,9 @@ export function AddSkillSourceModal({
   }
 
   const remove = async (sourceId: string): Promise<void> => {
-    if (typeof window.api.skillsRemoveSource !== 'function') return
+    if (typeof agentSkillsApi.skillsRemoveSource !== 'function') return
     setRemoving(true)
-    const result = await window.api.skillsRemoveSource({ sourceId })
+    const result = await agentSkillsApi.skillsRemoveSource({ sourceId })
     setRemoving(false)
     if (!result.ok) {
       setPhase({ kind: 'failed', message: result.message })

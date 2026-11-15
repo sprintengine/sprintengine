@@ -36,9 +36,9 @@ export type TailnetToolsFrontDoor = {
     id: string
     scopes?: unknown
     code?: unknown
-    via?: 'ipc' | 'tool'
+    via?: 'window' | 'tool'
   }): TailnetApprovePairRequestView
-  denyTailnetPairRequest(id: string, via?: 'ipc' | 'tool'): TailnetRemoteStatus
+  denyTailnetPairRequest(id: string, via?: 'window' | 'tool'): TailnetRemoteStatus
   cancelTailnetPairing(): TailnetRemoteStatus
   revokeTailnetDevice(deviceId: string): TailnetRemoteStatus
   listTailnetPeers(): Promise<TailnetPeerScan>

@@ -1,6 +1,8 @@
 import * as Crypto from "expo-crypto";
 import { Directory, File, Paths } from "expo-file-system";
-import type { ConversationKey } from "../api/conversationWire";
+import {
+  type ConversationWireKey as ConversationKey,
+} from "../../../packages/conversation-protocol/src/public";
 import {
   createConversationCacheStore,
   MAX_CACHE_CHARS,

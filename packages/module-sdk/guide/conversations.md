@@ -77,23 +77,30 @@ export const registerMain: RegisterMain = (host) => {
   if (!host.supports('conversations')) return
   const chats = getConversationService(host)          // manifest: "dependsOn": ["agent-runtime"]
 
-  host.registerIpc(`${host.moduleId}:start`, async (_event, input) => {
-    const started = await chats.create({
-      workspaceId: String((input as { workspaceId?: unknown }).workspaceId),
-      name: 'Release notes',
-      prompt: 'Draft release notes from the commits since the last tag. Do not push.',
-      // cli, model, skills, attachments, permissionPreset: optional
-    })
-    if (!started.ok) return started                     // { ok: false, code, message }
-    const ref = { workspaceId: started.conversation.workspaceId, agentId: started.conversation.agentId }
-    const off = chats.subscribe(ref, async (event) => {
-      if (event.type !== 'turn_completed') return
-      off()
-      const reply = await chats.reply(ref)              // the agent's last message of the turn
-      if (!reply.ok) host.notify({ severity: 'warning', title: 'Release notes did not finish' })
-      else host.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
-    })
-    return started
+  host.registerMethods({
+    start: {
+      access: 'operate',
+      params: readWorkspaceId,                          // (value) => { ok: true, params } | { ok: false, message }
+      handler: async ({ workspaceId }, { commandId }) => {
+        const started = await chats.create({
+          workspaceId,
+          commandId,                                    // a retried call finds the chat the first one made
+          name: 'Release notes',
+          prompt: 'Draft release notes from the commits since the last tag. Do not push.',
+          // cli, model, skills, attachments, permissionPreset: optional
+        })
+        if (!started.ok) return started                 // { ok: false, code, message }
+        const ref = { workspaceId: started.conversation.workspaceId, agentId: started.conversation.agentId }
+        const off = chats.subscribe(ref, async (event) => {
+          if (event.type !== 'turn_completed') return
+          off()
+          const reply = await chats.reply(ref)          // the agent's last message of the turn
+          if (!reply.ok) host.notify({ severity: 'warning', title: 'Release notes did not finish' })
+          else host.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
+        })
+        return { ok: true, result: { agentId: started.conversation.agentId } }
+      },
+    },
   })
 }
 ```

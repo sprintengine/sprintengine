@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 import type { ConversationThread } from '../../../shared/conversation-index'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { revealAgentTerminalTab } from './agentTabReveal'
+import { windowChatServices } from '../components/panels/agentChat/windowChat'
 import { conversationAgentRuntimePatch } from '../components/workspace/conversationSpawnOptions'
 
 const jumps = new Map<string, number>()
@@ -42,8 +43,8 @@ export async function openConversationMatch(input: {
     notify()
     return revealAgentTerminalTab({ workspaceId: input.workspaceId, agentId: input.agentId, name: agent.name })
   }
-  const result = await window.api
-    .conversationThreads({ workspaceRoot: input.workspaceRoot, workspaceId: input.workspaceId })
+  const result = await windowChatServices()
+    .history.threads({ workspaceRoot: input.workspaceRoot, workspaceId: input.workspaceId })
     .catch(() => null)
   const thread = result?.ok ? result.threads.find((candidate) => candidate.agentId === input.agentId) : undefined
   if (thread) return openConversationHistory(input.workspaceId, thread, input.seq)

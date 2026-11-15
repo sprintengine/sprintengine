@@ -1,8 +1,8 @@
 // The idle reaper's live-work probe for native Windows sessions: one
 // PowerShell (CIM) read per sweep. It cannot run here, so the runner is
 // stubbed with output captured in the shape the read prints. WSL sessions are
-// read by their distribution's helper instead (see
-// `hosts/wsl-helper/proc.test.ts`).
+// read by their distribution's Studio server instead
+// (`server/wsl/distribution/proc.mjs`).
 
 import assert from 'node:assert/strict'
 import { test } from 'vitest'

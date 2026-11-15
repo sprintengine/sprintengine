@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { fakePairedStudios } from '../../studio/environmentStudio.double'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -97,8 +98,7 @@ test('Un-settle puts a chat back, and Open leaves Settings for it', async () => 
 })
 
 test('a chat opened from a paired machine is brought back there first, then here', async () => {
-  const asked: unknown[] = []
-  let answer: (value: { ok: true; workspaceId: string; settledAt: null }) => void = () => {}
+  let answer: (value: { settledAt: null }) => void = () => {}
   const workspaces = fixtures.state.workspaces as Array<Record<string, unknown>>
   workspaces[1] = {
     ...workspaces[1],
@@ -112,22 +112,25 @@ test('a chat opened from a paired machine is brought back there first, then here
     },
   }
   const previous = (window as { api?: unknown }).api
-  ;(window as { api?: unknown }).api = {
-    meshSettleConversation: (input: unknown) => {
-      asked.push(input)
-      return new Promise((resolve) => {
+  const api = {}
+  ;(window as { api?: unknown }).api = api
+  // That machine's Studio, as this window's own client of it reaches it.
+  const studio = fakePairedStudios(api, {
+    'conversation.settle': () =>
+      new Promise((resolve) => {
         answer = resolve
-      })
-    },
-  }
+      }),
+  })
   try {
     await render()
     await act(async () =>
       host.querySelector<HTMLButtonElement>('button[aria-label="Un-settle Fix the login banner"]')?.click(),
     )
-    expect(asked).toEqual([{ connectionId: 'c1', workspaceId: 'remote-w2', settled: false }])
+    expect(studio.writes()).toEqual([
+      { connectionId: 'c1', method: 'conversation.settle', params: { workspaceId: 'remote-w2', settled: false } },
+    ])
     expect(unsettled).toEqual([])
-    await act(async () => answer({ ok: true, workspaceId: 'remote-w2', settledAt: null }))
+    await act(async () => answer({ settledAt: null }))
     expect(unsettled).toEqual(['w2'])
   } finally {
     ;(window as { api?: unknown }).api = previous

@@ -334,12 +334,10 @@ export function onUsageLimitHit(listener: (hit: UsageLimitHit) => void): () => v
   return usageLimits.onLimitHit(listener)
 }
 
-// A Claude terminal's status line is read in the desktop's own process, where
-// its terminals run. With the Studio server out of process the chats, the
-// IPC that draws the limits and the resumes after them are the server's, and
-// its store is another; the desktop forwards each reading there (app-services,
-// `SERVER_EVENTS.usageStatusLine`) as well as keeping it here, where the
-// launch notices read it.
+// A Claude terminal's status line is read where its terminals run, the Studio
+// server (studio-agent-terminals.ts), whose store is the one the windows draw,
+// the resumes wait on and the launch notices read. Whoever wants each reading
+// as it is taken (the runtime's tests) hears it here.
 const statusLineForwarders = new Set<(rateLimits: unknown, at: number) => void>()
 
 /** A Claude Code status line's `rateLimits`: into this process's store, and to whatever forwards them. */

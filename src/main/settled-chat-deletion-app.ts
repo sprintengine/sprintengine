@@ -11,8 +11,8 @@ import { createSettledChatWorktreeOps } from './settled-chat-worktrees'
 import { createWorktreeInventory } from './worktree-pool/worktree-inventory'
 
 // Deleting a settled chat as this app does it, wherever it is asked: a
-// window's Delete (settled-chats-ipc.ts) and a paired desktop's
-// (`conversation.delete`). One construction, so the two cannot delete
+// client's Delete over the Studio protocol (`settledChats.delete`) and a
+// paired desktop's on its lane (`conversation.delete`). One construction, so the two cannot delete
 // differently.
 
 type Services = {

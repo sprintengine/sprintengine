@@ -735,7 +735,7 @@ test('every model-picker surface passes the discovered catalog to the merge', as
   }
 })
 
-test("a chat in a WSL workspace runs that machine's CLI, whichever chat CLI it is", () => {
+test("a chat in a WSL workspace is handed that machine's commands, and no machine to send them to", () => {
   const cliRuntimes = {
     'claude-code': { command: 'C:\\tools\\claude.exe', models: ['opus'] },
     codex: { command: 'codex' },
@@ -751,13 +751,15 @@ test("a chat in a WSL workspace runs that machine's CLI, whichever chat CLI it i
   assert.equal(conversationCliRuntimesFor(cliRuntimes, 'local', hosts as never), cliRuntimes)
   assert.equal(conversationCliRuntimesFor(cliRuntimes, undefined, hosts as never), cliRuntimes)
   assert.deepEqual(conversationCliRuntimesFor(cliRuntimes, 'wsl:Ubuntu', hosts as never), {
-    'claude-code': { command: '/opt/claude/bin/claude', models: ['opus'], hostId: 'wsl:Ubuntu' },
+    // The distribution's Studio runs the chat and starts its CLI as its own,
+    // so no host id goes with them.
+    'claude-code': { command: '/opt/claude/bin/claude', models: ['opus'] },
     // This PC's command does not go with it: the distribution's PATH finds `codex`.
-    codex: { command: '', hostId: 'wsl:Ubuntu' },
-    cursor: { command: '/home/dev/.local/bin/cursor-agent', hostId: 'wsl:Ubuntu' },
-    opencode: { command: '', hostId: 'wsl:Ubuntu' },
-    grok: { command: '', hostId: 'wsl:Ubuntu' },
-    'kimi-code': { command: '', hostId: 'wsl:Ubuntu' },
+    codex: { command: '' },
+    cursor: { command: '/home/dev/.local/bin/cursor-agent' },
+    opencode: { command: '' },
+    grok: { command: '' },
+    'kimi-code': { command: '' },
     // A CLI with no chat runtime is a terminal's business, and left alone.
     'acme-cli': { command: 'acme' },
   })
@@ -765,7 +767,6 @@ test("a chat in a WSL workspace runs that machine's CLI, whichever chat CLI it i
   assert.deepEqual(conversationCliRuntimesFor(cliRuntimes, 'wsl:Debian', hosts as never)?.['claude-code'], {
     command: '',
     models: ['opus'],
-    hostId: 'wsl:Debian',
   })
 })
 

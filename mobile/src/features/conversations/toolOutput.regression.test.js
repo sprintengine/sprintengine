@@ -18,7 +18,7 @@ const {
   toolDetailChat,
   toolDetailSize,
   toolOutputView,
-} = require("../../../.mobile-test-build/src/features/conversations/toolOutput.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/toolOutput.js");
 
 const ESC = "\u001b";
 
@@ -159,6 +159,15 @@ test("edits are read from what the step was called with: before and after, sever
 });
 
 const tool = (name, input, extra = {}) => ({ name, input, status: "ok", ...extra });
+
+test("a change that came without its bodies is drawn only from its detail", () => {
+  const cut = tool("Write", { file_path: "/r/a.ts", content: "first line only" }, { inputTruncated: true });
+  const waiting = toolOutputView(cut, null).view;
+  assert.equal(waiting.kind, "note", "never the cut body as if it were the file");
+  const whole = toolOutputView(cut, { input: { file_path: "/r/a.ts", content: "first line only\nand the rest" }, output: "", clipped: false }).view;
+  assert.equal(whole.kind, "edit");
+  assert.equal(whole.edits[0].added, 2);
+});
 
 test("each kind of step reads as itself", () => {
   const command = toolOutputView(tool("Bash", { command: "npm test" }, { exitCode: 1, output: "preview" }), {

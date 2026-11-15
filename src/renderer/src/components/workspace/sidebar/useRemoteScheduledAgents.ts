@@ -1,16 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
+import { parseEnvironmentRoute } from '../../../../../../packages/studio-protocol/src/environment'
+import { STUDIO_SCHEDULES_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
+import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import type { MachineRef } from '../../../../../shared/machine-identity'
 import type { ScheduledAgentView, ScheduledAgentsPause } from '../../../../../shared/scheduled-agents'
 import type { MeshConnection, MeshScheduledAgentAction } from '../../../../../shared/tailnet-mesh'
 import type { TailnetScope } from '../../../../../shared/tailnet'
 import { tailnetScopeGrantsAccess } from '../../../../../shared/tailnet'
 import type { RemoteBrowseEntry } from '../remoteBand/remoteSessionsModel'
+import {
+  followedEnvironmentChats,
+  followedEnvironmentTargets,
+  onFollowedEnvironmentChats,
+  type EnvironmentChatsSnapshot,
+} from '../../../studio/environmentChats'
+import {
+  environmentStudioAvailable,
+  pairedConnectionOf,
+  pairedRoute,
+  type EnvironmentTarget,
+} from '../../../studio/environmentStudio'
+import { pairedScheduledAgents, scheduledAgentsOf } from '../../../studio/pairedSchedules'
+import { environmentConversationTransport } from '../../panels/agentChat/environmentChat'
 
-// Each paired machine's scheduled agents, for the sidebar's Scheduled section.
-// A schedule there runs on that machine, by that machine's scheduler, so it is
-// listed and controlled from here over the `schedule.*` tools the machine
-// serves to a paired device: on `workspace:read` to list, `workspace:operate`
-// to run, pause, resume or close one.
+// Each other machine's scheduled agents, for the sidebar's Scheduled section:
+// a paired desktop's, and an SSH machine's or a WSL distribution's this window
+// follows chats on. A schedule there runs on that machine, by that machine's
+// scheduler (a schedule made here for a machine's folder is handed over to it,
+// environment-migration.ts), so it is listed and controlled from here on that
+// machine's Studio (`schedules.*`), asked by this window itself over its route:
+// a paired desktop on `workspace:read` to list, `workspace:operate` to run,
+// pause, resume or close one.
 //
 // Read on the same beat as the machine's rows: whenever its browse settles —
 // the mount read, a change it pushed, a machine waking — since a run starting
@@ -20,8 +41,17 @@ import type { RemoteBrowseEntry } from '../remoteBand/remoteSessionsModel'
 const REMOTE_SCHEDULES_CADENCE_MS = 120_000
 
 export type RemoteScheduledMachine = {
-  connectionId: string
+  /** The route this window asks it by (`formatEnvironmentRoute`). */
+  route: string
+  /**
+   * Its pairing here, for a paired desktop; null for another environment's
+   * (an SSH machine's). Either's schedules open in New chat's editor, which
+   * saves them there.
+   */
+  connectionId: string | null
   machineName: string
+  /** How its rows draw the machine's mark. */
+  machine: MachineRef
   agents: ScheduledAgentView[]
   pausedAll: ScheduledAgentsPause | null
   /** The pairing may run, pause, resume and close its schedules (`workspace:operate`). */
@@ -79,111 +109,217 @@ function subscribePublishedMachines(listener: () => void): () => void {
   }
 }
 
-/** One of a paired machine's schedules as the Scheduled section holds it now, with its machine. */
+/**
+ * The machines this desktop owns (its SSH machines and WSL distributions, not
+ * a paired desktop) whose schedules the Scheduled section lists now: what
+ * Pause all and Resume all cover beside this device.
+ */
+export function ownedScheduledMachines(): readonly RemoteScheduledMachine[] {
+  return publishedMachines.filter((machine) => machine.connectionId === null)
+}
+
+/** One of another machine's schedules as the Scheduled section holds it now, with its machine, by its route. */
 export function remoteScheduledAgentNow(
-  connectionId: string,
+  route: string,
   id: string,
 ): { agent: ScheduledAgentView; machine: RemoteScheduledMachine } | null {
-  const machine = publishedMachines.find((candidate) => candidate.connectionId === connectionId)
+  const machine = publishedMachines.find((candidate) => candidate.route === route)
   const agent = machine?.agents.find((candidate) => candidate.id === id)
   return machine && agent ? { agent, machine } : null
 }
 
 /**
- * One of a paired machine's schedules as the Scheduled section last read it.
+ * One of another machine's schedules as the Scheduled section last read it, by its route.
  * `machine` null is a machine not read just now (asleep, off the tailnet),
  * which says nothing of the schedule; `agent` null under a machine that was
  * read is a schedule gone from it.
  */
-export function useRemoteScheduledAgent(ref: { connectionId: string; id: string } | null): {
+export function useRemoteScheduledAgent(ref: { route: string; id: string } | null): {
   machine: RemoteScheduledMachine | null
   agent: ScheduledAgentView | null
 } {
   const machines = useSyncExternalStore(subscribePublishedMachines, () => publishedMachines)
-  const connectionId = ref?.connectionId ?? null
+  const route = ref?.route ?? null
   const id = ref?.id ?? null
   return useMemo(() => {
-    const machine = connectionId
-      ? (machines.find((candidate) => candidate.connectionId === connectionId) ?? null)
-      : null
+    const machine = route ? (machines.find((candidate) => candidate.route === route) ?? null) : null
     return { machine, agent: machine?.agents.find((candidate) => candidate.id === id) ?? null }
-  }, [machines, connectionId, id])
+  }, [machines, route, id])
+}
+
+/** What moves when an environment's chat list does: a chat more or fewer, one that moved, the client away or back. */
+function listBeat(snapshot: EnvironmentChatsSnapshot): string {
+  const latest = snapshot.sessions.reduce((at, session) => Math.max(at, session.updatedAt), 0)
+  return `${snapshot.sessions.length}:${latest}:${snapshot.stale}`
+}
+
+/**
+ * The environments other than a paired desktop whose schedules the section
+ * lists: every one this window follows chats on (an SSH machine, a WSL
+ * distribution: `useFollowWindowEnvironments`) that the environment list
+ * still holds, read on its own route like its chats. Each with a beat that
+ * moves whenever its chat list does, since a run starting there is a chat it
+ * lists. A route a paired desktop is listed by is that machine's, read by its
+ * pairing above.
+ */
+function followedScheduleSources(
+  environments: readonly EnvironmentEntry[],
+  pairedRoutes: ReadonlySet<string>,
+): Array<{ target: EnvironmentTarget; machine: MachineRef; beat: string }> {
+  const sources = new Map(followedEnvironmentChats().map((source) => [source.route, source]))
+  return followedEnvironmentTargets().flatMap((target) => {
+    if (pairedRoutes.has(target.route)) return []
+    const route = parseEnvironmentRoute(target.route)
+    const entry = route ? environmentOfRoute(environments, route) : null
+    if (!entry) return []
+    const snapshot = sources.get(target.route)?.snapshot()
+    return [
+      {
+        target: { route: target.route, name: entry.displayName || target.name },
+        machine: entry.machine,
+        beat: snapshot ? listBeat(snapshot) : '',
+      },
+    ]
+  })
 }
 
 export function useRemoteScheduledAgents({
   enabled,
   connections,
   browses,
+  environments = [],
 }: {
   enabled: boolean
   connections: readonly MeshConnection[]
   browses: ReadonlyMap<string, RemoteBrowseEntry>
+  /** The environment list (`useEnvironments`), which names the other environments followed and says which are gone. */
+  environments?: readonly EnvironmentEntry[]
 }): {
   machines: RemoteScheduledMachine[]
-  refresh: (connectionId: string) => void
+  /** Read one machine's list again now, by its route. */
+  refresh: (route: string) => void
 } {
   const [lists, setLists] = useState<
     ReadonlyMap<string, { agents: ScheduledAgentView[]; pausedAll: ScheduledAgentsPause | null }>
   >(() => new Map())
-  const bridge = typeof window !== 'undefined' && typeof window.api?.meshScheduledAgents === 'function'
-  // The machines that may be asked, and when each was last browsed: the beat.
-  const readable = useMemo(
+  const bridge = environmentStudioAvailable()
+  // The other environments' beat: whatever this window follows of them.
+  const followedBeat = useSyncExternalStore(
+    onFollowedEnvironmentChats,
     () =>
-      enabled && bridge
-        ? connections.flatMap((connection) => {
-            const entry = browses.get(connection.id)
-            const access = remoteScheduleAccess(entry)
-            return access.read ? [{ connection, at: entry?.at ?? 0, operate: access.operate }] : []
-          })
-        : [],
-    [bridge, browses, connections, enabled],
+      followedEnvironmentChats()
+        .map((source) => {
+          const snapshot = source.snapshot()
+          return `${source.route}:${listBeat(snapshot)}`
+        })
+        .join('|'),
+    () => '',
   )
+  // The machines that may be asked, and when each was last browsed or listed: the beat.
+  const readable = useMemo(() => {
+    if (!enabled || !bridge) return []
+    const paired = connections.flatMap((connection) => {
+      const entry = browses.get(connection.id)
+      const access = remoteScheduleAccess(entry)
+      const route = pairedRoute(connection.id)
+      return access.read
+        ? [
+            {
+              target: { route, name: connection.machineName },
+              connectionId: connection.id as string | null,
+              machine: { kind: 'paired', name: connection.machineName } as MachineRef,
+              beat: `${entry?.at ?? 0}`,
+              operate: access.operate,
+            },
+          ]
+        : []
+    })
+    const others = followedScheduleSources(
+      environments,
+      new Set(connections.map((connection) => pairedRoute(connection.id))),
+    ).map((source) => ({ ...source, connectionId: null, operate: true }))
+    return [...paired, ...others]
+    // `followedBeat` is the followed sources' state, read inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, browses, connections, enabled, environments, followedBeat])
   const asking = useRef(new Set<string>())
-  const read = useCallback((connectionId: string) => {
-    if (asking.current.has(connectionId)) return
-    asking.current.add(connectionId)
-    void window.api
-      .meshScheduledAgents({ connectionId })
+  const targetsRef = useRef(new Map<string, EnvironmentTarget>())
+  targetsRef.current = new Map(readable.map(({ target }) => [target.route, target]))
+  const read = useCallback((route: string) => {
+    const target = targetsRef.current.get(route)
+    if (!target || asking.current.has(route)) return
+    asking.current.add(route)
+    const connectionId = pairedConnectionOf(route)
+    void pairedScheduledAgents(connectionId ? { id: connectionId, machineName: target.name } : target)
       .then((result) => {
         // A machine that did not answer keeps what it last said, as its rows do.
         if (!result.ok) return
-        setLists((current) =>
-          new Map(current).set(connectionId, { agents: result.agents, pausedAll: result.pausedAll }),
-        )
+        setLists((current) => new Map(current).set(route, { agents: result.agents, pausedAll: result.pausedAll }))
       })
       .catch(() => undefined)
-      .finally(() => asking.current.delete(connectionId))
+      .finally(() => asking.current.delete(route))
   }, [])
   useEffect(() => {
-    changeListeners.add(read)
+    const announced = (connectionId: string) => read(pairedRoute(connectionId))
+    changeListeners.add(announced)
     return () => {
-      changeListeners.delete(read)
+      changeListeners.delete(announced)
     }
   }, [read])
-  const beat = readable.map(({ connection, at }) => `${connection.id}@${at}`).join('|')
+  // Another environment's list as it changes there (`schedules.changed`, the
+  // push this window's own Scheduled section follows on its Studio): a
+  // schedule handed over to it, run, paused or closed there shows at once.
+  const pushedRoutes = readable
+    .filter(({ connectionId }) => connectionId === null)
+    .map(({ target }) => `${target.route}\u0001${target.name}`)
+    .join('\u0000')
   useEffect(() => {
-    for (const { connection } of readable) read(connection.id)
+    if (!pushedRoutes) return
+    const stops = pushedRoutes.split('\u0000').map((entry) => {
+      const [route, name] = entry.split('\u0001') as [string, string]
+      const { followPush } = environmentConversationTransport({ route, name }).services
+      return (
+        followPush?.({
+          topic: 'schedules.changed',
+          params: {},
+          capability: STUDIO_SCHEDULES_CAPABILITY,
+          onPayload: (state) => {
+            const { agents, pausedAll } = scheduledAgentsOf(state)
+            setLists((current) => new Map(current).set(route, { agents, pausedAll }))
+          },
+        }) ?? (() => undefined)
+      )
+    })
+    return () => {
+      for (const stop of stops) stop()
+    }
+  }, [pushedRoutes])
+  const beat = readable.map(({ target, beat: at }) => `${target.route}@${at}`).join('|')
+  useEffect(() => {
+    for (const { target } of readable) read(target.route)
     // On the beat alone: the list's identity moves with every browse map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [beat, read])
-  const readableIds = readable.map(({ connection }) => connection.id).join('|')
+  const readableRoutes = readable.map(({ target }) => target.route).join('\u0000')
   useEffect(() => {
-    if (!readableIds) return
+    if (!readableRoutes) return
     const timer = window.setInterval(() => {
-      for (const id of readableIds.split('|')) read(id)
+      for (const route of readableRoutes.split('\u0000')) read(route)
     }, REMOTE_SCHEDULES_CADENCE_MS)
     return () => window.clearInterval(timer)
-  }, [read, readableIds])
+  }, [read, readableRoutes])
 
   const machines = useMemo(
     () =>
-      readable.flatMap(({ connection, operate }) => {
-        const list = lists.get(connection.id)
+      readable.flatMap(({ target, connectionId, machine, operate }) => {
+        const list = lists.get(target.route)
         if (!list || list.agents.length === 0) return []
         return [
           {
-            connectionId: connection.id,
-            machineName: connection.machineName,
+            route: target.route,
+            connectionId,
+            machineName: target.name,
+            machine,
             agents: list.agents,
             pausedAll: list.pausedAll,
             operable: operate,

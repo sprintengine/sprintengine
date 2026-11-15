@@ -12,6 +12,8 @@ vi.mock('../../store/workspaceStore', () => ({
   }),
 }))
 
+vi.mock('../../studio/agentSettings', () => import('../../studio/agentSettings.double'))
+const { agentSettingsDouble } = await import('../../studio/agentSettings.double')
 const { UpdateEverythingCard, groupByMachine } = await import('./UpdateEverythingCard')
 
 const behind = (cli: string, hostId: string) => ({
@@ -47,21 +49,19 @@ beforeEach(() => {
     refreshCliAvailability: async () => void refreshed.push('availability'),
     refreshCliVersionAdvisories: async () => void refreshed.push('advisories'),
   }
-  Object.assign(window, {
-    api: {
-      platform: 'darwin',
-      cliUpdateAll: vi.fn(
-        () =>
-          new Promise((resolve) => {
-            finish = (items) => resolve({ ok: true, items })
-          }),
-      ),
-      onCliUpdateAllProgress: (cb: (items: CliUpdateAllItem[]) => void) => {
-        progress = cb
-        return () => {
-          progress = null
-        }
-      },
+  Object.assign(window, { api: { platform: 'darwin' } })
+  Object.assign(agentSettingsDouble, {
+    cliUpdateAll: vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = (items) => resolve({ ok: true, items })
+        }),
+    ),
+    onCliUpdateAllProgress: (cb: (items: CliUpdateAllItem[]) => void) => {
+      progress = cb
+      return () => {
+        progress = null
+      }
     },
   })
   host = document.createElement('div')

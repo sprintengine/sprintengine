@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { UsagePeerMode, UsageReport, UsageReportRequest } from '../../../../shared/usage-report'
+import { windowChatStores, type ChatStoresApi } from '../../studio/chatStores'
 import { usageWindow, type UsageRange, type UsageWindow } from './usageDashboardModel'
 
 // The dashboard's report for a range, asked of main when the range is shown
@@ -31,13 +32,13 @@ export type UsageReportState = {
   refresh: () => void
 }
 
-type UsageApi = Partial<Pick<Window['api'], 'usageReport'>>
+type UsageApi = Partial<Pick<ChatStoresApi, 'usageReport'>>
 
 export function useUsageReport(
   range: UsageRange,
   /** One machine to count (`UsageReportMachine.id`), or null for every one. */
   machine: string | null = null,
-  api: UsageApi | null = typeof window === 'undefined' ? null : window.api,
+  api: UsageApi | null = windowChatStores(),
 ): UsageReportState {
   const [answer, setAnswer] = useState<Answer | null>(() => lastAnswers.get(answerKey(range, machine)) ?? null)
   const [loading, setLoading] = useState(false)

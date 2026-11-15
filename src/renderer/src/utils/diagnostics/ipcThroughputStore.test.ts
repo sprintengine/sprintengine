@@ -19,11 +19,11 @@ test('ipcThroughputStore', async () => {
   run('diffs monotonic counters into per-second rates', () => {
     const prev: IpcStatsSnapshot = {
       sampledAt: NOW - 1000,
-      channels: [{ name: 'onTerminalData', calls: 1, outBytes: 0, inEvents: 100, inBytes: 50_000 }],
+      channels: [{ name: 'onGitRepoChanged', calls: 1, outBytes: 0, inEvents: 100, inBytes: 50_000 }],
     }
     const current: IpcStatsSnapshot = {
       sampledAt: NOW,
-      channels: [{ name: 'onTerminalData', calls: 1, outBytes: 0, inEvents: 140, inBytes: 70_000 }],
+      channels: [{ name: 'onGitRepoChanged', calls: 1, outBytes: 0, inEvents: 140, inBytes: 70_000 }],
     }
     const throughput = diffIpcSnapshots(prev, current)
     assert.equal(throughput.elapsedMs, 1000)

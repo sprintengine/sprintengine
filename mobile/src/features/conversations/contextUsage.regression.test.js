@@ -8,14 +8,14 @@ const test = require("node:test");
 // latest report's input plus output, never a sum across turns. No window, no
 // ring.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   CONTEXT_RING_WARN_PERCENTAGE,
   applyContextEvent,
   contextRingLabel,
   contextRingValue,
 } = require(path.join(buildRoot, "src/features/conversations/contextUsage.js"));
-const { projectConversation } = require(path.join(buildRoot, "src/features/conversations/conversationLogic.js"));
+const { projectPhoneConversation } = require(path.join(buildRoot, "src/features/conversations/conversationLogic.js"));
 
 const usage = (payload) => ({ type: "usage_updated", payload });
 const fold = (events) => events.reduce(applyContextEvent, null);
@@ -76,7 +76,7 @@ test("the long press says the tokens and nothing else", () => {
 
 test("the projection carries the reading, so the chat's strip reads it off the hook", () => {
   const event = (seq, type, payload) => ({ id: `e${seq}`, seq, sessionId: "s", workspaceId: "w", type, createdAt: seq, payload });
-  const projected = projectConversation([
+  const projected = projectPhoneConversation([
     event(1, "turn_started", { turnId: "t" }),
     event(2, "usage_updated", { turnId: "t", inputTokens: 70_000, outputTokens: 6_000, contextWindow: 200_000 }),
     event(3, "turn_completed", { turnId: "t", checkpointSummary: { files: 2, addedLines: 3, removedLines: 1 } }),

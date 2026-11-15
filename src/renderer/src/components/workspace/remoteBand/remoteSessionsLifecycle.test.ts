@@ -75,7 +75,7 @@ function band(entries: Array<[MeshConnection, Partial<RemoteBrowseEntry> & { con
         { browse: browse(), loading: false, error: null, at: 1, lifecycle: true, access: 'operate' as const, ...entry },
       ]),
     ),
-    reachability: new Map(),
+    environments: [],
     workspaces: [],
   })
 }

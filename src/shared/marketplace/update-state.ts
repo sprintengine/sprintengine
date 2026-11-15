@@ -1,3 +1,11 @@
+import type { MarketplaceUpdateAvailability, ModuleUpdateState } from '../../../packages/studio-protocol/src/public'
+
+export type {
+  MarketplaceUpdateAvailability,
+  MarketplaceUpdateStateEntry,
+  ModuleUpdateState,
+} from '../../../packages/studio-protocol/src/public'
+
 // Update detection for installed marketplace content.
 //
 // Node-free and pure so both processes can use it. Versions are plain
@@ -6,10 +14,6 @@
 // installed dev build) and must never render as an update or an error.
 // Detection is NOT gated on module enablement: an installed-but-disabled
 // module still needs an accurate update state.
-
-const MODULE_UPDATE_STATES = ['current', 'update-available', 'ahead-of-registry'] as const
-
-export type ModuleUpdateState = (typeof MODULE_UPDATE_STATES)[number]
 
 export function moduleUpdateState(installedVersion: number, registryLatest: number): ModuleUpdateState {
   if (installedVersion < registryLatest) return 'update-available'
@@ -20,12 +24,6 @@ export function moduleUpdateState(installedVersion: number, registryLatest: numb
 // Why a check can not answer: the registry read failed outright, or it
 // succeeded but carries no entry for this id (delisted, or a purely local
 // install). Neither may ever read as "up to date".
-type MarketplaceUpdateUnknownReason = 'registry-unreachable' | 'not-in-registry'
-
-export type MarketplaceUpdateAvailability =
-  | { state: ModuleUpdateState; installedVersion: number; latestVersion: number }
-  | { state: 'unknown'; installedVersion: number; reason: MarketplaceUpdateUnknownReason }
-
 export function marketplaceUpdateAvailability(
   installedVersion: number,
   registryLatest: number | undefined,
@@ -38,13 +36,4 @@ export function marketplaceUpdateAvailability(
     installedVersion,
     latestVersion: registryLatest,
   }
-}
-
-// One installed marketplace entry (install receipt or directly installed user
-// module) with its computed availability — the per-entry unit the Extensions
-// manage surface renders.
-export type MarketplaceUpdateStateEntry = {
-  id: string
-  displayName: string
-  availability: MarketplaceUpdateAvailability
 }

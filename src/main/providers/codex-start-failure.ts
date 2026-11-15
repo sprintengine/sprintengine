@@ -68,18 +68,15 @@ export function codexStartTimeoutMessage(input: { seconds: number; machine: stri
 }
 
 /**
- * The machine a chat's `codex` ran on, as the message names it: the WSL
- * distribution it was started in from Windows, else the distribution this
- * process itself runs in (a Studio server inside WSL), else this desktop,
- * else (a Studio server on another machine) that machine's host name.
+ * The machine a chat's `codex` ran on, as the message names it: the
+ * distribution this process runs in (a Studio server inside WSL), else this
+ * desktop, else (a Studio server on another machine) that machine's host name.
  */
 export function codexMachineLabel(
-  wslDistro: string | null,
   env: NodeJS.ProcessEnv = process.env,
   platform: string = process.platform,
   isDesktop: boolean = Boolean(process.versions.electron),
 ): string {
-  if (wslDistro) return `WSL: ${wslDistro}`
   if (env.WSL_DISTRO_NAME) return `WSL: ${env.WSL_DISTRO_NAME}`
   if (isDesktop) return executionHostLabel(LOCAL_HOST_ID, platform)
   try {
@@ -89,58 +86,40 @@ export function codexMachineLabel(
   }
 }
 
-/**
- * The Codex home folder on the machine the chat ran on, as this process's file
- * system opens it. For a distribution started from Windows, its home through
- * the WSL host (`\\wsl.localhost\<distro>\home\<user>`), with the
- * distribution's own `CODEX_HOME` when its login shell sets one.
- */
-export async function codexHomeFor(wslDistro: string | null, env: NodeJS.ProcessEnv): Promise<string | null> {
-  if (!wslDistro) return env.CODEX_HOME?.trim() || join(homedir(), '.codex')
-  try {
-    const { hostRegistry } = await import('../hosts/host-registry')
-    const home = await hostRegistry().get(`wsl:${wslDistro}`).homeDir()
-    if (!home) return null
-    return home.env?.CODEX_HOME ?? join(home.native, '.codex')
-  } catch {
-    return null
-  }
+/** The Codex home folder on this machine, where its chats' `codex` runs. */
+function codexHomeFor(env: NodeJS.ProcessEnv): string {
+  return env.CODEX_HOME?.trim() || join(homedir(), '.codex')
 }
 
 /**
  * How long the failure waits for the log database's size. The machine Codex
  * just failed to start on is the one most likely to be stuck, and a listing
- * of a distribution's share that stopped answering never settles: past this,
- * the message goes out without the size.
+ * of a folder on a disk that stopped answering never settles: past this, the
+ * message goes out without the size.
  */
 export const CODEX_LOG_SIZE_DEADLINE_MS = 5_000
 
 /** The error a start that timed out on `initialize` fails with. */
 export async function explainCodexInitializeTimeout(input: {
   timeoutMs: number
-  wslDistro: string | null
   env: NodeJS.ProcessEnv
-  readLogBytes?: (wslDistro: string | null, env: NodeJS.ProcessEnv) => Promise<number | null>
+  readLogBytes?: (env: NodeJS.ProcessEnv) => Promise<number | null>
   /** Tests shorten it; {@link CODEX_LOG_SIZE_DEADLINE_MS} otherwise. */
   readDeadlineMs?: number
 }): Promise<Error> {
   const readLogBytes =
-    input.readLogBytes ??
-    (async (distro: string | null, env: NodeJS.ProcessEnv) => {
-      const home = await codexHomeFor(distro, env)
-      return home ? codexLogDatabaseBytes(home) : null
-    })
+    input.readLogBytes ?? (async (env: NodeJS.ProcessEnv) => codexLogDatabaseBytes(codexHomeFor(env)))
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), input.readDeadlineMs ?? CODEX_LOG_SIZE_DEADLINE_MS)
   })
-  const logBytes = await Promise.race([readLogBytes(input.wslDistro, input.env).catch(() => null), deadline]).finally(
-    () => clearTimeout(timer),
+  const logBytes = await Promise.race([readLogBytes(input.env).catch(() => null), deadline]).finally(() =>
+    clearTimeout(timer),
   )
   return new Error(
     codexStartTimeoutMessage({
       seconds: Math.round(input.timeoutMs / 1000),
-      machine: codexMachineLabel(input.wslDistro),
+      machine: codexMachineLabel(),
       logBytes,
     }),
   )

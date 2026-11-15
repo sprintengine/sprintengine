@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
-import { PassThrough } from 'node:stream'
 
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import {
@@ -22,6 +20,7 @@ import {
 } from './claude-agent-provider'
 import type { MockAdapterTurnInput } from './mock-conversation-provider'
 import { ConversationRuntime } from '../conversation-runtime'
+import { stagedPluginsDirectory } from '../claude-project-commands'
 import {
   conversationCommandsFor,
   onConversationCommandsChanged,
@@ -38,7 +37,6 @@ test('claude-agent-provider', async () => {
     await testTurnStreamsDeltasToolsUsageAndCompletion()
     await testImageAttachmentsBecomeMultimodalContent()
     await testNativeSkillSelectionReachesSdk()
-    await testWslChatRunsItsChildInTheDistribution()
     await testAskModeReadOnlyAndEffort()
     await testModeSwitchesReachTheLiveChild()
     await testLiveModelSwitch()
@@ -205,58 +203,6 @@ test('claude-agent-provider', async () => {
       models: sdk.models,
       stoppedTasks: sdk.stoppedTasks,
     }
-  }
-
-  // A chat on a WSL machine readies that machine, asks it for its `claude`,
-  // and hands the SDK's spawn to the distribution instead of this PC.
-  async function testWslChatRunsItsChildInTheDistribution(): Promise<void> {
-    const sdk = createFakeSdk((_message, context) => {
-      context.emit({ type: 'result', subtype: 'success', is_error: false, session_id: 'wsl-chat' })
-    })
-    const prepared: string[] = []
-    const resolvedWith: unknown[] = []
-    const spawned: Array<{ target: unknown; request: { command: string; args: string[]; cwd?: string } }> = []
-    const adapter = createClaudeAgentProvider({
-      loadQuery: sdk.loadQuery as never,
-      resolveExecutable: async (cliRuntimes) => {
-        resolvedWith.push(cliRuntimes)
-        return '/home/dev/.local/bin/claude'
-      },
-      buildEnv: (input) => ({ [CLAUDE_AGENT_SESSION_ENV_KEY]: input.sessionId }),
-      now: () => 1000,
-      prepareWslTarget: async (hostId) => {
-        prepared.push(hostId)
-        return { distro: 'Ubuntu', agentStateSocketPath: '/run/user/1000/agent.sock' }
-      },
-      spawnWslChild: (target, request) => {
-        spawned.push({ target, request })
-        const child = new EventEmitter() as EventEmitter & Record<string, unknown>
-        Object.assign(child, { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() })
-        Object.assign(child, { pid: 42, exitCode: null, killed: false, kill: () => true })
-        return child as never
-      },
-    })
-    const cliRuntimes = { 'claude-code': { command: '', hostId: 'wsl:Ubuntu' as const } }
-    const input = turnInput({ workspaceRoot: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\app', cliRuntimes })
-    await adapter.startSession(input)
-    for await (const _event of await adapter.sendTurn(input)) {
-      /* drain the turn */
-    }
-    assert.deepEqual(prepared, ['wsl:Ubuntu'])
-    assert.deepEqual(resolvedWith, [cliRuntimes])
-    const options = sdk.capturedOptions[0] as { spawnClaudeCodeProcess: (request: unknown) => unknown }
-    options.spawnClaudeCodeProcess({
-      command: '/home/dev/.local/bin/claude',
-      args: ['--output-format', 'stream-json'],
-      cwd: input.workspaceRoot,
-      env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' },
-    })
-    assert.equal(spawned.length, 1)
-    assert.deepEqual(spawned[0].target, { distro: 'Ubuntu', agentStateSocketPath: '/run/user/1000/agent.sock' })
-    assert.equal(spawned[0].request.command, '/home/dev/.local/bin/claude')
-    assert.deepEqual(spawned[0].request.args, ['--output-format', 'stream-json'])
-    assert.equal(adapter.listLiveSessions()[0]?.hasChildProcess, true)
-    await adapter.disposeAll()
   }
 
   async function testNativeSkillSelectionReachesSdk(): Promise<void> {
@@ -2525,7 +2471,7 @@ test('turns racing to start the Claude child stage one skills plugin and spawn o
     const second = adapter.sendTurn(f.turn('turn_2'))
     await Promise.all([drain(await first), drain(await second)])
     assert.equal(queries.length, 1)
-    assert.equal((await readdir(f.tempDir)).length, 1)
+    assert.equal((await readdir(stagedPluginsDirectory(f.tempDir))).length, 1)
   } finally {
     await adapter.disposeAll()
     await rm(f.root, { recursive: true, force: true })
@@ -2538,9 +2484,9 @@ test('disposing every Claude child settles only once their skills plugins are re
   try {
     await adapter.startSession(f.turn('turn_1'))
     await drain(await adapter.sendTurn(f.turn('turn_1')))
-    assert.equal((await readdir(f.tempDir)).length, 1)
+    assert.equal((await readdir(stagedPluginsDirectory(f.tempDir))).length, 1)
     await adapter.disposeAll()
-    assert.deepEqual(await readdir(f.tempDir), [])
+    assert.deepEqual(await readdir(stagedPluginsDirectory(f.tempDir)), [])
   } finally {
     await rm(f.root, { recursive: true, force: true })
   }
@@ -2550,23 +2496,51 @@ test('a skills plugin left by a process that is gone is swept, one a live proces
   const tempDir = await mkdtemp(join(tmpdir(), 'claude-skill-sweep-'))
   try {
     const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    const staged = stagedPluginsDirectory(tempDir)
     const folders = {
       // No process can have this id on macOS, Linux or Windows.
-      dead: 'sprintengine-claude-skills-99999999-abc',
-      live: `sprintengine-claude-skills-${process.ppid}-abc`,
-      legacy: 'sprintengine-claude-skills-abc123',
-      unrelated: 'other-tool-99999999-abc',
+      dead: '99999999-abc',
+      live: `${process.ppid}-abc`,
+      unnamed: 'abc123',
     }
     for (const name of Object.values(folders)) {
-      await mkdir(join(tempDir, name, '.claude-plugin'), { recursive: true })
-      await utimes(join(tempDir, name), old, old)
+      await mkdir(join(staged, name, '.claude-plugin'), { recursive: true })
+      await utimes(join(staged, name), old, old)
     }
+    // What an older version staged in the temp folder itself is not this sweep's.
+    const older = join(tempDir, 'sprintengine-claude-skills-99999999-abc')
+    await mkdir(older)
+    await utimes(older, old, old)
     await sweepStaleSkillPlugins(tempDir)
-    assert.deepEqual((await readdir(tempDir)).sort(), [folders.live, folders.unrelated].sort())
+    assert.deepEqual((await readdir(staged)).sort(), [folders.live, folders.unnamed].sort())
+    assert.ok((await stat(older)).isDirectory())
   } finally {
     await rm(tempDir, { recursive: true, force: true })
   }
 })
+
+// A temp folder can hold hundreds of thousands of entries, and listing one
+// took minutes on every start. The temp folder here may be entered but not
+// listed, so a sweep that lists it fails.
+test.runIf(process.platform !== 'win32' && process.getuid?.() !== 0)(
+  'the sweep never lists the temp folder itself, only the folder plugins are staged in',
+  async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'claude-skill-sweep-'))
+    try {
+      const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      const dead = join(stagedPluginsDirectory(tempDir), '99999999-abc')
+      await mkdir(dead)
+      await utimes(dead, old, old)
+      await chmod(tempDir, 0o300)
+      await assert.rejects(readdir(tempDir), { code: 'EACCES' })
+      await sweepStaleSkillPlugins(tempDir)
+      await assert.rejects(stat(dead), { code: 'ENOENT' })
+    } finally {
+      await chmod(tempDir, 0o700)
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  },
+)
 
 // The sequence Claude Code 2.1 streams for one agent launched in the background
 // (recorded from a real run): the launch notice comes back at once, the turn

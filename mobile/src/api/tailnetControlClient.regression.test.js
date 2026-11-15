@@ -3,18 +3,11 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/mobile");
 const {
-  TailnetControlClient,
-  POLLED_SNAPSHOT_COLLECTIONS,
   completeTailnetPairing,
-  knownCommandTypes,
-  readSnapshotCommands,
   readTailnetIdentity,
   withTailnetScopes,
-  tailnetClientForSession,
-  tailnetGrantAllows,
-  tailnetSupportedCommands,
 } = require(path.join(buildRoot, "src/api/tailnetControlClient.js"));
 const { parsePairingPayload, tailnetEndpointBaseUrl } = require(path.join(
   buildRoot,
@@ -34,18 +27,6 @@ function jsonResponse(status, body) {
     json: async () => body,
   };
 }
-
-function toolResult(structuredContent, isError = false) {
-  return { jsonrpc: "2.0", id: "srv-1", result: { content: [], structuredContent, isError } };
-}
-
-const validSnapshot = {
-  protocolVersion: 4,
-  generatedAt: "2026-08-31T12:00:00.000Z",
-  desktopSessionId: "tailnet:studio-mac",
-  snapshotVersion: "snap_abc",
-  commands: ["snapshot.request", "backlog.update"],
-};
 
 test("the desktop's tailnet pairing link parses to its endpoint and one-time code", () => {
   // Exactly what tailnet-service.ts mints: two params, endpoint + token.
@@ -107,11 +88,9 @@ test("tailnet pairing exchanges the one-time code and stores the gateway's own g
     assert.equal(session.baseUrl, "http://100.64.0.9:8471");
     assert.equal(session.deviceToken, "mctn_secret");
     assert.equal(session.deviceId, "tnd_phone1");
-    // A version-1 Studio declares nothing on the pair answer, and that must
-    // read as "not declared" — never as version 0 or as no capabilities.
-    assert.deepEqual(result.data.transport, { transportVersion: null, capabilities: null });
+    // A Studio that declares nothing on the pair answer reads as "not declared", never as version 0.
+    assert.deepEqual(result.data.transport, { transportVersion: null });
     assert.equal(session.tailnetTransportVersion, undefined);
-    assert.equal(session.tailnetCapabilities, undefined);
     // The grant is kept as the gateway said it; `tailnetGrantAllows` decides
     // what it unlocks.
     assert.deepEqual(session.tailnetScopes, ["workspace:read", "workspace:operate", "horizon:read"]);
@@ -120,14 +99,15 @@ test("tailnet pairing exchanges the one-time code and stores the gateway's own g
   }
 });
 
-test("a version-2 Studio's pair answer lands its transport declaration on the session", async () => {
+test("a Studio's pair answer lands its transport version on the session, and a capability list it sent is not kept", async () => {
   global.fetch = async () =>
     jsonResponse(200, {
       deviceId: "tnd_phone2",
       deviceName: "Test phone",
       deviceToken: "mctn_secret",
       scopes: ["workspace:read", "conversation:operate"],
-      transportVersion: 2,
+      transportVersion: 3,
+      // A desktop from before transport 3 listed capabilities here; what one serves is its Studio welcome's to say.
       capabilities: ["conversations", "conversation-models"],
     });
   try {
@@ -138,8 +118,8 @@ test("a version-2 Studio's pair answer lands its transport declaration on the se
       completion: result.data,
       pairedAt: "2026-09-06T12:00:00.000Z",
     });
-    assert.equal(session.tailnetTransportVersion, 2);
-    assert.deepEqual(session.tailnetCapabilities, ["conversations", "conversation-models"]);
+    assert.equal(session.tailnetTransportVersion, 3);
+    assert.equal("tailnetCapabilities" in session, false);
   } finally {
     global.fetch = originalFetch;
   }
@@ -154,8 +134,7 @@ test("readTailnetIdentity carries the bearer token, keeps the declaration, and r
       deviceName: "Test phone",
       scopes: ["conversation:read"],
       serverInfo: { name: "SprintEngine Studio MCP", version: "1.2.3" },
-      transportVersion: 2,
-      capabilities: ["conversations"],
+      transportVersion: 3,
       protocolVersions: ["2025-06-18"],
     });
   };
@@ -168,13 +147,21 @@ test("readTailnetIdentity carries the bearer token, keeps the declaration, and r
     // no machine, never as a guessed one.
     assert.deepEqual(result.data, {
       scopes: ["conversation:read"],
-      transport: { transportVersion: 2, capabilities: ["conversations"] },
+      transport: { transportVersion: 3 },
       machine: null,
+      environmentId: null,
     });
     global.fetch = async () =>
       jsonResponse(200, { scopes: [], transportVersion: 2, machine: { kind: "mini", color: "orange" } });
     const marked = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
     assert.deepEqual(marked.data.machine, { kind: "mini", color: "orange" });
+    // Which Studio it is, as chat links name it; an id no link can carry is none.
+    global.fetch = async () => jsonResponse(200, { transportVersion: 2, environmentId: "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b" });
+    const identified = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
+    assert.equal(identified.data.environmentId, "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b");
+    global.fetch = async () => jsonResponse(200, { transportVersion: 2, environmentId: "env/../1" });
+    const odd = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
+    assert.equal(odd.data.environmentId, null);
     // An answer without a grant says nothing about it, not that it is empty.
     global.fetch = async () => jsonResponse(200, { transportVersion: 2 });
     const silent = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
@@ -201,203 +188,6 @@ test("a refused pairing code names the desktop and says how to get a fresh one",
   } finally {
     global.fetch = originalFetch;
   }
-});
-
-test("the client for a session talks to that pairing's gateway with its device token", async () => {
-  const requests = [];
-  global.fetch = async (url, init) => {
-    requests.push({ url, headers: init.headers });
-    return jsonResponse(200, toolResult({ unchanged: true, snapshotVersion: "snap_abc" }));
-  };
-  try {
-    const client = tailnetClientForSession({
-      deviceId: "tnd_phone1",
-      desktopName: "Desktop on 100.64.0.9",
-      baseUrl: "http://100.64.0.9:8471",
-      deviceToken: "mctn_secret",
-      pairedAt: "2026-08-31T12:00:00.000Z",
-      tailnetScopes: ["workspace:read"],
-    });
-    assert.ok(client instanceof TailnetControlClient);
-    await client.readSnapshot({ knownSnapshotVersion: "snap_abc" });
-    assert.equal(requests[0].url, "http://100.64.0.9:8471/tailnet/v1/mcp");
-    assert.equal(requests[0].headers.authorization, "Bearer mctn_secret");
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test("readSnapshot speaks JSON-RPC tools/call with the bearer device token and validates the document", async () => {
-  const requests = [];
-  global.fetch = async (url, init) => {
-    requests.push({ url, headers: init.headers, body: JSON.parse(init.body) });
-    return jsonResponse(200, toolResult({ unchanged: false, snapshot: validSnapshot }));
-  };
-  try {
-    const client = new TailnetControlClient({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
-    const result = await client.readSnapshot({ include: ["backlog"], knownSnapshotVersion: "snap_old" });
-    assert.equal(result.ok, true);
-    assert.equal(result.data.unchanged, false);
-    assert.equal(result.data.snapshot.snapshotVersion, "snap_abc");
-
-    const request = requests[0];
-    assert.equal(request.url, "http://100.64.0.9:8471/tailnet/v1/mcp");
-    assert.equal(request.headers.authorization, "Bearer mctn_secret");
-    // Never an Origin header — the gateway refuses any request carrying one.
-    assert.equal("origin" in request.headers || "Origin" in request.headers, false);
-    assert.equal(request.body.method, "tools/call");
-    assert.equal(request.body.params.name, "workspace.snapshot");
-    assert.deepEqual(request.body.params.arguments, {
-      include: ["backlog"],
-      knownSnapshotVersion: "snap_old",
-    });
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test("a matched knownSnapshotVersion comes back as the unchanged marker", async () => {
-  global.fetch = async () => jsonResponse(200, toolResult({ unchanged: true, snapshotVersion: "snap_abc" }));
-  try {
-    const client = new TailnetControlClient({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
-    const result = await client.readSnapshot({ knownSnapshotVersion: "snap_abc" });
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.data, { unchanged: true, snapshotVersion: "snap_abc" });
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test("sendCommand dispatches only the served set and carries an idempotency key", async () => {
-  const requests = [];
-  global.fetch = async (url, init) => {
-    requests.push(JSON.parse(init.body));
-    return jsonResponse(
-      200,
-      toolResult({ ok: true, commandId: "tnc_1", commandType: "backlog.update", executedAt: "2026-08-31T12:00:01.000Z", data: { relativePath: "backlog/x.md" } }),
-    );
-  };
-  try {
-    const client = new TailnetControlClient({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
-    const result = await client.sendCommand({
-      type: "backlog.update",
-      payload: { workspacePath: "ws_abc", relativePath: "backlog/x.md", status: "ready" },
-      expectedSnapshotVersion: "snap_abc",
-    });
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.data, { relativePath: "backlog/x.md" });
-    const args = requests[0].params.arguments;
-    assert.equal(requests[0].params.name, "workspace.mobile_command");
-    assert.equal(args.type, "backlog.update");
-    assert.equal(args.expectedSnapshotVersion, "snap_abc");
-    assert.ok(typeof args.idempotencyKey === "string" && args.idempotencyKey.length > 0);
-
-    // An unserved command never touches the network.
-    const refused = await client.sendCommand({ type: "device.revoke", payload: { deviceId: "tnd_x" } });
-    assert.equal(refused.ok, false);
-    assert.equal(refused.errorCode, "command_not_supported");
-    assert.equal(requests.length, 1);
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test("gateway refusals map onto the app's error vocabulary", async () => {
-  const responses = [
-    toolResult({ error: { code: "tailnet_scope_required", message: "backlog:operate not granted" } }, true),
-    toolResult({ error: { code: "command_not_supported", message: "not served" } }, true),
-  ];
-  global.fetch = async () => jsonResponse(200, responses.shift());
-  try {
-    const client = new TailnetControlClient({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
-    const scopeRefused = await client.sendCommand({ type: "backlog.update", payload: {} });
-    assert.equal(scopeRefused.ok, false);
-    assert.equal(scopeRefused.errorCode, "unauthorized");
-
-    const unsupported = await client.sendCommand({ type: "backlog.create", payload: {} });
-    assert.equal(unsupported.ok, false);
-    assert.equal(unsupported.errorCode, "command_not_supported");
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test("a revoked device reads as unauthenticated, an unreachable gateway as desktop_unavailable", async () => {
-  global.fetch = async () => jsonResponse(401, {});
-  try {
-    const client = new TailnetControlClient({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_revoked" });
-    const revoked = await client.readSnapshot();
-    assert.equal(revoked.ok, false);
-    assert.equal(revoked.errorCode, "unauthenticated");
-  } finally {
-    global.fetch = originalFetch;
-  }
-
-  global.fetch = async () => {
-    throw new Error("network down");
-  };
-  try {
-    const client = new TailnetControlClient({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
-    const unreachable = await client.readSnapshot();
-    assert.equal(unreachable.ok, false);
-    assert.equal(unreachable.errorCode, "desktop_unavailable");
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test("the transport's own surface stays honest about what it does not serve", () => {
-  // `sprintengine.create` was served here until the phone's sprint surface was
-  // cut (2026-09-16), and is not a command type at all since protocol v3. What
-  // this still pins is the shape: a command the gateway does not serve is refused
-  // client-side, and the failure names the transport rather than being a mystery.
-  // The pull request reads joined it on 2026-10-30, behind the same grant.
-  assert.deepEqual([...tailnetSupportedCommands], ["snapshot.request", "backlog.update", "pullRequest.read", "pullRequest.diff"]);
-  assert.equal(tailnetGrantAllows(["workspace:read"], "pullRequest.read"), false);
-  // The grant mirrors the desktop's single-tool gate: workspace:operate
-  // unlocks everything served; the per-family operates unlock NOTHING here —
-  // a control the desktop would refuse must never be drawn.
-  assert.equal(tailnetGrantAllows(["workspace:operate"], "snapshot.request"), true);
-  assert.equal(tailnetGrantAllows(["workspace:operate"], "backlog.update"), true);
-  assert.equal(tailnetGrantAllows(["workspace:read"], "snapshot.request"), true);
-  assert.equal(tailnetGrantAllows(["workspace:read"], "backlog.update"), false);
-  assert.equal(tailnetGrantAllows(["backlog:operate", "sprint:operate"], "backlog.update"), false);
-  assert.equal(tailnetGrantAllows([], "snapshot.request"), false);
-  assert.equal(tailnetGrantAllows(undefined, "snapshot.request"), false);
-  // Commands the gateway does not serve are never granted, whatever the scopes.
-  for (const unserved of ["backlog.create", "device.revoke", "automations.control"]) {
-    assert.equal(tailnetGrantAllows(["workspace:operate"], unserved), false, unserved);
-  }
-});
-
-test("the polled snapshot vocabulary is backlog, and nothing else", () => {
-  // `automations` left with the phone's automations (2026-09-29).
-  assert.deepEqual([...POLLED_SNAPSHOT_COLLECTIONS], ["backlog"]);
-});
-
-test("the capability gate reads the commands a desktop advertises, and drops what this build does not know", () => {
-  assert.equal(readSnapshotCommands(undefined).size, 0);
-  assert.equal(readSnapshotCommands("backlog.update").size, 0);
-
-  // `task.start` and `agent.followUp` left the wire at protocol v3, and
-  // `automations.control` left the phone on 2026-09-29; a desktop advertising a
-  // retired command is advertising something no phone will draw.
-  const mixed = readSnapshotCommands([
-    "backlog.update",
-    "automations.control",
-    "task.start",
-    "agent.followUp",
-    "invalid-command",
-    null,
-    42,
-  ]);
-  assert.deepEqual([...mixed].sort(), ["backlog.update"]);
-
-  for (const commandType of knownCommandTypes) {
-    assert.equal(readSnapshotCommands([commandType]).has(commandType), true, commandType);
-  }
-  // Tolerating the wire's spelling is not tolerating any spelling.
-  assert.equal(readSnapshotCommands(["backlog.Update", "BACKLOG.UPDATE", "backlog-update"]).size, 0);
 });
 
 test("a 401 about the tailnet node is not an unpairing; a plain one still is", () => {

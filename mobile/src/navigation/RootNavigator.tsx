@@ -40,8 +40,9 @@ export function RootNavigator() {
   const rootRoute = resolveRootRoute(session);
   useEffect(() => {
     let mounted = true;
-    // A conversation on a named desktop, or a desktop's own chat link, which
-    // names only the workspace. Nothing else a `sprintengine://` link says is acted on.
+    // A conversation on a named desktop, or a Studio chat link, which names
+    // the chat's environment and its id there (or, from an older desktop, only
+    // its id). Nothing else a `sprintengine://` link says is acted on.
     const receive = (url: string) => { const target = parseAppLink(url); if (mounted && target) setAppLink(target); };
     void Linking.getInitialURL().then((url) => { if (url) receive(url); }).catch(() => {});
     const subscription = Linking.addEventListener("url", ({ url }) => receive(url));
@@ -53,7 +54,11 @@ export function RootNavigator() {
     else
       navigationRef.navigate("App", {
         screen: "ChatLink",
-        params: { workspaceId: appLink.link.workspaceId, ...(appLink.link.agentId ? { agent: appLink.link.agentId } : {}) },
+        params: {
+          workspaceId: appLink.link.chatId,
+          ...(appLink.link.environmentId ? { environment: appLink.link.environmentId } : {}),
+          ...(appLink.link.agentId ? { agent: appLink.link.agentId } : {}),
+        },
       });
     setAppLink(null);
   }, [appLink, isNavigationReady, rootRoute, navigationRef]);

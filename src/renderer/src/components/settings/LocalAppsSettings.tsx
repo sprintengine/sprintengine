@@ -8,6 +8,7 @@ import type {
   StudioLocalAppToolset,
   StudioLocalAppsStatus,
 } from '../../../../shared/studio-local-apps'
+import { accessApi } from '../../studio/access'
 import { formatRelativeMsAgo, relativeFromNow } from '../../utils/relativeTime'
 import {
   CopyGlyphButton,
@@ -56,6 +57,28 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
     description:
       'Offer tools that Studio’s agents can call, which run in the app. Every call still asks as the chat’s own permissions say.',
   },
+  {
+    scope: 'environment:maintain',
+    title: 'Update Studio',
+    description: 'Download a new version of Studio and restart into it. Running turns get time to finish first.',
+  },
+  {
+    scope: 'settings:write',
+    title: 'Change settings',
+    description: 'Set or remove a provider’s API key, and revoke a rule that answers approvals by itself.',
+  },
+  {
+    scope: 'modules:read',
+    title: 'Hear extensions',
+    description:
+      'Hear what this machine’s extensions say, their events and the notifications they raise, and ask them what they declare as reading only.',
+  },
+  {
+    scope: 'modules:operate',
+    title: 'Use extensions',
+    description:
+      'Ask this machine’s extensions to do what they declare as changing something. What that is depends on each extension and the permissions you trusted it with.',
+  },
 ]
 
 const REACH_ITEMS: Array<{ value: StudioLocalAppToolReach; label: string }> = [
@@ -103,9 +126,8 @@ export function LocalAppsSettings() {
   const nameId = useId()
 
   const refresh = useCallback(async () => {
-    if (typeof window.api.studioLocalAppsStatus !== 'function') return
     try {
-      setStatus(await window.api.studioLocalAppsStatus())
+      setStatus(await accessApi.studioLocalAppsStatus())
     } catch {
       // Status stays unknown; the section does not render.
     }
@@ -113,8 +135,7 @@ export function LocalAppsSettings() {
 
   useEffect(() => {
     void refresh()
-    if (typeof window.api.onStudioLocalAppsChanged !== 'function') return undefined
-    return window.api.onStudioLocalAppsChanged((next) => {
+    return accessApi.onStudioLocalAppsChanged((next) => {
       setStatus(next)
       // A code redeemed or cancelled from anywhere is no longer one to show.
       setMinted((current) => (current && next.offers.some((offer) => offer.id === current.offer.id) ? current : null))
@@ -134,7 +155,7 @@ export function LocalAppsSettings() {
     if (!draft) return
     setError(null)
     try {
-      const view = await window.api.studioLocalAppsOffer(draft)
+      const view = await accessApi.studioLocalAppsOffer(draft)
       setMinted(view)
       setStatus(view.status)
       setDraft(null)
@@ -152,7 +173,7 @@ export function LocalAppsSettings() {
       tone: 'danger',
     })
     if (!confirmed) return
-    setStatus(await window.api.studioLocalAppsRevoke(id))
+    setStatus(await accessApi.studioLocalAppsRevoke(id))
   }
 
   const toggleScope = (scope: StudioScope, on: boolean) =>
@@ -209,7 +230,7 @@ export function LocalAppsSettings() {
                       items={REACH_ITEMS}
                       value={app.toolReach}
                       disabled={!status.running}
-                      onChange={(reach) => void window.api.studioLocalAppsSetReach(app.id, reach).then(setStatus)}
+                      onChange={(reach) => void accessApi.studioLocalAppsSetReach(app.id, reach).then(setStatus)}
                     />
                   </Field>
                 </div>
@@ -223,7 +244,7 @@ export function LocalAppsSettings() {
             label={offer.name}
             help={`Waiting to pair · the code expires ${relativeFromNow(Date.parse(offer.expiresAt), now)}`}
           >
-            <GhostButton onClick={() => void window.api.studioLocalAppsCancelOffer(offer.id).then(setStatus)}>
+            <GhostButton onClick={() => void accessApi.studioLocalAppsCancelOffer(offer.id).then(setStatus)}>
               Cancel
             </GhostButton>
           </SettingsRow>

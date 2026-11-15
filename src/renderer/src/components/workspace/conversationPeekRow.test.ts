@@ -133,7 +133,7 @@ test('conversationPeekRow', async () => {
     assert.equal(
       only.agent.sessionId,
       'parked-1',
-      'after a restart the durable id is the agent record’s cliSessionId — the same id terminalStatus takes',
+      'after a restart the durable id is the agent record’s cliSessionId — the same id terminal.status takes',
     )
     assert.equal(only.agent.model, 'claude-opus-5', 'and the record carries the model too')
     assert.equal(only.agent.cli, 'claude-code', 'and the runtime')

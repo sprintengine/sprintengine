@@ -57,7 +57,16 @@ export type NewChatDraft = {
    * it, which opens the chip as the door always opens it.
    */
   worktreeName?: string | null
+  /**
+   * The draft is a scheduled agent's, and when it would run: the door reopens
+   * on the schedule chip and the Schedule button rather than as a chat. Absent
+   * or null for a chat.
+   */
+  schedule?: NewChatDraftSchedule | null
 }
+
+/** A scheduled agent's draft schedule: a cron, or one moment (`once`, epoch ms) instead of its repeats. */
+export type NewChatDraftSchedule = { cron: string; once: number | null }
 
 const EMPTY_DRAFT: NewChatDraft = {
   folderPath: null,
@@ -158,9 +167,17 @@ function fromStored(stored: StoredDraft): NewChatDraft {
     ...stored,
     skills: Array.isArray(stored.skills) ? stored.skills : [],
     mcpServers: Array.isArray(stored.mcpServers) ? stored.mcpServers : [],
+    schedule: storedSchedule(stored.schedule),
     // Bytes follow from the vault; until they do an image is not shown.
     images: [],
   }
+}
+
+function storedSchedule(value: unknown): NewChatDraftSchedule | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { cron, once } = value as Partial<NewChatDraftSchedule>
+  if (typeof cron !== 'string' || !cron.trim()) return null
+  return { cron, once: typeof once === 'number' && Number.isFinite(once) ? once : null }
 }
 
 function load(from: { storage: DraftStorage | null; vault: PromptStashImageVault }): void {

@@ -7,7 +7,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test } = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   beginSnooze,
   confirmSnooze,
@@ -22,11 +22,20 @@ const {
   withPendingSnoozes,
 } = require(path.join(buildRoot, "src/features/conversations/snoozeLogic.js"));
 const { buildChatRows } = require(path.join(buildRoot, "src/features/conversations/conversationListLogic.js"));
-const { buildSnoozeArgs, createConversationLifecycleApi, readSnoozeAnswer } = require(
-  path.join(buildRoot, "src/api/conversationLifecycle.js"),
-);
-const { declaresChatRowMenu } = require(path.join(buildRoot, "src/api/tailnetTransport.js"));
-const { parseConversationLifecycle } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+const { parseConversationServerFrame } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
+// A frame's text, read by the contract's own parser.
+const parseConversationFrame = (text) => parseConversationServerFrame(JSON.parse(text));
+// A listed chat as the phone reads it: through a `sessions` frame, by the
+// desktop's contract.
+const ROW = { workspaceId: "w", agentId: "a", title: "t", phase: "idle", updatedAt: 1, createdAt: 1, providerId: "p", modelId: "m", turnCount: 0, lastSeq: 0 };
+const readRow = (fields) =>
+  parseConversationFrame(JSON.stringify({ type: "sessions", requestId: "r", sessions: [{ ...ROW, ...fields }] })).sessions[0];
+const LIFECYCLE = ["chatTitle", "lastUserMessageAt", "lastTurnEndedAt", "lastVisitedAt", "visitRewoundAt", "snoozedUntil"];
+const lifecycleOf = (fields) => {
+  const row = readRow(fields);
+  return Object.fromEntries(LIFECYCLE.filter((name) => name in row).map((name) => [name, row[name]]));
+};
+
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -48,9 +57,7 @@ const rows = (threads, input = {}) =>
     desktopName: "Mac",
     threads,
     workspaces: null,
-    lifecycle: true,
-    canOperate: true,
-    rowMenu: true,
+    manage: true,
     ...input,
   });
 
@@ -116,17 +123,11 @@ test("a chat sleeps while its wake time is ahead, on a shelf soonest-first, and 
   assert.equal(snoozeWakeWords(local(2026, 11, 2, 9), at), "Mon 2 Nov, 9:00 AM");
 });
 
-test("Snooze is offered only where the desktop takes it, this phone operates the chat, and nothing in it works", () => {
-  assert.equal(declaresChatRowMenu({ tailnetCapabilities: ["conversation-lifecycle", "chat-row-menu"] }), true);
-  assert.equal(declaresChatRowMenu({ tailnetCapabilities: ["conversation-lifecycle"] }), false);
-  assert.equal(declaresChatRowMenu({}), false);
-
+test("Snooze is offered only where the desktop keeps its chats' rest, this phone operates the chat, and nothing in it works", () => {
   const [row] = rows([thread()]);
   assert.equal(row.snoozable, true);
   assert.equal(snoozeOffered(row), true);
-  assert.equal(rows([thread()], { rowMenu: false })[0].snoozable, false);
-  assert.equal(rows([thread()], { canOperate: false })[0].snoozable, false);
-  assert.equal(rows([thread()], { lifecycle: false })[0].snoozable, false);
+  assert.equal(rows([thread()], { manage: false })[0].snoozable, false);
   // The desktop ends a snoozed chat's processes, so it refuses one with an agent at work.
   assert.equal(snoozeOffered(rows([thread({ phase: "running" })])[0]), false);
   assert.equal(snoozeOffered(rows([thread({ phase: "starting" })])[0]), false);
@@ -136,49 +137,11 @@ test("Snooze is offered only where the desktop takes it, this phone operates the
 });
 
 test("a listed snoozedUntil is kept only in its shape", () => {
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: 1234 }), { snoozedUntil: 1234 });
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: "1234" }), {});
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: -5 }), {});
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: 1.5 }), {});
-});
-
-test("conversation.snooze goes to the desktop's gateway, and only its own answer for the chat counts", async () => {
-  const calls = [];
-  let refuse = false;
-  globalThis.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
-    calls.push({ url, name: body.params.name, args: body.params.arguments });
-    const args = body.params.arguments;
-    const structuredContent = refuse
-      ? {
-          ok: false,
-          error: { code: "working", message: "An agent in this chat is still working. Snooze it once it has finished." },
-        }
-      : { ok: true, workspaceId: args.workspaceId, snoozedUntil: args.until };
-    return { ok: true, status: 200, json: async () => ({ jsonrpc: "2.0", id: body.id, result: { structuredContent } }) };
-  };
-  const api = createConversationLifecycleApi({ baseUrl: "http://desk:7777", deviceToken: "tok" });
-  assert.deepEqual(await api.snooze("w1", 5000.7), { ok: true, data: { workspaceId: "w1", snoozedUntil: 5000 } });
-  assert.deepEqual(calls[0], {
-    url: "http://desk:7777/tailnet/v1/mcp",
-    name: "conversation.snooze",
-    args: { workspaceId: "w1", until: 5000 },
-  });
-  assert.deepEqual(await api.snooze("w1", null), { ok: true, data: { workspaceId: "w1", snoozedUntil: null } });
-  assert.deepEqual(calls[1].args, { workspaceId: "w1", until: null }, "null wakes it now");
-  refuse = true;
-  const refused = await api.snooze("w1", 5000);
-  assert.equal(refused.ok, false);
-  assert.match(refused.message, /still working/);
-
-  assert.deepEqual(buildSnoozeArgs("w1", null), { workspaceId: "w1", until: null });
-  assert.deepEqual(readSnoozeAnswer({ ok: true, workspaceId: "w1", snoozedUntil: null }, "w1"), {
-    workspaceId: "w1",
-    snoozedUntil: null,
-  });
-  assert.equal(readSnoozeAnswer({ ok: true, workspaceId: "w2", snoozedUntil: 5 }, "w1"), null);
-  assert.equal(readSnoozeAnswer({ ok: true, workspaceId: "w1", snoozedUntil: "5" }, "w1"), null);
-  assert.equal(readSnoozeAnswer({ ok: true, workspaceId: "w1" }, "w1"), null);
+  assert.deepEqual(lifecycleOf({ snoozedUntil: 1234 }), { snoozedUntil: 1234 });
+  assert.deepEqual(lifecycleOf({ snoozedUntil: "1234" }), {});
+  assert.deepEqual(lifecycleOf({ snoozedUntil: -5 }), {});
+  // A clock is any instant at or after the epoch, as the desktop reads one.
+  assert.deepEqual(lifecycleOf({ snoozedUntil: 1.5 }), { snoozedUntil: 1.5 });
 });
 
 test("a snooze this phone asked for is drawn at once, and until a read that set out after the answer", () => {

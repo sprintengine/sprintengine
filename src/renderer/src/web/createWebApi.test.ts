@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import React, { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { createIpcRouter, type RouterPort } from '../../../preload/ipc-router-core'
@@ -26,6 +28,7 @@ vi.mock('../../../preload/ipc-router', () => ({ ipc: router }))
 const { createWebApi } = await import('./createWebApi')
 const { apiModules } = await import('../../../preload/api-surface')
 const { isUnsupportedOnThisClient, refusedChannels } = await import('./unsupported')
+const { currentEnvironments, resetEnvironmentsForTests, useEnvironments } = await import('../hooks/useEnvironments')
 
 beforeEach(() => {
   posted.length = 0
@@ -42,19 +45,12 @@ test('every member the preload builds is present, with the four computed values'
   expect(api.diagnosticsGetIpcStats().channels).toEqual([])
 })
 
-test('a member whose channel the server owns goes over the tab’s socket', async () => {
-  const api = createWebApi()
-  void api.workspaceSyncGetSnapshot()
-  await Promise.resolve()
-  expect(posted.at(-1)).toMatchObject({ t: 'ipc.invoke', channel: 'workspace-sync:get-snapshot' })
-})
-
 test('a member a browser cannot do is a rejected promise, never a throw or undefined, and is reported once', async () => {
   const api = createWebApi()
   let thrown: unknown = null
   let pending: Promise<unknown> | null = null
   expect(() => {
-    pending = api.terminalSpawn('session-1', 80, 24, '/Users/dev/app')
+    pending = api.panePopOutOpen({ popOutId: 'pop-1', tabs: [] } as never)
   }).not.toThrow()
   try {
     await pending
@@ -62,8 +58,44 @@ test('a member a browser cannot do is a rejected promise, never a throw or undef
     thrown = error
   }
   expect(isUnsupportedOnThisClient(thrown)).toBe(true)
-  expect(refusedChannels()).toContain('terminal:spawn')
+  expect(refusedChannels()).toContain('pane-popout:open')
   expect(posted).toHaveLength(0)
+})
+
+// The machines a desktop knows are its own state, as its window geometry is
+// (shared/environments.ts), not a server method: a tab's Studio is the one
+// that served it. Its read is refused here and never asked of the server, and
+// the list every surface draws from reads that as no other machines, quietly.
+test('the list of machines is the desktop’s: a tab is refused it, and draws none', async () => {
+  const api = createWebApi()
+  let refusal: unknown = null
+  await api.environmentsList().catch((error: unknown) => (refusal = error))
+  expect(isUnsupportedOnThisClient(refusal)).toBe(true)
+  expect(posted).toHaveLength(0)
+
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const previous = (window as { api?: unknown }).api
+  ;(window as { api?: unknown }).api = api
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  const drawn: number[] = []
+  function Machines() {
+    drawn.push(useEnvironments().length)
+    return null
+  }
+  try {
+    await act(async () => root.render(React.createElement(Machines)))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(refusedChannels()).toContain('environments:list')
+    expect(currentEnvironments()).toEqual([])
+    expect(drawn.every((count) => count === 0)).toBe(true)
+  } finally {
+    act(() => root.unmount())
+    resetEnvironmentsForTests()
+    ;(window as { api?: unknown }).api = previous
+  }
 })
 
 test('a subscription to a shell push is a working no-op', () => {
@@ -82,10 +114,7 @@ test('the clipboard and links act in the browser, never on the server', async ()
   expect(posted).toHaveLength(0)
 })
 
-test('the chat rides the Studio protocol, and boot reads find empty states', async () => {
+test('boot reads find empty states', async () => {
   const api = createWebApi()
-  expect(api.studioChatTransport).toBe('studio')
-  expect(await api.terminalList()).toEqual([])
   expect((await api.authGetState()).status).toBe('signed_out')
-  expect((await api.listThirdPartyRendererEntries()).entries).toEqual([])
 })

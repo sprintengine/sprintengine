@@ -1,4 +1,4 @@
-import { cp, lstat, readFile, rename, rm, stat, writeFile } from 'fs/promises'
+import { lstat, readFile, rename, rm, stat } from 'fs/promises'
 import { join } from 'path'
 
 import {
@@ -11,6 +11,7 @@ import type {
   DesignSystemAttachSource,
   DesignSystemDetachResult,
 } from '../../shared/design-system/attach'
+import { copyConfinedDirectory, realFolderPath, writeConfinedFile } from '../confined-file'
 import { findEscapingSymlink } from './bundle-copy-confinement'
 import { readDesignSystemLibraryEntry, type LibraryPaths } from './library-registry'
 
@@ -164,8 +165,13 @@ export async function attachDesignSystemBundle(
   const stagingDir = join(workspaceRoot, ATTACH_STAGING_DIRNAME)
   try {
     await rm(stagingDir, { recursive: true, force: true })
-    await cp(sourceDir, stagingDir, { recursive: true })
-    await writeFile(join(stagingDir, DESIGN_SYSTEM_MANIFEST_FILENAME), stampedJson)
+    // Into the project's real folder, through no link put in the copy's way.
+    const realStagingDir = await realFolderPath(stagingDir)
+    await copyConfinedDirectory(sourceDir, realStagingDir)
+    // The copied manifest is replaced, never written through: it may be a link.
+    const manifestPath = join(realStagingDir, DESIGN_SYSTEM_MANIFEST_FILENAME)
+    await rm(manifestPath, { force: true })
+    await writeConfinedFile(manifestPath, stampedJson, { exclusive: true })
     await rename(stagingDir, targetDir)
   } catch (error) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)

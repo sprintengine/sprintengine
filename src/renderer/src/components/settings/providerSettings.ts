@@ -49,9 +49,9 @@ export type ProviderSecretView =
 
 export function deriveProviderTabState(
   result: ConversationProviderListResult | null,
-  ipcAvailable: boolean,
+  available: boolean,
 ): ProviderTabState {
-  if (!ipcAvailable) {
+  if (!available) {
     return {
       kind: 'unavailable',
       message: 'Conversation providers need an app restart before this tab is available.',

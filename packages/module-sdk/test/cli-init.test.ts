@@ -143,7 +143,7 @@ describe('sprintengine-module init', () => {
       dependsOn: string[]
     }
     assert.deepEqual(manifest.entry, { renderer: 'dist/renderer.mjs', main: 'dist/main.cjs' })
-    assert.deepEqual(manifest.permissions, ['ipc:workspace-read', 'mcp:tools', 'storage', 'module:bridge'])
+    assert.deepEqual(manifest.permissions, ['ipc:workspace-read', 'module:bridge', 'mcp:tools', 'storage'])
     assert.deepEqual(manifest.dependsOn, ['agent-runtime'])
     const plugin = readJson(join(dir, 'plugin.json')) as { permissions: string[] }
     assert.deepEqual(plugin.permissions, manifest.permissions, 'the bundle discloses the same')

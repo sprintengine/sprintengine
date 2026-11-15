@@ -79,14 +79,20 @@ The client keeps its connection:
 
 - It **reconnects** after a drop that reconnecting can fix — Studio quitting
   or restarting, a socket that fell too far behind — with exponential backoff
-  and jitter, never sooner than Studio asked.
+  and jitter, never sooner than Studio asked. A connection that drops as soon
+  as it opens still backs off: the count resets once one stays up 30 s.
+- It **checks itself on a wake**. `client.wake()` on an open client (or the
+  page coming back to the foreground) pings Studio, keeps a connection that
+  answers and makes one that does not again at once.
 - It **waits to be woken** after a refusal a new connection would repeat. A
   refused credential (`unauthorized`, `revoked`) or being offline parks the
   client (`state: 'parked'`) until `client.wake()`, or in a browser the page
   coming back online or to the foreground; a refused credential also ends what
   was waiting on it. A refusal waking cannot help
   (`unsupported_protocol_version`) closes it for good; `client.closed` rejects
-  with it.
+  with it. `openStudioUpdateSession` still reaches that Studio: it says which
+  side is behind and how the Studio is updated (`status()`), and asks one that
+  updates itself to do so (`start()`, with `environment:maintain`).
 - It **follows one Studio**: the one its first connection reaches, or the one
   named by `environmentId`. A reconnect that reaches another is refused
   (`environment_changed`) before a cursor is resumed or a request resent.
@@ -110,6 +116,11 @@ The client keeps its connection:
 A transport may bring the credential its one connection says hello with
 (`StudioTransport.credential`): a ticket minted for that connection alone, as
 Studio's own windows use. `auth` is then optional.
+
+`webSocketTransport({ ticket })` is such a transport over a WebSocket: before
+each connection, reconnects included, it calls `ticket()` for the URL to open
+and the token the hello presents. It uses the global `WebSocket` unless you
+pass `WebSocket`.
 
 `client.subscribe(topic, params, { onPayload, onEnd? })` follows a push topic
 such as `conversation.commands`: each payload as it comes, subscribed again on
@@ -231,5 +242,5 @@ const conversations = fromModuleConversationService(getConversationService(host)
 ## Environments
 
 The main entry runs in Node and in a browser, given a transport (any object
-with `send`, `close`, `onMessage` and `onClose`). `@sprintengine/agent-sdk/node`
+with `send`, `close`, `onMessage` and `onClose`; `webSocketTransport` is one). `@sprintengine/agent-sdk/node`
 adds the socket transport and needs Node 22.12 or later.

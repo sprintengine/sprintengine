@@ -20,19 +20,7 @@ import {
  * their level as an optional `permissionMode`, which a peer that does not know
  * it ignores, falling back to the level's mode.
  */
-export type CliPermissionModeSpec = {
-  /** Stable. A generic preset's name for the mode that stands for that preset. */
-  id: string
-  /** The CLI's own name for it. */
-  label: string
-  /** One line for a menu row. */
-  summary?: string
-  /** The full explanation, for a tooltip. */
-  description?: string
-  level: CliPermissionPreset
-  /** The CLI declares this mode read-only. */
-  readOnly?: true
-}
+export type { CliPermissionModeSpec } from '../../packages/studio-protocol/src/public'
 
 // What a runtime may name one of its own modes: short, and nothing a path,
 // a flag or a markup fragment could be read as.

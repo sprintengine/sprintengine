@@ -3,6 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 import { withoutRepeatedWorkspacePrefix } from '../../../utils/terminalFileLinks'
 import { ConversationLinkProvider, ConversationMarkdown } from './conversationLinks'
 import {
@@ -23,9 +24,11 @@ let files: Set<string>
 let root: Root | null = null
 let host: HTMLElement | null = null
 
-beforeEach(() => {
+beforeEach(async () => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   ;(window as unknown as { api: unknown }).api = { platform: 'darwin' }
+  // The window's own Studio, welcomed: its chats' paths are its disk's.
+  await installStudioLoopback(window as unknown as { api: Record<string, unknown> }).welcomed()
   files = new Set()
 })
 
@@ -40,7 +43,6 @@ function DiskFiles({ children }: { children: React.ReactNode }) {
   const local = useConversationTransport()
   const transport: ConversationTransport = {
     ...local,
-    capabilities: { ...local.capabilities, localFiles: true },
     services: {
       ...local.services,
       files: {

@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.settled', async () => {
   // Settled chats (2026-09-07; off the rail 2026-09-28). A folder's resting
@@ -54,33 +58,33 @@ test('WorkspaceSidebar.settled', async () => {
   // A chat agent has no pty: main owns its process, and Settle ends it through
   // the conversation runtime. Echo's live chat and a chat already stopped.
   const chatsSuspended: string[] = []
+  terminalsDouble.listTerminals = async () => [
+    {
+      sessionId: 'alpha-pty',
+      workspaceId: 'w1',
+      processAlive: true,
+      kind: 'agent',
+      cli: 'claude-code',
+      activity: { kind: alphaActivityAtKill, since: 1 },
+    },
+    // Hotel holds nothing but a shell, printing as a shell does: a plain
+    // terminal reads as working for a few seconds after any output.
+    {
+      sessionId: 'terminal-hotel-shell',
+      workspaceId: 'w8',
+      processAlive: true,
+      kind: 'terminal',
+      activity: { kind: 'working', since: 1 },
+    },
+  ]
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
+  terminalsDouble.closeTerminal = async (sessionId: string) => {
+    killed.push(sessionId)
+  }
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [
-      {
-        sessionId: 'alpha-pty',
-        workspaceId: 'w1',
-        processAlive: true,
-        kind: 'agent',
-        cli: 'claude-code',
-        activity: { kind: alphaActivityAtKill, since: 1 },
-      },
-      // Hotel holds nothing but a shell, printing as a shell does: a plain
-      // terminal reads as working for a few seconds after any output.
-      {
-        sessionId: 'terminal-hotel-shell',
-        workspaceId: 'w8',
-        processAlive: true,
-        kind: 'terminal',
-        activity: { kind: 'working', since: 1 },
-      },
-    ],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
-    terminalKill: async (sessionId: string) => {
-      killed.push(sessionId)
-    },
     conversationSessionsList: async () => ({
       ok: true,
       sessions: [
@@ -93,6 +97,8 @@ test('WorkspaceSidebar.settled', async () => {
       return { ok: true }
     },
   }
+  // A chat's session is listed and suspended by the window's Studio, over the protocol.
+  installStudioLoopback(domWindow as never)
 
   async function main(): Promise<void> {
     const React = await import('react')

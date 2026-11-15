@@ -7,7 +7,7 @@ const test = require("node:test");
 // A runtime wears the same logo on the phone as on the desktop. This pins the
 // CLI-to-logo mapping to the desktop's, plus the phone's wider Claude match.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/src/components/glyphs");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile/src/components/glyphs");
 const { resolveCliLogoKind } = require(path.join(buildRoot, "cliLogoKind.js"));
 
 test("each desktop CLI id resolves to its own logo", () => {

@@ -1,6 +1,7 @@
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { test, expect } from 'vitest'
+import { afterAll, beforeAll, expect, test, vi } from 'vitest'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 import {
   ConversationLinkProvider,
   ConversationMarkdown,
@@ -16,6 +17,17 @@ import {
   useConversationTransport,
   type ConversationTransport,
 } from './conversationTransport'
+
+// The window's own Studio, welcomed: a chat on it has its paths read and
+// linked through the window's services.
+beforeAll(async () => {
+  const win = { api: { platform: 'darwin' } as Record<string, unknown> }
+  vi.stubGlobal('window', win)
+  await installStudioLoopback(win).welcomed()
+})
+afterAll(() => {
+  vi.unstubAllGlobals()
+})
 
 function render(text: string) {
   return renderToStaticMarkup(
@@ -151,8 +163,8 @@ function RemoteFiles({ children }: { children: React.ReactNode }) {
   const local = useConversationTransport()
   const remote: ConversationTransport = {
     ...local,
-    kind: 'remote',
-    capabilities: { ...local.capabilities, localFiles: false },
+    // Another machine's chat: its environment is not the window's Studio.
+    environment: { id: 'another-machine', label: 'mac-mini', route: null },
   }
   return <ConversationTransportProvider value={remote}>{children}</ConversationTransportProvider>
 }

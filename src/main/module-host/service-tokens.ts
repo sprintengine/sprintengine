@@ -24,17 +24,19 @@ import type { ModuleAppStateMirror } from './module-app-state-mirror'
 // boundaries (instead of importing the concrete instances). index.ts seeds the
 // kernel with the live AppServices instances via loadMainModules' provideServices
 // hook; modules call host.requireService(<token>).
-export const TerminalRuntimeToken = createServiceToken<AppServices['terminalRuntime']>('core.terminal-runtime')
+export const TerminalRuntimeToken =
+  createServiceToken<NonNullable<AppServices['terminalRuntime']>>('core.terminal-runtime')
 // The single main-process path that drives an agent session: send,
 // submit, interrupt, read, wait — serialized per session, dispatched per
 // transport. Consumers resolve this instead of writing to a pty themselves.
-export const AgentControlPlaneToken = createServiceToken<AppServices['agentControlPlane']>('core.agent-control-plane')
+export const AgentControlPlaneToken =
+  createServiceToken<NonNullable<AppServices['agentControlPlane']>>('core.agent-control-plane')
 // The single main-process path that COMPOSES an agent launch: CLI and
 // permission defaults, connector resolution, naming, spawn.
 // Consumers resolve this instead of asking a renderer to launch for them, which
 // is what made every headless agent launch fail for want of an open window.
 export const AgentLaunchServiceToken =
-  createServiceToken<AppServices['agentLaunchService']>('core.agent-launch-service')
+  createServiceToken<NonNullable<AppServices['agentLaunchService']>>('core.agent-launch-service')
 export const GitHubTokenStoreToken = createServiceToken<AppServices['githubTokenStore']>('core.github-token-store')
 // The main-owned agent-launch settings (CLI runtimes, permission preset, MCP
 // servers, knowledge roots, last-selected CLI) that main-side spawns read.
@@ -57,6 +59,11 @@ export const WorkspaceRegistryToken = createServiceToken<AppServices['workspaceR
 export const ConversationLaunchServiceToken =
   createServiceToken<AppServices['conversationLaunchService']>('core.conversation-launch')
 export const ConversationRuntimeToken = createServiceToken<AppServices['conversations']>('core.conversation-runtime')
+// A conversation host: the chats' ordinary send, which resumes a chat at rest
+// from its record, as a paired device's send does. For first-party work that
+// sends to a chat it did not just start (a scheduled run finished after a
+// restart). First-party only.
+export const ConversationHostToken = createServiceToken<AppServices['createConversationHost']>('core.conversation-host')
 // Scheduled agents: the one door every caller — the New chat panel, an
 // extension, an agent's MCP call — creates and changes them through.
 export const ScheduledAgentsServiceToken = createServiceToken<ScheduledAgentsService>('scheduled-agents.service')

@@ -1,26 +1,31 @@
 import { useEffect } from 'react'
 
+import { STUDIO_MODULES_CAPABILITY } from '../../../../../packages/studio-protocol/src/public'
 import { getRendererHost } from '../../modules'
 import { startModuleNotificationIngest } from '../../modules/module-notifications'
+import { followWindowStudioPush } from '../../studio/windowStudioPush'
 import { useNotificationStore } from '../../store/notificationStore'
 
 /**
  * A capability module's `MainHost.notify`, filed into this window's bell while
- * the window's shell is mounted: live on the kernel's push channel, plus the
- * backlog it kept from before this window listened
- * (shared/modules/notifications.ts). Filed once per delivery id, so a row
- * heard live and read again, or cleared since, is not filed twice. Mounted by
- * the window that draws a bell, which is also what makes
- * `supports('notifications')` true in a renderer.
+ * the window's shell is mounted: the `module.notifications` stream of the
+ * window's Studio, which sends the rows its server still keeps and then each
+ * new one. Filed once per delivery id, so a row heard again after a reconnect,
+ * or cleared since, is not filed twice. Mounted by the window that draws a
+ * bell, which is also what makes `supports('notifications')` true in a renderer.
  */
 export function useModuleNotificationIngest(): void {
   useEffect(() => {
-    if (typeof window.api?.onModuleNotification !== 'function') return
+    if (typeof window.api?.studioWindowTicket !== 'function') return
     const host = getRendererHost()
-    const listRecent = window.api.listRecentModuleNotifications
     const stop = startModuleNotificationIngest({
-      subscribe: (cb) => window.api.onModuleNotification(cb),
-      ...(typeof listRecent === 'function' ? { listRecent: () => listRecent() } : {}),
+      subscribe: (cb) =>
+        followWindowStudioPush({
+          topic: 'module.notifications',
+          params: {},
+          capability: STUDIO_MODULES_CAPABILITY,
+          onPayload: cb,
+        }),
       file: (deliveryId, entry) => useNotificationStore.getState().fileModuleNotification(deliveryId, entry),
     })
     host.setModuleNotificationsWired(true)

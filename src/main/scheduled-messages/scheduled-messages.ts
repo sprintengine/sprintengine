@@ -196,8 +196,16 @@ export type ScheduledMessagesDeps = {
 export type ScheduledMessageHoldResult = { ok: true; id: string; repeat?: true } | { ok: false; reason: string }
 
 export type ScheduledMessages = {
-  /** Read the file, follow the chats, and arm for what is due. */
-  start(): Promise<void>
+  /**
+   * Read the file, follow the chats, and arm for what is due. `after`, where given, holds every send
+   * the clock or a turn's end would start until it resolves (for good, when it rejects): what this
+   * machine hands to another environment is taken out first (the hand-over's
+   * plan), so none of it goes from here as well. The person's Send now waits
+   * for it too.
+   */
+  start(options?: { after?: Promise<unknown> }): Promise<void>
+  /** Settles once the start has read the file: `state()` holds what it kept. */
+  loaded(): Promise<void>
   /**
    * Hold a message for the end of the chat's turn (at once, when none is
    * running): one a paired machine queued. It joins the chat's held message
@@ -214,12 +222,20 @@ export type ScheduledMessages = {
   ): ScheduledMessageHoldResult
   /** The held message the command `source` went into, still held or gone; null for a command never held. */
   heldFrom(source: string): string | null
+  /** What a message still here carries beside its words, by where it is on this disk; null for none. */
+  carriedOf(id: string): ScheduledMessageCarried | null
   /**
    * Schedule a message a paired machine asked for, to go at `sendAt` as one
    * scheduled here does. `source` names the command it came in on; the same
    * one again is the same message, scheduled once.
    */
-  scheduleFrom(chat: ScheduledMessageChat, text: string, sendAt: number, source: string): ScheduledMessageHoldResult
+  scheduleFrom(
+    chat: ScheduledMessageChat,
+    text: string,
+    sendAt: number,
+    source: string,
+    untilLimitReset?: UsageLimitProvider,
+  ): ScheduledMessageHoldResult
   /** The computer woke or was unlocked: timers stood still while it slept, so read the clock again. */
   wake(): void
   /** Chats may have been deleted: forget their messages. */
@@ -227,6 +243,8 @@ export type ScheduledMessages = {
   state(): ScheduledMessagesState
   update(update: ScheduledMessageUpdate): ScheduledMessagesState
   onChanged(listener: (state: ScheduledMessagesState) => void): () => void
+  /** Settles once every change made so far is written to the file. */
+  flush(): Promise<void>
   /** Stop the timer and the listeners, and let the last write land. */
   dispose(): Promise<void>
 }
@@ -255,6 +273,10 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
   const unsubscribers: Array<() => void> = []
   let timer: unknown = null
   let running = false
+  // What the start waits on before anything goes out (`start`'s `after`).
+  let holding: Promise<unknown> | null = null
+  let markLoaded: () => void = () => undefined
+  const loadedOnce = new Promise<void>((resolve) => (markLoaded = resolve))
   // Nothing goes out before this: the start's grace, then the stagger.
   let quietUntil = 0
   let writing: Promise<void> = Promise.resolve()
@@ -350,7 +372,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
 
   function tick(): void {
     timer = null
-    if (!running) return
+    if (!running || holding) return
     const at = now()
     const dropped = dropStale()
     if (at >= quietUntil) {
@@ -511,7 +533,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     entry.untilLimitReset = undefined
     const at = now()
     entry.sendAt = Math.min(entry.sendAt, at)
-    if (running) fire(entry, at)
+    if (running && !holding) fire(entry, at)
     else changed()
     return state()
   }
@@ -588,6 +610,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     input: string,
     sendAt: number,
     source: string,
+    untilLimitReset?: UsageLimitProvider,
   ): ScheduledMessageHoldResult {
     // The same command again is the same message, still waiting or gone.
     const scheduled = messages.find((entry) => entry.sources?.includes(source))
@@ -613,6 +636,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
         sendAt,
         createdAt: now(),
         sources: [source],
+        ...(untilLimitReset ? { untilLimitReset } : {}),
       },
     ]
     changed()
@@ -621,9 +645,23 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
 
   // ── Life ─────────────────────────────────────────────────────────────────
 
-  async function start(): Promise<void> {
+  async function start(options: { after?: Promise<unknown> } = {}): Promise<void> {
     if (running) return
     running = true
+    if (options.after) {
+      // One that fails holds every send: what it would have taken out may
+      // still be listed here.
+      const after = options.after.then(
+        () => true,
+        () => false,
+      )
+      holding = after
+      void after.then((released) => {
+        if (!released || holding !== after) return
+        holding = null
+        arm()
+      })
+    }
     quietUntil = now() + STARTUP_GRACE_MS
     unsubscribers.push(deps.onConversationEvent(onConversationEvent))
     const saved = readSaved(await deps.storage.read().catch(() => null))
@@ -652,13 +690,16 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     if (dropStale() || repeated) persist()
     const next = state()
     for (const listener of [...listeners]) listener(next)
+    markLoaded()
     arm()
   }
 
   return {
     start,
+    loaded: () => loadedOnce,
     hold,
     heldFrom,
+    carriedOf: (id) => messages.find((entry) => entry.id === id)?.carried ?? null,
     scheduleFrom,
     wake() {
       if (!running) return
@@ -676,6 +717,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    flush: () => writing,
     async dispose() {
       running = false
       if (timer !== null) clearTimer(timer)

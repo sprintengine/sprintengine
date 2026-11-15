@@ -186,14 +186,16 @@ That runs, in order:
 
 | Script | What it does |
 | --- | --- |
-| `npm run typecheck` | `tsc --noEmit` over the whole app. |
+| `npm run typecheck` | `tsc --noEmit` over the whole app, and over the shared client runtime and conversation timeline in `../packages/`. |
 | `npm run lint` | ESLint with Expo's config. |
 | `npm run lint:tokens` | Checks that screens use the design tokens in `src/theme/tokens.ts` rather than raw colours, spacing and font values. |
-| `npm run test:mobile` | Compiles the logic modules to `.mobile-test-build/` and runs the `*.regression.test.js` suites with `node --test`. |
+| `npm run test:mobile` | Compiles the logic modules to `.mobile-test-build/` and runs every `*.regression.test.js` suite under `src/` with `node --test` (`scripts/run-mobile-tests.cjs`). |
+| `npm run test:runtime` | Compiles the shared client runtime's portable tests (the connection supervisor's and the conversation timeline's, in `../packages/`) the same way and runs them with `node --test` (`scripts/run-runtime-tests.cjs`); `scripts/vitest-bridge.cjs` answers their `vitest` imports, so the desktop's suite runs the same files. |
 
-The tests run on plain Node with no simulator. A new suite has to be added to
-the `test:mobile` list in `package.json`, and any module it loads to
-`tsconfig.test.json`.
+The tests run on plain Node with no simulator. A new suite is found by its
+name, `*.regression.test.js` anywhere under `src/`; any module it loads has to
+be added to `tsconfig.test.json`. The run fails on a test it would pass over (a
+`*.test.ts`, or a `*.test.js` with another name) and on finding no suites.
 
 Other scripts:
 
@@ -222,19 +224,28 @@ under `/tailnet/v1/`:
 - **Pairing and identity:** `pair` spends the one-time link for a device token;
   `identity` reports what the desktop speaks and whether the pairing still
   stands (`src/api/tailnetControlClient.ts`, `src/api/tailnetTransport.ts`).
-- **Tools:** `mcp` takes JSON-RPC tool calls such as `workspace.list`,
-  `workspace.snapshot` and `conversation.create`
-  (`src/api/tailnetWorkspaces.ts`, `src/api/conversationLaunch.ts`).
-- **Live chats:** a WebSocket per open chat, opened with a short-lived ticket
-  from `ws-ticket`, streams the conversation's events
-  (`src/api/tailnetConversations.ts`, `src/api/conversationWire.ts`).
+- **The Studio protocol:** `studio`, one socket per desktop opened with a
+  short-lived ticket, carries the projects and New chat, the backlogs and
+  shares (`backlog.*`, `shares.list`, heard moving by `backlog.changed`), the
+  pull request viewer (`src/api/desktopStudio.ts`,
+  `src/api/desktopReads.ts`, `src/api/tailnetWorkspaces.ts`,
+  `src/api/conversationLaunch.ts`).
+- **Tools:** `mcp` takes the JSON-RPC tool calls the phone has not yet moved
+  onto the protocol.
+- **Live chats:** on the same Studio socket, each open chat followed as
+  `conversation.session` and driven by its methods (`src/api/desktopConversations.ts`),
+  what it offers read from the desktop's welcome (`src/api/chatOffers.ts`).
 
-Two parts of the wire are copies of Studio's own definitions and are
-hash-pinned by tests so they cannot drift silently:
-`src/api/conversation-protocol/` mirrors `packages/conversation-protocol/src/`,
-and `src/shared/mobile-control/protocol.ts` carries the mobile-control types.
-Change them together with the Studio side; the policy for wire changes is
-`docs/compatibility.md` at the repository root.
+The conversation contract, its decoder and the connection supervisor (part of
+the shared client runtime, `packages/client-runtime`) are the desktop's own
+packages, imported from the repository's `packages/` folder as source:
+`src/features/conversations/sendRules.ts` holds only the phone's own rules beside them, and
+a frame, event or listed chat this build does not know is passed over or listed
+as unknown rather than refused. Metro
+watches that folder (`metro.config.js`), and the test build compiles it beside
+the app (`tsconfig.test.json`). The Studio protocol is imported the same
+way, from `packages/studio-protocol`. The policy for wire
+changes is `docs/compatibility.md` at the repository root.
 
 `docs/conversations.md` describes how the chat list and a chat behave in
 detail, and `docs/canvases.md` how the phone lists a desktop's Canvas boards

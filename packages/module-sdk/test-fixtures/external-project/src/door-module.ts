@@ -22,7 +22,7 @@ export const manifest: CapabilityManifest = {
   summary: 'Instance-global tide charts behind a top-level door.',
   defaultEnabled: true,
   source: 'third-party',
-  engines: { hostApi: 1 },
+  engines: { hostApi: 2 },
   entry: {
     renderer: 'dist/renderer.mjs',
   },

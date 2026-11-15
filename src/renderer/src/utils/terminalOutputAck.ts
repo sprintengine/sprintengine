@@ -1,3 +1,4 @@
+import { ackTerminal } from '../studio/terminals'
 /**
  * Batches a pane's flow-control acknowledgements to main.
  *
@@ -47,11 +48,7 @@ export function createTerminalAckReporter(send: (units: number) => void) {
   }
 }
 
-/** The reporter for one local session's pane: acks go to main over `terminal:ack`. */
+/** The reporter for one session's pane: acks go to the Studio as `terminal.ack`. */
 export function createSessionAckReporter(sessionId: string) {
-  return createTerminalAckReporter((units) => {
-    // A narrower preload (an aux window, a test harness) has no ack channel;
-    // main then simply never waits on this pane.
-    if (typeof window.api.terminalAck === 'function') window.api.terminalAck(sessionId, units)
-  })
+  return createTerminalAckReporter((units) => ackTerminal(sessionId, units))
 }

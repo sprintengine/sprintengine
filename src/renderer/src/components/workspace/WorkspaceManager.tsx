@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPairedChat } from '../../studio/pairedDiscovery'
 import { StudioServerBanner } from '../studioServer/StudioServerBanner'
 import { hostIdForFolder, isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { isProjectlessChatsRoot, PROJECTLESS_CHATS_LABEL } from '../../../../shared/projectless-chats'
@@ -56,6 +57,7 @@ import {
   useConversationSessions,
   type ConversationSessionEntry,
 } from '../../hooks/conversationSessionsStore'
+import { useFollowWindowEnvironments } from '../../hooks/useFollowWindowEnvironments'
 import { recencyEqual, stableRecord, stableSet, type RowRecency } from './stableRowSlices'
 import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
 import { meshConversationSessionId } from '../../../../shared/tailnet-mesh'
@@ -147,7 +149,9 @@ import { confirmNewChatWith, type NewChatExtension } from './manager/newChatConf
 import { obtainNewChatWorktree, prepareNewChatWorktree, takeReadyNewChatWorktree } from '../../utils/newChatWorktree'
 import type { AgentState } from '../../../../shared/agent-state'
 import { openChatLink } from './manager/chatLinkOpener'
-import { remoteChatLinkTarget } from './remoteBand/remoteChatLinks'
+import { remoteChatLinkTargets, remoteChatOnConnection } from './remoteBand/remoteChatLinks'
+import { environmentIdsOf, environmentRouteOfMeshConnection } from '../../../../shared/environment-keys'
+import { currentEnvironments } from '../../hooks/useEnvironments'
 import { registerRemoteChatOpener } from './remoteBand/remoteChatSearch'
 import { setAppCommandRunner } from '../../commands/appCommandRunner'
 import {
@@ -274,6 +278,14 @@ import { LEGACY_COMMAND_ID_ALIASES, type KeybindingPlatform } from '../../comman
 import type { CommandAvailabilityContext } from '../../commands/availability'
 import type { CommandScope, ModuleCommandContext } from '../../commands/types'
 import { dispatchPanelCommandEvent } from '../../utils/panelCommands'
+import {
+  closeTerminal,
+  onTerminalPromptUndelivered,
+  setTerminalVisible,
+  suspendTerminal,
+  takeUndeliveredPrompts,
+  terminalStatus,
+} from '../../studio/terminals'
 // From the pure search module, not the palette component: the palette is
 // React.lazy and importing a type through it would be a needless edge into the
 // deferred chunk.
@@ -307,6 +319,15 @@ import {
   workspaceWindowBoundsForDrop,
   type AgentSpawnPlacement,
 } from './manager/layoutTabActions'
+import { windowChatServices } from '../panels/agentChat/windowChat'
+import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
+import { agentSetupApi } from '../../studio/agentSetup'
+import { agentSkillsApi } from '../../studio/agentSkills'
+import { gitApi } from '../../studio/git'
+import { hostsApi } from '../../studio/hosts'
+import { worktreesApi } from '../../studio/worktrees'
+import { extensionsApi } from '../../studio/extensions'
+import { workspaceSyncApi } from '../../studio/workspaceSync'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -459,6 +480,8 @@ function addWorkingChatWorkspaces(
 
 export default function WorkspaceManager() {
   useAppTheme()
+  // The SSH machines this window has chats on: their sessions join the window's list.
+  useFollowWindowEnvironments()
   const dialog = useConfirmDialog()
   // The row menu's Delete chat… on a settled chat, the same flow Settings ▸ Settled chats runs.
   const { deleteChats: deleteSettledChats, deleteThere: deleteSettledChatThere } = useDeleteSettledChats()
@@ -744,7 +767,12 @@ export default function WorkspaceManager() {
     // Opened on a paired machine's scheduled agent: the panel edits that one,
     // and saves it there. The record is as its row had it when opened, until
     // the Scheduled section reads that machine again.
-    editingRemoteScheduledAgent?: { connectionId: string; machineName: string; agent: ScheduledAgentView } | null
+    editingRemoteScheduledAgent?: {
+      route: string
+      connectionId: string | null
+      machineName: string
+      agent: ScheduledAgentView
+    } | null
     // Opened on a paired machine's project ("New chat in project" on its chat
     // or header): the panel starts on that machine and project.
     remoteProject?: { connectionId: string; workspaceId: string } | null
@@ -1368,7 +1396,7 @@ export default function WorkspaceManager() {
         try {
           let detected: { mcpServerKeys: string[]; skillKeys: string[] } | null = null
           try {
-            const detection = await window.api.detectExistingAgentConfig()
+            const detection = await agentSetupApi.detectExistingAgentConfig()
             if (!detection.ok) {
               // Detection itself failed. Report it and leave the profile
               // un-adopted so the next workspace creation tries again — claiming
@@ -1406,7 +1434,7 @@ export default function WorkspaceManager() {
 
           setAgentConfigAdoptionResult({ status: 'adopting' })
           try {
-            const result = await window.api.adoptAgentConfig({
+            const result = await agentSetupApi.adoptAgentConfig({
               workspaceRoot: plan.workspaceRoot,
               mcpServerKeys: plan.mcpServerKeys,
               skillKeys: plan.skillKeys,
@@ -1659,8 +1687,8 @@ export default function WorkspaceManager() {
   // already marked stays marked on its rail row and is not announced again.
   // Button-free, like every toast but the CLI update; Sync lives on the source.
   useEffect(() => {
-    if (typeof window.api?.onSkillSourcesUpdated !== 'function') return
-    return window.api.onSkillSourcesUpdated((check) => {
+    if (typeof agentSkillsApi.onSkillSourcesUpdated !== 'function') return
+    return agentSkillsApi.onSkillSourcesUpdated((check) => {
       const notice = sourceUpdatesNotice(check)
       if (!notice) return
       showToast({ tone: 'accent', title: notice.title, description: notice.description })
@@ -1672,12 +1700,8 @@ export default function WorkspaceManager() {
   // the bell where Copy message gives it back. The toast is button-free; the
   // row is where the message lives.
   useEffect(() => {
-    const api = window.api
-    if (typeof api?.onTerminalPromptUndelivered !== 'function') return
-    if (typeof api.terminalTakeUndeliveredPrompts !== 'function') return
     const take = (): void => {
-      void api
-        .terminalTakeUndeliveredPrompts()
+      void takeUndeliveredPrompts()
         .then((events) => {
           const store = useWorkspaceStore.getState()
           for (const event of events) {
@@ -1699,7 +1723,7 @@ export default function WorkspaceManager() {
     }
     // Anything that went undelivered while no window was open.
     take()
-    return api.onTerminalPromptUndelivered(take)
+    return onTerminalPromptUndelivered(take)
   }, [])
 
   // Model discovery: main pushes a CLI's catalog whenever a probe answers (the
@@ -1792,9 +1816,7 @@ export default function WorkspaceManager() {
   // up, and every later push lands in the store.
   const checkCliVersions = useWorkspaceStore((s) => s.checkCliVersions)
   useEffect(() => {
-    const api = typeof window === 'undefined' ? null : window.api
-    if (api && typeof api.cliVersionChecksSetEnabled === 'function')
-      void api.cliVersionChecksSetEnabled(checkCliVersions)
+    if (windowHasStudio()) void agentSettingsApi.cliVersionChecksSetEnabled(checkCliVersions).catch(() => undefined)
     // The read compares what startup detection found; it probes nothing.
     if (checkCliVersions) void useWorkspaceStore.getState().refreshCliVersionAdvisories()
   }, [checkCliVersions])
@@ -1814,13 +1836,13 @@ export default function WorkspaceManager() {
   // ends, and one bell row, from the primary window, for one that failed.
   const reportsWorktreeInstalls = useRef(isPrimaryWorkspaceWindow)
   reportsWorktreeInstalls.current = isPrimaryWorkspaceWindow
-  useEffect(() => {
-    const api = typeof window === 'undefined' ? null : window.api
-    if (!api || typeof api.onWorktreeInstallChanged !== 'function') return
-    return api.onWorktreeInstallChanged((view) =>
-      showWorktreeInstallToast(view, { report: reportsWorktreeInstalls.current }),
-    )
-  }, [])
+  useEffect(
+    () =>
+      worktreesApi.onWorktreeInstallChanged((view) =>
+        showWorktreeInstallToast(view, { report: reportsWorktreeInstalls.current }),
+      ),
+    [],
+  )
 
   useEffect(
     () =>
@@ -1981,7 +2003,7 @@ export default function WorkspaceManager() {
       if (!send) continue
       applied.set(session.sessionId, shouldPaint)
       if (shouldPaint) clearPaneAttachedHidden(session.sessionId)
-      void window.api.terminalSetVisible(session.sessionId, shouldPaint).catch(() => {})
+      void setTerminalVisible(session.sessionId, shouldPaint).catch(() => {})
     }
     // Forget sessions that unmounted or moved to another window; their own
     // TerminalView teardown already set them hidden on the main side.
@@ -2501,7 +2523,7 @@ export default function WorkspaceManager() {
   // bold them as "hot" — instant to switch into, versus suspended/exited rows that
   // re-launch on open. Derived from the same live `terminalSessions` snapshot as
   // activity, and recomputes the moment the reaper suspends an agent (it disposes
-  // the session, and the terminal:sessions-delta broadcast carries the change).
+  // the session, and the terminal.sessions broadcast carries the change).
   const residentWorkspaceIdsRef = useRef<ReadonlySet<string> | null>(null)
   const residentWorkspaceIds = useMemo(() => {
     const ids = residentAgentWorkspaceIds(terminalSessions, conversationSessions)
@@ -2656,7 +2678,7 @@ export default function WorkspaceManager() {
       spawnError('Worktree needs a project', 'Open a project folder before spawning an agent on a worktree.')
       return null
     }
-    const repoRoot = await window.api.getGitRepoRoot(workspace.folderPath)
+    const repoRoot = await gitApi.getGitRepoRoot(workspace.folderPath)
     if (!repoRoot) {
       spawnError(
         'Worktree needs a git repository',
@@ -2674,7 +2696,7 @@ export default function WorkspaceManager() {
     }
     // From the worktree pool, on the default branch (main's git.ts): a
     // reused slot keeps the last agent's installed dependencies.
-    const result = await window.api.createGitWorktree({
+    const result = await worktreesApi.createGitWorktree({
       repoRoot,
       containerPath: paths.containerPath,
       destinationPath: paths.destinationPath,
@@ -3059,6 +3081,9 @@ export default function WorkspaceManager() {
         connector: connector ?? null,
         forcedSelection,
         ...(remoteProject ? { remoteProject } : {}),
+        // The draft keeps its kind: a scheduled agent's reopens as one, with
+        // its schedule chip and its Schedule button.
+        ...(parked?.schedule ? { mode: 'scheduled' as const } : {}),
       })
     },
     [activeFolderPath, activeRemoteOrigin, activeWorktreeRepoRoot, workspaceWindowId],
@@ -3090,7 +3115,8 @@ export default function WorkspaceManager() {
   )
   // New chat over a New chat door that holds something keeps that draft, in
   // the sidebar's Drafts, and begins another; over an empty one, or anywhere
-  // else, it opens the door on the draft the window has, as it always did.
+  // else, it opens the door on the draft the window has, as it always did. A
+  // new scheduled agent's door is a draft too, and is kept the same way.
   const newChatPanelStateRef = useRef(newChatPanelState)
   newChatPanelStateRef.current = newChatPanelState
   const openNewChatPanel = useCallback(
@@ -3102,7 +3128,7 @@ export default function WorkspaceManager() {
       const open = newChatPanelStateRef.current
       if (
         open &&
-        (open.mode ?? 'chat') === 'chat' &&
+        open.mode !== 'extension' &&
         !open.editingScheduledAgentId &&
         !open.editingRemoteScheduledAgent &&
         folderPath === undefined &&
@@ -3149,7 +3175,7 @@ export default function WorkspaceManager() {
   // what it last said.
   const editingRemote = newChatPanelState?.editingRemoteScheduledAgent ?? null
   const editingRemoteRef = useMemo(
-    () => (editingRemote ? { connectionId: editingRemote.connectionId, id: editingRemote.agent.id } : null),
+    () => (editingRemote ? { route: editingRemote.route, id: editingRemote.agent.id } : null),
     [editingRemote],
   )
   const remoteEditingRead = useRemoteScheduledAgent(editingRemoteRef)
@@ -3163,6 +3189,7 @@ export default function WorkspaceManager() {
     () =>
       editingRemote
         ? {
+            route: editingRemote.route,
             connectionId: editingRemote.connectionId,
             machineName: editingRemote.machineName,
             pausedAll: remoteEditingRead.machine?.pausedAll ?? null,
@@ -3256,11 +3283,11 @@ export default function WorkspaceManager() {
    */
   const runCardGo = useCallback(
     async (card: HostedCard, launch: CardLaunchChoice): Promise<void> => {
-      if (typeof window.api?.cardsRun !== 'function') return
+      if (typeof agentSkillsApi.cardsRun !== 'function') return
       const state = useWorkspaceStore.getState()
       const workspaceRoot =
         state.workspaces.find((workspace) => workspace.id === windowActiveWorkspaceId)?.folderPath ?? null
-      const result = await window.api
+      const result = await agentSkillsApi
         .cardsRun({
           slug: card.slug,
           actions: card.go,
@@ -3370,8 +3397,8 @@ export default function WorkspaceManager() {
       // for itself, and dropping the whole chat over a stale name would throw
       // away the run that succeeded.
       const skills =
-        chatRoot && chat.skills.length > 0 && typeof window.api.workspaceSkillsList === 'function'
-          ? await window.api
+        chatRoot && chat.skills.length > 0 && typeof agentSkillsApi.workspaceSkillsList === 'function'
+          ? await agentSkillsApi
               .workspaceSkillsList({ workspaceRoot: chatRoot })
               .then((listed) => (listed.ok ? listed.skills.filter((skill) => chat.skills.includes(skill.id)) : []))
               .catch(() => [] as WorkspaceSkill[])
@@ -3665,6 +3692,16 @@ export default function WorkspaceManager() {
   const newChatProjectOptions = useMemo(() => newChatProjectOptionsOf(workspaces), [workspaces])
   const selectNewChatProject = (path: string) => {
     setNewChatPanelState((prev) => (prev ? { ...prev, folderPath: path, folderLabel: newChatFolderLabel(path) } : prev))
+    rescopeOpenDraft(path)
+  }
+  // The parked draft is scoped to the project the person picks, not only the
+  // one the door opened on: the sidebar's Drafts row names it, and read "No
+  // project" beside a composer showing the chosen one. Only while the door is
+  // showing the draft (not a scheduled agent being edited, not an extension).
+  const rescopeOpenDraft = (path: string) => {
+    const open = newChatPanelState
+    if (!open || open.mode === 'extension' || open.editingScheduledAgentId || open.editingRemoteScheduledAgent) return
+    rescopeNewChatDraft(workspaceWindowId, path)
   }
   // "No project": main makes the root the chats without one live under, and
   // the door scopes to it. Each chat started there gets its own folder in it
@@ -3672,7 +3709,7 @@ export default function WorkspaceManager() {
   // without sending makes nothing.
   const projectlessChatsRoot = async (): Promise<string | null> => {
     try {
-      return await window.api.projectlessChatsRoot()
+      return await workspaceSyncApi.projectlessChatsRoot()
     } catch (caught) {
       showToast({
         tone: 'error',
@@ -3691,17 +3728,15 @@ export default function WorkspaceManager() {
     if (root) openNewChatPanel(root)
   })
   // The folder picker opens where the machine the door stands on keeps its
-  // files: a WSL machine's Linux home (`\\wsl.localhost\<distro>\home\…`),
-  // this machine's usual place otherwise.
+  // files: a WSL machine's own (`\\wsl.localhost\<distro>\home\…`, as its
+  // Studio says), this machine's usual place otherwise.
   const browseNewChatProject = async (hostId?: ExecutionHostId | null) => {
     let defaultPath: string | undefined
-    if (isWslHostId(hostId) && typeof window.api.hostsHome === 'function') {
-      const home = await window.api.hostsHome(hostId).catch(() => null)
-      if (home?.ok) defaultPath = home.native
-    }
+    if (isWslHostId(hostId)) defaultPath = (await hostsApi.hostsHome(hostId).catch(() => null)) ?? undefined
     const dir = await window.api.openDir(defaultPath ? { defaultPath } : undefined)
     if (!dir) return
     setNewChatPanelState((prev) => (prev ? { ...prev, folderPath: dir, folderLabel: newChatFolderLabel(dir) } : prev))
+    rescopeOpenDraft(dir)
   }
   // The New-chat selector's Import-from-Git clone lives HERE, not in the
   // selector (remote-sessions-ux / project-selector-sources): a clone that
@@ -3710,7 +3745,7 @@ export default function WorkspaceManager() {
   // popover, so success always lands — the panel is reopened on that project
   // if it was closed meanwhile — and the toast names what arrived.
   const cloneNewChatProject = useCallback(async (input: RepositoryCloneInput): Promise<RepositoryCloneResult> => {
-    const cloned = await window.api.cloneRepository(input).catch((caught: unknown): RepositoryCloneResult => ({
+    const cloned = await gitApi.cloneRepository(input).catch((caught: unknown): RepositoryCloneResult => ({
       ok: false,
       message: caught instanceof Error ? caught.message : 'Could not clone the repository.',
     }))
@@ -3831,7 +3866,7 @@ export default function WorkspaceManager() {
     confirmNewChatWith(
       {
         makeExtension: async ({ id, folder }, prompt) => {
-          const made = await window.api
+          const made = await extensionsApi
             .extensionScaffoldCreate({
               id,
               ...(folder ? { folder } : {}),
@@ -3850,7 +3885,7 @@ export default function WorkspaceManager() {
         takeReadyWorktree: (folder, name) => takeReadyNewChatWorktree(folder, name, newChatHostRef.current),
         makeProjectlessFolder: async (prompt) => {
           try {
-            return await window.api.createProjectlessChatFolder(prompt)
+            return await workspaceSyncApi.createProjectlessChatFolder(prompt)
           } catch (caught) {
             showToast({
               tone: 'error',
@@ -4011,8 +4046,9 @@ export default function WorkspaceManager() {
   )
 
   // A chat agent started on a paired machine (remote-sessions-ux /
-  // new-chat-on-a-remote-machine): it is created THERE over the audited mesh
-  // client — cli, prompt, model, and preset forwarded verbatim, so the remote's
+  // new-chat-on-a-remote-machine): it is created THERE, on that machine's
+  // Studio, by this window's own client of it (`createPairedChat`) — cli,
+  // prompt, model, and preset forwarded verbatim, so the remote's
   // own refusals (a scope, a CLI it lacks) surface word for word — and runs in
   // that machine's conversation runtime. What opens here is the same chat pane
   // the Remote band opens for one of its chats, following it by workspace and
@@ -4020,32 +4056,27 @@ export default function WorkspaceManager() {
   // toast; no phantom row.
   const confirmRemoteNewChat = useCallback(
     async (launch: RemoteNewChatLaunch): Promise<void> => {
-      const created = await window.api
-        .meshCreateConversation({
-          connectionId: launch.connectionId,
+      // Asked of that machine's Studio by this window itself.
+      const created = await createPairedChat(
+        { id: launch.connectionId, machineName: launch.machineName },
+        {
           ...(launch.noProject ? { noProject: true } : { workspaceId: launch.remoteWorkspaceId }),
-          cli: launch.cli,
-          prompt: launch.prompt || undefined,
-          cliModel: launch.cliModel ?? undefined,
+          ...(launch.cli ? { cli: launch.cli } : {}),
+          ...(launch.prompt ? { prompt: launch.prompt } : {}),
+          ...(launch.cliModel ? { cliModel: launch.cliModel } : {}),
           // As named, either preset: the launcher showed it, and the chat
           // over there starts on it.
           permissionPreset: launch.permissionPreset,
-          // Present only for a machine that keeps one (`new-chat-effort`).
-          effort: launch.effort,
-          // A worktree cut for it there, or one the project has; refused in
-          // words by a machine that does not take it, never dropped.
+          ...(launch.effort ? { effort: launch.effort } : {}),
+          // A worktree cut for it there, or one the project has.
           ...(launch.worktree ? { worktree: launch.worktree } : {}),
-          // The staged images, as bytes: main puts them in that machine's
-          // upload store and the first message names them there.
-          ...(launch.images?.length ? { attachments: launch.images } : {}),
+          // The staged images, as bytes: staged there once the chat exists, and
+          // its first message names them.
+          ...(launch.images?.length ? { images: launch.images } : {}),
           // That machine's skills, installed and run over there.
           ...(launch.skills?.length ? { skills: launch.skills } : {}),
-        })
-        .catch((error: unknown): { ok: false; code: string; message: string } => ({
-          ok: false,
-          code: 'failed',
-          message: error instanceof Error ? error.message : String(error),
-        }))
+        },
+      )
       if (!created.ok) {
         showToast({
           tone: 'error',
@@ -4804,7 +4835,7 @@ export default function WorkspaceManager() {
     // updateAgent would fabricate one and focusOrAddAgentTab would open a pane
     // for it. For those rows activation is plain workspace focus only.
     const agentId = item.agentId && workspace.agents[item.agentId] ? item.agentId : null
-    const status = await window.api.terminalStatus(item.sessionId)
+    const status = await terminalStatus(item.sessionId)
     if (!status.processAlive) {
       setTerminalSessions((sessions) => sessions.filter((session) => session.sessionId !== item.sessionId))
       if (agentId) {
@@ -4858,9 +4889,11 @@ export default function WorkspaceManager() {
     // A conversation agent has no PTY behind its sessionId: killing it through
     // the terminal runtime would report nothing and leave the agent running.
     if (item.transport === 'conversation') {
-      void window.api.conversationSessionStop({ sessionId: item.sessionId }).catch(() => {})
+      void windowChatServices()
+        .sessions.stop({ sessionId: item.sessionId })
+        .catch(() => {})
     } else {
-      void window.api.terminalKill(item.sessionId).catch(() => {})
+      void closeTerminal(item.sessionId).catch(() => {})
     }
     // Killing the process always works; the derived state resets only exist for
     // a row that has a workspace behind it.
@@ -4885,11 +4918,11 @@ export default function WorkspaceManager() {
   // Pause = freeze-the-view suspend: kill the agent PTY to free memory but keep
   // the painted scrollback and the resume flags, so reopening relaunches the CLI
   // with --resume. Unlike stopSession we do NOT reset launch flags or prune the
-  // session — the suspend broadcast (terminal:sessions-delta) flips it to
+  // session — the suspend broadcast (terminal.sessions) flips it to
   // suspended (processAlive=false), which drops it out of the working-sessions
   // list on its own.
   const pauseSession = (item: SessionItem) => {
-    void window.api.terminalSuspend(item.sessionId).catch(() => {})
+    void suspendTerminal(item.sessionId).catch(() => {})
   }
 
   const stopSessionGroup = async (group: SessionGroup, items: SessionItem[]) => {
@@ -4958,10 +4991,10 @@ export default function WorkspaceManager() {
       editingScheduledAgentId: id,
     })
   })
-  // A paired machine's, from its row in the same section: the same panel,
-  // editing it on that machine, on its project there.
-  const sidebarOpenRemoteScheduledAgent = useStableCallback((connectionId: string, id: string) => {
-    const found = remoteScheduledAgentNow(connectionId, id)
+  // Another machine's, from its row in the same section: the same panel,
+  // editing it on that machine (a paired desktop's on its project there).
+  const sidebarOpenRemoteScheduledAgent = useStableCallback((route: string, id: string) => {
+    const found = remoteScheduledAgentNow(route, id)
     if (!found) return
     closeGlobalSurface()
     closeModalSurface()
@@ -4973,7 +5006,12 @@ export default function WorkspaceManager() {
       connector: null,
       forcedSelection: null,
       mode: 'scheduled',
-      editingRemoteScheduledAgent: { connectionId, machineName: found.machine.machineName, agent: found.agent },
+      editingRemoteScheduledAgent: {
+        route,
+        connectionId: found.machine.connectionId,
+        machineName: found.machine.machineName,
+        agent: found.agent,
+      },
     })
   })
   // A kept draft from the sidebar's Drafts: made this window's, and New chat
@@ -5024,8 +5062,14 @@ export default function WorkspaceManager() {
     void workspaceRegistryReady.then(() => {
       if (disposed) return
       unsubscribe = window.api.onChatLinkOpen((link) => {
+        // The machines as this window last read them (the sidebar keeps the
+        // list), for which environment is this one and which machine a
+        // paired row is on. Before the first read lands, the link is matched
+        // by its chat id alone.
+        const ids = environmentIdsOf(currentEnvironments())
         const state = useWorkspaceStore.getState()
         openChatLink(link, {
+          localEnvironmentId: ids?.local ?? null,
           getChat: (chatId) => {
             const workspace = state.workspaces.find((candidate) => candidate.id === chatId)
             return workspace && !isHiddenFromRail(workspace, state.appSettings.modules) ? workspace : null
@@ -5035,14 +5079,27 @@ export default function WorkspaceManager() {
           moveHere: (chatId, fromWindowId) => moveWorkspaceToWindow(chatId, workspaceWindowId, fromWindowId),
           select: sidebarSelectWorkspace,
           revealAgent: (workspaceId, agentId, name) => revealAgentTerminalTab({ workspaceId, agentId, name }),
-          // A paired machine's chat, by its id there: the row here that
-          // follows it, or the row its machine lists.
-          openRemote: (chatId) => {
-            const spec = remoteChatLinkTarget(chatId)
-            if (!spec) return false
-            openRemoteSession(spec)
-            return true
-          },
+          // A paired machine's chat, by its address: the row here that
+          // follows it, or the chat its machine lists.
+          followerOf: (address) =>
+            state.workspaces.find(
+              (workspace) =>
+                workspace.remoteOrigin?.workspaceId === address.chatId &&
+                ids?.ofRoute(environmentRouteOfMeshConnection(workspace.remoteOrigin.connectionId)) ===
+                  address.environmentId,
+            )?.id ?? null,
+          remoteChats: (wanted) =>
+            remoteChatLinkTargets(wanted).map((target) => ({
+              environmentId: target.environmentId,
+              machineName: target.machineName,
+              open: () => void openRemoteSession(target.spec),
+            })),
+          several: (places) =>
+            showToast({
+              tone: 'warn',
+              title: 'That link matches chats on more than one machine',
+              description: `It was copied before links named their machine. Open the chat from the sidebar: ${places.join(', ')}.`,
+            }),
           notOnThisMachine: () =>
             showToast({
               tone: 'warn',
@@ -5063,8 +5120,8 @@ export default function WorkspaceManager() {
   useEffect(
     () =>
       registerRemoteChatOpener((target) => {
-        const spec = remoteChatLinkTarget(target.workspaceId)
-        if (!spec || spec.connectionId !== target.connectionId) return null
+        const spec = remoteChatOnConnection(target.connectionId, target.workspaceId)
+        if (!spec) return null
         if (spec.attachedWorkspaceId || spec.conversation.agentId === target.agentId) return openRemoteSession(spec)
         return openRemoteSession({
           ...spec,
@@ -5440,7 +5497,7 @@ export default function WorkspaceManager() {
                         open panel must remount; keyed on identity, so removing
                         the chip never does. */}
                             <NewAgentPanel
-                              key={`${newChatPanelState.connector?.id ?? 'plain'}:${newChatPanelState.forcedSelection?.kind ?? 'remembered'}:${newChatPanelState.mode ?? 'chat'}:${newChatPanelState.editingScheduledAgentId ?? ''}:${editingRemoteRef ? `${editingRemoteRef.connectionId}/${editingRemoteRef.id}` : ''}:${newChatPanelState.remoteProject ? `${newChatPanelState.remoteProject.connectionId}/${newChatPanelState.remoteProject.workspaceId}` : ''}:${newChatDraftGeneration}`}
+                              key={`${newChatPanelState.connector?.id ?? 'plain'}:${newChatPanelState.forcedSelection?.kind ?? 'remembered'}:${newChatPanelState.mode ?? 'chat'}:${newChatPanelState.editingScheduledAgentId ?? ''}:${editingRemoteRef ? `${editingRemoteRef.route}/${editingRemoteRef.id}` : ''}:${newChatPanelState.remoteProject ? `${newChatPanelState.remoteProject.connectionId}/${newChatPanelState.remoteProject.workspaceId}` : ''}:${newChatDraftGeneration}`}
                               remoteProject={newChatPanelState.remoteProject ?? null}
                               initialMcpServers={newChatPanelState.connector ? [newChatPanelState.connector] : null}
                               workspaceId={windowActiveWorkspaceId ?? ''}

@@ -60,10 +60,10 @@ export function hasLiveAgentLaunchIntent(agent: AgentLaunchIntentInput | null | 
 export interface AgentColdLoadInput {
   /** Reattaching an externally-owned session; identity is not ours to decide. */
   attachedSessionId?: string | null
-  /** `terminal:status` — a pty is running under this session id. */
+  /** `terminal.status` — a pty is running under this session id. */
   processAlive: boolean
   /**
-   * `terminal:status` — main holds a suspended record for this session id, OR
+   * `terminal.status` — main holds a suspended record for this session id, OR
    * rehydrated one from the snapshot sidecar on disk. Either way there is a
    * painted screen to show.
    */

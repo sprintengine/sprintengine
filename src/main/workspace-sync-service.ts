@@ -1,4 +1,5 @@
 import {
+  agentPatchForWire,
   type WorkspaceFieldsPatch,
   type WorkspaceSyncCommand,
   type WorkspaceSyncCommandResult,
@@ -194,6 +195,7 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
     windowId: string,
     folderPath: string | null,
     actor: WorkspaceMutationActor,
+    options: { activate?: false } = {},
   ): WorkspaceSyncCommandResult {
     const modeCheck = registry.precheckWorkspaceMode(workspace.mode)
     if (!modeCheck.ok) return failure(modeCheck.reason, modeCheck.message)
@@ -204,6 +206,7 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
           workspace: registry.adoptRecord(workspace),
           windowId,
           insert: { kind: 'folder_head', folderPath },
+          ...(options.activate === false ? { activate: false as const } : {}),
         },
       },
       windowId,
@@ -235,6 +238,27 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
   ): WorkspaceSyncCommandResult {
     if (patch.visitRewoundAt !== undefined) {
       return failure('field_not_editable', 'The visit clock goes back only through Mark unread (rewindVisit).')
+    }
+    return emit(
+      { type: 'workspace.update_fields', payload: { workspaceId, patch, editedAt: now() } },
+      registry.getState().primaryWorkspaceWindowId,
+      actor,
+    )
+  }
+
+  /**
+   * A copy's fields as the environment that holds the chat has them
+   * (`server/environment/environment-replicas.ts`): written as that
+   * environment wrote them, its Mark unread's `visitRewoundAt` included, since
+   * the decision was made there and this record only follows it.
+   */
+  function mirrorWorkspaceFields(
+    workspaceId: WorkspaceId,
+    patch: WorkspaceFieldsPatch,
+    actor: WorkspaceMutationActor,
+  ): WorkspaceSyncCommandResult {
+    if (!registry.getRecord(workspaceId)) {
+      return failure('unknown_workspace', `Workspace "${workspaceId}" is not in the registry.`)
     }
     return emit(
       { type: 'workspace.update_fields', payload: { workspaceId, patch, editedAt: now() } },
@@ -313,8 +337,11 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
     actor: WorkspaceMutationActor,
     configEditedAt: number = now(),
   ): WorkspaceSyncCommandResult {
+    // A field main clears with `undefined` goes as null: the event reaches
+    // windows as JSON, which would drop it, and leave their copy stale.
+    const wire = patch === null ? null : agentPatchForWire(patch)
     return emit(
-      { type: 'workspace.update_agent', payload: { workspaceId, agentId, patch, configEditedAt } },
+      { type: 'workspace.update_agent', payload: { workspaceId, agentId, patch: wire, configEditedAt } },
       registry.getState().primaryWorkspaceWindowId,
       actor,
     )
@@ -336,8 +363,10 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
     createWorkspace,
     dispatch,
     flush: () => registry.flush(),
+    whenWritten: () => registry.whenWritten(),
     getEventsAfter,
     getSnapshot,
+    mirrorWorkspaceFields,
     removeWorkspace,
     renameWorkspace,
     rewindVisit,

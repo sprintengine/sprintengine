@@ -1,12 +1,10 @@
-import type { ConversationClientMessage } from '../../../../packages/conversation-protocol/src/public'
 import type { StudioAccess } from '../../../../packages/studio-protocol/src/permissions'
-import type { McpConnectionContext, McpToolRegistration } from '../../../shared/modules/mcp-tools'
 import type { TailnetScope } from '../../../shared/tailnet'
 
 // What everything a paired device can ask of this machine requires, in the
 // permissions every remote method declares
-// (packages/studio-protocol/src/permissions.ts): the gateway's tools, its
-// authenticated routes, and the frames of the conversation lane. A device's
+// (packages/studio-protocol/src/permissions.ts): the gateway's tools and its
+// authenticated routes. A device's
 // scopes are translated to permissions where it asks
 // (`tailnetDevicePrincipal`, src/shared/tailnet.ts), and the gateway judges
 // every one of these with the same `authorizeStudioAccess`.
@@ -20,88 +18,23 @@ import type { TailnetScope } from '../../../shared/tailnet'
 /**
  * Every route a paired device's token opens, and what it needs. Pairing and
  * health come before a token and are not here; a path not listed is not
- * found. `mcp` and `stream` carry tools, each judged by `tailnetToolAccess`;
- * `events` says only that something changed, and what a device may then read
- * is decided by what it reads with.
+ * found. `mcp` and `stream` carry tools, each judged by `tailnetToolAccess`.
  */
 export const TAILNET_ROUTE_ACCESS = {
   identity: { permissions: [] },
   'ws-ticket': { permissions: [] },
   mcp: { permissions: [] },
   stream: { permissions: [] },
-  events: { permissions: [] },
-  // Following a chat: the lane's frames are judged one by one below.
-  conversation: { permissions: ['conversation:read'] },
-  'conversation-image': { permissions: ['conversation:read'] },
-  // The composer's reads, in the chat's own folder.
-  'conversation-files': { permissions: ['conversation:read'] },
-  'conversation-commands': { permissions: ['conversation:read'] },
-  // Asking again starts the chat's CLI, which is driving it.
-  'conversation-commands:refresh': { permissions: ['conversation:read', 'conversation:operate'] },
-  // A picture or file staged for a message the device will send.
-  upload: { permissions: ['conversation:read', 'conversation:operate'] },
-  // A paired desktop's Canvas pane on this machine's boards (`canvas-live-boards`):
-  // looking at one is a read; its messages are judged one by one below.
-  canvas: { permissions: ['workspace:read'] },
+  // The Studio protocol: opening it needs only the pairing; every method and
+  // topic it carries is judged by the Studio router against the device's
+  // grant as it stands at that request (`tailnetDeviceStudioScopes`).
+  studio: { permissions: [] },
 } as const satisfies Readonly<Record<string, StudioAccess>>
 
 export type TailnetDeviceRoute = keyof typeof TAILNET_ROUTE_ACCESS
 /** The routes a ticket opens as a WebSocket upgrade; every other route is an HTTP request. */
-export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation' | 'canvas'>
+export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'studio'>
 export type TailnetHttpRoute = Exclude<TailnetDeviceRoute, TailnetUpgradeRoute>
-
-const FOLLOW: StudioAccess = { permissions: ['conversation:read'] }
-const DRIVE: StudioAccess = { permissions: ['conversation:read', 'conversation:operate'] }
-
-/**
- * Every frame a device sends on the conversation lane, and what it needs:
- * reading what a chat shows is following it; a command, and a side question
- * (which runs the chat's agent as a send does), drive it. Typed over the
- * lane's frames, so a frame added to the contract does not compile here
- * until it says what it needs.
- */
-export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessage['type']]: StudioAccess } = {
-  hello: FOLLOW,
-  list: FOLLOW,
-  subscribe: FOLLOW,
-  loadEarlier: FOLLOW,
-  getToolDetail: FOLLOW,
-  getTurnDiff: FOLLOW,
-  getContextBreakdown: FOLLOW,
-  watchQueued: FOLLOW,
-  watchScheduled: FOLLOW,
-  watchUsageLimits: FOLLOW,
-  watchSubagents: FOLLOW,
-  // A chat's changes, as its Diff tab reads them: only the files a step lists.
-  watchChanges: FOLLOW,
-  getChangesDiff: FOLLOW,
-  getChangedFile: FOLLOW,
-  // A device cancels only a question it asked itself.
-  cancelSideQuestion: FOLLOW,
-  askSideQuestion: DRIVE,
-  command: DRIVE,
-}
-
-const LOOK: StudioAccess = { permissions: ['workspace:read'] }
-const DRAW: StudioAccess = { permissions: ['workspace:read', 'workspace:operate'] }
-
-/** Every message a device sends on the canvas lane (`tailnet-canvas-stream.ts`). */
-export type CanvasLaneMessageType = 'open' | 'close' | 'watch' | 'file' | 'commit' | 'human'
-
-/**
- * What each message on the canvas lane needs. Opening, closing and following a
- * chat's `canvas.open` are looking at boards; a scene, a picture sent for one
- * and taking the pen change one. Opening a board that is not there yet makes
- * it, which the lane allows only to a device that may change boards.
- */
-export const CANVAS_LANE_ACCESS: { readonly [T in CanvasLaneMessageType]: StudioAccess } = {
-  open: LOOK,
-  close: LOOK,
-  watch: LOOK,
-  file: DRAW,
-  commit: DRAW,
-  human: DRAW,
-}
 
 /** What a tool call over the tailnet needs: nothing a grant can give for a local-only tool, else its family's permission. */
 export function tailnetToolAccess(toolName: string, isMutation: boolean): StudioAccess {
@@ -130,9 +63,9 @@ const TERMINAL_LAUNCH_TOOLS: ReadonlySet<string> = new Set(['terminal.create', '
 
 /**
  * One chat's agent driving another chat here (conversation-chat-tools.ts). A
- * paired device follows and drives this machine's chats over its own
- * conversation lane, which has its own commands for the same, so these are
- * for the agents on this machine alone.
+ * paired device follows and drives this machine's chats on the Studio
+ * protocol (`conversation.*`), which has its own methods for the same, so
+ * these are for the agents on this machine alone.
  */
 const CHAT_TO_CHAT_TOOLS: ReadonlySet<string> = new Set([
   'conversation.send',
@@ -179,13 +112,35 @@ const CHAT_TO_CHAT_TOOLS: ReadonlySet<string> = new Set([
  * The `visual.*` family draws an agent's markup, scripts and all, in a hidden
  * window on this machine; it is for an agent writing a reply here.
  *
+ * The `browser.*` family drives and reads the in-app browser pane on this
+ * machine's screen. The pane carries the person's own sign-ins, so even a read
+ * (a snapshot, a screenshot, the console or the network log) hands a device
+ * whatever page the person has open; and opening a page there reaches this
+ * machine's loopback servers. It is for an agent working here, whatever scope
+ * a device holds.
+ *
  * The `extension.*` family makes an extension project in a folder on this
  * machine that the caller names, and teaches an agent about to work in it; a
  * paired device has neither the folder nor the agent.
  *
  * The `plugin.*` family finds a plugin and draws it as a card in the calling
  * agent's chat, for the person at this machine to install or not.
+ *
+ * Settling, visiting, marking, snoozing and highlighting a chat are an
+ * agent's tools; a paired device does each through the Studio's own method
+ * of the same purpose (`conversation.settle` and the rest), so a device has
+ * one way to a chat's record, not two.
  */
+/** The agents' tools on a chat's rest, visit clock and marks; a device has the Studio's methods. */
+const CHAT_LIFECYCLE_TOOLS: ReadonlySet<string> = new Set([
+  'conversation.settle',
+  'conversation.visit',
+  'conversation.mark_unread',
+  'conversation.snooze',
+  'conversation.highlight',
+  'conversation.auto_settle',
+])
+
 export function localOnlyGatewayToolReason(toolName: string): string | null {
   if (toolName.startsWith('tailnet.')) {
     return `"${toolName}" configures who may drive this machine and is served only on its owner-only local socket, never over the tailnet. Run it from an agent on that machine.`
@@ -215,49 +170,27 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
     return `"${toolName}" hands the calling agent a worktree on this machine and holds it for that agent, and a paired device is not an agent. Run it from an agent on that machine.`
   }
   if (CHAT_TO_CHAT_TOOLS.has(toolName)) {
-    return `"${toolName}" lets an agent on this machine drive another chat here. A paired device follows and drives this machine's chats over its conversation lane instead.`
+    return `"${toolName}" lets an agent on this machine drive another chat here. A paired device follows and drives this machine's chats through this machine's Studio (\`conversation.*\`) instead.`
+  }
+  if (toolName.startsWith('browser.')) {
+    return `"${toolName}" drives the in-app browser pane on this machine, which holds the person's own pages and sign-ins, and is served only on its local socket. Run it from an agent on that machine.`
   }
   if (toolName.startsWith('visual.')) {
     return `"${toolName}" draws an agent's visual in a hidden window on this machine, for a reply it is writing here. Run it from an agent on that machine.`
+  }
+  if (CHAT_LIFECYCLE_TOOLS.has(toolName)) {
+    return `"${toolName}" is an agent's way to a chat's record here. A paired device settles, marks, snoozes and highlights this machine's chats through this machine's Studio (\`conversation.settle\`, \`conversation.markUnread\` and the rest) instead.`
+  }
+  if (toolName.startsWith('schedule.')) {
+    return `"${toolName}" is an agent's way to this machine's scheduled agents. A paired device lists and changes them through this machine's Studio (\`schedules.*\`) instead.`
+  }
+  if (toolName.startsWith('canvas.')) {
+    return `"${toolName}" is an agent's way to this machine's boards. A paired device lists, shows and draws on them through this machine's Studio (\`canvas.*\`) instead.`
   }
   if (toolName.startsWith('terminal.')) {
     return `"${toolName}" reads the terminals on this machine, and terminals are not served over the tailnet. A paired device follows this machine's chats instead; run it from an agent on that machine.`
   }
   return null
-}
-
-/**
- * Tools served to paired devices and left out of the local socket's list: the
- * other side of `localOnlyGatewayToolReason`. `usage.report` answers another
- * desktop's usage dashboard with counts by hashed session, which no agent
- * here has a use for, and every tool an agent is listed costs it context.
- * The chat management tools below answer a paired desktop's menus on a chat
- * here, which an agent here has its own ways to.
- */
-const PAIRED_DEVICE_ONLY_TOOLS: ReadonlySet<string> = new Set([
-  'usage.report',
-  // ── A paired desktop's chat management ──
-  'conversation.rename',
-  'conversation.auto_compact',
-  'conversation.pull_request_unwatch',
-  'conversation.delete_plan',
-  'conversation.delete',
-  'conversation.search',
-  'conversation.approval_rules',
-  'conversation.approval_rule_revoke',
-])
-
-export function servedOnlyToPairedDevices(toolName: string): boolean {
-  return PAIRED_DEVICE_ONLY_TOOLS.has(toolName)
-}
-
-/** The gateway's own tools as one caller is listed them: without those served only to paired devices, unless it is one. */
-export function gatewayToolsForCaller(
-  tools: McpToolRegistration[],
-  context: McpConnectionContext | undefined,
-): McpToolRegistration[] {
-  if (context?.metadata.kind === 'remote-tailnet') return tools
-  return tools.filter((tool) => !servedOnlyToPairedDevices(tool.name))
 }
 
 /**

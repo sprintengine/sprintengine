@@ -341,16 +341,16 @@ test('a WSL startup script lives in the helper directory inside the distribution
   assert.ok(scriptOf(config).endsWith('\n'))
 })
 
-test('a WSL launch with no helper directory says the helper is not running, and writes nothing here', () => {
+test("a WSL launch with no launch directory says the distribution's server is not running, and writes nothing here", () => {
   const cwd = join(temp, 'workspace-no-helper')
   mkdirSync(cwd, { recursive: true })
   assert.throws(
     () => launchInWsl(cwd, 'sid-none', { kind: 'wsl', distro: 'Ubuntu', env: {}, sessionDir: undefined }),
-    /The WSL helper for Ubuntu is not running/u,
+    /The Studio server in Ubuntu is not running/u,
   )
   assert.throws(
     () => getPlainShellLaunchConfig(cwd, 'plain-none', { kind: 'wsl', distro: 'Ubuntu', env: {} }),
-    /The WSL helper for Ubuntu is not running/u,
+    /The Studio server in Ubuntu is not running/u,
   )
 })
 
@@ -576,7 +576,6 @@ test("OpenCode in WSL gets the helper's Unix socket baked into its plugin", asyn
     resolveAgentStateSpec: (cli) => (cli === 'opencode' ? manifest.agentStateSpec : null),
     resolveReporterScriptPath: () => null,
     resolveReporterTemplatePath: (template) => join(process.cwd(), 'resources', 'hooks', template),
-    onFrame: () => undefined,
   })
   await service.installForWorkspace(root, 'opencode', {
     pathStyle: 'wsl',

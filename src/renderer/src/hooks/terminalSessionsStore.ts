@@ -1,8 +1,11 @@
 import type { TerminalSessionSnapshot, TerminalSessionsDelta } from '../../../shared/electron-api'
+import { listTerminals, onTerminalSessionsDelta } from '../studio/terminals'
 
+/** The terminals' list and its stream, as the window's Studio connection serves them (`studio/terminals.ts`). */
 export type TerminalSessionsApi = {
-  terminalList(): Promise<TerminalSessionSnapshot[]>
-  onTerminalSessionsDelta(cb: (delta: TerminalSessionsDelta) => void): () => void
+  list(): Promise<TerminalSessionSnapshot[]>
+  /** `onResubscribed`: the stream started on a connection, and what changed before it is not replayed. */
+  onDelta(cb: (delta: TerminalSessionsDelta) => void, onResubscribed?: () => void): () => void
 }
 
 /**
@@ -172,7 +175,7 @@ function getTerminalSessionSignatureRow(session: TerminalSessionSnapshot) {
 }
 
 function defaultTerminalSessionsApi(): TerminalSessionsApi {
-  return window.api
+  return { list: listTerminals, onDelta: onTerminalSessionsDelta }
 }
 
 /**
@@ -254,7 +257,7 @@ export function createTerminalSessionsStore(apiProvider: () => TerminalSessionsA
     for (const listener of semanticListeners) notify(listener)
   }
 
-  /** A full list from `terminal:list`: replaces everything held. */
+  /** A full list from `terminal.list`: replaces everything held. */
   const applyFull = (sessions: TerminalSessionSnapshot[]) => {
     const nextById = new Map<string, TerminalSessionSnapshot>()
     const nextSignatures = new Map<string, string>()
@@ -271,7 +274,7 @@ export function createTerminalSessionsStore(apiProvider: () => TerminalSessionsA
     publish(sessions, removed, semanticChanged, true)
   }
 
-  /** A `terminal:sessions-delta`: only the sessions that changed, and the ids that went away. */
+  /** A `terminal.sessions` push: only the sessions that changed, and the ids that went away. */
   const applyDelta = (delta: TerminalSessionsDelta) => {
     let semanticChanged = false
     const upserted: TerminalSessionSnapshot[] = []
@@ -300,8 +303,8 @@ export function createTerminalSessionsStore(apiProvider: () => TerminalSessionsA
     const version = connectionVersion
     const api = apiProvider() as Partial<TerminalSessionsApi> | undefined
     // Same partial-host tolerance as connect(): quiet emptiness, not a throw.
-    if (typeof api?.terminalList !== 'function') return []
-    const sessions = await api.terminalList()
+    if (typeof api?.list !== 'function') return []
+    const sessions = await api.list()
     if (subscriberCount === 0 || version !== connectionVersion) return sessions
     applyFull(sessions)
     return sessions
@@ -326,21 +329,25 @@ export function createTerminalSessionsStore(apiProvider: () => TerminalSessionsA
 
   const connect = () => {
     if (unsubscribeIpc) return
-    // A host without the terminal bridge (a partial test harness, an aux
-    // window with a narrower preload) gets an empty, quiet store rather than
-    // a subscriber-time throw inside React's commit.
+    // A host without terminals (a partial test harness) gets an empty, quiet
+    // store rather than a subscriber-time throw inside React's commit.
     const api = apiProvider() as Partial<TerminalSessionsApi> | undefined
-    if (typeof api?.onTerminalSessionsDelta !== 'function' || typeof api.terminalList !== 'function') return
+    if (typeof api?.onDelta !== 'function' || typeof api.list !== 'function') return
     connectionVersion += 1
     const version = connectionVersion
-    unsubscribeIpc = api.onTerminalSessionsDelta(applyDelta)
-    void api
-      .terminalList()
-      .then((sessions) => {
-        if (subscriberCount === 0 || !unsubscribeIpc || version !== connectionVersion) return
-        applyFull(sessions)
-      })
-      .catch(() => {})
+    const list = () => {
+      void api.list!()
+        .then((sessions) => {
+          if (subscriberCount === 0 || !unsubscribeIpc || version !== connectionVersion) return
+          applyFull(sessions)
+        })
+        .catch(() => {})
+    }
+    // The list is asked for now, and again each time the stream starts on a
+    // connection: a first connect that failed and was tried again, a
+    // reconnect, a new client. What changed in between was not sent.
+    unsubscribeIpc = api.onDelta(applyDelta, list)
+    list()
   }
 
   const disconnectIfIdle = () => {

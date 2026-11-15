@@ -10,6 +10,8 @@ import type { Workspace } from '../types/workspace'
 import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
 
+vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
+
 beforeEach(() => vi.resetModules())
 afterEach(() => vi.unstubAllGlobals())
 
@@ -42,6 +44,11 @@ async function harness(
   agents: Workspace['agents'] = {},
   terminalList = async (): Promise<TerminalSessionSnapshot[]> => [],
 ) {
+  // The modules are fresh for every test: the double the store calls is the
+  // one the mocked module is now.
+  const { terminalsDouble } =
+    (await import('../studio/terminals')) as unknown as typeof import('../studio/terminals.double')
+  terminalsDouble.listTerminals = terminalList
   const disk = createInMemoryWorkspaceRegistryStore()
   const registry = createWorkspaceRegistryService({ store: disk })
   const bus = createWorkspaceSyncService({ registry, maxReplayEvents: 1 })
@@ -81,7 +88,6 @@ async function harness(
     localStorage,
     addEventListener: () => {},
     api: {
-      terminalList,
       workspaceSyncGetSnapshot: async () => bus.getSnapshot(),
       workspaceSyncGetEventsAfter: async (sequence: number) => bus.getEventsAfter(sequence),
       workspaceSyncDispatch: async (command: WorkspaceSyncCommand) => {

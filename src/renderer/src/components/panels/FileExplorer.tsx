@@ -18,6 +18,7 @@ import {
 } from './fileExplorerModuleActions'
 import { getGitEntry, normalizePathKey, useGitStatus } from '../../hooks/useGitStatus'
 import { useWorkspaceFolderStatus } from '../../hooks/useWorkspaceFolderStatus'
+import { FilesOnMachineLater, useWorkspaceEnvironmentLabel } from '../environments/NotOnMachineYet'
 import { useSlowFolderLoads } from '../../hooks/useSlowFolderLoads'
 import { getGitStatusAppearance } from '../../utils/gitStatusAppearance'
 import {
@@ -36,7 +37,7 @@ import { isPathOrChild } from '../../utils/paths'
 import type { FileSearchEngine } from '../../../../shared/ipc/filesystem'
 import { openGitDiff } from '../../utils/openGitDiff'
 import { openDiffWindow } from '../auxWindows/openDiffWindow'
-import { openFileSurface } from '../../utils/openFileSurface'
+import { announcePathRemoved, openFileSurface } from '../../utils/openFileSurface'
 import { fileExplorerSelectionFromVerticalRange, fileExplorerSelectionRange } from '../../utils/fileExplorerSelection'
 import { setFileDropData } from '../../utils/terminalDrop'
 import { consumePendingFileReveal, subscribeFileReveal } from '../../utils/fileReveal'
@@ -77,6 +78,7 @@ import { useAgentFileTrail } from './useAgentFileTrail'
 import { showToast } from '../../store/toastStore'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { isImeKey } from '../../utils/imeKey'
+import { filesApi } from '../../studio/files'
 
 const EMPTY_EXPANDED_PATHS: string[] = []
 const EMPTY_TREE_ROWS: TreeRow[] = []
@@ -353,7 +355,7 @@ async function searchFiles(
   const lowerQuery = query.toLowerCase().trim()
   if (!lowerQuery) return { entries: [], diagnostics: null }
 
-  const result = await window.api.searchFiles(rootPath, query, { limit })
+  const result = await filesApi.searchFiles(rootPath, query, { limit })
   if (!result.ok) throw new Error(result.message)
 
   const matches: Entry[] = result.results.map((entry) => ({ ...entry }))
@@ -969,13 +971,15 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       initialValue: defaultName,
       confirmLabel: 'Create',
       required: true,
+      selectFileStem: kind === 'file',
+      typedExtensionReplaces: kind === 'file',
     })
     const name = rawName?.trim()
     if (!name) return
 
     try {
       const newPath =
-        kind === 'file' ? await window.api.createFile(targetDir, name) : await window.api.createDir(targetDir, name)
+        kind === 'file' ? await filesApi.createFile(targetDir, name) : await filesApi.createDir(targetDir, name)
 
       if (targetDir !== rootPath) {
         setExpandedPaths((current) => ({ ...current, [targetDir]: true }))
@@ -1027,6 +1031,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       removeFileTabsForPath(workspaceId, path)
     }
     onPathRemoved?.(path)
+    announcePathRemoved(path)
   }
 
   const startRename = (entry: Entry) => {
@@ -1052,7 +1057,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
 
     try {
       committingRenameRef.current = true
-      const nextPath = await window.api.renamePath(entry.path, nextName)
+      const nextPath = await filesApi.renamePath(entry.path, nextName)
       carryOpenFiles(entry.path, nextPath)
 
       if (entry.isDir) {
@@ -1081,7 +1086,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     if (!clipboard) return
 
     try {
-      const newPath = await window.api.copyPath(clipboard.path, targetDir)
+      const newPath = await filesApi.copyPath(clipboard.path, targetDir)
       setExpandedPaths((current) => ({ ...current, [targetDir]: true }))
       await refreshParentDirectory(targetDir)
       selectionAnchorPathRef.current = newPath
@@ -1097,7 +1102,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     const deletableEntries = entries.filter((entry) => !entry.gitDeleted)
     if (!deletableEntries.length) return
 
-    if (typeof window.api.deletePath !== 'function') {
+    if (typeof filesApi.deletePath !== 'function') {
       showError('Delete support is not loaded yet. Restart the app so Electron reloads the preload script.')
       return
     }
@@ -1123,7 +1128,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     if (!confirmed) return
 
     try {
-      await Promise.all(topLevelEntries.map((entry) => window.api.deletePath(entry.path)))
+      await Promise.all(topLevelEntries.map((entry) => filesApi.deletePath(entry.path)))
       topLevelEntries.forEach((entry) => dropOpenFiles(entry.path))
 
       topLevelEntries.forEach((entry) => model?.forget(entry.path))
@@ -1242,7 +1247,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
 
     try {
       for (const entry of entriesToMove) {
-        const nextPath = await window.api.movePath(entry.path, targetDir)
+        const nextPath = await filesApi.movePath(entry.path, targetDir)
         if (nextPath === entry.path) continue
         movedEntries.push({ entry, nextPath })
         carryOpenFiles(entry.path, nextPath)
@@ -1286,7 +1291,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   // tree. Each copy is independent so one name collision does not abort the rest.
   const copyExternalFilesIntoDirectory = async (sourcePaths: string[], targetDir: string) => {
     if (!sourcePaths.length) return
-    if (typeof window.api.copyPathInto !== 'function') {
+    if (typeof filesApi.copyPathInto !== 'function') {
       showError('Copying files into the explorer is not supported in this build.')
       return
     }
@@ -1295,7 +1300,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     const errors: string[] = []
     for (const sourcePath of sourcePaths) {
       try {
-        copiedPaths.push(await window.api.copyPathInto(sourcePath, targetDir))
+        copiedPaths.push(await filesApi.copyPathInto(sourcePath, targetDir))
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error))
       }
@@ -1448,7 +1453,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       latestGitStatusRef.current?.repoRoot &&
       (gitDiffEntry || entry.gitDeleted),
     )
-    const canDeletePath = canUsePathCommands && typeof window.api.deletePath === 'function'
+    const canDeletePath = canUsePathCommands && typeof filesApi.deletePath === 'function'
     // A module's action is asked about a workspace, so a tree that knows none
     // offers none rather than handing a module an empty id.
     const fileActions = workspaceId
@@ -2513,6 +2518,8 @@ interface Props {
 export default function FileExplorer({ workspaceId }: Props) {
   const { folderPath, folderReadyPath, folderMissing, checkingFolder, recheckFolder } =
     useWorkspaceFolderStatus(workspaceId)
+  // A chat on another machine: its folder is there, not here (phase 8).
+  const machine = useWorkspaceEnvironmentLabel(workspaceId)
   const setFolderPath = useWorkspaceStore((s) => s.setFolderPath)
   const activeFilePath = useWorkspaceStore(
     (s) => s.workspaces.find((workspace) => workspace.id === workspaceId)?.editorState?.activeFilePath ?? null,
@@ -2542,7 +2549,7 @@ export default function FileExplorer({ workspaceId }: Props) {
     let content = ''
     if (!isImageFile(path || name)) {
       try {
-        content = await window.api.readfile(path)
+        content = await filesApi.readfile(path)
       } catch {
         content = ''
       }
@@ -2677,6 +2684,8 @@ export default function FileExplorer({ workspaceId }: Props) {
             refreshGitStatus={refreshGitStatus}
             onOpenFile={handleOpenFile}
           />
+        ) : machine ? (
+          <FilesOnMachineLater machine={machine} />
         ) : checkingFolder ? (
           <FileExplorerSkeleton />
         ) : folderMissing && folderPath ? (

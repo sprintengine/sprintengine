@@ -147,6 +147,22 @@ test('branchSteps', async () => {
     assert.equal(items[0].kind, 'branch')
   })
 
+  run('only the working tree against HEAD, on this computer, has an index between its sides', () => {
+    const diff = {
+      files: [{ path: 'a.ts', status: 'modified' as const, additions: 1, deletions: 1 }],
+      additions: 1,
+      deletions: 1,
+    }
+    const against = (selection: Parameters<typeof branchItemsFrom>[1], snap: BranchStepsSnapshot, remote = false) =>
+      branchItemsFrom(diff, selection, snap, '/repo', remote)[0].againstHead
+    assert.equal(against({ kind: 'uncommitted' }, snapshot()), true, 'the tail is HEAD to the working tree')
+    assert.equal(against({ kind: 'commit', hash: 'aaaaaa1' }, snapshot()), false, 'a commit is history')
+    assert.equal(against({ kind: 'span' }, snapshot()), false, 'the span reaches back past HEAD to the base')
+    assert.equal(against({ kind: 'span' }, snapshot({ baseOid: null, scope: 'folder' })), true, 'no base: HEAD it is')
+    assert.equal(against({ kind: 'span' }, snapshot({ steps: [] })), true, 'nothing ahead of the base: base is HEAD')
+    assert.equal(against({ kind: 'uncommitted' }, snapshot(), true), false, "another machine's index is not ours")
+  })
+
   run('no diff yields no items rather than a broken list', () => {
     assert.deepEqual(branchItemsFrom(null, { kind: 'span' }, snapshot(), '/repo'), [])
   })

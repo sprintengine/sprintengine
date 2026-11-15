@@ -9,6 +9,7 @@ import {
   type ConversationServerFrame,
   type ConversationThread,
   type ConversationToolDetail,
+  type ConversationWireEvent,
   type ConversationWirePage,
   type ConversationWirePermissionPreset,
 } from './conversation.js'
@@ -40,6 +41,12 @@ import {
   type StudioPermission,
 } from './permissions.js'
 import { STUDIO_CHAT_METHODS, STUDIO_CHAT_TOPICS, type StudioChatMethodMap, type StudioChatTopicMap } from './chat.js'
+import {
+  STUDIO_FOLLOWED_METHODS,
+  STUDIO_FOLLOWED_TOPICS,
+  type StudioFollowedMethodMap,
+  type StudioFollowedTopicMap,
+} from './followed.js'
 import { parseStudioConversationKey, type StudioConversationKey } from './key.js'
 import {
   STUDIO_FILES_METHODS,
@@ -60,11 +67,137 @@ import {
   type StudioLocalServersTopicMap,
 } from './local-servers.js'
 import {
+  STUDIO_MODULES_METHODS,
+  STUDIO_MODULES_TOPICS,
+  type StudioModulesMethodMap,
+  type StudioModulesTopicMap,
+} from './modules.js'
+import { STUDIO_MODULE_SERVICES_METHODS, type StudioModuleServicesMethodMap } from './module-services.js'
+import { STUDIO_WORKSPACES_METHODS, type StudioWorkspacesMethodMap } from './workspaces.js'
+import {
+  STUDIO_TERMINALS_METHODS,
+  STUDIO_TERMINALS_TOPICS,
+  type StudioTerminalsMethodMap,
+  type StudioTerminalsTopicMap,
+} from './terminals.js'
+import {
   STUDIO_TOOLS_METHODS,
   STUDIO_TOOLS_TOPICS,
   type StudioToolsMethodMap,
   type StudioToolsTopicMap,
 } from './tools.js'
+import { STUDIO_UPDATE_METHODS, type StudioUpdateMethodMap } from './update.js'
+import {
+  STUDIO_AGENT_SETTINGS_METHODS,
+  STUDIO_AGENT_SETTINGS_TOPICS,
+  type StudioAgentSettingsMethodMap,
+  type StudioAgentSettingsTopicMap,
+} from './agent-settings.js'
+import {
+  STUDIO_AGENT_SETUP_METHODS,
+  STUDIO_AGENT_SETUP_TOPICS,
+  type StudioAgentSetupMethodMap,
+  type StudioAgentSetupTopicMap,
+} from './agent-setup.js'
+import { STUDIO_READINESS_METHODS, type StudioReadinessMethodMap } from './readiness.js'
+import {
+  STUDIO_ENVIRONMENT_ACCESS_METHODS,
+  STUDIO_ENVIRONMENT_ACCESS_TOPICS,
+  type StudioEnvironmentAccessMethodMap,
+  type StudioEnvironmentAccessTopicMap,
+} from './environment-access.js'
+import {
+  STUDIO_CHAT_STORES_METHODS,
+  STUDIO_CHAT_STORES_TOPICS,
+  type StudioChatStoresMethodMap,
+  type StudioChatStoresTopicMap,
+} from './chat-stores.js'
+import {
+  STUDIO_BACKLOG_FOLDER_METHODS,
+  STUDIO_BACKLOG_METHODS,
+  STUDIO_BACKLOG_TOPICS,
+  STUDIO_SHARES_METHODS,
+  type StudioBacklogFolderMethodMap,
+  type StudioBacklogMethodMap,
+  type StudioBacklogTopicMap,
+  type StudioSharesMethodMap,
+} from './backlog.js'
+import { STUDIO_PULL_REQUEST_READS_METHODS, type StudioPullRequestReadsMethodMap } from './pull-request-reads.js'
+import { STUDIO_PULL_REQUEST_CREATE_METHODS, type StudioPullRequestCreateMethodMap } from './pull-request-create.js'
+import {
+  STUDIO_AGENT_SKILLS_METHODS,
+  STUDIO_AGENT_SKILLS_TOPICS,
+  type StudioAgentSkillsMethodMap,
+  type StudioAgentSkillsTopicMap,
+} from './agent-skills.js'
+import {
+  STUDIO_SCHEDULES_METHODS,
+  STUDIO_SCHEDULES_TOPICS,
+  type StudioSchedulesMethodMap,
+  type StudioSchedulesTopicMap,
+} from './schedules.js'
+import {
+  STUDIO_FILE_SYSTEM_METHODS,
+  STUDIO_FILE_SYSTEM_TOPICS,
+  type StudioFileSystemMethodMap,
+  type StudioFileSystemTopicMap,
+} from './file-system.js'
+import { STUDIO_GIT_METHODS, STUDIO_GIT_TOPICS, type StudioGitMethodMap, type StudioGitTopicMap } from './git.js'
+import {
+  STUDIO_WORKSPACE_SYNC_METHODS,
+  STUDIO_WORKSPACE_SYNC_TOPICS,
+  type StudioWorkspaceSyncMethodMap,
+  type StudioWorkspaceSyncTopicMap,
+} from './workspace-sync.js'
+import {
+  STUDIO_WORKTREES_METHODS,
+  STUDIO_WORKTREES_TOPICS,
+  type StudioWorktreesMethodMap,
+  type StudioWorktreesTopicMap,
+} from './worktrees.js'
+import { STUDIO_CHAT_LIFECYCLE_METHODS, type StudioChatLifecycleMethodMap } from './chat-lifecycle.js'
+import {
+  STUDIO_CANVAS_METHODS,
+  STUDIO_CANVAS_TOPICS,
+  type StudioCanvasMethodMap,
+  type StudioCanvasTopicMap,
+} from './canvas.js'
+import {
+  STUDIO_EXTENSIONS_METHODS,
+  STUDIO_EXTENSIONS_TOPICS,
+  type StudioExtensionsMethodMap,
+  type StudioExtensionsTopicMap,
+} from './extensions.js'
+import {
+  STUDIO_ARTIFACTS_METHODS,
+  STUDIO_ARTIFACTS_TOPICS,
+  type StudioArtifactsMethodMap,
+  type StudioArtifactsTopicMap,
+} from './artifacts.js'
+import {
+  STUDIO_ACCESS_METHODS,
+  STUDIO_ACCESS_TOPICS,
+  type StudioAccessMethodMap,
+  type StudioAccessTopicMap,
+} from './access.js'
+import {
+  STUDIO_WEB_DEVICES_METHODS,
+  STUDIO_WEB_DEVICES_TOPICS,
+  type StudioWebDevicesMethodMap,
+  type StudioWebDevicesTopicMap,
+} from './web-devices.js'
+import {
+  STUDIO_TAILNET_METHODS,
+  STUDIO_TAILNET_TOPICS,
+  type StudioTailnetMethodMap,
+  type StudioTailnetTopicMap,
+} from './tailnet.js'
+import {
+  STUDIO_HOSTS_METHODS,
+  STUDIO_HOSTS_TOPICS,
+  type StudioHostsMethodMap,
+  type StudioHostsTopicMap,
+} from './hosts.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -82,11 +215,11 @@ export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type S
 // against the grant as it stands at that moment (`authorizeStudioMethod`,
 // `permissions.ts`).
 //
-// A conversation command is the conversation lane's own command, addressed:
-// its params are the command's members plus the conversation `key` and the
-// client's `commandId`, and they are read by the lane's own validator
-// (`parseConversationClientMessage`), so the socket and the tailnet accept
-// exactly the same commands. Every mutation carries a `commandId`; a retry
+// A conversation command is the conversation contract's own command,
+// addressed: its params are the command's members plus the conversation `key`
+// and the client's `commandId`, and they are read by the contract's own
+// validator (`parseConversationClientMessage`), so every client's commands are
+// held to exactly the same rules. Every mutation carries a `commandId`; a retry
 // with the same id is answered with the first attempt's result and is never
 // carried out twice, across a reconnect and an app restart alike.
 
@@ -100,12 +233,16 @@ type Addressed<T> = { key: StudioConversationKey; commandId: string } & T
 
 /**
  * A command method's params: the conversation lane's command of that kind,
- * its `kind` given by the method, addressed. Pictures (`uploadIds`) are not
- * carried by this connection (`parseStudioCommand`), and a rule that outlives
- * the conversation (`always`) is not taken from it.
+ * its `kind` given by the method, addressed. A send's pictures and files
+ * (`uploadIds`) are uploads this client staged on this connection
+ * (`uploads.begin` and `uploads.append`, a picture or an `attachment`), spent
+ * by the send under its command id. A rule that outlives the
+ * conversation (`always`) is taken, as the lane takes it
+ * (`conversation-permanent-approvals`), from a client the router lets allow a
+ * kind of request for the rest of the conversation.
  */
 type CommandParams<K extends ConversationCommand['kind']> = Addressed<
-  Omit<Exclude<Extract<ConversationCommand, { kind: K }>, { decision: 'always' }>, 'kind' | 'uploadIds'>
+  Omit<Extract<ConversationCommand, { kind: K }>, 'kind'>
 >
 
 /**
@@ -121,6 +258,9 @@ export type StudioRuntimeRefusalCode =
   | 'cli_not_conversational'
   | 'unknown_skill'
   | 'conversation_start_failed'
+  // New chat's own: no worktree could be cut or found for it, or its CLI has no such effort.
+  | 'worktree_unavailable'
+  | 'unsupported_effort'
 
 /** A command's own refusals: the runtime's, a ceiling it would exceed, and a decision no remote client makes. */
 type CommandRefusal = StudioRuntimeRefusalCode | 'ceiling_exceeded' | 'unsafe_remote_decision'
@@ -143,6 +283,8 @@ export type StudioCreatedConversation = {
   /** The preset the chat runs on: the one asked for, lowered to the client's ceiling. */
   permissionPreset?: ConversationWirePermissionPreset
   permissionMode?: string
+  /** The worktree it runs in, when that is one (cut for it, or named by `inWorktree`), with its branch. */
+  worktree?: { path: string; branch: string | null }
 }
 
 /** What `server.info` answers: the welcome without the per-connection parts. */
@@ -150,6 +292,8 @@ export type StudioServerInfo = {
   protocolVersion: number
   minProtocolVersion: number
   server: StudioServerIdentity
+  /** As the welcome says it: this run of the server. */
+  bootId?: string
   environment: StudioEnvironment
   capabilities: string[]
   conversation: ConversationHelloAnswer
@@ -157,11 +301,41 @@ export type StudioServerInfo = {
 }
 
 export type StudioMethodMap = StudioConversationMethodMap &
+  StudioFollowedMethodMap &
   StudioChatMethodMap &
   StudioToolsMethodMap &
   StudioFilesMethodMap &
   StudioPullRequestsMethodMap &
-  StudioLocalServersMethodMap
+  StudioLocalServersMethodMap &
+  StudioModulesMethodMap &
+  StudioModuleServicesMethodMap &
+  StudioTerminalsMethodMap &
+  StudioUpdateMethodMap &
+  StudioAgentSettingsMethodMap &
+  StudioAgentSetupMethodMap &
+  StudioWorkspacesMethodMap &
+  StudioReadinessMethodMap &
+  StudioEnvironmentAccessMethodMap &
+  StudioChatStoresMethodMap &
+  StudioAgentSkillsMethodMap &
+  StudioSchedulesMethodMap &
+  StudioFileSystemMethodMap &
+  StudioBacklogMethodMap &
+  StudioBacklogFolderMethodMap &
+  StudioSharesMethodMap &
+  StudioPullRequestReadsMethodMap &
+  StudioPullRequestCreateMethodMap &
+  StudioGitMethodMap &
+  StudioWorktreesMethodMap &
+  StudioWorkspaceSyncMethodMap &
+  StudioChatLifecycleMethodMap &
+  StudioCanvasMethodMap &
+  StudioExtensionsMethodMap &
+  StudioArtifactsMethodMap &
+  StudioAccessMethodMap &
+  StudioWebDevicesMethodMap &
+  StudioTailnetMethodMap &
+  StudioHostsMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -174,7 +348,7 @@ type StudioConversationMethodMap = {
   'server.ping': { params: Record<string, never>; result: { at: number } }
   'conversation.list': { params: Record<string, never>; result: { conversations: ConversationThread[] } }
   'conversation.create': {
-    params: ConversationCreateRequest & { commandId: string }
+    params: StudioConversationCreateParams
     result: { conversation: StudioCreatedConversation }
     errors: StudioRuntimeRefusalCode | 'ceiling_exceeded'
   }
@@ -191,53 +365,48 @@ type StudioConversationMethodMap = {
   'conversation.setModel': Command<'setModel', StudioCommandAnswer & { modelId: string }>
   /**
    * Takes back a message the desktop holds for the chat's turn to end, by its
-   * `id` (the conversation lane's `cancelQueued`). An owner's only: this
-   * socket names no held message to anyone else.
+   * `id` (the conversation lane's `cancelQueued`).
    */
   'conversation.cancelQueued': Command<'cancelQueued'>
   /**
    * Stops one agent the chat spawned, by the call that spawned it (its lane's
    * `toolUseId`; the conversation lane's `stopSubagent`), and leaves the chat,
    * its turn and its other agents running. Refused for an agent that is not
-   * running, and for a chat whose provider cannot stop one by itself. An
-   * owner's only for now: no SDK call names it yet.
+   * running, and for a chat whose provider cannot stop one by itself.
    */
   'conversation.stopSubagent': Command<'stopSubagent'>
   /**
    * Passes the person's words to one agent the chat spawned, by the call that
    * spawned it (the conversation lane's `messageSubagent`): the chat's model is
-   * asked to deliver them. Refused for a chat whose provider cannot. An owner's
-   * only for now: no SDK call names it yet.
+   * asked to deliver them. Refused for a chat whose provider cannot.
    */
   'conversation.messageSubagent': Command<'messageSubagent'>
   /**
    * Sets the reasoning effort the chat runs at from its next turn (the
    * conversation lane's `setReasoningEffort`): one of the levels its listed
    * `capabilities.reasoningEfforts` names, or none for the provider's own
-   * default, kept on the chat. An owner's only for now: no SDK call names it yet.
+   * default, kept on the chat.
    */
   'conversation.setReasoningEffort': Command<'setReasoningEffort'>
   /**
    * Reconnects one of a live chat's MCP servers, or switches it on or off (the
    * conversation lane's `mcpServerAction`), where its listed
    * `capabilities.mcpServerActions` names the action. Never a sign-in, whose
-   * callback the chat's CLI waits for on the desktop. An owner's only for now.
+   * callback the chat's CLI waits for on the desktop.
    */
   'conversation.mcpServerAction': Command<'mcpServerAction'>
   /**
    * Restarts the chat's agent (the conversation lane's `restartSession`): its
    * process ends, the session keeps its place, and the next message starts it
    * again. Refused while the agent works; `notice` says when there was none
-   * running. An owner's only for now.
+   * running.
    */
   'conversation.restartSession': Command<'restartSession'>
   /**
    * Has the desktop keep a message and send it into the chat at `sendAt`
    * (the conversation lane's `scheduleSend`), answered once it is kept; and
    * sends one it keeps now, or deletes it, by its `id`
-   * (`sendScheduledNow`, `cancelScheduled`). Owners' only, as
-   * `conversation.cancelQueued` is: this socket's conversation topic names no
-   * scheduled message, so nothing else could address one.
+   * (`sendScheduledNow`, `cancelScheduled`).
    */
   'conversation.scheduleSend': Command<'scheduleSend'>
   'conversation.sendScheduledNow': Command<'sendScheduledNow'>
@@ -246,8 +415,7 @@ type StudioConversationMethodMap = {
    * Acts on the notice a usage limit left on the chat's turn (the
    * conversation lane's `usageLimitResume`): schedules the resume the desktop
    * sends once the limit resets (`always`: for every chat a limit stops),
-   * cancels, dismisses or retries it. An owner's only: this socket's
-   * conversation topic names no notice.
+   * cancels, dismisses or retries it.
    */
   'conversation.usageLimitResume': Command<'usageLimitResume'>
   /** Ends the chat's live session. Idempotent by nature: stopping a stopped chat answers ok. */
@@ -260,6 +428,15 @@ type StudioConversationMethodMap = {
   'conversation.toolDetail': {
     params: { key: StudioConversationKey; toolUseId: string }
     result: { detail: ConversationToolDetail }
+    errors: 'not_found'
+  }
+  /**
+   * One event as the chat's log stores it, by the `seq` and `id` it was sent
+   * under: the whole of an event that crossed cut to fit (`wireClipped`).
+   */
+  'conversation.event': {
+    params: { key: StudioConversationKey; seq: number; id: string }
+    result: { event: ConversationWireEvent }
     errors: 'not_found'
   }
   'conversation.turnDiff': {
@@ -325,10 +502,9 @@ const COMMAND_ID = '"commandId" must be a string of 1 to 200 characters.'
 
 /**
  * A command method's params as the conversation command they carry, read by
- * the conversation lane's own validator. The refusal is the lane's own
+ * the conversation contract's own validator. The refusal is the contract's own
  * (`explainRejectedConversationMessage`), so an over-long message is refused
- * as too large, exactly as on the tailnet. An `always` decision is refused as
- * unsafe, as by a desktop without `conversation-permanent-approvals`.
+ * as too large.
  */
 export function parseStudioCommand(
   method: StudioCommandMethod,
@@ -337,15 +513,6 @@ export function parseStudioCommand(
   const key = parseStudioConversationKey(params.key)
   if (!key) return refuse('invalid_params', KEY_REQUIRED)
   if (!id(params.commandId)) return refuse('invalid_params', COMMAND_ID)
-  // Pictures travel beside the socket, not in it, and this version has no
-  // upload route: refused rather than dropped, so a send never silently loses one.
-  if (params.uploadIds !== undefined) return refuse('invalid_params', 'This connection does not carry pictures yet.')
-  // A rule that outlives the conversation is taken on the tailnet from a
-  // desktop that advertises `conversation-permanent-approvals`; this socket
-  // does not advertise it, and refuses the decision as the lane's first
-  // version does.
-  if (method === 'conversation.resolveApproval' && params.decision === 'always')
-    return refuse('unsafe_remote_decision', 'A remote device cannot choose a permanent rule.')
   const { key: _key, commandId, ...members } = params
   const frame = { type: 'command', commandId, command: { ...members, kind: STUDIO_COMMAND_METHODS[method] } }
   const parsed = parseConversationClientMessage(frame)
@@ -403,16 +570,101 @@ const operate: StudioMethodSpec = {
   mutation: true,
   capability: STUDIO_CONVERSATIONS_CAPABILITY,
 }
+// A command the runtime carries out under a receipt written to the chat's own
+// log (`runCommand`), or one whose effect keeps its command id where it is
+// kept (a scheduled message's `sources`): a retry after a restart is answered
+// from that, never carried out again. Every other command's receipt is held
+// in the running server's memory.
+const operateDurably: StudioMethodSpec = { ...operate, mutation: true, receipts: 'durable' }
 
 function command<K extends ConversationCommand['kind'], M extends StudioCommandMethod>(
   method: M,
   kind: K,
-  owner?: true,
+  spec: StudioMethodSpec = operate,
 ): StudioMethodDefinition<{ params: CommandParams<K>; result: unknown }> {
-  return { ...operate, ...(owner ? { owner } : {}), params: commandParams(method, kind) }
+  return { ...spec, params: commandParams(method, kind) }
 }
 
 const noParams = (): StudioParsed<Record<string, never>> => studioParams({})
+
+/**
+ * How New chat starts one, beyond the contract's create: as a chat of its own
+ * in the project's folder (`newChat`) rather than one more agent in a
+ * workspace, in a worktree cut for it (`worktree`, named from `worktreeName`)
+ * or one the project already has (`inWorktree`, a path `workspaces.checkout`
+ * lists), under no project at all (`noProject`, in place of `workspaceId`),
+ * and at a reasoning effort (`effort`, one of the CLI's `reasoningLevels`).
+ * The gateway's `conversation.create` tool takes the same, for agents.
+ */
+export type StudioNewChatOptions = {
+  newChat?: boolean
+  worktree?: boolean
+  worktreeName?: string
+  inWorktree?: string
+  effort?: string
+}
+
+/** A create as the protocol takes it: in a workspace, or (`noProject`) in a folder of its own. */
+export type StudioConversationCreate = StudioNewChatOptions &
+  (
+    | (ConversationCreateRequest & { noProject?: undefined })
+    | (Omit<ConversationCreateRequest, 'workspaceId'> & { workspaceId?: undefined; noProject: true })
+  )
+
+export type StudioConversationCreateParams = StudioConversationCreate & { commandId: string }
+
+const EFFORT_ID = /^[a-z][a-z0-9_-]{0,31}$/iu
+
+/** A create's members, read and held to New chat's rules; `commandId` is the caller's to read. */
+export function parseStudioConversationCreate(
+  value: Record<string, unknown>,
+): { ok: true; create: StudioConversationCreate } | { ok: false; message: string } {
+  const { commandId: _commandId, noProject, newChat, worktree, worktreeName, inWorktree, effort, ...request } = value
+  if (noProject !== undefined && noProject !== true) return { ok: false, message: '"noProject", when given, is true.' }
+  for (const [name, flag] of [
+    ['newChat', newChat],
+    ['worktree', worktree],
+  ] as const)
+    if (flag !== undefined && typeof flag !== 'boolean') return { ok: false, message: `"${name}" is a boolean.` }
+  for (const [name, text, max] of [
+    ['worktreeName', worktreeName, 200],
+    ['inWorktree', inWorktree, 4096],
+  ] as const)
+    if (text !== undefined && (typeof text !== 'string' || !text.trim() || text.length > max))
+      return { ok: false, message: `"${name}" is a string of 1 to ${max} characters.` }
+  if (effort !== undefined && (typeof effort !== 'string' || !EFFORT_ID.test(effort.trim())))
+    return { ok: false, message: '"effort" is an effort level id, such as "high".' }
+  if (noProject) {
+    if (request.workspaceId !== undefined)
+      return { ok: false, message: '"noProject" takes the place of "workspaceId".' }
+    if (worktree || worktreeName !== undefined || inWorktree !== undefined)
+      return { ok: false, message: 'A chat with no project has no checkout to take a worktree from.' }
+  }
+  if (worktree && newChat !== true)
+    return { ok: false, message: '"worktree" starts a new chat: set "newChat" with it.' }
+  if (worktreeName !== undefined && worktree !== true)
+    return { ok: false, message: '"worktreeName" names a new worktree: set "worktree" with it.' }
+  if (inWorktree !== undefined && newChat !== true)
+    return { ok: false, message: '"inWorktree" starts a new chat: set "newChat" with it.' }
+  if (inWorktree !== undefined && worktree)
+    return { ok: false, message: 'Ask for a new worktree or name one, not both.' }
+  // The contract's own members, read by its own validator; a chat under no
+  // project names no workspace, so it is read with a stand-in and given none.
+  const parsed = parseConversationCreateRequest(noProject ? { ...request, workspaceId: 'no-project' } : request)
+  if (!parsed.ok) return { ok: false, message: parsed.message }
+  const options: StudioNewChatOptions = {
+    ...(newChat === true ? { newChat: true } : {}),
+    ...(worktree === true ? { worktree: true } : {}),
+    ...(typeof worktreeName === 'string' ? { worktreeName: worktreeName.trim() } : {}),
+    ...(typeof inWorktree === 'string' ? { inWorktree: inWorktree.trim() } : {}),
+    ...(typeof effort === 'string' ? { effort: effort.trim() } : {}),
+  }
+  if (noProject) {
+    const { workspaceId: _standIn, ...rest } = parsed.request
+    return { ok: true, create: { ...rest, ...options, noProject: true } }
+  }
+  return { ok: true, create: { ...parsed.request, ...options } }
+}
 
 const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap> = {
   'server.info': { ...read(null), params: noParams },
@@ -421,32 +673,38 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
   'conversation.create': {
     scope: 'conversation:create',
     mutation: true,
+    // Found again by the chat record it made (its `launchCommandId`).
+    receipts: 'durable',
     capability: STUDIO_CONVERSATION_CREATE_CAPABILITY,
     params: (value) => {
       if (!id(value.commandId)) return refuse('invalid_params', COMMAND_ID)
-      const { commandId, ...request } = value
-      const parsed = parseConversationCreateRequest(request)
-      if (!parsed.ok) return refuse('invalid_params', parsed.message)
-      return studioParams({ ...parsed.request, commandId: value.commandId })
+      const parsed = parseStudioConversationCreate(value)
+      return parsed.ok
+        ? studioParams({ ...parsed.create, commandId: value.commandId })
+        : refuse('invalid_params', parsed.message)
     },
   },
-  'conversation.send': command('conversation.send', 'send'),
-  'conversation.interrupt': command('conversation.interrupt', 'interrupt'),
-  'conversation.resolveApproval': command('conversation.resolveApproval', 'resolveApproval'),
-  'conversation.answerQuestion': command('conversation.answerQuestion', 'answerQuestion'),
-  'conversation.resolvePlan': command('conversation.resolvePlan', 'resolvePlan'),
-  'conversation.setPermissionPreset': command('conversation.setPermissionPreset', 'setPermissionPreset'),
-  'conversation.setModel': command('conversation.setModel', 'setModel'),
-  'conversation.cancelQueued': command('conversation.cancelQueued', 'cancelQueued', true),
-  'conversation.stopSubagent': command('conversation.stopSubagent', 'stopSubagent', true),
-  'conversation.messageSubagent': command('conversation.messageSubagent', 'messageSubagent', true),
-  'conversation.setReasoningEffort': command('conversation.setReasoningEffort', 'setReasoningEffort', true),
-  'conversation.mcpServerAction': command('conversation.mcpServerAction', 'mcpServerAction', true),
-  'conversation.restartSession': command('conversation.restartSession', 'restartSession', true),
-  'conversation.scheduleSend': command('conversation.scheduleSend', 'scheduleSend', true),
-  'conversation.sendScheduledNow': command('conversation.sendScheduledNow', 'sendScheduledNow', true),
-  'conversation.cancelScheduled': command('conversation.cancelScheduled', 'cancelScheduled', true),
-  'conversation.usageLimitResume': command('conversation.usageLimitResume', 'usageLimitResume', true),
+  'conversation.send': command('conversation.send', 'send', operateDurably),
+  'conversation.interrupt': command('conversation.interrupt', 'interrupt', operateDurably),
+  'conversation.resolveApproval': command('conversation.resolveApproval', 'resolveApproval', operateDurably),
+  'conversation.answerQuestion': command('conversation.answerQuestion', 'answerQuestion', operateDurably),
+  'conversation.resolvePlan': command('conversation.resolvePlan', 'resolvePlan', operateDurably),
+  'conversation.setPermissionPreset': command(
+    'conversation.setPermissionPreset',
+    'setPermissionPreset',
+    operateDurably,
+  ),
+  'conversation.setModel': command('conversation.setModel', 'setModel', operateDurably),
+  'conversation.cancelQueued': command('conversation.cancelQueued', 'cancelQueued'),
+  'conversation.stopSubagent': command('conversation.stopSubagent', 'stopSubagent'),
+  'conversation.messageSubagent': command('conversation.messageSubagent', 'messageSubagent'),
+  'conversation.setReasoningEffort': command('conversation.setReasoningEffort', 'setReasoningEffort'),
+  'conversation.mcpServerAction': command('conversation.mcpServerAction', 'mcpServerAction'),
+  'conversation.restartSession': command('conversation.restartSession', 'restartSession'),
+  'conversation.scheduleSend': command('conversation.scheduleSend', 'scheduleSend', operateDurably),
+  'conversation.sendScheduledNow': command('conversation.sendScheduledNow', 'sendScheduledNow'),
+  'conversation.cancelScheduled': command('conversation.cancelScheduled', 'cancelScheduled'),
+  'conversation.usageLimitResume': command('conversation.usageLimitResume', 'usageLimitResume'),
   'conversation.stop': {
     ...operate,
     params: (value) => {
@@ -476,6 +734,16 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
       return studioParams({ key: at.params.key, toolUseId: value.toolUseId })
     },
   },
+  'conversation.event': {
+    ...read(),
+    params: (value) => {
+      const at = keyed(value)
+      if (!at.ok) return at
+      if (!integer(value.seq) || value.seq < 1) return refuse('invalid_params', '"seq" must be a sequence number.')
+      if (!id(value.id)) return refuse('invalid_params', '"id" names the event.')
+      return studioParams({ key: at.params.key, seq: value.seq, id: value.id })
+    },
+  },
   'conversation.turnDiff': {
     ...read(),
     params: (value) => {
@@ -496,11 +764,53 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
 /** Every method: how it is held and how its params are read. A method of the map without one does not compile. */
 export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_CONVERSATION_METHODS,
+  ...STUDIO_FOLLOWED_METHODS,
   ...STUDIO_CHAT_METHODS,
   ...STUDIO_TOOLS_METHODS,
   ...STUDIO_FILES_METHODS,
   ...STUDIO_PULL_REQUESTS_METHODS,
   ...STUDIO_LOCAL_SERVERS_METHODS,
+  ...STUDIO_MODULES_METHODS,
+  ...STUDIO_MODULE_SERVICES_METHODS,
+  ...STUDIO_TERMINALS_METHODS,
+  ...STUDIO_UPDATE_METHODS,
+  ...STUDIO_AGENT_SETTINGS_METHODS,
+  ...STUDIO_AGENT_SETUP_METHODS,
+  ...STUDIO_AGENT_SKILLS_METHODS,
+  ...STUDIO_WORKSPACES_METHODS,
+  ...STUDIO_READINESS_METHODS,
+  ...STUDIO_ENVIRONMENT_ACCESS_METHODS,
+  ...STUDIO_CHAT_STORES_METHODS,
+  ...STUDIO_SCHEDULES_METHODS,
+  ...STUDIO_FILE_SYSTEM_METHODS,
+  ...STUDIO_BACKLOG_METHODS,
+  ...STUDIO_BACKLOG_FOLDER_METHODS,
+  ...STUDIO_SHARES_METHODS,
+  ...STUDIO_PULL_REQUEST_READS_METHODS,
+  ...STUDIO_PULL_REQUEST_CREATE_METHODS,
+  ...STUDIO_GIT_METHODS,
+  ...STUDIO_WORKTREES_METHODS,
+  ...STUDIO_WORKSPACE_SYNC_METHODS,
+  ...STUDIO_CHAT_LIFECYCLE_METHODS,
+  ...STUDIO_CANVAS_METHODS,
+  ...STUDIO_EXTENSIONS_METHODS,
+  ...STUDIO_ARTIFACTS_METHODS,
+  ...STUDIO_ACCESS_METHODS,
+  ...STUDIO_WEB_DEVICES_METHODS,
+  ...STUDIO_TAILNET_METHODS,
+  ...STUDIO_HOSTS_METHODS,
+}
+
+/**
+ * Whether a request may be sent again to a server that is not the one it was
+ * sent to: a read always may; a mutation only where its receipts are durable
+ * (`StudioMethodReceipts`), since any other's receipt went with the server
+ * that carried it out, and sent again it would be carried out twice. A method
+ * this version does not define is held to be a mutation.
+ */
+export function studioResendableAfterRestart(method: string): boolean {
+  const spec = isStudioMethod(method) ? STUDIO_METHODS[method] : null
+  return spec !== null && (!spec.mutation || spec.receipts === 'durable')
 }
 
 /** Whether a string names a method this version of the protocol defines. */
@@ -532,11 +842,32 @@ export type StudioTopicMap = {
     payload: ConversationServerFrame
     stream: 'frames'
   }
-} & StudioChatTopicMap &
+} & StudioFollowedTopicMap &
+  StudioChatTopicMap &
   StudioToolsTopicMap &
   StudioFilesTopicMap &
   StudioPullRequestsTopicMap &
-  StudioLocalServersTopicMap
+  StudioLocalServersTopicMap &
+  StudioModulesTopicMap &
+  StudioTerminalsTopicMap &
+  StudioAgentSettingsTopicMap &
+  StudioAgentSetupTopicMap &
+  StudioChatStoresTopicMap &
+  StudioAgentSkillsTopicMap &
+  StudioSchedulesTopicMap &
+  StudioFileSystemTopicMap &
+  StudioBacklogTopicMap &
+  StudioGitTopicMap &
+  StudioWorktreesTopicMap &
+  StudioWorkspaceSyncTopicMap &
+  StudioCanvasTopicMap &
+  StudioExtensionsTopicMap &
+  StudioArtifactsTopicMap &
+  StudioAccessTopicMap &
+  StudioWebDevicesTopicMap &
+  StudioTailnetTopicMap &
+  StudioHostsTopicMap &
+  StudioEnvironmentAccessTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -564,11 +895,32 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
       return studioParams({ key: at.params.key, ...limit.params })
     },
   },
+  ...STUDIO_FOLLOWED_TOPICS,
   ...STUDIO_CHAT_TOPICS,
   ...STUDIO_TOOLS_TOPICS,
   ...STUDIO_FILES_TOPICS,
   ...STUDIO_PULL_REQUESTS_TOPICS,
   ...STUDIO_LOCAL_SERVERS_TOPICS,
+  ...STUDIO_MODULES_TOPICS,
+  ...STUDIO_TERMINALS_TOPICS,
+  ...STUDIO_AGENT_SETTINGS_TOPICS,
+  ...STUDIO_AGENT_SETUP_TOPICS,
+  ...STUDIO_CHAT_STORES_TOPICS,
+  ...STUDIO_BACKLOG_TOPICS,
+  ...STUDIO_AGENT_SKILLS_TOPICS,
+  ...STUDIO_SCHEDULES_TOPICS,
+  ...STUDIO_FILE_SYSTEM_TOPICS,
+  ...STUDIO_GIT_TOPICS,
+  ...STUDIO_WORKTREES_TOPICS,
+  ...STUDIO_WORKSPACE_SYNC_TOPICS,
+  ...STUDIO_CANVAS_TOPICS,
+  ...STUDIO_EXTENSIONS_TOPICS,
+  ...STUDIO_ARTIFACTS_TOPICS,
+  ...STUDIO_ACCESS_TOPICS,
+  ...STUDIO_WEB_DEVICES_TOPICS,
+  ...STUDIO_TAILNET_TOPICS,
+  ...STUDIO_HOSTS_TOPICS,
+  ...STUDIO_ENVIRONMENT_ACCESS_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */
@@ -578,7 +930,7 @@ export function isStudioTopic(value: unknown): value is StudioTopic {
 
 // ── Access ──────────────────────────────────────────────────────────────────
 
-type StudioSpec = { scope: StudioMethodSpec['scope']; extraPermissions?: readonly StudioPermission[]; owner?: true }
+type StudioSpec = { scope: StudioMethodSpec['scope']; extraPermissions?: readonly StudioPermission[]; owner?: string }
 
 /** What a method or topic needs: the permission its scope names, first, then any it adds. */
 export function studioSpecPermissions(spec: StudioSpec): readonly StudioPermission[] {
@@ -590,7 +942,7 @@ function studioSpecAccess(table: object, name: string): StudioAccess | undefined
   // Own keys only: `constructor` is not a method.
   if (!Object.hasOwn(table, name)) return undefined
   const spec = (table as Record<string, StudioSpec>)[name]
-  return { permissions: studioSpecPermissions(spec), ...(spec.owner ? { owner: true as const } : {}) }
+  return { permissions: studioSpecPermissions(spec), ...(spec.owner ? { owner: spec.owner } : {}) }
 }
 
 /** A grant as it stands, the method it asks for, and the answer: unknown methods are refused. */
@@ -607,6 +959,46 @@ export function authorizeStudioTopic(
   topic: string,
 ): StudioAuthorization {
   return authorizeStudioAccess(studioGrantPrincipal(grant), studioSpecAccess(STUDIO_TOPICS, topic))
+}
+
+/**
+ * What each method asks of its caller, derived from the table: the permissions
+ * it needs and whether it is an owner's only. A client reads what a grant
+ * reaches here (`studioGrantAllows`), never off `grant.owner`.
+ */
+export const STUDIO_METHOD_ACCESS = Object.freeze(
+  Object.fromEntries(
+    (Object.keys(STUDIO_METHODS) as StudioMethod[]).map((method) => [
+      method,
+      studioSpecAccess(STUDIO_METHODS, method) as StudioAccess,
+    ]),
+  ),
+) as { readonly [M in StudioMethod]: StudioAccess }
+
+/** The same for each topic. */
+export const STUDIO_TOPIC_ACCESS = Object.freeze(
+  Object.fromEntries(
+    (Object.keys(STUDIO_TOPICS) as StudioTopic[]).map((topic) => [
+      topic,
+      studioSpecAccess(STUDIO_TOPICS, topic) as StudioAccess,
+    ]),
+  ),
+) as { readonly [T in StudioTopic]: StudioAccess }
+
+/**
+ * Whether a grant as it stands reaches a method: the server's grant check
+ * (`authorizeStudioMethod`), for a client deciding whether to offer a control.
+ * Unknown methods are not reached. A request it allows can still be refused
+ * by a rule on its params (a folder only an owner may name, a file's bytes
+ * staged for `files.write`) or for a capability the Studio does not advertise.
+ */
+export function studioGrantAllows(grant: { owner: boolean; scopes: readonly string[] }, method: string): boolean {
+  return authorizeStudioMethod(grant, method).ok
+}
+
+/** The same for subscribing to a topic. */
+export function studioGrantAllowsTopic(grant: { owner: boolean; scopes: readonly string[] }, topic: string): boolean {
+  return authorizeStudioTopic(grant, topic).ok
 }
 
 /**

@@ -78,7 +78,7 @@ let host: HTMLElement | null = null
 
 beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-  ;(window as unknown as { api: unknown }).api = { studioConnect: () => undefined }
+  ;(window as unknown as { api: unknown }).api = { studioWindowTicket: () => undefined }
   studio.supports = true
   studio.requests.length = 0
   studio.topics.clear()

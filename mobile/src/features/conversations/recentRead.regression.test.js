@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { createRecentRead } = require("../../../.mobile-test-build/src/features/conversations/recentRead.js");
+const { createRecentRead } = require("../../../.mobile-test-build/mobile/src/features/conversations/recentRead.js");
 
 function desktop() {
   let clock = 0;

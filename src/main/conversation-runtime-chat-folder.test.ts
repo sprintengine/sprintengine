@@ -182,7 +182,9 @@ test('a revert holds its folder for its whole length, and waits for a return und
     const returning = exclusive(await leases.tryExclusive(workspaceRoot, 'the pool is returning this worktree'))
     let done = false
     const reverting = runtime.revertToTurn({ key, turnSeq: 1 }).finally(() => (done = true))
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    // Until the revert has asked for the folder: however long a loaded machine takes to get there.
+    while (!(await leases.holders(workspaceRoot)).some((holder) => holder.waiting))
+      await new Promise((resolve) => setImmediate(resolve))
     assert.equal(done, false, 'waits while the return runs')
     assert.deepEqual(
       (await leases.holders(workspaceRoot)).map(({ reason, waiting }) => ({ reason, waiting })),
@@ -298,6 +300,90 @@ test('Stop abandons a message waiting for its folder, and deleting a chat abando
     )
     returning.release()
   } finally {
+    await runtime.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+  }
+})
+
+// A send that met a busy chat after its first look (another send took the
+// turn while this one waited for the folder or its skills), or found the
+// folder held, ran nothing: it is answered busy, never kept as the command's
+// answer, so the same id sent again once the chat is free sends the message.
+test('a send that loses the turn, or finds the folder held, is busy, and the same id sends once free', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-chat-folder-'))
+  const mock = createMockConversationProvider()
+  let open: () => void = () => undefined
+  let gate = Promise.resolve()
+  let folderBusy = false
+  // The first send's turn starting: the second send's hold waits for it, so
+  // the first always takes the turn, however slow the machine.
+  let turnBegan: () => void = () => undefined
+  const began = new Promise<void>((resolve) => (turnBegan = resolve))
+  let race: { holds: number } | null = null
+  const leases = createWorktreeLeases()
+  const runtime = new ConversationRuntime({
+    // A turn that ends when the test lets it.
+    adapters: [
+      {
+        ...mock,
+        sendTurn: (input) =>
+          (async function* () {
+            turnBegan()
+            await gate
+            yield* mock.sendTurn({ ...input, message: '/tools' }) as Iterable<never>
+          })(),
+      },
+    ],
+    getProviderById: () => undefined,
+    worktreeLeases: {
+      ...leases,
+      // A moment's wait for every hold, so both sends below look at a resting
+      // chat; the second of the race waits until the first's turn has begun.
+      acquireShared: async (path, options) => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        if (race && ++race.holds === 2) {
+          race = null
+          await began
+        }
+        return folderBusy ? { busy: 'The worktree is being put back.' } : leases.acquireShared(path, options)
+      },
+    },
+  })
+  try {
+    const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+    const started = await runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+    assert.ok(started.ok)
+    const sessionId = started.session.sessionId
+    gate = new Promise<void>((resolve) => (open = resolve))
+    // Both look at a resting chat; the first takes the turn.
+    race = { holds: 0 }
+    const first = runtime.sendTurn({ sessionId, commandId: 'first', message: 'one' })
+    const second = await runtime.sendTurn({ sessionId, commandId: 'second', message: 'two' })
+    assert.equal(second.ok ? null : second.code, 'busy', 'the loser is busy, not refused for good')
+    const rested = new Promise<void>((resolve) => runtime.onSessionIdle(() => resolve()))
+    open()
+    assert.equal((await first).ok, true)
+    await rested
+
+    folderBusy = true
+    const held = await runtime.sendTurn({ sessionId, commandId: 'third', message: 'three' })
+    assert.equal(held.ok ? null : held.code, 'busy', 'a folder held elsewhere is busy too')
+    folderBusy = false
+
+    for (const [commandId, message] of [
+      ['second', 'two'],
+      ['third', 'three'],
+    ] as const) {
+      const idle = new Promise<void>((resolve) => runtime.onSessionIdle(() => resolve()))
+      assert.equal((await runtime.sendTurn({ sessionId, commandId, message })).ok, true, `${message} sent again`)
+      await idle
+    }
+    const read = await runtime.readTranscript(key)
+    assert.ok(read.ok)
+    const said = read.events.filter((event) => event.type === 'user_message').map((event) => event.payload?.text)
+    assert.deepEqual(said, ['one', 'two', 'three'])
+  } finally {
+    open()
     await runtime.shutdown()
     await rm(workspaceRoot, { recursive: true, force: true })
   }

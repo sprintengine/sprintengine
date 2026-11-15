@@ -21,18 +21,14 @@
  * setting).
  */
 
-export const WRITING_STYLE_MODES = ['repository', 'conventional', 'custom'] as const
+import {
+  WRITING_STYLE_MODES,
+  type TextGenerationWritingStyle,
+  type WritingStyleMode,
+} from '../../../packages/studio-protocol/src/public'
 
-export type WritingStyleMode = (typeof WRITING_STYLE_MODES)[number]
-
-export type TextGenerationWritingStyle = {
-  mode: WritingStyleMode
-  /**
-   * The person's style guide, used when `mode` is `custom`. Kept while another
-   * mode is chosen, so switching away and back does not lose what they wrote.
-   */
-  instructions: string
-}
+// The modes and the setting's shape, as the Studio protocol carries them.
+export { WRITING_STYLE_MODES, type TextGenerationWritingStyle, type WritingStyleMode }
 
 /** The longest style guide kept: a page of instructions, not a document to pay for on every draft. */
 export const MAX_WRITING_STYLE_INSTRUCTIONS_LENGTH = 2_000

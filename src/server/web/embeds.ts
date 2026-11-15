@@ -239,6 +239,7 @@ export function embedFrameAllowed(line: string, conversation: EmbedConversation)
       return (
         (frame.method === 'conversation.loadEarlier' ||
           frame.method === 'conversation.toolDetail' ||
+          frame.method === 'conversation.event' ||
           frame.method === 'conversation.turnDiff') &&
         names(frame.params?.key)
       )

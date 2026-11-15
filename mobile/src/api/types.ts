@@ -1,12 +1,3 @@
-export {
-  mobileControlProtocolVersion,
-  type MobileControlCommand,
-  type MobileControlErrorCode,
-  type MobileControlSnapshot,
-  type MobileSnapshotCollection,
-  validateMobileControlSnapshot,
-} from "../shared/mobile-control";
-
 /**
  * One paired desktop, as this phone holds it: a tailnet pairing with the
  * desktop's Studio gateway. There is no other kind — the phone reaches a
@@ -39,7 +30,6 @@ export interface MobileSession {
    * declared anything — those read as "unknown", never as "old".
    */
   tailnetTransportVersion?: number;
-  tailnetCapabilities?: string[];
   /**
    * How the desktop draws itself as a machine — its kind and colour, the
    * person's override applied — from the `machine` its identity answers with.
@@ -47,6 +37,12 @@ export interface MobileSession {
    * not send one, and then the desktop wears the generic remote mark.
    */
   machineMark?: DesktopMachineMark;
+  /**
+   * The desktop's Studio environment id, from its identity: the same on every
+   * pairing with it and across a rename, and what a chat link names it by.
+   * Re-read on foreground. Absent until a Studio that says one has answered.
+   */
+  environmentId?: string;
   status?: DesktopSessionStatus;
   lastSeenAt?: string;
   revokedAt?: string;
@@ -60,9 +56,23 @@ export interface DesktopMachineMark {
 
 export type DesktopSessionStatus = "online" | "offline" | "stale" | "revoked";
 
+/**
+ * What a call to the desktop can fail with, in the phone's words: a request
+ * the desktop could not read, a method it does not serve, and what the
+ * transport said (no credential, a grant that does not reach it, a pairing
+ * the desktop ended, no desktop to reach).
+ */
+export type ApiErrorCode =
+  | "invalid_payload"
+  | "command_not_supported"
+  | "unauthenticated"
+  | "unauthorized"
+  | "device_revoked"
+  | "desktop_unavailable";
+
 export interface ApiResult<TData> {
   ok: boolean;
   data?: TData;
-  errorCode?: import("../shared/mobile-control").MobileControlErrorCode;
+  errorCode?: ApiErrorCode;
   message?: string;
 }

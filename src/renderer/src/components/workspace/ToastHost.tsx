@@ -7,6 +7,8 @@ import { createModuleToastSink } from './moduleToasts'
 import { isPairRequestTerminalPhase } from '../../../../shared/tailnet'
 import { PairRequestToastAccept } from '../remote/PairRequestToastAccept'
 import { shortMachineName } from '../remote/machineRowModel'
+import { tailnetApi } from '../../studio/tailnet'
+import { clientSupports } from '../../clientCapabilities'
 
 // The main window's toast host: mounts the one region and runs the app-level
 // producers that have no pane of their own (MC: remote-sessions-ux /
@@ -58,8 +60,9 @@ function useModuleToastSink(): void {
 function usePairRequestToastBridge(): void {
   const announced = useRef(new Set<string>())
   useEffect(() => {
-    if (typeof window.api.onTailnetEvent !== 'function') return
-    return window.api.onTailnetEvent((payload) => {
+    // Studio's own window's: a browser tab administers no listener or mesh.
+    if (!clientSupports('tailnet-admin')) return
+    return tailnetApi.onTailnetEvent((payload) => {
       const event = payload.event
       if (event.kind !== 'pair-request') return
       const toastId = pairRequestToastId(event.requestId)
@@ -113,8 +116,9 @@ export const LISTENER_TOAST_ID = 'tailnet-listener'
 function useListenerToastBridge(): void {
   const stopped = useRef(false)
   useEffect(() => {
-    if (typeof window.api.onTailnetEvent !== 'function') return
-    return window.api.onTailnetEvent((payload) => {
+    // Studio's own window's: a browser tab administers no listener or mesh.
+    if (!clientSupports('tailnet-admin')) return
+    return tailnetApi.onTailnetEvent((payload) => {
       const event = payload.event
       if (event.kind !== 'listener') return
       if (!event.running) {
@@ -147,8 +151,9 @@ function useMeshToastBridge(): void {
   const revokedConnections = useRef(new Set<string>())
 
   useEffect(() => {
-    if (typeof window.api.onMeshEvent !== 'function') return
-    return window.api.onMeshEvent((event) => {
+    // Studio's own window's: a browser tab administers no listener or mesh.
+    if (!clientSupports('tailnet-admin')) return
+    return tailnetApi.onMeshEvent((event) => {
       if (event.kind === 'machine-paired') {
         showToast({
           tone: 'good',

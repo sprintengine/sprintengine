@@ -1,13 +1,13 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const {
   JUMP_SLACK,
   jumpMark,
   jumpToLatest,
   newRepliesSince,
   transcriptScrollable,
-} = require("../../../.mobile-test-build/src/features/conversations/jumpToLatest.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/jumpToLatest.js");
 
 function event(seq, type, payload) {
   return { id: `event-${seq}`, seq, sessionId: "session", workspaceId: "workspace", agentId: "agent", createdAt: seq, type, payload };
@@ -23,7 +23,7 @@ function exchange(seq, turn, words) {
 }
 // The rows as the screen holds them, with the turn still arriving.
 function view(events) {
-  const projected = projectConversation(events);
+  const projected = projectPhoneConversation(events);
   const live = projected.replies.find((reply) => reply.streaming)?.turn ?? null;
   return { rows: projected.rows, live, busy: projected.turnBusy };
 }

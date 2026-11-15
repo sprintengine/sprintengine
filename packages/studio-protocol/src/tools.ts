@@ -26,6 +26,13 @@ import { parseStudioConversationKey, type StudioConversationKey } from './key.js
 // `client-tools` capability. A client that never offers is never sent a
 // `call`, and a client only sends `reply` or `progress` to a Studio that
 // advertised the capability, so neither end is handed a frame it does not know.
+//
+// Grants. Offering, withdrawing and focusing are `tools:offer`, and so is what
+// a client that offers tools reads beside its offer: the catalog (its method
+// and topic) and the toolsets a chat was opened to (with `conversation:read`).
+// Opening a chat to an app's toolset, or closing it, changes what an agent may
+// call, so `tools.grant` needs `settings:write` beside `conversation:operate`,
+// as revoking an approval rule does. A paired device holds neither.
 
 // ── Names ───────────────────────────────────────────────────────────────────
 
@@ -273,9 +280,9 @@ export type StudioToolsMethodMap = {
   }
   /** Every toolset this client may see: its own and the built-ins; an owner sees all of them. */
   'tools.catalog': { params: Record<string, never>; result: { toolsets: StudioToolsetListing[] } }
-  /** Owners only: the app toolsets one conversation was opened to. */
+  /** The app toolsets one conversation was opened to (`conversation:read` and `tools:offer`). */
   'tools.grants': { params: { key: StudioConversationKey }; result: { grants: string[] }; errors: 'not_found' }
-  /** Owners only: open one conversation to one app's toolset, or close it again. */
+  /** Open one conversation to one app's toolset, or close it again (`conversation:operate` and `settings:write`). */
   'tools.grant': {
     params: { key: StudioConversationKey; toolset: string; granted: boolean; commandId: string }
     result: { grants: string[] }
@@ -587,16 +594,16 @@ export const STUDIO_TOOLS_METHODS: StudioMethodTable<StudioToolsMethodMap> = {
     },
   },
   'tools.catalog': {
-    scope: 'conversation:read',
+    scope: 'tools:offer',
     mutation: false,
     capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
     params: studioNoParams,
   },
   'tools.grants': {
     scope: 'conversation:read',
+    extraPermissions: ['tools:offer'],
     mutation: false,
     capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    owner: true,
     params: (value) => {
       const key = parseStudioConversationKey(value.key)
       return key ? studioParams({ key }) : refuse(KEY)
@@ -604,9 +611,9 @@ export const STUDIO_TOOLS_METHODS: StudioMethodTable<StudioToolsMethodMap> = {
   },
   'tools.grant': {
     scope: 'conversation:operate',
+    extraPermissions: ['settings:write'],
     mutation: true,
     capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    owner: true,
     params: (value) => {
       const key = parseStudioConversationKey(value.key)
       if (!key) return refuse(KEY)
@@ -621,7 +628,7 @@ export const STUDIO_TOOLS_METHODS: StudioMethodTable<StudioToolsMethodMap> = {
 
 export const STUDIO_TOOLS_TOPICS: StudioTopicTable<StudioToolsTopicMap> = {
   'tools.catalog': {
-    scope: 'conversation:read',
+    scope: 'tools:offer',
     capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
     push: true,
     params: studioNoParams,

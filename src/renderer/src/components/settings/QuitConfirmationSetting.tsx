@@ -8,7 +8,7 @@ export function QuitConfirmationSetting() {
   return (
     <MainOwnedSettingToggle
       label="Ask before quitting while agents are working"
-      description="Quitting stops any agent that is mid-turn or waiting on you."
+      description="Quitting stops any agent that is mid-turn or waiting on you, and this computer's schedules and pull request watches until the app opens again; the question names them."
       read={window.api?.getQuitConfirmation}
       write={(enabled) => window.api.setQuitConfirmation(enabled)}
     />

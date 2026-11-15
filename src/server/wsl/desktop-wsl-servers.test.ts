@@ -4,9 +4,9 @@ import { test } from 'vitest'
 import type { ExecutionHostId, ExecutionHostSettings } from '../../shared/execution-host'
 import { createDesktopWslServers } from './desktop-wsl-servers'
 
-// The per-distribution switch is the only thing that sends a distribution's
-// chats to a Studio server inside it, whichever process owns the core: a
-// person who never turned it on gets no server, no install and no listener.
+// A distribution's Studio server holds its chats (design-wsl-ssh-direct PR
+// 3c), whichever process owns the core. Building the supervisor starts
+// nothing: a server starts when a chat, a window or the hand-over needs it.
 
 function servers(hosts: Partial<Record<ExecutionHostId, Partial<ExecutionHostSettings>>>) {
   return createDesktopWslServers({
@@ -20,11 +20,6 @@ function servers(hosts: Partial<Record<ExecutionHostId, Partial<ExecutionHostSet
   })
 }
 
-test('chats run on a distribution’s server only where the person turned it on', () => {
-  assert.equal(servers({}).chatServerOn('Ubuntu'), false, 'off by default')
-  assert.equal(servers({ 'wsl:Ubuntu': { chatServer: 'off' } }).chatServerOn('Ubuntu'), false)
-  const on = servers({ 'wsl:Ubuntu': { chatServer: 'on' } })
-  assert.equal(on.chatServerOn('Ubuntu'), true)
-  assert.equal(on.chatServerOn('Debian'), false, 'one distribution’s switch is its own')
-  assert.deepEqual(on.manager.statuses(), [], 'nothing is started by asking')
+test('building the supervisor starts no server', () => {
+  assert.deepEqual(servers({ 'wsl:Ubuntu': { serverTransport: 'stdio' } }).manager.statuses(), [])
 })

@@ -11,10 +11,23 @@ import type { CapabilityManifest } from './index.js'
  * against as `engines.hostApi` in its manifest; the host loads it when that
  * number is within `[HOST_API_MIN_SUPPORTED, HOST_API_VERSION]`.
  */
-export const HOST_API_VERSION = 1
+export const HOST_API_VERSION = 2
 
-/** The oldest host API a host still loads modules for. */
-export const HOST_API_MIN_SUPPORTED = 1
+/**
+ * The oldest host API a host still loads modules for. Host API 2 replaced
+ * host API 1's IPC channels (`registerIpc`, `RendererHost.invoke`) with
+ * declared methods, so a module built for 1 is refused, told how to rebuild.
+ */
+export const HOST_API_MIN_SUPPORTED = 2
+
+/** What each host API this host no longer loads lost, and how a module built for it is rebuilt. */
+const RETIRED_HOST_APIS: Readonly<Record<number, string>> = {
+  1: "Host API 2 replaced its IPC channels with declared methods. Rebuild it against @sprintengine/module-sdk 2: MainHost.registerIpc becomes registerMethods, and the window's host.invoke becomes host.methods().read or .operate.",
+}
+
+/** Where a refused module's author is sent, and what someone whose agent wrote it can do. */
+const UPDATE_HELP =
+  'The Drop-in extensions guide (docs/module-authors/drop-in-extensions.md) says how. If an agent made it, ask an agent to update it.'
 
 /**
  * A feature a module can ask the running host about with `host.supports(...)`
@@ -172,7 +185,7 @@ export function checkHostApiCompatibility(
     return {
       ok: false,
       code: 'host_api_too_old',
-      message: `The module was built for host API ${hostApi}, and this version of the app loads ${HOST_API_MIN_SUPPORTED} or newer. Rebuild it against a current SDK.`,
+      message: `The module was built for host API ${hostApi}, and this version of the app loads ${HOST_API_MIN_SUPPORTED} or newer. ${RETIRED_HOST_APIS[hostApi] ?? 'Rebuild it against a current SDK.'} ${UPDATE_HELP}`,
     }
   }
   return { ok: true }

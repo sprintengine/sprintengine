@@ -1,27 +1,26 @@
 // How the Windows side runs things in a WSL distribution: a shell with its
 // script on stdin, a script to completion, or one argv (`tar`) with a body
-// streamed to its stdin. One shape for the helper's install and the Studio
-// server's start, so the server's tests can stand a plain `sh` in for
-// `wsl.exe` the way the helper's do.
+// streamed to its stdin. One shape for the Studio server's install and its
+// start, so the server's tests can stand a plain `sh` in for `wsl.exe`.
 
 import { spawn } from 'node:child_process'
 import type { Readable } from 'node:stream'
 
 import { killProcessTree } from '../process-tree-kill'
 import type { RunOutcome } from '../process-run'
-import type { HelperProcess } from './wsl-helper-client'
+import type { WslStdioProcess } from './wsl-process'
 import { decodeWslOutput, runWslScript, wslDistroArgs } from './wsl-distro'
 
 export type WslRunner = {
   /** `wsl.exe -d <distro> --cd ~ --exec sh -s`, all three pipes open; the caller writes the script. */
-  spawnShell(distro: string): HelperProcess
+  spawnShell(distro: string): WslStdioProcess
   /** A script run by `sh -s` in the Linux home, to completion. */
   runScript(distro: string, script: string, options: { timeoutMs: number | null }): Promise<RunOutcome>
   /** `wsl.exe -d <distro> --cd ~ --exec <argv>` with `body` streamed to its stdin. */
   runExec(distro: string, argv: readonly string[], body: Buffer | Readable, timeoutMs: number): Promise<RunOutcome>
 }
 
-function spawnShell(distro: string): HelperProcess {
+function spawnShell(distro: string): WslStdioProcess {
   const child = spawn('wsl.exe', [...wslDistroArgs(distro), '--cd', '~', '--exec', 'sh', '-s'], {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -35,7 +34,7 @@ function spawnShell(distro: string): HelperProcess {
     kill: () => killProcessTree(child),
     once: (event: 'close' | 'error', listener: (...args: never[]) => void) =>
       child.once(event, listener as (...args: unknown[]) => void),
-  } as HelperProcess
+  } as WslStdioProcess
 }
 
 function runExec(

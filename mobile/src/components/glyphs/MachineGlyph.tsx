@@ -1,6 +1,8 @@
 import { Circle, Path, Rect } from "react-native-svg";
 
-import type { ConversationPullRequestState } from "../../api/conversationWire";
+import {
+  type ConversationWirePullRequestState as ConversationPullRequestState,
+} from "../../../../packages/conversation-protocol/src/public";
 import { useTheme } from "../../theme/ThemeProvider";
 import { GlyphFrame, iconSize, type GlyphProps } from "./Glyph";
 import {

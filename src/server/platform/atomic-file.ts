@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { chmodSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { chmod, rename, unlink, writeFile } from 'node:fs/promises'
+import { chmodSync, closeSync, fsyncSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmod, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 // ── Replacing a file whole ──────────────────────────────────────────────────
@@ -22,6 +22,45 @@ export type AtomicWriteOptions = {
    * leaves it. Skipped on Windows, which has no permission bits to set.
    */
   exactMode?: boolean
+  /**
+   * Flush the new bytes to the disk before the rename, and the rename after
+   * it, so a power cut leaves the old file or the new one, never an empty
+   * one: for a record whose loss loses work (a hand-over's journal).
+   */
+  durable?: boolean
+}
+
+/** Flush a file, or a folder's entries, to the disk; a folder that cannot be opened for it (Windows) is passed over. */
+async function flushToDisk(path: string, folder = false): Promise<void> {
+  const handle = await open(path, 'r').catch((error: unknown) => {
+    if (folder) return null
+    throw error
+  })
+  if (!handle) return
+  try {
+    await handle.sync().catch((error: unknown) => {
+      if (!folder) throw error
+    })
+  } finally {
+    await handle.close()
+  }
+}
+
+function flushToDiskSync(path: string, folder = false): void {
+  let fd: number
+  try {
+    fd = openSync(path, 'r')
+  } catch (error) {
+    if (folder) return
+    throw error
+  }
+  try {
+    fsyncSync(fd)
+  } catch (error) {
+    if (!folder) throw error
+  } finally {
+    closeSync(fd)
+  }
 }
 
 /**
@@ -50,7 +89,11 @@ function renameIsRetryable(error: unknown, attempt: number): boolean {
 const renameRetryDelayMs = (attempt: number): number => 25 * (attempt + 1)
 
 /** Replace `path` with `data` through a temporary file and a rename. */
-export async function writeFileAtomic(path: string, data: string, options: AtomicWriteOptions = {}): Promise<void> {
+export async function writeFileAtomic(
+  path: string,
+  data: string | Uint8Array,
+  options: AtomicWriteOptions = {},
+): Promise<void> {
   const temporary = stagingPath(path)
   try {
     await writeFile(temporary, data, {
@@ -60,6 +103,7 @@ export async function writeFileAtomic(path: string, data: string, options: Atomi
     if (options.exactMode && options.mode !== undefined && process.platform !== 'win32') {
       await chmod(temporary, options.mode)
     }
+    if (options.durable) await flushToDisk(temporary)
     for (let attempt = 0; ; attempt++) {
       try {
         await rename(temporary, path)
@@ -69,6 +113,7 @@ export async function writeFileAtomic(path: string, data: string, options: Atomi
         await new Promise((resolveDelay) => setTimeout(resolveDelay, renameRetryDelayMs(attempt)))
       }
     }
+    if (options.durable) await flushToDisk(dirname(path), true)
   } catch (error) {
     await unlink(temporary).catch(() => undefined)
     throw error
@@ -87,6 +132,7 @@ export function writeFileAtomicSync(path: string, data: string, options: AtomicW
     if (options.exactMode && options.mode !== undefined && process.platform !== 'win32') {
       chmodSync(temporary, options.mode)
     }
+    if (options.durable) flushToDiskSync(temporary)
     for (let attempt = 0; ; attempt++) {
       try {
         renameSync(temporary, path)
@@ -96,6 +142,7 @@ export function writeFileAtomicSync(path: string, data: string, options: AtomicW
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, renameRetryDelayMs(attempt))
       }
     }
+    if (options.durable) flushToDiskSync(dirname(path), true)
   } catch (error) {
     try {
       unlinkSync(temporary)

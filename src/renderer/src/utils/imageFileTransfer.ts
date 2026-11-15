@@ -2,6 +2,7 @@ import { ATTACHABLE_IMAGE_TYPES } from '../../../shared/conversation-attachments
 import { isPathInside } from '../../../shared/host-paths'
 import { clientSupports } from '../clientCapabilities'
 import { hasFileDropData, readFileDropPayload, SPRINTENGINE_FILE_DROP_MIME } from './terminalDrop'
+import { filesApi } from '../studio/files'
 
 // DataTransfer plumbing shared by every surface that takes an image from a
 // paste or a drop — the chat composer (AgentChatView) and the new-chat launch
@@ -321,7 +322,7 @@ function fileFromDataUrl(dataUrl: string, name: string): File | null {
  */
 export async function readPastedImagePaths(
   paths: string[],
-  readDataUrl: (path: string) => Promise<string> = (path) => window.api.readImageDataUrl(path),
+  readDataUrl: (path: string) => Promise<string> = (path) => filesApi.readImageDataUrl(path),
 ): Promise<{ ok: true; files: File[] } | { ok: false; message: string }> {
   const files: File[] = []
   for (const path of paths) {

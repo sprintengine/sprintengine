@@ -1,368 +1,45 @@
-// What the tailnet transport says it speaks, and what this build makes of it
-//. No react-native import, so `node --test` can pin it.
+// What the tailnet transport says it is, as this phone keeps it. No
+// react-native import, so `node --test` can pin it.
 //
-// The desktop's gateway carries `transportVersion` and `capabilities` on
-// `/tailnet/v1/health` (unauthenticated), `/tailnet/v1/identity` and the
-// `/tailnet/v1/pair` answer (tailnet-routes.ts, TAILNET_TRANSPORT_VERSION and
-// TAILNET_CAPABILITIES). The version bumps when the wire changes in a way a
-// client must know about; a capability is an additive feature that ships
-// without a bump. Neither side refuses the other over a mismatch — the list
-// still draws — but the desktop's row says which side is behind, because a
-// person standing at the desktop can update it and a person holding the phone
-// can update the app.
+// The desktop's gateway carries `transportVersion` on `/tailnet/v1/health`
+// (unauthenticated), `/tailnet/v1/identity` and the `/tailnet/v1/pair` answer
+// (tailnet-routes.ts, TAILNET_TRANSPORT_VERSION). This phone shows it on the
+// desktop's detail screen and judges nothing by it: what a desktop serves,
+// and whether the two are in step, come from its Studio protocol's welcome
+// (`desktopStudio.ts`, `chatOffers.ts`). A desktop from before transport 3
+// serves no Studio protocol, which the phone's connection says in words.
 
-/** The oldest transport this build will talk to. */
-export const TAILNET_TRANSPORT_MIN = 1;
-
-/**
- * The newest transport this build knows. 2 (2026-09-06) added the terminal
- * surface's change feed and sliced frames; the phone no longer reads either
- * (terminals left it 2026-09-29), but a version-2 Studio is still current.
- */
-export const TAILNET_TRANSPORT_KNOWN = 2;
-
-/** What a gateway declared, as stored on the session. Absent fields mean a Studio that declared nothing. */
+/** What a gateway declared, as stored on the session. Absent means a Studio that declared nothing. */
 export interface TailnetTransportDeclaration {
   transportVersion: number | null;
-  capabilities: string[] | null;
 }
 
-/**
- * Reads the declaration out of any gateway answer that may carry one — pair,
- * identity, health. A missing field is null, not 0 or []: a version-1 Studio
- * sends `transportVersion: 1` and no `capabilities`, and "declared none" must
- * stay distinguishable from "declared an empty list".
- */
+/** Reads the declaration out of any gateway answer that may carry one: pair, identity, health. */
 export function readTransportDeclaration(body: unknown): TailnetTransportDeclaration {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return { transportVersion: null, capabilities: null };
-  const record = body as Record<string, unknown>;
-  const version = record.transportVersion;
-  const capabilities = record.capabilities;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { transportVersion: null };
+  const version = (body as Record<string, unknown>).transportVersion;
   return {
     transportVersion: typeof version === "number" && Number.isInteger(version) && version >= 0 ? version : null,
-    capabilities: Array.isArray(capabilities) ? capabilities.filter((entry): entry is string => typeof entry === "string") : null,
   };
 }
 
-/**
- * Where a desktop stands against this build.
- *
- * - `current`: inside the range this build speaks.
- * - `studio-older`: below the minimum. Nothing is refused, but what this build
- *   was written against is not there, and the desktop's row says so.
- * - `app-older`: above what this build knows. The desktop may be sending
- *   shapes this build does not read; the row says the app needs updating.
- * - `unknown`: paired before either side declared anything.
- */
-export type TransportStanding = "current" | "studio-older" | "app-older" | "unknown";
-
-export function transportStanding(session: { tailnetTransportVersion?: number }): TransportStanding {
-  const version = session.tailnetTransportVersion;
-  if (typeof version !== "number") return "unknown";
-  if (version < TAILNET_TRANSPORT_MIN) return "studio-older";
-  if (version > TAILNET_TRANSPORT_KNOWN) return "app-older";
-  return "current";
-}
-
-/** The one sentence a desktop row says when the two sides are out of step; null when there is nothing to say. */
-export function transportStandingSentence(standing: TransportStanding): string | null {
-  switch (standing) {
-    case "studio-older":
-      return "This desktop's Studio is older than this app expects. Update Studio on the desktop.";
-    case "app-older":
-      return "This desktop's Studio is newer than this app knows. Update the app.";
-    default:
-      return null;
-  }
-}
-
-/** The transport line on the desktop's detail screen: the version, and what it can do, in the desktop's own words. */
-export function describeTransport(session: { tailnetTransportVersion?: number; tailnetCapabilities?: string[] }): string {
-  const version = typeof session.tailnetTransportVersion === "number" ? `tailnet v${session.tailnetTransportVersion}` : "tailnet, version not declared";
-  const capabilities = session.tailnetCapabilities;
-  if (!capabilities) return version;
-  return capabilities.length > 0 ? `${version} · ${capabilities.join(", ")}` : `${version} · no extras`;
-}
-
-/**
- * Whether the desktop said it lists each chat's models and takes `setModel`
- * (`conversation-models`). Absence is a NO: an older desktop refuses the
- * command, so an undeclared Studio shows no model control rather
- * than one that fails when used. Identity is re-read on every foreground, so a
- * desktop that updates lights the control up without a re-pair.
- */
-export function declaresConversationModels(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-models") ?? false;
-}
-
-/**
- * Whether the desktop said it serves a chat's pictures over the tailnet
- * (`conversation-images`). Absence is a NO: an older desktop has no such
- * route, so its chats show no picture at all rather than one that fails to
- * load. Like `conversation-models`, it lights up on the next foreground once
- * the desktop updates.
- */
-export function declaresConversationImages(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-images") ?? false;
-}
-
-/**
- * Whether the desktop serves the pictures a person sent with a message
- * (`conversation-message-images`), by the `ref` their `user_message` recorded.
- * Absence is a NO: an older desktop answers that request 400, so the phone
- * names such a picture instead of asking for it.
- */
-export function declaresMessageImages(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-message-images") ?? false;
-}
-
-/**
- * Whether the desktop takes files of any type with a message
- * (`conversation-message-files`): its upload route takes `kind=file`, and a
- * send's upload ids attach those files to the message by their path there.
- * Absent means pictures only, so the composer offers no File row.
- */
-export function declaresMessageFiles(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-message-files") ?? false;
-}
-
-/**
- * Whether the desktop said its chats run on all four permission presets
- * (`conversation-permission-modes`): `manual` and `auto` beside `none` and
- * `bypass`. Absence is a NO: an older desktop reads `manual` and `auto` as
- * `none`, so offering them there would promise a mode the chat never runs.
- */
-export function declaresPermissionModes(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-permission-modes") ?? false;
-}
-
-/**
- * Whether the desktop said it takes `resolvePlan` (`conversation-plans`), which
- * answers a plan request as a plan and nothing else. Absence is a NO: every
- * desktop still takes a plan answered as an approval.
- */
-export function declaresConversationPlans(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-plans") ?? false;
-}
-
-/**
- * Whether the desktop said it holds a message queued behind a running turn
- * and sends it itself (`conversation-queued-sends`). Absence is a NO, and the
- * phone holds the message as it always has: an older desktop drops `queue`
- * and refuses the send as busy, and has no `cancelQueued` to take one back.
- */
-export function declaresQueuedSends(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-queued-sends") ?? false;
-}
-
-/**
- * Whether the desktop said it holds what a queued message carries beside its
- * words, pictures and files (`conversation-queued-attachments`): a `send` with
- * `queue` takes `uploadIds`, and the desktop makes them its own the moment it
- * holds the message, so the phone may sleep before the turn ends. Absence is a
- * NO: an older desktop refuses `queue` beside them, and such a message waits
- * on the phone.
- */
-export function declaresQueuedAttachments(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-queued-attachments") ?? false;
-}
-
-/**
- * Whether the desktop said it keeps a message scheduled into a chat and sends
- * it at its time (`conversation-scheduled-sends`). Absence is a NO: the chat's
- * "+" offers no Schedule, since an older desktop refuses the commands.
- */
-export function declaresScheduledSends(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-scheduled-sends") ?? false;
-}
-
-/**
- * Whether the desktop answers a conversation socket's `hello`
- * (`conversation-hello`) with its protocol version and capabilities. It is
- * the cheapest frame a socket can ask about, so a chat probes with it where
- * the desktop takes it. Absence is a NO: an older desktop refuses a `hello`,
- * so the probe there stays a `list`.
- */
-export function declaresConversationHello(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-hello") ?? false;
-}
-
-/**
- * Whether the desktop scales a chat's pictures down itself and takes larger
- * uploads (`conversation-image-downscale`), up to 20 MB. Absence is a NO: an
- * older desktop refuses a picture over 5 MB, so the phone refuses it first
- * rather than upload it for nothing.
- */
-export function declaresImageDownscale(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-image-downscale") ?? false;
-}
-
-/**
- * Whether the desktop takes a message into a running turn
- * (`conversation-steer-sends`). Absence is a NO, and every message sent
- * mid-turn queues, as before.
- */
-export function declaresSteerSends(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-steer-sends") ?? false;
-}
-
-/**
- * Whether the desktop stops one agent of a chat by itself
- * (`conversation-stop-subagent`). Absence is a NO: an older desktop refuses
- * the command, so the phone offers no agent a Stop of its own there. Such a
- * desktop's turn Stop still ends the agents with the turn.
- */
-export function declaresStopSubagent(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-stop-subagent") ?? false;
-}
-
-/**
- * Whether the desktop passes the person's words to one agent of a chat
- * (`conversation-agent-message`). Absence is a NO: an older desktop refuses the
- * command, so the phone draws no box for an agent there.
- */
-export function declaresAgentMessage(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-agent-message") ?? false;
-}
-
-/**
- * Whether the desktop names a chat's sub-agents when asked
- * (`conversation-subagents`). Absence is a NO: the phone does not ask, and a
- * chat lists only the agents its CLI spawned, as before.
- */
-export function declaresConversationSubagents(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-subagents") ?? false;
-}
-
-/**
- * Whether the desktop says what it knows of its plans' usage limits
- * (`conversation-usage-limits`). Absence is a NO: no Usage row.
- */
-export function declaresUsageLimits(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-usage-limits") ?? false;
-}
-
-/**
- * Whether the desktop expands a quote's token in a message it is sent
- * (`conversation-quote-tokens`). Absence is a NO: the phone writes a quote as
- * a blockquote, the words an older desktop's agent reads, and never says in
- * its `hello` that it reads tokens.
- */
-export function declaresQuoteTokens(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-quote-tokens") ?? false;
-}
-
-/**
- * Whether the desktop said its chat list carries each chat's title and
- * clocks, leaves settled chats out, and takes `conversation.settle` and
- * `conversation.visit` (`conversation-lifecycle`). Absence is a NO: an older
- * desktop has neither tool, so the phone offers no Settle and stamps no
- * visits there, and reads its list as it always has.
- */
-export function declaresConversationLifecycle(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("conversation-lifecycle") ?? false;
-}
-
-/**
- * Whether the desktop said a paired device may write its chats' row marks
- * (`chat-row-menu`), Snooze and Wake now among them: `conversation.snooze`,
- * with each listed chat's `snoozedUntil`. Absence is a NO: an older desktop
- * answers the tool "Unknown tool", so the phone offers no Snooze there.
- */
-export function declaresChatRowMenu(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("chat-row-menu") ?? false;
-}
-
-/**
- * Whether the desktop said it takes `conversation.mark_unread`
- * (`chat-mark-unread`), which moves a chat's visit clock back so its latest
- * finish reads as unseen on every device. Absence is a NO: an older desktop
- * answers the tool "Unknown tool", so the phone offers no Mark unread there,
- * and its list's visit clock is read as only ever moving forward.
- */
-export function declaresChatMarkUnread(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("chat-mark-unread") ?? false;
-}
-
-/**
- * Whether the desktop said `conversation.create` takes `worktree`
- * (`new-chat-worktree`): a new chat in a worktree of its own, cut as the
- * desktop's New chat cuts one. Absence is a NO, and the one that matters most
- * of these: an older desktop skips an argument it does not know, so a
- * `worktree` sent there starts the chat in the checkout and says nothing.
- */
-export function declaresNewChatWorktree(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("new-chat-worktree") ?? false;
-}
-
-/**
- * Whether the desktop said `schedule.create` takes a one-time instant, a
- * name and a worktree name (`scheduled-agents`). Without it the phone still
- * lists, runs and makes repeating schedules there, but offers no "Once":
- * an older handler refuses an argument it does not declare.
- */
-export function declaresScheduledAgents(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("scheduled-agents") ?? false;
-}
-
-/**
- * Whether the desktop said `conversation.create` takes `effort`
- * (`new-chat-effort`), one of the CLI's `reasoningLevels`. Absence is a NO:
- * an older desktop would drop the level without a word.
- */
-export function declaresNewChatEffort(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("new-chat-effort") ?? false;
-}
-
-/**
- * Whether the desktop said `cli.runtime.list` answers each CLI with its model
- * picker's own rows (`cli-runtime-catalog`). Absence is a NO, and the picker
- * reads the older `models` list as it always has.
- */
-export function declaresCliRuntimeCatalog(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("cli-runtime-catalog") ?? false;
-}
-
-/**
- * Whether the desktop said `canvas.list` takes `scope: machine` and answers
- * every board there with its project and id (`canvas-machine-boards`).
- * Absence is a NO: the phone then lists one project's boards at a time, with
- * no `scope`, as an older desktop has always answered, and says so.
- */
-export function declaresCanvasMachineBoards(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("canvas-machine-boards") ?? false;
-}
-
-/**
- * Whether the desktop said `conversation.create` takes `noProject` in place of
- * a workspace (`new-chat-no-project`): the chat runs in a folder of its own
- * there. Absence is a NO: an older desktop refuses a call with no workspace.
- */
-export function declaresNewChatNoProject(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("new-chat-no-project") ?? false;
+/** The transport line on the desktop's detail screen. */
+export function describeTransport(session: { tailnetTransportVersion?: number }): string {
+  return typeof session.tailnetTransportVersion === "number" ? `tailnet v${session.tailnetTransportVersion}` : "tailnet, version not declared";
 }
 
 /**
  * The session with a fresh declaration folded in, or null when nothing moved —
  * so a foreground re-read that finds the same Studio writes nothing to storage.
  */
-export function withTransportDeclaration<T extends { tailnetTransportVersion?: number; tailnetCapabilities?: string[] }>(
+export function withTransportDeclaration<T extends { tailnetTransportVersion?: number }>(
   session: T,
   declaration: TailnetTransportDeclaration,
 ): T | null {
   const nextVersion = declaration.transportVersion ?? session.tailnetTransportVersion;
-  const nextCapabilities = declaration.capabilities ?? session.tailnetCapabilities;
-  const versionSame = nextVersion === session.tailnetTransportVersion;
-  const capabilitiesSame =
-    nextCapabilities === session.tailnetCapabilities ||
-    (Array.isArray(nextCapabilities) &&
-      Array.isArray(session.tailnetCapabilities) &&
-      nextCapabilities.length === session.tailnetCapabilities.length &&
-      nextCapabilities.every((entry, index) => entry === session.tailnetCapabilities?.[index]));
-  if (versionSame && capabilitiesSame) return null;
+  if (nextVersion === session.tailnetTransportVersion) return null;
   const next = { ...session };
   if (nextVersion !== undefined) next.tailnetTransportVersion = nextVersion;
-  if (nextCapabilities !== undefined) next.tailnetCapabilities = nextCapabilities;
   return next;
 }
 
@@ -383,6 +60,17 @@ export function withMachineMark<T extends { machineMark?: { kind: string; color:
   if (machine) next.machineMark = { kind: machine.kind, color: machine.color };
   else delete next.machineMark;
   return next;
+}
+
+/**
+ * The session with the desktop's environment id folded in, or null when it is
+ * the one already held or the identity said none. An id once said is kept
+ * when a later answer says none (a Studio rolled back to a build before ids):
+ * the id names the data directory, which a downgrade does not change.
+ */
+export function withEnvironmentId<T extends { environmentId?: string }>(session: T, environmentId: string | null): T | null {
+  if (!environmentId || environmentId === session.environmentId) return null;
+  return { ...session, environmentId };
 }
 
 /**

@@ -5,11 +5,11 @@
 // the phone's chat page here, in the phone's own words and shapes. No
 // react-native import, so `node --test` can pin it.
 
-import type {
-  ConversationLocalServer,
-  ConversationUsageLimitSnapshot,
-  ConversationUsageLimitWindow,
-} from "../../api/conversationWire";
+import {
+  type ConversationWireLocalServer as ConversationLocalServer,
+  type ConversationUsageLimitSnapshot,
+  type ConversationUsageLimitWindow,
+} from "../../../../packages/conversation-protocol/src/public";
 
 /** "Server · dev-site · Running", or "3 servers · 2 running". Null with none. */
 export function serverWords(servers: readonly ConversationLocalServer[] | undefined): { meta: string; sub: string } | null {

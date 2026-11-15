@@ -20,92 +20,41 @@ import type { TerminalPathStyle } from './ipc/terminal'
 
 export const LOCAL_HOST_ID = 'local'
 
-export type ExecutionHostId = typeof LOCAL_HOST_ID | `wsl:${string}`
-
-export type ExecutionHostKind = 'posix' | 'windows' | 'wsl'
-
-export type ExecutionHostState = 'ready' | 'stopped' | 'starting' | 'unavailable'
-
-/** One machine, as the picker and Settings show it. */
-export type ExecutionHostSummary = {
-  id: ExecutionHostId
-  kind: ExecutionHostKind
-  /** "This Mac", "This PC (Windows)", "WSL: Ubuntu". */
-  label: string
-  pathStyle: TerminalPathStyle
-  state: ExecutionHostState
-  /** Why the host is `unavailable` or `stopped`, in words a person can act on. */
-  reason?: string
-  /** WSL only: the distribution `wsl.exe` runs when none is named. */
-  isDefaultDistro?: boolean
-  /** WSL only: whether the person turned this distribution on as a machine. */
-  enabled?: boolean
-  /** WSL only: 1 or 2, when WSL reported it. */
-  wslVersion?: number | null
-  /** WSL only, on a desktop that can run Studio servers in its distributions: where its chats run (phase 7). */
-  chatServer?: WslChatServerSummary
-}
-
-/** Where a distribution's chats run, and how its Studio server stands, in words for Settings. */
-export type WslChatServerSummary = {
-  /** Chats run on a Studio server inside the distribution. */
-  on: boolean
-  state: 'stopped' | 'starting' | 'ready' | 'unavailable' | 'shut-down'
-  /** How Windows reaches it while it is ready: over loopback, or through the stdio bridge. */
-  transport?: 'loopback' | 'stdio'
-  /** Why it is unavailable or shut down, or why the bridge, in words. */
-  reason?: string
-}
+import type {
+  ExecutionHostId,
+  ExecutionHostKind,
+  ExecutionHostSettings,
+  ExecutionHostState,
+  ExecutionHostSummary,
+  HostsListResult,
+  WslServerSummary,
+} from '../../packages/studio-protocol/src/public'
 
 /**
- * The per-machine settings. The local machine's CLI commands stay on the CLI
- * runtime itself (`cliRuntimes[cli].command`, which the Agents tab edits);
- * every other machine keeps its own here, because a binary on PATH in one
- * distribution says nothing about another.
+ * The per-machine settings, as the Studio protocol carries them. The local
+ * machine's CLI commands stay on the CLI runtime itself
+ * (`cliRuntimes[cli].command`); every other machine keeps its own here,
+ * because a binary on PATH in one distribution says nothing about another.
  */
-export type ExecutionHostSettings = {
-  /** WSL: offered as a machine for new chats. A workspace already in it runs either way. */
-  enabled: boolean
-  /** Per-CLI command override on this machine. Blank or absent uses the CLI's own binary name. */
-  cliCommands: Record<string, string>
-  /** Extra environment exported into every launch on this machine. */
-  env: Record<string, string>
-  /** The plain-terminal shell. Absent uses the machine's default (`bash -li` in WSL). */
-  shell?: string
-  /**
-   * WSL: where this distribution's chats run. `on`: a Studio server inside
-   * the distribution (phase 7); `off`: one process per chat, started from
-   * Windows, as before. Absent is the release default
-   * (`DEFAULT_WSL_CHAT_SERVER`), in process and out of process alike.
-   */
-  chatServer?: 'on' | 'off'
-  /** WSL: how Windows reaches that server. `auto` tries loopback first; `stdio` always uses the bridge. */
-  serverTransport?: 'auto' | 'stdio'
+export type { ExecutionHostSettings }
+
+export type { ExecutionHostId }
+
+export type { ExecutionHostKind, ExecutionHostState, ExecutionHostSummary, HostsListResult, WslServerSummary }
+
+/** A machine on this computer's state, in words: Settings and the environment list read it. */
+export function executionHostStateWords(host: Pick<ExecutionHostSummary, 'state' | 'reason' | 'wslVersion'>): string {
+  const lead =
+    host.state === 'ready'
+      ? 'Running'
+      : host.state === 'stopped'
+        ? 'Stopped — starts when a workspace on it needs it'
+        : host.state === 'starting'
+          ? (host.reason ?? 'Starting')
+          : (host.reason ?? 'Unavailable')
+  const version = host.wslVersion ? ` · WSL ${host.wslVersion}` : ''
+  return `${lead}${version}`
 }
-
-/** Where a WSL distribution's chats run when the person has not chosen: off until the flip criteria are met. */
-export const DEFAULT_WSL_CHAT_SERVER: 'on' | 'off' = 'off'
-
-export const HOSTS_CHANNELS = {
-  /** renderer → main: the machines this computer offers, `{ refresh?: boolean }`. */
-  list: 'hosts:list',
-  /** main → renderer: the list changed (a distribution appeared, a setting moved). */
-  changed: 'hosts:changed',
-  /** renderer → main: the Linux home of a WSL host, as the UNC path Windows opens. */
-  home: 'hosts:home',
-} as const
-
-/**
- * What `hosts:list` answers: this machine first, then WSL distributions (all
- * of them for Settings, the enabled ones for the picker). `wsl` says whether
- * WSL answered at all, and is null off Windows.
- */
-export type HostsListResult = {
-  hosts: ExecutionHostSummary[]
-  wsl: { available: boolean; reason?: string } | null
-}
-
-export type HostHomeResult = { ok: true; home: string; native: string } | { ok: false; message: string }
 
 const WSL_PREFIX = 'wsl:'
 // The names WSL itself accepts for a distribution (see `isValidWslDistroName`
@@ -147,17 +96,17 @@ export function normalizeExecutionHostId(value: unknown, platform?: string): Exe
 }
 
 /**
- * A chat's CLI runtimes as a process on `platform` may act on them: off
- * Windows every `wsl:` host id is dropped, so the CLI runs on this machine.
- * A WSL server is handed the runtimes the Windows side built for a WSL
- * workspace, and a stray id there would send a provider looking for
- * `wsl.exe`, or make an approval check respell Linux paths into UNC ones.
+ * A chat's CLI runtimes with every host id dropped: a chat's CLI always runs
+ * on the machine of the Studio that runs the chat. A chat in a WSL
+ * distribution is that distribution's Studio's, which starts its CLI there as
+ * its own (design-wsl-ssh-direct). An id a window or an older peer still
+ * sends would send the CLI's lookup into a distribution from Windows, or
+ * looking for `wsl.exe` from Linux.
  */
-export function cliRuntimesOnPlatform<T extends { hostId?: ExecutionHostId }>(
+export function chatCliRuntimes<T extends { hostId?: ExecutionHostId }>(
   cliRuntimes: Record<string, T | undefined> | undefined,
-  platform: string,
 ): Record<string, T | undefined> | undefined {
-  if (!cliRuntimes || platform === 'win32') return cliRuntimes
+  if (!cliRuntimes) return cliRuntimes
   let changed = false
   const out: Record<string, T | undefined> = {}
   for (const [cli, runtime] of Object.entries(cliRuntimes)) {
@@ -312,7 +261,6 @@ export function normalizeExecutionHostSettings(value: unknown): ExecutionHostSet
     cliCommands: stringRecord(value.cliCommands),
     env,
     ...(shell ? { shell } : {}),
-    ...(value.chatServer === 'on' || value.chatServer === 'off' ? { chatServer: value.chatServer } : {}),
     ...(value.serverTransport === 'auto' || value.serverTransport === 'stdio'
       ? { serverTransport: value.serverTransport }
       : {}),

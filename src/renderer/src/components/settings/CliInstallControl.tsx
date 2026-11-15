@@ -4,6 +4,7 @@ import type { CliDetectResult, CliInstallMethodInfo, CliInstallResult } from '..
 import { LOCAL_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { useAnsiPlainText } from '../../hooks/useAnsiPlainText'
 import { GhostButton, InlineNotice, LifecycleGlyph, PrimaryButton, Select, Spinner, type SelectItem } from '../ui'
+import { agentSettingsApi } from '../../studio/agentSettings'
 
 export type CliInstallControlProps = {
   cli: string
@@ -107,7 +108,7 @@ export function CliInstallControl({
   const runDetect = useCallback(async () => {
     setDetecting(true)
     try {
-      const result = await window.api.cliDetect(cli, { command, ...(hostId ? { hostId } : {}) })
+      const result = await agentSettingsApi.cliDetect(cli, { command, ...(hostId ? { hostId } : {}) })
       if (mountedRef.current) setDetect(result)
     } finally {
       if (mountedRef.current) setDetecting(false)
@@ -130,7 +131,7 @@ export function CliInstallControl({
     setExpanded(true)
     setInstallError(null)
     setMethods(null)
-    const available = await window.api.cliInstallMethods(cli, { command, ...(hostId ? { hostId } : {}) })
+    const available = await agentSettingsApi.cliInstallMethods(cli, { command, ...(hostId ? { hostId } : {}) })
     if (!mountedRef.current) return
     setMethods(available)
     const preferred =
@@ -157,7 +158,7 @@ export function CliInstallControl({
   const loadMethods = useCallback(async (): Promise<CliInstallMethodInfo[]> => {
     if (methodsRef.current) return methodsRef.current
     if (methodsInFlightRef.current) return methodsInFlightRef.current
-    const request = window.api.cliInstallMethods(cli, { command, ...(hostId ? { hostId } : {}) })
+    const request = agentSettingsApi.cliInstallMethods(cli, { command, ...(hostId ? { hostId } : {}) })
     methodsInFlightRef.current = request
     const available = await request.finally(() => {
       if (methodsInFlightRef.current === request) methodsInFlightRef.current = null
@@ -220,7 +221,7 @@ export function CliInstallControl({
     setInstalling(true)
     setInstallError(null)
     setLog('')
-    const unsubscribe = window.api.onCliInstallOutput(
+    const unsubscribe = agentSettingsApi.onCliInstallOutput(
       cli,
       (chunk) => {
         if (mountedRef.current) setLog((prev) => prev + chunk)
@@ -228,7 +229,7 @@ export function CliInstallControl({
       hostId,
     )
     try {
-      const result = await window.api.cliInstall(
+      const result = await agentSettingsApi.cliInstall(
         { cli, methodId: chosen.id },
         { command, ...(hostId ? { hostId } : {}) },
       )

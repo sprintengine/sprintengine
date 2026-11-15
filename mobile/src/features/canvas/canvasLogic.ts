@@ -5,12 +5,9 @@ import {
   type CanvasBoardsApi,
   type PhoneCanvasBoard,
 } from "../../api/canvasBoards";
-import type { DesktopWorkspace, WorkspacesApi } from "../../api/tailnetWorkspaces";
-import { declaresCanvasMachineBoards } from "../../api/tailnetTransport";
 import { formatChatSettledAt } from "../conversations/conversationListLogic";
 
-// The phone's Canvases, as rules: how each paired desktop is asked for its
-// boards, what a row says, what a picture is asked for, and where Continue in
+// The phone's Canvases, as rules: what a desktop's list says, what a row says, what a picture is asked for, and where Continue in
 // a new chat starts. Pure and free of React Native, so the regression suite
 // reads the same rules the screens run. The words are the desktop's where it
 // has words for the same thing (its Canvas pane's All boards, and its picture
@@ -32,88 +29,20 @@ export function canvasContinuePrompt(name: string, board: string): string {
   return `I want to keep working on the Canvas board "${name}". Pass ${board} as \`board\` to every canvas tool, because a bare name could mean another board. Open it with canvas.open, read it with canvas.describe, then ask me what to change.`;
 }
 
-/**
- * How a desktop is asked for its boards.
- *
- * - `machine`: it advertises `canvas-machine-boards`, so one call lists every
- *   board there, removed projects' included.
- * - `project`: an older desktop, asked from a chat: that chat's project alone.
- * - `projects`: an older desktop, asked from home: each project it has open,
- *   one call apiece.
- */
-export type CanvasListMode = "machine" | "project" | "projects";
-
-export function canvasListMode(
-  session: { tailnetCapabilities?: string[] },
-  chat: { workspaceId: string } | null,
-): CanvasListMode {
-  if (declaresCanvasMachineBoards(session)) return "machine";
-  return chat ? "project" : "projects";
-}
-
-/** What the list says, in words, when it is not the whole machine's. Null when it is. */
-export function canvasListModeNote(mode: CanvasListMode, machine: string): string | null {
-  switch (mode) {
-    case "machine":
-      return null;
-    // The desktop's own sentence for the same answer from the same machine.
-    case "project":
-      return `${machine} lists only this project's boards. Update SprintEngine Studio there to see all of them.`;
-    case "projects":
-      return `${machine} lists its boards one project at a time, so these are the boards of the projects open there, and none from a removed project. Update SprintEngine Studio there to see all of them.`;
-  }
-}
-
 /** A refusal of a list or a picture, as a person can act on it. */
 export function canvasRefusalWords(
   machine: string,
   failure: Extract<CanvasAnswer<unknown>, { ok: false }>,
   what: "list" | "picture",
 ): string {
-  // A machine that keeps no canvas tools running: a server with no desktop open offers none.
-  if (failure.code === "unknown_tool")
+  // A Studio that runs no canvas service (a server with no desktop open) serves no boards.
+  if (failure.code === "unavailable" && /does not serve canvas/u.test(failure.message))
     return `${machine} is not offering its boards right now. Open SprintEngine Studio there and try again.`;
   if (failure.errorCode === "unauthorized")
     return `This phone may not read ${machine}'s projects, so not its boards. Pair again with project access.`;
   if (failure.code === "no_picture") return `${machine} sent no picture of this board.`;
   if (failure.message) return failure.message;
   return what === "list" ? `${machine} did not list its boards.` : `${machine} could not draw this board.`;
-}
-
-/**
- * The projects an older desktop is asked about from home: one workspace per
- * project, the checkout where it is open, else the first of its worktrees.
- * A workspace with no folder is no project and has no boards.
- */
-export function canvasProjectsToAsk(
-  workspaces: readonly Pick<DesktopWorkspace, "workspaceId" | "projectName" | "projectKey" | "worktree" | "projectless">[],
-): { workspaceId: string; name: string }[] {
-  const chosen = new Map<string, { workspaceId: string; name: string; checkout: boolean }>();
-  for (const workspace of workspaces) {
-    if (!workspace.projectKey || workspace.projectless) continue;
-    const checkout = !workspace.worktree;
-    const held = chosen.get(workspace.projectKey);
-    if (held && (held.checkout || !checkout)) continue;
-    chosen.set(workspace.projectKey, { workspaceId: workspace.workspaceId, name: workspace.projectName, checkout });
-  }
-  return [...chosen.values()].map(({ workspaceId, name }) => ({ workspaceId, name }));
-}
-
-/**
- * Several projects' lists as one, the most recently changed first, as one
- * machine-wide list is. A board two projects both answered (two clones of
- * one store) is listed once.
- */
-export function mergeCanvasLists(lists: readonly (readonly PhoneCanvasBoard[])[]): PhoneCanvasBoard[] {
-  const seen = new Set<string>();
-  const merged: PhoneCanvasBoard[] = [];
-  for (const board of lists.flat()) {
-    const key = board.id ?? `${board.workspaceId ?? ""}\u0000${board.path}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(board);
-  }
-  return merged.sort((a, b) => b.modifiedAt - a.modifiedAt || a.name.localeCompare(b.name));
 }
 
 /** The line under a board's name: its project, how much is on it, and when it last changed. */
@@ -185,8 +114,8 @@ export function canvasRowTarget(deviceId: string, board: PhoneCanvasBoard, asker
 }
 
 /**
- * What `canvas.screenshot` is asked for: the board by its id where it has
- * one, which needs no project, else by its path in the project it was listed
+ * What `canvas.picture` is asked for: the board by its id where it has one,
+ * which needs no project, else by its path in the project it was listed
  * under. Under the asking chat where there is one, as a paired desktop asks.
  */
 export function canvasPictureRequest(target: CanvasBoardTarget): { board: string; workspaceId: string | null } {
@@ -235,65 +164,21 @@ export interface CanvasDesktopRead {
   error: string | null;
 }
 
-/** How many of an older desktop's projects are asked at once. */
-const PROJECT_READS_AT_ONCE = 4;
-
 /**
- * Asks one desktop for its boards, as its capabilities allow (`canvasListMode`),
- * and never throws: a refusal is a read with words in it. `chat` is the chat
- * the list was opened from, when it was opened from one on this desktop.
+ * Asks one desktop for every board on it, and never throws: a refusal is a
+ * read with words in it. `chat` is the chat the list was opened from, when it
+ * was opened from one on this desktop: its project's boards are marked `here`.
  */
 export async function readCanvasDesktop(input: {
   machine: string;
-  session: { tailnetCapabilities?: string[] };
-  chat: { workspaceId: string; projectName: string | null } | null;
+  chat: { workspaceId: string } | null;
   boards: CanvasBoardsApi;
-  workspaces: Pick<WorkspacesApi, "listWorkspaces">;
 }): Promise<CanvasDesktopRead> {
   const { machine, chat } = input;
-  const mode = canvasListMode(input.session, chat);
-  const modeNote = canvasListModeNote(mode, machine);
-  const failed = (failure: Extract<CanvasAnswer<unknown>, { ok: false }>): CanvasDesktopRead => ({
-    boards: null,
-    notes: [],
-    error: canvasRefusalWords(machine, failure, "list"),
-  });
   try {
-    if (mode !== "projects") {
-      const answer =
-        mode === "machine"
-          ? await input.boards.listMachine(chat?.workspaceId ?? null)
-          : await input.boards.listProject({ workspaceId: chat!.workspaceId, name: chat!.projectName });
-      if (!answer.ok) return failed(answer);
-      return { boards: answer.data.boards, notes: [modeNote, answer.data.note].filter((note): note is string => !!note), error: null };
-    }
-    const listed = await input.workspaces.listWorkspaces();
-    if (!listed.ok) return { boards: null, notes: [], error: listed.message ?? `${machine} did not list its projects.` };
-    const projects = canvasProjectsToAsk(listed.data ?? []);
-    const answers: { name: string; answer: CanvasAnswer<{ boards: PhoneCanvasBoard[] }> }[] = [];
-    for (let start = 0; start < projects.length; start += PROJECT_READS_AT_ONCE) {
-      const batch = projects.slice(start, start + PROJECT_READS_AT_ONCE);
-      answers.push(
-        ...(await Promise.all(batch.map(async (project) => ({ name: project.name, answer: await input.boards.listProject(project) })))),
-      );
-      // A machine with no canvas tools says so on its first answer; the rest would say the same.
-      const unknown = answers.find(({ answer }) => !answer.ok && answer.code === "unknown_tool");
-      if (unknown && !unknown.answer.ok) return failed(unknown.answer);
-    }
-    const lists = answers.flatMap(({ answer }) => (answer.ok ? [answer.data.boards] : []));
-    const missing = answers.flatMap(({ name, answer }) => (answer.ok ? [] : [name]));
-    if (answers.length > 0 && lists.length === 0) {
-      const first = answers[0].answer;
-      if (!first.ok) return failed(first);
-    }
-    return {
-      boards: mergeCanvasLists(lists),
-      notes: [
-        modeNote,
-        missing.length ? `${missing.join(", ")} did not list ${missing.length === 1 ? "its" : "their"} boards.` : null,
-      ].filter((note): note is string => !!note),
-      error: null,
-    };
+    const answer = await input.boards.list(chat?.workspaceId ?? null);
+    if (!answer.ok) return { boards: null, notes: [], error: canvasRefusalWords(machine, answer, "list") };
+    return { boards: answer.data.boards, notes: answer.data.note ? [answer.data.note] : [], error: null };
   } catch {
     return { boards: null, notes: [], error: `${machine} did not answer.` };
   }

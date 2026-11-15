@@ -5,7 +5,7 @@ import type {
   ModuleResolutionError,
   ModuleResolutionErrorCode,
 } from './manifest'
-import { HOST_API_VERSION } from './host-api'
+import { HOST_API_VERSION, checkHostApiCompatibility } from './host-api'
 
 export type ModuleResolutionOptions = {
   /**
@@ -74,7 +74,7 @@ export function resolveModuleEnablement(
   for (const id of [...accepted]) {
     const reason = ineligible[id]
     if (!reason) continue
-    errors.push({ id, code: reason, message: ineligibleMessage(id, reason) })
+    errors.push({ id, code: reason, message: ineligibleMessage(byId.get(id)!, reason) })
     accepted.delete(id)
   }
 
@@ -153,12 +153,19 @@ export function resolveModuleEnablement(
 // Each reason says what the user can do about it: trusting fixes an untrusted
 // module, nothing the user does fixes a tampered one, and an incompatible one
 // needs a different build of the module or of the app.
-function ineligibleMessage(id: string, reason: ModuleResolutionErrorCode): string {
+function ineligibleMessage(manifest: CapabilityManifest, reason: ModuleResolutionErrorCode): string {
+  const id = manifest.id
   switch (reason) {
     case 'invalid_signature':
       return `Module "${id}" has an invalid signature and will not load.`
-    case 'incompatible_host_api':
-      return `Module "${id}" was built for a different host API than this app provides (${HOST_API_VERSION}); update the module or the app to enable it.`
+    case 'incompatible_host_api': {
+      // The check's own words say which side to update, and for a retired
+      // host API what replaced it and what to rebuild against.
+      const compatibility = checkHostApiCompatibility(manifest)
+      return compatibility.ok
+        ? `Module "${id}" was built for a different host API than this app provides (${HOST_API_VERSION}); update the module or the app to enable it.`
+        : `Module "${id}" will not load. ${compatibility.message}`
+    }
     default:
       return `Module "${id}" is not trusted yet; trust it in Settings → Modules to enable.`
   }

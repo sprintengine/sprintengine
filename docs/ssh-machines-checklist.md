@@ -12,11 +12,11 @@ examples call it `build-box`, with a user `dev`.
 
 ## 1. Add and connect (any desktop)
 
-1. Settings › Machines › SSH machines. Type `build-box` (an alias in your
+1. Settings › Machines › Add an SSH machine. Type `build-box` (an alias in your
    `~/.ssh/config`), then Check.
    Expect: the route it resolves to, `dev@<host>:<port>`, and the jump host if
    your config names one. Nothing has connected yet.
-2. Add it, then Connect.
+2. Add it; it joins the Machines list. Connect it from its row.
    Expect, on a first connection: "New machine: build-box" with the key type
    and the SHA-256 fingerprint. Cancel is focused, not Trust.
 3. Check the fingerprint against the machine (`ssh-keygen -lf
@@ -41,6 +41,16 @@ examples call it `build-box`, with a user `dev`.
 3. With the key not in ssh-agent: let the connection drop (turn Wi-Fi off and
    on). Expect: "build-box needs you to sign in." and no dialog until you click
    Connect.
+4. Mid-turn, kill the server on build-box: `kill -9 <pid>`, with the pid from
+   `~/.local/share/sprintengine-studio/data/run/server.json`.
+   Expect: within a few seconds the machine leaves "Connected" ("Reconnecting
+   to build-box…"), the server is started again without a dialog (the key in
+   ssh-agent), and the chat shows its whole history and takes a new message.
+5. Hang the server on build-box instead: `kill -STOP <pid>`, the same pid.
+   Expect: within half a minute Settings › Machines says "The Studio server on
+   build-box is running but not answering. Stop it there, or restart build-box.
+   Studio keeps trying." Studio does not start a second server beside it. Then
+   `kill -CONT <pid>`: the machine reads "Connected" again, on the same server.
 
 ## 3. The pane
 

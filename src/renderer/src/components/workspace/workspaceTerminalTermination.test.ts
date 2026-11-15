@@ -1,26 +1,31 @@
 import assert from 'node:assert/strict'
 
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import type { Workspace } from '../../types/workspace'
 import { suspendSnoozedWorkspaceTerminals, terminateSettledWorkspaceTerminals } from './workspaceTerminalTermination'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 // Settle's kill waits on main's answer about what is working; a chat the
 // person un-settled during that round trip keeps its agents.
 
 test('a chat un-settled while main is asked is not killed; one still settled is', async () => {
   const killed: string[] = []
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.closeTerminal = async (sessionId: string) => {
+    killed.push(sessionId)
+  }
   Object.assign(globalThis, {
     window: {
       api: {
-        terminalList: async () => [],
         conversationSessionsList: async () => ({ ok: true, sessions: [] }),
-        terminalKill: async (sessionId: string) => {
-          killed.push(sessionId)
-        },
       },
     },
   })
+  installStudioLoopback(globalThis.window as never)
   const workspace = {
     id: 'ws-1',
     agents: { a: { cliSessionId: 'pty-1' } },
@@ -38,10 +43,13 @@ test('a chat un-settled while main is asked is not killed; one still settled is'
 test('a Snooze pauses nothing while main says an agent is working, nor once the chat is woken', async () => {
   const suspended: string[] = []
   let working = true
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.suspendTerminal = async (sessionId: string) => {
+    suspended.push(sessionId)
+  }
   Object.assign(globalThis, {
     window: {
       api: {
-        terminalList: async () => [],
         conversationSessionsList: async () => ({
           ok: true,
           sessions: [
@@ -54,9 +62,6 @@ test('a Snooze pauses nothing while main says an agent is working, nor once the 
             },
           ],
         }),
-        terminalSuspend: async (sessionId: string) => {
-          suspended.push(sessionId)
-        },
         conversationSessionSuspend: async ({ sessionId }: { sessionId: string }) => {
           suspended.push(sessionId)
           return { ok: true }
@@ -64,6 +69,7 @@ test('a Snooze pauses nothing while main says an agent is working, nor once the 
       },
     },
   })
+  installStudioLoopback(globalThis.window as never)
   const workspace = {
     id: 'ws-1',
     agents: { a: { cliSessionId: 'pty-1' } },

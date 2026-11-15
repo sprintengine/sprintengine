@@ -158,20 +158,20 @@ when stateful and needs nothing when stateless.
 
 ### Event mapping (SDKMessage → ConversationEvent)
 
-| SDK                                                | Canonical                                                |
-| -------------------------------------------------- | -------------------------------------------------------- |
-| `system/init`                                      | `session_started` payload `{ providerSessionId, model }` |
-| `stream_event: content_block_delta text_delta`     | `content_delta`                                          |
-| `stream_event: content_block_delta thinking_delta` | `reasoning_delta`                                        |
-| `assistant` message `tool_use` blocks              | `tool_started` (name + input summary)                    |
-| `user` message `tool_result` blocks                | `tool_output`                                            |
-| `system/status` status `compacting`                | `context_compacting` (once per compaction)               |
-| `system/compact_boundary`                          | `context_compacted` payload `{ trigger, preTokens }`     |
-| `stream_event: message_start` (main chain)         | `usage_updated` payload `{ promptCache, contextUsed }`   |
+| SDK                                                | Canonical                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `system/init`                                      | `session_started` payload `{ providerSessionId, model }`                 |
+| `stream_event: content_block_delta text_delta`     | `content_delta`                                                          |
+| `stream_event: content_block_delta thinking_delta` | `reasoning_delta`                                                        |
+| `assistant` message `tool_use` blocks              | `tool_started` (name + input summary)                                    |
+| `user` message `tool_result` blocks                | `tool_output`                                                            |
+| `system/status` status `compacting`                | `context_compacting` (once per compaction)                               |
+| `system/compact_boundary`                          | `context_compacted` payload `{ trigger, preTokens }`                     |
+| `stream_event: message_start` (main chain)         | `usage_updated` payload `{ promptCache, contextUsed }`                   |
 | `result success`                                   | `usage_updated` (+ `contextWindow` from `modelUsage`) + `turn_completed` |
-| `result error*`                                    | `turn_failed`                                            |
-| `canUseTool` callback                              | `approval_requested` … `approval_resolved`               |
-| rate-limit / auth notices                          | `turn_failed` reason `auth` (v1)                         |
+| `result error*`                                    | `turn_failed`                                                            |
+| `canUseTool` callback                              | `approval_requested` … `approval_resolved`                               |
+| rate-limit / auth notices                          | `turn_failed` reason `auth` (v1)                                         |
 
 Everything unrecognized is dropped (forward-compatible with SDK churn).
 
@@ -209,8 +209,9 @@ and routes approval responses to the same provider session.
 `src/main/conversation-session-api.ts` has no Electron dependency. It attaches a
 live listener before reading catch-up, deduplicates by per-conversation `seq`,
 and emits a synchronized marker before draining queued live events. Large
-catch-ups use pages ending on user-turn boundaries. Commands with a client UUID
-reuse one of the conversation's last 256 persisted receipts.
+catch-ups use pages ending on user-turn boundaries. A command repeated under
+its id is answered from its receipt in the conversation's log (the newest 1,024
+are kept in memory; `docs/conversations.md`, "Commands and the chat's log").
 
 ### Process lifecycle
 

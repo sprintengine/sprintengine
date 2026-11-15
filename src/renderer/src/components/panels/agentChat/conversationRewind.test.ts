@@ -71,3 +71,35 @@ test('an earlier page read after the rewind is still hidden by it', () => {
   expect(shown([rewind])).toEqual([])
   expect(shown([...one.events, ...two.events, rewind])).toEqual([])
 })
+
+test('a failure is told apart by its event: read again whole it is the same one, a later one with the same words is not', async () => {
+  const { tellOfTurnFailure, resetTurnFailureNoticesForTests } = await import('./turnFailureNotices')
+  resetTurnFailureNoticesForTests()
+  // The window first reads the chat before it has failed.
+  expect(tellOfTurnFailure('workspace', 'agent', null)).toBe(false)
+  const failed = turn('t1', 'fail please', 'turn_failed')
+  const first = projectConversation(failed.events)
+  expect(first.lastError).toBe('provider')
+  expect(first.lastErrorId).toBe(failed.events.at(-1)!.id)
+  // The same log read again (a reconnect, a server restarted under the chat).
+  const again = projectConversation([...failed.events])
+  expect(again.lastErrorId).toBe(first.lastErrorId)
+  expect(tellOfTurnFailure('workspace', 'agent', first.lastErrorId!)).toBe(true)
+  expect(tellOfTurnFailure('workspace', 'agent', again.lastErrorId!), 'told once').toBe(false)
+  // A later turn failing with the same words is a new failure.
+  const later = projectConversation([...failed.events, ...turn('t2', 'again', 'turn_failed').events])
+  expect(later.lastError).toBe(first.lastError)
+  expect(later.lastErrorId).not.toBe(first.lastErrorId)
+  expect(tellOfTurnFailure('workspace', 'agent', later.lastErrorId!)).toBe(true)
+})
+
+test('a failure already in a chat’s history when this window first reads it is not told; a later one is', async () => {
+  const { tellOfTurnFailure, resetTurnFailureNoticesForTests } = await import('./turnFailureNotices')
+  resetTurnFailureNoticesForTests()
+  const failed = turn('t1', 'fail please', 'turn_failed')
+  const opened = projectConversation(failed.events)
+  expect(tellOfTurnFailure('workspace', 'agent-2', opened.lastErrorId!), 'already there when it opens').toBe(false)
+  expect(tellOfTurnFailure('workspace', 'agent-2', opened.lastErrorId!), 'nor on a re-read').toBe(false)
+  const later = projectConversation([...failed.events, ...turn('t2', 'again', 'turn_failed').events])
+  expect(tellOfTurnFailure('workspace', 'agent-2', later.lastErrorId!), 'one after it opened').toBe(true)
+})

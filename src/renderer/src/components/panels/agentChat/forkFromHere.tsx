@@ -9,11 +9,12 @@ import { useState } from 'react'
 import { newAgentIdSuffix } from '../../../../../shared/agent-ids'
 
 import type { ConversationImageAttachment, ConversationKey } from '../../../../../shared/conversation-runtime'
+import type { ConversationAddress } from '../../../../../../packages/studio-protocol/src/public'
 import { GhostButton, Tooltip } from '../../ui'
 import { showToast } from '../../../store/toastStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { placeSpawnedAgentTab } from '../../workspace/manager/layoutTabActions'
-import { forkedAgentPatch, forkName } from '../../../../../shared/conversation/fork'
+import { pairedConnectionOf } from '../../../studio/environmentStudio'
 import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../shared/layouts/templates'
 import { meshConversationSessionId, type MeshConversationPaneSpec } from '../../../../../shared/tailnet-mesh'
 import { LAYOUT_TEMPLATES } from '../../../layouts/templates'
@@ -193,95 +194,136 @@ function ForkFromHereButton({
 }
 
 /**
- * Make the fork and open it: the runtime writes its conversation, then the
- * new chat joins the workspace as this one's twin (its CLI, model, effort,
- * permission mode, skills and working folder), named after it, in the tab
- * after this one's. A message forked before goes into its composer.
+ * Make the fork and open it, for every chat. The chat's server makes the fork
+ * beside it, as its twin (its CLI, model, effort, permission mode, skills and
+ * working folder), named after it beside its workspace's other chats, and
+ * answers where it is and what it called it: it opens by that address, in the
+ * tab after this one's once its record has arrived, with a message forked
+ * before in its composer. A paired desktop's fork opens as a pane onto that
+ * machine (`openPairedFork`), as its chats do here. The address must be on
+ * the chat's own machine: a fork is made beside the chat it came from.
  */
 export async function forkChat(input: {
-  transport: Pick<ConversationTransport, 'fork'>
+  transport: Pick<ConversationTransport, 'fork' | 'environment'>
+  /** The chat as the view names it: its workspace here, and its id where it runs. */
   key: ConversationKey
+  /** The chat's provider, which names the fork's id as every chat's is named. */
+  providerId: string
+  /** The chat's name, for a fork its server does not name. */
+  name?: string
   target: ForkFromHereTarget
 }): Promise<void> {
   const { key, target } = input
-  const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === key.workspaceId)
-  const parent = workspace?.agents[key.agentId]
-  if (!input.transport.fork || !parent?.conversation) throw new Error('This chat cannot be forked here.')
-  const agentId = `conversation-${parent.conversation.providerId}-${newAgentIdSuffix()}`
-  const name = forkName(
-    parent.name || 'Chat',
-    Object.values(workspace?.agents ?? {}).map((agent) => agent.name),
-  )
+  if (!input.transport.fork) throw new Error('This chat cannot be forked here.')
+  const newAgentId = `conversation-${input.providerId}-${newAgentIdSuffix()}`
   const forked = await input.transport.fork({
     key,
-    newAgentId: agentId,
-    title: name,
+    newAgentId,
     ...(target.side === 'user'
       ? { side: 'user' as const, turnSeq: target.turnSeq }
       : { side: 'assistant' as const, turnId: target.turnId }),
   })
   if (!forked.ok) throw new Error(forked.message)
-  useWorkspaceStore.getState().updateAgent(key.workspaceId, agentId, forkedAgentPatch(parent, name))
+  const { environment } = input.transport
+  const lost = 'Studio made the fork but did not say where it is. Reload the window to find it.'
+  if (!forked.name || (environment.id !== null && forked.address.environmentId !== environment.id))
+    throw new Error(lost)
+  const connectionId = pairedConnectionOf(environment.route)
+  if (connectionId) {
+    await openPairedFork({
+      connectionId,
+      machineName: environment.label,
+      workspaceId: key.workspaceId,
+      remoteWorkspaceId: forked.address.chatId,
+      agentId: key.agentId,
+      newAgentId: forked.address.agentId,
+      name: forked.name,
+      target,
+    })
+    return
+  }
+  if (forked.address.chatId !== key.workspaceId) throw new Error(lost)
+  await openFork(forked.address, forked.name, key.agentId, target)
+}
+
+/** How long a fork's record is waited for here before its tab opens all the same. */
+const FORK_RECORD_WAIT_MS = 5_000
+
+function untilAgentRecord(workspaceId: string, agentId: string): Promise<void> {
+  const has = () =>
+    Boolean(useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.agents[agentId])
+  if (has()) return Promise.resolve()
+  return new Promise((resolve) => {
+    let stop = () => {}
+    const timer = setTimeout(() => {
+      stop()
+      resolve()
+    }, FORK_RECORD_WAIT_MS)
+    stop = useWorkspaceStore.subscribe(() => {
+      if (!has()) return
+      clearTimeout(timer)
+      stop()
+      resolve()
+    })
+  })
+}
+
+/**
+ * Open a fork this window's Studio made, by its address: the workspace's
+ * record arrives from the Studio, then its tab opens after the chat it came
+ * from, with the message forked before in its composer.
+ */
+async function openFork(
+  address: ConversationAddress,
+  name: string,
+  afterAgentId: string,
+  target: ForkFromHereTarget,
+): Promise<void> {
+  const { chatId: workspaceId, agentId } = address
+  await untilAgentRecord(workspaceId, agentId)
   if (target.side === 'user') {
-    composerDraftStore().getState().put(key.workspaceId, agentId, target.draft)
-    if (target.attachments?.length) holdForkedAttachments(key.workspaceId, agentId, target.attachments)
+    composerDraftStore().getState().put(workspaceId, agentId, target.draft)
+    if (target.attachments?.length) holdForkedAttachments(workspaceId, agentId, target.attachments)
   } else if (target.draft?.text.trim())
-    composerDraftStore().getState().put(key.workspaceId, agentId, {
+    composerDraftStore().getState().put(workspaceId, agentId, {
       text: target.draft.text,
       skillIds: [],
       mentions: [],
     })
-  placeSpawnedAgentTab(key.workspaceId, agentId, name, { afterAgentId: key.agentId })
+  placeSpawnedAgentTab(workspaceId, agentId, name, { afterAgentId })
   showToast({ tone: 'neutral', title: `Forked into ${name}. Both chats work in the same files.` })
 }
 
 /**
- * Fork a chat followed from a paired machine. The machine makes the fork, as
- * its own Fork from here would: beside the chat in its workspace there, named
- * after it beside that workspace's other chats, in the same files. Here it
- * opens as a pane onto that machine in the tab after this chat's, as a local
- * fork opens after its chat, or, where this chat's layout is not mounted, as a
- * chat of its own, the way a chat started over there from New chat opens. A
- * message forked before goes into its composer; the files it attached by path
- * stay behind, since those paths are on that machine's disk.
+ * Open a fork a paired machine made: beside the chat in its workspace there,
+ * named after it beside that workspace's other chats, in the same files. Here it opens as a pane onto that machine in the tab after
+ * this chat's, as a fork by address opens after its chat, or, where this
+ * chat's layout is not mounted, as a chat of its own, the way a chat started
+ * over there from New chat opens. A message forked before goes into its
+ * composer; the files it attached by path stay behind, since those paths are
+ * on that machine's disk.
  */
-export async function forkRemoteChat(input: {
-  transport: Pick<ConversationTransport, 'fork' | 'machineName' | 'remoteExtensions'>
+async function openPairedFork(input: {
+  /** The pairing the machine is reached by, and what it is called. */
+  connectionId: string
+  machineName: string | null
   /** The workspace here whose pane follows the chat. */
   workspaceId: string
-  /** The chat's id over there, and the provider it runs on, which names the fork's id as a local fork's. */
+  /** The chat's workspace over there, which the fork shares. */
+  remoteWorkspaceId: string
+  /** The chat's id over there, and the fork's. */
   agentId: string
-  providerId: string
-  /** The chat's name, for the fork's until the machine says what it called it. */
+  newAgentId: string
+  /** What the machine called the fork. */
   name: string
   target: ForkFromHereTarget
 }): Promise<void> {
-  const { target } = input
-  const remote = input.transport.remoteExtensions
+  const { target, newAgentId: agentId, name } = input
+  const remote = { connectionId: input.connectionId, workspaceId: input.remoteWorkspaceId }
   const origin = useWorkspaceStore
     .getState()
     .workspaces.find((candidate) => candidate.id === input.workspaceId)?.remoteOrigin
-  if (!input.transport.fork || !remote) throw new Error('This chat cannot be forked here.')
-  const machineName = input.transport.machineName ?? origin?.machineName ?? 'the other machine'
-  const agentId = `conversation-${input.providerId}-${newAgentIdSuffix()}`
-  const forked = await input.transport.fork({
-    // The transport names the chat by its ids over there; this key is only
-    // the shape the call takes, and its root means nothing to that machine.
-    key: { workspaceRoot: '', workspaceId: remote.workspaceId, agentId: input.agentId },
-    newAgentId: agentId,
-    ...(target.side === 'user'
-      ? { side: 'user' as const, turnSeq: target.turnSeq }
-      : { side: 'assistant' as const, turnId: target.turnId }),
-  })
-  if (!forked.ok) throw new Error(forked.message)
-  // What the machine called it, beside the chats of its workspace there.
-  const listed = await window.api.meshConversationList(remote.connectionId).catch(() => null)
-  const named = listed?.ok
-    ? listed.conversations.find(
-        (conversation) => conversation.workspaceId === remote.workspaceId && conversation.agentId === agentId,
-      )?.title
-    : undefined
-  const name = named || forkName(input.name || 'Chat', [])
+  const machineName = input.machineName ?? origin?.machineName ?? 'the other machine'
   const pane: MeshConversationPaneSpec = {
     connectionId: remote.connectionId,
     machineName,

@@ -1,8 +1,9 @@
-import { presentToolItem } from "../../api/conversation-protocol/presentation";
-import { recordValue, stringValue, type MobileTool } from "./conversationLogic";
+import { presentToolItem } from "../../../../packages/conversation-protocol/src/public";
+import type { RowTool } from "../../../../packages/conversation-timeline/src/public";
+import { recordValue, stringValue } from "./conversationLogic";
 
 // Which steps in a chat carry a picture, and how big it is drawn. The picture
-// itself lives on the desktop (see api/conversationImages.ts).
+// itself lives on the desktop, read by `conversation.picture` (api/desktopConversations.ts).
 
 // The formats the desktop serves as pictures. An SVG is markup the agent read
 // as text, and that text is what it went on; the rest the phone cannot draw.
@@ -34,7 +35,7 @@ export type ToolPicture = {
   /** The line under a generated picture: its prompt, when Codex gave one. */
   caption?: string;
 };
-export function toolPicture(tool: MobileTool): ToolPicture | null {
+export function toolPicture(tool: RowTool): ToolPicture | null {
   if (tool.status !== "ok") return null;
   const input = recordValue(tool.input);
   if (tool.name === "GenerateImage") {

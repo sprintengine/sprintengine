@@ -11,12 +11,22 @@ import {
   type MessagePortMain,
 } from 'electron'
 
-import type { StudioTransport } from '../../../packages/agent-sdk/src/transport'
+import type { StudioTransport } from '../../../packages/client-runtime/src/public'
 import type { ServerBootstrapEnvelope } from '../../server/bootstrap/envelope'
-import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS, type PowerHint } from '../../server/desktop/server-methods'
+import {
+  SERVER_EVENTS,
+  SERVER_METHODS,
+  SHELL_METHODS,
+  type PowerHint,
+  type ShellConnectResult,
+} from '../../server/desktop/server-methods'
 import { serveShellBridge } from '../../server/shell-bridge/serve-shell-bridge'
+import { serveArtifactsShell } from '../../server/artifacts/artifacts-shell-bridge'
+import type { ArtifactThumbnailer } from '../artifacts/artifacts-service'
+import type { ArtifactsSetupConsent } from '../artifacts/artifacts-setup-consent'
 import type { ShellBridge } from '../../server/shell-bridge/shell-bridge'
-import type { StudioConnectResult } from '../../shared/studio-connection'
+import type { StudioWindowTicket } from '../../shared/studio-connection'
+import type { StudioWindowTicketIssuer } from '../ipc/studio-window-ticket-ipc'
 import { isCanvasWorkerWindow } from '../canvas/canvas-worker-window'
 import { isAppRendererUrl } from '../ipc/ipc-sender'
 import { isWorkspaceWindowWebContents } from '../window-factory'
@@ -46,13 +56,21 @@ export type DesktopServerHost = {
   log: ServerLog
   /** Fork the server and start sending hints. At app ready. */
   start(): void
-  /** Answer the server's requests of the shell: the bridge, and the shell's own caches. */
+  /**
+   * Answer the server's requests of the shell: the bridge, its Trash, Studio's
+   * plugin it installs, and for artifacts a page's picture and the set-up
+   * question asked natively.
+   */
   serveShell(
     bridge: ShellBridge,
-    caches: { marketplaceRead(input: unknown): unknown; thirdPartyModules(): unknown },
+    caches: {
+      trash(path: string): Promise<void>
+      studioPluginStatus(workspaceRoot: string | null): Promise<unknown>
+      artifacts: { thumbnailer: ArtifactThumbnailer; askNatively: ArtifactsSetupConsent }
+    },
   ): void
-  /** A chat view's protocol connection, its port handed to the server. */
-  connectStudioPort(port: MessagePortMain): Promise<StudioConnectResult>
+  /** Tickets for the windows' connections to the server's window listener, once it is serving. */
+  windowTickets: StudioWindowTicketIssuer
   shutdown(options: {
     drain: boolean
     budgetMs: number
@@ -133,8 +151,11 @@ export function createDesktopServerHost(options: {
 
   function sendWindowHints(): void {
     const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed() && !isCanvasWorkerWindow(win))
+    const showing = windows.filter((win) => win.isVisible() && !win.isMinimized())
     supervisor.rpc.emit(SERVER_EVENTS.hintVisibility, {
-      anyWindowVisible: windows.some((win) => win.isVisible() && !win.isMinimized()),
+      anyWindowVisible: showing.length > 0,
+      // Only a workspace window can answer an artifacts set-up question; a pop-out cannot.
+      workspaceWindowVisible: showing.some((win) => isWorkspaceWindowWebContents(win.webContents)),
     })
     supervisor.rpc.emit(SERVER_EVENTS.hintFocus, { appFocused: windows.some((win) => win.isFocused()) })
   }
@@ -176,7 +197,7 @@ export function createDesktopServerHost(options: {
         port2.close()
         throw new Error('Studio server is restarting.')
       }
-      const { ticket } = await supervisor.call<StudioConnectResult>(SERVER_METHODS.shellConnect, { clientId })
+      const { ticket } = await supervisor.call<ShellConnectResult>(SERVER_METHODS.shellConnect, { clientId })
       return messagePortTransport(port2, { token: ticket })
     },
     attachSshPort: (clientId, port) =>
@@ -197,24 +218,40 @@ export function createDesktopServerHost(options: {
     },
     serveShell(bridge, caches) {
       serveShellBridge(supervisor.rpc, bridge)
-      supervisor.rpc.handle(SHELL_METHODS.marketplaceRead, (input) => caches.marketplaceRead(input))
-      supervisor.rpc.handle(SHELL_METHODS.thirdPartyModules, () => caches.thirdPartyModules())
+      supervisor.rpc.handle(SHELL_METHODS.studioPluginStatus, (params) => {
+        const root = (params as { workspaceRoot?: unknown } | null)?.workspaceRoot
+        return caches.studioPluginStatus(typeof root === 'string' && root.length > 0 ? root : null)
+      })
+      supervisor.rpc.handle(SHELL_METHODS.trash, async (params) => {
+        const path = (params as { path?: unknown } | null)?.path
+        if (typeof path !== 'string' || path.length === 0) throw new Error('No folder to move to the Trash.')
+        await caches.trash(path)
+      })
+      serveArtifactsShell(supervisor.rpc, caches.artifacts)
     },
-    async connectStudioPort(port) {
-      if ((await supervisor.whenReady(STUDIO_CONNECT_WAIT_MS)) !== 'ready') {
-        throw new Error('Studio server is not running, so this window cannot reach its chats yet.')
-      }
-      const clientId = prefixedId('studio', 6)
-      if (!supervisor.post({ t: 'attach-client', clientId, windowId: null, kind: 'studio-connection' }, [port])) {
-        throw new Error('Studio server is restarting; try again.')
-      }
-      return supervisor.call<StudioConnectResult>(SERVER_METHODS.studioConnect, { clientId })
+    windowTickets: {
+      async windowTicket(request) {
+        if ((await supervisor.whenReady(STUDIO_CONNECT_WAIT_MS)) !== 'ready') {
+          const state = supervisor.state
+          throw new Error(
+            state.kind === 'failed'
+              ? `Studio server stopped, so this window cannot reach its chats. ${state.reason}`
+              : 'Studio server is not running yet, so this window cannot reach its chats yet.',
+          )
+        }
+        return supervisor.call<StudioWindowTicket>(SERVER_METHODS.windowTicket, request)
+      },
+      revokeWindow(windowKey) {
+        // A server that is not serving holds no connection of this window.
+        if (supervisor.state.kind !== 'ready') return
+        void supervisor.call(SERVER_METHODS.windowRevoke, { windowKey }).catch(() => undefined)
+      },
     },
     shutdown: (shutdownOptions) => supervisor.shutdown(shutdownOptions),
   }
 }
 
-/** How long a chat view's connection waits for a server still starting. */
+/** How long a window's ticket waits for a server still starting. */
 const STUDIO_CONNECT_WAIT_MS = 20_000
 /** How long one attempt of the shell's client waits; its own backoff tries again after. */
 const SHELL_CONNECT_WAIT_MS = 30_000

@@ -6,6 +6,7 @@ import {
   backlogExcerpt,
   backlogItemSlugFromPath,
   backlogPreviewMarkdown,
+  backlogRenameFileName,
   createBacklogItem,
   nextArchiveRelativePath,
   scanBacklog,
@@ -85,6 +86,15 @@ test('backlog', async () => {
   function basename(pathValue: string): string {
     return pathValue.split('/').at(-1) ?? pathValue
   }
+
+  run('a rename keeps the item a backlog file: its extension stays unless one was typed', () => {
+    assert.equal(backlogRenameFileName('2026-11-14-second-item.md', 'Renamed item'), 'Renamed item.md')
+    assert.equal(backlogRenameFileName('mock.html', 'other'), 'other.html')
+    assert.equal(backlogRenameFileName('a.md', 'b.md'), 'b.md')
+    assert.equal(backlogRenameFileName('a.md', 'b.HTML'), 'b.HTML')
+    assert.equal(backlogRenameFileName('a.md', 'notes.txt'), 'notes.txt.md', 'another extension would hide it too')
+    assert.equal(backlogRenameFileName('a.md', '  '), '')
+  })
 
   run('missing backlog returns a typed missing-folder state', async () => {
     const result = await scanBacklog('/repo', fixture({ '/repo': { kind: 'dir' } }))
@@ -760,11 +770,7 @@ test('backlog', async () => {
       /aria-label=\{`Unlink \$\{model\.label\}`\}/,
       'each secondary link exposes an accessible unlink control',
     )
-    assert.match(
-      backlogPanelSource,
-      /window\.api\.removeBacklogLink\(/,
-      'unlink persists through the dedicated Backlog IPC',
-    )
+    assert.match(backlogPanelSource, /backlogApi\.removeBacklogLink\(/, 'unlink persists through the backlog methods')
     assert.match(
       backlogPanelSource,
       /The linked work itself is not deleted/,
@@ -785,7 +791,7 @@ test('backlog', async () => {
     assert.match(linksSectionSource, /syncBacklogItemLinks\(/, 'the section resolves provider-backed links')
     assert.match(
       linksSectionSource,
-      /persistLink: \(args\) => window\.api\.addOrUpdateBacklogLink\(args\)/,
+      /persistLink: \(args\) => backlogApi\.addOrUpdateBacklogLink\(args\)/,
       'resolved status persists through the Backlog service',
     )
   })
@@ -798,7 +804,7 @@ test('backlog', async () => {
     )
     assert.match(
       backlogPanelSource,
-      /window\.api\.updateBacklogStatus/,
+      /backlogApi\.updateBacklogStatus/,
       'manual completion persists through the Backlog object service',
     )
   })

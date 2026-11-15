@@ -22,11 +22,11 @@ import {
   type BacklogEpicMeta,
   type BacklogRowItem,
 } from "./backlogLogic";
-import type { MobileControlBacklogItemStatus } from "../../shared/mobile-control";
+import type { StudioBacklogItemStatus } from "../../../../packages/studio-protocol/src/public";
 
 // Backlog readiness maps onto the shared lifecycle vocabulary: `completed`
 // becomes the `done` check, the rest are named identically.
-const STATUS_TO_LIFECYCLE: Record<MobileControlBacklogItemStatus, LifecycleState> = {
+const STATUS_TO_LIFECYCLE: Record<StudioBacklogItemStatus, LifecycleState> = {
   idea: "idea",
   ready: "ready",
   in_progress: "in_progress",

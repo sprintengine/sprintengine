@@ -1,4 +1,6 @@
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { isMachinePath } from '../../shared/machine-paths'
+import { machineRouteOfPath } from '../../shared/machine-spelling'
 import type { ConversationRuntime } from '../../main/conversation-runtime'
 
 // What everything that drives or reads chats calls: the session API both IPC
@@ -27,7 +29,8 @@ export type ConversationBackendMember =
   | 'getNativeProviderModels'
   | 'startSession'
   | 'sendTurn'
-  | 'hasCommandReceipt'
+  | 'commandReceipt'
+  | 'hasChatCommandReceipt'
   | 'respondToRequest'
   | 'setPermission'
   | 'setModel'
@@ -45,6 +48,7 @@ export type ConversationBackendMember =
   | 'endTerminalHandoff'
   | 'noteTerminalHandoff'
   | 'getToolDetail'
+  | 'readConversationEvent'
   | 'findToolCall'
   | 'readAttachment'
   | 'planDocument'
@@ -77,18 +81,47 @@ export function localConversationBackend(runtime: ConversationRuntime): Conversa
 }
 
 /**
- * This process's runtime, refusing a chat whose folder is on an SSH machine
- * (`ssh://…`, shared/machine-paths.ts): it is that machine's server's to run,
- * and a path in that spelling handed to this computer's runtime would be read
- * as a folder here. Every member answers such a call as it fails, in words.
+ * This process's runtime, refusing a chat another environment holds: one whose
+ * folder is on an SSH machine (`ssh://…`, shared/machine-paths.ts), or in a
+ * WSL distribution, or whose record here says it is that environment's
+ * (`environmentRouteOfRecord`). It is that environment's Studio's to run
+ * (design-wsl-ssh-direct PR 1d, PR 3c): a path in that spelling handed to
+ * this computer's runtime would be read as a folder here, and a WSL chat run
+ * here would run on Windows. Every member answers such a call as it fails,
+ * in words.
  */
-export function refuseMachinePaths(backend: ConversationBackend): ConversationBackend {
-  const named = (first: unknown): boolean => {
-    if (typeof first !== 'object' || first === null) return false
-    const record = first as { workspaceRoot?: unknown; key?: { workspaceRoot?: unknown } }
-    return isMachinePath(record.workspaceRoot) || isMachinePath(record.key?.workspaceRoot)
+export function refuseOtherEnvironments(
+  backend: ConversationBackend,
+  deps: {
+    recordOf(workspaceId: string): Parameters<typeof environmentRouteOfRecord>[0] | null
+    platform?: string
+  },
+): ConversationBackend {
+  const platform = deps.platform ?? process.platform
+  const elsewhere = (first: unknown): string | null => {
+    if (typeof first !== 'object' || first === null) return null
+    const given = first as {
+      workspaceId?: unknown
+      workspaceRoot?: unknown
+      key?: { workspaceId?: unknown; workspaceRoot?: unknown }
+    }
+    // Only a call that names the chat's folder (a key, a session's start):
+    // the rest (a list, a read by session id) find nothing of another
+    // environment's here, and some answer at once rather than in a promise.
+    const root = given.key?.workspaceRoot ?? given.workspaceRoot
+    if (typeof root !== 'string') return null
+    if (isMachinePath(root)) return 'ssh:'
+    const workspaceId = given.key?.workspaceId ?? given.workspaceId
+    const record = typeof workspaceId === 'string' ? deps.recordOf(workspaceId) : null
+    return (
+      environmentRouteOfRecord(record, platform) ??
+      (platform === 'win32' && !record ? (machineRouteOfPath(root) ?? null) : null)
+    )
   }
-  const message = 'This chat is on an SSH machine. Turn SSH machines on (Settings › Agents › Studio server) to open it.'
+  const message = (route: string) =>
+    route.startsWith('wsl:')
+      ? `This chat is WSL: ${route.slice('wsl:'.length)}'s, and runs on that distribution's own Studio server.`
+      : 'This chat is on an SSH machine. Turn SSH machines on (Settings › Agents › Studio server) to open it.'
   // One wrapper per member, so a member read twice is the same function (a
   // listener handed in and later taken out again is found).
   const wrapped = new Map<PropertyKey, { of: unknown; fn: (...args: unknown[]) => unknown }>()
@@ -99,10 +132,11 @@ export function refuseMachinePaths(backend: ConversationBackend): ConversationBa
       const known = wrapped.get(member)
       if (known && known.of === value) return known.fn
       const fn = (...args: unknown[]) => {
-        if (args.length > 0 && named(args[0]))
+        const route = args.length > 0 ? elsewhere(args[0]) : null
+        if (route)
           return member === 'recoverTranscript'
-            ? Promise.reject(new Error(message))
-            : Promise.resolve({ ok: false, message })
+            ? Promise.reject(new Error(message(route)))
+            : Promise.resolve({ ok: false, message: message(route) })
         return (value as (...input: unknown[]) => unknown).apply(target, args)
       }
       wrapped.set(member, { of: value, fn })

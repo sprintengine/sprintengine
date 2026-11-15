@@ -35,6 +35,8 @@ type Session = {
   state: SessionState
   disposed: boolean
   earlier: Promise<void> | null
+  // Reading back whole the events that crossed cut to fit, while it runs.
+  restoring: Promise<void> | null
   seenSeq: SeqRanges
   // `state.events` has been handed to readers in a snapshot, so the next live
   // event copies it before appending; until then events append in place.
@@ -314,6 +316,7 @@ function openSharedSession(transport: ConversationTransport, key: ConversationKe
     state: emptyState(),
     disposed: false,
     earlier: null,
+    restoring: null,
     seenSeq: new SeqRanges(),
     logShared: false,
     compactedTo: 0,
@@ -526,6 +529,51 @@ function loadEarlierTurns(transport: ConversationTransport, shared: SharedSessio
   return session.earlier
 }
 
+/** An event that crossed the wire cut to fit one frame; the whole is a read away. */
+export function isClippedEvent(event: ConversationEvent): boolean {
+  return event.payload?.wireClipped === true
+}
+
+/**
+ * Read back whole every event the session holds that crossed cut to fit
+ * (`wireClipped`), one at a time, each put in place of its cut copy as it
+ * comes: the transcript is drawn from the events, so the message, the
+ * approval or the agent's words they make read whole. A read that fails
+ * stops there and says why; asking again carries on with what is still cut.
+ */
+function restoreClippedEvents(transport: ConversationTransport, shared: SharedSession): Promise<void> {
+  const { session } = shared
+  if (session.disposed) return Promise.resolve()
+  if (session.restoring) return session.restoring
+  const clipped = session.state.events.filter(isClippedEvent)
+  if (!clipped.length) return Promise.resolve()
+  session.restoring = (async () => {
+    for (const cut of clipped) {
+      const read = await transport.readEvent({ ...session.key, seq: cut.seq!, id: cut.id })
+      if (session.disposed) return
+      if (!read.ok) throw new Error(read.message)
+      const index = session.state.events.findIndex((event) => event.seq === cut.seq && event.id === cut.id)
+      if (index === -1) continue
+      const events = session.state.events.slice()
+      events[index] = { ...read.event, id: cut.id, seq: cut.seq }
+      session.state = { ...session.state, events, error: null }
+      session.logShared = false
+      publish(shared)
+    }
+  })()
+    .catch((error: unknown) => {
+      if (!session.disposed) {
+        session.state = { ...session.state, error: error instanceof Error ? error.message : String(error) }
+        publish(shared)
+      }
+      throw error
+    })
+    .finally(() => {
+      session.restoring = null
+    })
+  return session.restoring
+}
+
 /**
  * One reader of a conversation's session. `active` is whether the reader can
  * be seen (the window's visibility is added here); a reader nobody can see
@@ -602,5 +650,10 @@ export function useConversationSession(
     return shared ? loadEarlierTurns(conversationTransport, shared) : Promise.resolve()
   }, [conversationTransport])
 
-  return { ...state, loadEarlier }
+  const restoreClipped = useCallback((): Promise<void> => {
+    const shared = sharedRef.current
+    return shared ? restoreClippedEvents(conversationTransport, shared) : Promise.resolve()
+  }, [conversationTransport])
+
+  return { ...state, loadEarlier, restoreClipped }
 }

@@ -674,6 +674,8 @@ export function createWorkspaceRegistryService(options: WorkspaceRegistryService
     needsHydration,
     subscribe,
     flush: () => options.store.flush(),
+    /** Settles once every change accepted so far is on disk (`WorkspaceRegistryStore.whenWritten`). */
+    whenWritten: () => options.store.whenWritten(),
   }
 
   function fileToState(source: WorkspaceRegistryFile): WorkspaceSyncState {

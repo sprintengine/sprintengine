@@ -9,8 +9,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import {
   RemotePopover,
   deviceLivenessText,
-  meshMachinePhase,
-  machinePhaseText,
   remoteGlyphState,
   remoteGlyphToneClass,
   remoteGlyphTooltip,
@@ -20,6 +18,8 @@ import type { TailnetPresence } from './useTailnetPresence'
 import { useToastStore } from '../../../store/toastStore'
 import type { TailnetLiveDevice, TailnetRemoteStatus } from '../../../../../shared/tailnet'
 import type { MeshConnection, MeshMachineReachability } from '../../../../../shared/tailnet-mesh'
+import { meshConnection } from '../../../../../shared/environment-connections'
+import type { EnvironmentEntry } from '../../../../../shared/environments'
 import { test } from 'vitest'
 
 test('RemotePopover', async () => {
@@ -67,7 +67,7 @@ test('RemotePopover', async () => {
       declined?: boolean
     },
     approveCalls: [] as Array<{ id: string; scopes: string[]; code: string }>,
-    reachabilityCalls: [] as Array<string | undefined>,
+    reachabilityCalls: [] as string[],
     cancelCalls: [] as string[],
     forgetCalls: [] as string[],
   }
@@ -84,9 +84,9 @@ test('RemotePopover', async () => {
       return Promise.resolve(bridge.approveResult)
     },
     tailnetDenyPairRequest: () => Promise.resolve({}),
-    meshCheckReachability: (connectionId?: string) => {
-      bridge.reachabilityCalls.push(connectionId)
-      return Promise.resolve({ revision: 0, requests: [], reachability: [] })
+    environmentsRetry: (route: string) => {
+      bridge.reachabilityCalls.push(route)
+      return Promise.resolve()
     },
     meshCancelPairing: (requestId: string) => {
       bridge.cancelCalls.push(requestId)
@@ -171,6 +171,20 @@ test('RemotePopover', async () => {
     }
   }
 
+  // The environment list as main builds it from these pairings and their checks.
+  function envs(p: TailnetPresence): EnvironmentEntry[] {
+    return p.mesh.map((entry) => ({
+      environmentId: null,
+      displayName: entry.machineName,
+      routes: [{ kind: 'tailnet', connection: entry.id }],
+      machine: { kind: 'paired', name: entry.machineName },
+      descriptor: null,
+      connection: meshConnection(p.meshReachability.get(entry.id)),
+      compatibility: 'unknown',
+    }))
+  }
+  const glyph = (p: TailnetPresence) => remoteGlyphState(p, envs(p))
+
   function presence(overrides: Partial<TailnetPresence> = {}): TailnetPresence {
     return {
       status: status(),
@@ -178,7 +192,6 @@ test('RemotePopover', async () => {
       mesh: [],
       meshRequests: [],
       meshReachability: new Map(),
-      meshRemoteChanges: new Map(),
       ...overrides,
     }
   }
@@ -243,44 +256,39 @@ test('RemotePopover', async () => {
     })
   }
   function popover(p: TailnetPresence, onOpenRemoteSettings: () => void = () => {}) {
-    return <RemotePopover presence={p} onOpenRemoteSettings={onOpenRemoteSettings} />
+    return <RemotePopover presence={p} environments={envs(p)} onOpenRemoteSettings={onOpenRemoteSettings} />
   }
 
   // ── derivation ───────────────────────────────────────────────────────────
 
   run('the glyph is absent while the feature is off and nothing is paired — not present-but-empty', () => {
-    assert.equal(
-      remoteGlyphState(presence({ status: status({ enabled: false, running: false, endpoint: null }) })).visible,
-      false,
-    )
-    assert.equal(remoteGlyphState(presence({ status: null })).visible, false)
+    assert.equal(glyph(presence({ status: status({ enabled: false, running: false, endpoint: null }) })).visible, false)
+    assert.equal(glyph(presence({ status: null })).visible, false)
   })
 
   run('a paired mesh machine earns the glyph even with the inbound listener off', () => {
-    const state = remoteGlyphState(
+    const state = glyph(
       presence({ status: status({ enabled: false, running: false, endpoint: null }), mesh: [connection()] }),
     )
     assert.equal(state.visible, true)
   })
 
   run('connected = an inbound device live here; degraded = a paired machine that revoked this one', () => {
-    const inbound = remoteGlyphState(presence({ live: { revision: 1, devices: [device()] } }))
+    const inbound = glyph(presence({ live: { revision: 1, devices: [device()] } }))
     assert.equal(inbound.connected, true)
     assert.equal(inbound.degraded, false)
-    const outbound = remoteGlyphState(
-      presence({ mesh: [connection()], meshReachability: new Map([['conn-1', reach()]]) }),
-    )
+    const outbound = glyph(presence({ mesh: [connection()], meshReachability: new Map([['conn-1', reach()]]) }))
     assert.equal(outbound.connected, false, 'a machine answering over there is not a device connected here')
     assert.equal(outbound.answering, 1)
     assert.equal(outbound.degraded, false)
-    const quiet = remoteGlyphState(
+    const quiet = glyph(
       presence({
         mesh: [connection()],
         meshReachability: new Map([['conn-1', reach({ reachable: false, detail: 'no answer' })]]),
       }),
     )
     assert.equal(quiet.degraded, false, 'a machine that is not answering may yet come back on its own')
-    const revoked = remoteGlyphState(
+    const revoked = glyph(
       presence({
         mesh: [connection()],
         meshReachability: new Map([['conn-1', reach({ reachable: false, unauthorized: true })]]),
@@ -291,20 +299,12 @@ test('RemotePopover', async () => {
     assert.equal(remoteGlyphTooltip(revoked), 'Remote — live · 0 machines answering · a machine revoked this pairing')
   })
 
-  run('a machine’s phase is derived from main’s reachability check for that machine alone', () => {
-    assert.deepEqual(meshMachinePhase('conn-1'), { phase: 'paired' })
-    assert.deepEqual(meshMachinePhase('conn-1', new Map([['conn-1', reach({ checking: true, checkedAt: null })]])), {
-      phase: 'checking',
-    })
-    assert.equal(meshMachinePhase('conn-1', new Map([['conn-1', reach()]])).phase, 'reachable')
-    assert.equal(
-      meshMachinePhase('conn-1', new Map([['other', reach({ connectionId: 'other' })]])).phase,
-      'paired',
-      'another machine’s check does not count',
+  run('a machine’s state is its own environment’s: another machine’s check does not count', () => {
+    const [only] = envs(
+      presence({ mesh: [connection()], meshReachability: new Map([['other', reach({ connectionId: 'other' })]]) }),
     )
-    const now = Date.now()
-    assert.equal(machinePhaseText({ phase: 'checking' }, now), 'checking…')
-    assert.equal(machinePhaseText({ phase: 'paired' }, now), 'paired')
+    assert.equal(only?.connection.state, 'unknown')
+    assert.equal(glyph(presence({ mesh: [connection()] })).answering, 0)
   })
 
   run('device liveness reads "Connected for" from the socket, else "Last seen" from the last activity', () => {
@@ -323,7 +323,7 @@ test('RemotePopover', async () => {
   run(
     'the glyph itself carries the state: green for serving or connected, pulsing amber only when someone is wanted',
     () => {
-      const tone = (p: TailnetPresence) => remoteGlyphToneClass(remoteGlyphState(p))
+      const tone = (p: TailnetPresence) => remoteGlyphToneClass(glyph(p))
       assert.match(tone(presence()), /tone-good/, 'serving alone is green — this Studio can be reached')
       assert.match(
         tone(presence({ live: { revision: 1, devices: [device()] } })),
@@ -427,7 +427,7 @@ test('RemotePopover', async () => {
       // Owner ruling 2026-09-05: the header is the name and the count. Whether
       // this device is on the tailnet is the glyph's ink and the glyph's tooltip.
       assert.doesNotMatch(markup, /Serving/, 'no listener word in the header')
-      for (const row of mounted.querySelectorAll('[data-machine-phase]')) {
+      for (const row of mounted.querySelectorAll('[data-machine-status]')) {
         assert.doesNotMatch(row.innerHTML, /rounded-full/, 'no status dot on a machine row — the glyph is the status')
       }
       assert.match(markup, /data-tailnet-listening="true"/)
@@ -492,15 +492,15 @@ test('RemotePopover', async () => {
       ),
     )
     const markup = mounted.innerHTML
-    assert.match(markup, /checking…/)
+    assert.match(markup, /Checking…/)
     assert.doesNotMatch(
       markup,
       /status-dot-pulse/,
       'no dots: the words carry the check in flight, the glyph stays in the default ink',
     )
-    assert.match(markup, /not answering · /)
+    assert.match(markup, /Not answering · /)
     assert.match(markup, /aria-label="Not answering"/)
-    assert.match(markup, /paired/, 'a machine with no check yet is paired, nothing more claimed')
+    assert.match(markup, />Paired</, 'a machine with no check yet is paired, nothing more claimed')
     assert.equal((markup.match(/<svg/g) ?? []).length >= 3, true, 'the remote glyph leads every machine row')
     unmount()
   })
@@ -650,20 +650,17 @@ test('RemotePopover', async () => {
         /data-machine-answering="true"/,
         'a machine main last saw answering is not claimed answering now',
       )
-      const state = remoteGlyphState(p)
+      const state = glyph(p)
       assert.equal(state.serving, false)
       assert.equal(state.answering, 0, 'nothing answers while this device is off the tailnet')
       assert.match(remoteGlyphTooltip(state), /not connected to Tailscale/)
       assert.match(remoteGlyphTooltip(state), /no Tailscale address/, 'the error rides the tooltip')
       assert.match(
-        remoteGlyphTooltip(
-          remoteGlyphState(presence({ mesh: [connection()], meshReachability: new Map([['conn-1', reach()]]) })),
-        ),
+        remoteGlyphTooltip(glyph(presence({ mesh: [connection()], meshReachability: new Map([['conn-1', reach()]]) }))),
         /live · 1 machine answering/,
       )
       assert.equal(
-        remoteGlyphState(presence({ mesh: [connection()], meshReachability: new Map([['conn-1', reach()]]) }))
-          .answering,
+        glyph(presence({ mesh: [connection()], meshReachability: new Map([['conn-1', reach()]]) })).answering,
         1,
         'the count the glyph wears',
       )
@@ -768,38 +765,40 @@ test('RemotePopover', async () => {
     async () => {
       bridge.reachabilityCalls.length = 0
       let pairAgain = 0
+      const retryPresence = presence({
+        mesh: [
+          connection(),
+          connection({ id: 'conn-2', machineName: 'Studio', endpoint: '100.1.1.2:8471' }),
+          connection({ id: 'conn-3', machineName: 'Old box', endpoint: '100.1.1.3:8471' }),
+        ],
+        meshReachability: new Map([
+          ['conn-1', reach()],
+          [
+            'conn-2',
+            reach({
+              connectionId: 'conn-2',
+              machineName: 'Studio',
+              reachable: false,
+              detail: 'no answer',
+              lastReachedAt: Date.now() - 2 * 3_600_000,
+            }),
+          ],
+          [
+            'conn-3',
+            reach({
+              connectionId: 'conn-3',
+              machineName: 'Old box',
+              reachable: false,
+              unauthorized: true,
+              detail: 'Unauthorized.',
+            }),
+          ],
+        ]),
+      })
       const mounted = mount(
         <RemotePopover
-          presence={presence({
-            mesh: [
-              connection(),
-              connection({ id: 'conn-2', machineName: 'Studio', endpoint: '100.1.1.2:8471' }),
-              connection({ id: 'conn-3', machineName: 'Old box', endpoint: '100.1.1.3:8471' }),
-            ],
-            meshReachability: new Map([
-              ['conn-1', reach()],
-              [
-                'conn-2',
-                reach({
-                  connectionId: 'conn-2',
-                  machineName: 'Studio',
-                  reachable: false,
-                  detail: 'no answer',
-                  lastReachedAt: Date.now() - 2 * 3_600_000,
-                }),
-              ],
-              [
-                'conn-3',
-                reach({
-                  connectionId: 'conn-3',
-                  machineName: 'Old box',
-                  reachable: false,
-                  unauthorized: true,
-                  detail: 'Unauthorized.',
-                }),
-              ],
-            ]),
-          })}
+          presence={retryPresence}
+          environments={envs(retryPresence)}
           onOpenRemoteSettings={() => {
             pairAgain += 1
           }}
@@ -814,19 +813,19 @@ test('RemotePopover', async () => {
       assert.match(markup, /aria-label="Answering"/)
       assert.match(
         markup,
-        /not answering · 2 h/,
+        /Not answering · 2 h/,
         'how long it has been silent — not a second clause about when it last was not',
       )
       assert.doesNotMatch(markup, /last reached/)
-      assert.match(markup, /revoked there — pair again to reconnect/)
+      assert.match(markup, /Revoked this device/)
       assert.match(markup, /aria-label="Revoked there"/)
       click(buttonLabelled(mounted, /^Check whether Studio is answering$/))
       await flush()
-      assert.deepEqual(bridge.reachabilityCalls, ['conn-2'], 'Retry re-checks that one machine')
+      assert.deepEqual(bridge.reachabilityCalls, ['tailnet:conn-2'], 'Retry re-checks that one machine')
       click(buttonNamed(mounted, /Pair again/))
       assert.equal(pairAgain, 1, 'Pair again opens the picker')
       assert.equal(
-        remoteGlyphState(
+        glyph(
           presence({
             mesh: [connection()],
             meshReachability: new Map([['conn-1', reach({ reachable: false, unauthorized: true })]]),

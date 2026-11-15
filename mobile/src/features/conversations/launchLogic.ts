@@ -2,7 +2,9 @@
 // their models, and the permission presets. No react-native import, so
 // `node --test` can pin every rule here.
 
-import type { ConversationPermissionPreset } from "../../api/conversationWire";
+import {
+  type ConversationWirePermissionPreset as ConversationPermissionPreset,
+} from "../../../../packages/conversation-protocol/src/public";
 
 export interface CliRuntimeModel {
   id: string;

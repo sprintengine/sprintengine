@@ -3,15 +3,20 @@ import { connect as connectSocket } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { connect, type ConnectOptions, type StudioClient } from './client.js'
-import { StudioError } from './errors.js'
+import {
+  StudioError,
+  connect,
+  type ConnectOptions,
+  type StudioClient,
+  type StudioTransport,
+  type StudioTransportFactory,
+} from './runtime.js'
 import {
   STUDIO_RUN_DIRECTORY,
   STUDIO_SERVER_DISCOVERY_FILENAME,
   parseStudioServerDiscovery,
   type StudioServerDiscovery,
 } from './protocol.js'
-import type { StudioTransport, StudioTransportFactory } from './transport.js'
 
 // Reaching the Studio on this machine from Node: where its data directory is,
 // where its owner socket is (from the discovery file it writes there), a

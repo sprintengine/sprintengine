@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { afterAll, beforeAll, test } from 'vitest'
+import { afterAll, beforeAll, test, vi } from 'vitest'
 
 import { meshConversationSessionId } from '../../../../shared/tailnet-mesh'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 // The Working section with a paired machine in the list: a chat at work over
 // there folds in with this computer's whether or not it is open here, under
@@ -82,23 +85,16 @@ async function createHarness() {
   }
   // What the machine lists now; a push makes the sidebar read it again.
   let conversations: Listed[] = []
-  let meshListener: ((event: unknown) => void) | null = null
-  let revision = 10
 
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
     getGitRepositoryIdentity: async () => null,
     getWorkspaceChangeSummary: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     onTailnetEvent: () => () => {},
-    onMeshEvent: (listener: (event: unknown) => void) => {
-      meshListener = listener
-      return () => {
-        meshListener = null
-      }
-    },
+    onMeshEvent: () => () => {},
     tailnetGetStatus: async () => ({
       enabled: true,
       running: true,
@@ -114,12 +110,12 @@ async function createHarness() {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
+  const studio = fakePairedStudios(domWindow.api as object, {
+    'conversation.list': () => ({ conversations: conversations }),
+    'workspaces.list': () => ({
       workspaces: ['rw1', 'rw2', 'rw3', 'rw4'].map((id) => ({
         id,
         name: id,
@@ -127,19 +123,9 @@ async function createHarness() {
         folderPath: id === 'rw4' ? '/Users/dev/quiet-project' : '/Users/dev/demo-app',
         repository: null,
       })),
-      gaps: [],
     }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations,
-      access: 'operate',
-      modelSwitch: false,
-      lifecycle: true,
-      rowMenu: true,
-      markUnread: true,
-    }),
-    meshVisitConversation: async () => ({ ok: true, workspaceId: 'rw1', lastVisitedAt: Date.now() }),
-  }
+    'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
+  })
 
   const React = await import('react')
   const { act } = React
@@ -247,13 +233,7 @@ async function createHarness() {
   const push = async (next?: Listed[]): Promise<void> => {
     if (next) conversations = next
     await act(async () => {
-      meshListener?.({
-        kind: 'remote-changed',
-        revision: ++revision,
-        connectionId: 'c1',
-        machineName: 'mac-mini',
-        what: 'conversations',
-      })
+      studio.push('conversations.changed', { what: 'conversations' })
     })
     await settle(300)
   }

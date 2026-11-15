@@ -57,6 +57,7 @@ function open(autoCompact: { on: boolean; claude: boolean }, picked: ContextMenu
         x={0}
         y={0}
         workspace={chat('claude-agent')}
+        chatLink={null}
         moduleOverrides={{}}
         isDetachedWindow={false}
         now={0}

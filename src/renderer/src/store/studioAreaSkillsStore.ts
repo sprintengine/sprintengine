@@ -1,5 +1,6 @@
 // The person's choices about the built-in plugin's area skills, as every
-// surface in this window reads them: one fetch, then main's broadcasts.
+// surface in this window reads them: one fetch, then the Studio's pushes
+// (`areaSkills.get`, `areaSkills.changed`).
 //
 // A surface's suggestion and the Settings switch read the same record, so
 // installing from the Backlog panel flips the switch, and switching one off in
@@ -16,6 +17,7 @@ import {
   type StudioAreaSkillChoices,
   type StudioAreaSkillId,
 } from '../../../shared/studio-area-skills'
+import { agentSetupApi, windowHasStudio, type AgentSetupApi } from '../studio/agentSetup'
 
 let choices: StudioAreaSkillChoices | null = null
 let started = false
@@ -26,18 +28,18 @@ function publish(next: unknown): void {
   for (const listener of listeners) listener()
 }
 
-function api(): Partial<Window['api']> | undefined {
-  return typeof window === 'undefined' ? undefined : window.api
+function api(): AgentSetupApi | undefined {
+  return windowHasStudio() ? agentSetupApi : undefined
 }
 
 function start(): void {
   if (started) return
   started = true
   const bridge = api()
-  // An older preload, or a test that stubs none of this: no choices, so no
-  // suggestion and a Settings section with nothing to show.
-  if (typeof bridge?.studioAreaSkillsGet !== 'function') return
-  bridge.onStudioAreaSkillsChanged?.((next) => publish(next))
+  // A page with no Studio: no choices, so no suggestion and a Settings
+  // section with nothing to show.
+  if (!bridge) return
+  bridge.onStudioAreaSkillsChanged((next) => publish(next))
   void bridge
     .studioAreaSkillsGet()
     .then(publish)
@@ -57,13 +59,13 @@ export function useStudioAreaSkillChoices(): StudioAreaSkillChoices | null {
 
 export async function setStudioAreaSkillEnabled(skillId: StudioAreaSkillId, enabled: boolean): Promise<void> {
   const bridge = api()
-  if (typeof bridge?.studioAreaSkillsSetEnabled !== 'function') return
+  if (!bridge) return
   publish(await bridge.studioAreaSkillsSetEnabled({ skillId, enabled }))
 }
 
 export async function dismissStudioAreaSkill(skillId: StudioAreaSkillId): Promise<void> {
   const bridge = api()
-  if (typeof bridge?.studioAreaSkillsDismiss !== 'function') return
+  if (!bridge) return
   publish(await bridge.studioAreaSkillsDismiss({ skillId }))
 }
 

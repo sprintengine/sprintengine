@@ -1,4 +1,3 @@
-import type { WebContents } from 'electron'
 import type { ObservedCheckout } from '../shared/observed-checkout'
 import type { BranchPullRequest } from '../shared/git/pull-request'
 import type * as pty from 'node-pty'
@@ -28,6 +27,7 @@ import {
   TERMINAL_RECENT_REPLAY_BYTES,
 } from '../shared/terminal-history'
 import { TerminalReplayBuffer } from './terminal-replay-buffer'
+import { headlessTerminalViewer, type TerminalViewer } from '../server/terminals/terminal-viewer'
 
 export type TerminalSize = {
   cols: number
@@ -36,7 +36,7 @@ export type TerminalSize = {
 
 type FailedTerminalSessionInput = {
   sessionId: string
-  sender?: WebContents
+  viewer?: TerminalViewer
   message: string
   at?: number
   exitCode?: number
@@ -64,7 +64,7 @@ type FailedTerminalSessionInput = {
 export type TerminalSession = {
   sessionId: string
   process: pty.IPty
-  sender: WebContents
+  viewer: TerminalViewer
   isReady: boolean
   hasExited: boolean
   exitedAt: number | null
@@ -210,11 +210,11 @@ export type TerminalSession = {
   // whether the ledger moved since it last sent it without comparing the list.
   fileChangesVersion?: number
   // How far into the output stream (`output.endOffset` terms) the renderer's
-  // xterm has been sent, and to which window. Revealing a hidden pane sends
+  // xterm has been sent, and to which viewer. Revealing a hidden pane sends
   // only what lies past it when that is still retained, instead of resetting
   // the pane and replaying the whole window.
   rendererDeliveredOffset?: number
-  rendererDeliveredTo?: WebContents
+  rendererDeliveredTo?: TerminalViewer
   kind: TerminalKind
   pathStyle?: TerminalPathStyle
   // The machine the session runs on (see shared/execution-host.ts). A resume
@@ -440,8 +440,8 @@ export function isTerminalSessionStale(
   // the sidecar's own TTL bounds the disk.
   if (session.kind === 'agent' && (session.suspended || session.hasExited)) return false
   // A session painted in a pane right now is on screen; only trust the flag
-  // while its window still exists.
-  if (session.visible && !session.sender.isDestroyed()) return false
+  // while its pane is still there.
+  if (session.visible && !session.viewer.isGone()) return false
   return now - getTerminalUnseenSince(session) > maxUnseenMs
 }
 
@@ -467,7 +467,7 @@ export function createFailedTerminalSession(input: FailedTerminalSessionInput): 
   return {
     sessionId: input.sessionId,
     process: createInactiveTerminalProcess(),
-    sender: input.sender ?? createNoopWebContents(),
+    viewer: input.viewer ?? headlessTerminalViewer(),
     isReady: true,
     hasExited: true,
     exitedAt: at,
@@ -505,7 +505,7 @@ export function createFailedTerminalSession(input: FailedTerminalSessionInput): 
 
 type SuspendedPlaceholderSessionInput = {
   sessionId: string
-  sender?: WebContents
+  viewer?: TerminalViewer
   // When the sidecar was written (the suspend/quit moment) — the honest "last
   // output" time for the painted content.
   savedAt: number
@@ -556,7 +556,7 @@ export function createSuspendedPlaceholderSession(input: SuspendedPlaceholderSes
   const session: TerminalSession = {
     sessionId: input.sessionId,
     process: createInactiveTerminalProcess(),
-    sender: input.sender ?? createNoopWebContents(),
+    viewer: input.viewer ?? headlessTerminalViewer(),
     isReady: true,
     hasExited: false,
     exitedAt: null,
@@ -1120,7 +1120,7 @@ export function parseSessionContextUsage(raw: unknown, now = Date.now()): Sessio
  * A session snapshot without its two lists — the file ledger (up to 500
  * entries) and the pull request marks. The sessions broadcast sends this for
  * every session that changed and adds a list only when that list itself moved;
- * {@link getTerminalSnapshot} is the whole thing, for `terminal:list` and the
+ * {@link getTerminalSnapshot} is the whole thing, for `terminal.list` and the
  * remote transports.
  */
 export type TerminalSessionSnapshotBase = Omit<TerminalSessionSnapshot, 'fileChanges' | 'pullRequests'>
@@ -1217,22 +1217,4 @@ function createInactiveTerminalProcess(): pty.IPty {
     onData: () => ({ dispose: () => undefined }),
     onExit: () => ({ dispose: () => undefined }),
   } as unknown as pty.IPty
-}
-
-function createNoopWebContents(): WebContents {
-  return {
-    isDestroyed: () => true,
-    send: () => undefined,
-  } as unknown as WebContents
-}
-
-/**
- * Event sink for sessions spawned with no window (a headless launch). Every
- * outbound send is guarded on
- * `isDestroyed()`, so a headless session simply emits nothing until a window
- * attaches — the reattach path (`spawnTerminalFromIpc` existing-session
- * branch) then adopts the real WebContents and replays scrollback.
- */
-export function createHeadlessTerminalSender(): WebContents {
-  return createNoopWebContents()
 }

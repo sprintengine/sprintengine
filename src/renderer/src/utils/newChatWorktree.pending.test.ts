@@ -28,6 +28,7 @@ vi.mock('./diagnostics', () => ({ publishDiagnosticSync: () => undefined }))
 const {
   newChatWorktreeAttemptRunning,
   pendingNewChatWorktreeFailure,
+  pendingNewChatWorktreeOf,
   prepareNewChatWorktree,
   startPendingNewChatInProject,
 } = await import('./newChatWorktree')
@@ -110,6 +111,28 @@ test('a failure is written onto the chat, and a retry clears it before trying ag
   assert.deepEqual(writes, ['agent:pending', `folder:${PROJECT}-wt`, 'agent:cleared'])
 })
 
+test('a chat with its folder waits on nothing, though an older record still names the wait', async () => {
+  // As a registry written before clears reached it reads after a restart: the
+  // worktree landed and the chat ran in it, but the wait was never cleared.
+  const landed = pendingChat()
+  landed.folderPath = `${PROJECT}-wt`
+  state.workspaces = [landed]
+  const made: unknown[] = []
+  stubWorktree(async () => {
+    made.push('worktree')
+    return { ok: true, data: { path: `${PROJECT}-wt2`, branch: 'agent/chat-3', baseRef: 'main' } }
+  })
+  assert.equal(pendingNewChatWorktreeOf(landed, landed.agents.agent), null)
+  assert.equal(await prepareNewChatWorktree('chat'), false, 'nothing to prepare')
+  assert.equal(startPendingNewChatInProject('chat'), false, 'nothing to start in the project')
+  assert.deepEqual(made, [])
+  assert.equal(landed.folderPath, `${PROJECT}-wt`, 'the chat keeps its worktree')
+  assert.deepEqual(pendingNewChatWorktreeOf(pendingChat(), pendingChat().agents.agent), {
+    name: '',
+    projectFolder: PROJECT,
+  })
+})
+
 test('a chat pending with no attempt in this window reads as failed, never as preparing', () => {
   assert.equal(
     pendingNewChatWorktreeFailure('chat', { name: '', projectFolder: PROJECT }),
@@ -132,7 +155,7 @@ test('Start in the project goes ahead while an attempt runs, and the worktree it
   })
   assert.equal(await attempt, false)
   assert.deepEqual(writes, [], 'the chat stays in the project')
-  assert.deepEqual(givenBack, [{ pool: { kind: 'release', leaseId: 'lease-1' } }])
+  assert.deepEqual(givenBack, [{ pool: { kind: 'release', leaseId: 'lease-1', unused: true } }])
 
   // A retry asked of it afterwards (another window's button, say) has nothing left to make.
   stubWorktree(async () => ({ ok: true, data: { path: `${PROJECT}-wt2`, branch: 'agent/chat-2', baseRef: 'main' } }))

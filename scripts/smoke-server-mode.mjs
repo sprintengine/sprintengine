@@ -6,8 +6,8 @@
 //   1. waits for the server's ready and for the window's port, and lists the
 //      gateway's tools: the shell's toolsets are there;
 //   2. SIGKILLs the server and waits for the restart and a fresh port, and
-//      lists again: the shell offered its toolsets to the new server, and a
-//      call reaches the shell's terminal toolset;
+//      lists again: the shell offered its toolsets to the new server, and the
+//      server answers its own terminal tools (the ptys are the server's);
 //   3. quits, and checks the app and its server are both gone in time;
 //   4. relaunches in process on the same profile (the rollback), and checks it
 //      reads the same data directory: the same environment id.
@@ -125,7 +125,8 @@ async function waitUntil(condition, what) {
 }
 
 // One tool from each toolset the shell offers out of process (phase 6, 6.3).
-const SHELL_TOOLS = ['browser.open', 'canvas.list', 'editor.open', 'tour.status', 'terminal.list', 'agent.launch']
+// The terminal and agent tools are the server's own: the terminals run there.
+const SHELL_TOOLS = ['browser.open', 'canvas.list', 'editor.open', 'tour.status']
 
 /**
  * One MCP session with the gateway, as an agent's bridge opens it: the names
@@ -227,11 +228,11 @@ try {
   const missingAfter = await missingShellTools(profile)
   if (missingAfter.length > 0) fail(`after the restart the gateway does not list ${missingAfter.join(', ')}`)
   else say('the shell offered its toolsets to the restarted server')
-  // A call the server routes to the shell's terminal toolset, and its answer back.
+  // A terminal tool, answered by the restarted server itself.
   const called = await gatewaySession(profile, { name: 'terminal.list', arguments: {} })
   if (called.error || called.result?.isError)
-    fail(`terminal.list through the shell failed: ${JSON.stringify(called.error ?? called.result)}`)
-  else say('terminal.list answered through the shell')
+    fail(`terminal.list on the server failed: ${JSON.stringify(called.error ?? called.result)}`)
+  else say('terminal.list answered by the server')
 
   const appPid = app.child.pid
   const exit = await quit(app)

@@ -1,11 +1,12 @@
 // Builds dist/esm and dist/cjs.
 //
-// The protocol is a dependency of this package, not a copy of it. In this
-// repository `src/protocol.ts` re-exports the Studio protocol's source by path,
-// so the app's tests drive this client against the server they ship with. The
-// build stages the sources with that one file replaced by a re-export of
-// `@sprintengine/studio-protocol`, and compiles the staged tree against the
-// protocol packages' own declarations, so the tarball names its dependency.
+// The protocol and the client runtime are dependencies of this package, not
+// copies of them. In this repository `src/protocol.ts` and `src/runtime.ts`
+// re-export their sources by path, so the app's tests drive this client against
+// the server they ship with. The build stages the sources with those two files
+// replaced by re-exports of `@sprintengine/studio-protocol` and
+// `@sprintengine/client-runtime`, and compiles the staged tree against those
+// packages' own declarations, so the tarball names its dependencies.
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -18,8 +19,8 @@ const require = createRequire(import.meta.url)
 const compiler = join(dirname(require.resolve('typescript/package.json')), 'bin', 'tsc')
 const stage = join(packageDir, '.stage')
 
-// The protocol's build builds the conversation protocol it depends on first.
-execFileSync(process.execPath, [join(packagesDir, 'studio-protocol', 'build.mjs')], { stdio: 'inherit' })
+// The runtime's build builds the protocols it depends on first.
+execFileSync(process.execPath, [join(packagesDir, 'client-runtime', 'build.mjs')], { stdio: 'inherit' })
 rmSync(join(packageDir, 'dist'), { recursive: true, force: true })
 rmSync(stage, { recursive: true, force: true })
 try {
@@ -28,6 +29,7 @@ try {
     filter: (source) => !source.endsWith('.test.ts'),
   })
   writeFileSync(join(stage, 'src', 'protocol.ts'), "export * from '@sprintengine/studio-protocol'\n")
+  writeFileSync(join(stage, 'src', 'runtime.ts'), "export * from '@sprintengine/client-runtime'\n")
   for (const [directory, module, type] of [
     ['esm', 'ES2022', 'module'],
     ['cjs', 'CommonJS', 'commonjs'],
@@ -50,6 +52,7 @@ try {
           types: ['node'],
           typeRoots: [join(packagesDir, '..', 'node_modules', '@types')],
           paths: {
+            '@sprintengine/client-runtime': [join(packagesDir, 'client-runtime', 'dist', directory, 'public.d.ts')],
             '@sprintengine/studio-protocol': [join(packagesDir, 'studio-protocol', 'dist', directory, 'public.d.ts')],
             '@sprintengine/conversation-protocol': [
               join(packagesDir, 'conversation-protocol', 'dist', directory, 'public.d.ts'),

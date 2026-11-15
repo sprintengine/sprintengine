@@ -14,7 +14,7 @@ vi.mock('electron', () => import('../../../tests/stubs/electron'))
 import { EXTENSION_GUIDE_TOPICS } from '../../../packages/module-sdk/src/guide'
 import { listModuleParts, listModuleTemplates } from '../../../packages/module-sdk/src/scaffold'
 import type { McpToolRegistration, McpToolResult } from '../../shared/modules/mcp-tools'
-import { createExtensionScaffoldHandlers } from '../ipc/extension-scaffold-ipc'
+import { createExtensionScaffoldHandlers } from '../extension-scaffold'
 import { createExtensionTools, EXTENSION_PART_IDS, EXTENSION_TEMPLATE_IDS } from './extension-tools'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { localOnlyGatewayToolReason } from './tailnet/tailnet-scopes'

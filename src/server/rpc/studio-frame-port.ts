@@ -5,17 +5,14 @@ import { STUDIO_SCOPES, type StudioGrant } from '../../../packages/studio-protoc
 import type { StudioAuthenticator } from './studio-rpc-types'
 
 // A Studio connection over a message port: one frame per message instead of
-// one per line. It is how Studio's own windows reach the RPC. Main makes a
-// channel per connection, keeps one end and hands the other to the window's
-// preload, which keeps it out of the page; once the server runs in a process
-// of its own, main hands its end to that process instead, and nothing on the
-// window's side changes.
+// one per line. It is how the desktop's shell reaches its own server (the
+// shell role, which offers the built-in toolsets): main makes a channel per
+// connection and hands one end to the server. Studio's windows do not use it;
+// they open a WebSocket to the window listener (`studio-window-listener.ts`).
 //
-// The port is the window's identity: main gives one only to a window of its
-// own (the same check its IPC makes). The hello on it still carries a
-// credential, as every hello does, but one that cannot be used anywhere else:
-// a ticket minted for this connection alone, good for one hello within
-// thirty seconds. The window never holds anything longer-lived.
+// The hello on a connection still carries a credential, as every hello does,
+// but one that cannot be used anywhere else: a ticket minted for that
+// connection alone, good for one hello within thirty seconds.
 
 /** The end of a message channel a Studio connection runs over. Main's `MessagePortMain` is one. */
 export type StudioFramePort = {
@@ -89,9 +86,12 @@ export function framePortStream(port: StudioFramePort): Duplex {
 
 const TICKET_TTL_MS = 30_000
 
-/** A ticket: printable, unguessable, and shaped as a hello's credential must be. */
+/**
+ * A ticket for one connection (a window's socket, the shell's port): 32 random
+ * bytes, printable, and shaped as a hello's credential must be.
+ */
 export function mintStudioTicket(): string {
-  return `seport_${randomBytes(24).toString('base64url')}`
+  return `seticket_${randomBytes(32).toString('base64url')}`
 }
 
 function sameSecret(presented: string, expected: string): boolean {

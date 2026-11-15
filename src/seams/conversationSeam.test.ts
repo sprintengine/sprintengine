@@ -16,16 +16,18 @@ import type {
   MockAdapterSessionInput,
   MockAdapterTurnInput,
 } from '../main/providers/mock-conversation-provider'
-import type { ConversationIpcHandlers } from '../main/ipc/conversation-ipc'
+import type { ConversationService } from '../main/conversation-service'
 import { test, vi } from 'vitest'
 
-// The IPC wire between the real preload and the real main handlers.
+// The wire between the window's real chat calls and main's real handlers: the
+// window's Studio client and protocol parts, the Studio RPC router, and the
+// chat backend with its input checks (tests/studio-chat-wire.ts).
 vi.mock('electron', () => import('../../tests/stubs/electron'))
 
 test('conversationSeam', async () => {
   // The input each stubbed IPC handler is handed, read off the real handler
   // surface so a stub cannot drift from the channel it stands in for.
-  type HandlerInput<K extends keyof ConversationIpcHandlers> = Parameters<NonNullable<ConversationIpcHandlers[K]>>[0]
+  type HandlerInput<K extends keyof ConversationService> = Parameters<NonNullable<ConversationService[K]>>[0]
 
   // ── Seam: the conversation composer and its runtime (T4 → T5, items 1798/1809/1810)
   //
@@ -124,7 +126,6 @@ test('conversationSeam', async () => {
       getSecretStatus: refuse,
       setSecret: refuse,
       clearSecret: refuse,
-      readTranscript: refuse,
     }
   }
 
@@ -141,10 +142,8 @@ test('conversationSeam', async () => {
 
   async function testContinuationTurnIsBusyOnBothSidesOfTheBoundary(): Promise<void> {
     await withWorkspaceRoot('sprintengine-seam-conversation-busy-', async (workspaceRoot) => {
-      const { ipcMain } = await import('electron')
       const { ConversationRuntime } = await import('../main/conversation-runtime')
-      const { registerConversationIpc } = await import('../main/ipc/conversation-ipc')
-      const { conversationApi } = await import('../preload/api/conversation')
+      const { connectChatOverStudio } = await import('../../tests/studio-chat-wire')
       const { projectConversation, isConversationBusy } =
         await import('../renderer/src/components/panels/AgentChatView')
 
@@ -164,7 +163,7 @@ test('conversationSeam', async () => {
       const broadcast: ConversationEvent[] = []
       runtime.onEvent((event) => broadcast.push(event))
 
-      registerConversationIpc(ipcMain, {
+      const wire = connectChatOverStudio({
         ...refusingHandlerStubs(),
         startSession: (input: HandlerInput<'startSession'>) => runtime.startSession(input),
         sendTurn: (input: HandlerInput<'sendTurn'>) => runtime.sendTurn(input),
@@ -174,7 +173,11 @@ test('conversationSeam', async () => {
         stopSession: (input: HandlerInput<'stopSession'>) => runtime.stopSession(input),
         listSessions: (input: HandlerInput<'listSessions'>) => runtime.listSessions(input),
         onEvent: (listener: HandlerInput<'onEvent'>) => runtime.onEvent(listener),
-      } as unknown as Parameters<typeof registerConversationIpc>[1])
+      } as unknown as ConversationService)
+      const conversationApi = {
+        conversationSessionStart: (input: HandlerInput<'startSession'>) => wire.parts.startSession!(input),
+        conversationSessionSendTurn: (input: ConversationSendTurnInput) => wire.parts.send(input),
+      }
 
       const started = await conversationApi.conversationSessionStart({
         workspaceRoot,
@@ -262,7 +265,7 @@ test('conversationSeam', async () => {
       assert.equal(flushed.ok, true, 'and the same message is accepted')
       assert.equal(broadcast.filter((event) => event.type === 'user_message').length, 2)
 
-      await conversationApi.conversationSessionStop({ sessionId })
+      await runtime.stopSession({ sessionId })
       console.log('ok - a continuation turn reads as busy in the composer and in the runtime alike')
     })
   }
@@ -337,9 +340,7 @@ test('conversationSeam', async () => {
   // --- 1810: one accepted attachment set, not two that agree today ------------
 
   async function testComposerAndBoundaryAcceptTheSameAttachments(): Promise<void> {
-    const { ipcMain } = await import('electron')
-    const { registerConversationIpc } = await import('../main/ipc/conversation-ipc')
-    const { conversationApi } = await import('../preload/api/conversation')
+    const { connectChatOverStudio } = await import('../../tests/studio-chat-wire')
     const {
       ATTACHABLE_IMAGE_TYPES,
       MAX_ATTACHMENTS_PER_TURN,
@@ -362,7 +363,7 @@ test('conversationSeam', async () => {
         updatedAt: 0,
       } as ConversationSessionSummary,
     }
-    registerConversationIpc(ipcMain, {
+    const wire = connectChatOverStudio({
       ...refusingHandlerStubs(),
       startSession: async () => ({ ok: false, message: 'unused' }),
       sendTurn: async (input: ConversationSendTurnInput) => {
@@ -375,7 +376,11 @@ test('conversationSeam', async () => {
       stopSession: async () => accepted,
       listSessions: () => ({ ok: true, sessions: [] }),
       onEvent: () => () => {},
-    } as unknown as Parameters<typeof registerConversationIpc>[1])
+    } as unknown as ConversationService)
+    const conversationApi = {
+      conversationSessionSendTurn: async (input: ConversationSendTurnInput) =>
+        (await wire.parts.send(input)) as ConversationSessionActionResult,
+    }
 
     const send = async (attachments: unknown): Promise<ConversationSessionActionResult> =>
       conversationApi.conversationSessionSendTurn({

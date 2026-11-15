@@ -1,6 +1,6 @@
 import { Path, Rect } from "react-native-svg";
 
-import type { ConversationToolKind } from "../../api/conversation-protocol/tool-types";
+import type { ConversationToolKind } from "../../../../packages/conversation-protocol/src/public";
 import { GlyphFrame, iconSize } from "../../components/glyphs/Glyph";
 
 // The chat's own marks. The tool kinds are the desktop's design-system glyphs

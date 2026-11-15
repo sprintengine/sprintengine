@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { afterEach, test, vi } from 'vitest'
 
 import type { ConversationEvent, ConversationMcpServer } from '../../shared/conversation-runtime'
-import type { ExecutionHostId } from '../../shared/execution-host'
 import {
   CLAUDE_AGENT_PROVIDER_ID,
   claudeMcpLaunch,
@@ -48,7 +47,7 @@ function harness(
   }),
 ) {
   const options: Record<string, unknown>[] = []
-  const gatewayAskedFor: Array<{ hostId?: ExecutionHostId }> = []
+  const gatewayAskedFor: string[] = []
   // What reached the child, in order: each registration and each message.
   const sent: Array<{ registered: Record<string, unknown> } | { message: unknown } | { reconnected: string }> = []
   const query = (params: { prompt: AsyncIterable<Record<string, unknown>>; options: Record<string, unknown> }) => {
@@ -95,10 +94,8 @@ function harness(
       SPRINTENGINE_WORKSPACE_ID: input.workspaceId,
       SPRINTENGINE_AGENT_ID: input.agentId,
     }),
-    // A WSL machine that is always ready; its child is never spawned here.
-    prepareWslTarget: async () => ({ distro: 'Ubuntu', agentStateSocketPath: '/run/user/1000/agent.sock' }),
-    resolveStudioMcpServer: async (input) => {
-      gatewayAskedFor.push(input)
+    resolveStudioMcpServer: async () => {
+      gatewayAskedFor.push('gateway')
       if (gateway === 'throws') throw new Error('no launcher')
       return gateway
     },
@@ -169,7 +166,7 @@ test('claude-agent-provider mcp servers', async () => {
         },
       },
     })
-    assert.deepEqual(gatewayAskedFor, [{}])
+    assert.deepEqual(gatewayAskedFor, ['gateway'])
     await adapter.disposeAll()
   }
 
@@ -191,36 +188,8 @@ test('claude-agent-provider mcp servers', async () => {
     await adapter.disposeAll()
   }
 
-  // A chat on a WSL machine asks for that machine's gateway.
-  {
-    const { firstTurn, gatewayAskedFor, adapter } = harness(null)
-    await firstTurn({ cliRuntimes: { 'claude-code': { hostId: 'wsl:Ubuntu' } } })
-    assert.deepEqual(gatewayAskedFor, [{ hostId: 'wsl:Ubuntu' }])
-    await adapter.disposeAll()
-  }
-
-  // That gateway names the channel token its bridge opens with, and the entry
-  // the SDK puts on the child's command line carries neither the token nor a
-  // reference to it: the bridge inherits it from the child (spawnWslClaude).
-  {
-    const { firstTurn, adapter } = harness({
-      id: 'sprintengine-studio',
-      name: 'SprintEngine Studio',
-      transport: 'stdio',
-      command: '/home/dev/.local/share/sprintengine-studio/launcher',
-      args: ['mcp'],
-      env: { SPRINTENGINE_USER_DATA_DIR: '/run/user/1000/sprintengine' },
-      envVarNames: ['SPRINTENGINE_MCP_CHANNEL_TOKEN'],
-    })
-    const options = await firstTurn({ cliRuntimes: { 'claude-code': { hostId: 'wsl:Ubuntu' } } })
-    const entry = (options.mcpServers as Record<string, { env?: Record<string, string> }>)['sprintengine-studio']
-    assert.equal(entry.env?.SPRINTENGINE_USER_DATA_DIR, '/run/user/1000/sprintengine')
-    assert.doesNotMatch(JSON.stringify(entry), /SPRINTENGINE_MCP_CHANNEL_TOKEN/u)
-    await adapter.disposeAll()
-  }
-
-  // The rendering: HTTP and SSE with a bearer token the CLI expands, Windows
-  // paths for a child in WSL, and a server with nothing to start left out.
+  // The rendering: HTTP and SSE with a bearer token the CLI expands, and a
+  // server with nothing to start left out.
   assert.deepEqual(
     claudeMcpServers([
       {
@@ -237,15 +206,6 @@ test('claude-agent-provider mcp servers', async () => {
       linear: { type: 'http', url: 'https://mcp.linear.app/mcp', headers: { Authorization: 'Bearer ${LINEAR_TOKEN}' } },
       events: { type: 'sse', url: 'https://example.com/sse', headers: { 'X-Team': 'acme' } },
     },
-  )
-  assert.deepEqual(
-    claudeMcpServers(
-      [{ id: 'local', name: 'Local', transport: 'stdio', command: 'C:\\tools\\mcp.exe', args: ['--x'] }],
-      {
-        wsl: true,
-      },
-    ).local,
-    { type: 'stdio', command: '/mnt/c/tools/mcp.exe', args: ['--x'] },
   )
 })
 

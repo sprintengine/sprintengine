@@ -1,87 +1,41 @@
-import type { ApiResult, MobileControlCommand } from "./types";
+import type {
+  StudioPullRequestCheck,
+  StudioPullRequestDetail,
+  StudioPullRequestDiffPage,
+  StudioPullRequestRemark,
+} from "../../../packages/studio-protocol/src/public";
+import { readPullRequestDetail as askDetail, readPullRequestDiff as askDiff } from "./desktopReads";
+import type { DesktopStudioOptions, DesktopTarget } from "./desktopStudio";
+import type { ApiResult } from "./types";
 
 // A pull request as the phone's viewer shows it, read from the desktop that
-// lists it: `pullRequest.read` for its detail and `pullRequest.diff` for a
-// page of one file's diff, two mobile-control commands that only read
-// (`shared/mobile-control/protocol.ts`). The desktop asks GitHub through its
-// own `gh` and cuts every list down before it sends it, so an answer is a
-// screen of a pull request, not the whole of it.
+// lists it: `pullRequests.detail` for its detail and `pullRequests.diff` for a
+// page of one file's diff, on the desktop's Studio protocol. The desktop asks
+// GitHub through its own `gh` and cuts every list down before it sends it, so
+// an answer is a screen of a pull request, not the whole of it.
 //
-// What an answer means is pure and exported, so the regression suite reads
-// the same rules the screens run. An answer in a shape this build does not
-// know is read as no answer, never half of one.
+// The shapes are the protocol's. What another machine sends is still read
+// member by member: an answer in a shape this build does not know is read as
+// no answer, never half of one. Pure and exported, so the regression suite
+// reads the same rules the screens run.
 
-export type PullRequestState = "open" | "merged" | "closed";
-export type PullRequestCheckStatus = "pending" | "passed" | "failed";
-
-export interface PullRequestCheck {
-  name: string;
-  workflow: string;
-  status: PullRequestCheckStatus;
-  required: boolean;
-}
-
-export interface PullRequestRemark {
-  kind: "comment" | "review";
-  author: string;
-  verdict?: "approved" | "changes-requested" | "commented";
-  excerpt: string;
-  at: number;
-}
-
-export interface PullRequestChangedFile {
-  path: string;
-  additions: number;
-  deletions: number;
-  /** GitHub's word for the change, lower-cased ("added", "modified", "renamed"…), or null. */
-  change: string | null;
-}
-
-export interface PullRequestDetail {
-  url: string;
-  number: number | null;
-  title: string | null;
-  state: PullRequestState;
-  isDraft: boolean;
-  author: string | null;
-  baseRefName: string | null;
-  headRefName: string | null;
-  openedAt: number | null;
-  endedAt: number | null;
-  mergeable: "mergeable" | "conflicting" | "unknown";
-  checks: { passed: number; failed: number; pending: number; items: PullRequestCheck[] };
-  reviewDecision: "approved" | "changes-requested" | "review-required" | null;
-  reviews: { approved: number; changesRequested: number; commented: number };
-  remarks: { total: number; latest: PullRequestRemark[] };
-  /** Null when the desktop could not read them. `total` may be more than `items` lists. */
-  files: { total: number; additions: number; deletions: number; items: PullRequestChangedFile[] } | null;
-}
-
-export interface PullRequestDiffPage {
-  path: string;
-  patch: string;
-  offset: number;
-  nextOffset: number | null;
-  totalLines: number;
-}
+export type PullRequestState = StudioPullRequestDetail["state"];
+export type PullRequestCheckStatus = StudioPullRequestCheck["status"];
+export type PullRequestCheck = StudioPullRequestCheck;
+export type PullRequestRemark = StudioPullRequestRemark;
+export type PullRequestChangedFile = NonNullable<StudioPullRequestDetail["files"]>["items"][number];
+export type PullRequestDetail = StudioPullRequestDetail;
+export type PullRequestDiffPage = Omit<StudioPullRequestDiffPage, "url">;
 
 export interface PullRequestApi {
   read(url: string): Promise<ApiResult<PullRequestDetail>>;
   diff(url: string, path: string, offset?: number): Promise<ApiResult<PullRequestDiffPage>>;
 }
 
-/** The one call the API needs of the desktop's control client. */
-export interface PullRequestCommandSender {
-  sendCommand<T>(command: {
-    type: MobileControlCommand["type"];
-    payload: Record<string, unknown>;
-  }): Promise<ApiResult<T>>;
-}
-
-export function createPullRequestApi(client: PullRequestCommandSender): PullRequestApi {
+export function createPullRequestApi(target: DesktopTarget, options: DesktopStudioOptions = {}): PullRequestApi {
   return {
     async read(url) {
-      const result = await client.sendCommand<unknown>({ type: "pullRequest.read", payload: { url } });
+      const result = await askDetail(target, url, options);
       if (!result.ok) return { ok: false, errorCode: result.errorCode, message: result.message };
       const detail = readPullRequestDetail(result.data);
       return detail
@@ -93,10 +47,7 @@ export function createPullRequestApi(client: PullRequestCommandSender): PullRequ
           };
     },
     async diff(url, path, offset = 0) {
-      const result = await client.sendCommand<unknown>({
-        type: "pullRequest.diff",
-        payload: offset > 0 ? { url, path, offset } : { url, path },
-      });
+      const result = await askDiff(target, offset > 0 ? { url, path, offset } : { url, path }, options);
       if (!result.ok) return { ok: false, errorCode: result.errorCode, message: result.message };
       const page = readPullRequestDiffPage(result.data, path);
       return page
@@ -112,13 +63,10 @@ export function createPullRequestApi(client: PullRequestCommandSender): PullRequ
 
 /**
  * Whether a refusal says the desktop does not serve the reads at all: one
- * from before them. Its validator answers an unknown command as
- * `invalid_payload` with these words, and its gateway as `command_not_supported`.
+ * from before them, which answers the method as unknown.
  */
 export function pullRequestReadsUnsupported(result: Pick<ApiResult<unknown>, "ok" | "errorCode" | "message">): boolean {
-  if (result.ok) return false;
-  if (result.errorCode === "command_not_supported") return true;
-  return result.errorCode === "invalid_payload" && /supported mobile-control command/.test(result.message ?? "");
+  return !result.ok && result.errorCode === "command_not_supported";
 }
 
 /** The detail, or null when the answer is not in its shape. */

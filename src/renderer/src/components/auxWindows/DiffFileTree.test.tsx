@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, test } from 'vitest'
 
 import type { DiffFileItem } from './diffFileList'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 // The diff viewer's file list is the Files tree with a filter applied: it
 // lists the viewer's own items (one row per file, however many of the
@@ -37,6 +38,8 @@ const reads: string[] = []
     },
   },
 )
+// The sessions the tree marks are listed by the window's Studio, over the protocol.
+installStudioLoopback(window as never)
 
 const { DiffFileTree, diffTreeEntries, diffTreeIndexForPath } = await import('./DiffFileTree')
 const { ConfirmDialogProvider } = await import('../ui/ConfirmDialog')

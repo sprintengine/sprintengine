@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import {
-  CONVERSATION_MAX_CHANGES_STEPS,
-  isConversationChangedPath,
-  parseConversationChangedFileSides,
-  parseConversationChangesDiff,
-} from '../src/checkoutChanges'
+import { CONVERSATION_MAX_CHANGES_STEPS, isConversationChangedPath } from '../src/checkoutChanges'
 import { explainRejectedConversationMessage, parseConversationClientMessage } from '../src/clientFrames'
 import { CONVERSATION_CAPABILITIES, CONVERSATION_CHANGES_CAPABILITY } from '../src/handshake'
 import { isKnownConversationServerFrameType, parseConversationServerFrame } from '../src/serverFrames'
@@ -25,33 +20,6 @@ const changes = {
   steps: [step],
   hasUncommitted: true,
 }
-
-test('the capability is named, and each read is a request of its own', () => {
-  assert.equal(CONVERSATION_CHANGES_CAPABILITY, 'conversation-changes')
-  assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(CONVERSATION_CHANGES_CAPABILITY))
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchChanges', requestId: 'r-1' }), {
-    type: 'watchChanges',
-    requestId: 'r-1',
-  })
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchChanges', requestId: 'r-2', stop: true }), {
-    type: 'watchChanges',
-    requestId: 'r-2',
-    stop: true,
-  })
-  assert.deepEqual(
-    parseConversationClientMessage({ type: 'getChangesDiff', requestId: 'r-3', selection: { kind: 'span' } }),
-    { type: 'getChangesDiff', requestId: 'r-3', selection: { kind: 'span' } },
-  )
-  assert.deepEqual(
-    parseConversationClientMessage({
-      type: 'getChangedFile',
-      requestId: 'r-4',
-      selection: { kind: 'commit', hash },
-      path: 'src/calendar.ts',
-    }),
-    { type: 'getChangedFile', requestId: 'r-4', selection: { kind: 'commit', hash }, path: 'src/calendar.ts' },
-  )
-})
 
 test('a step names no revision but a commit, and a path names nothing outside the checkout', () => {
   const file = (selection: unknown, path: unknown) =>
@@ -107,34 +75,7 @@ test('a changes frame says how the checkout stands, whole, and null where there 
   assert.ok(isKnownConversationServerFrameType({ type: 'changes' }))
 })
 
-test('the answers read as the Diff tab reads its own', () => {
-  assert.deepEqual(
-    parseConversationChangesDiff({
-      files: [
-        { path: 'src/a.ts', status: 'modified', additions: 3, deletions: 1 },
-        { path: 'src/b.ts', status: 'renamed', additions: 0, deletions: 0, oldPath: 'src/old-b.ts' },
-        { path: '../escape.ts', status: 'modified', additions: 1, deletions: 0 },
-        { path: 'src/c.ts', status: 'exploded', additions: 1, deletions: 0 },
-      ],
-      additions: 4,
-      deletions: 1,
-    }),
-    {
-      files: [
-        { path: 'src/a.ts', status: 'modified', additions: 3, deletions: 1 },
-        { path: 'src/b.ts', status: 'renamed', additions: 0, deletions: 0, oldPath: 'src/old-b.ts' },
-      ],
-      additions: 4,
-      deletions: 1,
-    },
-  )
-  assert.deepEqual(
-    parseConversationChangedFileSides({ original: { kind: 'absent' }, modified: { kind: 'content', content: 'x\n' } }),
-    { original: { kind: 'absent' }, modified: { kind: 'content', content: 'x\n' } },
-  )
-  assert.deepEqual(
-    parseConversationChangedFileSides({ original: { kind: 'too-large' }, modified: { kind: 'too-large' } }),
-    { original: { kind: 'too-large' }, modified: { kind: 'too-large' } },
-  )
-  assert.equal(parseConversationChangedFileSides({ original: { kind: 'content' }, modified: { kind: 'absent' } }), null)
+test('the capability is named', () => {
+  assert.equal(CONVERSATION_CHANGES_CAPABILITY, 'conversation-changes')
+  assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(CONVERSATION_CHANGES_CAPABILITY))
 })

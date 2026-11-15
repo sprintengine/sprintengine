@@ -7,7 +7,7 @@ const {
   draftKey,
   normalizeDrafts,
   withDraft,
-} = require("../../../.mobile-test-build/src/features/conversations/composerDrafts.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/composerDrafts.js");
 
 const key = (agentId, deviceId = "desk") => draftKey({ deviceId, workspaceId: "w", agentId });
 

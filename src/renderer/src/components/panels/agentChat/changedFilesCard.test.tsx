@@ -70,7 +70,7 @@ test('changed files load on disclosure and the tree supports one-tab-stop naviga
       },
     },
   })
-  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
+  await installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> }).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ChangedFilesCard } = await import('./changedFilesCard')
@@ -165,7 +165,7 @@ test('a small change set shows its tree at once, and its files open in the app d
       ),
     },
   })
-  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
+  await installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> }).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ChangedFilesCard } = await import('./changedFilesCard')
@@ -284,7 +284,7 @@ test('a revert confirms the exact files shown and asks again when they changed',
       },
     },
   })
-  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
+  await installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> }).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { RevertTurnAction } = await import('./changedFilesCard')
@@ -357,7 +357,7 @@ test('undoing a revert that later work followed says it replaces that work, and 
       },
     },
   })
-  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
+  await installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> }).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { RevertTurnAction } = await import('./changedFilesCard')

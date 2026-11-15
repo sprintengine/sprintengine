@@ -1,4 +1,5 @@
-// The module registry as the user sees it, mirrored renderer → main.
+// The module registry as the user sees it, reported by a window to its Studio
+// (`module.reportRegistry`).
 //
 // The renderer owns the module universe: it registers every bundled renderer
 // module (already narrowed to the build channel by `activeForChannel`), loads
@@ -8,44 +9,30 @@
 // answer "what modules does this app have, and is one of them on?" must read
 // the renderer's answer, not re-derive a second one.
 //
-// This is the same mirror shape as module enablement (`modules:set-enablement`)
-// and the terminal idle policy: the renderer pushes on boot and on every change,
-// main caches the last push in memory, and a consumer that has not received one
-// yet says so rather than inventing an empty registry. Nothing here is
+// The window reports it on boot and on every change, the Studio keeps the last
+// report in memory, and a consumer that has not received one yet says so rather than inventing an empty registry. Nothing here is
 // persisted — it is a projection of live renderer state, valid only for the
 // running app session.
 //
-// Consumer today: the `module.*` gateway tools (src/main/automation).
+// Consumer today: the Studio's `module.*` agent tools (src/main/automation).
 
-import type { CapabilityManifest, ModuleResolutionErrorCode, ModuleSource } from './manifest'
+import type {
+  CapabilityManifest,
+  ModuleContributedSurfaces,
+  ModuleRegistryEntry,
+  ModuleRegistrySnapshot,
+  ModuleAbsence,
+} from '../../../packages/studio-protocol/src/public'
 import { isRecord } from '../records'
 
-/** Renderer → main push of the current module registry. */
-export const MODULE_REGISTRY_SNAPSHOT_CHANNEL = 'modules:set-registry-snapshot'
-
-/**
- * Which build the snapshot was taken in. `production` is a packaged build,
- * where the dev-only modules are absent from the registry entirely — never
- * present-but-disabled (see shared/modules/dev-only.ts).
- */
-export type ModuleBuildChannel = 'development' | 'production'
-
-/**
- * What a module contributes to the app, by surface kind — ids only, never
- * components. Panels are deliberately absent: the renderer kernel resolves a
- * panel by component id but does not enumerate them, so a panel list here would
- * be a guess.
- */
-export type ModuleContributedSurfaces = {
-  workspaceTypes: string[]
-  globalSurfaces: string[]
-  modalSurfaces: string[]
-  sidebarNavEntries: string[]
-  settingsSections: string[]
-  commands: string[]
-  topBarItems: string[]
-  backlogItemActions: string[]
-}
+export type {
+  ModuleAbsence,
+  ModuleBuildChannel,
+  ModuleContributedSurfaces,
+  ModuleRegistryEntry,
+  ModuleRegistrySnapshot,
+  ModuleRegistrySnapshotWriteResult,
+} from '../../../packages/studio-protocol/src/public'
 
 export const EMPTY_MODULE_SURFACES: ModuleContributedSurfaces = {
   workspaceTypes: [],
@@ -58,46 +45,8 @@ export const EMPTY_MODULE_SURFACES: ModuleContributedSurfaces = {
   backlogItemActions: [],
 }
 
-/**
- * Why a module in the registry is not active. `disabled` is the user's own
- * switch (or a `defaultEnabled: false` nobody turned on); every other reason is
- * a resolution failure carrying the resolver's own code — a dependency that is
- * missing or off, a conflict, a cycle, or third-party trust.
- */
-type ModuleAbsence = {
-  reason: 'disabled' | ModuleResolutionErrorCode
-  message: string
-}
-
-export type ModuleRegistryEntry = {
-  id: string
-  /** The manifest as registered — the module's own self-description. */
-  manifest: CapabilityManifest
-  /** Provenance. Bundled modules are compiled in; third-party come from ~/.sprintengine/modules. */
-  source: ModuleSource
-  /** Resolved through the same enablement resolution the app gates its surfaces on. */
-  enabled: boolean
-  /** Null when the module is enabled. */
-  absence: ModuleAbsence | null
-  surfaces: ModuleContributedSurfaces
-}
-
-export type ModuleRegistrySnapshot = {
-  /** Epoch ms the renderer captured this at; a consumer can disclose its age. */
-  capturedAt: number
-  channel: ModuleBuildChannel
-  /**
-   * Every module in the registry universe for this build channel. Dev-only
-   * modules excluded from a packaged build are ABSENT here, not disabled.
-   */
-  modules: ModuleRegistryEntry[]
-}
-
 // The upper bound `new Date(ms).toISOString()` accepts (ECMAScript time range).
 const MAX_TIMESTAMP_MS = 8.64e15
-
-/** Answer to a push: `ok: false` names why the snapshot was refused. */
-export type ModuleRegistrySnapshotWriteResult = { ok: boolean; message?: string }
 
 /**
  * Validate a pushed snapshot at the main-process boundary. The sender is our own

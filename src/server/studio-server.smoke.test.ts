@@ -8,7 +8,6 @@ import { createInterface } from 'node:readline'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { acquireDataDirLock } from './core/data-dir'
-import { connectRemoteConversationBackend } from './wsl/backend-wire'
 import { connectLoopback } from './wsl/front-door-client'
 import { enterFrontDoor, ownerTokenHash } from './wsl/front-door-proof'
 
@@ -104,7 +103,9 @@ async function mcpSession(socketPath: string) {
 
 test('the bundle carries nothing of Electron and serves the gateway under plain Node', async () => {
   const source = readFileSync(bundle, 'utf8')
-  assert.doesNotMatch(source, /require\(["'](electron|electron-updater|node-pty)["']\)/)
+  assert.doesNotMatch(source, /require\(["'](electron|electron-updater)["']\)/)
+  // The pty module is loaded on a terminal's first start, never as the bundle loads.
+  assert.doesNotMatch(source, /^(?:var|const|let) [\w$]+ = (?:__toESM\()?require\(["']node-pty["']\)/mu)
 
   const env = isolatedEnv('serve')
   const dataDir = join(scratch, 'serve', 'data')
@@ -139,6 +140,8 @@ test('the bundle carries nothing of Electron and serves the gateway under plain 
   const listed = await mcp.call('tools/list')
   const names = (listed.result?.tools as Array<{ name: string }>).map((tool) => tool.name)
   assert.ok(names.includes('conversation.create'), names.join(', '))
+  // The worktree pool is every core's, a standalone server's included.
+  assert.ok(names.includes('worktree.lease') && names.includes('worktree.release'), names.join(', '))
   const created = await mcp.call('tools/call', { name: 'conversation.create', arguments: { workspaceId: 'missing' } })
   assert.equal(created.result?.isError, true)
   assert.match(JSON.stringify(created.result), /workspace/i)
@@ -348,22 +351,13 @@ test('a server with a front door lets in only a proven front door, and serves it
       listeners: { gateway: true, tailnet: 'off', frontDoor: { loopback: true } },
       secrets: { kind: 'key-file' },
       flags: {},
-      wsl: { distro: 'Ubuntu-24.04' },
+      wsl: { distro: 'Ubuntu-24.04', profile: '0123456789ab' },
     })}\n`,
   )
   const ready = await next()
   assert.equal(ready.t, 'ready', stderr)
   assert.ok(ready.frontDoor.port > 0)
   assert.equal(ready.frontDoor.socketPath, join(dataDir, 'run', 'front-door.sock'))
-
-  const socket = await connectLoopback(ready.frontDoor.port)
-  const backend = connectRemoteConversationBackend(await enterFrontDoor(socket, { token, purpose: 'backend' }))
-  await backend.refresh()
-  const listed = backend.listSessions()
-  assert.ok(listed.ok && listed.sessions.length === 0)
-  const threads = await backend.listThreads({ workspaceRoot: dataDir, workspaceId: 'ws-1' })
-  assert.ok(threads.ok, 'a call crosses to the core and back')
-  backend.close()
 
   const shell = await enterFrontDoor(connect(ready.frontDoor.socketPath), { token, purpose: 'studio' })
   const ticketLine = await new Promise<string>((resolve) => {
@@ -377,7 +371,7 @@ test('a server with a front door lets in only a proven front door, and serves it
   shell.destroy()
 
   await assert.rejects(
-    enterFrontDoor(await connectLoopback(ready.frontDoor.port), { token: 'seown_not-it', purpose: 'backend' }),
+    enterFrontDoor(await connectLoopback(ready.frontDoor.port), { token: 'seown_not-it', purpose: 'studio' }),
     /could not prove/u,
   )
 
@@ -420,7 +414,10 @@ test('a server killed mid-turn leaves a directory the next one takes over: the l
   let firstErr = ''
   first.stderr.on('data', (chunk: Buffer) => (firstErr += chunk.toString('utf8')))
   const waiting = createInterface({ input: first.stdout })[Symbol.asyncIterator]()
-  const said = await waiting.next()
+  // The core's own log lines share stdout (the checkout catch-up's, the
+  // pool's); the fixture's report is the JSON one.
+  let said = await waiting.next()
+  while (!said.done && !said.value.startsWith('{')) said = await waiting.next()
   assert.equal(said.done, false, firstErr)
   assert.equal(JSON.parse(said.value).waiting, true)
   const firstPid = first.pid

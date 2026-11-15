@@ -1,7 +1,6 @@
 import type { ElectronApi } from '../../../../shared/electron-api'
 import type { ModuleTrustStatus } from '../../../../shared/modules/manifest'
-
-type ModuleFolderInstallApi = Pick<ElectronApi, 'openDir' | 'installThirdPartyModuleFolder'>
+import type { ModuleLifecycleClient } from '../../studio/moduleLifecycle'
 
 export type AddThirdPartyModuleOutcome =
   | { status: 'cancelled' }
@@ -10,14 +9,17 @@ export type AddThirdPartyModuleOutcome =
 
 /**
  * The one folder-picker install round trip used by both Settings and the
- * Extensions drawer. Validation, copying, signature classification, and trust
- * remain main-process responsibilities behind `installThirdPartyModuleFolder`;
- * this adapter only turns cancellation and transport failures into UI states.
+ * Extensions drawer. The folder is picked here, on this computer; validation,
+ * copying and signature classification are the Studio's (`module.install`),
+ * which installs from a folder on its own machine: the window's Studio is
+ * this computer's. This adapter only turns cancellation and failures into UI
+ * states.
  */
 export async function addThirdPartyModuleFromFolder(
-  api: Partial<ModuleFolderInstallApi>,
+  api: Partial<Pick<ElectronApi, 'openDir'>>,
+  lifecycle: Pick<ModuleLifecycleClient, 'install'> | null,
 ): Promise<AddThirdPartyModuleOutcome> {
-  if (typeof api.openDir !== 'function' || typeof api.installThirdPartyModuleFolder !== 'function') {
+  if (typeof api.openDir !== 'function' || !lifecycle) {
     return { status: 'failed', message: 'Installing extension modules is unavailable in this build.' }
   }
 
@@ -25,17 +27,17 @@ export async function addThirdPartyModuleFromFolder(
     const folder = await api.openDir()
     if (!folder) return { status: 'cancelled' }
 
-    const result = await api.installThirdPartyModuleFolder(folder)
+    const result = await lifecycle.install(folder)
     if (!result.ok) {
       return {
         status: 'failed',
-        message: result.message ?? result.issues?.[0]?.message ?? 'Could not install the extension module.',
+        message: result.message || result.issues?.[0]?.message || 'Could not install the extension module.',
       }
     }
     return {
       status: 'installed',
-      id: result.id?.trim() || null,
-      trust: result.trust ?? null,
+      id: result.moduleId.trim() || null,
+      trust: result.trust,
     }
   } catch (error) {
     return {

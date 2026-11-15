@@ -2,7 +2,8 @@ import React from 'react'
 
 import type { TailnetPresence } from './useTailnetPresence'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import { meshMachinePhase, machineIsAnswering } from '../../remote/machineRowModel'
+import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import { environmentAnswering, environmentStatus } from '../../../../../shared/environment-status'
 
 // The Remote glyph's own vocabulary — state, tooltip, ink, and the settings
 // opener the account menu's row needs. Split out of `RemotePopover.tsx` so the
@@ -21,7 +22,11 @@ import { meshMachinePhase, machineIsAnswering } from '../../remote/machineRowMod
  * that used to carry all this is gone: two indicators for one state, on a
  * 16px glyph.
  */
-export function remoteGlyphState(presence: TailnetPresence): {
+export function remoteGlyphState(
+  presence: TailnetPresence,
+  /** The machines this desktop knows (`useEnvironments`), for how each paired one stands. */
+  environments: readonly EnvironmentEntry[],
+): {
   visible: boolean
   /** The inbound listener is up: this Studio can be reached, so the glyph is green. */
   serving: boolean
@@ -38,13 +43,13 @@ export function remoteGlyphState(presence: TailnetPresence): {
   const connected = presence.live.devices.length > 0
   // A machine that revoked us will not fix itself, and the glyph is where a
   // person would look before opening anything.
-  const degraded = [...presence.meshReachability.values()].some((entry) => entry.unauthorized)
+  const paired = presence.mesh.flatMap((connection) => {
+    const environment = environmentOfRoute(environments, { kind: 'tailnet', connection: connection.id })
+    return environment ? [environment] : []
+  })
+  const degraded = paired.some((environment) => environmentStatus(environment).kind === 'signed-out')
   const serving = presence.status?.running === true
-  const answering = serving
-    ? presence.mesh.filter((connection) =>
-        machineIsAnswering(meshMachinePhase(connection.id, presence.meshReachability)),
-      ).length
-    : 0
+  const answering = serving ? paired.filter(environmentAnswering).length : 0
   return {
     // Hidden entirely while the feature is off — absent, not present-but-empty
     // (epic cross-cutting acceptance). A mesh-only user still gets it: paired

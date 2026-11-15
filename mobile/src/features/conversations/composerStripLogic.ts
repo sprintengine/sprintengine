@@ -14,7 +14,7 @@
 //
 // Widths are measured on screen (onLayout); this file only decides.
 
-import type { ChangedTurn, TurnChanges } from "./conversationLogic";
+import type { ChangedTurn, TurnChanges } from "../../../../packages/conversation-timeline/src/public";
 
 /** The shortest a front-truncated branch may be, its "…" included, before it leaves the line. */
 export const MIN_BRANCH_CHARS = 10;

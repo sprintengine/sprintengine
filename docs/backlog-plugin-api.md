@@ -148,9 +148,13 @@ module reads and changes items through the host's Backlog service, served by
   writes the calling module's key only.
 - Answers are result-shaped (`{ ok: false, code, message }`); vocabulary the app
   does not know is `invalid_input`.
-- The renderer methods reach the same service in main through the host's
-  `modules:host-service:invoke` channel, and are refused while the Backlog
-  module is disabled.
+- The renderer methods reach the same service on the module's server over the
+  window's Studio connection (`moduleBacklog.location`, `.create`,
+  `.updateStatus`, `.updateTriage`, `.addLink` and `.updateModuleMetadata`;
+  `moduleUsage.query` for `queryUsage`), naming the calling module; the
+  server answers `module_unavailable` for a module that does not run there.
+  A write is carried out once per command id. They are refused while the
+  Backlog module is disabled.
 
 ## Link Providers
 

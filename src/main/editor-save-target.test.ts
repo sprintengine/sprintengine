@@ -3,19 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
-import { registerFilesystemMutationIpc } from './ipc/filesystem-mutation-ipc'
+import { createStudioFileSystem } from '../server/files/studio-file-system'
 
 type Handler = (_event: unknown, ...args: unknown[]) => Promise<unknown>
 
+/** A save as the window makes it (`files.writeText`): its path, its text and its project's roots. */
 function writefileHandler(): Handler {
-  const handlers = new Map<string, Handler>()
-  const ipcMain = { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) }
-  registerFilesystemMutationIpc(ipcMain as unknown as Parameters<typeof registerFilesystemMutationIpc>[0], {
-    getUniqueCopyPath: async () => '',
-    pathExists: async () => false,
-    trashItem: async () => {},
-  })
-  return handlers.get('fs:writefile')!
+  const files = createStudioFileSystem({ readableRoots: () => [], writableRoots: () => [] })
+  return (_event, path, text, options) =>
+    files.writeText(path as string, text as string, (options as { roots?: string[] } | undefined)?.roots ?? [], true)
 }
 
 describe.skipIf(process.platform === 'win32')('an editor save stays in the project', () => {

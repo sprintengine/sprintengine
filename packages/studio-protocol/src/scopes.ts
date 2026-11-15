@@ -10,15 +10,41 @@
 //
 // The three read families after them are what a chat view reads beside its
 // conversation: the providers and models it can run, files for @-mentions and
-// links, and the workspace list. Every method that needs one is also held to
-// an owner's connection for now (`STUDIO_METHODS[m].owner`), so no pairing can
-// use them yet; a pairing stored before they existed never gains them, since
-// a grant holds exactly the names it was given.
+// links, and the workspace list. A pairing stored before they existed never
+// gains them, since a grant holds exactly the names it was given. A client
+// that is not an owner names files only inside the folders Studio knows.
 //
-// `tools:offer` lets a client give Studio's agents tools of its own (`tools.*`):
+// `backlog:read` reads the backlogs of the projects a Studio holds
+// (`backlog.list` and its `backlog.changed` stream); `backlog:operate` changes
+// an item's status and triage there (`backlog.update`) and carries
+// `backlog:read`. A paired device holds them with its pairing's `backlog:*`.
+//
+// `tools:offer` lets a client give Studio's agents tools of its own (`tools.*`),
+// and read the catalog and which chats were opened to a toolset beside it:
 // Settings shows it as "Give agents tools from this app", off unless ticked.
-// `files:write` is the board files' write half beside `files:read`; like the
-// reads, it is held to an owner's connection for now.
+// `files:write` is the board files' write half beside `files:read`.
+//
+// `environment:maintain` lets a client update this Studio (`update.start`):
+// download a new version, drain and restart into it. An owner's grant holds
+// it; a pairing only when it was given it.
+//
+// `settings:write` changes this Studio's settings from a client: a provider's
+// key, an approval rule revoked, a chat opened to an app's tools. Like
+// `environment:maintain`, an owner holds it and a pairing only when it was
+// given it.
+//
+// `modules:read` hears what this Studio's modules say: their events and the
+// bell rows they raise, and calls the methods they declare `read`
+// (`module.*`). `modules:operate` calls the ones they declare `operate` too,
+// and carries `modules:read`. Neither is held to an owner's connection.
+//
+// `workspaces:operate` changes what a Studio keeps beside its workspaces and
+// runs on its own: its scheduled agents (`schedules.*`). It carries
+// `workspaces:read`, as an operate scope carries its read. A paired device
+// holds it with its `workspace:operate` pairing.
+//
+// No scope reaches the terminals: a terminal is a shell on the machine, so
+// only an owner's own connections reach them, never a grant (`terminals.ts`).
 
 /** Every scope this version of the protocol defines, narrowest first. */
 export const STUDIO_SCOPES = [
@@ -28,8 +54,15 @@ export const STUDIO_SCOPES = [
   'providers:read',
   'files:read',
   'workspaces:read',
+  'backlog:read',
+  'backlog:operate',
   'tools:offer',
   'files:write',
+  'environment:maintain',
+  'settings:write',
+  'modules:read',
+  'modules:operate',
+  'workspaces:operate',
 ] as const
 
 export type StudioScope = (typeof STUDIO_SCOPES)[number]
@@ -50,8 +83,11 @@ export function normalizeStudioScopes(value: unknown): StudioScope[] {
   return STUDIO_SCOPES.filter((scope) => held.has(scope))
 }
 
-/** Whether a grant covers `needed`. `conversation:operate` covers `conversation:read`. */
+/** Whether a grant covers `needed`. An `operate` scope covers its `read`. */
 export function studioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
+  if (needed === 'backlog:read') return scopes.includes('backlog:operate')
+  if (needed === 'modules:read') return scopes.includes('modules:operate')
+  if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }

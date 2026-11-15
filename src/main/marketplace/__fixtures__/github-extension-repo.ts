@@ -32,7 +32,7 @@ export function moduleManifest(options: { files?: boolean } = {}): string {
       summary: 'Notes, an extension for SprintEngine Studio.',
       defaultEnabled: false,
       source: 'third-party',
-      engines: { hostApi: 1 },
+      engines: { hostApi: 2 },
       permissions: ['storage'],
       entry: { renderer: 'dist/renderer.mjs' },
       ...(options.files === false ? {} : { files: { 'dist/renderer.mjs': sha256(RENDERER) } }),

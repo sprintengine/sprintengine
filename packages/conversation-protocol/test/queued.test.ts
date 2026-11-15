@@ -75,20 +75,6 @@ test('a held message is taken back by its id; a malformed one is a bad frame, an
   )
 })
 
-test('watchQueued asks under a request id, which an older desktop answers it under', () => {
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchQueued', requestId: 'queued-1', extra: true }), {
-    type: 'watchQueued',
-    requestId: 'queued-1',
-  })
-  assert.equal(parseConversationClientMessage({ type: 'watchQueued' }), null)
-  assert.equal(parseConversationClientFrame({ type: 'watchQueued', requestId: 'queued-1' }), null)
-  assert.deepEqual(explainRejectedConversationFrame({ type: 'watchQueued', requestId: 'queued-1' }), {
-    code: 'invalid_frame',
-    message: 'Unsupported conversation frame.',
-    requestId: 'queued-1',
-  })
-})
-
 test('a queued frame is read whole, an unreadable message left out and the rest kept', () => {
   assert.equal(isKnownConversationServerFrameType({ type: 'queued' }), true)
   const frame = parseConversationServerFrame({

@@ -16,7 +16,7 @@ import { createClientToolRegistry, type ClientToolRegistry } from '../../../src/
 import { createClientToolsetStore } from '../../../src/server/tools/client-toolset-store'
 import { StudioError, StudioToolError, connect, toolResult, type StudioClient, type ToolCall } from '../src/index'
 import type { StudioCallFrame } from '../src/protocol'
-import { createClientTools } from '../src/tools'
+import { createClientTools } from '../../client-runtime/src/rpc/tools'
 import { socketTransport } from '../src/node'
 
 // `client.tools` against the in-process router: an offer, a call there and

@@ -3,6 +3,13 @@ import type { ComponentType, LazyExoticComponent } from 'react'
 import type { RowBadge } from '../components/workspace/SidebarNavButton'
 
 import type { ModuleEventEnvelope } from '../../../shared/modules/events'
+import type {
+  ModuleCallAnswer,
+  ModuleMethodAccess,
+  ModuleMethodContract,
+  ModuleMethodContracts,
+  ModuleMethodsClient,
+} from '../../../shared/modules/methods'
 import type { CapabilityManifest } from '../../../shared/modules/manifest'
 import { COMMAND_REGISTRY } from '../commands/commandRegistry'
 import { collapseDuplicateKeybindings } from '../commands/keybindings'
@@ -34,7 +41,7 @@ import type {
   ModuleBacklogTriageInput,
 } from '../../../shared/modules/backlog-service'
 import type { UsageQuery, UsageQueryResult } from '../../../shared/modules/activity-service'
-import type { ModuleHostServiceName } from '../../../shared/modules/host-service-bridge'
+import type { StudioModuleServicesMethodMap } from '../../../../packages/studio-protocol/src/public'
 import { publishSurfaceView } from '../components/workspace/surfaceView'
 
 // Renderer-side host kernel. Mirrors the main-process MainHost: capability
@@ -798,10 +805,61 @@ export type ModuleAppStateStore = {
 }
 
 // Source of main→renderer module events. The kernel owns only the
-// seam: modules/index.ts wires it over `window.api.onModuleEvent`, and the
+// seam: modules/index.ts wires it over the window's `module.events` stream, and the
 // scoped host's `subscribe` filters the stream to the calling module's own
-// events. One preload listener backs every module's subscriptions.
+// events. One stream subscription backs every module's subscriptions.
 export type ModuleEventSource = (cb: (envelope: ModuleEventEnvelope) => void) => () => void
+
+/** One call of a module's own method, as the window's Studio client carries it. */
+export type ModuleMethodCall = {
+  moduleId: string
+  method: string
+  access: ModuleMethodAccess
+  params: unknown
+  /** An operate's command id: given by the caller, or made for the call. */
+  commandId?: string
+}
+
+// Caller of a module's declared methods: modules/index.ts wires it over the
+// window's Studio client (`module.read` / `module.operate`). It never throws:
+// every refusal, the host's or the module's, is an answer.
+export type ModuleMethodCaller = (call: ModuleMethodCall) => Promise<ModuleCallAnswer<ModuleMethodContract>>
+
+/** A host service a module's renderer half calls on its server: `moduleBacklog.*`, `moduleUsage.query`. */
+export type ModuleServiceMethod = keyof StudioModuleServicesMethodMap
+/** What a host-service call takes: the protocol's params, less the command id the caller makes. */
+export type ModuleServiceParams<M extends ModuleServiceMethod> = Omit<
+  StudioModuleServicesMethodMap[M]['params'],
+  'commandId'
+>
+/** What it answers: the service's own result, its refusals included. */
+export type ModuleServiceAnswer<M extends ModuleServiceMethod> = StudioModuleServicesMethodMap[M]['result']
+
+// Caller of the host's services: modules/index.ts wires it over the window's
+// Studio client. It never throws: a refusal the protocol or the connection
+// gave comes back in the service's own vocabulary (`moduleServiceRefusal`).
+export type ModuleServiceCaller = <M extends ModuleServiceMethod>(
+  method: M,
+  params: ModuleServiceParams<M>,
+) => Promise<ModuleServiceAnswer<M>>
+
+/**
+ * A refusal of a host-service call in the service's words: params the
+ * protocol refused are the service's `invalid_input`, anything else its
+ * "unavailable" code (`backlog_unavailable` for the Backlog).
+ */
+export function moduleServiceRefusal<M extends ModuleServiceMethod>(
+  method: M,
+  code: string,
+  message: string,
+): ModuleServiceAnswer<M> {
+  const unavailable = method.startsWith('moduleBacklog.') ? 'backlog_unavailable' : 'unavailable'
+  return {
+    ok: false,
+    code: code === 'invalid_params' || code === 'too_large' ? 'invalid_input' : unavailable,
+    message,
+  } as ModuleServiceAnswer<M>
+}
 
 // ── Shell feedback, links and context for module code ──────────────────────
 
@@ -846,7 +904,7 @@ export type RendererHost = {
   readonly hostApiVersion: number
   /**
    * This module's id: the one its manifest declares, which every scoped call
-   * is stamped with — the prefix its `invoke` channels carry, the `source`
+   * is stamped with — the module its `methods` calls reach, the `source`
    * its notification rows are filed under.
    */
   readonly moduleId: string
@@ -933,14 +991,15 @@ export type RendererHost = {
    */
   openModalSurface(id: string): boolean
   /**
-   * Invoke an IPC channel this module's own `entry.main` registered via
-   * `MainHost.registerIpc`. The channel must be `<moduleId>:`-prefixed —
-   * validated here before any IPC, and again by the main-side dispatcher,
-   * which requires the owning module to declare `module:bridge` (or the broad
-   * `ipc:invoke` it was split out of).
-   * A contract, not a security boundary.
+   * Call the methods this module's own `entry.main` declared with
+   * `MainHost.registerMethods`, typed by the module's contract: `read` offers
+   * the methods declared `read`, `operate` the ones declared `operate`. They
+   * travel over the window's Studio connection (`module.read` /
+   * `module.operate`) to the server the module runs on, and never throw: a
+   * refusal, the module's own or the host's (`module_unavailable`,
+   * `module_method_unknown`, `invalid_params`, …), is an answer.
    */
-  invoke(channel: string, payload?: unknown): Promise<unknown>
+  methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
   /** The workspace's Backlog items (read-only views; change them with the write methods below). Requires `backlog.read`. */
   listBacklogItems(workspaceId: string): Promise<BacklogItem[]>
   /**
@@ -949,8 +1008,8 @@ export type RendererHost = {
    * watch stays open. Requires `backlog.read`.
    */
   watchBacklogItems(workspaceId: string, cb: (items: BacklogItem[]) => void, options?: BacklogWatchOptions): () => void
-  // ── Backlog writes and usage, through main's moduleId-first registries ──
-  // (shared/modules/host-service-bridge.ts). Result-shaped, never a throw.
+  // ── Backlog writes and usage: the protocol's `moduleBacklog.*` and ──
+  // `moduleUsage.query` on the module's server. Result-shaped, never a throw.
   getBacklogLocation(workspaceId: string): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>>
   createBacklogItem(
     workspaceId: string,
@@ -1057,12 +1116,12 @@ export type RendererHost = {
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
   /**
    * Subscribe to events your module's `entry.main` pushed with
-   * `MainHost.emit` — the subscribe verb `invoke` does not have.
+   * `MainHost.emit` — the subscribe verb `methods` does not have.
    * Scoped to your module: another module's events never reach you, and yours
    * never reach it. `cb` receives the emitted payload. Returns the
    * unsubscriber; call it on unmount. Nothing is replayed, so a subscriber
    * must be correct having missed every event emitted before it subscribed —
-   * read current state through an invoke and let events keep it fresh. See the
+   * read current state through a `read` method and let events keep it fresh. See the
    * delivery contract in shared/modules/events.ts.
    */
   subscribe(topic: string, cb: (payload: unknown) => void): () => void
@@ -1297,13 +1356,25 @@ export type RendererKernel = {
   setModuleAppStateStore(store: ModuleAppStateStore): void
   /**
    * Source for `RendererHost.subscribe`. Wired once at boot by modules/index.ts
-   * over `window.api.onModuleEvent`. The kernel owns the subscriber set, so ONE
+   * over the window's `module.events` stream. The kernel owns the subscriber set, so ONE
    * listener on this source backs every module's subscriptions and a subscribe
    * made before the source lands still receives once it does — module code
    * never has to guard the wiring window. Absent (tests, windowless bundles)
    * nothing is delivered, which is indistinguishable from nothing being emitted.
    */
   setModuleEventSource(source: ModuleEventSource): void
+  /**
+   * Caller for `RendererHost.methods`. Wired once at boot by modules/index.ts
+   * over the window's Studio client; absent (tests, windowless bundles) a call
+   * is answered `unavailable`.
+   */
+  setModuleMethodCaller(caller: ModuleMethodCaller): void
+  /**
+   * Caller for the Backlog writes and `queryUsage`. Wired once at boot by
+   * modules/index.ts over the window's Studio client; absent, a call is
+   * answered with the service's "unavailable" refusal.
+   */
+  setModuleServiceCaller(caller: ModuleServiceCaller): void
   /**
    * Working-root source for `RendererHost.getWorkingRoot`. Wired once at boot
    * by modules/index.ts (store + worktree resolution); absent (early boot,
@@ -1455,6 +1526,8 @@ export function createRendererHost(): RendererKernel {
   type ModuleEventSubscriber = { moduleId: string; topic: string; cb: (payload: unknown) => void }
   const moduleEventSubscribers = new Set<ModuleEventSubscriber>()
   let detachModuleEventSource: (() => void) | null = null
+  let moduleMethodCaller: ModuleMethodCaller | null = null
+  let moduleServiceCaller: ModuleServiceCaller | null = null
   type ModuleAppStateWatcher = {
     moduleId: string
     cb: (values: Readonly<Record<string, unknown>>) => void
@@ -1533,40 +1606,29 @@ export function createRendererHost(): RendererKernel {
       `Module "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
     )
   }
-  // A call into one of main's moduleId-first registries. Main checks the
-  // permission; a refusal or a missing door comes back as data.
-  const callHostService = async <T>(
-    moduleId: string,
-    service: ModuleHostServiceName,
-    method: string,
-    args: unknown[],
-    unavailableCode: string,
-  ): Promise<T> => {
-    const invoke = typeof window === 'undefined' ? undefined : window.api?.moduleHostServiceInvoke
-    if (!invoke) {
-      return { ok: false, code: unavailableCode, message: `The ${service} service is not available here.` } as T
-    }
-    try {
-      return (await invoke({ moduleId, service, method, args })) as T
-    } catch (error) {
-      return {
-        ok: false,
-        code: unavailableCode,
-        message: error instanceof Error ? error.message : String(error),
-      } as T
-    }
-  }
+  // A call into one of the host's services on the module's server, which
+  // checks the module's permission. A refusal comes back as data.
+  const callModuleService = <M extends ModuleServiceMethod>(
+    method: M,
+    params: ModuleServiceParams<M>,
+  ): Promise<ModuleServiceAnswer<M>> =>
+    moduleServiceCaller
+      ? moduleServiceCaller(method, params)
+      : Promise.resolve(moduleServiceRefusal(method, 'unavailable', 'The host services are not available here.'))
   // The Backlog writes follow the Backlog module's enablement like its reads:
   // switched off, the Backlog is off for modules too.
-  const callBacklog = <T extends object = object>(
-    moduleId: string,
-    method: string,
-    args: unknown[],
-  ): Promise<ModuleBacklogResult<T>> => {
+  const callBacklog = <M extends Exclude<ModuleServiceMethod, 'moduleUsage.query'>>(
+    method: M,
+    params: ModuleServiceParams<M>,
+  ): Promise<ModuleServiceAnswer<M>> => {
     if (backlogReader && moduleEnabledResolver && !moduleEnabledResolver(backlogReader.moduleId)) {
-      return Promise.resolve({ ok: false, code: 'backlog_unavailable', message: 'The Backlog module is disabled.' })
+      return Promise.resolve({
+        ok: false,
+        code: 'backlog_unavailable',
+        message: 'The Backlog module is disabled.',
+      } as ModuleServiceAnswer<M>)
     }
-    return callHostService<ModuleBacklogResult<T>>(moduleId, 'backlog', method, args, 'backlog_unavailable')
+    return callModuleService(method, params)
   }
   const enabledModuleCommands = (moduleEnabled?: (moduleId: string) => boolean): RegisteredModuleCommand[] =>
     [...moduleCommands.values()]
@@ -1915,25 +1977,30 @@ export function createRendererHost(): RendererKernel {
           )
         },
         getBacklogLocation(workspaceId) {
-          return callBacklog(moduleId, 'getLocation', [workspaceId])
+          return callBacklog('moduleBacklog.location', { moduleId, workspaceId })
         },
         createBacklogItem(workspaceId, input) {
-          return callBacklog(moduleId, 'create', [workspaceId, input])
+          return callBacklog('moduleBacklog.create', { moduleId, workspaceId, input })
         },
         updateBacklogStatus(workspaceId, itemId, status) {
-          return callBacklog(moduleId, 'updateStatus', [workspaceId, itemId, status])
+          return callBacklog('moduleBacklog.updateStatus', { moduleId, workspaceId, itemId, status })
         },
         updateBacklogTriage(workspaceId, itemId, triage) {
-          return callBacklog(moduleId, 'updateTriage', [workspaceId, itemId, triage])
+          return callBacklog('moduleBacklog.updateTriage', { moduleId, workspaceId, itemId, triage })
         },
         addBacklogLink(workspaceId, itemId, link) {
-          return callBacklog(moduleId, 'addLink', [workspaceId, itemId, link])
+          return callBacklog('moduleBacklog.addLink', { moduleId, workspaceId, itemId, link })
         },
         updateBacklogModuleMetadata(workspaceId, itemId, value) {
-          return callBacklog(moduleId, 'updateModuleMetadata', [workspaceId, itemId, value])
+          return callBacklog('moduleBacklog.updateModuleMetadata', {
+            moduleId,
+            workspaceId,
+            itemId,
+            ...(value === undefined ? {} : { value }),
+          })
         },
         queryUsage(query) {
-          return callHostService<UsageQueryResult>(moduleId, 'usage', 'query', [query], 'unavailable')
+          return callModuleService('moduleUsage.query', { moduleId, query })
         },
         getAssetUrl(relativePath) {
           if (moduleEnabledResolver && !moduleEnabledResolver(moduleId)) throw new Error('Module is disabled.')
@@ -2174,19 +2241,27 @@ export function createRendererHost(): RendererKernel {
             }
           }
         },
-        async invoke(channel, payload) {
-          if (!channel.startsWith(`${moduleId}:`)) {
-            throw new Error(
-              `Module "${moduleId}" may only invoke its own channels ("${moduleId}:*"); got "${channel}".`,
-            )
+        methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs> {
+          // Always this module's own methods: the module id is not the caller's to name.
+          const call = (access: ModuleMethodAccess, method: string, params: unknown, commandId?: string) => {
+            if (!moduleMethodCaller)
+              return Promise.resolve({
+                ok: false as const,
+                code: 'unavailable' as const,
+                message: 'This window has no Studio connection to call a module method over.',
+              })
+            return moduleMethodCaller({
+              moduleId,
+              method,
+              access,
+              params,
+              ...(commandId === undefined ? {} : { commandId }),
+            })
           }
-          const outcome = await window.api.moduleBridgeInvoke(channel, payload)
-          if (!outcome.ok) {
-            // Keep the structured refusal code on the thrown error so module
-            // code can branch on the refusal kind without parsing prose.
-            throw Object.assign(new Error(outcome.message), { code: outcome.code })
+          return {
+            read: (method, params) => call('read', method, params) as never,
+            operate: (method, params, options) => call('operate', method, params, options?.commandId) as never,
           }
-          return outcome.result
         },
       }
     },
@@ -2318,6 +2393,12 @@ export function createRendererHost(): RendererKernel {
       // Attach anything that watched before the store landed (a module's
       // registerRenderer runs synchronously, this wiring a microtask later).
       for (const watcher of moduleAppStateWatchers) attachModuleAppStateWatcher(watcher)
+    },
+    setModuleMethodCaller(caller) {
+      moduleMethodCaller = caller
+    },
+    setModuleServiceCaller(caller) {
+      moduleServiceCaller = caller
     },
     setModuleEventSource(source) {
       // One listener on the source, whoever subscribed and whenever. Re-wiring

@@ -5,7 +5,7 @@ import {
   type ConversationCommandCatalog,
 } from '../../../../../shared/conversation/commands'
 import type { ChatCommandSource } from './chatServices'
-import { windowChatServices } from './conversationTransport'
+import { windowChatServices } from './windowChat'
 
 // The command list a chat's `/` menu offers: what its CLI reported for the
 // chat's folder, with the few commands Studio answers itself put first.

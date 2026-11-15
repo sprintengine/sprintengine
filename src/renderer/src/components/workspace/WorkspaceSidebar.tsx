@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { changePairedChat, settlePairedChat, visitPairedChat } from '../../studio/pairedChats'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
 import { PromptCacheMark } from './PromptCacheMark'
 import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
-import { chatLinkFor } from '../../../../shared/deep-link'
 import { isProjectlessChatsRoot, projectlessScopeOf } from '../../../../shared/projectless-chats'
 import { copyToClipboardWithToast } from '../../utils/copyToClipboardWithToast'
 import {
@@ -73,7 +75,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { selectChatListView } from '../../store/slices/settingsSlice'
 import { ChatListGroupingMenu } from './sidebar/ChatListGroupingMenu'
 import { type HighlightColor, type LayoutTemplate, type Workspace, type WorkspaceId } from '../../types/workspace'
-import type { MeshConversationChange } from '../../../../shared/tailnet-mesh'
+import type { MeshConnection, MeshConversationChange } from '../../../../shared/tailnet-mesh'
 import { usePendingEditorReveal } from '../../utils/agentEditorReveal'
 import { hasHighlightOverride, isStarred } from '../../utils/highlight'
 import { projectColorKey, projectHue, resolveProjectColor, type ProjectColor } from '../../utils/projectColor'
@@ -93,6 +95,7 @@ import { useWorkspaceMachineRef } from '../../hooks/useMachineIdentity'
 import { distroOfHostId, isWslHostId } from '../../../../shared/execution-host'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useRemoteSessions } from './remoteBand/useRemoteSessions'
+import { useEnvironments } from '../../hooks/useEnvironments'
 import { publishRemoteChatLinkTargets } from './remoteBand/remoteChatLinks'
 import { publishRemoteSearchMachines } from './remoteBand/remoteChatSearch'
 import {
@@ -152,7 +155,7 @@ import {
   workspaceWokeAt,
 } from '../../utils/workspaceSnooze'
 import { workspaceRowEmphasis } from '../../utils/workspaceRowEmphasis'
-import { useScheduledAgents, useScheduledAgentsPause } from '../../store/scheduledAgentsStore'
+import { useScheduledAgents, useScheduledAgentsHeld, useScheduledAgentsPause } from '../../store/scheduledAgentsStore'
 import { showToast } from '../../store/toastStore'
 import { regenerateStoreWorkspaceTitle } from '../../store/generatedWorkspaceTitle'
 import { inWorkingSection } from './sidebar/workingSection'
@@ -163,11 +166,21 @@ import { ScheduledAgentRow } from './sidebar/ScheduledAgentRow'
 import { DraftsSection } from './sidebar/DraftsSection'
 import { setChatReferenceDragData } from '../../../../shared/chat-reference'
 import {
+  chatAddressOfWorkspace,
+  chatLinkOfRemoteChat,
+  chatLinkOfWorkspace,
+  environmentIdsOf,
+} from '../../../../shared/environment-keys'
+import {
   remoteScheduleActionWords,
   useRemoteScheduledAgents,
   type RemoteScheduledMachine,
 } from './sidebar/useRemoteScheduledAgents'
-import { PauseAllScheduledAgentsControl, ScheduledAgentsPausedNotice } from './sidebar/ScheduledPauseControls'
+import {
+  PauseAllScheduledAgentsControl,
+  ScheduledAgentsHeldNotice,
+  ScheduledAgentsPausedNotice,
+} from './sidebar/ScheduledPauseControls'
 import { setScheduledAgentPaused } from '../../utils/scheduledAgentsPause'
 import { isScheduledRunChat, scheduledAgentRunInProgress } from '../../utils/scheduledAgentRuns'
 import type { ScheduledAgentView } from '../../../../shared/scheduled-agents'
@@ -236,13 +249,14 @@ import {
   WorkspaceContextMenu,
   autoCompactSwitchOf,
   canRegenerateTitleOf,
-  chatLinkIdOf,
   isChatMarkChange,
   workspaceTypeRowActions,
   type ChatMarkChange,
 } from './sidebar/contextMenus'
 import { cancelNextMiddleButtonRelease } from '../../utils/middleButtonRelease'
 import { isImeKey } from '../../utils/imeKey'
+import { schedulesApi } from '../../studio/schedules'
+import { workspaceSyncApi, workspaceSyncReachable } from '../../studio/workspaceSync'
 
 export { TerminalLineView } from './sidebar/TerminalLineView'
 
@@ -346,9 +360,9 @@ type WorkspaceSidebarProps = {
   // The scheduled agent the door in this window is editing, drawn selected.
   openScheduledAgentId?: string | null
   // Open a paired machine's scheduled agent: the same editor, saving there.
-  onOpenRemoteScheduledAgent?: (connectionId: string, id: string) => void
+  onOpenRemoteScheduledAgent?: (route: string, id: string) => void
   // The paired machine's scheduled agent the door is editing, drawn selected.
-  openRemoteScheduledAgent?: { connectionId: string; id: string } | null
+  openRemoteScheduledAgent?: { route: string; id: string } | null
   // Reopen a kept New chat draft, and throw one away. Absent, no Drafts section.
   onOpenDraft?: (id: string) => void
   onDeleteDraft?: (id: string) => void
@@ -375,7 +389,7 @@ type WorkspaceSidebarProps = {
   onDeleteSettledChat?: (workspaceId: string) => void
   /**
    * Delete a paired machine's settled chat there, after asking, and then this
-   * computer's record of it (`chat-delete` there). Absent, such a chat's menu
+   * computer's record of it (`chat-lifecycle` there). Absent, such a chat's menu
    * offers no Delete.
    */
   onDeleteSettledChatThere?: (workspaceId: string) => void
@@ -408,6 +422,7 @@ const STATUS_WORKING_SHELF_KEY = '__status_working__'
 const STATUS_WORKING_SHELF_ID = 'ws-status-working-chats'
 const NO_WORKING_IDS: ReadonlySet<string> = new Set()
 const NO_WORKING_REMOTE: readonly RemoteConversation[] = []
+const NO_MESH_CONNECTIONS: readonly MeshConnection[] = []
 
 const DRAG_MIME_WORKSPACE = 'application/x-sprintengine-workspace'
 const DRAG_MIME_FOLDER = 'application/x-sprintengine-folder'
@@ -512,11 +527,13 @@ function WorkspaceSidebar({
   // Every scheduled agent paused at once, and until when (null: they are not).
   const scheduledAgentsPause = useScheduledAgentsPause()
   const scheduledPausedAll = scheduledAgentsEnabled ? scheduledAgentsPause : null
+  // None runs though none is paused: the hand-over's records could not be read.
+  const scheduledHeld = useScheduledAgentsHeld()
   // Run now from a schedule's menu: the run is a chat of its own, started in
   // the background as every run is, and it runs whether or not the schedule is
   // paused — it was asked for.
   const runScheduledAgentNow = useCallback((agent: ScheduledAgentView) => {
-    void window.api
+    void schedulesApi
       .runScheduledAgentNow(agent.id)
       .then((result) => {
         const failure = !result.ok ? result.message : !result.run.ok ? result.run.message : null
@@ -532,7 +549,7 @@ function WorkspaceSidebar({
   // and said so. No Undo on the toast — the toast spec keeps its action row for
   // its two named consumers, and an undo racing a dismissal timer is not one.
   const closeScheduledAgent = useCallback((agent: ScheduledAgentView) => {
-    void window.api
+    void schedulesApi
       .removeScheduledAgent(agent.id)
       .then((removed) => {
         showToast(
@@ -1015,7 +1032,7 @@ function WorkspaceSidebar({
   // The menu of a chat on a paired machine that no window here holds, by its row's key.
   const [remoteMenu, setRemoteMenu] = useState<{ key: string; x: number; y: number } | null>(null)
   // A paired machine's chat no window here holds, being renamed in its row
-  // (`chat-rename`): its key there, and what has been typed.
+  // (`chat-lifecycle`): its key there, and what has been typed.
   const [renamingRemote, setRenamingRemote] = useState<{ key: string; value: string } | null>(null)
   const remoteRenameInputRef = useRef<HTMLInputElement>(null)
   const [folderMenu, setFolderMenu] = useState<{ folderKey: string; x: number; y: number } | null>(null)
@@ -1430,6 +1447,8 @@ function WorkspaceSidebar({
   // this device is on the tailnet decides which rows exist at all (below), and
   // the browse decides how many lines each open remote row draws.
   const remoteSessions = useRemoteSessions({ enabled: !contextRailActive })
+  // How each machine stands (design-environments), for whether its rows are a last read.
+  const environments = useEnvironments()
   const {
     presence: remotePresence,
     browses: remoteBrowses,
@@ -1447,28 +1466,36 @@ function WorkspaceSidebar({
         buildRemoteBand({
           connections: remotePresence.mesh,
           browses: remoteBrowses,
-          reachability: remotePresence.meshReachability,
+          environments,
           workspaces: railWorkspaces,
         }),
         pendingRemoteMarks,
       ),
-    [remotePresence.mesh, remoteBrowses, remotePresence.meshReachability, railWorkspaces, pendingRemoteMarks],
+    [remotePresence.mesh, remoteBrowses, environments, railWorkspaces, pendingRemoteMarks],
   )
   // What a link to one of their chats opens (`remoteChatLinks.ts`).
-  useEffect(() => publishRemoteChatLinkTargets(remoteGroups), [remoteGroups])
-  // Each paired machine's scheduled agents, beside this computer's in the
-  // Scheduled section: they run there, by its scheduler, and are driven from
-  // here. Off with this computer's module, as the section is.
+  useEffect(() => publishRemoteChatLinkTargets(remoteGroups, environments), [remoteGroups, environments])
+  // Each other machine's scheduled agents, beside this computer's in the
+  // Scheduled section: a paired desktop's, and an SSH machine's this window
+  // follows chats on. They run there, by its scheduler, and are driven from
+  // here. Off with this computer's module, as the section is; a paired
+  // desktop's also off the tailnet.
   const remoteScheduled = useRemoteScheduledAgents({
-    enabled: scheduledAgentsEnabled && remoteLink !== 'down',
-    connections: remotePresence.mesh,
+    enabled: scheduledAgentsEnabled,
+    connections: remoteLink === 'down' ? NO_MESH_CONNECTIONS : remotePresence.mesh,
     browses: remoteBrowses,
+    environments,
   })
   const refreshRemoteScheduled = remoteScheduled.refresh
   const actOnRemoteScheduled = useCallback(
     (machine: RemoteScheduledMachine, agent: ScheduledAgentView, action: 'run' | 'pause' | 'resume' | 'delete') => {
-      void window.api
-        .meshScheduledAgentAction({ connectionId: machine.connectionId, id: agent.id, action })
+      void pairedScheduledAgentAction(
+        machine.connectionId
+          ? { id: machine.connectionId, machineName: machine.machineName }
+          : { route: machine.route, name: machine.machineName },
+        agent.id,
+        action,
+      )
         .then((result) => {
           const titles = { run: 'Started', pause: 'Paused', resume: 'Resumed', delete: 'Scheduled agent closed' }
           const failed = { run: 'Did not run', pause: 'Not paused', resume: 'Not resumed', delete: 'Not closed' }
@@ -1481,7 +1508,7 @@ function WorkspaceSidebar({
                 }
               : { tone: 'error', title: failed[action], description: result.message },
           )
-          refreshRemoteScheduled(machine.connectionId)
+          refreshRemoteScheduled(machine.route)
         })
         .catch(() => {})
     },
@@ -1679,8 +1706,7 @@ function WorkspaceSidebar({
   // the machine's own words.
   const settleRemoteConversation = useCallback(
     (conversation: RemoteConversation) => {
-      const settle = window.api?.meshSettleConversation
-      if (typeof settle !== 'function') return
+      if (!environmentStudioAvailable()) return
       const restore = (message: string) => {
         setSettlingRemote((current) => {
           const next = new Set(current)
@@ -1690,7 +1716,10 @@ function WorkspaceSidebar({
         showToast({ tone: 'error', title: `${conversation.title} was not settled`, description: message })
       }
       setSettlingRemote((current) => new Set(current).add(conversation.key))
-      void settle({ connectionId: conversation.connectionId, workspaceId: conversation.workspaceId })
+      void settlePairedChat(
+        { id: conversation.connectionId, machineName: conversation.machineName },
+        conversation.workspaceId,
+      )
         .then((answer) => {
           if (!answer.ok) restore(answer.message)
           // Read again, so the list that no longer names it is what clears
@@ -1702,9 +1731,18 @@ function WorkspaceSidebar({
     [refreshRemote],
   )
 
+  // A paired machine by its pairing here, for what this window asks of its Studio.
+  const pairedMachineOf = useCallback(
+    (connectionId: string) => ({
+      id: connectionId,
+      machineName:
+        remotePresence.mesh.find((connection) => connection.id === connectionId)?.machineName ?? 'That machine',
+    }),
+    [remotePresence.mesh],
+  )
   // The row menu on a paired machine's chat, open here or not: its star,
   // colour, sleep and Auto-settle are that machine's record of the chat
-  // (`chat-row-menu`), and Mark unread its read state (`chat-mark-unread`).
+  // (`chat-lifecycle`), and Mark unread its read state (`chat-lifecycle`).
   // The marks are drawn at once and held until its list says them; a refusal
   // puts the row back as it was, with the machine's own words.
   const changeRemoteChat = useCallback(
@@ -1714,8 +1752,7 @@ function WorkspaceSidebar({
       marks?: RemoteChatPending,
       onTaken?: () => void,
     ) => {
-      const call = window.api?.meshChangeConversation
-      if (typeof call !== 'function') return
+      if (!environmentStudioAvailable()) return
       const key = remoteChatKey(target.connectionId, target.workspaceId)
       if (marks)
         setPendingRemoteMarks((current) =>
@@ -1739,7 +1776,7 @@ function WorkspaceSidebar({
         if (marks) settlePending(false)
         showToast({ tone: 'error', title: remoteChangeRefusedTitle(change, target.title), description: message })
       }
-      void call({ connectionId: target.connectionId, workspaceId: target.workspaceId, change })
+      void changePairedChat(pairedMachineOf(target.connectionId), target.workspaceId, change)
         .then((answer) => {
           if (!answer.ok) {
             refused(answer.message)
@@ -1752,7 +1789,7 @@ function WorkspaceSidebar({
         })
         .catch((error: unknown) => refused(error instanceof Error ? error.message : String(error)))
     },
-    [refreshRemote],
+    [refreshRemote, pairedMachineOf],
   )
   // The same, from either menu's action: what each asks of the machine, and
   // what the row wears meanwhile. Snooze presets are resolved against the
@@ -1805,9 +1842,9 @@ function WorkspaceSidebar({
   // (`canMarkWorkspaceUnread` below).
   const unreadOnLeaveRef = useRef(new Set<string>())
   const markWorkspaceUnread = useCallback((workspaceId: string) => {
-    const mark = window.api?.workspaceMarkUnread
-    if (typeof mark !== 'function') return
-    void mark(workspaceId)
+    if (!workspaceSyncReachable('workspaceMarkUnread')) return
+    void workspaceSyncApi
+      .workspaceMarkUnread(workspaceId)
       .then((answer) => {
         if (!answer.ok) showToast({ tone: 'error', title: 'Not marked unread', description: answer.message })
       })
@@ -1835,8 +1872,7 @@ function WorkspaceSidebar({
     const origin = workspace.remoteOrigin
     if (origin) {
       const row = remoteConversationByWorkspace.get(workspace.id)?.agents[0]
-      const visit = window.api?.meshVisitConversation
-      if (!row?.lifecycle || typeof visit !== 'function') return null
+      if (!row?.lifecycle || !environmentStudioAvailable()) return null
       const chatWorkspaceId = remoteOriginChatWorkspaceId(origin)
       return {
         key: `remote:${origin.connectionId}:${chatWorkspaceId}`,
@@ -1845,7 +1881,9 @@ function WorkspaceSidebar({
         // The machine stamps the visit with its own clock, which this one's
         // may not agree with.
         stamp: () => {
-          void visit({ connectionId: origin.connectionId, workspaceId: chatWorkspaceId }).catch(() => undefined)
+          void visitPairedChat({ id: origin.connectionId, machineName: origin.machineName }, chatWorkspaceId).catch(
+            () => undefined,
+          )
         },
         // The "New" divider weighs the machine's visit clock, as its list said
         // it before this opening's first stamp, against the replies that
@@ -1896,7 +1934,7 @@ function WorkspaceSidebar({
   // there, so it is not offered for one.
   //
   // A chat followed from a paired machine keeps its read state there, so it
-  // is marked there, where the machine takes it (`chat-mark-unread`); the
+  // is marked there, where the machine takes it (`chat-lifecycle`); the
   // chat in front is not offered, since its visit is stamped there every few
   // seconds while it is on screen.
   const canMarkWorkspaceUnread = (workspace: Workspace): boolean => {
@@ -1927,7 +1965,7 @@ function WorkspaceSidebar({
   }
 
   // Rename on a paired machine's chat, open here or not, where that machine
-  // keeps its chats' names for every device (`chat-rename`): the name is
+  // keeps its chats' names for every device (`chat-lifecycle`): the name is
   // asked of it, drawn at once and held until its list says it, and a
   // refusal puts the old name back with the machine's own words. A row
   // opened here takes the name too, once the machine has it, so the rest of
@@ -1977,7 +2015,7 @@ function WorkspaceSidebar({
   }
 
   // Auto compact on a paired machine's chat is that machine's rule for its
-  // own chat (`chat-auto-compact`): switched there, drawn at once, and held
+  // own chat (`chat-lifecycle`): switched there, drawn at once, and held
   // until its list says it, as a mark is.
   const toggleRemoteAutoCompact = (
     target: { connectionId: string; workspaceId: string; title: string },
@@ -2002,9 +2040,8 @@ function WorkspaceSidebar({
   const settleOpenedRemote = useCallback(
     (workspace: Workspace, settled = true) => {
       const origin = workspace.remoteOrigin
-      const settle = window.api?.meshSettleConversation
       const here = () => (settled ? settleWorkspaceById(workspace.id) : setWorkspaceSettled(workspace.id, false))
-      if (!origin || typeof settle !== 'function' || !remoteKeepsRest(workspace)) {
+      if (!origin || !environmentStudioAvailable() || !remoteKeepsRest(workspace)) {
         here()
         return
       }
@@ -2014,7 +2051,11 @@ function WorkspaceSidebar({
           title: settled ? `${workspace.name} was not settled` : `${workspace.name} was not brought back`,
           description: message,
         })
-      void settle({ connectionId: origin.connectionId, workspaceId: remoteOriginChatWorkspaceId(origin), settled })
+      void settlePairedChat(
+        { id: origin.connectionId, machineName: origin.machineName },
+        remoteOriginChatWorkspaceId(origin),
+        settled,
+      )
         .then((answer) => {
           if (answer.ok) here()
           else refused(answer.message)
@@ -2674,10 +2715,12 @@ function WorkspaceSidebar({
     dragRef.current = { type: 'workspace', id: workspace.id, folderKey: fKey }
     // A move within the list; a copy into a composer, which types the chat's
     // reference where it lands (`chat-reference.ts`), for its agent to read.
+    const ids = environmentIdsOf(environments)
     const referenced = setChatReferenceDragData(event.dataTransfer, {
       id: workspace.id,
       name: workspace.name,
       remote: Boolean(workspace.remoteOrigin),
+      address: ids ? chatAddressOfWorkspace(workspace, ids) : null,
     })
     event.dataTransfer.effectAllowed = referenced ? 'copyMove' : 'move'
     event.dataTransfer.setData(DRAG_MIME_WORKSPACE, workspace.id)
@@ -3563,7 +3606,7 @@ function WorkspaceSidebar({
   }
   const renderScheduledSection = () => {
     const remoteCount = remoteScheduled.machines.reduce((count, machine) => count + machine.agents.length, 0)
-    if (scheduledAgents.length === 0 && remoteCount === 0) return null
+    if (scheduledAgents.length === 0 && remoteCount === 0 && !scheduledHeld) return null
     const expanded = expandedShelves[SCHEDULED_SHELF_KEY] !== false
     return (
       <section role="group" className="relative pt-1" aria-label="Scheduled agents">
@@ -3576,6 +3619,7 @@ function WorkspaceSidebar({
           onToggle={() => setExpandedShelves((prev) => ({ ...prev, [SCHEDULED_SHELF_KEY]: !expanded }))}
           trailing={<PauseAllScheduledAgentsControl pause={scheduledPausedAll} />}
         />
+        {scheduledHeld ? <ScheduledAgentsHeldNotice reason={scheduledHeld} /> : null}
         {scheduledPausedAll ? <ScheduledAgentsPausedNotice pause={scheduledPausedAll} now={now} /> : null}
         <div id={SCHEDULED_SHELF_ID} role="group" aria-label="Scheduled agents" hidden={!expanded}>
           {expanded
@@ -3603,7 +3647,7 @@ function WorkspaceSidebar({
             ? remoteScheduled.machines.flatMap((machine) =>
                 machine.agents.map((agent) => (
                   <ScheduledAgentRow
-                    key={`scheduled-${machine.connectionId}-${agent.id}`}
+                    key={`scheduled-${machine.route}-${agent.id}`}
                     agent={agent}
                     now={now}
                     project={{
@@ -3612,17 +3656,18 @@ function WorkspaceSidebar({
                       color: null,
                       unfiled: false,
                     }}
-                    machine={{ ref: { kind: 'paired', name: machine.machineName }, name: machine.machineName }}
+                    machine={{ ref: machine.machine, name: machine.machineName }}
                     runInProgress={null}
                     selected={
-                      openRemoteScheduledAgent?.connectionId === machine.connectionId &&
-                      openRemoteScheduledAgent.id === agent.id
+                      openRemoteScheduledAgent?.route === machine.route && openRemoteScheduledAgent.id === agent.id
                     }
                     pausedAll={machine.pausedAll !== null}
                     {...(machine.operable
                       ? {
+                          // Opens in New chat's editor, which saves it on the
+                          // machine it runs on, addressed by its route.
                           ...(onOpenRemoteScheduledAgent
-                            ? { onOpen: () => onOpenRemoteScheduledAgent(machine.connectionId, agent.id) }
+                            ? { onOpen: () => onOpenRemoteScheduledAgent(machine.route, agent.id) }
                             : {}),
                           onClose: () => actOnRemoteScheduled(machine, agent, 'delete'),
                           onTogglePause: () =>
@@ -4370,6 +4415,11 @@ function WorkspaceSidebar({
           workspace={
             railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId) ?? null
           }
+          chatLink={(() => {
+            const workspace =
+              railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId)
+            return workspace ? chatLinkOfWorkspace(workspace, environments) : null
+          })()}
           moduleOverrides={moduleOverrides}
           isDetachedWindow={isDetachedWindow}
           now={now}
@@ -4523,7 +4573,7 @@ function WorkspaceSidebar({
               return
             }
             if (action === 'copy-link') {
-              const link = chatLinkFor(chatLinkIdOf(workspace))
+              const link = chatLinkOfWorkspace(workspace, environments)
               if (link) void copyToClipboardWithToast(link)
               setContextMenu(null)
               return
@@ -4662,7 +4712,7 @@ function WorkspaceSidebar({
                 canNewChat={remoteNewChatTargetOf(conversation.connectionId, conversation.workspaceId) !== null}
                 canMarkUnread={canMarkRemoteConversationUnread(conversation, now)}
                 isDetachedWindow={isDetachedWindow}
-                workspaceId={conversation.workspaceId}
+                chatLink={chatLinkOfRemoteChat(conversation.connectionId, conversation.workspaceId, environments)}
                 starred={conversation.highlight?.starred === true}
                 color={conversation.highlight?.color ?? null}
                 snoozedUntil={conversation.snoozedUntil}
@@ -4698,7 +4748,7 @@ function WorkspaceSidebar({
                   else if (action === 'toggle-settle') settleRemoteConversation(conversation)
                   else if (action === 'mark-unread') changeRemoteChat(target, { kind: 'mark-unread' })
                   else if (action === 'copy-link') {
-                    const link = chatLinkFor(conversation.workspaceId)
+                    const link = chatLinkOfRemoteChat(conversation.connectionId, conversation.workspaceId, environments)
                     if (link) void copyToClipboardWithToast(link)
                   } else if (action === 'move-to-new-window' || action === 'move-to-main-window')
                     onOpenRemoteSession?.(

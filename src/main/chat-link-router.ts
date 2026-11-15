@@ -1,7 +1,7 @@
 import type { ChatLink } from '../shared/deep-link'
 
-// Where a `sprintengine://chat/…` link lands (shared/deep-link.ts has the
-// grammar). Main picks the window and brings it forward; the window's renderer
+// Where a `sprintengine://chat/…` link lands (packages/studio-protocol's
+// chat-link.ts has the grammar). Main picks the window and brings it forward; the window's renderer
 // opens the chat, or says it is not on this machine, because its store is
 // where the chat is or is not (workspaceManager's `chatLinkOpener`).
 //
@@ -41,7 +41,12 @@ export type ChatLinkRouterDeps<W extends ChatLinkWindow> = {
   /** The workspace-window id a window was opened with. */
   windowIdOf: (window: W) => string
   primaryWindowId: () => string
-  /** The window the registry files this chat under; null when it files it nowhere. */
+  /**
+   * The window the registry files this chat under, by its id here; null when
+   * it files it nowhere. A link to a paired machine's chat names its id
+   * there, which files nowhere: it goes to the focused window, whose renderer
+   * finds the row that follows it.
+   */
   holderOf: (chatId: string) => string | null
   /** Whether windows can be made yet: before `ready` the boot makes the first one. */
   canOpenWindow: () => boolean

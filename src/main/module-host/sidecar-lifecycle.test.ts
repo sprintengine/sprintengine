@@ -1,14 +1,9 @@
 import assert from 'node:assert/strict'
-import type { IpcMain } from 'electron'
 
 import { createMainKernel, type SidecarLifecycle, type SidecarRunState } from './main-host'
 import { test } from 'vitest'
 
 test('sidecar-lifecycle', async () => {
-  function createFakeIpcMain(): IpcMain {
-    return { handle: () => undefined } as unknown as IpcMain
-  }
-
   function trackingLifecycle(log: string[], id: string, overrides: Partial<SidecarLifecycle> = {}): SidecarLifecycle {
     return {
       start: async () => {
@@ -24,7 +19,7 @@ test('sidecar-lifecycle', async () => {
   // Startup spawns lifecycle sidecars in registration order, composed with the
   // modules' other startup hooks; shutdown stops them in reverse order.
   async function testStartupAndShutdownOrder(): Promise<void> {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     const log: string[] = []
 
     const alpha = kernel.hostFor('alpha')
@@ -57,7 +52,7 @@ test('sidecar-lifecycle', async () => {
   // A demand sidecar does not spawn at startup; its owner starts it through the
   // kernel handle, and shutdown still stops it.
   async function testDemandSidecar(): Promise<void> {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     const log: string[] = []
     const handle = kernel
       .hostFor('sprint-engine')
@@ -82,7 +77,7 @@ test('sidecar-lifecycle', async () => {
   // Spawn failure: queryable 'failed' state with the error recorded, and a
   // module-identified error notification — never a fake-running state.
   async function testSpawnFailure(): Promise<void> {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     const delivered = kernel.recentNotifications()
     const handle = kernel.hostFor('sprint-engine').registerSidecar(
       { id: 'broken-daemon', kind: 'process', startOn: 'demand' },
@@ -104,7 +99,7 @@ test('sidecar-lifecycle', async () => {
 
     // Startup-spawned failures are isolated (runStartup must not throw) but
     // still recorded and notified.
-    const startupKernel = createMainKernel(createFakeIpcMain())
+    const startupKernel = createMainKernel()
     const startupDelivered = startupKernel.recentNotifications()
     startupKernel.hostFor('alpha').registerSidecar(
       { id: 'broken-eager', kind: 'process' },
@@ -126,7 +121,7 @@ test('sidecar-lifecycle', async () => {
   // Declarative registrations (no lifecycle) stay 'declared'; the handle cannot
   // start them and shutdown ignores them.
   async function testDeclarativeSidecar(): Promise<void> {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     const handle = kernel.hostFor('sprint-engine').registerSidecar({ id: 'sprint-engine-core', kind: 'process' })
 
     await kernel.runStartup()
@@ -143,7 +138,7 @@ test('sidecar-lifecycle', async () => {
   // Status delegation: an externally-triggered daemon's own state is the truth
   // source for kernel status queries.
   async function testStatusDelegation(): Promise<void> {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     let externalState: SidecarRunState = 'stopped'
     let externalError: string | undefined
     const handle = kernel.hostFor('sprint-engine').registerSidecar(
@@ -176,7 +171,7 @@ test('sidecar-lifecycle', async () => {
 
   // Concurrent starts share one spawn — a slow lifecycle is never double-spawned.
   async function testConcurrentStartsShareOneSpawn(): Promise<void> {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     let spawnCount = 0
     let releaseSpawn: () => void = () => undefined
     const handle = kernel.hostFor('alpha').registerSidecar(
@@ -202,7 +197,7 @@ test('sidecar-lifecycle', async () => {
   }
 
   function testDuplicateSidecarIdRejected(): void {
-    const kernel = createMainKernel(createFakeIpcMain())
+    const kernel = createMainKernel()
     kernel.hostFor('alpha').registerSidecar({ id: 'daemon', kind: 'process' })
     assert.throws(
       () => kernel.hostFor('beta').registerSidecar({ id: 'daemon', kind: 'process' }),

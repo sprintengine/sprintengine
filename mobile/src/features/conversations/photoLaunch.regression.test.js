@@ -11,7 +11,7 @@ const test = require("node:test");
 // already uploaded: a second chat beside an empty first one, or the same
 // picture sent twice, is the bug this pins.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { launchWithPhotos, openingStillInBox } = require(
   path.join(buildRoot, "src/features/conversations/photoLaunch.js"),
 );

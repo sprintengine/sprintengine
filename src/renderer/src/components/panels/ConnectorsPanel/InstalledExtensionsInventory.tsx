@@ -67,6 +67,8 @@ import { ConnectorRow, ConnectorSectionHeading } from './ConnectorRow'
 import { ModuleUpdateBanner, type ModuleUpdateFlow, type ModuleUpdateNotice } from './ExtensionUpdateBanner'
 import { cliOnlyRegistryIds, deriveManageUpdateBanner } from './extensionUpdates'
 import { errorMessage } from '../../../../../shared/errors'
+import { agentSkillsApi } from '../../../studio/agentSkills'
+import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
 
 // Per-row actions, all optional: the host wires only the handlers that exist
 // today (no new IPC), and rows without a matching handler carry no affordance.
@@ -150,12 +152,12 @@ export function InstalledExtensionsInventory({
   const [updateNotice, setUpdateNotice] = useState<ModuleUpdateNotice | null>(null)
 
   const loadModules = useCallback(async () => {
-    if (typeof window.api.listThirdPartyModules !== 'function') {
+    if (!windowHasStudio()) {
       setModules({ status: 'unsupported' })
       return
     }
     try {
-      const result = await window.api.listThirdPartyModules()
+      const result = await extensionsApi.listThirdPartyModules()
       // Guard the shape, not just the rejection: a malformed IPC result must
       // degrade to the error notice like every other source, never crash the
       // derive step (the state-matrix rule).
@@ -170,12 +172,12 @@ export function InstalledExtensionsInventory({
   }, [])
 
   const loadClis = useCallback(async () => {
-    if (typeof window.api.pluginsList !== 'function') {
+    if (!windowHasStudio()) {
       setClis({ status: 'unsupported' })
       return
     }
     try {
-      const result = await window.api.pluginsList()
+      const result = await extensionsApi.pluginsList()
       setClis(result.ok ? { status: 'ok', value: result.plugins } : { status: 'error', message: result.message })
     } catch (error) {
       setClis({ status: 'error', message: errorMessage(error, 'Could not list installed agent CLIs.') })
@@ -183,14 +185,14 @@ export function InstalledExtensionsInventory({
   }, [])
 
   const loadSkills = useCallback(async () => {
-    if (typeof window.api.workspaceSkillsList !== 'function') {
+    if (typeof agentSkillsApi.workspaceSkillsList !== 'function') {
       setSkills({ status: 'unsupported' })
       return
     }
     try {
       // The skills installed for every project are as much "installed" as the
       // folder's: every agent reads them, with or without a folder open.
-      const result = await window.api.workspaceSkillsList({ workspaceRoot, includeGlobal: true })
+      const result = await agentSkillsApi.workspaceSkillsList({ workspaceRoot, includeGlobal: true })
       setSkills(result.ok ? { status: 'ok', value: result.skills } : { status: 'error', message: result.message })
     } catch (error) {
       setSkills({ status: 'error', message: errorMessage(error, 'Could not list installed skills.') })
@@ -200,10 +202,10 @@ export function InstalledExtensionsInventory({
   // Update detection. A thrown read is a failed check and renders
   // couldn't-check — never silence that reads as "up to date".
   const loadUpdateStates = useCallback(async (forceRefresh = false) => {
-    if (typeof window.api.readMarketplacePluginUpdateStates !== 'function') return
+    if (!windowHasStudio()) return
     try {
       setUpdateStates(
-        await window.api.readMarketplacePluginUpdateStates(forceRefresh ? { forceRefresh: true } : undefined),
+        await extensionsApi.readMarketplacePluginUpdateStates(forceRefresh ? { forceRefresh: true } : undefined),
       )
     } catch (error) {
       setUpdateStates({ ok: false, message: errorMessage(error, 'Could not check for updates.') })
@@ -244,11 +246,7 @@ export function InstalledExtensionsInventory({
         const [id, ...rest] = pending
         pending = rest
         const entry = registryPlugins?.find((plugin) => plugin.id === id)
-        if (
-          !entry ||
-          typeof window.api.verifyMarketplacePlugin !== 'function' ||
-          typeof window.api.updateMarketplacePluginFromRegistry !== 'function'
-        ) {
+        if (!entry || !windowHasStudio() || !windowHasStudio()) {
           setUpdateRun({ status: 'idle' })
           setUpdateNotice({
             tone: 'error',
@@ -268,7 +266,7 @@ export function InstalledExtensionsInventory({
           setUpdateRun({ status: 'busy', label: `Checking ${entry.name}…` })
           let verify
           try {
-            verify = await window.api.verifyMarketplacePlugin({ id: entry.id })
+            verify = await extensionsApi.verifyMarketplacePlugin({ id: entry.id })
           } catch (error) {
             setUpdateRun({ status: 'idle' })
             setUpdateNotice({ tone: 'error', message: errorMessage(error, 'Could not verify this update.') })
@@ -301,7 +299,7 @@ export function InstalledExtensionsInventory({
 
         setUpdateRun({ status: 'busy', label: `Updating ${entry.name}…` })
         try {
-          const result = await window.api.updateMarketplacePluginFromRegistry({
+          const result = await extensionsApi.updateMarketplacePluginFromRegistry({
             id: entry.id,
             ...(trustToken ? { trustToken } : {}),
             workspaceRoot: workspaceRoot ?? undefined,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import { createTerminalOutputBuffer } from './terminal-output-buffer'
 import { TerminalReplayBuffer } from './terminal-replay-buffer'
 import type { TerminalSession } from './terminal-session'
@@ -10,11 +10,11 @@ const LOW = 10
 const STALL_MS = 40
 
 function harness() {
-  const sent: Array<{ channel: string; payload: string | number }> = []
-  const sender = { isDestroyed: () => false } as unknown as WebContents
+  const sent: Array<{ type: string; data: string }> = []
+  const viewer: TerminalViewer = { isGone: () => false, deliver: () => undefined }
   const session = {
     sessionId: 'session_flow',
-    sender,
+    viewer,
     visible: true,
     lastInputAt: null,
     output: new TerminalReplayBuffer(),
@@ -22,7 +22,8 @@ function harness() {
   const flow: string[] = []
   const buffer = createTerminalOutputBuffer({
     getSession: (sessionId) => (sessionId === session.sessionId ? session : undefined),
-    sendTerminalEvent: (_sender, channel, payload) => sent.push({ channel, payload }),
+    sendTerminalEvent: (_viewer, event) =>
+      sent.push({ type: event.type, data: event.type === 'data' ? event.data : '' }),
     recordDataBatch: () => undefined,
     flowControl: {
       highWatermark: HIGH,
@@ -110,7 +111,7 @@ test('records how far the pane has been sent, and not while it is hidden', () =>
   emit('one\r\n')
   buffer.flush(session.sessionId)
   assert.equal(session.rendererDeliveredOffset, session.output.endOffset)
-  assert.equal(session.rendererDeliveredTo, session.sender)
+  assert.equal(session.rendererDeliveredTo, session.viewer)
   const delivered = session.rendererDeliveredOffset
 
   session.visible = false
@@ -175,7 +176,7 @@ test('trimming a pending batch never starts inside a multi-byte character', () =
   buffer.send(session, 'a', 1)
   buffer.send(session, data, Buffer.byteLength(data))
   buffer.flush(session.sessionId)
-  const forwarded = String(sent[sent.length - 1]?.payload ?? '')
+  const forwarded = String(sent[sent.length - 1]?.data ?? '')
   assert.ok(forwarded.includes('throttled'), 'the bound was hit')
   assert.equal(forwarded.includes('�'), false, 'no replacement character after the notice')
   assert.ok(forwarded.endsWith('€€€'))

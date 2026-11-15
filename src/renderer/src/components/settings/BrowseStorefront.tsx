@@ -26,6 +26,7 @@ import {
   summarizeInstallResult,
   type InstallFlowState,
 } from './installFlow'
+import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // The registry plugin detail panel + trust-gate install flow, rendered by the
 // Connectors surface next to its browse rows. The detail data comes from the
@@ -94,7 +95,7 @@ export function PluginDetailPanel({
       setFlow({ status: 'installing' })
       try {
         const result = await installAndActivateRendererModules(() =>
-          window.api.installMarketplacePluginFromRegistry({
+          extensionsApi.installMarketplacePluginFromRegistry({
             id: plugin.id,
             // The approval main issued at verify; it installs exactly what the
             // prompt disclosed, never whatever the source moved to since.
@@ -127,14 +128,14 @@ export function PluginDetailPanel({
     // still resolves the entry itself, discloses each server exactly as it
     // would be written, and issues the token — they are executable config, so
     // they always route through the explicit trust prompt.
-    if (typeof window.api.verifyMarketplacePlugin !== 'function') {
+    if (!windowHasStudio()) {
       setFlow({ status: 'error', message: 'Installing extensions needs a newer app build. Update and restart.' })
       return
     }
     setFlow({ status: 'verifying' })
     let verify
     try {
-      verify = await window.api.verifyMarketplacePlugin({ id: plugin.id })
+      verify = await extensionsApi.verifyMarketplacePlugin({ id: plugin.id })
     } catch (error) {
       setFlow({ status: 'error', message: error instanceof Error ? error.message : 'Could not verify this extension.' })
       return

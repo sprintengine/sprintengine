@@ -1,8 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { BrowserWindow, Menu, app, dialog, type IpcMain } from 'electron'
 
-import { ensureDefaultUserSkillsDir } from '../skills/user-skills-dir'
-
 export const TEST_OPEN_DIR_ENV = 'SPRINTENGINE_TEST_OPEN_DIR'
 
 export type TestOpenDirOverrideOptions = {
@@ -55,24 +53,6 @@ export function registerMenuDialogIpc(ipcMain: IpcMain): void {
         : {}),
     })
     return result.filePaths[0] ?? null
-  })
-
-  ipcMain.handle('skills:ensure-default-user-dir', (): string => ensureDefaultUserSkillsDir())
-
-  // Cold-start default location for a brand-new workspace folder, used only
-  // when the renderer has no selected/recent folder to derive a parent from.
-  // The user's Documents directory is a predictable, cross-platform home for
-  // projects; falling back to the home dir if Documents is unavailable.
-  ipcMain.handle('app:default-workspace-parent', async (): Promise<string | null> => {
-    try {
-      return app.getPath('documents')
-    } catch {
-      try {
-        return app.getPath('home')
-      } catch {
-        return null
-      }
-    }
   })
 
   ipcMain.handle('app:show-menubar-menu', async (event, menuLabel: string, position?: { x?: number; y?: number }) => {

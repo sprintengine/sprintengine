@@ -343,8 +343,14 @@ test('a handoff is refused while a turn runs', async () => {
   let release!: () => void
   const hold = new Promise<void>((resolve) => (release = resolve))
   const chat = await setup({ hold })
+  // Until the turn is under way: its message is in the chat.
+  const underWay = new Promise<void>((resolve) =>
+    chat.runtime.onEvent((event) => {
+      if (event.type === 'user_message') resolve()
+    }),
+  )
   const turn = chat.sendLater('a long one')
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  await underWay
   const handed = await chat.runtime.handoffConversation({ key: chat.key })
   assert.deepEqual(handed, { ok: false, message: 'Stop the running turn before handing the chat off.' })
   release()

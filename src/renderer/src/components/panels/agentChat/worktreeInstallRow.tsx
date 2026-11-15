@@ -17,6 +17,7 @@ import type { WorktreeDependencyInstallView } from '../../../../../shared/electr
 import { comparablePath } from '../../../../../shared/host-paths'
 import { Spinner } from '../../ui'
 import { ComposerTrayRow } from './composerTray'
+import { worktreesApi } from '../../../studio/worktrees'
 
 /** The running installs after one more change: added or moved on while it runs, dropped once it ends. */
 export function applyInstallChange(
@@ -41,15 +42,14 @@ export function installIn(
 function useRunningWorktreeInstalls(active: boolean): WorktreeDependencyInstallView[] {
   const [installs, setInstalls] = useState<WorktreeDependencyInstallView[]>([])
   useEffect(() => {
-    const api = typeof window === 'undefined' ? null : window.api
-    if (!active || !api || typeof api.onWorktreeInstallChanged !== 'function') return
+    if (!active) return
     let disposed = false
-    const unsubscribe = api.onWorktreeInstallChanged((view) => {
+    const unsubscribe = worktreesApi.onWorktreeInstallChanged((view) => {
       if (!disposed) setInstalls((current) => applyInstallChange(current, view))
     })
     // One that started before this view mounted.
-    void api
-      .listWorktreeInstalls?.()
+    void worktreesApi
+      .listWorktreeInstalls()
       .then((running) => {
         if (!disposed) setInstalls((current) => running.reduce(applyInstallChange, current))
       })

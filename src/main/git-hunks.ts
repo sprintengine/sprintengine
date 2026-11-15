@@ -13,10 +13,8 @@
 // by content (`locateHunk`). An offset that was true when the box was drawn is
 // not evidence a second later.
 
-import { isAbsolute } from 'path'
-
 import type { GitCommandResult } from './git'
-import { getRelativeGitPath, runGitCommand, toPathspec, toPosixPath } from './git-utils'
+import { getRelativeGitPath, runGitCommand, toPathspec } from './git-utils'
 import {
   formatHunkHeader,
   hunkFingerprint,
@@ -71,14 +69,12 @@ function diffArgs(scope: GitHunkScope, relativePath: string): string[] {
 
 /**
  * The path, as git wants to hear it, and only if it is this repository's to
- * give. `getRelativeGitPath` resolves a relative path against the PROCESS's
- * working directory, which is not the repository — so a path that already is
- * relative is taken as given, and one that is absolute is made relative to the
- * root. Either way it must land inside the root: the renderer names the file,
- * and a name that climbs out with `..` is refused rather than diffed.
+ * give: absolute, or relative to the root. Either way it must land inside the
+ * root: the renderer names the file, and a name that climbs out with `..` is
+ * refused rather than diffed.
  */
 function repoRelativePath(repoRoot: string, filePath: string): string | null {
-  const relativePath = isAbsolute(filePath) ? getRelativeGitPath(repoRoot, filePath) : toPosixPath(filePath)
+  const relativePath = getRelativeGitPath(repoRoot, filePath)
   if (!relativePath || relativePath === '..' || relativePath.startsWith('../')) return null
   return relativePath
 }

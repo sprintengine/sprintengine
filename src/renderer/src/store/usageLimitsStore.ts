@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import { windowChatStores, type ChatStoresApi } from '../studio/chatStores'
+
 import {
   usageLimitProviderOfConversation,
   type UsageLimitProvider,
@@ -7,10 +9,10 @@ import {
   type UsageLimitsState,
 } from '../../../shared/usage-limits'
 
-// The subscription usage limits as main last reported them (`usage-limits:*`),
-// held once per window so the chat strips and the palette's dialog read one
-// answer. Not persisted: main keeps the reading, and its cache, and answers
-// the first read.
+// The subscription usage limits as the window's Studio last told them
+// (`usageLimits.*`), held once per window so the chat strips and the palette's
+// dialog read one answer. Not persisted: the Studio keeps the reading, and its
+// cache, and answers the first read.
 //
 // Subscribed only while something draws it. Every chat strip of a Claude or
 // Codex chat retains it as it mounts, and the last one to go lets the push go,
@@ -26,7 +28,7 @@ export const useUsageLimitsStore = create<UsageLimitsStore>()((set) => ({
   setState: (state) => set({ state }),
 }))
 
-type UsageLimitsApi = Partial<Pick<Window['api'], 'usageLimits' | 'onUsageLimitsChanged'>>
+type UsageLimitsApi = Partial<Pick<ChatStoresApi, 'usageLimits' | 'onUsageLimitsChanged'>>
 
 let holders = 0
 let release: (() => void) | null = null
@@ -57,9 +59,7 @@ function subscribe(api: UsageLimitsApi): () => void {
 }
 
 /** Keep the store on main's reading while the caller draws it. Returns the release. */
-export function retainUsageLimits(
-  api: UsageLimitsApi | null = typeof window === 'undefined' ? null : window.api,
-): () => void {
+export function retainUsageLimits(api: UsageLimitsApi | null = windowChatStores()): () => void {
   if (!api) return () => {}
   holders += 1
   if (holders === 1) release = subscribe(api)

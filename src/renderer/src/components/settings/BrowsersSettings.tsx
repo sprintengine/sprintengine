@@ -1,21 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { encodeQrCode } from '../../../../shared/qr-code'
 import type { WebDevicesStatus } from '../../../../shared/web-client'
 import { useRelativeNow } from '../../hooks/useRelativeNow'
 import { relativeFromNow } from '../../utils/relativeTime'
-import { CopyGlyphButton, GhostButton, InlineNotice, Input, OutlineButton, Select, useConfirmDialog } from '../ui'
-import { QrSquare } from './RemoteTailnetSettingsTab'
+import { webDevicesApi } from '../../studio/webDevices'
+import { GhostButton, InlineNotice, Input, OutlineButton, useConfirmDialog } from '../ui'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
-import { formatTimeOfDay } from '../../utils/clockFormat'
 
 // Settings → Remote, in a web tab: the browsers paired with this server
 // (phase 9 spec, 6.2, 14.9). Every paired browser is listed with where it
 // paired from and when it was last seen, and is removed here; removing one
 // closes its connections at once. A browser asking to pair by approval waits
-// here until the owner types the six digits it shows. "Pair another browser"
-// makes a one-time link, as text and as a QR code for a phone, on one of the
-// server's own origins.
+// here until the owner types the six digits it shows. That is how another
+// browser, a phone's included, is paired from a tab: no tab is handed a
+// pairing link (a one-time credential), so a stolen session cannot mint one.
+// On the machine itself, `studio-server pair` prints one.
 //
 // Only a server running the web listener answers these; a desktop window
 // asks, is refused, and draws nothing.
@@ -24,13 +23,11 @@ export function BrowsersSettings() {
   const [status, setStatus] = useState<WebDevicesStatus | null>(null)
   const [codes, setCodes] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
-  const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null)
-  const [linkOrigin, setLinkOrigin] = useState<string | null>(null)
   const dialog = useConfirmDialog()
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await window.api.webDevicesStatus())
+      setStatus(await webDevicesApi.webDevicesStatus())
     } catch {
       setStatus(null)
     }
@@ -38,10 +35,9 @@ export function BrowsersSettings() {
 
   useEffect(() => {
     void refresh()
-    return window.api.onWebDevicesChanged((next) => setStatus(next))
+    return webDevicesApi.onWebDevicesChanged((next) => setStatus(next))
   }, [refresh])
 
-  const qr = useMemo(() => (link ? encodeQrCode(link.url) : null), [link])
   // "last seen 2 minutes ago" and "pairing ends in 3 days" move with the
   // clock while the panel stays open, not only when the device list changes.
   // A desktop window draws nothing here, so its clock does not tick.
@@ -69,10 +65,8 @@ export function BrowsersSettings() {
       confirmLabel: 'Remove',
       tone: 'danger',
     })
-    if (confirmed) await act(() => window.api.webDevicesRevoke(id))
+    if (confirmed) await act(() => webDevicesApi.webDevicesRevoke(id))
   }
-
-  const originItems = status.origins.map((origin) => ({ value: origin, label: origin }))
 
   return (
     <section aria-labelledby="browsers-settings-title" className="space-y-3">
@@ -96,7 +90,7 @@ export function BrowsersSettings() {
                 className="flex items-center gap-2"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  void act(() => window.api.webDevicesApprove(request.requestId, codes[request.requestId] ?? ''))
+                  void act(() => webDevicesApi.webDevicesApprove(request.requestId, codes[request.requestId] ?? ''))
                 }}
               >
                 <Input
@@ -117,7 +111,7 @@ export function BrowsersSettings() {
                 <OutlineButton type="submit" disabled={(codes[request.requestId] ?? '').length !== 6}>
                   Let in
                 </OutlineButton>
-                <GhostButton onClick={() => void act(() => window.api.webDevicesDecline(request.requestId))}>
+                <GhostButton onClick={() => void act(() => webDevicesApi.webDevicesDecline(request.requestId))}>
                   Decline
                 </GhostButton>
               </form>
@@ -149,44 +143,10 @@ export function BrowsersSettings() {
       <SettingCard>
         <SettingsRow
           label="Pair another browser"
-          help="A link that works once, within five minutes. Open it in the other browser, or scan it with a phone."
+          help={`Open ${status.origins[0] ?? 'this server'} in it and ask to pair; it shows six digits to type here. Or run studio-server pair on this machine.`}
         >
-          <div className="flex items-center gap-2">
-            {originItems.length > 1 ? (
-              <Select
-                ariaLabel="Address the link opens"
-                items={originItems}
-                value={linkOrigin ?? originItems[0].value}
-                onChange={setLinkOrigin}
-              />
-            ) : null}
-            <OutlineButton
-              onClick={() =>
-                void window.api
-                  .webDevicesLink(linkOrigin ?? undefined)
-                  .then(setLink, (failure: unknown) =>
-                    setError(failure instanceof Error ? failure.message : String(failure)),
-                  )
-              }
-            >
-              Make a link
-            </OutlineButton>
-          </div>
+          {null}
         </SettingsRow>
-        {link ? (
-          <div className="flex items-start gap-4 px-4 pb-4">
-            {qr ? <QrSquare matrix={qr} label="Pairing link" /> : null}
-            <div className="min-w-0 space-y-2">
-              <p className="break-all font-mono text-meta text-[color:var(--text-muted)]">{link.url}</p>
-              <div className="flex items-center gap-2">
-                <CopyGlyphButton text={link.url} label="Copy the pairing link" />
-                <span className="text-meta text-[color:var(--text-subtle)]">
-                  Works until {formatTimeOfDay(new Date(link.expiresAt), { timeStyle: 'medium' })}
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </SettingCard>
     </section>
   )

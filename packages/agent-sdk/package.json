@@ -51,6 +51,7 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@sprintengine/client-runtime": "^0.1.0",
     "@sprintengine/studio-protocol": "^0.1.0"
   },
   "scripts": {

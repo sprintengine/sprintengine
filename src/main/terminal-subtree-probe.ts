@@ -20,8 +20,9 @@
 //
 // Pure core (testable without spawning); the OS reads (`ps`, `lsof`, and on
 // Windows one PowerShell) are injected. A WSL session is read by its
-// distribution's helper from /proc instead (`resources/wsl-helper/lib/proc.mjs`
-// applies the same rule), reached through `WslHost.probeSubtrees`. Runs
+// distribution's Studio server from /proc instead
+// (`server/wsl/distribution/proc.mjs` applies the same rule), reached through
+// `WslHost.probeSubtrees`. Runs
 // once per sweep over the small set of reap candidates, not per process, so
 // the cost is a fixed handful of subprocesses regardless of candidate count.
 // Any failure resolves to "live" (keep the terminal alive) — never the reverse.
@@ -205,7 +206,7 @@ export function matchCliSessionPids(psOutput: string, cliSessionId: string): num
  *
  * `host` says where the session ran. On Windows a native session's survivors
  * are found by command line through CIM and ended with their trees. A WSL
- * session's are killed inside its distribution by its helper
+ * session's are killed inside its distribution by its Studio server
  * (`WslHost.killSessionSurvivors`), never here.
  */
 export async function killCliSessionSurvivors(

@@ -46,6 +46,8 @@ vi.mock('../workspace/useConversationPullRequests', () => ({
 }))
 
 import CommandPalette from './CommandPalette'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 const chatAgent = {
   agent: { id: 'agent', name: 'Art Shea', runtimeKind: 'conversation', conversation: { providerId: 'claude-agent' } },
@@ -126,9 +128,10 @@ beforeEach(() => {
       searchContent: async () => ({ ok: true, results: [], engine: 'ripgrep' }),
       cancelContentSearch: async () => {},
       conversationSearch,
-      conversationCancelSearch: async () => ({ ok: true }),
     },
   })
+  // History is searched by the window's Studio, over the protocol.
+  installStudioLoopback(window as never)
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)

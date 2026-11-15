@@ -39,7 +39,7 @@ async function mount(entry: UserEntry, options: { canRestoreFiles: boolean; rewi
       },
     },
   })
-  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
+  await installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> }).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { EditFromHereAction } = await import('./editFromHere')

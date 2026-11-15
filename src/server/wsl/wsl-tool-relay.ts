@@ -1,9 +1,11 @@
 import type { Duplex } from 'node:stream'
-import { StringDecoder } from 'node:string_decoder'
 
-import { connect, type StudioClient } from '../../../packages/agent-sdk/src/client'
-import type { OfferedToolset, ToolDefinition } from '../../../packages/agent-sdk/src/tools'
-import type { StudioTransport } from '../../../packages/agent-sdk/src/transport'
+import {
+  connect,
+  type StudioClient,
+  type OfferedToolset,
+  type ToolDefinition,
+} from '../../../packages/client-runtime/src/public'
 import {
   STUDIO_RESERVED_TOOLSET_NAMES,
   STUDIO_TOOL_NAME_PATTERN,
@@ -11,11 +13,11 @@ import {
 } from '../../../packages/studio-protocol/src/public'
 import { connectionContextOf, gatewayToolTimeoutMs } from '../../main/automation/offer-gateway-tools'
 import { isStudioGatewayMutation } from '../../main/automation/studio-gateway-tools'
-import { servedOnlyToPairedDevices } from '../../main/automation/tailnet/tailnet-scopes'
 import { backoffDelayMs } from '../../shared/exponentialBackoff'
 import { wslToWindowsPath } from '../../shared/host-paths'
 import { toolError, type McpToolRegistration } from '../../shared/modules/mcp-tools'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
+import { lineTransport, readTicket } from './studio-door'
 import type { WslServerConnection } from './wsl-environment-manager'
 
 // The desktop's toolsets, for a chat agent in WSL (phase 7 spec, 3.7). An
@@ -77,7 +79,8 @@ export type RelayTarget = {
   key: string
   /** For the log: "WSL: Ubuntu", "build-box". */
   name: string
-  backend: { isOpen(): boolean; onClose(listener: (reason: string) => void): void }
+  /** The server's own liveness: the desktop's owner connection to it. The offers end with it. */
+  alive: RelayLiveness
   open(purpose: 'studio'): Promise<Duplex>
   toolsets: readonly string[]
   /** Whether the tools modules add on the Windows side are offered too (phase 5, 7.2). */
@@ -86,15 +89,53 @@ export type RelayTarget = {
   args(toolset: string, args: Record<string, unknown>): Record<string, unknown>
 }
 
+/** Whether a target's server is up, and word when it goes. */
+export type RelayLiveness = { isOpen(): boolean; onClose(listener: (reason: string) => void): void }
+
 /** The toolsets offered to an SSH machine's server: none that act on this computer's files or processes. */
 export const SSH_RELAYED_TOOLSETS = ['browser', 'canvas'] as const
+
+/**
+ * An SSH machine's server as a relay target: alive while the owner connection
+ * this computer holds to it is (design-wsl-ssh-direct PR 1a: that connection
+ * ending is the server lost), offered the browser and the canvas only, on a
+ * `studio` stream of its own.
+ */
+export function sshRelayTarget(input: {
+  route: string
+  name: string
+  owner: Pick<StudioClient, 'state' | 'closed'>
+  open(): Promise<Duplex>
+}): RelayTarget {
+  return {
+    key: input.route,
+    name: input.name,
+    alive: ownerLiveness(input.owner),
+    open: () => input.open(),
+    toolsets: SSH_RELAYED_TOOLSETS,
+    args: (_toolset, args) => args,
+  }
+}
+
+/** A server is up while the desktop's owner connection to it is (design-wsl-ssh-direct PR 1a and PR 3). */
+function ownerLiveness(owner: Pick<StudioClient, 'state' | 'closed'>): RelayLiveness {
+  return {
+    isOpen: () => owner.state !== 'closed',
+    onClose: (listener) => {
+      void owner.closed.then(
+        () => listener('closed'),
+        (error: unknown) => listener(error instanceof Error ? error.message : String(error)),
+      )
+    },
+  }
+}
 
 /** A WSL server as a relay target, its editor and workspace paths respelled for Windows. */
 export function wslRelayTarget(connection: WslServerConnection): RelayTarget {
   return {
     key: `wsl:${connection.distro}`,
     name: `WSL: ${connection.distro}`,
-    backend: connection.backend,
+    alive: ownerLiveness(connection.owner),
     open: (purpose) => connection.open(purpose),
     toolsets: [...RELAYED_TOOLSETS, ...WINDOWS_SIDE_TOOLSETS],
     moduleTools: true,
@@ -152,80 +193,6 @@ export function relayedToolArgs(
   return next
 }
 
-/** A Studio protocol transport over an admitted stream: one frame per line, saying hello with `ticket`. */
-export function lineTransport(stream: Duplex, ticket: string): StudioTransport {
-  const decoder = new StringDecoder('utf8')
-  const messageListeners: Array<(frame: string) => void> = []
-  const closeListeners: Array<(error?: Error) => void> = []
-  let buffer = ''
-  let failure: Error | undefined
-  stream.on('data', (chunk: Buffer | string) => {
-    buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk)
-    let newline = buffer.indexOf('\n')
-    while (newline !== -1) {
-      const line = buffer.slice(0, newline)
-      buffer = buffer.slice(newline + 1)
-      if (line.trim()) for (const listener of messageListeners) listener(line)
-      newline = buffer.indexOf('\n')
-    }
-  })
-  stream.on('error', (error: Error) => {
-    failure = error
-  })
-  stream.once('close', () => {
-    for (const listener of closeListeners) listener(failure)
-  })
-  return {
-    credential: { token: ticket },
-    send: (frame) => void stream.write(`${frame}\n`),
-    close: () => {
-      stream.end()
-      stream.destroy()
-    },
-    onMessage: (listener) => void messageListeners.push(listener),
-    onClose: (listener) => void closeListeners.push(listener),
-    pause: () => void stream.pause(),
-    resume: () => void stream.resume(),
-  }
-}
-
-/** The ticket line a `studio` door says first, then the stream for the protocol. */
-export function readTicket(stream: Duplex, timeoutMs = 10_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let buffer = Buffer.alloc(0)
-    const done = (error: Error | null, ticket?: string) => {
-      clearTimeout(timer)
-      stream.off('readable', onReadable)
-      stream.off('close', onClose)
-      if (error) reject(error)
-      else resolve(ticket!)
-    }
-    const onClose = () => done(new Error('The Studio server closed the connection before it gave a ticket.'))
-    const onReadable = () => {
-      let chunk: Buffer | null
-      while ((chunk = stream.read() as Buffer | null) !== null) {
-        buffer = Buffer.concat([buffer, chunk])
-        const newline = buffer.indexOf(0x0a)
-        if (newline === -1) continue
-        const rest = buffer.subarray(newline + 1)
-        if (rest.length > 0) stream.unshift(rest)
-        try {
-          const line = JSON.parse(buffer.subarray(0, newline).toString('utf8')) as { t?: unknown; ticket?: unknown }
-          if (line.t !== 'ticket' || typeof line.ticket !== 'string') throw new Error('no ticket')
-          done(null, line.ticket)
-        } catch {
-          done(new Error('The Studio server did not give a ticket.'))
-        }
-        return
-      }
-    }
-    const timer = setTimeout(() => done(new Error('The Studio server gave no ticket in time.')), timeoutMs)
-    timer.unref?.()
-    stream.on('readable', onReadable)
-    stream.once('close', onClose)
-  })
-}
-
 /**
  * The toolset and tool name one of Studio's own tools crosses under: its
  * family and the rest, the rest's dots as underscores, or the part of a
@@ -268,7 +235,7 @@ export function relayShellToolsets(input: {
     string,
     {
       client: StudioClient
-      backend: RelayTarget['backend']
+      alive: RelayLiveness
       offered: Map<string, OfferedToolset>
       syncing: Promise<void>
       stop(): void
@@ -276,8 +243,8 @@ export function relayShellToolsets(input: {
   >()
   // The newest target under each key: a reopen for one a new server start replaced is not made.
   const current = new Map<string, RelayTarget>()
-  // Backends whose close is already listened for: each reopen would add another.
-  const watched = new WeakSet<RelayTarget['backend']>()
+  // Servers whose close is already listened for: each reopen would add another.
+  const watched = new WeakSet<RelayLiveness>()
   let closed = false
 
   /**
@@ -310,8 +277,6 @@ export function relayShellToolsets(input: {
     }
     const offeredByClients = new Set(sets.keys())
     for (const registration of input.gatewayTools?.() ?? []) {
-      // A tool served to paired devices alone is no agent's, here or there.
-      if (servedOnlyToPairedDevices(registration.name)) continue
       const named = relayedToolName(registration.name)
       if (!named || offeredByClients.has(named.toolset)) continue
       const taken =
@@ -432,7 +397,7 @@ export function relayShellToolsets(input: {
       backoffDelayMs(attempt, { baseMs: RELAY_REOPEN_MS, maxMs: RELAY_REOPEN_MAX_MS }) ?? RELAY_REOPEN_MAX_MS
     setTimeout(() => {
       if (closed || current.get(connection.key) !== connection) return
-      if (connection.backend.isOpen() === false || open.has(connection.key)) return
+      if (connection.alive.isOpen() === false || open.has(connection.key)) return
       relay(connection, attempt + 1)
     }, delay).unref?.()
   }
@@ -440,11 +405,11 @@ export function relayShellToolsets(input: {
   function relay(connection: RelayTarget, attempt = 0): void {
     if (closed) return
     open.get(connection.key)?.stop()
-    if (!watched.has(connection.backend)) {
-      watched.add(connection.backend)
-      connection.backend.onClose(() => {
+    if (!watched.has(connection.alive)) {
+      watched.add(connection.alive)
+      connection.alive.onClose(() => {
         const entry = open.get(connection.key)
-        if (entry?.backend === connection.backend) entry.stop()
+        if (entry?.alive === connection.alive) entry.stop()
       })
     }
     const doConnect = input.connectClient ?? connect
@@ -459,14 +424,14 @@ export function relayShellToolsets(input: {
       reconnect: false,
     }).then(
       (client) => {
-        if (closed || connection.backend.isOpen() === false) {
+        if (closed || connection.alive.isOpen() === false) {
           client.close()
           return
         }
         const unsubscribe = input.registry.subscribe(() => void sync(connection))
         open.set(connection.key, {
           client,
-          backend: connection.backend,
+          alive: connection.alive,
           offered: new Map(),
           syncing: Promise.resolve(),
           stop: () => {
@@ -475,8 +440,7 @@ export function relayShellToolsets(input: {
             open.delete(connection.key)
           },
         })
-        // The tools' own stream can end while the server and its backend wire
-        // stay up (each stream is its own relay): opened again, or the WSL
+        // The tools' own stream can end while the server stays up (each stream is its own relay): opened again, or the WSL
         // agents lose the desktop's toolsets until the server restarts.
         void client.closed
           .then(
@@ -486,7 +450,7 @@ export function relayShellToolsets(input: {
           .then(() => {
             if (open.get(connection.key)?.client !== client) return
             open.get(connection.key)?.stop()
-            if (closed || connection.backend.isOpen() === false) return
+            if (closed || connection.alive.isOpen() === false) return
             log(`The desktop's tools stream to ${connection.name} closed; opening it again.`)
             reopen(connection, 0)
           })
@@ -498,7 +462,7 @@ export function relayShellToolsets(input: {
         )
         // Tried again while the server is up, or its agents go without the
         // desktop's toolsets until it restarts.
-        if (!closed && connection.backend.isOpen() !== false) reopen(connection, attempt)
+        if (!closed && connection.alive.isOpen() !== false) reopen(connection, attempt)
       },
     )
   }

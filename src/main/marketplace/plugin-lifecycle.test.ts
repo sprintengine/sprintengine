@@ -4,7 +4,6 @@ import { existsSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { IpcMain } from 'electron'
 
 import type { McpSettings, SkillHarness } from '../../shared/electron-api'
 import type { MarketplacePluginEntry, MarketplacePluginManifest } from '../../shared/marketplace'
@@ -44,16 +43,6 @@ test('plugin-lifecycle', async () => {
   type Signer = {
     publicKey: KeyObject
     privateKey: KeyObject
-  }
-
-  function createFakeIpcMain(): { ipcMain: IpcMain; handled: string[] } {
-    const handled: string[] = []
-    const ipcMain = {
-      handle(channel: string, _handler: unknown): void {
-        handled.push(channel)
-      },
-    } as unknown as IpcMain
-    return { ipcMain, handled }
   }
 
   async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
@@ -428,9 +417,7 @@ test('plugin-lifecycle', async () => {
       assert.equal(modules.modules[0]?.manifest.id, 'registry-module-v1')
       assert.equal(modules.modules[0].trust.status, 'trusted')
       const planned = planThirdPartyMainModules(modules)
-      const { ipcMain } = createFakeIpcMain()
       const loaded = loadMainModules({
-        ipcMain,
         modules: planned.modules,
         ineligible: planned.ineligible,
         launchErrors: planned.launchErrors,
@@ -1821,9 +1808,7 @@ test('plugin-lifecycle', async () => {
       assert.equal(modules.modules[0]?.manifest.id, 'granted-module')
       assert.equal(modules.modules[0].trust.status, 'trusted')
       const planned = planThirdPartyMainModules(modules)
-      const { ipcMain } = createFakeIpcMain()
       const loaded = loadMainModules({
-        ipcMain,
         modules: planned.modules,
         ineligible: planned.ineligible,
         launchErrors: planned.launchErrors,

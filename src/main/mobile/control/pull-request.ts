@@ -1,6 +1,6 @@
 // The phone's pull request reads (`pullRequest.read`, `pullRequest.diff`): what
 // it shows of a pull request, built from the desktop's own GitHub reads and cut
-// down to the bounds in `mobilePullRequestLimits`, so nothing the phone asks
+// down to the bounds in `STUDIO_PULL_REQUEST_READ_LIMITS`, so nothing the phone asks
 // for is ever larger than a screen of it. Read-only: nothing here writes to
 // GitHub.
 
@@ -15,12 +15,12 @@ import { checkKey, type PullRequestWatchRead, type WatchedCheck } from '../../gi
 import type { PullRequestReadFailure } from '../../github/branch-pull-request'
 import { MobileControlCommandError } from './command-error'
 import {
-  mobilePullRequestLimits as LIMITS,
-  type MobileControlPullRequestCheck,
-  type MobileControlPullRequestDetail,
-  type MobileControlPullRequestDiffPage,
-  type MobileControlPullRequestRemark,
-} from './protocol'
+  STUDIO_PULL_REQUEST_READ_LIMITS as LIMITS,
+  type StudioPullRequestCheck,
+  type StudioPullRequestDetail,
+  type StudioPullRequestDiffPage,
+  type StudioPullRequestRemark,
+} from '../../../../packages/studio-protocol/src/public'
 
 /** Where the reads come from: `gh`, in the app; a fake in the tests. */
 export type MobileControlPullRequestReader = {
@@ -64,7 +64,7 @@ function readFailed(reason: PullRequestReadFailure): MobileControlCommandError {
 export async function readMobilePullRequest(
   url: string,
   reader: MobileControlPullRequestReader = ghPullRequestReader,
-): Promise<MobileControlPullRequestDetail> {
+): Promise<StudioPullRequestDetail> {
   const [summary, files] = await Promise.all([reader.summary(url), reader.files(url)])
   if (!summary.settled) throw readFailed(summary.reason)
   return buildPullRequestDetail(url, summary, files)
@@ -77,11 +77,11 @@ export function buildPullRequestDetail(
   url: string,
   summary: Extract<PullRequestWatchRead, { settled: true }>,
   files: PullRequestFilesRead,
-): MobileControlPullRequestDetail {
+): StudioPullRequestDetail {
   const required = new Set(summary.requiredChecks ?? [])
   const checks = { passed: 0, failed: 0, pending: 0 }
   for (const check of summary.checks) checks[check.status]++
-  const items: MobileControlPullRequestCheck[] = [...summary.checks]
+  const items: StudioPullRequestCheck[] = [...summary.checks]
     .sort((a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status])
     .slice(0, LIMITS.checks)
     .map((check) => ({
@@ -98,7 +98,7 @@ export function buildPullRequestDetail(
     else if (remark.verdict === 'changes-requested') reviews.changesRequested++
     else reviews.commented++
   }
-  const latest: MobileControlPullRequestRemark[] = [...summary.remarks]
+  const latest: StudioPullRequestRemark[] = [...summary.remarks]
     .sort((a, b) => b.at - a.at)
     .slice(0, LIMITS.remarks)
     .map((remark) => ({
@@ -146,7 +146,7 @@ export async function readMobilePullRequestDiff(
   path: string,
   offset: number,
   reader: MobileControlPullRequestReader = ghPullRequestReader,
-): Promise<MobileControlPullRequestDiffPage> {
+): Promise<StudioPullRequestDiffPage> {
   const read = await reader.diff(url)
   if (!read.settled) throw readFailed(read.reason)
   const section = fileDiffSection(read.diff, path)
@@ -189,7 +189,7 @@ export function pageFileDiff(
   path: string,
   section: readonly string[],
   offset: number,
-): MobileControlPullRequestDiffPage {
+): StudioPullRequestDiffPage {
   const start = Math.min(Math.max(0, Math.trunc(offset)), section.length)
   let end = Math.min(start + LIMITS.diffPageLines, section.length)
   if (end < section.length && !section[end].startsWith('@@')) {

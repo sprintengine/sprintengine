@@ -3,7 +3,7 @@
  *
  * Main pushes every session change to every window, so a window that is
  * listening already has the list. This used to be backed by a thirty-second
- * `terminalList` poll that ran for as long as the window was open, whether or
+ * `terminal.list` poll that ran for as long as the window was open, whether or
  * not a push had ever gone missing — two IPC round trips a minute, and a full
  * signature pass over every session on each, for nothing.
  *

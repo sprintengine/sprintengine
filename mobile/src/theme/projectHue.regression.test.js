@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/mobile");
 const { isProjectHue, projectHueColor } = require(path.join(buildRoot, "src/theme/projectHue.js"));
 
 // The desktop names eight preset hues in `PROJECT_COLOR_PRESETS`. If this

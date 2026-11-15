@@ -6,6 +6,7 @@ import { sessionsAttentionTone } from './workspaceManagerHelpers'
 import { remoteGlyphState, remoteGlyphToneClass, remoteGlyphTooltip, useOpenRemoteSettings } from './topbar/remoteGlyph'
 import { SessionsPopover, type SessionGroup, type SessionItem } from './topbar/SessionsPopover'
 import { useTailnetPresence } from './topbar/useTailnetPresence'
+import { useEnvironments } from '../../hooks/useEnvironments'
 import type { AccountMenuRow, AccountBadge } from './SidebarAccountBar'
 
 // Remote and Sessions, behind the avatar (owner ruling 2026-11-07). The account
@@ -40,7 +41,8 @@ export function useAccountSurfaces({
 }) {
   // Remote presence (remote-sessions-ux / remote-glyph-topbar): pushed, never polled.
   const presence = useTailnetPresence()
-  const remoteState = remoteGlyphState(presence)
+  const environments = useEnvironments()
+  const remoteState = remoteGlyphState(presence, environments)
   const [remoteOpen, setRemoteOpen] = React.useState(false)
   // An OS notification about a pair request or a machine's answer was clicked
   // (pair-from-the-scan-and-stay-paired, phase 3): main brought the window
@@ -130,6 +132,7 @@ export function AccountSurfaces({
   presence: ReturnType<typeof useTailnetPresence>
 }) {
   const openRemoteSettings = useOpenRemoteSettings()
+  const environments = useEnvironments()
   const anchor = sessionsOpen || remoteOpen ? avatarAnchor() : null
   return (
     <>
@@ -151,6 +154,7 @@ export function AccountSurfaces({
           <React.Suspense fallback={null}>
             <RemotePopover
               presence={presence}
+              environments={environments}
               onOpenRemoteSettings={() => {
                 onCloseRemote()
                 openRemoteSettings()

@@ -12,7 +12,7 @@ import type {
   ConversationSessionFrame,
   ConversationSubscribeInput,
 } from '../../../../../shared/conversation-runtime'
-import { chatOverStudioUnderTest, installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
+import { installStudioLoopback, settleStudio } from '../../../../../../tests/studio-chat-loopback'
 
 test('live appends use the sequence index without rescanning or sorting hydrated history', () => {
   const seen = new Set<number>()
@@ -93,7 +93,6 @@ test('scoped catch-up hydrates at the fence and pages without losing live events
     return null
   }
   const root = createRoot(document.createElement('div'))
-  const overStudio = chatOverStudioUnderTest()
   // Each look is its own `act`, so what arrived is drawn before the next.
   const until = async (check: () => boolean, what: string) => {
     for (let tries = 0; !check() && tries < 400; tries++)
@@ -105,13 +104,10 @@ test('scoped catch-up hydrates at the fence and pages without losing live events
   }
   try {
     await act(async () => root.render(createElement(StrictMode, null, createElement(Harness, { agentId: 'agent' }))))
-    await until(() => subscriptions.length >= (overStudio ? 1 : 2), 'the subscription')
+    await until(() => subscriptions.length >= 1, 'the subscription')
     await settle()
-    if (overStudio) expect(subscriptions).toHaveLength(1)
-    else {
-      expect(subscriptions).toHaveLength(2)
-      expect(subscriptions[0].dispose).toHaveBeenCalledOnce()
-    }
+    // The window's client holds one follow for the chat, however often StrictMode mounts it.
+    expect(subscriptions).toHaveLength(1)
     const live = subscriptions[subscriptions.length - 1]
     expect(live.input).toEqual({
       key: { workspaceRoot: '/Users/dev/project', workspaceId: 'workspace', agentId: 'agent' },
@@ -120,7 +116,6 @@ test('scoped catch-up hydrates at the fence and pages without losing live events
     const receive = live.receive
     const stableLoadEarlier = hook.loadEarlier
     await act(async () => {
-      if (!overStudio) subscriptions[0].receive({ type: 'event', event: event(999) })
       receive({
         type: 'snapshot',
         page: { events: [event(12), event(11), event(11)], hasMore: true, beforeCursor: 11 },
@@ -648,6 +643,93 @@ test('the session keeps a settled turn’s tokens as one event, and appends live
   }
 })
 
+test('an event that crossed cut to fit is read whole on request and drawn whole in its place', async () => {
+  const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost' })
+  const previous = Object.getOwnPropertyDescriptors(globalThis)
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  })
+  const receivers: ((frame: ConversationSessionFrame) => void)[] = []
+  const base = {
+    workspaceId: 'workspace',
+    agentId: 'agent',
+    sessionId: 'session',
+    providerId: 'mock',
+    modelId: 'mock',
+    createdAt: 1,
+  }
+  const whole = 'The answer, all of it, as the log keeps it.'
+  const asked: unknown[] = []
+  Object.assign(dom.window, {
+    api: {
+      onConversationSession: (
+        _input: ConversationSubscribeInput,
+        receive: (frame: ConversationSessionFrame) => void,
+      ) => {
+        receivers.push(receive)
+        return () => undefined
+      },
+      conversationEvent: async (input: { seq: number; id: string }) => {
+        asked.push({ seq: input.seq, id: input.id })
+        return {
+          ok: true,
+          event: { ...base, id: 'event-3', seq: 3, type: 'content_delta', payload: { turnId: 'a', text: whole } },
+        }
+      },
+    },
+  })
+  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
+  const { act, createElement } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { useConversationSession, isClippedEvent } = await import('./useConversationSession')
+  const { projectConversation } = await import('./conversationProjection')
+  let hook!: ReturnType<typeof useConversationSession>
+  function Reader() {
+    hook = useConversationSession('/Users/dev/clipped', 'workspace', 'agent')
+    return null
+  }
+  const root = createRoot(document.createElement('div'))
+  const receive = (frame: ConversationSessionFrame) => receivers.at(-1)!(frame)
+  try {
+    await act(async () => root.render(createElement(Reader)))
+    const page = [
+      { ...base, id: 'event-1', seq: 1, type: 'user_message', payload: { turnId: 'a', text: 'Go' } },
+      { ...base, id: 'event-2', seq: 2, type: 'turn_started', payload: { turnId: 'a' } },
+      {
+        ...base,
+        id: 'event-3',
+        seq: 3,
+        type: 'content_delta',
+        payload: { turnId: 'a', text: 'The answer', wireClipped: true },
+      },
+      { ...base, id: 'event-4', seq: 4, type: 'turn_completed', payload: { turnId: 'a' } },
+    ] as ConversationEvent[]
+    await act(async () => {
+      receive({ type: 'snapshot', page: { events: page, hasMore: false, beforeCursor: null } })
+      receive({ type: 'synchronized', seq: 4 })
+    })
+    for (let tries = 0; !hook.hydrated && tries < 50; tries++)
+      await act(async () => new Promise((r) => setTimeout(r, 5)))
+    expect(hook.events.filter(isClippedEvent)).toHaveLength(1)
+    expect(asked).toEqual([])
+    await act(async () => hook.restoreClipped())
+    expect(asked).toEqual([{ seq: 3, id: 'event-3' }])
+    expect(hook.events.filter(isClippedEvent)).toHaveLength(0)
+    const reply = projectConversation(hook.events).entries.find((entry) => entry.kind === 'assistant')
+    expect(reply && 'text' in reply ? reply.text : undefined).toBe(whole)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+    for (const key of ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT']) {
+      if (previous[key]) Object.defineProperty(globalThis, key, previous[key])
+      else Reflect.deleteProperty(globalThis, key)
+    }
+  }
+})
+
 test('a chat opened again draws what it held at once and asks only for what was written since', async () => {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost' })
   const previous = Object.getOwnPropertyDescriptors(globalThis)
@@ -692,6 +774,7 @@ test('a chat opened again draws what it held at once and asks only for what was 
   })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
+  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
   const { useConversationSession, RETAINED_SESSION_LIMIT } = await import('./useConversationSession')
   let hook!: ReturnType<typeof useConversationSession>
   function Harness({ agentId }: { agentId: string }) {
@@ -700,13 +783,17 @@ test('a chat opened again draws what it held at once and asks only for what was 
   }
   const root = createRoot(document.createElement('div'))
   const subscriptionOf = (agentId: string) => subscriptions.filter((entry) => entry.input.key.agentId === agentId)
-  const open = async (agentId: string) => act(async () => root.render(createElement(Harness, { agentId })))
+  const open = async (agentId: string) => {
+    await act(async () => root.render(createElement(Harness, { agentId })))
+    await settleStudio(act)
+  }
   const join = async (agentId: string, events: ConversationEvent[], head: number) => {
     const { receive } = subscriptionOf(agentId).at(-1)!
     await act(async () => {
       receive({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null }, generation: `log-${agentId}` })
       receive({ type: 'synchronized', seq: head, generation: `log-${agentId}` })
     })
+    await settleStudio(act)
   }
   try {
     await open('first')
@@ -800,6 +887,7 @@ test('a chat read ahead of its open is drawn at once by the open, over one read'
   })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
+  installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
   const { useConversationSession, prefetchConversationSession } = await import('./useConversationSession')
   const { localConversationTransport } = await import('./conversationTransport')
   let hook!: ReturnType<typeof useConversationSession>
@@ -808,8 +896,8 @@ test('a chat read ahead of its open is drawn at once by the open, over one read'
     return null
   }
   const key = (agentId: string) => ({ workspaceRoot: '/Users/dev/ahead', workspaceId: 'workspace', agentId })
-  const synchronize = (index: number, agentId: string) =>
-    act(async () => {
+  const synchronize = async (index: number, agentId: string) => {
+    await act(async () => {
       subscriptions[index].receive({
         type: 'snapshot',
         page: { events: [event(agentId, 1)], hasMore: false, beforeCursor: null },
@@ -817,21 +905,28 @@ test('a chat read ahead of its open is drawn at once by the open, over one read'
       })
       subscriptions[index].receive({ type: 'synchronized', seq: 1, generation: 'log' })
     })
+    await settleStudio(act)
+  }
+  // Each read and open reaches the far end of the window's socket a few turns later.
+  const settle = () => settleStudio(act)
   const root = createRoot(document.createElement('div'))
   try {
     // Read ahead and answered before the open: the read is let go and kept.
     prefetchConversationSession(localConversationTransport, key('rested'))
+    await settle()
     expect(subscriptions).toHaveLength(1)
     await synchronize(0, 'rested')
     expect(subscriptions[0].dispose).toHaveBeenCalledOnce()
     await act(async () => root.render(createElement(Harness, { agentId: 'rested' })))
     expect(hook.hydrated).toBe(true)
+    await settle()
     expect(hook.events.map((entry) => entry.seq)).toEqual([1])
     expect(subscriptions[1].input).toMatchObject({ afterSeq: 1, generation: 'log' })
 
     // Opened while the read ahead is still out: the open joins it.
     prefetchConversationSession(localConversationTransport, key('clicked'))
     await act(async () => root.render(createElement(Harness, { agentId: 'clicked' })))
+    await settle()
     expect(subscriptions).toHaveLength(3)
     await synchronize(2, 'clicked')
     expect(subscriptions).toHaveLength(3)
@@ -840,6 +935,7 @@ test('a chat read ahead of its open is drawn at once by the open, over one read'
 
     // Reading ahead a chat that is open costs nothing.
     prefetchConversationSession(localConversationTransport, key('clicked'))
+    await settle()
     expect(subscriptions).toHaveLength(3)
     expect(subscriptions[2].dispose).not.toHaveBeenCalled()
   } finally {

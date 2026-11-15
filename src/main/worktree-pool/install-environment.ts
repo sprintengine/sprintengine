@@ -1,7 +1,7 @@
 import { userInfo } from 'os'
 import { delimiter } from 'path'
 
-import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
+import { captureLoginEnv } from '../../server/wsl/distribution/login-env.mjs'
 import { withoutInheritedSessionEnv } from '../inherited-session-env'
 import { searchDirectories } from '../login-shell-path'
 

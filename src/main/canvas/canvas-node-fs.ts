@@ -6,8 +6,9 @@
 // forgot to pass one. Here there is nothing to test — every function is one
 // call through to Node.
 
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { watch } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 
 import type { CanvasDirectoryWatcher, CanvasFs } from './canvas-service'
 
@@ -40,6 +41,35 @@ export function createNodeCanvasFs(): CanvasFs {
       }))
     },
     unlink: (path) => unlink(path),
+    realPath: (path) => realPathOrWouldBe(path),
+  }
+}
+
+/**
+ * Where a path really leads, every link followed: a file's real path, or, for
+ * one not there yet, its nearest existing folder's real path and the rest. A
+ * link that leads nowhere throws: whatever wrote through it would land where
+ * it points, and that is not known.
+ */
+async function realPathOrWouldBe(requested: string): Promise<string> {
+  const rest: string[] = []
+  let at = requested
+  for (;;) {
+    try {
+      const real = await realpath(at)
+      return rest.length ? join(real, ...rest.reverse()) : real
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      const parent = dirname(at)
+      if ((code !== 'ENOENT' && code !== 'ENOTDIR') || parent === at) throw error
+      const link = await lstat(at).then(
+        (stats) => stats.isSymbolicLink(),
+        () => false,
+      )
+      if (link) throw Object.assign(new Error(`${at} is a link that leads nowhere.`), { code: 'ENOENT' })
+      rest.push(basename(at))
+      at = parent
+    }
   }
 }
 

@@ -156,7 +156,7 @@ test('an owner lists, refreshes, notes work and tool calls, and malformed params
   }
 })
 
-test('a paired app is refused, whatever it holds', async () => {
+test('a paired app reads pull requests by workspaces:read; what Studio’s agents report stays an owner’s', async () => {
   const { stub } = stubPullRequests()
   const { started } = await ownerOver(stub)
   const app = await connectLineClient(started.path)
@@ -164,11 +164,23 @@ test('a paired app is refused, whatever it holds', async () => {
   app.send(hello({ token: pairFakeClient(started.auth, 'app', ['workspaces:read', 'conversation:read']) }))
   await app.next((frame) => frame.t === 'welcome')
   app.send({ t: 'req', id: 'a1', method: 'pullRequests.list', params: { workspaceIds: ['ws-1'] } })
-  const refused = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
+  const listed = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
+  assert.equal(listed.t === 'res' && listed.ok, true)
+  app.send({
+    t: 'req',
+    id: 'a2',
+    method: 'pullRequests.noteWork',
+    params: { conversation: { workspaceId: 'ws-1', agentId: 'agent-1' }, turnEnded: true },
+  })
+  const refused = await app.next((frame) => frame.t === 'res' && frame.id === 'a2')
   assert.equal(refused.t === 'res' && !refused.ok && refused.error.code, 'owner_required')
-  app.send({ t: 'sub', id: 's1', topic: 'pullRequests.changed', params: {} })
-  const failed = await app.next((frame) => frame.t === 'subFailed' && frame.sub === 's1')
-  assert.equal(failed.t === 'subFailed' && failed.code, 'owner_required')
+  const reader = await connectLineClient(started.path)
+  cleanups.push(() => reader.close())
+  reader.send(hello({ token: pairFakeClient(started.auth, 'reader', ['conversation:read']) }))
+  await reader.next((frame) => frame.t === 'welcome')
+  reader.send({ t: 'sub', id: 's1', topic: 'pullRequests.changed', params: {} })
+  const failed = await reader.next((frame) => frame.t === 'subFailed' && frame.sub === 's1')
+  assert.equal(failed.t === 'subFailed' && failed.code, 'scope_required')
 })
 
 test('the stream names what moved, never the lists', async () => {

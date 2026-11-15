@@ -7,6 +7,9 @@ import type { WorkspaceSyncCommand, WorkspaceSyncEvent } from '../../../shared/w
 import type { LayoutTemplate, Workspace } from '../types/workspace'
 import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
+import { terminalsDouble } from '../studio/terminals.double'
+
+vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
 
 // A chat started with ⌘⏎ from New chat joins the window without coming to the
 // front: the window keeps the chat it had, in this window's store, in main's
@@ -52,12 +55,12 @@ async function harness(seed: string[]) {
     removeItem: (key: string) => void stored.delete(key),
   }
   vi.stubGlobal('localStorage', localStorage)
+  terminalsDouble.listTerminals = async () => []
   vi.stubGlobal('window', {
     location: { href: 'http://localhost/?windowId=primary' },
     localStorage,
     addEventListener: () => {},
     api: {
-      terminalList: async () => [],
       workspaceSyncGetSnapshot: async () => bus.getSnapshot(),
       workspaceSyncGetEventsAfter: async (sequence: number) => bus.getEventsAfter(sequence),
       workspaceSyncDispatch: async (command: WorkspaceSyncCommand) => {

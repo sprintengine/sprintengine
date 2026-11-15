@@ -57,6 +57,56 @@ afterAll(() => {
   }
 })
 
+/**
+ * The chat's Studio, as Create PR asks it (`pullRequests.*`), answered from
+ * the stand-ins each test puts on `window.api` under the names they had when
+ * this window's shell did the work. A pull request it creates is not
+ * recorded: there is no record here, which the strip says with its address.
+ */
+async function studioHost() {
+  const { studioPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
+  const api = () => (dom.window as unknown as { api: Record<string, (...args: unknown[]) => Promise<unknown>> }).api
+  const studio = {
+    supports: () => true,
+    request: async (method: string, params: Record<string, unknown>): Promise<unknown> => {
+      const pin = params.pin
+      switch (method) {
+        case 'pullRequests.createState':
+          return { state: (await api().createPullRequestState?.('/Users/dev/app')) ?? null }
+        case 'pullRequests.draft': {
+          const drafted = (await api().draftPullRequestText?.({})) as
+            { ok: true; value: { title: string; body: string } } | { ok: false; message: string } | undefined
+          if (!drafted) return new Promise(() => {})
+          return drafted.ok
+            ? { ok: true, title: drafted.value.title, body: drafted.value.body }
+            : { ok: false, code: 'draft_failed', message: drafted.message }
+        }
+        case 'pullRequests.draftCancel':
+          return {}
+        case 'pullRequests.push':
+          return api().pushForPullRequest('/Users/dev/app', pin)
+        case 'pullRequests.create': {
+          const created = (await api().createPullRequest({
+            title: params.title,
+            body: params.body,
+            ...(pin ? { pin } : {}),
+          })) as { ok: boolean; kind?: string; url?: string }
+          return created.ok && created.kind === 'created'
+            ? {
+                ...created,
+                recorded: false,
+                recordMessage: `The pull request is open (${created.url}), but it could not be recorded: no Studio here.`,
+              }
+            : created
+        }
+        default:
+          throw new Error(`Not asked of Studio here: ${method}`)
+      }
+    },
+  }
+  return studioPullRequestHost({ workspaceId: 'ws-1', agentId: 'agent-1' }, async () => studio as never)
+}
+
 function pr(overrides: Partial<BranchPullRequest> & { number: number }): BranchPullRequest {
   return {
     url: `https://github.com/acme/app/pull/${overrides.number}`,
@@ -175,14 +225,13 @@ test('Create PR takes the slot, drafts, pushes, creates, and says on the strip w
     pluginCatalogEntries: [{ id: 'claude-code' }] as never,
   }))
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const { localPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
   let settled = 0
   const holds: boolean[] = []
   const mounted = await mount(
     <PanelFactRows
       pullRequests={[pr({ number: 2, state: 'merged' })]}
       createPullRequest={{
-        host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
+        host: await studioHost(),
         onSettled: () => (settled += 1),
         onHoldChange: (held) => holds.push(held),
       }}
@@ -226,10 +275,9 @@ test('a held Create PR failure on a checkout no longer ready is dismissed, not r
     pluginCatalogEntries: [{ id: 'claude-code' }] as never,
   }))
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const { localPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
   const holds: boolean[] = []
   const props = {
-    host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
+    host: await studioHost(),
     onSettled: () => {},
     onHoldChange: (held: boolean) => holds.push(held),
   }
@@ -283,7 +331,6 @@ test('a pull request the branch already had is opened, not claimed for this chat
     pluginCatalogEntries: [{ id: 'claude-code' }] as never,
   }))
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const { localPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
   let settled = 0
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
@@ -294,7 +341,7 @@ test('a pull request the branch already had is opened, not claimed for this chat
     root.render(
       <PanelFactRows
         createPullRequest={{
-          host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
+          host: await studioHost(),
           onSettled: () => (settled += 1),
           ready: true,
         }}
@@ -340,12 +387,11 @@ test('the confirm step says how many uncommitted changes the pull request leaves
     pluginCatalogEntries: [{ id: 'claude-code' }] as never,
   }))
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const { localPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
   let settled = 0
   const mounted = await mount(
     <PanelFactRows
       createPullRequest={{
-        host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
+        host: await studioHost(),
         onSettled: () => (settled += 1),
         ready: true,
       }}
@@ -460,12 +506,11 @@ test('on GitLab the control says merge request, and a page opened instead says w
     pluginCatalogEntries: [{ id: 'claude-code' }] as never,
   }))
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const { localPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
   let settled = 0
   const { container, act, unmount } = await mount(
     <PanelFactRows
       createPullRequest={{
-        host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
+        host: await studioHost(),
         onSettled: () => (settled += 1),
         forge: 'gitlab',
         ready: true,
@@ -527,12 +572,11 @@ async function confirmCreate(outcome: unknown, openResult: unknown, draft = { ti
     pluginCatalogEntries: [{ id: 'claude-code' }] as never,
   }))
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const { localPullRequestHost } = await import('../../../panels/agentChat/pullRequestHost')
   let settled = 0
   const { container, act, unmount } = await mount(
     <PanelFactRows
       createPullRequest={{
-        host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
+        host: await studioHost(),
         onSettled: () => (settled += 1),
         forge: 'gitlab',
         ready: true,

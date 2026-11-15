@@ -14,6 +14,7 @@ import {
   type ConversationMentionRef as ComposerMentionRef,
 } from '../../../../../shared/conversation/mentions'
 import { clipKeepingQuotes } from '../../../../../shared/chat-quotes'
+import type { ConversationImageAttachment } from '../../../../../shared/conversation-runtime'
 // `files` are the files attached by path (the composer's file cards), local to
 // this device like the rest of the draft; the agent receives them as paths
 // after the words when the draft is sent.
@@ -25,6 +26,35 @@ export type ComposerDraft = {
   updatedAt: number
 }
 export const EMPTY_DRAFT: ComposerDraft = { text: '', skillIds: [], mentions: [], files: [], updatedAt: 0 }
+
+/**
+ * A message the composer sent and Studio has not yet answered: kept until it
+ * does, so a reload or a restart in between finds it, and either sees it in
+ * the chat's log or gives it back with a notice. Never lost unseen, and never
+ * sent twice: given back, it keeps its command id, which a send of the same
+ * words reuses, so Studio answers a late copy from its receipt.
+ */
+export type PendingComposerSend = {
+  text: string
+  skillIds: string[]
+  mentions: ComposerMentionRef[]
+  files: string[]
+  /** Its pictures, when they fit beside the drafts (`MAX_PENDING_PICTURE_CHARS`). */
+  attachments: ConversationImageAttachment[]
+  /** How many of its pictures did not fit, and are named as lost when it is given back. */
+  picturesNotKept: number
+  commandId: string
+  /** The id its `user_message` echoes, by which the chat's log shows it landed. */
+  localTurnId: string
+  /** Whether it went from the composer (else: a first message, Retry, a queued message). */
+  fromDraft: boolean
+  at: number
+  /** Given back to the composer already: kept only for its command id. */
+  restored?: true
+}
+/** The most a pending send's pictures may take in storage, which every draft shares. */
+export const MAX_PENDING_PICTURE_CHARS = 600_000
+const MAX_PENDING_SENDS = 50
 const MAX_DRAFT_FILES = 50
 const keyOf = (workspaceId: string, agentId: string) => JSON.stringify([workspaceId, agentId])
 
@@ -48,6 +78,48 @@ function normalizeDraft(value: unknown): ComposerDraft | null {
     updatedAt: raw.updatedAt,
   }
 }
+const isString = (value: unknown): value is string => typeof value === 'string'
+
+function normalizePendingSend(value: unknown): PendingComposerSend | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<PendingComposerSend>
+  if (!isString(raw.text) || !isString(raw.commandId) || !isString(raw.localTurnId)) return null
+  if (typeof raw.at !== 'number' || !Number.isFinite(raw.at)) return null
+  const draft = normalizeDraft({ ...raw, updatedAt: raw.at })
+  if (!draft) return null
+  const attachments = Array.isArray(raw.attachments)
+    ? raw.attachments.filter(
+        (picture): picture is ConversationImageAttachment =>
+          Boolean(picture) &&
+          isString(picture.id) &&
+          isString(picture.mediaType) &&
+          isString(picture.dataBase64) &&
+          typeof picture.byteLength === 'number',
+      )
+    : []
+  return {
+    text: draft.text,
+    skillIds: draft.skillIds,
+    mentions: draft.mentions,
+    files: draft.files,
+    attachments,
+    picturesNotKept: typeof raw.picturesNotKept === 'number' && raw.picturesNotKept > 0 ? raw.picturesNotKept : 0,
+    commandId: raw.commandId,
+    localTurnId: raw.localTurnId,
+    fromDraft: raw.fromDraft === true,
+    at: raw.at,
+    ...(raw.restored === true ? { restored: true as const } : {}),
+  }
+}
+// The newest pending sends, a bounded number of them.
+function boundedSends(records: Record<string, PendingComposerSend>): Record<string, PendingComposerSend> {
+  return Object.fromEntries(
+    Object.entries(records)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, MAX_PENDING_SENDS),
+  )
+}
+
 // Most recently used first, dropping the rest once either the draft count or
 // the character budget is spent. The newest draft is always kept.
 function bounded(records: Record<string, ComposerDraft>): Record<string, ComposerDraft> {
@@ -172,6 +244,11 @@ function writeNewestThatFit(blob: string, tryWrite: (blob: string) => boolean): 
 
 type DraftState = {
   drafts: Record<string, ComposerDraft>
+  /** Each chat's send not yet answered, or given back (`PendingComposerSend`). */
+  sends: Record<string, PendingComposerSend>
+  readSend(workspaceId: string, agentId: string): PendingComposerSend | null
+  /** Keep (or, with null, let go of) the chat's pending send. */
+  putSend(workspaceId: string, agentId: string, send: PendingComposerSend | null): void
   read(workspaceId: string, agentId: string): ComposerDraft
   // `files` may be left out by a caller that seeds a draft with words alone (a fork, an opener).
   put(
@@ -199,6 +276,15 @@ export function createComposerDraftStore(storage: StateStorage, now = Date.now) 
     persist(
       (set, get) => ({
         drafts: {},
+        sends: {},
+        readSend: (workspaceId, agentId) => get().sends[keyOf(workspaceId, agentId)] ?? null,
+        putSend: (workspaceId, agentId, send) =>
+          set((state) => {
+            const sends = { ...state.sends }
+            if (send) sends[keyOf(workspaceId, agentId)] = send
+            else delete sends[keyOf(workspaceId, agentId)]
+            return { sends: boundedSends(sends) }
+          }),
         read: (workspaceId, agentId) => {
           const key = keyOf(workspaceId, agentId)
           const records = get().drafts
@@ -227,7 +313,7 @@ export function createComposerDraftStore(storage: StateStorage, now = Date.now) 
         name: 'sprintengine-conversation-drafts',
         version: 1,
         storage: createJSONStorage(() => persisted.storage),
-        partialize: (state) => ({ drafts: state.drafts }),
+        partialize: (state) => ({ drafts: state.drafts, sends: state.sends }),
         merge: (persisted, current) => {
           const raw = persisted && typeof persisted === 'object' && 'drafts' in persisted ? persisted.drafts : null
           const drafts: Record<string, ComposerDraft> = Object.create(null)
@@ -236,7 +322,14 @@ export function createComposerDraftStore(storage: StateStorage, now = Date.now) 
               const value = normalizeDraft(candidate)
               if (value) drafts[key] = value
             }
-          return { ...current, drafts: bounded(drafts) }
+          const rawSends = persisted && typeof persisted === 'object' && 'sends' in persisted ? persisted.sends : null
+          const sends: Record<string, PendingComposerSend> = Object.create(null)
+          if (rawSends && typeof rawSends === 'object')
+            for (const [key, candidate] of Object.entries(rawSends)) {
+              const value = normalizePendingSend(candidate)
+              if (value) sends[key] = value
+            }
+          return { ...current, drafts: bounded(drafts), sends: boundedSends(sends) }
         },
       },
     ),

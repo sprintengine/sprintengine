@@ -5,6 +5,9 @@ import type { ConversationEvent, ConversationSessionSummary } from '../../../../
 import type { PullRequestsChanged, StudioPullRequests } from '../../../../server/pull-requests/pull-request-domain'
 import { installRenderCounter } from '../../../../../tests/render-counter'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 // How much of the sidebar renders for the things that happen all day in a
 // window: a token streaming into one chat, a switch between chats, a store
@@ -72,11 +75,11 @@ let sessions: ConversationSessionSummary[] = Array.from({ length: ROWS }, (_, in
   lastAssistantText: `Answer ${index}`,
 }))
 const conversationListeners = new Set<(event: ConversationEvent) => void>()
+terminalsDouble.listTerminals = async () => []
+terminalsDouble.onTerminalSessionsDelta = () => () => {}
 domWindow.api = {
   platform: 'darwin',
   detectProjectLogo: async () => null,
-  terminalList: async () => [],
-  onTerminalSessionsDelta: () => () => {},
   getWorkspaceChangeSummary: async () => null,
   conversationSessionsList: async () => ({ ok: true, sessions }),
   onConversationEvent: (listener: (event: ConversationEvent) => void) => {

@@ -1,6 +1,7 @@
 # Published artifacts
 
-Status: **built**, in `src/main/artifacts/`, with the site's files in
+Status: **built**, in `src/main/artifacts/`, served by the Studio core
+(`src/server/artifacts/artifacts-domain.ts`), with the site's files in
 `resources/artifacts-site/`.
 
 ## 1. What it is for
@@ -49,9 +50,12 @@ upload) stays made, and says so.
 
 What is kept, and where: `artifacts-settings.json` in userData holds the
 repository and what Studio found (the site's address, the Cloudflare account
-and project). The Cloudflare token is sealed with the app's secret cipher in
-`artifacts-cloudflare-token.bin`, as the GitHub token is, and never comes back
-to the renderer, a tool's answer or an error. Pushing to a git host uses the
+and project). The Cloudflare token is sealed with the Studio's secret cipher in
+`artifacts-cloudflare-token.bin`, as the GitHub token is (the desktop
+keychain, which the server out of process reaches through the shell), and
+never comes back to a window, a protocol answer, a tool's answer or an error.
+A window reads and sets this up over the Studio protocol (`artifacts.settings`,
+`artifacts.setUp`), each an owner's. Pushing to a git host uses the
 sign-in the machine already has for that host: the saved GitHub token for
 github.com, otherwise the token `gh` holds for the host, handed to git through
 an inline credential helper and the child's environment, never argv, a remote
@@ -60,26 +64,30 @@ own helper or keys. An address with a sign-in in it is refused.
 
 ## 3. The tools
 
-| Tool | What it does |
-| --- | --- |
-| `artifacts.setup` | Sets the host up from a repository or a Cloudflare token, once the person confirms in Studio. Answers the site's address. |
+| Tool                | What it does                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifacts.setup`   | Sets the host up from a repository or a Cloudflare token, once the person confirms in Studio. Answers the site's address.                                                   |
 | `artifacts.publish` | An HTML file, or a folder with its page, with a title, description, tags, project, source repository/branch/commit and an optional picture. Answers the artifact's address. |
-| `artifacts.list` | Newest first, narrowed by tags and project. |
-| `artifacts.search` | By words in the title, description, project, tags and branch. |
-| `artifacts.get` | One artifact and every version's address. |
-| `artifacts.update` | Retitle, describe, re-tag, move project, and/or publish a new version from a path. |
-| `artifacts.delete` | Takes it off the site; a git-kept site keeps it in its history. |
+| `artifacts.list`    | Newest first, narrowed by tags and project.                                                                                                                                 |
+| `artifacts.search`  | By words in the title, description, project, tags and branch.                                                                                                               |
+| `artifacts.get`     | One artifact and every version's address.                                                                                                                                   |
+| `artifacts.update`  | Retitle, describe, re-tag, move project, and/or publish a new version from a path.                                                                                          |
+| `artifacts.delete`  | Takes it off the site; a git-kept site keeps it in its history.                                                                                                             |
 
 With no host set up every tool but `artifacts.setup` refuses with
 `not_configured`, naming the settings page and `artifacts.setup`, so an agent
 offers to set it up in conversation.
 
-`artifacts.setup` changes the person's setting, so the person decides. Main
-asks them in a native message box (as it asks before quitting), naming the
-agent, the host, the repository or the account and project, and what Studio
-will do; Return and Escape refuse, and no answer in five minutes is a refusal.
-Nothing is turned on, made or saved before the answer, and only one question
-is open at a time. The only thing done before asking is reading which accounts
+`artifacts.setup` changes the person's setting, so the person decides. The
+Studio asks them in its own window, as a confirmation dialog: the windows
+follow the open questions (`artifacts.setupQuestions`) and answer one
+(`artifacts.answerSetupQuestion`), both an owner's, so a page in the embedded
+browser or a paired device can neither see nor answer it. With no workspace
+window showing (a pop-out cannot show the question), the desktop's shell asks
+in a native message box instead (as it asks before quitting). Either names the agent, the host, the repository or the
+account and project, and what Studio will do; Return and Escape refuse, and no
+answer in five minutes is a refusal. Nothing is turned on, made or saved
+before the answer. The only thing done before asking is reading which accounts
 a Cloudflare token sees, so the person can be asked which. The token goes
 from the arguments to secret storage; neither the question nor the answer
 carries it, and the gateway's audit keeps no argument but identifiers.
@@ -87,8 +95,9 @@ carries it, and the gateway's audit keeps no argument but identifiers.
 Publishing, changing, removing and setting up read files at a path the caller
 names, or change where this machine publishes, and use its credentials, so
 they are mutations served on the local socket only; a paired device gets the
-three reads on the `workspace:read` scope. Main serves the family in process
-and out (the shell's `artifacts` toolset), as it does `worktree.*`.
+three reads on the `workspace:read` scope. The Studio core serves the family
+in process and out, over the same service and setting the windows set up; the
+worktree pool's slots it may publish from are the same core's.
 
 ## 4. A version, and the site
 
@@ -106,7 +115,8 @@ public. Files the page loads from the network are listed as a warning.
 
 The page is laid out in a folder of its own and opened there in a hidden,
 sandboxed window of the app's own Chromium for its picture
-(`artifact-thumbnail-electron.ts`).
+(`artifact-thumbnail-electron.ts`), which the Studio server out of process asks
+the shell to draw (`shell.artifact-thumbnail` on the control channel).
 
 The repository's layout is the site:
 

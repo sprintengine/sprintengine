@@ -2,21 +2,19 @@ import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 
 import {
   CHAT_EXPORT_CHANNEL,
-  parseChatExportInput,
+  isChatExportAction,
   type ChatExportInput,
   type ChatExportResult,
 } from '../../shared/chat-export'
 import { assertAppSender } from './ipc-sender'
 
-// Export chat's channel. The window says which chat and what to make of it,
-// and nothing more: no path, no title, no text. Main finds the chat in its
-// workspace, reads the transcript itself, shows the save dialog itself and
-// writes where the person chose, so a page that reached the preload cannot
-// make this write anything anywhere. Only the app's own window is answered.
-// A chat followed from a paired machine has no transcript here to read: the
-// window that follows it hands over the events it read from that machine,
-// each checked as the protocol checks one off the wire, and main still asks
-// where to save.
+// Export chat's channel: the shell's half. The window hands over the chat as
+// its Studio read it (`conversation.exportPage`) and what to make of it, and
+// nothing more: no path. The chat is checked as the protocol checks one off
+// the wire; main shows the save dialog itself and writes where the person
+// chose, or puts the chat on this computer's clipboard, so a page that
+// reached the preload cannot make this write anything anywhere. Only the
+// app's own window is answered. Main reads no transcript here.
 
 export function registerChatExportIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
@@ -30,18 +28,13 @@ export function registerChatExportIpc(
   const assertSender = deps.assertSender ?? assertAppSender
   ipcMain.handle(CHAT_EXPORT_CHANNEL, async (event: IpcMainInvokeEvent, raw: unknown): Promise<ChatExportResult> => {
     assertSender(event)
-    const parsed = parseChatExportInput(raw)
-    if (!parsed.ok) return parsed
-    const remote = (raw as { remote?: unknown }).remote
-    let input: ChatExportInput = parsed.input
-    if (remote !== undefined) {
-      const { parseChatExportRemoteSource } = await import('../chat-export/chat-export-source')
-      const source = parseChatExportRemoteSource(remote)
-      if (!source) return { ok: false, message: "That chat's transcript could not be read." }
-      input = { ...input, remote: source }
-    }
+    const { action, source: unread } = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+    if (!isChatExportAction(action)) return { ok: false, message: 'That is not a format a chat exports as.' }
+    const { parseChatExportSource } = await import('../chat-export/chat-export-source')
+    const source = parseChatExportSource(unread)
+    if (!source) return { ok: false, message: "That chat's transcript could not be read." }
     try {
-      return await deps.run(input, event.sender)
+      return await deps.run({ action, source }, event.sender)
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'The chat could not be exported.' }
     }

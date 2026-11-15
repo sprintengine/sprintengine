@@ -164,7 +164,7 @@ test('built-in and reserved names are the shell’s, and a name Studio serves is
 })
 
 test('an app may not offer a toolset whose tools flatten to one Studio serves itself', () => {
-  const ownTools = ['pull_request.link', 'workspace.mobile_command']
+  const ownTools = ['pull_request.link', 'workspace.checkout']
   const scoped = createClientToolRegistry({
     store: createClientToolsetStore({}),
     servedFamilies: () => new Set(ownTools.map((name) => name.split('.')[0])),

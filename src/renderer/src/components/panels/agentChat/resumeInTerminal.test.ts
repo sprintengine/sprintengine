@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { beforeEach, test, vi } from 'vitest'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 // Continue in terminal from a tab's menu brings a chat's reclaimed worktree
 // back first, as the open chat does, and hands nothing over when it cannot.
@@ -29,6 +30,7 @@ beforeEach(() => {
       },
     },
   })
+  installStudioLoopback(globalThis.window as never)
 })
 
 test('the worktree is brought back before the handoff', async () => {

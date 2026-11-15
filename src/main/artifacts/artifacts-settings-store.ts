@@ -1,13 +1,15 @@
 /**
- * Settings ▸ Artifacts, owned by main: the `artifacts.*` tools run here and
- * read it on every call, with or without a window open.
+ * Settings ▸ Artifacts, owned by the Studio core (server/artifacts/artifacts-domain.ts):
+ * the `artifacts.*` tools run there and read it on every call, with or
+ * without a window open.
  *
  * Two files under userData. `artifacts-settings.json` holds what is not
  * secret: which host, the repository, and what Studio found when it set the
  * host up (the site's address, the Cloudflare account and project). The
  * Cloudflare API token is sealed apart in `artifacts-cloudflare-token.bin`
- * with the app's secret cipher (Electron's `safeStorage` in the desktop), as
- * the GitHub token is (github-token-store.ts). Without a cipher it lasts for
+ * with the Studio's secret cipher (Electron's `safeStorage` in the desktop,
+ * reached through the shell by the server out of process), as the GitHub
+ * token is (github-token-store.ts). Without a cipher it lasts for
  * the session only. The token is never in a view, a log line or an error.
  *
  * Nothing here decides what may be saved: `setUpArtifacts` (artifacts-setup.ts)

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { gitApi } from '../studio/git'
 
 // The current Git branch for a workspace folder, for a header label. The repo
 // root is resolved once per folder and the branch is re-read only when main
@@ -23,18 +24,14 @@ export function useGitBranch(folderPath: string | null): GitBranchState {
     let stopWatching: (() => void) | null = null
     setState({ branch: null, isRepo: false })
 
-    if (
-      !folderPath ||
-      typeof window.api.getGitRepoRoot !== 'function' ||
-      typeof window.api.getGitBranches !== 'function'
-    ) {
+    if (!folderPath || typeof gitApi.getGitRepoRoot !== 'function' || typeof gitApi.getGitBranches !== 'function') {
       return
     }
 
     const loadBranch = async (): Promise<void> => {
       if (!repoRoot) return
       try {
-        const snapshot = await window.api.getGitBranches(repoRoot)
+        const snapshot = await gitApi.getGitBranches(repoRoot)
         if (!cancelled) setState({ branch: snapshot.current, isRepo: true })
       } catch {
         // Transient git failure: keep the last good branch rather than flicker
@@ -44,7 +41,7 @@ export function useGitBranch(folderPath: string | null): GitBranchState {
 
     void (async () => {
       try {
-        repoRoot = await window.api.getGitRepoRoot(folderPath)
+        repoRoot = await gitApi.getGitRepoRoot(folderPath)
       } catch {
         repoRoot = null
       }
@@ -56,8 +53,8 @@ export function useGitBranch(folderPath: string | null): GitBranchState {
         return
       }
       await loadBranch()
-      if (cancelled || typeof window.api.watchGitCheckout !== 'function') return
-      stopWatching = window.api.watchGitCheckout(repoRoot, (change) => {
+      if (cancelled || typeof gitApi.watchGitCheckout !== 'function') return
+      stopWatching = gitApi.watchGitCheckout(repoRoot, (change) => {
         if (change.kinds.includes('refs')) void loadBranch()
       })
     })()

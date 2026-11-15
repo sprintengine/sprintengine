@@ -27,6 +27,7 @@
     "build:sdk": "tsc -p packages/module-sdk/tsconfig.json",
     "build:conversation-protocol": "node packages/conversation-protocol/build.mjs",
     "build:studio-protocol": "node packages/studio-protocol/build.mjs",
+    "build:client-runtime": "node packages/client-runtime/build.mjs",
     "build:agent-sdk": "node packages/agent-sdk/build.mjs",
     "dist": "npm run runtimes:fetch && npm run sdk:bundle && npm run build && npm run build:server:wsl && electron-builder",
     "dist:win": "npm run runtimes:fetch -- --platform win32 && npm run sdk:bundle && npm run build && npm run build:server:wsl && electron-builder --win",
@@ -52,10 +53,11 @@
     "typecheck:all": "npm run typecheck:app && npm run typecheck:tests",
     "verify:app": "npm run typecheck:all && npm run lint && npm run format:check && npm run knip && npm run test && npm run test:sdk:drift && npm run test:sdk:pack && npm run test:conversation-protocol:pack && npm run test:studio-packages:pack && npm run test:card-feed && npm run test:sources && npm run test:release",
     "verify:marketplace-registry": "esbuild resources/marketplace/verify-marketplace.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/marketplace-registry-verify.cjs && node node_modules/.cache/sprintengine/marketplace-registry-verify.cjs",
-    "lint": "oxlint && node scripts/lint-nul-bytes.mjs && node scripts/lint-design-tokens.mjs && node scripts/lint-panel-composition.mjs && node scripts/lint-primitive-duplication.mjs && node scripts/lint-door-surfaces.mjs && node scripts/lint-design-system-conformance.mjs && node scripts/testing/design-system-guard-probes.mjs",
+    "lint": "oxlint && node scripts/lint-nul-bytes.mjs && node scripts/lint-design-tokens.mjs && node scripts/lint-panel-composition.mjs && node scripts/lint-primitive-duplication.mjs && node scripts/lint-door-surfaces.mjs && node scripts/lint-chat-locality.mjs && node scripts/lint-design-system-conformance.mjs && node scripts/testing/design-system-guard-probes.mjs",
     "lint:code": "oxlint",
     "format": "prettier --write \"*.ts\" \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"packages/*/{src,test,drift,examples}/**/*.{ts,tsx}\" \"scripts/**/*.{js,mjs,cjs}\" \"design-system/scripts/**/*.mjs\"",
     "test:web:smoke": "node scripts/web-smoke.mjs",
+    "test:cross-client": "node scripts/cross-client-gate.mjs",
     "format:check": "prettier --check \"*.ts\" \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"packages/*/{src,test,drift,examples}/**/*.{ts,tsx}\" \"scripts/**/*.{js,mjs,cjs}\" \"design-system/scripts/**/*.mjs\"",
     "knip": "knip --include files,dependencies,unlisted,binaries --no-config-hints",
     "knip:exports": "knip --include exports,types,duplicates",
@@ -67,6 +69,7 @@
     "lint:primitive-duplication": "node scripts/lint-primitive-duplication.mjs",
     "lint:primitive-duplication:report": "node scripts/lint-primitive-duplication.mjs --report",
     "lint:door-surfaces": "node scripts/lint-door-surfaces.mjs",
+    "lint:chat-locality": "node scripts/lint-chat-locality.mjs",
     "lint:design-system-conformance": "node scripts/lint-design-system-conformance.mjs",
     "lint:guard-probes": "node scripts/testing/design-system-guard-probes.mjs",
     "catalogue:cli-entries": "esbuild resources/marketplace/generate-cli-entries.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/marketplace-cli-entries-generate.cjs && node node_modules/.cache/sprintengine/marketplace-cli-entries-generate.cjs",
@@ -182,13 +185,6 @@
       {
         "from": "resources/sources.json",
         "to": "sources.json"
-      },
-      {
-        "from": "resources/wsl-helper",
-        "to": "wsl-helper",
-        "filter": [
-          "**/*.mjs"
-        ]
       },
       {
         "from": "resources/hooks",

@@ -35,7 +35,8 @@ export async function resolveEditorSaveTarget(filePath: string, roots: readonly 
   const entry = await lstatOrNull(target)
   if (projectRoots.length === 0) {
     if (entry?.isSymbolicLink()) throw new Error(SAVE_TARGET_IS_LINK)
-    return target
+    // Its real folder, so the write can check nothing changed under it since.
+    return join(await realpath(dirname(target)), basename(target))
   }
 
   const realFolder = await realpath(dirname(target))

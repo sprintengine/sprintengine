@@ -43,11 +43,13 @@ export const DEFAULT_DELTA_FLUSH_MS = 40
 const DEFAULT_TOOL_OUTPUT_FLUSH_MS = 500
 
 /**
- * How long one write may take before it counts as failed. Events are published
- * only once their write settles, so a write that never does (a hung network
- * volume, a wedged disk) would otherwise stall the chat without a word.
+ * How long one write may take before it is reported as stalled. It is still
+ * waited for: what a write that has not settled holds may yet be on disk, so
+ * counting it failed would let a retry write it twice, and publishing what
+ * comes after it would hand out numbers the log may not hold. A hung volume
+ * stalls the chat, and the log says why.
  */
-const DEFAULT_WRITE_TIMEOUT_MS = 30_000
+const DEFAULT_SLOW_WRITE_MS = 30_000
 
 /**
  * How an append ended. `superseded`: a later event for the same tool replaced
@@ -66,6 +68,15 @@ type DeltaRun = { event: ConversationEvent; text: string; parts: DeltaPart[] }
 type Entry =
   | { kind: 'run'; run: DeltaRun }
   | { kind: 'event'; event: ConversationEvent; partialToolUseId?: string; superseded?: boolean }
+  // A line of the log that is not an event (a command's receipt): it has no
+  // `type`, so every transcript reader passes over it.
+  | { kind: 'record'; record: ConversationLogRecord }
+
+/**
+ * A line of a chat's log that is not an event. It must not carry a string
+ * `type`: readers take a line with one for an event.
+ */
+export type ConversationLogRecord = { readonly type?: never } & Record<string, unknown>
 
 type Waiter = {
   entry: Entry
@@ -74,6 +85,10 @@ type Waiter = {
 }
 
 export type AppendStream = {
+  /**
+   * Append `chunk` whole or not at all: a write that fails leaves the file as
+   * it was before it (the default stream truncates back what got through).
+   */
   write(chunk: string): Promise<void>
   close(): Promise<void>
 }
@@ -81,9 +96,11 @@ export type AppendStream = {
 export type ConversationEventLogOptions = {
   flushDelayMs?: number
   toolOutputFlushDelayMs?: number
-  writeTimeoutMs?: number
+  slowWriteMs?: number
   openStream?: (filePath: string, storageRoot?: string) => Promise<AppendStream>
   onError?: (filePath: string, error: unknown) => void
+  /** A write has not settled in `slowWriteMs`; it is still waited for. */
+  onStall?: (filePath: string, ms: number) => void
 }
 
 type FileLog = {
@@ -104,9 +121,10 @@ export class ConversationEventLog {
   private readonly closing = new Map<string, Promise<void>>()
   private readonly flushDelayMs: number
   private readonly toolOutputFlushDelayMs: number
-  private readonly writeTimeoutMs: number
+  private readonly slowWriteMs: number
   private readonly openStream: (filePath: string, storageRoot?: string) => Promise<AppendStream>
   private readonly onError: (filePath: string, error: unknown) => void
+  private readonly onStall: (filePath: string, ms: number) => void
 
   constructor(options: ConversationEventLogOptions = {}) {
     this.flushDelayMs = Math.max(0, options.flushDelayMs ?? DEFAULT_DELTA_FLUSH_MS)
@@ -114,27 +132,57 @@ export class ConversationEventLog {
       this.flushDelayMs,
       options.toolOutputFlushDelayMs ?? Math.max(DEFAULT_TOOL_OUTPUT_FLUSH_MS, this.flushDelayMs),
     )
-    this.writeTimeoutMs = options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS
+    this.slowWriteMs = options.slowWriteMs ?? DEFAULT_SLOW_WRITE_MS
     this.openStream = options.openStream ?? openAppendStream
     this.onError = options.onError ?? (() => undefined)
+    this.onStall =
+      options.onStall ??
+      ((filePath, ms) =>
+        console.warn(`[conversation-event-log] a write to ${filePath} has not finished after ${ms} ms; still waiting`))
   }
 
   /**
-   * Record `event`. Settles once the batch holding it has been written (or it
-   * was superseded before that). A write failure resolves `failed` after
-   * `onError` has seen it — a transcript that cannot be written must not take
-   * the live chat down — and rejects only when `onError` itself throws.
+   * Record `event`, and after it in the same write the `records` it commits
+   * with (a command's receipt). Settles once the batch holding it has been
+   * written (or it was superseded before that). A batch is written whole or
+   * not at all; a failure resolves `failed` after `onError` has seen it — a
+   * transcript that cannot be written must not take the live chat down — and
+   * rejects only when `onError` itself throws.
    */
-  append(filePath: string, event: ConversationEvent, storageRoot?: string): Promise<ConversationAppendOutcome> {
+  append(
+    filePath: string,
+    event: ConversationEvent,
+    storageRoot?: string,
+    records: readonly ConversationLogRecord[] = [],
+  ): Promise<ConversationAppendOutcome> {
     const log = this.fileLog(filePath)
     log.storageRoot ??= storageRoot
     const done = new Promise<ConversationAppendOutcome>((resolve, reject) => {
       const entry = this.enqueue(log, event)
       log.waiters.push({ entry, resolve, reject })
     })
-    if (isDelta(event)) this.schedule(filePath, log, this.flushDelayMs)
+    for (const record of records) log.entries.push({ kind: 'record', record })
+    if (records.length > 0) void this.write(filePath, log)
+    else if (isDelta(event)) this.schedule(filePath, log, this.flushDelayMs)
     else if (partialToolUseId(event)) this.schedule(filePath, log, this.toolOutputFlushDelayMs)
     else void this.write(filePath, log)
+    return done
+  }
+
+  /** Record a line that is not an event, with whatever is queued before it, now. */
+  appendRecord(
+    filePath: string,
+    record: ConversationLogRecord,
+    storageRoot?: string,
+  ): Promise<ConversationAppendOutcome> {
+    const log = this.fileLog(filePath)
+    log.storageRoot ??= storageRoot
+    const entry: Entry = { kind: 'record', record }
+    const done = new Promise<ConversationAppendOutcome>((resolve, reject) => {
+      log.entries.push(entry)
+      log.waiters.push({ entry, resolve, reject })
+    })
+    void this.write(filePath, log)
     return done
   }
 
@@ -260,39 +308,35 @@ export class ConversationEventLog {
     log.entries = []
     log.waiters = []
     const chunk = entries
-      .filter((entry) => entry.kind === 'run' || !entry.superseded)
-      .map((entry) => (entry.kind === 'run' ? serializeRun(entry.run) : serialize(entry.event)))
+      .filter((entry) => entry.kind !== 'event' || !entry.superseded)
+      .map((entry) =>
+        entry.kind === 'run'
+          ? serializeRun(entry.run)
+          : entry.kind === 'record'
+            ? `${JSON.stringify(entry.record)}\n`
+            : serialize(entry.event),
+      )
       .join('')
     const outcome = (entry: Entry, ok: boolean): ConversationAppendOutcome =>
       entry.kind === 'event' && entry.superseded ? 'superseded' : ok ? 'written' : 'failed'
     log.tail = log.tail.then(async () => {
       let ok = true
-      let timedOut = false
       let timer: NodeJS.Timeout | undefined
       try {
         if (chunk) {
           if (!log.stream) log.stream = this.openStream(filePath, log.storageRoot)
           const stream = log.stream
-          await Promise.race([
-            stream.then((open) => open.write(chunk)),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(() => {
-                timedOut = true
-                reject(new Error(`Writing the conversation transcript took longer than ${this.writeTimeoutMs} ms.`))
-              }, this.writeTimeoutMs)
-              timer.unref?.()
-            }),
-          ]).finally(() => clearTimeout(timer))
+          timer = setTimeout(() => this.onStall(filePath, this.slowWriteMs), this.slowWriteMs)
+          timer.unref?.()
+          await stream.then((open) => open.write(chunk)).finally(() => clearTimeout(timer))
         }
       } catch (error) {
         ok = false
         // Drop the broken stream so the next write reopens rather than failing
-        // forever on a handle that is gone. A stream whose write never settled
-        // may never close either, so that close is not waited for.
+        // forever on a handle that is gone.
         const broken = log.stream
         log.stream = null
-        const closing = broken?.then((stream) => stream.close()).catch(() => undefined)
-        if (!timedOut) await closing
+        await broken?.then((stream) => stream.close()).catch(() => undefined)
         try {
           this.onError(filePath, error)
         } catch (reported) {
@@ -416,10 +460,57 @@ async function openAppendStream(filePath: string, storageRoot = dirname(filePath
       // Appending straight after it would glue the next record onto the
       // fragment, and both would be unreadable although this write succeeded
       // and its events were published. The fragment gets a line of its own.
-      await file.writeFile(unterminated ? `\n${chunk}` : chunk, 'utf8')
+      await writeWhole(file, unterminated ? `\n${chunk}` : chunk, (size) =>
+        truncateConversationLog(storageRoot, filePath, size),
+      )
       unterminated = false
     },
     close: () => file.close(),
+  }
+}
+
+/**
+ * Cut a chat's log back to `size` bytes, through a handle of its own: one
+ * opened to append cannot be cut on every platform, and the log's own stays
+ * open meanwhile.
+ */
+export async function truncateConversationLog(storageRoot: string, filePath: string, size: number): Promise<void> {
+  const cut = await openConfinedExistingFile(
+    await conversationConfinementRoot(storageRoot, filePath),
+    filePath,
+    'write',
+  )
+  try {
+    await cut.truncate(size)
+  } finally {
+    await cut.close()
+  }
+}
+
+/**
+ * Append `text` all of it or none: whatever part of a write that failed
+ * reached the file (a disk that filled mid-write) is cut back off, so no line
+ * of a batch that failed, a command's receipt among them, is read after a
+ * restart. The size it cuts back to is read just before the write: this
+ * file's one writer is the log, one write at a time. A cut that fails is
+ * reported with the write's own error, so the batch counts as failed.
+ */
+export async function writeWhole(
+  file: { stat(): Promise<{ size: number }>; writeFile(text: string, encoding: 'utf8'): Promise<void> },
+  text: string,
+  truncate: (size: number) => Promise<void>,
+): Promise<void> {
+  const { size } = await file.stat()
+  try {
+    await file.writeFile(text, 'utf8')
+  } catch (error) {
+    await truncate(size).catch((cut: unknown) => {
+      console.warn(
+        '[conversation-event-log] a failed write could not be taken back:',
+        cut instanceof Error ? cut.message : cut,
+      )
+    })
+    throw error
   }
 }
 

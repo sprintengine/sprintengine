@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
 
-import { connect, type StudioClient } from '../../../packages/agent-sdk/src/client'
+import { connect, type StudioClient } from '../../../packages/client-runtime/src/public'
 import type { CanvasElement } from '../../shared/canvas/types'
 import { emptyScene, parseSceneFile, serializeSceneFile } from '../../shared/canvas/scene-file'
 import { createStudioFiles } from '../../server/rpc/studio-files'

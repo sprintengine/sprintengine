@@ -97,7 +97,7 @@ import { isSettledWorkspace } from '../utils/workspaceSettle'
 import { isSnoozeUnexpired } from '../utils/workspaceSnooze'
 import { noteWorkspaceSettledElsewhere, noteWorkspaceSnoozedElsewhere } from '../utils/settledElsewhere'
 import { isPlaceholderAgentName } from '../utils/agentNames'
-import { applyWorkspaceFieldsPatch } from '../../../shared/workspace-sync'
+import { applyAgentPatch, applyWorkspaceFieldsPatch } from '../../../shared/workspace-sync'
 import { isRetiredWorkspaceMode } from '../../../shared/workspace-mode'
 import {
   configureWorkspaceSyncClient,
@@ -127,6 +127,7 @@ import {
 import { isLegacyV44WorkspaceEnvelope, splitLegacyV44Envelope } from './repositories/workspaceRegistry'
 import type { AgentLaunchSettings } from '../../../shared/launch-settings'
 import { launchSettingsApiFromWindow, launchSettingsClient } from './launchSettingsClient'
+import { showToast } from './toastStore'
 import { migrateLegacyCliPermissionPresets } from './legacyCliPermissionPresets'
 import { onWindowVisibilityChange } from '../utils/windowActivity'
 import {
@@ -142,6 +143,12 @@ import type {
   WorkspaceRegistryEmptyState,
   WorkspaceWorktree,
 } from '../types/workspace'
+import { windowModuleSwitches, type ModuleSwitchStore } from '../studio/moduleSwitches'
+import { windowHasStudio } from '../studio/extensions'
+import { configureTerminals, listTerminals } from '../studio/terminals'
+import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
+import { agentSettingsApi } from '../studio/agentSettings'
+import { workspaceSyncApi, workspaceSyncReachable } from '../studio/workspaceSync'
 
 migrateLegacyWorkspaceStorageKey()
 
@@ -525,8 +532,8 @@ function readAuxWindowKind(): string | null {
 
 function scheduleBackupWrite(): void {
   if (typeof window === 'undefined' || PERSISTS_NOTHING) return
-  const api = window.api
-  if (!api || typeof api.workspaceBackupWrite !== 'function') return
+  if (!workspaceSyncReachable('workspaceBackupWrite')) return
+  const api = workspaceSyncApi
 
   if (backupWriteTimer) clearTimeout(backupWriteTimer)
   backupWriteTimer = setTimeout(() => {
@@ -1161,13 +1168,13 @@ async function attemptBackupRecovery(): Promise<void> {
     emitHydrationDiagnostic()
     return
   }
-  if (typeof window.api?.workspaceBackupRead !== 'function') {
+  if (!workspaceSyncReachable('workspaceBackupRead')) {
     emitHydrationDiagnostic()
     return
   }
 
   try {
-    const result = await window.api.workspaceBackupRead()
+    const result = await workspaceSyncApi.workspaceBackupRead()
     if (!result.ok) {
       if (result.reason !== 'missing') {
         hydrationContext.recoveryError = `${result.reason}${result.message ? `:${result.message}` : ''}`
@@ -1492,7 +1499,7 @@ export const useWorkspaceStore: WorkspaceStoreHook = create<WorkspaceStore>()(
 
 function scheduleInitialPluginCatalogRefresh(): void {
   if (typeof window === 'undefined') return
-  if (!window.api || typeof window.api.pluginsList !== 'function') return
+  if (!windowHasStudio()) return
   queueMicrotask(() => {
     const store = useWorkspaceStore.getState()
     void store.refreshPluginCatalog()
@@ -1500,82 +1507,60 @@ function scheduleInitialPluginCatalogRefresh(): void {
     // pickers/defaults can hide and avoid defaulting to uninstalled agents.
     // After main's launch settings are in, so the probe runs each CLI's real
     // command and WSL switch rather than the defaults.
-    if (typeof window.api?.pluginsDetectAvailability === 'function') {
-      void launchSettingsClient.ready.then(() => {
-        const current = useWorkspaceStore.getState()
-        return current.refreshCliAvailability({
-          cliRuntimes: current.appSettings.cliRuntimes,
-        })
+    void launchSettingsClient.ready.then(() => {
+      const current = useWorkspaceStore.getState()
+      return current.refreshCliAvailability({
+        cliRuntimes: current.appSettings.cliRuntimes,
       })
-    }
+    })
   })
 }
 
 scheduleInitialPluginCatalogRefresh()
 
-// Mirror module enablement to the main process so it can gate module IPC and
-// sidecar spawning at the next launch. The renderer is the source of truth; the
-// main cache is updated whenever the override changes (deduped). Guarded for
-// non-browser bundles (node test harnesses) where window/api are absent.
-function syncModuleEnablementToMain(): void {
-  if (typeof window === 'undefined') return
-  const api = window.api as { setModuleEnablement?: (o: Record<string, boolean>) => Promise<unknown> } | undefined
-  if (!api?.setModuleEnablement) return
-
-  let lastSerialized = ''
-  const push = (overrides: Record<string, boolean>): void => {
-    const serialized = JSON.stringify(overrides)
-    if (serialized === lastSerialized) return
-    lastSerialized = serialized
-    void api.setModuleEnablement!(overrides)
-  }
-
-  push(useWorkspaceStore.getState().appSettings.modules ?? {})
-  useWorkspaceStore.subscribe((state) => push(state.appSettings.modules ?? {}))
+// The person's module switches, as the window's Studio holds them: read at
+// every open of the window's connection and every change of what is
+// installed, and the Studio's choice taken for each module it lists
+// (studio/moduleSwitches.ts). Settings switches a module through the same
+// object, which waits for the Studio before the window's copy changes.
+// Guarded for bundles with no Studio connection (node test harnesses).
+export const studioModuleSwitchStore: ModuleSwitchStore = {
+  overrides: () => useWorkspaceStore.getState().appSettings.modules ?? {},
+  set: (moduleId, enabled) => useWorkspaceStore.getState().setModuleEnabled(moduleId, enabled),
 }
-syncModuleEnablementToMain()
+windowModuleSwitches(studioModuleSwitchStore)
 
-// Mirror the "Pause idle terminals after" setting (minutes → ms) to the main
-// reap policy so the next idle sweep uses the user's value. Renderer is the
-// source of truth; pushed on startup and on every change (deduped). Main clamps.
-function syncTerminalIdleSuspendToMain(): void {
+// Mirror the "Pause idle terminals after" setting (minutes → ms) and the
+// "Always keep running" recency floor to the Studio's reaper (`terminal.configure`),
+// so its next idle sweep uses the person's values. The window is the source of
+// truth: they are sent on startup, on every change, and again whenever the
+// window's connection opens (a restarted server starts from its defaults). A
+// send that fails is sent again on the next. The Studio clamps both.
+function syncTerminalPolicyToStudio(): void {
   if (typeof window === 'undefined') return
-  const api = window.api as { setTerminalIdleSuspendMs?: (ms: number) => Promise<unknown> } | undefined
-  if (!api?.setTerminalIdleSuspendMs) return
-
-  let lastSent = NaN
-  const push = (minutes: number): void => {
-    const ms = Math.round(minutes * 60 * 1000)
-    if (ms === lastSent) return
-    lastSent = ms
-    void api.setTerminalIdleSuspendMs!(ms)
+  const api = window.api as Parameters<typeof watchWindowStudio>[0] & { studioWindowTicket?: unknown }
+  if (typeof api?.studioWindowTicket !== 'function') return
+  let sent = ''
+  const push = (force = false): void => {
+    const { terminalIdleSuspendMinutes, terminalKeepRecentAlive } = useWorkspaceStore.getState().appSettings
+    const policy = {
+      idleSuspendMs: Math.round(terminalIdleSuspendMinutes * 60 * 1000),
+      keepRecentAlive: terminalKeepRecentAlive,
+    }
+    const key = `${policy.idleSuspendMs}:${policy.keepRecentAlive}`
+    if (key === sent && !force) return
+    sent = key
+    void configureTerminals(policy).catch(() => {
+      if (sent === key) sent = ''
+    })
   }
-
-  push(useWorkspaceStore.getState().appSettings.terminalIdleSuspendMinutes)
-  useWorkspaceStore.subscribe((state) => push(state.appSettings.terminalIdleSuspendMinutes))
+  push()
+  useWorkspaceStore.subscribe(() => push())
+  watchWindowStudio(api, () => {
+    if (windowStudioState(api) === 'open') push(true)
+  })
 }
-syncTerminalIdleSuspendToMain()
-
-// Mirror the "Always keep running" recency floor to the main reap policy so the
-// next idle sweep never pauses below the user's N most recently used agents.
-// Renderer is the source of truth; pushed on startup and on every change
-// (deduped). Main clamps.
-function syncTerminalKeepRecentAliveToMain(): void {
-  if (typeof window === 'undefined') return
-  const api = window.api as { setTerminalKeepRecentAliveCount?: (count: number) => Promise<unknown> } | undefined
-  if (!api?.setTerminalKeepRecentAliveCount) return
-
-  let lastSent = NaN
-  const push = (count: number): void => {
-    if (count === lastSent) return
-    lastSent = count
-    void api.setTerminalKeepRecentAliveCount!(count)
-  }
-
-  push(useWorkspaceStore.getState().appSettings.terminalKeepRecentAlive)
-  useWorkspaceStore.subscribe((state) => push(state.appSettings.terminalKeepRecentAlive))
-}
-syncTerminalKeepRecentAliveToMain()
+syncTerminalPolicyToStudio()
 
 // One-time hydration handshake. On the first boot after the registry
 // inverted, main has no registry file and this window is the only place the
@@ -1588,13 +1573,8 @@ syncTerminalKeepRecentAliveToMain()
 // that carries no explicit "the user removed everything" record. The legacy key
 // is left untouched either way, so a refusal costs one boot and retries.
 async function offerRegistryHydration(): Promise<void> {
-  const api = window.api as
-    | {
-        workspaceRegistryNeedsHydration?: () => Promise<boolean>
-        workspaceRegistryHydrate?: (payload: unknown) => Promise<unknown>
-      }
-    | undefined
-  if (!api?.workspaceRegistryNeedsHydration || !api.workspaceRegistryHydrate) return
+  if (!workspaceSyncReachable('workspaceRegistryNeedsHydration')) return
+  const api = workspaceSyncApi
   let needsHydration = false
   try {
     needsHydration = await api.workspaceRegistryNeedsHydration()
@@ -1738,7 +1718,7 @@ function adoptRegistrySnapshot(rawSnapshot: import('../../../shared/workspace-sy
 async function repairRegistryAgentNames(): Promise<void> {
   // Read retained sessions too: a paused agent can still carry its original
   // name. Re-read the store after the await so a rename or removal wins.
-  const sessions = (await window.api?.terminalList?.().catch(() => [])) ?? []
+  const sessions = (await listTerminals().catch(() => [])) ?? []
   const repairs: { workspaceId: string; agentId: string; name: string }[] = []
   useWorkspaceStore.setState((current) => {
     const workspaces = nameGenericWorkspaceAgents(current.workspaces, (workspaceId, agentId) => {
@@ -1777,7 +1757,7 @@ async function repairRegistryAgentNames(): Promise<void> {
 let resolveWorkspaceRegistryReady: () => void = () => undefined
 export const workspaceRegistryReady = new Promise<void>((resolve) => {
   resolveWorkspaceRegistryReady = resolve
-  if (typeof window === 'undefined' || typeof window.api?.workspaceSyncGetSnapshot !== 'function') resolve()
+  if (typeof window === 'undefined' || !workspaceSyncReachable('workspaceSyncGetSnapshot')) resolve()
 })
 
 // Wire the main-mediated workspace sync bus. The client asks main for every
@@ -1851,14 +1831,10 @@ function initWorkspaceSyncClient(): void {
           // main just launched and registered; the session tick decides whether
           // it gets a tab. A snapshot never counts, so a reload reveals nothing.
           if (!workspace.agents[apply.agentId]) noteLaunchedAgentArrived(workspace.id, apply.agentId)
-          const existing = workspace.agents[apply.agentId] ?? defaultAgent(apply.agentId)
-          return {
-            ...workspace,
-            agents: {
-              ...workspace.agents,
-              [apply.agentId]: { ...existing, ...apply.patch, configEditedAt: apply.configEditedAt },
-            },
-          }
+          const agent = { ...(workspace.agents[apply.agentId] ?? defaultAgent(apply.agentId)) }
+          applyAgentPatch(agent, apply.patch)
+          agent.configEditedAt = apply.configEditedAt
+          return { ...workspace, agents: { ...workspace.agents, [apply.agentId]: agent } }
         }),
       ),
     applyWorkspaceRemoved: (apply) =>
@@ -1894,6 +1870,21 @@ function initWorkspaceSyncClient(): void {
       applyImportedSyncEvent(() => useWorkspaceStore.getState().applyAgentTerminalSessionEvent(apply)),
     applyAgentTerminalLaunchState: (apply: AgentTerminalLaunchStateApply) =>
       applyImportedSyncEvent(() => useWorkspaceStore.getState().applyAgentTerminalLaunchStateEvent(apply)),
+    currentWorkspace: (workspaceId) =>
+      useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
+    // A new chat Studio never took: said, with its first message, which went
+    // nowhere else, so the words can be sent again.
+    reportUnsavedWorkspace: (workspace, message) => {
+      const firstMessage = Object.values(workspace.agents ?? {})
+        .map((agent) => agent.chatStartupPrompt?.trim())
+        .find(Boolean)
+      showToast({
+        tone: 'error',
+        title: `“${workspace.name}” was not saved`,
+        description: firstMessage ? `${message} Its first message was: “${firstMessage}”` : message,
+        autoDismissMs: false,
+      })
+    },
   })
   // Subscribe immediately so no broadcast is missed, and offer hydration
   // alongside it. The two race by design: the snapshot seed cannot blank this
@@ -1939,7 +1930,7 @@ function migrateCliPermissionPresetsToMain(): void {
   void launchSettingsClient.ready.then(() =>
     migrateLegacyCliPermissionPresets({
       storage,
-      held: async () => (await window.api.launchSettingsGet()).settings.cliPermissionPresets ?? {},
+      held: async () => (await agentSettingsApi.launchSettingsGet()).settings.cliPermissionPresets ?? {},
       update: (patch) => launchSettingsClient.update(patch),
     }),
   )

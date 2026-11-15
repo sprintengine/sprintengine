@@ -13,41 +13,10 @@ export const WEB_PREVIEWS_CLOSE_CHANNEL = 'web:previews:close'
 /** Pushed to a session's tabs: its open previews, whole, on every change. */
 export const WEB_PREVIEWS_CHANGED_CHANNEL = 'web:previews:changed'
 
-/** Embeds of one conversation, read-only, for another page to frame (phase 9 spec, 5.4; R58, R59). */
-export const WEB_EMBEDS_CREATE_CHANNEL = 'web:embeds:create'
-export const WEB_EMBEDS_LIST_CHANNEL = 'web:embeds:list'
-export const WEB_EMBEDS_REVOKE_CHANNEL = 'web:embeds:revoke'
-
-/** The browsers paired with this server, and the ones asking to be (phase 9 spec, 6.2). */
-export const WEB_DEVICES_STATUS_CHANNEL = 'web:devices:status'
-export const WEB_DEVICES_REVOKE_CHANNEL = 'web:devices:revoke'
-export const WEB_DEVICES_RENAME_CHANNEL = 'web:devices:rename'
-export const WEB_DEVICES_LINK_CHANNEL = 'web:devices:link'
-export const WEB_DEVICES_APPROVE_CHANNEL = 'web:devices:approve'
-export const WEB_DEVICES_DECLINE_CHANNEL = 'web:devices:decline'
-/** Pushed to every owner tab when a browser is paired, removed, or asks. */
-export const WEB_DEVICES_CHANGED_CHANNEL = 'web:devices:changed'
-
-export type WebDevice = {
-  id: string
-  name: string
-  route: 'loopback' | 'tailnet'
-  createdAt: string
-  expiresAt: string
-  lastSeenAt: string | null
-  /** The browser asking: the one whose Settings this is. */
-  current: boolean
-}
-
-export type WebPairRequest = {
-  requestId: string
-  name: string
-  route: 'loopback' | 'tailnet'
-  createdAt: string
-  expiresAt: string
-}
-
-export type WebDevicesStatus = { devices: WebDevice[]; requests: WebPairRequest[]; origins: string[] }
+// The browsers paired with this server are the Studio protocol's
+// (`webDevices.*`, packages/studio-protocol/src/web-devices.ts), where their
+// shapes are defined. Embeds are minted by `studio-server embed` alone.
+export type { WebDevice, WebDevicesStatus, WebPairRequest } from '../../packages/studio-protocol/src/public'
 
 /** The channels the web front door adds to a tab's tunnel, beside the server's own (SERVER_IPC_CHANNELS). */
 const WEB_TUNNEL_CHANNEL_TABLE = {
@@ -55,15 +24,6 @@ const WEB_TUNNEL_CHANNEL_TABLE = {
   [WEB_PREVIEWS_LIST_CHANNEL]: { retry: 'once' },
   [WEB_PREVIEWS_OPEN_CHANNEL]: {},
   [WEB_PREVIEWS_CLOSE_CHANNEL]: {},
-  [WEB_EMBEDS_CREATE_CHANNEL]: {},
-  [WEB_EMBEDS_LIST_CHANNEL]: { retry: 'once' },
-  [WEB_EMBEDS_REVOKE_CHANNEL]: {},
-  [WEB_DEVICES_STATUS_CHANNEL]: { retry: 'once' },
-  [WEB_DEVICES_REVOKE_CHANNEL]: {},
-  [WEB_DEVICES_RENAME_CHANNEL]: {},
-  [WEB_DEVICES_LINK_CHANNEL]: {},
-  [WEB_DEVICES_APPROVE_CHANNEL]: {},
-  [WEB_DEVICES_DECLINE_CHANNEL]: {},
 } as const satisfies Readonly<Record<string, ServerIpcChannel>>
 
 /** The front door's own tunnel channels, by name. */

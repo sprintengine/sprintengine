@@ -6,8 +6,8 @@ const {
   pickableProjects,
   projectFolderKey,
   recordProjectPick,
-} = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
-const { createTailnetWorkspacesApi } = require("../../../.mobile-test-build/src/api/tailnetWorkspaces.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
+const { readDesktopWorkspaces } = require("../../../.mobile-test-build/mobile/src/api/tailnetWorkspaces.js");
 
 // Step one of New lists the projects used most first, in
 // the order New chat on the desktop lists them. The desktop counts the uses and
@@ -92,39 +92,18 @@ test("only the latest picks are remembered, and stored picks are read fail-soft"
   assert.deepEqual(normalizeProjectPicks("nope"), {});
 });
 
-test("workspace.list's usage fields are read when sent and left off when not", async () => {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    status: 200,
-    ok: true,
-    json: async () => ({
-      jsonrpc: "2.0",
-      id: "ws-1",
-      result: {
-        structuredContent: {
-          ok: true,
-          workspaces: [
-            { id: "ws-new", name: "Chat", folderPath: "/Users/dev/app", projectFrecency: 1.5, projectLastUsedAt: new Date(NOW).toISOString() },
-            { id: "ws-never", name: "Chat", folderPath: "/Users/dev/notes", projectFrecency: 0, projectLastUsedAt: null },
-            { id: "ws-old", name: "Chat", folderPath: "/Users/dev/old" },
-            { id: "ws-bad", name: "Chat", folderPath: "/Users/dev/bad", projectFrecency: "lots" },
-          ],
-        },
-      },
-    }),
-  });
-  try {
-    const api = createTailnetWorkspacesApi({ baseUrl: "http://mac-mini.tail1234.ts.net:7420", deviceToken: "token" });
-    const listed = await api.listWorkspaces();
-    assert.equal(listed.ok, true);
-    const byId = Object.fromEntries(listed.data.map((workspace) => [workspace.workspaceId, workspace]));
-    assert.equal(byId["ws-new"].projectFrecency, 1.5);
-    assert.equal(byId["ws-new"].projectLastUsedAt, NOW);
-    assert.equal(byId["ws-never"].projectFrecency, 0);
-    assert.equal(byId["ws-never"].projectLastUsedAt, null);
-    assert.equal("projectFrecency" in byId["ws-old"], false, "an older desktop sends none");
-    assert.equal("projectFrecency" in byId["ws-bad"], false, "a score that is not a number is no score");
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+test("workspaces.list's usage fields are read when sent and left off when not", () => {
+  const listed = readDesktopWorkspaces([
+    { id: "ws-new", name: "Chat", folderPath: "/Users/dev/app", projectFrecency: 1.5, projectLastUsedAt: new Date(NOW).toISOString() },
+    { id: "ws-never", name: "Chat", folderPath: "/Users/dev/notes", projectFrecency: 0, projectLastUsedAt: null },
+    { id: "ws-old", name: "Chat", folderPath: "/Users/dev/old" },
+    { id: "ws-bad", name: "Chat", folderPath: "/Users/dev/bad", projectFrecency: "lots" },
+  ]);
+  const byId = Object.fromEntries(listed.map((workspace) => [workspace.workspaceId, workspace]));
+  assert.equal(byId["ws-new"].projectFrecency, 1.5);
+  assert.equal(byId["ws-new"].projectLastUsedAt, NOW);
+  assert.equal(byId["ws-never"].projectFrecency, 0);
+  assert.equal(byId["ws-never"].projectLastUsedAt, null);
+  assert.equal("projectFrecency" in byId["ws-old"], false, "an older desktop sends none");
+  assert.equal("projectFrecency" in byId["ws-bad"], false, "a score that is not a number is no score");
 });

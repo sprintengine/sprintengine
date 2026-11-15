@@ -6,6 +6,7 @@ import type { Workspace } from '../../../types/workspace'
 import { TabNode, Actions, type Model, TabSetNode } from 'flexlayout-react'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { rememberClosedLayoutTab } from '../../../utils/recentlyClosedTabs'
+import { closeTerminal } from '../../../studio/terminals'
 
 // Where a spawn should land, and what it should start with. From the tab
 // strip's "+", `tabId` names that tab's node and `prompt` is what was typed on
@@ -98,7 +99,7 @@ export function killTerminalForLayoutTab(
       )
       .forEach((session) => sessionIds.add(session.sessionId))
     sessionIds.forEach((sessionId) => {
-      void window.api.terminalKill(sessionId).catch(() => {})
+      void closeTerminal(sessionId).catch(() => {})
     })
     state.updateAgent(workspaceId, agentId, {
       cliStartRequested: false,
@@ -120,7 +121,7 @@ export function killTerminalForLayoutTab(
       )
       .forEach((session) => sessionIds.add(session.sessionId))
     sessionIds.forEach((sessionId) => {
-      void window.api.terminalKill(sessionId).catch(() => {})
+      void closeTerminal(sessionId).catch(() => {})
     })
   }
 }
@@ -149,7 +150,7 @@ export function stopActiveTerminal(workspaceId: string, terminalSessions: Termin
     )
     .forEach((item) => sessionIds.add(item.sessionId))
   sessionIds.forEach((sessionId) => {
-    void window.api.terminalKill(sessionId).catch(() => {})
+    void closeTerminal(sessionId).catch(() => {})
   })
   return true
 }

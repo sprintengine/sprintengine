@@ -1,9 +1,7 @@
-// The IPC contract for a chat composer's slash-command list: the renderer asks
-// for the list of one CLI in one folder, and main pushes every list it hears
-// afterwards (a probe, a live session's init, an ACP update) to every window.
-// The lists themselves are kept in main (src/main/conversation-commands).
-export const CONVERSATION_COMMANDS_LIST_CHANNEL = 'conversation-commands:list'
-export const CONVERSATION_COMMANDS_CHANGED_CHANNEL = 'conversation-commands:changed'
+// A chat composer's slash-command list, asked for one CLI in one folder: over
+// the Studio protocol (`conversation.commands`, whose topic of the same name
+// carries every list published afterwards). The lists themselves are kept in
+// main (src/main/conversation-commands).
 
 export type ConversationCommandsRequest = {
   /** The chat CLI id ('claude-code', 'codex', …). */

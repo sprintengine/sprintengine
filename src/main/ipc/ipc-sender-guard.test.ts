@@ -54,10 +54,10 @@ test('a message from anything but the app never reaches its listener', () => {
   const { ipc, emitter } = fakeIpcMain()
   guardIpcSenders(ipc, isTrusted)
   const heard: unknown[] = []
-  ipc.on('terminal:write', (_event, data) => heard.push(data))
-  emitter.emit('terminal:write', guest, 'rm -rf ~\r')
-  emitter.emit('terminal:write', app, 'ls\r')
-  assert.deepEqual(heard, ['ls\r'])
+  ipc.on('git:push', (_event, data) => heard.push(data))
+  emitter.emit('git:push', guest, '--force')
+  emitter.emit('git:push', app, 'origin')
+  assert.deepEqual(heard, ['origin'])
 })
 
 test('a once listener is spent only by the app, not by a foreign message sent first', () => {
@@ -103,9 +103,40 @@ test('handlers registered through a wrapper of ipcMain are guarded too, and the 
   const { ipc, invoke } = fakeIpcMain()
   guardIpcSenders(ipc, isTrusted)
   guardIpcSenders(ipc, () => true)
-  // As `machineAwareIpc` does: a proxy whose `handle` calls ipcMain's own.
+  // A wrapper whose `handle` calls ipcMain's own.
   const wrapper = { handle: (channel: string, listener: () => unknown) => ipc.handle(channel, listener) }
   wrapper.handle('git:status', () => 'clean')
   assert.equal(await invoke('git:status', app), 'clean')
   await assert.rejects(invoke('git:status', guest), /did not come from/)
+})
+
+test('a channel the registration rule does not allow fails as it registers, every way of registering', () => {
+  const { ipc, emitter, handlers } = fakeIpcMain()
+  const listed = new Set(['window:close', 'chat-link:ready'])
+  guardIpcSenders(
+    ipc,
+    isTrusted,
+    () => {},
+    (channel) => listed.has(channel),
+  )
+  ipc.handle('window:close', () => undefined)
+  ipc.on('chat-link:ready', () => undefined)
+  const listener = () => undefined
+  for (const register of [
+    () => ipc.handle('backlog:secret-door', () => undefined),
+    () => ipc.handleOnce('backlog:secret-door', () => undefined),
+    () => ipc.on('backlog:secret-door', listener),
+    () => ipc.once('backlog:secret-door', listener),
+    () => ipc.addListener('backlog:secret-door', listener),
+    () => ipc.prependListener('backlog:secret-door', listener),
+    () => ipc.prependOnceListener('backlog:secret-door', listener),
+  ]) {
+    assert.throws(
+      register,
+      (error: Error) => error.name === 'UnlistedIpcChannelError' && /ipc-inventory/.test(error.message),
+    )
+  }
+  assert.deepEqual([...handlers.keys()], ['window:close'])
+  assert.equal(emitter.listenerCount('backlog:secret-door'), 0)
+  assert.equal(emitter.listenerCount('chat-link:ready'), 1)
 })

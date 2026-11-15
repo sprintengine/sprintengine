@@ -7,7 +7,7 @@ import {
   DEFAULT_AGENT_SPAWN_PERMISSION_PRESET,
   emptyAgentLaunchSettings,
 } from '../shared/launch-settings'
-import type { TerminalSpawnPayload } from './ipc/terminal-ipc'
+import type { TerminalSpawnPayload } from './terminal-spawn-payload'
 import {
   createAgentLaunchService,
   type AgentLaunchServiceDeps,

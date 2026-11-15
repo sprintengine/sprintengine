@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { RepositoryIdentity, RepositoryIdentityRead } from '../../../../shared/repository-identity'
 import { normalizeFolderKey } from '../../../../shared/project-hue'
+import { gitApi } from '../../studio/git'
 
 // Which repository each local folder is a clone of (one-project-across-
 // machines): the sidebar files a paired machine's copy of a repository under
@@ -83,7 +84,7 @@ export function useFolderRepositoryIdentities(
   const wanted = [...new Set(folderPaths.flatMap((path) => (path?.trim() ? [path.trim()] : [])))].sort()
   const wantedKey = wanted.join('\n')
   useEffect(() => {
-    const read = window.api?.getGitRepositoryIdentity
+    const read = gitApi.getGitRepositoryIdentity
     let cancelled = false
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     const missing = wanted.filter((path) => !identities.has(folderIdentityKey(path)))

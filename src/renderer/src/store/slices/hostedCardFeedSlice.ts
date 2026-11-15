@@ -1,5 +1,6 @@
 import type { HostedCardFeedReadResult } from '../../../../shared/electron-api'
 import type { HostedCard } from '../../../../shared/hosted-card-feed'
+import { extensionsApi, type ExtensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // The hosted card feed as the renderer sees it, its own slice and not a
 // generalisation over the hosted feeds — they have different schemas and are
@@ -43,27 +44,19 @@ interface HostedCardFeedSliceActions {
 //
 // The read/fetch split above is the design, not an accident of wiring. The only
 // thing that fetches this feed is the hourly poller leg in app-lifecycle.ts,
-// which calls `readHostedCardFeed` in main and pushes what changed back as
-// `hosted-card-feed:changed`; the renderer reads at first paint and applies the
-// push. The `hosted-card-feed:refresh` channel and its preload binding stay
-// where they are — `ElectronApi` declares them and card-feed-service.test.ts
-// covers the handler — so a manual refresh, if the browse question ever lands
-// it a button, is one action restored here and nothing below it rebuilt.
+// which has the Studio refresh its hosted feeds and tells every follower what
+// changed (`cardFeed.changed`); the window reads at first paint
+// (`cardFeed.get`) and applies the push. A manual refresh, if the browse
+// question ever lands it a button, is a protocol method and an action here.
 
 export type HostedCardFeedSlice = HostedCardFeedSliceState & HostedCardFeedSliceActions
 
 type HostedCardFeedSliceSet = (mutator: (state: HostedCardFeedSliceState) => void) => void
 
-type HostedCardFeedApi = Pick<Window['api'], 'hostedCardFeedGet'>
+type HostedCardFeedApi = Pick<ExtensionsApi, 'hostedCardFeedGet'>
 
 function getHostedCardFeedApi(): HostedCardFeedApi | null {
-  if (typeof window === 'undefined') return null
-  const api = window.api
-  // Narrowed to the one call this slice makes. It used to require
-  // `hostedCardFeedRefresh` as well, which meant a host exposing only the read
-  // half read as "no api at all" and drew an empty page — a guard for a call
-  // that is no longer made.
-  return api && typeof api.hostedCardFeedGet === 'function' ? api : null
+  return windowHasStudio() ? extensionsApi : null
 }
 
 export function createHostedCardFeedSlice(
@@ -122,11 +115,11 @@ function failure(error: unknown): HostedCardFeedReadResult {
   }
 }
 
-// Wire the main-process push into the store. Returns the unsubscribe.
+// Wire the Studio's `cardFeed.changed` into the store. Returns the unsubscribe.
 export function subscribeHostedCardFeedChanges(
   apply: (result: HostedCardFeedReadResult) => void,
-  api: Pick<Window['api'], 'onHostedCardFeedChanged'> | null = typeof window === 'undefined' ? null : window.api,
+  api: Pick<ExtensionsApi, 'onHostedCardFeedChanged'> | null = windowHasStudio() ? extensionsApi : null,
 ): () => void {
-  if (!api || typeof api.onHostedCardFeedChanged !== 'function') return () => {}
+  if (!api) return () => {}
   return api.onHostedCardFeedChanged(apply)
 }

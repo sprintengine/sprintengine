@@ -1,0 +1,14 @@
+// The shared client runtime's tests, built the way the phone's regression
+// suite is (tsconfig.test.json: CommonJS, the repository as the root) and run
+// on `node --test` by `npm run test:runtime`, with `scripts/vitest-bridge.cjs`
+// answering their `vitest` imports. The same files run in the desktop's suite
+// under vitest itself. Only portable tests are listed: the supervisor's and the
+// conversation timeline's. The runtime client's tests drive the desktop's
+// server and stay there.
+{
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "paths": { "vitest": ["./scripts/vitest-bridge.d.ts"] }
+  },
+  "include": ["../packages/client-runtime/test/connectionSupervisor.test.ts", "../packages/conversation-timeline/test/*.test.ts"]
+}

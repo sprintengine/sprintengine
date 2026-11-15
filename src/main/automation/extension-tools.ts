@@ -12,7 +12,7 @@ import {
   type ExtensionScaffoldCreateInput,
 } from '../../shared/extension-scaffold'
 import { toolError, type McpToolRegistration, type McpToolResult } from '../../shared/modules/mcp-tools'
-import type { createExtensionScaffoldHandlers } from '../ipc/extension-scaffold-ipc'
+import type { createExtensionScaffoldHandlers } from '../extension-scaffold'
 
 // How an agent builds a SprintEngine Studio extension: `extension.create`
 // makes the project, and `extension.guide` is the manual, a topic at a time.

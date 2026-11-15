@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import type { ConversationSearchHit } from '../../../../shared/conversation-index'
 import { createConversationHistoryProvider, type SearchableChat } from './conversationHistoryProvider'
 import { openConversationMatch } from '../../utils/conversationHistoryNavigation'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 vi.mock('../../utils/conversationHistoryNavigation', () => ({ openConversationMatch: vi.fn(async () => true) }))
 afterEach(() => {
@@ -34,6 +35,7 @@ test('every chat the sidebar lists is searched, and a chat is one row however ma
           : [],
   }))
   vi.stubGlobal('window', { api: { conversationSearch: search, conversationCancelSearch: vi.fn(async () => {}) } })
+  installStudioLoopback(globalThis.window as never)
   const rows = await createConversationHistoryProvider({
     getChats: () => [chat('one'), chat('two', '/Users/dev/other'), chat('three')],
   }).load('wave', context)
@@ -68,6 +70,7 @@ test('a chat whose history cannot be read costs its own matches, not the others'
       conversationCancelSearch: vi.fn(async () => {}),
     },
   })
+  installStudioLoopback(globalThis.window as never)
   const rows = await createConversationHistoryProvider({ getChats: () => [chat('broken'), chat('fine')] }).load(
     'wave',
     context,
@@ -82,48 +85,43 @@ test('a chat whose history cannot be read costs its own matches, not the others'
 
 test('superseding a search cancels the chat in flight and searches no further', async () => {
   let resolve!: (value: unknown) => void
-  const cancel = vi.fn(async () => undefined)
+  let signal: AbortSignal | undefined
   const search = vi.fn(
-    () =>
+    (_input: unknown, options?: { signal?: AbortSignal }) =>
       new Promise((done) => {
+        signal = options?.signal
         resolve = done
       }),
   )
-  vi.stubGlobal('window', { api: { conversationSearch: search, conversationCancelSearch: cancel } })
+  vi.stubGlobal('window', { api: { conversationSearch: search } })
+  installStudioLoopback(globalThis.window as never)
   const provider = createConversationHistoryProvider({ getChats: () => [chat('one'), chat('two')] })
   const pending = provider.load('wave', context)
   await vi.waitFor(() => expect(resolve).toBeDefined())
   provider.cancel?.()
-  expect(cancel).toHaveBeenCalledWith({ requestId: expect.any(String) })
+  // The Studio calls off the search it is running for this window.
+  await vi.waitFor(() => expect(signal?.aborted).toBe(true))
   resolve({ ok: true, hits: [hit(1, 'wave')] })
   expect(await pending).toEqual([])
   expect(search).toHaveBeenCalledOnce()
 })
 
-test('batches publish rows as a chat is read, and only the batches of the search in flight count', async () => {
-  let receive!: (batch: { requestId: string; hits: ConversationSearchHit[] }) => void
-  const stop = vi.fn()
+test('each chat’s rows are published as that chat is answered, before the next is read', async () => {
   const publish = vi.fn()
-  vi.stubGlobal('window', {
-    api: {
-      onConversationSearchBatch: (callback: typeof receive) => {
-        receive = callback
-        return stop
-      },
-      conversationSearch: async ({ requestId }: { requestId: string }) => {
-        receive({ requestId: 'another-window', hits: [hit(1, 'wave elsewhere')] })
-        receive({ requestId, hits: [hit(2, 'first wave')] })
-        expect(publish).toHaveBeenCalledTimes(1)
-        expect(publish.mock.calls[0][0][0].conversationMatch.count).toBe(1)
-        // The final answer is the whole list, batches included.
-        return { ok: true as const, hits: [hit(2, 'first wave'), hit(4, 'second wave')] }
-      },
-    },
+  const search = vi.fn(async ({ workspaceId }: { workspaceId: string }) => {
+    // The first chat's row is up while the second is read.
+    if (workspaceId === 'two') expect(publish).toHaveBeenCalledTimes(1)
+    return { ok: true as const, hits: [hit(2, `${workspaceId} wave`)] }
   })
-  const rows = await createConversationHistoryProvider({ getChats: () => [chat('one')] }).load('wave', context, publish)
-  expect(rows).toHaveLength(1)
-  expect(rows[0].conversationMatch?.count).toBe(2)
-  expect(stop).toHaveBeenCalledOnce()
+  vi.stubGlobal('window', { api: { conversationSearch: search } })
+  installStudioLoopback(globalThis.window as never)
+  const rows = await createConversationHistoryProvider({ getChats: () => [chat('one'), chat('two')] }).load(
+    'wave',
+    context,
+    publish,
+  )
+  expect(rows).toHaveLength(2)
+  expect(publish).toHaveBeenCalledTimes(2)
 })
 
 test('it waits for a second character and for a pause in typing', () => {

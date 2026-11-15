@@ -7,12 +7,9 @@
   "defaultEnabled": false,
   "source": "third-party",
   "engines": {
-    "hostApi": 1
+    "hostApi": 2
   },
-  "permissions": [
-    "ipc:workspace-read",
-    "storage"
-  ],
+  "permissions": ["ipc:workspace-read", "storage"],
   "entry": {
     "renderer": "dist/renderer.mjs"
   }

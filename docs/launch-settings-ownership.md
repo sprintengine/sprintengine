@@ -57,14 +57,20 @@ pushed the whole record to main on every change, and main kept a copy. Two
 windows could each push a stale copy of the other's edit, and a headless
 launch only saw what the last window to open had pushed.
 
-## Channels
+## Methods
 
-| Channel                   | Direction           | What it carries                                                                                     |
-| ------------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
-| `launch-settings:get`     | window → main       | The record (null before any write) and the settings in force, which is what a window shows at boot. |
-| `launch-settings:update`  | window → main       | A partial patch. Answered with the record main now holds.                                           |
-| `launch-settings:migrate` | window → main       | The one-time handover described below. Answered with main's record either way.                      |
-| `launch-settings:changed` | main → every window | The new record, after every write that changed it, whoever made it.                                 |
+A window reaches the record over its Studio connection, as every other client
+does (`packages/studio-protocol/src/agent-settings.ts`). All four are an
+owner's only: the record names the program each CLI and MCP server runs on the
+machine and a preset's arguments, and holds the MCP servers' environment,
+which carries their keys.
+
+| Method                   | Kind   | What it carries                                                                                     |
+| ------------------------ | ------ | --------------------------------------------------------------------------------------------------- |
+| `launchSettings.get`     | call   | The record (null before any write) and the settings in force, which is what a window shows at boot. |
+| `launchSettings.update`  | call   | A partial patch. Answered with the record the Studio now holds.                                     |
+| `launchSettings.migrate` | call   | The one-time handover described below. Answered with the Studio's record either way.                |
+| `launchSettings.changed` | stream | The new record, after every write that changed it, whoever made it.                                 |
 
 A patch names only what it changes. A CLI's runtime is replaced whole and the
 other CLIs are untouched; the MCP switch and each server are separate fields,

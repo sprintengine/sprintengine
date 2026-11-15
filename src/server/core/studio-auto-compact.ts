@@ -5,7 +5,7 @@ import type {
   ConversationSessionSummary,
 } from '../../shared/conversation-runtime'
 import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
-import type { ConversationGatewayHost } from '../../main/automation/tailnet/tailnet-conversation-host'
+import type { ConversationGatewayHost } from './conversation-host'
 import {
   AUTO_COMPACT_CLIENT_ID,
   createAutoCompactScheduler,
@@ -57,6 +57,7 @@ export type StudioAutoCompactDeps = {
     settledAt?: number | null
     autoCompactEnabled?: boolean | null
     remoteOrigin?: unknown
+    environment?: unknown
     agents: Record<string, unknown>
   } | null
   enabledByDefault: () => boolean
@@ -85,7 +86,8 @@ export function createStudioAutoCompact(deps: StudioAutoCompactDeps): AutoCompac
       return {
         autoCompactEnabled: typeof record.autoCompactEnabled === 'boolean' ? record.autoCompactEnabled : null,
         settled: isSettledWorkspace(record),
-        remote: Boolean(record.remoteOrigin),
+        // Another environment's chat (a copy here) is compacted where it runs.
+        remote: Boolean(record.remoteOrigin || record.environment),
       }
     },
     enabledByDefault: deps.enabledByDefault,

@@ -29,7 +29,6 @@ import { uploadStillSent } from '../../upload-references'
 // file is the message's and is kept a week from then, as one sent at once is;
 // deleted, it goes with its folder.
 
-export const MAX_TAILNET_FILE_BYTES = 25 * 1024 * 1024
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000
 export const TAILNET_UPLOADS_DIRNAME = 'tailnet-uploads'
 /** In an upload's folder while a held message carries its file. */

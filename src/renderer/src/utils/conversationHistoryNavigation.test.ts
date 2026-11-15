@@ -3,6 +3,7 @@ import type { ConversationThread } from '../../../shared/conversation-index'
 import { layoutHasConversation, openConversationHistory, openConversationMatch } from './conversationHistoryNavigation'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { revealAgentTerminalTab } from './agentTabReveal'
+import { installStudioLoopback } from '../../../../tests/studio-chat-loopback'
 
 vi.mock('../store/workspaceStore', () => ({ useWorkspaceStore: { getState: vi.fn() } }))
 vi.mock('./agentTabReveal', () => ({ revealAgentTerminalTab: vi.fn(() => true) }))
@@ -87,6 +88,7 @@ test('a search match in an agent the chat no longer has is restored from its sav
   } as unknown as ReturnType<typeof useWorkspaceStore.getState>)
   const thread = { agentId: 'gone', title: 'Old chat', providerId: 'provider', model: 'model' }
   vi.stubGlobal('window', { api: { conversationThreads: async () => ({ ok: true, threads: [thread] }) } })
+  installStudioLoopback(globalThis.window as never)
   expect(
     await openConversationMatch({ workspaceRoot: '/Users/dev/app', workspaceId: 'workspace', agentId: 'gone', seq: 4 }),
   ).toBe(true)
@@ -94,6 +96,7 @@ test('a search match in an agent the chat no longer has is restored from its sav
 
   // Gone from the saved threads too: the chat is still the answer.
   vi.stubGlobal('window', { api: { conversationThreads: async () => ({ ok: true, threads: [] }) } })
+  installStudioLoopback(globalThis.window as never)
   expect(
     await openConversationMatch({ workspaceRoot: '/Users/dev/app', workspaceId: 'workspace', agentId: 'gone', seq: 4 }),
   ).toBe(false)

@@ -26,6 +26,7 @@ export function pullRequestWatchIsTrouble(view: PullRequestWatchView): boolean {
  * main", "Approved · merging when green". What a line or a button says.
  */
 export function pullRequestWatchWords(view: PullRequestWatchView): string {
+  if (view.waiting) return 'Watch waiting'
   const base = view.base?.trim() || 'its base'
   switch (view.waitingOn) {
     case 'checks':
@@ -56,6 +57,7 @@ export function pullRequestWatchWords(view: PullRequestWatchView): string {
  */
 export function pullRequestWatchSentence(view: PullRequestWatchView): string {
   const wakes = 'The agent is woken when it needs a look.'
+  if (view.waiting) return `The watch is waiting: ${view.waiting}. It reads the pull request again once it can.`
   switch (view.waitingOn) {
     case 'checks':
       return `Studio is watching it while its checks run. ${wakes}`

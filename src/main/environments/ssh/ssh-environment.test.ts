@@ -12,9 +12,14 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { WSL_NODE_VERSION } from '../../hosts/wsl-node-runtime'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS, type SshEnvironmentSettings } from '../../../shared/ssh-environments'
-import { DEFAULT_TIMING, installFailureWords, SshEnvironment, type SshEnvironmentDeps } from './ssh-environment'
+import {
+  DEFAULT_TIMING,
+  installFailureWords,
+  serverNotAnsweringWords,
+  SshEnvironment,
+  type SshEnvironmentDeps,
+} from './ssh-environment'
 import { serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
 
@@ -80,7 +85,7 @@ function harness(
       spawned.push({ interactive, child })
       return child
     },
-    app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+    app: { version: VERSION, channel: 'latest' },
     dataName: 'data',
     startedBy: 'Studio on dev-macbook-air',
     serverTree: () => ({ dir: tree, digest }),
@@ -120,7 +125,7 @@ test('connect: installed, started, connected; a second client attaches; a lost s
     'the person asked: ssh may ask them',
   )
   assert.equal(first.environmentIds.length, 1)
-  assert.ok((await a.backend.listThreads({ workspaceId: 'w', workspaceRoot: home } as never)) !== undefined)
+  assert.ok((await a.owner.request('conversation.list', {})).conversations)
   const record = JSON.parse(
     readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
   ) as { pid: number }
@@ -180,6 +185,123 @@ test('connect: installed, started, connected; a second client attaches; a lost s
   )
 })
 
+test('a server that stays hung is not replaced, and the machine says so in words until it answers', async () => {
+  const home = join(scratch, 'hung')
+  mkdirSync(home)
+  const said: string[] = []
+  const machine = harness(home, {
+    timing: { backoff: { baseMs: 50, maxMs: 200 }, giveUpMs: 60_000, livenessMs: 500, pingMs: 500, handshakeMs: 1_500 },
+    log: (line) => said.push(line),
+  })
+  const serverPid = () =>
+    (
+      JSON.parse(
+        readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
+      ) as { pid: number }
+    ).pid
+  await machine.env.connect({ interactive: true })
+  const hung = serverPid()
+  pids.add(hung)
+  const words = serverNotAnsweringWords('build-box')
+  assert.equal(
+    words,
+    'The Studio server on build-box is running but not answering. Stop it there, or restart build-box.',
+  )
+
+  // Stopped, and left stopped: alive to the probe, so each try attaches to it
+  // again and hears nothing. The machine says what will help, not only that it
+  // is reconnecting.
+  process.kill(hung, 'SIGSTOP')
+  try {
+    assert.ok(
+      await until(() => machine.env.summary().stateText === `${words} Studio keeps trying.`, 20_000),
+      machine.changes.join('\n'),
+    )
+    assert.equal(machine.env.summary().state, 'reconnecting')
+    assert.equal(machine.env.current(), null)
+    assert.ok(
+      said.some((line) => line.startsWith(`${words} (attached;`)),
+      said.join('\n'),
+    )
+    // A chat asking meanwhile is told the same words.
+    await assert.rejects(machine.env.connect({ interactive: false }), { message: words })
+    // It keeps saying so on the next tries, and the server is never replaced under it.
+    const tries = machine.spawned.length
+    assert.ok(await until(() => machine.spawned.length > tries + 1, 20_000), 'it keeps trying')
+    assert.equal(machine.env.summary().stateText, `${words} Studio keeps trying.`)
+    assert.equal(serverPid(), hung)
+  } finally {
+    process.kill(hung, 'SIGCONT')
+  }
+  // Answering again, the same server is reached and the words go.
+  assert.ok(
+    await until(() => machine.env.summary().state === 'connected' && machine.env.current() !== null, 30_000),
+    machine.changes.join('\n'),
+  )
+  assert.equal(machine.env.summary().stateText, 'Connected')
+  assert.equal(serverPid(), hung)
+  machine.env.disconnect()
+  await machine.env.stopServer().catch(() => undefined)
+})
+
+test('the server dying or hanging under a live SSH session is noticed by its own connection, and the server started again', async () => {
+  const home = join(scratch, 'liveness')
+  mkdirSync(home)
+  const lost: string[] = []
+  const machine = harness(home, {
+    timing: { backoff: { baseMs: 50, maxMs: 200 }, giveUpMs: 60_000, livenessMs: 500, pingMs: 500 },
+    log: (line) => lost.push(line),
+  })
+  const serverPid = () =>
+    (
+      JSON.parse(
+        readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
+      ) as { pid: number }
+    ).pid
+  const first = await machine.env.connect({ interactive: true })
+  const killed = serverPid()
+  pids.add(killed)
+  const sessions = machine.spawned.length
+
+  // Killed: its connections end while the session (and the relay in it) live on.
+  process.kill(killed, 'SIGKILL')
+  assert.ok(
+    await until(() => machine.env.summary().state !== 'connected' || machine.env.current() !== first, 5_000),
+    'the machine still reads Connected over a dead server',
+  )
+  assert.ok(
+    lost.some((line) => /The connection to build-box was lost \(The Studio server on build-box/u.test(line)),
+    lost.join('\n'),
+  )
+  assert.ok(
+    await until(() => machine.env.summary().state === 'connected' && machine.env.current() !== null, 30_000),
+    machine.changes.join('\n'),
+  )
+  const restarted = serverPid()
+  pids.add(restarted)
+  assert.notEqual(restarted, killed, 'the reconnect started the server again')
+  assert.ok(machine.spawned.length > sessions, 'a new session brought it back')
+  assert.equal(machine.spawned.at(-1)!.interactive, false, 'a background reconnect never prompts')
+
+  // Hung (stopped, its socket still open): the pings go unanswered and it is lost all the same.
+  const second = machine.env.current()!
+  process.kill(restarted, 'SIGSTOP')
+  try {
+    assert.ok(
+      await until(() => machine.env.current() !== second, 5_000),
+      `a server that does not answer was kept: ${machine.env.summary().stateText}`,
+    )
+  } finally {
+    process.kill(restarted, 'SIGCONT')
+  }
+  assert.ok(
+    await until(() => machine.env.summary().state === 'connected' && machine.env.current() !== null, 30_000),
+    machine.changes.join('\n'),
+  )
+  machine.env.disconnect()
+  await machine.env.stopServer().catch(() => undefined)
+})
+
 test('a newer server on the machine is left alone: version-blocked, in words', async () => {
   const home = join(scratch, 'newer')
   const run = join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run')
@@ -196,7 +318,6 @@ test('a newer server on the machine is left alone: version-blocked, in words', a
       pid: process.pid,
       version: '99.0.0',
       origin: 'bootstrap',
-      backendWire: 9,
       hostId: 'x',
       socketPath: '/nowhere.sock',
     }),
@@ -210,6 +331,46 @@ test('a newer server on the machine is left alone: version-blocked, in words', a
   )
   assert.equal(machine.env.summary().action, null)
   assert.equal(readFileSync(join(run, 'server.json'), 'utf8').includes('99.0.0'), true, 'never replaced')
+})
+
+test('an update that failed before is not tried again on its own: the row says what failed and offers Retry', async () => {
+  const home = join(scratch, 'failed-update')
+  const run = join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run')
+  mkdirSync(run, { recursive: true, mode: 0o700 })
+  // The previous server runs again (this test process holds its lock, so
+  // nothing here may replace it), and its update to this version failed.
+  writeFileSync(
+    join(run, 'studio.lock'),
+    JSON.stringify({ role: 'server', pid: process.pid, hostname: hostname(), startedAt: '', token: 't' }),
+  )
+  writeFileSync(
+    join(run, 'server.json'),
+    JSON.stringify({
+      v: 1,
+      pid: process.pid,
+      version: '0.0.1',
+      origin: 'bootstrap',
+      protocolVersion: 1,
+      minProtocolVersion: 1,
+      hostId: 'x',
+      socketPath: '/nowhere.sock',
+    }),
+  )
+  writeFileSync(
+    join(run, 'update-failed.json'),
+    JSON.stringify({ from: '0.0.1', to: VERSION, at: 1, reason: 'The Studio server did not become ready. EADDRINUSE' }),
+  )
+  const machine = harness(home)
+  await assert.rejects(machine.env.connect({ interactive: true }))
+  const summary = machine.env.summary()
+  assert.equal(summary.state, 'version-blocked')
+  assert.equal(
+    summary.stateText,
+    `Updating the Studio server on build-box to ${VERSION} failed, so 0.0.1 runs again: The Studio server did not become ready. EADDRINUSE`,
+  )
+  assert.equal(summary.action, 'retry-update')
+  // The window its record said is kept for the machine list's compatibility.
+  assert.deepEqual(summary.protocol, { protocolVersion: 1, minProtocolVersion: 1 })
 })
 
 test('Disconnect and Stop server hold until the person connects again; nothing in the background undoes them', async () => {

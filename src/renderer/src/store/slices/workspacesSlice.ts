@@ -14,7 +14,7 @@ import {
 } from '../../../../shared/workspace-lifecycle'
 import { noteChatOpened } from '../../components/panels/agentChat/unreadDivider'
 import { isRetiredWorkspaceMode } from '../../../../shared/workspace-mode'
-import { hostIdToRecord } from '../../../../shared/execution-host'
+import { distroOfHostId, executionHostLabel, hostIdToRecord, isWslHostId } from '../../../../shared/execution-host'
 import { instantiateTemplateAgentIds } from '../../../../shared/agent-ids'
 import { workspaceProjectRoot, workspaceProjectRootOf } from '../../utils/workspaceWorktree'
 import { isProjectlessChatsRoot } from '../../../../shared/projectless-chats'
@@ -1434,7 +1434,20 @@ export function createWorkspacesSlice(
           // distribution, that distribution), so every workspace on macOS and
           // Linux stays exactly the record it always was.
           ...(recordedHostId ? { hostId: recordedHostId } : {}),
-          ...(options?.environment ? { environment: options.environment } : {}),
+          // A chat on a WSL distribution is that distribution's Studio's from
+          // the start (design-wsl-ssh-direct PR 3c): its record here is the
+          // copy main makes there, and its chat view asks the distribution.
+          ...(options?.environment
+            ? { environment: options.environment }
+            : recordedHostId && isWslHostId(recordedHostId)
+              ? {
+                  environment: {
+                    kind: 'wsl' as const,
+                    id: distroOfHostId(recordedHostId)!,
+                    label: executionHostLabel(recordedHostId, 'win32'),
+                  },
+                }
+              : {}),
           ...(options?.worktree ? { worktree: options.worktree } : {}),
           templateId: template.id,
           layoutModel: standardLayout,
@@ -1620,6 +1633,12 @@ export function createWorkspacesSlice(
     setFolderPath: (id, folderPath) =>
       set((state) => {
         const ws = state.workspaces.find((w) => w.id === id)
+        // A chat another environment holds (an SSH machine's, a WSL
+        // distribution's) keeps the folder that environment gives it: this
+        // record is its copy (environment-replicas.ts). A folder picked here
+        // would re-root it to this computer, and its chat would be read under
+        // a key the machine never wrote.
+        if (ws?.environment) return
         if (ws) {
           const folderChanged = ws.folderPath !== folderPath
           ws.folderPath = folderPath

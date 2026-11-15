@@ -10,10 +10,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
-import { stubWslHelper } from '../../tests/wsl-helper-stub'
+import { stubWslMachine, stubWslDistributionLink } from '../../tests/wsl-distribution-stub'
 import type { SubtreeLiveReason } from './terminal-subtree-probe'
 import { wslSessionPidKey } from './hosts/wsl-distro'
 
@@ -47,7 +47,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
       return process
     },
   }
-  const sender = { isDestroyed: () => false, send: () => undefined }
+  const sender: TerminalViewer = { isGone: () => false, deliver: () => undefined }
   const restore = standIn({
     electron: {
       app: {
@@ -59,28 +59,25 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     'node-pty': mockPty,
   })
   try {
-    // The distribution's helper, standing in: its /proc read answers from
-    // `verdicts`, and a read can be made to fail.
+    // The distribution's Studio server, standing in: its /proc read answers
+    // from `verdicts`, and a read can be made to fail.
     let verdicts: Record<string, SubtreeLiveReason | null> | null = null
-    const helper = stubWslHelper('Ubuntu', {
-      home: () => ({ home: '/home/dev' }),
-      'files.ensureTree': () => ({ current: true }),
-      'proc.snapshot': (params: { keys: string[] }) => {
+    const distribution = stubWslDistributionLink(undefined, {
+      processes: (ask) => {
+        if (ask.op !== 'snapshot') return { killed: [] }
         if (!verdicts) throw new Error('the read failed')
         const answer: Record<string, SubtreeLiveReason | null> = {}
-        for (const key of params.keys) if (key in verdicts) answer[key] = verdicts[key]
+        for (const key of ask.keys) if (key in verdicts) answer[key] = verdicts[key]
         return { verdicts: answer }
       },
-      'proc.killSession': () => ({ killed: [] }),
-      'session.write': () => ({ paths: [] }),
-      'session.remove': () => ({}),
     })
     const registryModule = await import('./hosts/host-registry')
     registryModule.installHostRegistry(
       registryModule.createHostRegistry({
         platform: 'win32',
         readHostSettings: () => ({}),
-        createWslHelper: () => helper,
+        distribution,
+        machine: stubWslMachine(),
       }),
     )
     const runtimeModule = await import('./terminal-runtime')
@@ -96,7 +93,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
       const platform = Object.getOwnPropertyDescriptor(process, 'platform')
       Object.defineProperty(process, 'platform', { value: 'win32' })
       try {
-        const result = await runtime.ipcHandlers.spawnTerminal(sender as unknown as WebContents, {
+        const result = await runtime.sessions.spawnTerminal(sender, {
           sessionId,
           cols: 120,
           rows: 30,
@@ -133,7 +130,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     const server = await spawnWslAgent('wsl-dev-server')
     const quiet = await spawnWslAgent('wsl-quiet')
 
-    assert.equal(helper.retained.size, 2, 'each live WSL session holds the helper')
+    assert.equal(distribution.holds.size, 2, "each live WSL session holds its distribution's server")
     const wellPastIdle = Date.now() + 60 * 60 * 1000
 
     // A read that fails holds both.
@@ -145,9 +142,9 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     // holding a port; the second's has nothing under it but an MCP helper.
     verdicts = { [server.key]: 'listening_port', [quiet.key]: null }
     const read = await runtimeModule.runGuardedTerminalReapSweeps(wellPastIdle + 1_000)
-    const snapshot = helper.requests.filter((request) => request.method === 'proc.snapshot').at(-1)
+    const snapshot = distribution.asked.filter((ask) => ask.method === 'processes').at(-1)
     assert.deepEqual(
-      (snapshot?.params as { keys: string[] }).keys.sort(),
+      [...(snapshot?.params as { keys: string[] }).keys].sort(),
       [server.key, quiet.key].sort(),
       'one read for the distribution, keyed by the pid files the startup scripts write',
     )
@@ -156,8 +153,8 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     assert.ok(read.idleReaped.includes('wsl-quiet'), 'the session at rest is suspended')
     assert.equal(quiet.pty.killed, true)
 
-    runtime.ipcHandlers.killTerminal('wsl-dev-server')
-    runtime.ipcHandlers.killTerminal('wsl-quiet')
+    runtime.sessions.killTerminal('wsl-dev-server')
+    runtime.sessions.killTerminal('wsl-quiet')
     await runtime.shutdown()
   } finally {
     restore()

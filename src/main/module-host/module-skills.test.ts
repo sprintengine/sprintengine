@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { join, resolve } from 'node:path'
-import type { IpcMain } from 'electron'
 
 import type { EnsureSkillInstalledResult, ModuleSkillRegistration } from '../../shared/modules/skills'
 import { loadMainModules, type CapabilityModule } from './load-modules'
@@ -14,18 +13,6 @@ test('module-skills', async () => {
   // live one layer down (src/main/builtin-skills.ts) and are covered there; this
   // file uses a recording registry so the host contract is testable without a
   // filesystem.
-
-  function createFakeIpcMain(): IpcMain {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>()
-    return {
-      handle(channel: string, handler: (...args: unknown[]) => unknown): void {
-        handlers.set(channel, handler)
-      },
-      removeHandler(channel: string): void {
-        handlers.delete(channel)
-      },
-    } as unknown as IpcMain
-  }
 
   type RecordedRegistration = { moduleId: string; registrations: ModuleSkillRegistration[] }
 
@@ -76,7 +63,7 @@ test('module-skills', async () => {
 
   function testSourceDirResolvesAgainstTheModuleRoot(): void {
     const recorder = createRecordingSkillRegistry()
-    const kernel = createMainKernel(createFakeIpcMain(), {
+    const kernel = createMainKernel({
       resolveModuleRoot: (moduleId) => (moduleId === 'review' ? REVIEW_ROOT : undefined),
       skillRegistry: recorder.registry,
     })
@@ -121,7 +108,7 @@ test('module-skills', async () => {
 
   function testSourceDirMayNotEscapeTheModuleRoot(): void {
     const recorder = createRecordingSkillRegistry()
-    const kernel = createMainKernel(createFakeIpcMain(), {
+    const kernel = createMainKernel({
       resolveModuleRoot: () => REVIEW_ROOT,
       skillRegistry: recorder.registry,
     })
@@ -151,7 +138,7 @@ test('module-skills', async () => {
 
   function testBundledModulesPassAbsolutePaths(): void {
     const recorder = createRecordingSkillRegistry()
-    const kernel = createMainKernel(createFakeIpcMain(), { skillRegistry: recorder.registry })
+    const kernel = createMainKernel({ skillRegistry: recorder.registry })
     const host = kernel.hostFor('bundled-thing')
     const shipped = resolve('/opt/sprintengine/resources/skills/shipped')
 
@@ -168,7 +155,7 @@ test('module-skills', async () => {
 
   function testOwnershipIsTracked(): void {
     const recorder = createRecordingSkillRegistry()
-    const kernel = createMainKernel(createFakeIpcMain(), {
+    const kernel = createMainKernel({
       resolveModuleRoot: (moduleId) => resolve('/tmp/sprintengine-modules', moduleId),
       skillRegistry: recorder.registry,
     })
@@ -192,7 +179,7 @@ test('module-skills', async () => {
 
   async function testEnsureSkillInstalledDelegates(): Promise<void> {
     const recorder = createRecordingSkillRegistry()
-    const kernel = createMainKernel(createFakeIpcMain(), {
+    const kernel = createMainKernel({
       resolveModuleRoot: () => REVIEW_ROOT,
       skillRegistry: recorder.registry,
     })
@@ -218,7 +205,7 @@ test('module-skills', async () => {
 
   async function testUnloadingAModuleTakesItsSkills(): Promise<void> {
     const recorder = createRecordingSkillRegistry()
-    const kernel = createMainKernel(createFakeIpcMain(), {
+    const kernel = createMainKernel({
       resolveModuleRoot: () => REVIEW_ROOT,
       skillRegistry: recorder.registry,
     })
@@ -262,7 +249,6 @@ test('module-skills', async () => {
     ]
 
     const { report } = loadMainModules({
-      ipcMain: createFakeIpcMain(),
       modules,
       moduleRoots: { review: REVIEW_ROOT },
       skillRegistry: recorder.registry,

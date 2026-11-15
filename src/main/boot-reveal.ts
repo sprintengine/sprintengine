@@ -1,3 +1,5 @@
+import type { IpcMain } from 'electron'
+
 // The splash's close contract, kept separate from Electron so it can be tested
 // as what it is: a one-shot race between two triggers.
 //
@@ -13,6 +15,17 @@
 // would otherwise leave a stuck plate over a permanently invisible app, with no
 // way out but Force Quit.
 export const BOOT_REVEAL_TIMEOUT_MS = 10_000
+
+/** The renderer's first-frame report: trigger (1). */
+export const BOOT_COMPLETE_CHANNEL = 'app:boot-complete'
+
+/**
+ * Hears the primary renderer's first frame, once: a renderer that reloads
+ * mid-boot (dev HMR) must not re-arm a reveal that has already happened.
+ */
+export function onRendererBootComplete(ipcMain: Pick<IpcMain, 'once'>, listener: () => void): void {
+  ipcMain.once(BOOT_COMPLETE_CHANNEL, () => listener())
+}
 
 type BootRevealTimers = {
   setTimer: (handler: () => void, ms: number) => unknown

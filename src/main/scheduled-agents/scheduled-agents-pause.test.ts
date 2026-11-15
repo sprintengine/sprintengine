@@ -6,6 +6,7 @@ import { afterEach, test, vi } from 'vitest'
 
 import type { ScheduledAgentDraft, ScheduledAgentLastRun } from '../../shared/scheduled-agents'
 import { createScheduledAgentsScheduler } from './scheduler'
+import { schedulerWithRunRecords } from './scheduled-runs.test-helper'
 import { createScheduledAgentsService, type ScheduledAgentsService } from './service'
 import { createScheduledAgentsStore, type ScheduledAgentsStore } from './store'
 
@@ -110,7 +111,7 @@ function harness(
   let ids = 0
   const store = createScheduledAgentsStore({ filePath, now: time.now, newId: () => `sa-${(ids += 1)}` })
   let service: ScheduledAgentsService | null = null
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => store.list(),
     recordRun: (id, ran) => store.recordRun(id, ran),
     run: async (agent) => {

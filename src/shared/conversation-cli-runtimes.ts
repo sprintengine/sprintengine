@@ -4,13 +4,13 @@ import { isWslHostId, type ExecutionHostId, type ExecutionHostSettings } from '.
 type CliRuntime = { command?: string; hostId?: ExecutionHostId }
 
 /**
- * The CLI runtimes a chat in a workspace runs with. A workspace on a WSL
- * machine runs every chat CLI from that machine (its command override there,
- * and the host id that sends the child into the distribution), the way a
- * terminal agent there does; on this machine they are the app's own. Shared
- * because a window starts most chats and main starts the rest (a scheduled
- * agent's run, a module's create), and the two must send a chat to the same
- * machine.
+ * The CLI runtimes a chat in a workspace runs with. A chat in a workspace on
+ * a WSL machine is that distribution's Studio's, which starts its CLI there
+ * as its own: it is handed the command set for that machine (empty: found on
+ * the distribution's own PATH) and no host id, since the CLI runs where the
+ * chat's Studio runs. On this machine they are the app's own. Shared because
+ * a window starts most chats and the server starts the rest (a scheduled
+ * agent's run, a module's create), and the two must agree.
  */
 export function conversationCliRuntimesForHost<T extends CliRuntime>(
   cliRuntimes: Partial<Record<string, Partial<T>>> | undefined,
@@ -20,12 +20,12 @@ export function conversationCliRuntimesForHost<T extends CliRuntime>(
   if (!hostId || !isWslHostId(hostId)) return cliRuntimes
   const onHost: Partial<Record<string, Partial<T>>> = { ...cliRuntimes }
   for (const cli of conversationClis()) {
+    const { hostId: _here, ...runtime } = cliRuntimes?.[cli] ?? {}
     onHost[cli] = {
-      ...cliRuntimes?.[cli],
+      ...runtime,
       // This machine's command means nothing there: an empty one is found on
       // the distribution's own PATH.
       command: hosts?.[hostId]?.cliCommands[cli] ?? '',
-      hostId,
     } as Partial<T>
   }
   return onHost

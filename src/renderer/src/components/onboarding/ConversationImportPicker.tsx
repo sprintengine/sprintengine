@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ConversationImportFolder } from '../../../../shared/electron-api'
 import type { ConversationImportScan } from './useConversationImportScan'
 import { showToast } from '../../store/toastStore'
+import { windowChatStores } from '../../studio/chatStores'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
 import { ChevronDownIcon } from '../AppIcons'
 import { Checkbox, IconButton, Spinner, Tooltip } from '../ui'
@@ -35,7 +36,9 @@ export function useConversationImportSelection(folders: readonly ConversationImp
     if (sessions.length === 0) return false
     setImporting(true)
     try {
-      const result = await window.api.importConversations({ sessions })
+      const stores = windowChatStores()
+      if (!stores) throw new Error('This window reaches no Studio.')
+      const result = await stores.importConversations({ sessions })
       showToast(describeImportResult(result))
       return result.ok && result.imported.length > 0
     } catch (error) {

@@ -15,15 +15,38 @@ import { ForeignIpcSenderError } from './ipc-sender'
 // message is dropped. A `once` listener or `handleOnce` handler is spent only
 // by a sender it answers, so a foreign message sent first cannot use it up
 // before the app's own arrives.
+//
+// The same wrap holds which channels may be registered at all
+// (`mayRegister`): main's entry passes the IPC inventory
+// (shared/ipc-inventory.ts), so a channel nobody has said is the shell's, or
+// named as moving to the Studio protocol, fails the moment it registers,
+// lazily registered ones included, rather than shipping as one more path.
 
 type Trusted = (event: IpcMainEvent | IpcMainInvokeEvent) => boolean
 type Refused = (channel: string, event: IpcMainEvent | IpcMainInvokeEvent) => void
+type MayRegister = (channel: string) => boolean
 type Listener = (event: IpcMainEvent, ...args: any[]) => void
 type Handler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
 
 const GUARDED = Symbol.for('sprintengine.ipcSenderGuard')
 
-export function guardIpcSenders(ipcMain: IpcMain, isTrusted: Trusted, onRefused: Refused = () => {}): void {
+/** A registration on a channel the inventory does not list. */
+export class UnlistedIpcChannelError extends Error {
+  constructor(channel: string) {
+    super(
+      `IPC channel "${channel}" is not in src/shared/ipc-inventory.ts. A window.api domain belongs on the ` +
+        "Studio protocol; a channel that is the desktop shell's own needs a row there saying why.",
+    )
+    this.name = 'UnlistedIpcChannelError'
+  }
+}
+
+export function guardIpcSenders(
+  ipcMain: IpcMain,
+  isTrusted: Trusted,
+  onRefused: Refused = () => {},
+  mayRegister: MayRegister = () => true,
+): void {
   const target = ipcMain as IpcMain & { [GUARDED]?: true }
   if (target[GUARDED]) return
   target[GUARDED] = true
@@ -84,20 +107,25 @@ export function guardIpcSenders(ipcMain: IpcMain, isTrusted: Trusted, onRefused:
     return wrapped
   }
 
-  target.handle = (channel, handler) => handle(channel, guardedHandler(channel, handler, false))
-  target.handleOnce = (channel, handler) => handle(channel, guardedHandler(channel, handler, true))
-  target.on = (channel, listener) => on(channel, guardedListener(channel, listener, false))
+  const listed = (channel: string): string => {
+    if (!mayRegister(channel)) throw new UnlistedIpcChannelError(channel)
+    return channel
+  }
+
+  target.handle = (channel, handler) => handle(listed(channel), guardedHandler(channel, handler, false))
+  target.handleOnce = (channel, handler) => handle(listed(channel), guardedHandler(channel, handler, true))
+  target.on = (channel, listener) => on(listed(channel), guardedListener(channel, listener, false))
   target.addListener = target.on
-  target.once = (channel, listener) => on(channel, guardedListener(channel, listener, true))
+  target.once = (channel, listener) => on(listed(channel), guardedListener(channel, listener, true))
   // EventEmitter's own signature allows a symbol, which no renderer can send
   // on: only a string channel is a renderer's to reach.
   target.prependListener = (channel, listener) =>
     typeof channel === 'string'
-      ? prepend(channel, guardedListener(channel, listener, false))
+      ? prepend(listed(channel), guardedListener(channel, listener, false))
       : prepend(channel, listener)
   target.prependOnceListener = (channel, listener) =>
     typeof channel === 'string'
-      ? prepend(channel, guardedListener(channel, listener, true))
+      ? prepend(listed(channel), guardedListener(channel, listener, true))
       : prependOnce(channel, listener)
   target.removeListener = (channel, listener) => {
     const wrapped = typeof channel === 'string' ? forget(channel, listener as Listener) : undefined

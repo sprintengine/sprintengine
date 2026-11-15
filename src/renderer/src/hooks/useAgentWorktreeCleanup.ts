@@ -8,6 +8,8 @@ import {
   entriesRemovedBy,
   openWorkspaceIds,
 } from '../utils/agentWorktreeCleanup'
+import { worktreesApi } from '../studio/worktrees'
+import { windowStudioIsAnotherMachine } from '../studio/windowStudioClient'
 
 /**
  * Runs the agent worktree cleanup unattended: once a little after launch,
@@ -61,7 +63,8 @@ function settledChatCount(): number {
 }
 
 export async function sweepAgentWorktrees(): Promise<void> {
-  if (typeof window.api?.cleanupAgentWorktrees !== 'function') return
+  // A web tab's Studio is swept by its own desktop's window, which holds the records.
+  if (windowStudioIsAnotherMachine()) return
   const { repoRoots } = agentWorktreeCleanupPlan(useWorkspaceStore.getState().workspaces)
   for (const repoRoot of repoRoots) {
     try {
@@ -73,7 +76,7 @@ export async function sweepAgentWorktrees(): Promise<void> {
         records.workspaces,
         openWorkspaceIds(records),
       )
-      const report = await window.api.cleanupAgentWorktrees({
+      const report = await worktreesApi.cleanupAgentWorktrees({
         repoRoot,
         protectedPaths,
         agentIds,

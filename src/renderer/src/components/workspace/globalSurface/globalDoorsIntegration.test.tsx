@@ -5,7 +5,13 @@ import { JSDOM } from 'jsdom'
 // Type-only: erased at runtime, so it cannot load a renderer module before the
 // DOM below exists.
 import type { ExtensionsSurfaceTarget } from './extensions/extensionsSurfaceTarget'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { adoptExtensionsDouble } from '../../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../../studio/extensions', () => import('../../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 test('globalDoorsIntegration', async () => {
   // Epic 1760's integration review (item T10): the pieces T1–T9 built, exercised

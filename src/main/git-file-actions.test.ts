@@ -16,6 +16,7 @@ test('git-file-actions', async () => {
   async function main(): Promise<void> {
     await assertStageTouchesOnlyTheNamedFile()
     await assertUnstageTouchesOnlyTheNamedFile()
+    await assertRepoRelativePathsAreTheRepositorys()
     await assertRevertTouchesOnlyTheNamedFile()
     await assertRevertCleansOnlyTheNamedUntrackedFile()
     console.log('git-file-actions.test.ts: ok')
@@ -75,6 +76,26 @@ test('git-file-actions', async () => {
       assert.equal(result.ok, true, result.message ?? '')
       assert.equal(statusOf(repo, BRACKETED), ' M src/[id].tsx')
       assert.equal(statusOf(repo, DECOY), 'M  src/i.tsx', 'the decoy stays staged')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  // The diff viewer's include box names its file as git status does, relative
+  // to the repository. The server's working directory is somewhere else
+  // entirely (`/` in a container), and resolving against it made git refuse
+  // the path as "outside repository".
+  async function assertRepoRelativePathsAreTheRepositorys(): Promise<void> {
+    const { root, repo } = makeRepo('relative')
+    try {
+      assert.notEqual(process.cwd(), repo, 'the test runs from somewhere other than the repository')
+      const staged = await stageGitPaths(repo, ['src/[id].tsx'])
+      assert.equal(staged.ok, true, staged.message ?? staged.stderr)
+      assert.equal(statusOf(repo, BRACKETED), 'M  src/[id].tsx', 'a repo-relative path stages that file')
+      assert.equal(statusOf(repo, DECOY), ' M src/i.tsx')
+      const unstaged = await unstageGitPaths(repo, ['src/[id].tsx'])
+      assert.equal(unstaged.ok, true, unstaged.message ?? unstaged.stderr)
+      assert.equal(statusOf(repo, BRACKETED), ' M src/[id].tsx', 'and unstages it')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

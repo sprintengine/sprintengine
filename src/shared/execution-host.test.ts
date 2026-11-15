@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import {
-  cliRuntimesOnPlatform,
+  chatCliRuntimes,
   distroOfHostId,
   executionHostLabel,
   hostCliCommand,
@@ -134,11 +134,12 @@ test('host settings normalize fail-soft', () => {
     { enabled: true, cliCommands: { codex: '/home/dev/bin/codex' }, env: { OK_NAME: 'v' } },
   )
   assert.equal(normalizeExecutionHostSettings({ shell: 'zsh ' }).shell, 'zsh ', 'kept as typed')
+  // The per-distribution chat server switch is gone (design-wsl-ssh-direct PR 3c): one saved is dropped.
   const server = normalizeExecutionHostSettings({ chatServer: 'on', serverTransport: 'stdio' })
-  assert.equal(server.chatServer, 'on')
+  assert.equal('chatServer' in server, false)
   assert.equal(server.serverTransport, 'stdio')
-  const unknown = normalizeExecutionHostSettings({ chatServer: 'yes', serverTransport: 'tcp' })
-  assert.equal('chatServer' in unknown || 'serverTransport' in unknown, false, 'an unknown value is the default')
+  const unknown = normalizeExecutionHostSettings({ serverTransport: 'tcp' })
+  assert.equal('serverTransport' in unknown, false, 'an unknown value is the default')
 })
 
 test("a CLI's command on a machine: this one keeps the runtime's, a WSL one its own", () => {
@@ -176,12 +177,12 @@ test('off Windows a WSL host id names nothing: no distribution, this machine, an
     claude: { command: 'claude', hostId: 'wsl:Ubuntu' },
     codex: { command: 'codex' },
   }
-  assert.deepEqual(cliRuntimesOnPlatform(runtimes, 'linux'), {
+  // On every platform: a chat's CLI runs where its Studio runs.
+  assert.deepEqual(chatCliRuntimes(runtimes), {
     claude: { command: 'claude' },
     codex: { command: 'codex' },
   })
-  assert.equal(cliRuntimesOnPlatform(runtimes, 'win32'), runtimes, 'Windows keeps them as they are')
   const local: Record<string, Runtime> = { codex: { command: 'codex' } }
-  assert.equal(cliRuntimesOnPlatform(local, 'linux'), local, 'nothing to drop is the same object')
-  assert.equal(cliRuntimesOnPlatform(undefined, 'linux'), undefined)
+  assert.equal(chatCliRuntimes(local), local, 'nothing to drop is the same object')
+  assert.equal(chatCliRuntimes(undefined), undefined)
 })

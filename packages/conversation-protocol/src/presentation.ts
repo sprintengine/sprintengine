@@ -100,16 +100,42 @@ function mcpTitle(name: string, displayTitle: string, serverName: string): strin
 }
 
 /** Presentation is shared by desktop and remote clients; malformed tools stay readable. */
+/** A step's kind as its presentation reads it: the one it names, else the one its tool's name implies. */
+export function presentedToolKind(item: Pick<PresentableTool, 'name' | 'kind'>): ConversationToolKind {
+  const safe = record(item)
+  const name = typeof safe.name === 'string' ? safe.name : 'Tool'
+  return safe.kind && Object.hasOwn(verbs, String(safe.kind))
+    ? (safe.kind as ConversationToolKind)
+    : inferConversationToolKind(name)
+}
+
+/**
+ * How a step's outcome is toned: from its status and exit code alone, so a
+ * view that only needs to know whether a step went wrong does not word it.
+ */
+export function presentedToolTone(item: Pick<PresentableTool, 'status' | 'exitCode'>): ToolPresentation['tone'] {
+  const safe = record(item)
+  const exitCode = typeof safe.exitCode === 'number' ? safe.exitCode : undefined
+  return safe.status === 'running'
+    ? 'running'
+    : safe.status === 'declined' || safe.status === 'stopped'
+      ? 'declined'
+      : safe.status === 'error' && exitCode === undefined
+        ? 'error'
+        : exitCode
+          ? 'neutral'
+          : safe.status === 'ok'
+            ? 'ok'
+            : 'neutral'
+}
+
 export function presentToolItem(
   item: PresentableTool,
   labelCommand?: (command: string) => { title: string } | string,
 ): ToolPresentation {
   const safe = record(item)
   const name = typeof safe.name === 'string' ? safe.name : 'Tool'
-  const kind =
-    safe.kind && Object.hasOwn(verbs, String(safe.kind))
-      ? (safe.kind as ConversationToolKind)
-      : inferConversationToolKind(name)
+  const kind = presentedToolKind(item)
   const input = record(safe.input)
   const live = safe.status === 'running'
   const verb = verbs[kind][live ? 1 : 0]
@@ -165,17 +191,7 @@ export function presentToolItem(
       title = otherTitle(name, input, live)
   }
   const exitCode = typeof safe.exitCode === 'number' ? safe.exitCode : undefined
-  const tone = live
-    ? 'running'
-    : safe.status === 'declined' || safe.status === 'stopped'
-      ? 'declined'
-      : safe.status === 'error' && exitCode === undefined
-        ? 'error'
-        : exitCode
-          ? 'neutral'
-          : safe.status === 'ok'
-            ? 'ok'
-            : 'neutral'
+  const tone = presentedToolTone(item)
   const subtitlePath = path || (kind === 'file_read' || kind === 'file_edit' || kind === 'file_write' ? legacy : '')
   return {
     icon: kind,

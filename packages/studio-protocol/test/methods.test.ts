@@ -8,6 +8,7 @@ import {
   isStudioMethod,
   parseStudioMethodParams,
   parseStudioTopicParams,
+  studioResendableAfterRestart,
   type StudioMethod,
 } from '../src/methods'
 import { CONVERSATION_COMMAND_KINDS, CONVERSATION_MAX_MESSAGE_CHARS } from '../src/conversation'
@@ -22,12 +23,16 @@ test('every method and topic names its scope and a capability this package defin
   const methods = Object.keys(STUDIO_METHODS) as StudioMethod[]
   for (const method of methods) {
     const spec = STUDIO_METHODS[method]
-    if (method === 'server.info' || method === 'server.ping') assert.equal(spec.scope, null, method)
-    else assert.ok(spec.scope && (STUDIO_SCOPES as readonly string[]).includes(spec.scope), method)
+    if (method === 'server.info' || method === 'server.ping' || method === 'update.status')
+      assert.equal(spec.scope, null, method)
+    // A method no scope reaches (a terminal's) is an owner's, never open to every client.
+    else if (spec.scope === null) assert.ok(spec.owner, method)
+    else assert.ok((STUDIO_SCOPES as readonly string[]).includes(spec.scope), method)
     if (spec.capability) assert.ok((STUDIO_CAPABILITIES as readonly string[]).includes(spec.capability), method)
     assert.equal(isStudioMethod(method), true)
   }
-  for (const [topic, spec] of Object.entries(STUDIO_TOPICS)) assert.ok(STUDIO_SCOPES.includes(spec.scope), topic)
+  for (const [topic, spec] of Object.entries(STUDIO_TOPICS))
+    assert.ok(spec.scope === null ? spec.owner : STUDIO_SCOPES.includes(spec.scope), topic)
   assert.equal(isStudioMethod('constructor'), false)
   assert.equal(isStudioMethod('conversation.compact'), false)
 })
@@ -37,6 +42,41 @@ test('every mutation is a method that carries a commandId, and every reader is n
     const withoutId = parseStudioMethodParams(method as StudioMethod, { key, message: 'hi', workspaceId: 'ws-1' })
     if (spec.mutation) assert.equal(withoutId.ok, false, method)
   }
+})
+
+test('only the mutations whose receipts outlive the server are sent again to a restarted one', () => {
+  // Each is answered from a receipt kept where a restart leaves it: the
+  // chat's own log (the runtime's commands), the chat record a create made,
+  // or a scheduled message's own sources. Adding one here is a claim about
+  // the server, to be checked there first.
+  const durable = (Object.keys(STUDIO_METHODS) as StudioMethod[]).filter(
+    (method) => STUDIO_METHODS[method].receipts === 'durable',
+  )
+  assert.deepEqual(durable.sort(), [
+    'conversation.answerQuestion',
+    'conversation.create',
+    'conversation.interrupt',
+    'conversation.resolveApproval',
+    'conversation.resolvePlan',
+    'conversation.scheduleSend',
+    'conversation.send',
+    'conversation.setModel',
+    'conversation.setPermissionPreset',
+    'session.interrupt',
+    'session.respond',
+    'session.send',
+    'session.setModel',
+    'session.setPermission',
+    'session.stop',
+  ])
+  for (const method of Object.keys(STUDIO_METHODS) as StudioMethod[]) {
+    const spec = STUDIO_METHODS[method]
+    assert.equal(studioResendableAfterRestart(method), !spec.mutation || spec.receipts === 'durable', method)
+  }
+  // Kept only in the running server's memory: sent again to the same boot alone.
+  for (const method of ['conversation.fork', 'conversation.revert', 'conversation.stop', 'git.commit', 'files.write'])
+    assert.equal(studioResendableAfterRestart(method), false, method)
+  assert.equal(studioResendableAfterRestart('no.such.method'), false)
 })
 
 test('every conversation command kind has its method, so the socket drives a chat as fully as the tailnet', () => {
@@ -77,14 +117,17 @@ test('a command’s params are read by the conversation lane’s own validator, 
     parseStudioMethodParams('conversation.resolvePlan', { key, commandId: 'c3', requestId: 'p1', decision: 'approve' }),
     { ok: true, params: { key, commandId: 'c3', requestId: 'p1', decision: 'approve' } },
   )
-  // A permanent rule is the person's to make, on the desktop.
-  const always = parseStudioMethodParams('conversation.resolveApproval', {
-    key,
-    commandId: 'c4',
-    requestId: 'r1',
-    decision: 'always',
-  })
-  assert.deepEqual(always.ok ? null : always.code, 'unsafe_remote_decision')
+  // A rule that outlives the conversation is read as the lane reads it
+  // (`conversation-permanent-approvals`); the router holds it to the ceiling.
+  assert.deepEqual(
+    parseStudioMethodParams('conversation.resolveApproval', {
+      key,
+      commandId: 'c4',
+      requestId: 'r1',
+      decision: 'always',
+    }),
+    { ok: true, params: { key, commandId: 'c4', requestId: 'r1', decision: 'always' } },
+  )
   const long = parseStudioMethodParams('conversation.send', {
     key,
     commandId: 'c5',
@@ -97,14 +140,21 @@ test('a command’s params are read by the conversation lane’s own validator, 
     preset: 'yolo',
   })
   assert.deepEqual(unknownPreset.ok ? null : unknownPreset.code, 'invalid_params')
-  // Pictures are refused rather than dropped from a send.
+  // A send names the uploads it carries; a malformed list is refused, never dropped.
   const pictures = parseStudioMethodParams('conversation.send', {
     key,
     commandId: 'c7',
     message: 'see',
     uploadIds: ['u1'],
   })
-  assert.deepEqual(pictures.ok ? null : pictures.code, 'invalid_params')
+  assert.deepEqual(pictures.ok ? pictures.params : null, { key, commandId: 'c7', message: 'see', uploadIds: ['u1'] })
+  const notAList = parseStudioMethodParams('conversation.send', {
+    key,
+    commandId: 'c7',
+    message: 'see',
+    uploadIds: 'u1',
+  })
+  assert.deepEqual(notAList.ok ? null : notAList.code, 'invalid_params')
   const noKey = parseStudioMethodParams('conversation.interrupt', { commandId: 'c8' })
   assert.deepEqual(noKey.ok ? null : noKey.code, 'invalid_params')
 })
@@ -151,4 +201,39 @@ test('reads and the session stream take a key and their own bounds', () => {
   })
   assert.equal(parseStudioTopicParams('conversation.session', { key, turnLimit: 101 }).ok, false)
   assert.equal(parseStudioMethodParams('conversation.list', 'nope').ok, false)
+})
+
+test('a create takes New chat’s options, held to its rules, and "No project" in place of a workspace', () => {
+  const create = (params: Record<string, unknown>) =>
+    parseStudioMethodParams('conversation.create', { commandId: 'c-1', ...params })
+  assert.deepEqual(
+    create({ workspaceId: 'ws-1', newChat: true, worktree: true, worktreeName: ' fix ', effort: 'high' }),
+    {
+      ok: true,
+      params: {
+        workspaceId: 'ws-1',
+        newChat: true,
+        worktree: true,
+        worktreeName: 'fix',
+        effort: 'high',
+        commandId: 'c-1',
+      },
+    },
+  )
+  assert.deepEqual(create({ noProject: true, prompt: 'hi' }), {
+    ok: true,
+    params: { prompt: 'hi', noProject: true, commandId: 'c-1' },
+  })
+  for (const refused of [
+    { noProject: true, workspaceId: 'ws-1' },
+    { noProject: true, newChat: true, worktree: true },
+    { noProject: false, workspaceId: 'ws-1' },
+    { workspaceId: 'ws-1', worktree: true },
+    { workspaceId: 'ws-1', newChat: true, worktreeName: 'fix' },
+    { workspaceId: 'ws-1', inWorktree: '/Users/dev/app-wt' },
+    { workspaceId: 'ws-1', newChat: true, worktree: true, inWorktree: '/Users/dev/app-wt' },
+    { workspaceId: 'ws-1', effort: 'not an effort!' },
+    {},
+  ])
+    assert.equal(create(refused).ok, false, JSON.stringify(refused))
 })

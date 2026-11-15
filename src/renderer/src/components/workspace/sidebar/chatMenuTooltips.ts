@@ -5,7 +5,7 @@
 //
 // `where` says whose the chat is. A chat here is `local`. A paired machine's
 // chat is `remote`, and `marks` says whether that machine keeps the row
-// menu's star, colour, sleep and Auto-settle (`chat-row-menu`): where it does
+// menu's star, colour, sleep and Auto-settle (`chat-lifecycle`): where it does
 // they are written there, and where it does not a chat opened here keeps them
 // on this computer only. Each item that works differently on a remote chat
 // says how.

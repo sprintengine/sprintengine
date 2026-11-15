@@ -4,6 +4,26 @@
 // are testable without git, `gh` or a window.
 
 import type { PullRequestForge } from './pr-url'
+import type {
+  StudioCreatePullRequestOutcome,
+  StudioCreatePullRequestReadiness,
+  StudioCreatePullRequestState,
+  StudioPullRequestCheckoutPin,
+  StudioPushForPullRequestOutcome,
+} from '../../../packages/studio-protocol/src/public'
+
+// The shapes a creation answers in are the protocol's (`pull-request-create.ts`
+// in the package), under the names the app has always used.
+export type CreatePullRequestReadiness = StudioCreatePullRequestReadiness
+export type CreatePullRequestState = StudioCreatePullRequestState
+export type PullRequestCheckoutPin = StudioPullRequestCheckoutPin
+export type CreatePullRequestOutcome = StudioCreatePullRequestOutcome
+export type PushForPullRequestOutcome = StudioPushForPullRequestOutcome
+export {
+  STUDIO_PULL_REQUEST_BODY_MAX_CHARS as PULL_REQUEST_BODY_MAX_CHARS,
+  STUDIO_PULL_REQUEST_TITLE_MAX_CHARS as PULL_REQUEST_TITLE_MAX_CHARS,
+  readStudioPullRequestCheckoutPin as readPullRequestCheckoutPin,
+} from '../../../packages/studio-protocol/src/public'
 
 /**
  * What the checkout says, read by the main process (`pull-request-create.ts`).
@@ -24,15 +44,6 @@ export type CreatePullRequestFacts = {
   /** The forge the checkout's remote is on; null when there is no remote it can name. */
   forge: PullRequestForge | null
 }
-
-/** Why the button is not drawn, for the tests and the diagnostics line; `ready` draws it. */
-export type CreatePullRequestReadiness =
-  | { ready: true }
-  | {
-      ready: false
-      reason:
-        'detached' | 'default-branch' | 'nothing-to-propose' | 'open-pull-request' | 'no-remote' | 'unsupported-forge'
-    }
 
 /**
  * Whether "Create PR" may show. All of these must hold:
@@ -65,95 +76,6 @@ export function createPullRequestReadiness(facts: CreatePullRequestFacts): Creat
   if (facts.forge === 'azure-devops') return { ready: false, reason: 'unsupported-forge' }
   return { ready: true }
 }
-
-/** What the strip needs to decide on the button. Null fields are facts git could not give. */
-export type CreatePullRequestState = {
-  readiness: CreatePullRequestReadiness
-  gitRoot: string | null
-  branch: string | null
-  /** The commit the branch is at, which a confirmed Create PR pushes and proposes. */
-  headSha: string | null
-  /**
-   * Paths with uncommitted changes (tracked, staged or not, and untracked
-   * files git does not ignore), which the pull request will not include; null
-   * when git could not say.
-   */
-  uncommittedChanges: number | null
-  base: string | null
-  forge: PullRequestForge | null
-}
-
-/**
- * The branch and commit a person confirmed a pull request for. The push and
- * the creation are refused when the checkout has moved off it since, rather
- * than proposing a branch or commits they did not see.
- */
-export type PullRequestCheckoutPin = { branch: string; headSha: string }
-
-/** The longest title and description a creation takes; what is longer is cut, as the dialog's field cuts a title. */
-export const PULL_REQUEST_TITLE_MAX_CHARS = 300
-export const PULL_REQUEST_BODY_MAX_CHARS = 65_000
-
-/**
- * A pin as a window or a paired machine sent it, or null when it is not one: a
- * branch name git could hold and a commit id. Shared by the shell's channels
- * and the gateway's tools, so the two cannot disagree about what a pin is.
- */
-export function readPullRequestCheckoutPin(value: unknown): PullRequestCheckoutPin | null {
-  if (!value || typeof value !== 'object') return null
-  const { branch, headSha } = value as Record<string, unknown>
-  if (typeof branch !== 'string' || !branch || branch.length > 255 || branch.includes('\0')) return null
-  if (typeof headSha !== 'string' || !/^[0-9a-f]{7,64}$/iu.test(headSha)) return null
-  return { branch, headSha }
-}
-
-/**
- * A creation's end: created by the forge's CLI, already there, a forge page to
- * open, the forge's list to look in, or why not. The window opens the address
- * and says what happened; the sentences about a page or list are its to write,
- * because only it learns whether the page actually opened.
- */
-export type CreatePullRequestOutcome =
-  | { ok: true; kind: 'created'; url: string }
-  /** The branch had one already, whoever opened it; shown, never linked to the chat. */
-  | { ok: true; kind: 'existing'; url: string }
-  | {
-      ok: true
-      kind: 'page'
-      url: string
-      /** How the strip names the forge whose page it is: GitLab by name, a Gitea or Bitbucket by its host. */
-      place: string
-      /**
-       * Why the page opens rather than the request being created here (the
-       * forge's CLI is missing, signed out or failed), for the strip to say.
-       * Absent on a forge the app has no CLI for, where the page is the way.
-       */
-      reason?: string
-      /**
-       * The description was not put in the page's address (the forge's page
-       * takes none, or it was too long for an address), so the window keeps
-       * it for the person to paste rather than losing what they wrote.
-       */
-      descriptionLeftOut?: true
-    }
-  | {
-      ok: true
-      /**
-       * The forge's CLI may well have opened the request, but its address
-       * could not be read (the CLI printed none Studio recognises, or did not
-       * answer in time). `url` is the repository's list of requests, where
-       * the person can find it: opening the "new request" page instead would
-       * invite a second one.
-       */
-      kind: 'list'
-      url: string
-      place: string
-      /** What is not known, for the strip to say. */
-      reason: string
-    }
-  | { ok: false; message: string }
-
-export type PushForPullRequestOutcome = { ok: true; pushed: boolean } | { ok: false; message: string }
 
 /** A remote, read: the forge it is on and the repository's web address. */
 export type ForgeRemote = { forge: PullRequestForge; webUrl: string }

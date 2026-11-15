@@ -20,7 +20,7 @@ const {
   tailHeard,
   tailShown,
   tailWords,
-} = require("../../../.mobile-test-build/src/features/dictation/dictationLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/dictation/dictationLogic.js");
 
 test("dictation starts an empty draft as a sentence", () => {
   assert.equal(joinDictation("", "check the gateway tests"), "Check the gateway tests");

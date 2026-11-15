@@ -1,29 +1,27 @@
 import { app, ipcMain, protocol, session, shell } from 'electron'
+import { shellTrash } from './cards/shell-trash'
+import { createElectronThumbnailer } from './artifacts/artifact-thumbnail-electron'
+import { askToSetUpArtifacts } from './artifacts/artifacts-setup-consent-electron'
 import { buildStamp as mainBuildStamp } from 'virtual:sprintengine-build-stamp'
 import { withoutDeepLinks } from '../shared/deep-link-scheme'
-import { MODULE_EVENTS_CHANNEL } from '../shared/modules/events'
-import { MODULE_NOTIFICATIONS_CHANNEL } from '../shared/modules/notifications'
 import { parseAuthCallbackFromArgv } from './auth-service'
 import { registerAppLifecycle } from './app-lifecycle'
 import { createAppServices } from './app-services'
 import { ensureExtensionFolders } from './extension-folders'
 import { ignoreMacosTypeOfServiceEinval, raiseConnectAttemptTimeout } from './network-defaults'
-import type { ModuleEnablementLiveApplier } from './ipc/module-enablement-ipc'
-import { activeForChannel } from '../shared/modules/dev-only'
 import { resolveModuleEnablement } from '../shared/modules/resolve'
 import { loadMainModules } from './module-host/load-modules'
 import { readModuleOverridesSync } from './module-host/enablement-store'
 import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
-import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest } from '../shared/modules/manifest'
-import { createBundledMainModules } from './modules'
+import type { CapabilityManifest } from '../shared/modules/manifest'
+import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { isLoadEligible, type ModuleTrustContext } from './modules/module-signature'
 import { readModuleTrustContextSync } from './modules/trust-context'
 import {
-  decodeThirdPartyLaunchSession,
-  encodeThirdPartyLaunchSession,
   planThirdPartyMainModules,
   readThirdPartyMainLaunchSnapshot,
+  thirdPartyLaunchSession,
   recordThirdPartyMainLaunchReport,
 } from './modules/third-party-main-loader'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
@@ -32,8 +30,9 @@ import { join } from 'node:path'
 import { MODULE_ASSET_SCHEME } from '../shared/modules/assets'
 import { createModuleAssetOriginResolver } from './modules/module-asset-origins'
 import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './modules/module-assets'
-import { registerThirdPartyRendererEntryIpc } from './modules/third-party-renderer-entries'
 import { defaultUserModuleRoot, discoverUserModules, discoverUserModulesSync } from './modules/user-module-registry'
+import { watchUserModuleRoot } from './modules/user-module-watch'
+import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -54,19 +53,11 @@ import {
   writeServerFallbackNote,
   writeServerMode,
 } from './server-mode'
-import {
-  readSavedSshPreview,
-  readSshPreview,
-  setSessionSshPreview,
-  writeSshPreview,
-} from './environments/ssh/ssh-preview'
-import { SSH_PREVIEW_CHANNELS, type SshPreviewStatus } from '../shared/ssh-preview'
+import { readSshPreview, registerSshPreviewIpc, setSessionSshPreview } from './environments/ssh/ssh-preview'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { STUDIO_SERVER_CHANNELS } from '../shared/studio-server-status'
 import { createDesktopServerHost } from './server-supervisor/desktop-server-host'
 import { channelForVersion } from './update-channel-store'
-import { createDefaultMarketplaceRegistryClient } from './ipc/marketplace-registry-ipc'
-import { toThirdPartyModuleView } from './ipc/third-party-module-ipc'
 
 /** How long the boot's workspace pass waits for the Studio server out of process. */
 const BOOT_SERVER_WAIT_MS = 15_000
@@ -123,34 +114,12 @@ if (serverHost) {
   console.info(`[studio-server] out of process (${serverMode.source})`)
 }
 const services = createAppServices(DIAGNOSTICS_ENABLED, serverHost?.link ?? null)
-let applyModuleEnablementLive: ModuleEnablementLiveApplier | undefined
-
-// Dev-only capability surfaces (none today) ship only in
-// from-source dev builds. A packaged/installed build is the production channel,
-// so they are excluded from registration entirely. See
-// src/shared/modules/dev-only.ts.
-const includeDevModules = !app.isPackaged
 
 const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
-  applyModuleEnablementLive: (overrides) => applyModuleEnablementLive?.(overrides),
-  // Which third-party main halves this session loaded: the server's, out of
-  // process, where they run; otherwise this process's own. Read only when
-  // Settings lists the modules, long after `moduleLoad` below exists.
-  readThirdPartyLaunchSession: async () =>
-    decodeThirdPartyLaunchSession(
-      serverHost
-        ? await serverHost.supervisor.call(SERVER_METHODS.thirdPartyLaunchSession)
-        : encodeThirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), moduleLoad.kernel.mcpToolRegistrations()),
-    ),
   ...(serverHost
     ? {
         server: {
-          studioConnections: { connectPort: (port) => serverHost.connectStudioPort(port) },
-          discoverModels: (input) =>
-            serverHost.supervisor.call(SERVER_METHODS.discoverModels, input, { timeoutMs: 120_000 }),
-          // A long chat is tens of megabytes, its pictures more.
-          readChatExportSource: (key) =>
-            serverHost.supervisor.call(SERVER_METHODS.conversationExportSource, key, { timeoutMs: 120_000 }),
+          windowTickets: serverHost.windowTickets,
         },
       }
     : {}),
@@ -179,20 +148,23 @@ applyHostApiGate(thirdPartyMainLoad.ineligible, thirdPartyMainLoad.modules)
 // takes effect without a reload. Declared before module construction so the
 // predicate can close over it; the set is filled in once the manifest list exists.
 const enabledMainModuleIds = new Set<string>()
-const activeMainModules = activeForChannel(
-  // Read only once a module asks, by which time `getModulePermissions` exists.
-  createBundledMainModules(studioPlatform(), (moduleId): readonly string[] | undefined =>
-    getModulePermissions(moduleId),
-  ),
-  (module) => module.manifest.id,
-  includeDevModules,
-)
+// The schedules are the core's; the kernel holds them under the person's
+// Scheduled agents switch. Out of process the server's kernel does
+// (server-modules.ts), and this process knows only the manifest.
+const scheduledAgentsModule = serverHost
+  ? null
+  : scheduledAgentsSwitchModule(
+      services.studioCore.scheduledAgents,
+      // Read only once a module asks, by which time `getModulePermissions` exists.
+      (moduleId): readonly string[] | undefined => getModulePermissions(moduleId),
+    )
+const activeMainModules = scheduledAgentsModule ? [scheduledAgentsModule] : []
 // Resolves any module id to the permissions it declared in its manifest, across
 // every module the app assembled. The companion registry gates attach on it.
 const moduleManifestsById = new Map<string, CapabilityManifest>(
   [
     AGENT_RUNTIME_MANIFEST,
-    ...activeMainModules.map((module) => module.manifest),
+    SCHEDULED_AGENTS_MANIFEST,
     ...thirdPartyMainLoad.modules.map((module) => module.manifest),
   ].map((manifest) => [manifest.id, manifest]),
 )
@@ -211,7 +183,6 @@ const agentRuntimeModule = createAgentRuntimeModule(services, {
 // (src/server/desktop/server-modules.ts); the shell loads none and keeps an
 // empty kernel for the renderer-entry channel, which is the shell's.
 const moduleLoad = loadMainModules({
-  ipcMain,
   modules: serverHost ? [] : [agentRuntimeModule, ...activeMainModules, ...thirdPartyMainLoad.modules],
   overrides: moduleOverrides,
   // Skill directories a third-party module registers are resolved against —
@@ -221,25 +192,29 @@ const moduleLoad = loadMainModules({
   moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
-  // Module events fan out to every open window on the one host-owned channel;
-  // the renderer kernel routes each envelope to its own module's subscribers.
-  // Nothing is buffered for windows opened later — see shared/modules/events.ts.
-  deliverModuleEvent: (event) => studioPlatform().clients.publish(MODULE_EVENTS_CHANNEL, event),
-  // A module's notify is a bell row in every window, over the same client bus;
-  // the kernel keeps the recent ones for a window that opens later.
-  deliverModuleNotification: (notification) =>
-    studioPlatform().clients.publish(MODULE_NOTIFICATIONS_CHANNEL, notification),
+  // Module events reach every client following the Studio's `module.events`
+  // stream; each window routes them to its own module's subscribers. Nothing
+  // is buffered for a client that connects later (shared/modules/events.ts).
+  deliverModuleEvent: (event) => services.moduleHub.deliverEvent(event),
+  // A module's notify is a bell row on `module.notifications`; the kernel
+  // keeps the recent ones, which the stream sends a client first.
+  deliverModuleNotification: (notification) => services.moduleHub.deliverNotification(notification),
   // A module tool that would shadow one of the gateway's own is refused at
   // registration, naming the tool it collides with.
   coreMcpToolNames: () => services.automationService?.coreToolNames() ?? [],
 })
+services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
+// A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
+services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
+// The host's services a module's window half calls: `moduleBacklog.*` and `moduleUsage.query`.
+services.moduleHub.serveHostServicesFrom((moduleId) => moduleLoad.kernel.hostServicesFor(moduleId))
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,
 // agent-runtime) all resolve. Recompute mirrors the renderer's
 // resolution so the gate's answer matches what the user sees in Settings.
 const mainModuleManifests = [
   agentRuntimeModule.manifest,
-  ...activeMainModules.map((module) => module.manifest),
+  SCHEDULED_AGENTS_MANIFEST,
   ...thirdPartyMainLoad.modules.map((module) => module.manifest),
 ]
 const recomputeMainEnablement = (overrides: Record<string, boolean>): void => {
@@ -248,25 +223,62 @@ const recomputeMainEnablement = (overrides: Record<string, boolean>): void => {
   for (const id of order) enabledMainModuleIds.add(id)
 }
 recomputeMainEnablement(moduleOverrides)
-applyModuleEnablementLive = async (overrides) => {
-  // Out of process the server's kernel applies it; this process wrote the file.
-  if (serverHost) {
-    recomputeMainEnablement(overrides)
-    return serverHost.supervisor.call(SERVER_METHODS.applyModuleEnablement, { overrides })
-  }
-  const report = await moduleLoad.applyEnablement(overrides, { liveModuleIds: LIVE_ENABLED_MODULE_IDS })
-  // A module with no live-loadable main half takes its toggle through the
-  // enablement gate rather than module load/unload — refresh the resolved set.
-  // The rest of the change was applied even when one module's half failed,
-  // so the gate follows it either way.
-  recomputeMainEnablement(overrides)
-  // Module-contributed gateway tools follow enablement live: the
-  // gateway re-reads the registry and enablement per request, so only the
-  // connected MCP clients need a nudge to refresh their tool lists.
-  services.automationService?.notifyToolsListChanged()
-  const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
-  if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
-  return { ok: true }
+// An extension's schedules are held to its permissions, and wait while it is not here.
+if (!serverHost)
+  services.studioCore.attachModules({
+    permissions: getModulePermissions,
+    loaded: () => [...enabledMainModuleIds],
+  })
+// What runs here, listed and changed over the Studio RPC (`module.*`). Out of
+// process the server's kernel holds the modules and serves it
+// (server-modules.ts); this process's kernel is empty.
+if (!serverHost)
+  services.moduleHub.serveLifecycleFrom(
+    createModuleLifecycle({
+      dataDir: app.getPath('userData'),
+      moduleRoot: defaultUserModuleRoot,
+      changed: () => services.moduleHub.deliverChanged(),
+      // What this session's kernel loaded, read only when an extension list is
+      // asked for, long after `moduleLoad` exists.
+      launchSession: () =>
+        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), moduleLoad.kernel.mcpToolRegistrations()),
+      registry: services.moduleRegistryMirror,
+      applyEnablement: async (overrides) => {
+        const report = await moduleLoad.applyEnablement(overrides, {
+          liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
+        })
+        // A module with no live-loadable main half takes its toggle through the
+        // enablement gate rather than module load/unload — refresh the resolved set.
+        // The rest of the change was applied even when one module's half failed,
+        // so the gate follows it either way.
+        recomputeMainEnablement(overrides)
+        // Module-contributed gateway tools follow enablement live: the
+        // gateway re-reads the registry and enablement per request, so only the
+        // connected MCP clients need a nudge to refresh their tool lists.
+        services.automationService?.notifyToolsListChanged()
+        const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
+        if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
+        return { ok: true }
+      },
+      view: () => {
+        const overrides = readModuleEnablementOverrides()
+        return {
+          manifests: () => mainModuleManifests,
+          enabled: (id) =>
+            overrides[id] ?? mainModuleManifests.find((manifest) => manifest.id === id)?.defaultEnabled ?? false,
+          running: (id) => moduleLoad.isRunning(id),
+          ineligible: (id) => thirdPartyMainLoad.ineligible[id],
+          loadError: (id) => moduleLoad.report.errors.find((error) => error.id === id)?.message,
+          declaredMethods: (id) => moduleLoad.kernel.declaredMethods(id),
+        }
+      },
+    }),
+  )
+// A module copied into the drop-in folder while Studio runs is listed at once,
+// not after a reload. Out of process the server watches (server-modules.ts).
+if (!serverHost) {
+  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => services.moduleHub.deliverChanged())
+  app.once('will-quit', stopWatchingModules)
 }
 // Automation server ← Scheduled agents module: resolved per tool call so a live
 // module disable/enable cycle is reflected immediately (service absent ⇒ the
@@ -288,13 +300,6 @@ recordThirdPartyMainLaunchReport(
   moduleLoad.report,
 )
 const moduleAssetOrigin = createModuleAssetOriginResolver(app.getPath('userData'))
-// Trusted third-party entry.renderer bundles are served on demand (the trust
-// store is re-read per request, so revoking trust takes effect immediately).
-registerThirdPartyRendererEntryIpc(moduleLoad.kernel.hostFor('@host'), {
-  discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext()),
-  trustContext: readModuleTrustContext,
-  assetOrigin: moduleAssetOrigin,
-})
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
@@ -401,18 +406,7 @@ registerAppRestartIpc(ipcMain, {
   confirm: () => services.quitConfirmation.confirm(),
   relaunch: () => relaunchApp(),
 })
-// The SSH machines switch: answered whether or not this session has them.
-const sshPreviewStatus = (): SshPreviewStatus => ({
-  enabled: sshPreview.enabled,
-  saved: sshPreview.fromEnvironment ? sshPreview.enabled : readSavedSshPreview(app.getPath('userData')),
-  fromEnvironment: sshPreview.fromEnvironment,
-})
-ipcMain.handle(SSH_PREVIEW_CHANNELS.get, () => sshPreviewStatus())
-ipcMain.handle(SSH_PREVIEW_CHANNELS.set, (_event, payload: unknown) => {
-  const enabled = (payload as { enabled?: unknown } | null)?.enabled
-  if (typeof enabled === 'boolean' && !sshPreview.fromEnvironment) writeSshPreview(app.getPath('userData'), enabled)
-  return sshPreviewStatus()
-})
+registerSshPreviewIpc(ipcMain, sshPreview, app.getPath('userData'))
 registerStudioServerIpc(ipcMain, {
   choice: serverMode,
   supervisor: serverHost?.supervisor ?? null,
@@ -443,25 +437,20 @@ if (serverHost) {
     relaunchApp([SERVER_FALLBACK_ARGUMENT])
   })
   // What the server asks of the shell: the keychain, notices, terminal
-  // launches, the integrations gate, and the two caches only the shell keeps.
+  // launches, the integrations gate, a removed skill's Trash, Studio's own
+  // plugin in a workspace, which the shell installs, and for artifacts a
+  // page's picture and the set-up question with no window showing.
   serverHost.serveShell(services.shellBridge, {
-    marketplaceRead: (input) => createDefaultMarketplaceRegistryClient().read(input as never),
-    thirdPartyModules: async () => {
-      const { modules, rejected } = await discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext())
-      return { modules: modules.map((module) => toThirdPartyModuleView(module)), rejected }
-    },
-  })
-  // A restarted server starts without the renderer's module registry; it is sent again.
-  serverHost.supervisor.onReady(() => {
-    const snapshot = services.moduleRegistryMirror.read()
-    if (snapshot) serverHost.link.rpc.emit(SERVER_EVENTS.moduleRegistrySnapshot, snapshot)
+    trash: (path) => shellTrash(path),
+    studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
+    artifacts: { thumbnailer: createElectronThumbnailer(), askNatively: askToSetUpArtifacts },
   })
 }
 
 registerAppLifecycle({
   diagnosticsEnabled: DIAGNOSTICS_ENABLED,
   allowMultipleInstances: allowsMultipleInstances(app),
-  terminalRuntime: services.terminalRuntime,
+  terminalRuntime: services.terminalLifecycle,
   conversations: services.conversations,
   conversationOwner: services.conversationOwner,
   automationService: services.automationService ?? undefined,
@@ -483,12 +472,25 @@ registerAppLifecycle({
   ...(services.localServers ? { localServers: services.localServers } : {}),
   ...(services.usageLimitResumes ? { usageLimitResumes: services.usageLimitResumes } : {}),
   ...(services.scheduledMessages ? { scheduledMessages: services.scheduledMessages } : {}),
-  launchNotices: services.launchNotices,
+  launchNotices: services.launchNotices ?? undefined,
   analytics: services.analytics,
   // Out of process the server runs every module's startup and shutdown hooks.
   ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),
   updateService: services.updateService,
-  checkPluginSourceUpdates: () => services.skillsService.checkSourceUpdates(),
+  // The skill sources are the server's out of process: their hourly check runs there.
+  checkPluginSourceUpdates: serverHost
+    ? async () => {
+        if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.skillSourcesCheck)
+      }
+    : () => services.skillsService?.checkSourceUpdates() ?? Promise.resolve(),
+  // The hosted feeds are the Studio's: out of process the server fetches them.
+  refreshHostedFeeds: serverHost
+    ? async () => {
+        if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.hostedFeedsRefresh)
+      }
+    : async () => {
+        await services.studioCore.extensions?.feeds.refresh()
+      },
   startDeferredBootJobs: services.startDeferredBootJobs,
   // Out of process the workspaces to prepare arrive with the server's first
   // snapshot; the pass waits for it, inside the same boot budget.
@@ -507,6 +509,15 @@ registerAppLifecycle({
           log: serverHost.log,
           onAttentionPhase: (listener) =>
             void serverHost.link.rpc.on(SERVER_EVENTS.attentionPhase, (event) => listener(event as AgentPhaseEvent)),
+          // The CLIs and their version check are the server's: the boot's
+          // detection waits for it to serve, inside the same budget.
+          detectClis: (which) =>
+            serverHost.link
+              .whenServing(BOOT_SERVER_WAIT_MS)
+              .then((serving) => (serving ? serverHost.link.rpc.call(SERVER_METHODS.cliDetect, { which }) : 0)),
+          refreshCliVersions: async () => {
+            if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.cliVersionsRefresh)
+          },
         },
       }
     : {}),

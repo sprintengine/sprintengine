@@ -1,6 +1,16 @@
 import type {
+  ConversationChangedFileSides,
+  ConversationChangesDiff,
+  ConversationChangesFrame,
+  ConversationChangesSelection,
+  ConversationCommandsAnswer,
+  ConversationFileSearchAnswer,
+  ConversationQueuedMessage,
+  ConversationScheduledMessage,
+  ConversationSideQuestionExchange,
+  ConversationSubagent,
+  ConversationUsageLimitsFrame,
   ConversationCommand,
-  ConversationCreateRequest,
   ConversationThread,
   ConversationWirePermissionPreset,
   StudioAuth,
@@ -9,12 +19,26 @@ import type {
   StudioGrant,
   StudioChatMethod,
   StudioMethodParams,
+  StudioCliRuntime,
+  StudioConversationCreate,
   StudioWorkspace,
+  StudioWorkspaceCheckout,
+  StudioWorkspaceExtensions,
+  StudioChatExportPage,
+  StudioListChange,
+  StudioWindowTicketGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type {
+  ConversationApprovalRuleRevokeResult,
+  ConversationApprovalRulesResult,
   ConversationAttachmentResult,
-  ConversationForkInput,
-  ConversationForkResult,
+  ConversationContextBreakdownResult,
+  ConversationEvent,
+  ConversationListSessionsResult,
+  ConversationMcpServerActionResult,
+  ConversationProviderSignInResult,
+  ConversationSideQuestionResult,
+  ConversationTerminalHandoffResult,
   ConversationKey,
   ConversationPageResult,
   ConversationPlanDocumentInput,
@@ -30,7 +54,9 @@ import type {
   ConversationSessionFrame,
   ConversationStartSessionResult,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationTurnDiffResult,
+  ConversationCommandReceiptState,
 } from '../../shared/conversation-runtime'
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
 import type {
@@ -38,7 +64,7 @@ import type {
   ConversationProviderModelsResult,
   ConversationSecretStatusResult,
 } from '../../shared/ipc/conversations'
-import type { FileSearchResult, FileSystemStat } from '../../shared/ipc/filesystem'
+import type { ConversationSearchResult, ConversationThreadsResult } from '../../shared/conversation-index'
 
 // What the Studio RPC needs from the rest of Studio, as interfaces, so the
 // router and the connection import nothing from Electron or from main: the
@@ -52,6 +78,8 @@ export type StudioCommandOutcome = {
   /** With `busy`: when trying again can succeed. */
   retryAfterMs?: number
   notice?: string
+  /** What a command that answers more than yes or no says: a fork's `name`. */
+  data?: Record<string, unknown>
 }
 
 /**
@@ -71,6 +99,8 @@ export type StudioConversationBackend = {
   ): { dispose(): void; ready: Promise<void> }
   loadEarlier(key: ConversationKey, beforeCursor: number, turnLimit?: number): Promise<ConversationPageResult>
   toolDetail(key: ConversationKey, toolUseId: string): Promise<ConversationToolDetailResult>
+  /** One event as stored, by the sequence and id it was sent under. */
+  event(key: ConversationKey, seq: number, id: string): Promise<ConversationEventReadResult>
   turnDiff(key: ConversationKey, turnSeq: number, path?: string): Promise<ConversationTurnDiffResult>
   /**
    * Carry out one command under an id already namespaced to its client. The
@@ -101,7 +131,7 @@ export type StudioConversationBackend = {
   findCreated(launchCommandId: string): StudioCreatedConversation | null
   /** Start a conversation. `request` has already been held to the client's ceiling. */
   create(
-    request: ConversationCreateRequest,
+    request: StudioConversationCreate,
     launchCommandId: string,
   ): Promise<{ ok: true; conversation: StudioCreatedConversation } | { ok: false; code: string; message: string }>
   /**
@@ -110,7 +140,121 @@ export type StudioConversationBackend = {
    * the tailnet lane redacts them. Returns a copy.
    */
   redact<T>(value: T): T
+  /**
+   * What a follower of one chat reads and does beside its stream
+   * (`followed.ts` in the protocol): the conversation host's own, as the
+   * tailnet lane serves them, so a chat offers the same wherever it is
+   * followed from. Each is absent on a Studio that cannot serve it, and its
+   * method or topic is then answered `unavailable`.
+   */
+  followed?: StudioFollowedBackend
 }
+
+/** A chat's export as its Studio reads it: the whole of it, paged out by the router. */
+export type StudioChatExportRead =
+  ({ ok: true } & Omit<StudioChatExportPage, 'nextOffset'>) | { ok: false; code?: 'not_found'; message: string }
+
+/** A chat by its workspace and agent: what the per-chat reads and watches are keyed by. */
+export type StudioChatRef = Pick<ConversationKey, 'workspaceId' | 'agentId'>
+
+/** A read for a follower's composer, or why there is none. */
+export type StudioComposerRead<T> =
+  { ok: true; answer: T } | { ok: false; code: 'unknown_conversation' | 'unavailable'; message: string }
+
+/** A changes read, or why there is none: `not_found` for a step or file the chat's changes do not hold. */
+export type StudioChangesRead<T> = ({ ok: true } & T) | { ok: false; code?: 'not_found'; message: string }
+
+/** How a lifecycle write ended: the record's new state, or why it was refused. */
+export type StudioLifecycleOutcome<T> = ({ ok: true } & T) | { ok: false; code: string; message: string }
+
+export type StudioFollowedBackend = {
+  /** Each watch is told what stands now, and again whenever it reads differently; it returns what stops it. */
+  watchQueued?(chat: StudioChatRef, listener: (messages: ConversationQueuedMessage[]) => void): () => void
+  watchScheduled?(chat: StudioChatRef, listener: (messages: ConversationScheduledMessage[]) => void): () => void
+  watchUsageLimits?(
+    chat: StudioChatRef,
+    listener: (state: Omit<ConversationUsageLimitsFrame, 'type' | 'key'>) => void,
+  ): () => void
+  watchSubagents?(chat: StudioChatRef, listener: (subagents: ConversationSubagent[]) => void): () => void
+  watchChanges?(
+    chat: StudioChatRef,
+    listener: (said: Omit<ConversationChangesFrame, 'type' | 'key'>) => void,
+  ): () => void
+  changesDiff?(
+    chat: StudioChatRef,
+    selection: ConversationChangesSelection,
+  ): Promise<StudioChangesRead<ConversationChangesDiff>>
+  changedFile?(
+    chat: StudioChatRef,
+    selection: ConversationChangesSelection,
+    path: string,
+  ): Promise<StudioChangesRead<ConversationChangedFileSides>>
+  /** Asked under the client's own id for the question, which only that client may call off. */
+  askSideQuestion?(
+    key: ConversationKey,
+    clientId: string,
+    questionId: string,
+    question: string,
+    history: ConversationSideQuestionExchange[],
+  ): Promise<ConversationSideQuestionResult>
+  cancelSideQuestion?(clientId: string, questionId: string): Promise<{ ok: true } | { ok: false; message: string }>
+  contextBreakdown?(key: ConversationKey): Promise<ConversationContextBreakdownResult>
+  /** In the chat's own folder only; a client's next search supersedes its last. */
+  searchFiles?(
+    key: ConversationKey,
+    clientId: string,
+    query: string,
+    limit?: number,
+  ): Promise<StudioComposerRead<ConversationFileSearchAnswer>>
+  listCommands?(key: ConversationKey, refresh: boolean): Promise<StudioComposerRead<ConversationCommandsAnswer>>
+  /**
+   * One picture of the chat as it is kept: a step's by its call, or one the
+   * person sent by the ref its message recorded. The chat's record names the
+   * file; nothing the client says is read as a path.
+   */
+  picture?(key: ConversationKey, ref: StudioPictureRef): Promise<StudioPictureRead>
+  /**
+   * Make a client's finished uploads the chat's, for the keyed send that names
+   * them: each picture staged and each file kept where the conversation host
+   * keeps a device's, under ids only that client may spend on that chat.
+   * Answered with those ids, in the order given.
+   */
+  stageUploads?(
+    key: ConversationKey,
+    clientId: string,
+    uploads: StudioStagedUpload[],
+  ): Promise<{ ok: true; ids: string[] } | { ok: false; code: 'not_found' | 'invalid_params'; message: string }>
+  /**
+   * Keep a file a client sent up with a session's message (`session.send`'s
+   * `fileUploadIds`) where this Studio keeps a device's files, and answer its
+   * path here, which the message attaches; `discard` removes it again when
+   * the send did not go.
+   */
+  keepFile?(clientId: string, file: { name: string; bytes: Buffer }): Promise<{ path: string; discard: () => void }>
+  /**
+   * Whether a client's send under a command id (already namespaced to it) was
+   * carried out before, held or in the chat's log, whatever restarted since:
+   * asked before its uploads are staged, which a repeat does not need.
+   */
+  sentBefore?(key: ConversationKey, clientId: string, commandId: string): Promise<boolean>
+  /** The chat's rest, written to its workspace's record as its row menu writes it; `byOwner` says whose write it is. */
+  settle?(workspaceId: string, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
+  visit?(
+    workspaceId: string,
+    visitedAt: number | undefined,
+    byOwner: boolean,
+  ): StudioLifecycleOutcome<{ lastVisitedAt: number }>
+}
+
+/** Which picture of a chat: a step's, or one the person sent. */
+export type StudioPictureRef = { toolUseId: string } | { attachment: string }
+
+/** A chat's picture, or why there is none to read. */
+export type StudioPictureRead =
+  { ok: true; mediaType: string; bytes: Buffer } | { ok: false; code: 'not_found' | 'too_large'; message: string }
+
+/** One finished upload a keyed send carries: a picture, or a file of any type attached by its path. */
+export type StudioStagedUpload = { purpose: 'picture' | 'attachment'; mediaType: string; name?: string; bytes: Buffer }
 
 /** A chat method's params as the router hands them on: its command id is the router's to namespace. */
 type ChatInput<M extends StudioChatMethod> = Omit<StudioMethodParams<M>, 'commandId'>
@@ -132,8 +276,13 @@ export type StudioChatBackend = {
       attachments?: ConversationImageAttachment[]
     },
   ): Promise<ConversationSessionActionResult>
-  /** Whether a session command's id has a receipt (or is being carried out): a repeat is answered from it. */
-  hasReceipt(input: { sessionId: string; commandId: string }): Promise<boolean>
+  /**
+   * What the runtime holds of a session command's id: a receipt (or the
+   * command being carried out), from which a repeat is answered; none; or no
+   * such session, which a send is answered as, so its client starts the chat
+   * again and asks on that session.
+   */
+  commandReceipt(input: { sessionId: string; commandId: string }): Promise<ConversationCommandReceiptState>
   interrupt(input: SessionCommand<ChatInput<'session.interrupt'>>): Promise<ConversationSessionActionResult>
   respond(input: SessionCommand<ChatInput<'session.respond'>>): Promise<ConversationSessionActionResult>
   setPermission(input: SessionCommand<ChatInput<'session.setPermission'>>): Promise<ConversationSessionActionResult>
@@ -141,7 +290,6 @@ export type StudioChatBackend = {
   revert(input: ConversationRevertInput): Promise<ConversationRevertResult>
   rewind(input: ConversationRewindInput): Promise<ConversationRewindResult>
   handoff(input: ConversationHandoffInput): Promise<ConversationHandoffResult>
-  fork(input: ConversationForkInput): Promise<ConversationForkResult>
   attachment(ref: string): Promise<ConversationAttachmentResult>
   planDocument(input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult>
   commands(input: ChatInput<'conversation.commands'>): Promise<ConversationCommandCatalog>
@@ -150,19 +298,57 @@ export type StudioChatBackend = {
   providers(input: ChatInput<'providers.list'>): Promise<ConversationProviderListResult>
   providerModels(input: ChatInput<'providers.models'>): Promise<ConversationProviderModelsResult>
   secretStatus(input: ChatInput<'providers.secretStatus'>): Promise<ConversationSecretStatusResult>
-  /**
-   * File search, in the slot of the connection asking: a newer search on the
-   * same channel ends the older one, and a closed connection's are ended.
-   */
-  searchFiles(slot: number, input: ChatInput<'files.search'>): Promise<FileSearchResult>
-  cancelFileSearch(slot: number, channel?: string): void
-  releaseFileSearches(slot: number): void
-  stat(path: string): Promise<FileSystemStat>
-  readImage(path: string): Promise<string>
-  repoRoot(folderPath: string, hostId?: string): Promise<string | null>
   /** Whether a folder is inside one a chat can be about: a workspace's, or Studio's own stores. */
   isKnownFolder?(path: string): Promise<boolean>
-  workspaces(): StudioWorkspace[]
+  listSessions(input: ChatInput<'session.list'>): Promise<ConversationListSessionsResult>
+  /** Through the runtime's receipts, as the other session commands. */
+  stopSession(input: SessionCommand<ChatInput<'session.stop'>>): Promise<ConversationSessionActionResult>
+  suspendSession(input: ChatInput<'session.suspend'>): Promise<ConversationSessionActionResult>
+  mcpServerAction(input: ChatInput<'session.mcpServerAction'>): Promise<ConversationMcpServerActionResult>
+  stopSubagent(input: ChatInput<'session.stopSubagent'>): Promise<ConversationSessionActionResult>
+  messageSubagent(input: ChatInput<'session.messageSubagent'>): Promise<ConversationSessionActionResult>
+  askSideQuestion(input: ChatInput<'session.askSideQuestion'>): Promise<ConversationSideQuestionResult>
+  cancelSideQuestion(
+    input: ChatInput<'session.cancelSideQuestion'>,
+  ): Promise<{ ok: true } | { ok: false; message: string }>
+  contextBreakdown(input: ChatInput<'session.contextBreakdown'>): Promise<ConversationContextBreakdownResult>
+  /**
+   * A chat's whole export, read where it is kept: what its record says of it,
+   * its transcript and the pictures its messages attached. Absent where
+   * Studio reads no exports (`conversation-export` is then not advertised).
+   */
+  exportSource?(chat: { workspaceId: string; agentId: string }): Promise<StudioChatExportRead>
+  /** A terminal agent on this machine carrying the chat on; absent where Studio opens no terminals. */
+  terminalHandoff?(
+    input: { sessionId: string } | { workspaceId: string; agentId: string },
+  ): Promise<ConversationTerminalHandoffResult>
+  threads(input: { workspaceId: string; workspaceRoot: string }): Promise<ConversationThreadsResult>
+  /**
+   * Search a workspace's history in the slot of the connection asking: a
+   * newer search under the same request id ends the older one, as does
+   * `cancelSearch`, and a closed connection's are ended.
+   */
+  searchHistory(
+    slot: number,
+    input: { workspaceId: string; workspaceRoot: string; query: string; requestId?: string },
+  ): Promise<ConversationSearchResult>
+  cancelHistorySearch(slot: number, requestId: string): void
+  releaseHistorySearches(slot: number): void
+  approvalRules(): Promise<ConversationApprovalRulesResult>
+  revokeApprovalRule(ruleId: string): Promise<ConversationApprovalRuleRevokeResult>
+  signIn(input: ChatInput<'providers.signIn'>): Promise<ConversationProviderSignInResult>
+  setSecret(input: ChatInput<'providers.setSecret'>): Promise<ConversationSecretStatusResult>
+  clearSecret(input: ChatInput<'providers.clearSecret'>): Promise<ConversationSecretStatusResult>
+  /**
+   * Every chat's lifecycle events as the all-chats broadcast carries them:
+   * lifecycle and status kinds only, each without its payload.
+   */
+  onLifecycleEvent(listener: (event: ConversationEvent) => void): () => void
+  /**
+   * The chat or workspace list may read differently now
+   * (`conversations.changed`). Absent where nothing says so.
+   */
+  onListChanged?(listener: (change: StudioListChange) => void): () => void
 }
 
 /** Who a request came from, beyond its grant. */
@@ -171,8 +357,8 @@ export type StudioRequestContext = {
   /** A number this connection alone holds, for the file search slots main keys by number. */
   slot: number
   /**
-   * The connection is one of Studio's own windows, over the port main handed
-   * it: the app's own chat view, which reads conversations over IPC as they
+   * The connection is one of Studio's own windows, admitted by a ticket main
+   * asked for on its behalf: the app's own chat view, which reads conversations over IPC as they
    * are. Its replies are not redacted, its mutations are not audited, and a
    * failure below is told in its own words, as the IPC tells it.
    */
@@ -188,9 +374,43 @@ export type StudioRequestContext = {
    * or asks about must be one Studio already knows.
    */
   knownFoldersOnly?: boolean
+  /** The connection is a browser's, an owner's tab included: it never reaches the terminals (`studio-browser-reach.ts`). */
+  browser?: boolean
+  /** The window this connection is one of Studio's own for, as main names it; absent for any other client. */
+  windowKey?: string
+  /**
+   * The desktop's own shell, over a port or a front-door stream its main
+   * process holds: the one caller of what the table holds to the shell
+   * (`shell`), such as a ticket for one of its windows.
+   */
+  shell?: boolean
 }
 
 export type StudioAuthOutcome = { ok: true; grant: StudioGrant; pairingToken?: string } | { ok: false; message: string }
+
+/** A discovery read's answer: the value, or why it has none. */
+export type StudioDiscoveryAnswer<T> =
+  { ok: true; value: T } | { ok: false; code: 'not_found' | 'unavailable'; message: string }
+
+/**
+ * What a client reads before it starts a chat (`workspaces.*`,
+ * `cliRuntimes.list`), answered by the same services as the gateway's tools
+ * of the same purpose, so a client on the protocol and an agent on MCP read
+ * one thing.
+ */
+export type StudioDiscovery = {
+  workspaces(): Promise<StudioWorkspace[]>
+  runtimes(cli?: string): Promise<StudioDiscoveryAnswer<{ clis: StudioCliRuntime[] }>>
+  checkout(workspaceId: string): Promise<StudioDiscoveryAnswer<StudioWorkspaceCheckout>>
+  extensions(workspaceId: string, cli?: string): Promise<StudioDiscoveryAnswer<StudioWorkspaceExtensions>>
+}
+
+/**
+ * A budget a connection's requests share with others of the same client, held
+ * from when a request is taken until it has really ended, whether or not its
+ * connection is still open: one more, and its release, or null when it is spent.
+ */
+export type StudioWorkBudget = { acquire(): (() => void) | null }
 
 /** Who may connect, and what each may do now. */
 export type StudioAuthenticator = {
@@ -215,7 +435,22 @@ export type StudioAuditEntry = {
   /** An offer or a withdrawal: the toolset's name and how many tools it holds. Never a tool's input or result. */
   toolset?: string
   tools?: number
+  /** A module method's call: the module and the method it named. Never its params or answer. */
+  moduleId?: string
+  moduleMethod?: string
   ok: boolean
   code?: string
   durationMs: number
+}
+
+/**
+ * What the desktop that holds this Studio over its front door asks of it for
+ * its windows (`environment-access.ts`): served
+ * only to that desktop's shell connection.
+ */
+export type StudioEnvironmentAccess = {
+  /** A ticket for one connection of one of its windows. */
+  windowTicket(request: { windowKey: string; origin: string }): Promise<StudioWindowTicketGrant>
+  /** A window of its has gone: its unspent tickets are void and its connections end. */
+  revokeWindow(windowKey: string): void
 }

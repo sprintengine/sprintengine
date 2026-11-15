@@ -186,7 +186,7 @@
     },
     {
       "name": "conversation.read",
-      "sha256": "00eb4fbfbcadc9d65bc00dd00242cf03fd2dcfad2140b8e115bb54c7a0c7ebf4"
+      "sha256": "721fc457ddbbe7d606b9b27eee95b0bddac0f50f1baef8cdc0a981ab2529aa3b"
     },
     {
       "name": "conversation.wait",
@@ -245,6 +245,14 @@
       "sha256": "22c97db66798e939a9996a1cd7701da3b7b335019f256af6f847fb106fe16e5b"
     },
     {
+      "name": "worktree.lease",
+      "sha256": "47397aaee3ecabfe79b7a083178addd6997fa0b2cb387205f2f2d4c7e47262e1"
+    },
+    {
+      "name": "worktree.release",
+      "sha256": "3d2790cf5be92d92ba13ee951db2d9b29817673604684884759a130d4c48915f"
+    },
+    {
       "name": "workspace.checkout",
       "sha256": "0afb536c6142df85c46b0e126675982fd5df43b7a286db59085bc20688572006"
     },
@@ -259,14 +267,6 @@
     {
       "name": "workspace.list",
       "sha256": "16923cd7a238930671ebb9a87c286ac993fd1cb3e6afed6ccac5fd9ebe95926e"
-    },
-    {
-      "name": "workspace.mobile_command",
-      "sha256": "70eb03165286a1d0eb56a50a70898563fc561bb9ac85a81b89d0477858e0f0cc"
-    },
-    {
-      "name": "workspace.snapshot",
-      "sha256": "b671eafa4e5520092b2e972c1cf45a71acd105c38fcd3110a595dd85c42a2285"
     },
     {
       "name": "workspace.status",
@@ -334,7 +334,7 @@
     },
     {
       "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
+      "sha256": "2ecb5b66a25e3ef459e817f99c14f4ffe229ce6d8202cce944ccc2fb00971e09"
     },
     {
       "name": "schedule.create",
@@ -359,14 +359,6 @@
     {
       "name": "schedule.resume",
       "sha256": "7fa625eb6d6a39fdc7eeeeaea16d5ddcd59aa8c05bbad45b8308e8b3ec9450f2"
-    },
-    {
-      "name": "worktree.lease",
-      "sha256": "47397aaee3ecabfe79b7a083178addd6997fa0b2cb387205f2f2d4c7e47262e1"
-    },
-    {
-      "name": "worktree.release",
-      "sha256": "3d2790cf5be92d92ba13ee951db2d9b29817673604684884759a130d4c48915f"
     },
     {
       "name": "artifacts.setup",
@@ -632,7 +624,7 @@
     },
     {
       "name": "conversation.read",
-      "sha256": "00eb4fbfbcadc9d65bc00dd00242cf03fd2dcfad2140b8e115bb54c7a0c7ebf4"
+      "sha256": "721fc457ddbbe7d606b9b27eee95b0bddac0f50f1baef8cdc0a981ab2529aa3b"
     },
     {
       "name": "conversation.wait",
@@ -691,6 +683,14 @@
       "sha256": "22c97db66798e939a9996a1cd7701da3b7b335019f256af6f847fb106fe16e5b"
     },
     {
+      "name": "worktree.lease",
+      "sha256": "47397aaee3ecabfe79b7a083178addd6997fa0b2cb387205f2f2d4c7e47262e1"
+    },
+    {
+      "name": "worktree.release",
+      "sha256": "3d2790cf5be92d92ba13ee951db2d9b29817673604684884759a130d4c48915f"
+    },
+    {
       "name": "workspace.checkout",
       "sha256": "0afb536c6142df85c46b0e126675982fd5df43b7a286db59085bc20688572006"
     },
@@ -705,14 +705,6 @@
     {
       "name": "workspace.list",
       "sha256": "16923cd7a238930671ebb9a87c286ac993fd1cb3e6afed6ccac5fd9ebe95926e"
-    },
-    {
-      "name": "workspace.mobile_command",
-      "sha256": "70eb03165286a1d0eb56a50a70898563fc561bb9ac85a81b89d0477858e0f0cc"
-    },
-    {
-      "name": "workspace.snapshot",
-      "sha256": "b671eafa4e5520092b2e972c1cf45a71acd105c38fcd3110a595dd85c42a2285"
     },
     {
       "name": "workspace.status",
@@ -780,7 +772,7 @@
     },
     {
       "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
+      "sha256": "2ecb5b66a25e3ef459e817f99c14f4ffe229ce6d8202cce944ccc2fb00971e09"
     },
     {
       "name": "schedule.create",
@@ -805,14 +797,6 @@
     {
       "name": "schedule.resume",
       "sha256": "7fa625eb6d6a39fdc7eeeeaea16d5ddcd59aa8c05bbad45b8308e8b3ec9450f2"
-    },
-    {
-      "name": "worktree.lease",
-      "sha256": "47397aaee3ecabfe79b7a083178addd6997fa0b2cb387205f2f2d4c7e47262e1"
-    },
-    {
-      "name": "worktree.release",
-      "sha256": "3d2790cf5be92d92ba13ee951db2d9b29817673604684884759a130d4c48915f"
     },
     {
       "name": "artifacts.setup",
@@ -893,50 +877,6 @@
   ],
   "remote-tailnet": [
     {
-      "name": "browser.status",
-      "sha256": "2d404d4e2653cd0c8d44ac3d08e9d6ee8181230ba864c38a5bc23a2a58c2c6b4"
-    },
-    {
-      "name": "browser.snapshot",
-      "sha256": "a631bb5ad0002f5549bb69ab1b85573576cc3af01c14416422766d3b83fd845d"
-    },
-    {
-      "name": "browser.screenshot",
-      "sha256": "2a87ca47ad5f6d53c2293030b89aa642a07c3a7ad1765f2276824cee02728961"
-    },
-    {
-      "name": "browser.wait_for",
-      "sha256": "83d9b09e6695ef092042738327ec9a4a25a11894b0c748020443937dd9e6b0a8"
-    },
-    {
-      "name": "browser.console",
-      "sha256": "14bdcf484b4b7e56a6cb8eebf6c2d98295405c173dc89fa4f2e361d6fd423612"
-    },
-    {
-      "name": "browser.actions",
-      "sha256": "cadd9f76dcb101ed83844e9e70424a99450bae82735229d8efaad068ecfb6002"
-    },
-    {
-      "name": "browser.network",
-      "sha256": "3ff7c18802e38936a43e2eaee1f2fd087559858b1fcd0a40b5cb631dc7a5504b"
-    },
-    {
-      "name": "canvas.list",
-      "sha256": "685f6313230c5227d254906454a7addaefa3bf65d87b715b220400a127c2d79e"
-    },
-    {
-      "name": "canvas.describe",
-      "sha256": "eed7a0182a4b985c9f4f6d8a655cf6703c7d4848343fb9283fb5e8524d510230"
-    },
-    {
-      "name": "canvas.find",
-      "sha256": "62816da14e423483de7464bad7f0557759655e1f94dc64b67b7e6dc790b14bf6"
-    },
-    {
-      "name": "canvas.screenshot",
-      "sha256": "e781853a246fcd3259ca3f359259842838308dd9ece387315a663576d5882e1f"
-    },
-    {
       "name": "editor.state",
       "sha256": "d45577bee391a7224b0bbd0619855cc1dc67ec54e111185e6459bc925572761b"
     },
@@ -945,24 +885,8 @@
       "sha256": "32ab506d18b5e8ab44ff26209fe600fe55f60008121fc93310f8c9e91caa6160"
     },
     {
-      "name": "conversation.delete_plan",
-      "sha256": "75064ce1a5a283409a6aecdd884ea0c1d0ae91d5564ed2a18b3b5a0567caa804"
-    },
-    {
-      "name": "conversation.search",
-      "sha256": "b00c23e3089e8e40ba81f7034cf7a6eb714989266de51da6700fe063ed34f869"
-    },
-    {
-      "name": "conversation.approval_rules",
-      "sha256": "85a7e146983c306dc792227a3778e8d691a63d0507f5e17db93a569f69e1188f"
-    },
-    {
       "name": "conversation.pull_request_state",
       "sha256": "20562a3eed934ba0ab6e00318653579bad222cb6d0f556abfb22da4754145959"
-    },
-    {
-      "name": "usage.report",
-      "sha256": "d305a31b01c9e1ab4b1bc0090bff07ffb11e033b8410bd7a017e8cc6c1a015a4"
     },
     {
       "name": "workspace.checkout",
@@ -975,10 +899,6 @@
     {
       "name": "workspace.list",
       "sha256": "16923cd7a238930671ebb9a87c286ac993fd1cb3e6afed6ccac5fd9ebe95926e"
-    },
-    {
-      "name": "workspace.snapshot",
-      "sha256": "b671eafa4e5520092b2e972c1cf45a71acd105c38fcd3110a595dd85c42a2285"
     },
     {
       "name": "workspace.status",
@@ -1011,10 +931,6 @@
     {
       "name": "marketplace.list",
       "sha256": "92cb04063b0099c17b578cb4b8ee61c93959d08bd124778d91b78386b501cf8c"
-    },
-    {
-      "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
     },
     {
       "name": "artifacts.list",

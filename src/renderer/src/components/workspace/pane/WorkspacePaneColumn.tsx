@@ -199,7 +199,7 @@ export function WorkspacePaneColumn({
 
   // The same, for a chat on a paired machine: its agent's canvas.open is told
   // over that machine's canvas lane while this window shows the chat, and the
-  // tab it opens is the board in the same editor (`canvas-live-boards`).
+  // tab it opens is the board in the same editor (`canvas-boards` on its Studio).
   const pairedCanvasKey = useWorkspaceStore((s) => {
     const origin = s.workspaces.find((w) => w.id === activeWorkspaceId)?.remoteOrigin
     return origin

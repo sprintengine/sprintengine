@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 
 import { CONVERSATION_MAX_SCHEDULED_MESSAGES } from '../../../packages/conversation-protocol/src/public'
+import { USAGE_LIMIT_PROVIDERS } from '../../shared/usage-limits'
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import type { ConversationCommand } from '../../../packages/conversation-protocol/src/public'
 import type {
@@ -11,7 +12,7 @@ import type {
   ConversationHeldMessages,
   ConversationHeldSend,
   ConversationScheduledSends,
-} from '../../main/automation/tailnet/tailnet-conversation-host'
+} from './conversation-host'
 import {
   createScheduledMessages,
   SCHEDULED_MESSAGES_FILE,
@@ -257,8 +258,10 @@ export function studioScheduledSends(scheduled: () => ScheduledMessages): Conver
       )
   const gone = { ok: false as const, message: 'That message is no longer scheduled: it was sent or deleted.' }
   return {
-    schedule(chat, text, sendAt, source) {
-      const kept = scheduled().scheduleFrom(chat, text, sendAt, source)
+    schedule(chat, text, sendAt, source, untilLimitReset) {
+      // A provider this Studio does not meter is a plain time.
+      const provider = USAGE_LIMIT_PROVIDERS.find((known) => known === untilLimitReset)
+      const kept = scheduled().scheduleFrom(chat, text, sendAt, source, provider)
       return kept.ok ? { ok: true } : { ok: false, message: kept.reason }
     },
     sendNow(chat, id) {
@@ -287,6 +290,7 @@ export function studioScheduledSends(scheduled: () => ScheduledMessages): Conver
           ...(message.waitingSince !== undefined ? { waitingSince: message.waitingSince } : {}),
           ...(message.sending ? { sending: true as const } : {}),
           ...(message.failure !== undefined ? { failure: message.failure } : {}),
+          ...(message.untilLimitReset ? { untilLimitReset: message.untilLimitReset } : {}),
         }))
     },
     onChanged(listener) {

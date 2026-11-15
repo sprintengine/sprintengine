@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.bulkSelect', async () => {
   // Several chats at once: Shift-click takes the range from the chat in
@@ -46,11 +49,11 @@ test('WorkspaceSidebar.bulkSelect', async () => {
 
   const marked: string[] = []
   const opened: string[] = []
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
     workspaceMarkUnread: async (workspaceId: string) => {
       marked.push(workspaceId)

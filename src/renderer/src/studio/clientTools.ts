@@ -47,7 +47,7 @@ function start(): void {
   let api: Parameters<typeof windowStudioClient>[0]
   try {
     api = window.api
-    if (typeof api?.studioConnect !== 'function') return
+    if (typeof api?.studioWindowTicket !== 'function') return
   } catch {
     return
   }

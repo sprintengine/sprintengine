@@ -108,12 +108,14 @@ function transcriptFile(workspaceRoot: string): string {
   return workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
 }
 
+/** The events on disk; a command's receipt is a line of the log too, with no `type`. */
 async function readLines(workspaceRoot: string): Promise<Record<string, unknown>[]> {
   const raw = await readFile(transcriptFile(workspaceRoot), 'utf-8')
   return raw
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((line) => typeof line.type === 'string')
 }
 
 test('streamed deltas reach listeners only once written, and a batch of them is one record', async () => {
@@ -177,7 +179,8 @@ test('a crash with a batch still unwritten never leaves a published sequence num
           // The second batch of deltas never lands: the process dies with it in flight.
           if (chunk.includes('"content_delta"') && ++deltaWrites >= 2) return new Promise<void>(() => undefined)
           for (const line of chunk.trim().split('\n')) {
-            const record = JSON.parse(line) as { seq: number; parts?: unknown[][] }
+            const record = JSON.parse(line) as { seq?: number; parts?: unknown[][] }
+            if (record.seq === undefined) continue
             written.push(record.seq, ...(record.parts ?? []).map((part) => part[3] as number))
           }
         },
@@ -255,7 +258,7 @@ test('after a completed turn the transcript rebuilds the full message', async ()
   })
 })
 
-test('numbers published but lost to a failed write are never reissued after a restart', async () => {
+test('after a write the disk refused, a restart numbers above every event a client was given', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const provider = streamingProvider(['lost ', 'to ', 'the ', 'disk'])
@@ -326,48 +329,105 @@ test('numbers published but lost to a failed write are never reissued after a re
   }
 })
 
-test('a transcript write that never settles fails in time, says so, and the turn still ends', async () => {
+test('a turn whose events the log refuses stops its session, publishes nothing unwritten, and ends once', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
-  const provider = streamingProvider(['stuck ', 'disk'])
+  const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+  const provider = streamingProvider(['lost ', 'to ', 'the ', 'disk'])
   provider.release()
+  let full = false
+  const onDisk = new Set<number>()
   const runtime = new ConversationRuntime({
     adapters: [provider.adapter],
     getProviderById: () => undefined,
     eventLog: {
       flushDelayMs: 1,
-      writeTimeoutMs: 50,
-      openStream: async () => ({
-        // A wedged volume: the delta batch is never acknowledged.
-        write: (chunk) => (chunk.includes('"content_delta"') ? new Promise<void>(() => undefined) : Promise.resolve()),
-        close: async () => undefined,
-      }),
+      openStream: async (filePath) => {
+        await mkdir(dirname(filePath), { recursive: true })
+        return {
+          write: async (chunk) => {
+            // The disk fills as the reply starts streaming.
+            full ||= chunk.includes('"content_delta"')
+            if (full) throw new Error('ENOSPC: no space left on device')
+            await appendFile(filePath, chunk)
+            for (const line of chunk.trim().split('\n')) {
+              const seq = (JSON.parse(line) as { seq?: number }).seq
+              if (seq !== undefined) onDisk.add(seq)
+            }
+          },
+          close: async () => undefined,
+        }
+      },
     },
   })
   const published: ConversationEvent[] = []
   runtime.onEvent((event) => published.push(event))
   try {
-    const started = await runtime.startSession({
-      workspaceRoot,
-      workspaceId: 'workspace',
-      agentId: 'agent',
-      providerId: 'streaming-provider',
-      modelId: 'model',
-    })
+    const started = await runtime.startSession({ ...key, providerId: 'streaming-provider', modelId: 'model' })
     assert.ok(started.ok)
-    const result = await runtime.sendTurn({ sessionId: started.session.sessionId, message: 'hi' })
-    assert.ok(result.ok)
+    await runtime.sendTurn({ sessionId: started.session.sessionId, message: 'hi' })
+    const stopped = () => {
+      const listed = runtime.listSessions()
+      return listed.ok && listed.sessions.every((session) => session.status === 'stopped')
+    }
+    while (!stopped()) await new Promise((resolve) => setImmediate(resolve))
     assert.equal(
-      published
-        .filter((event) => event.type === 'content_delta')
-        .map((event) => event.payload?.text)
-        .join(''),
-      'stuck disk',
-      'the live chat still shows what could not be saved',
+      published.some((event) => event.type === 'content_delta'),
+      false,
+      'nothing the log did not take reaches a client',
     )
-    const notices = published.filter((event) => typeof event.payload?.notice === 'string')
-    assert.equal(notices.length, 1)
-    assert.match(String(notices[0].payload?.notice), /could not be saved/)
-    assert.equal(published.at(-1)?.type, 'turn_completed')
+    assert.ok(
+      published.every((event) => onDisk.has(event.seq!)),
+      'every number a client holds is on disk',
+    )
+
+    // The disk is back, and the chat is taken up again.
+    full = false
+    const resumed = await runtime.startSession({ ...key, providerId: 'streaming-provider', modelId: 'model' })
+    assert.ok(resumed.ok)
+    const replay = await runtime.readTranscript(key, { all: true, closeOpenTurns: false })
+    assert.ok(replay.ok)
+    const turnId = replay.events.find((event) => event.type === 'user_message')?.payload?.turnId
+    const ends = replay.events.filter(
+      (event) => (event.type === 'turn_completed' || event.type === 'turn_failed') && event.payload?.turnId === turnId,
+    )
+    assert.equal(ends.length, 1, 'the turn ends in the log exactly once')
+    assert.equal(replay.events.filter((event) => event.type === 'content_delta').length, 0)
+  } finally {
+    await runtime.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+  }
+})
+
+test('ending a session leaves no stream open on its log, its answer written', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
+  const provider = streamingProvider([])
+  provider.release()
+  const open = new Set<number>()
+  let streams = 0
+  const runtime = new ConversationRuntime({
+    adapters: [provider.adapter],
+    getProviderById: () => undefined,
+    eventLog: {
+      openStream: async (filePath) => {
+        await mkdir(dirname(filePath), { recursive: true })
+        const id = ++streams
+        open.add(id)
+        return {
+          write: (chunk) => appendFile(filePath, chunk),
+          close: async () => void open.delete(id),
+        }
+      },
+    },
+  })
+  try {
+    const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+    const started = await runtime.startSession({ ...key, providerId: 'streaming-provider', modelId: 'model' })
+    assert.ok(started.ok)
+    const ended = await runtime.stopSession({ sessionId: started.session.sessionId, commandId: 'stop-1' })
+    assert.ok(ended.ok)
+    assert.deepEqual([...open], [], 'a folder the chat leaves can be moved or removed at once')
+    const lines = (await readFile(transcriptFile(workspaceRoot), 'utf-8')).trim().split('\n')
+    assert.match(lines.at(-1)!, /"receipt":\{"id":"stop-1"/)
   } finally {
     await runtime.shutdown()
     await rm(workspaceRoot, { recursive: true, force: true })

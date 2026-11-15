@@ -95,7 +95,30 @@ export type WorktreeExcludeResult =
   { scope: 'worktree'; file: string; enabledWorktreeConfig: boolean } | { scope: 'shared'; file: string }
 
 /**
- * Keep `entries` out of one worktree's git. A linked worktree gets its own
+ * The entries in our marked block of `text`, in order; none when it has no
+ * block. Comment lines inside the block are ours too, and are not entries.
+ */
+function markedEntries(text: string): string[] {
+  const start = text.indexOf(WORKTREE_EXCLUDE_START)
+  if (start < 0) return []
+  const end = text.indexOf(WORKTREE_EXCLUDE_END, start)
+  if (end < 0) return []
+  return text
+    .slice(start + WORKTREE_EXCLUDE_START.length, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+}
+
+/** `held` with each of `adding` it does not have yet appended, in order. */
+function unionEntries(held: readonly string[], adding: readonly string[]): string[] {
+  return [...new Set([...held, ...adding])]
+}
+
+/**
+ * Keep `entries` out of one worktree's git, beside whatever this app already
+ * keeps out of it: the generated MCP config and Studio's own skill copies are
+ * excluded by different callers, and neither may drop the other's. A linked worktree gets its own
  * excludes file as above. The main worktree has no private directory to give
  * it, so its entries go into the shared `info/exclude` between markers the
  * removal can find — the one case where shared and own are the same thing.
@@ -128,7 +151,8 @@ export async function excludeFromWorktree(
   }
 
   if (gitDir === commonDir) {
-    await writeMarkedSharedExcludes(sharedExclude, entries)
+    const shared = (await readFile(sharedExclude, 'utf8').catch(() => null)) ?? ''
+    await writeMarkedSharedExcludes(sharedExclude, unionEntries(markedEntries(shared), entries))
     recordIntegrationWrite({
       kind: 'git-exclude',
       path: sharedExclude,
@@ -159,7 +183,10 @@ export async function excludeFromWorktree(
     inheritedPath && existsSync(inheritedPath) ? await readFile(inheritedPath, 'utf8').catch(() => null) : null
   await writeFileAtomically(
     file,
-    renderWorktreeExcludeFile(entries, inheritedText === null ? null : { path: inheritedPath, text: inheritedText }),
+    renderWorktreeExcludeFile(
+      unionEntries(existing ? markedEntries(existing) : [], entries),
+      inheritedText === null ? null : { path: inheritedPath, text: inheritedText },
+    ),
   )
   const setFile = await runGit(worktreePath, ['config', '--worktree', 'core.excludesFile', file.split('\\').join('/')])
   if (!setFile.ok) throw new Error(setFile.message ?? 'git could not set the worktree’s excludes file.')

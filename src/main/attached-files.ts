@@ -25,7 +25,7 @@
  * modification time.
  */
 import { readFileSync } from 'fs'
-import { realpath, stat } from 'fs/promises'
+import { readFile, realpath, stat } from 'fs/promises'
 import { isAbsolute, join } from 'path'
 
 import { writeFileAtomicSync } from '../server/platform/atomic-file'
@@ -34,6 +34,8 @@ import {
   isNetworkPath,
   opensAsDocumentPackage,
   opensInDefaultApp,
+  MAX_ATTACHED_FILE_READ_BYTES,
+  type AttachedFileBytes,
   type AttachedFilePreview,
 } from '../shared/attached-files'
 
@@ -285,6 +287,25 @@ export function createAttachedFiles(deps: AttachedFilesDeps) {
         thumbnailDataUrl: await deps.thumbnails.thumbnail(path, info),
         openable: opensInDefaultApp(path, deps.platform),
       }
+    },
+
+    /**
+     * An attached file's bytes, for a chat on another machine (a paired
+     * desktop's) to take with a message: only a file this computer attached,
+     * as `open` is, and no larger than that machine takes.
+     */
+    async read(path: unknown): Promise<AttachedFileBytes> {
+      if (!isAttachablePath(path)) return { ok: false, message: 'That is not a file attached here.' }
+      const name = fileName(path)
+      if (!deps.registry.has(path)) return { ok: false, message: `${name} was not attached here.` }
+      const info = await stat(path).catch(() => null)
+      if (!info?.isFile()) return { ok: false, message: `${name} is not a file this computer still has.` }
+      if (info.size > MAX_ATTACHED_FILE_READ_BYTES)
+        return { ok: false, message: `${name} is larger than 25 MB, more than the other machine takes.` }
+      const bytes = await readFile(path).catch(() => null)
+      return bytes
+        ? { ok: true, name, dataBase64: bytes.toString('base64') }
+        : { ok: false, message: `${name} could not be read.` }
     },
 
     /** Opens an attached file in its default app; throws, in words, when it may not or did not. */

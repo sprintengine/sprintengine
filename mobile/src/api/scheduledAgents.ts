@@ -1,18 +1,23 @@
+import type { StudioClient } from "../../../packages/client-runtime/src/public";
+import type {
+  ScheduledAgentsPause,
+  StudioSchedule,
+  StudioScheduleDraft,
+  StudioSchedules,
+} from "../../../packages/studio-protocol/src/public";
+import { desktopStudio, studioFailure, type DesktopStudioOptions } from "./desktopStudio";
 import type { ApiResult } from "./types";
-import { createGatewayToolCaller } from "./tailnetWorkspaces";
 
-// A desktop's scheduled agents, from the phone: the gateway's `schedule.*`
-// tools over the same stateless JSON-RPC POST `workspace.list` rides. A
-// scheduled agent is a prompt and a schedule; each time it comes round the
-// desktop starts a chat with that prompt, whether or not this phone is awake,
-// and the chat is one more in the list. Listing needs `workspace:read`; Run
-// now, Pause, Resume, Close and making one need `workspace:operate`.
+// A desktop's scheduled agents, from the phone: the desktop's `schedules.*`
+// on its Studio protocol (desktopStudio.ts), answered by the same service its
+// own Scheduled section and its agents' `schedule.*` tools use. A scheduled
+// agent is a prompt and a schedule; each time it comes round the desktop
+// starts a chat with that prompt, whether or not this phone is awake, and the
+// chat is one more in the list. Listing needs `workspace:read`; Run now,
+// Pause, Resume, Close and making one need `workspace:operate`.
 //
-// The phone makes a repeating schedule with the arguments `schedule.create`
-// always took, so that needs nothing the desktop advertises beyond the tools.
-// A one-time schedule (`once`) is offered only where the desktop advertises
-// `scheduled-agents`: an older handler refuses an argument it does not
-// declare, rather than making a different schedule.
+// Each change carries a command id, so a send retried after the connection
+// dropped is carried out once: a retried Run now starts one chat.
 //
 // What is sent and what an answer means are pure and exported, so the
 // regression suite reads the same rules the screens run.
@@ -24,33 +29,29 @@ const RUN_TIMEOUT_MS = 60_000;
 
 export type ScheduledAgentAction = "run" | "pause" | "resume" | "delete";
 
-export interface PhoneScheduledAgent {
-  id: string;
+/** One schedule as the phone's rows show it: the desktop's row, and what the phone reads off it. */
+export type PhoneScheduledAgent = Pick<StudioSchedule, "id" | "prompt" | "cli" | "nextRunAt" | "waiting"> & {
   /** Its name, else its prompt's first line, as the desktop's sidebar titles it. */
   title: string;
-  prompt: string;
-  /** The schedule in the desktop's words ("Every weekday at 9:00 AM"); the cron where it had none. */
+  /** The schedule in the desktop's words ("Weekdays at 9:00 AM"); the cron where it had none. */
   scheduleWords: string;
   /** The project each run starts in: the last segment of its folder. */
   projectName: string;
-  cli: string;
   paused: boolean;
-  /** When it runs next, epoch ms; null while paused, or when it never will again. */
-  nextRunAt: number | null;
   /** Why its last run did not start, while the desktop has not been told it was seen; null otherwise. */
   lastFailure: string | null;
-}
+};
 
 export interface PhoneScheduledAgents {
   agents: PhoneScheduledAgent[];
   /** Every scheduled agent on the desktop is paused, and until when (null: until resumed). */
-  pausedAll: { until: number | null } | null;
+  pausedAll: Pick<ScheduledAgentsPause, "until"> | null;
 }
 
 /**
  * The cron naming the same minute as a one-time instant, in this phone's
- * zone, as the desktop's own `cronForInstant` writes it: `schedule.create`
- * still requires a cron, and whatever reads the cron alone reads a true one.
+ * zone, as the desktop's own `cronForInstant` writes it: whatever reads the
+ * cron alone reads a true one.
  */
 export function cronForInstant(at: Date): string {
   return `${at.getMinutes()} ${at.getHours()} ${at.getDate()} ${at.getMonth() + 1} *`;
@@ -64,12 +65,12 @@ export interface ScheduleDraft {
   /** The agent CLI; null leaves it to the desktop's last-picked one, as New chat's Desktop default does. */
   cli?: string | null;
   model?: string | null;
-  /** Run once at this instant (epoch ms) rather than repeating; offered only where `scheduled-agents` is advertised. */
+  /** Run once at this instant (epoch ms) rather than repeating. */
   once?: number | null;
   /** Each run in a fresh worktree of its own, as New chat's Worktree switch. */
   worktree?: boolean;
   /** The access New chat picked; absent, each run takes its CLI's at run time. */
-  permissionPreset?: string | null;
+  permissionPreset?: StudioScheduleDraft["permissionPreset"] | null;
 }
 
 /** Whether this phone's grant may run, pause, resume, close or make them there. */
@@ -77,17 +78,27 @@ export function canOperateSchedules(session: { tailnetScopes: string[] }): boole
   return session.tailnetScopes.includes("workspace:operate");
 }
 
-/** The tool each action is. */
-export function scheduledAgentActionTool(action: ScheduledAgentAction): string {
-  return `schedule.${action}`;
+/** The desktop's method each action is. */
+export function scheduleActionMethod(
+  action: ScheduledAgentAction,
+): "schedules.runNow" | "schedules.pause" | "schedules.resume" | "schedules.delete" {
+  switch (action) {
+    case "run":
+      return "schedules.runNow";
+    case "pause":
+      return "schedules.pause";
+    case "resume":
+      return "schedules.resume";
+    case "delete":
+      return "schedules.delete";
+  }
 }
 
 /**
- * `schedule.create`'s arguments: the draft trimmed, and a CLI, a model, a
- * one-time instant, a worktree and an access each only where one was picked,
- * so a repeating schedule sends nothing an older desktop does not declare.
+ * `schedules.create`'s draft: trimmed, and a CLI, a model, a one-time
+ * instant, a worktree and an access each only where one was picked.
  */
-export function buildCreateScheduleArgs(draft: ScheduleDraft): Record<string, unknown> {
+export function buildScheduleDraft(draft: ScheduleDraft): StudioScheduleDraft {
   return {
     workspaceId: draft.workspaceId,
     prompt: draft.prompt.trim(),
@@ -95,7 +106,7 @@ export function buildCreateScheduleArgs(draft: ScheduleDraft): Record<string, un
     timezone: draft.timezone,
     ...(draft.cli ? { cli: draft.cli } : {}),
     ...(draft.model ? { model: draft.model } : {}),
-    ...(draft.once != null ? { once: new Date(draft.once).toISOString() } : {}),
+    ...(draft.once != null ? { once: draft.once } : {}),
     ...(draft.worktree ? { worktree: true } : {}),
     ...(draft.permissionPreset ? { permissionPreset: draft.permissionPreset } : {}),
   };
@@ -125,10 +136,12 @@ export function scheduleStatusLine(agent: PhoneScheduledAgent, pausedAll: boolea
   if (agent.lastFailure) return `Last run failed — ${agent.lastFailure}`;
   if (agent.paused) return `Paused · ${agent.scheduleWords}`;
   if (pausedAll) return `Paused with every scheduled agent · ${agent.scheduleWords}`;
+  // Its times pass without a run until the desktop has what it lacks.
+  if (agent.waiting) return `Waiting: ${agent.waiting}`;
   return agent.scheduleWords;
 }
 
-/** One row of `schedule.list`, or null when it lacks what a row needs. */
+/** One row of `schedules.list`, read member by member, or null when it lacks what a row needs. */
 export function readScheduledAgent(value: unknown): PhoneScheduledAgent | null {
   if (!isRecord(value) || typeof value.id !== "string" || !value.id || typeof value.prompt !== "string") return null;
   const schedule = isRecord(value.schedule) ? value.schedule : null;
@@ -152,15 +165,16 @@ export function readScheduledAgent(value: unknown): PhoneScheduledAgent | null {
     scheduleWords: typeof value.scheduleWords === "string" && value.scheduleWords ? value.scheduleWords : schedule.cron,
     projectName: folder.split(/[\\/]/u).filter(Boolean).pop() ?? folder,
     cli: typeof value.cli === "string" ? value.cli : "",
-    paused: value.paused === true || instantOf(value.pausedAt) !== null,
+    paused: instantOf(value.pausedAt) !== null,
     nextRunAt: instantOf(value.nextRunAt),
+    ...(typeof value.waiting === "string" && value.waiting ? { waiting: value.waiting } : {}),
     lastFailure,
   };
 }
 
-/** `schedule.list`'s answer, kept to the rows this build can read. */
-export function readScheduledAgents(data: unknown): PhoneScheduledAgents {
-  const rows = isRecord(data) && Array.isArray(data.scheduledAgents) ? data.scheduledAgents : [];
+/** `schedules.list`'s answer, kept to the rows this build can read. */
+export function readScheduledAgents(data: StudioSchedules | unknown): PhoneScheduledAgents {
+  const rows = isRecord(data) && Array.isArray(data.schedules) ? data.schedules : [];
   const pause = isRecord(data) && isRecord(data.pausedAll) ? data.pausedAll : null;
   return {
     agents: rows.flatMap((row) => readScheduledAgent(row) ?? []),
@@ -168,34 +182,60 @@ export function readScheduledAgents(data: unknown): PhoneScheduledAgents {
   };
 }
 
-/** What the schedule screens need from the tools; a harness may supply a fake of the same shape. */
+/** What the schedule screens need from the desktop; a harness may supply a fake of the same shape. */
 export interface ScheduledAgentsApi {
   list(): Promise<ApiResult<PhoneScheduledAgents>>;
   act(id: string, action: ScheduledAgentAction): Promise<ApiResult<{ id: string; action: ScheduledAgentAction }>>;
   create(draft: ScheduleDraft): Promise<ApiResult<PhoneScheduledAgent>>;
 }
 
-export function createScheduledAgentsApi(options: { baseUrl: string; deviceToken: string }): ScheduledAgentsApi {
-  const callTool = createGatewayToolCaller(options);
+function newCommandId(): string {
+  return `schedule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createScheduledAgentsApi(
+  options: { baseUrl: string; deviceToken: string },
+  studio: DesktopStudioOptions = {},
+): ScheduledAgentsApi {
+  /** One ask of the desktop's Studio, answered or failed in the phone's words within `timeoutMs`. */
+  async function ask<T>(work: (client: StudioClient) => Promise<T>, timeoutMs: number): Promise<ApiResult<T>> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const data = await Promise.race([
+        desktopStudio(options, studio).then(work),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("The desktop did not answer in time.")), timeoutMs);
+        }),
+      ]);
+      return { ok: true, data };
+    } catch (error) {
+      const failed = studioFailure(error);
+      return { ok: false, errorCode: failed.errorCode, message: failed.message };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   return {
-    async list() {
-      const result = await callTool("schedule.list", {}, LIST_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      return { ok: true as const, data: readScheduledAgents(result.data) };
-    },
+    list: () => ask(async (client) => readScheduledAgents(await client.rpc["schedules.list"]({})), LIST_TIMEOUT_MS),
     async act(id, action) {
-      const result = await callTool(
-        scheduledAgentActionTool(action),
-        { id },
+      const commandId = newCommandId();
+      const method = scheduleActionMethod(action);
+      const done = await ask<unknown>(
+        (client) => client.request(method, { id, commandId }),
         action === "run" ? RUN_TIMEOUT_MS : WRITE_TIMEOUT_MS,
       );
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      return { ok: true as const, data: { id, action } };
+      return done.ok
+        ? { ok: true as const, data: { id, action } }
+        : { ok: false as const, errorCode: done.errorCode, message: done.message };
     },
     async create(draft) {
-      const result = await callTool("schedule.create", buildCreateScheduleArgs(draft), WRITE_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      const agent = readScheduledAgent(isRecord(result.data) ? result.data.scheduledAgent : null);
+      const commandId = newCommandId();
+      const made = await ask(
+        (client) => client.rpc["schedules.create"]({ ...buildScheduleDraft(draft), commandId }),
+        WRITE_TIMEOUT_MS,
+      );
+      if (!made.ok) return { ok: false as const, errorCode: made.errorCode, message: made.message };
+      const agent = readScheduledAgent(made.data?.schedule);
       return agent
         ? { ok: true as const, data: agent }
         : { ok: false as const, errorCode: "invalid_payload" as const, message: "The desktop did not confirm the schedule." };

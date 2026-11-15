@@ -30,6 +30,7 @@ import {
 } from '../../../../../shared/text-generation/contract'
 import { resolveStoreTextGenerationEngine } from '../../../store/generatedWorkspaceTitle'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
+import { agentSettingsApi, windowHasStudio } from '../../../studio/agentSettings'
 
 /** Why the button cannot draft right now, in words its tooltip and accessible name carry. */
 export function commitMessageDraftUnavailableReason(input: {
@@ -121,7 +122,7 @@ export function useCommitMessageDraft(options: {
       ),
     [textGeneration, pluginCatalogEntries, cliAvailability],
   )
-  const canDraft = typeof window !== 'undefined' && typeof window.api?.draftCommitMessage === 'function'
+  const canDraft = windowHasStudio()
   const unavailableReason = commitMessageDraftUnavailableReason({
     canDraft,
     repoRoot: options.repoRoot,
@@ -140,7 +141,7 @@ export function useCommitMessageDraft(options: {
   const stop = useCallback(() => {
     const draft = running.current
     if (!draft) return
-    void window.api.cancelCommitMessageDraft?.(draft.draftId)?.catch(() => undefined)
+    void agentSettingsApi.cancelCommitMessageDraft(draft.draftId).catch(() => undefined)
   }, [])
 
   // A new checkout, or the panel closing, ends the draft: its answer belongs
@@ -151,7 +152,7 @@ export function useCommitMessageDraft(options: {
       if (!draft) return
       running.current = null
       setDrafting(false)
-      void window.api.cancelCommitMessageDraft?.(draft.draftId)?.catch(() => undefined)
+      void agentSettingsApi.cancelCommitMessageDraft(draft.draftId).catch(() => undefined)
     },
     [options.repoRoot, options.scopeKey],
   )
@@ -177,7 +178,7 @@ export function useCommitMessageDraft(options: {
       request: () => {
         setDrafting(true)
         latest.current.report({ tone: 'neutral', text: 'Writing a commit message from the staged changes…' })
-        return window.api.draftCommitMessage({
+        return agentSettingsApi.draftCommitMessage({
           repoRoot,
           engine: chosen,
           draftId,

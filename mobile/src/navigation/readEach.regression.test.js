@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { readEach } = require("../../.mobile-test-build/src/navigation/readEach.js");
+const { readEach } = require("../../.mobile-test-build/mobile/src/navigation/readEach.js");
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const after = async (turns) => {

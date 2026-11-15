@@ -8,7 +8,7 @@ const test = require("node:test");
 // model are the desktop's own files, mirrored; these tests hold the mirrors
 // to their sources and the ported pieces to what the desktop's say.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const repoRoot = path.resolve(__dirname, "../../../..");
 const { cronFromEditorState, editorStateFromCron, switchTab } = require(
   path.join(buildRoot, "src/features/scheduled/scheduleEditor.js"),

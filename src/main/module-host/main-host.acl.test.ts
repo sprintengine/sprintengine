@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
-import { createMainKernel, createServiceToken, THIRD_PARTY_SERVICE_KEYS } from './main-host'
+import { createMainKernel, createServiceToken, THIRD_PARTY_SERVICE_KEYS, type ServiceToken } from './main-host'
 import * as serviceTokens from './service-tokens'
 import { test } from 'vitest'
 
@@ -29,7 +28,7 @@ const otherThirdParty: CapabilityManifest = {
 
 function kernelWith(...manifests: CapabilityManifest[]) {
   const byId = new Map(manifests.map((manifest) => [manifest.id, manifest]))
-  return createMainKernel(createFakeIpcMain().ipcMain, { resolveModuleManifest: (id) => byId.get(id) })
+  return createMainKernel({ resolveModuleManifest: (id) => byId.get(id) })
 }
 
 function tool(name: string, extra: Partial<McpToolRegistration> = {}): McpToolRegistration {
@@ -63,6 +62,166 @@ test('a third-party module resolves only the published service keys', () => {
 
   // First-party modules keep the whole kernel.
   assert.ok(kernel.hostFor('bundled').getService(serviceTokens.TerminalRuntimeToken))
+})
+
+test('a third-party module reaches a service that names a module only as itself', () => {
+  const kernel = kernelWith(bundled, thirdParty, otherThirdParty)
+  const calls: string[] = []
+  const storage = {
+    get: (moduleId: string, key: string) => {
+      calls.push(`${moduleId}:${key}`)
+      return key
+    },
+  }
+  kernel.hostFor('@host').provideService(serviceTokens.ModuleStorageToken, () => storage as never)
+  kernel.hostFor('@host').provideService(serviceTokens.WorkspaceServiceToken, () => storage as never)
+
+  const deck = kernel.hostFor('acme-deck').requireService(serviceTokens.ModuleStorageToken) as unknown as typeof storage
+  assert.equal(deck.get('acme-deck', 'mine'), 'mine')
+  assert.throws(() => deck.get('acme-other', 'theirs'), /called service "core.module-storage" as module "acme-other"/)
+  assert.throws(() => deck.get('bundled', 'theirs'), /only as itself/)
+  // The same view each time, and one it cannot change for anyone else.
+  assert.equal(kernel.hostFor('acme-deck').getService(serviceTokens.ModuleStorageToken), deck)
+  assert.throws(() => {
+    ;(deck as { get: unknown }).get = () => 'replaced'
+  }, /cannot change service/)
+  assert.deepEqual(calls, ['acme-deck:mine'])
+  // A service that names no module takes any first argument; a first-party module is handed it as is.
+  const workspace = kernel
+    .hostFor('acme-deck')
+    .requireService(serviceTokens.WorkspaceServiceToken) as unknown as typeof storage
+  assert.equal(workspace.get('any-workspace', 'name'), 'name')
+  assert.equal(kernel.hostFor('bundled').requireService(serviceTokens.ModuleStorageToken), storage)
+})
+
+test('reflection on a service a third-party module holds reaches only its guarded calls', async () => {
+  const kernel = kernelWith(bundled, thirdParty, otherThirdParty)
+  const calls: string[] = []
+  const handle = { send: (what: string) => calls.push(`handle:${what}`) }
+  class Ledger {
+    constructor(private readonly name: string) {}
+    write(what: string) {
+      calls.push(`${this.name}:${what}`)
+    }
+  }
+  const secrets = {
+    fetchWithSecret: (moduleId: string, name: string) => {
+      calls.push(`fetch:${moduleId}:${name}`)
+      return name
+    },
+    open: (moduleId: string) => {
+      calls.push(`open:${moduleId}`)
+      return handle
+    },
+    later: async (moduleId: string) => {
+      calls.push(`later:${moduleId}`)
+      return handle
+    },
+    ledgers: { first: new Ledger('first'), second: new Ledger('second') },
+  }
+  kernel.hostFor('@host').provideService(serviceTokens.ModuleSecretsServiceToken, () => secrets as never)
+  const kept = kernel.hostFor('acme-deck')
+  const service = kept.requireService(serviceTokens.ModuleSecretsServiceToken) as unknown as typeof secrets
+
+  // The method the descriptor holds is the guarded one, not the service's own.
+  const descriptor = Object.getOwnPropertyDescriptor(service, 'fetchWithSecret')
+  const reached = (descriptor?.value ?? descriptor?.get?.call(service)) as typeof secrets.fetchWithSecret
+  assert.notEqual(reached, secrets.fetchWithSecret)
+  assert.throws(() => reached('acme-other', 'their-key'), /only as itself/)
+  for (const name of Reflect.ownKeys(service)) {
+    const member = Reflect.get(service, name) as unknown
+    assert.notEqual(member, Reflect.get(secrets, name), `${String(name)} is not the service's own`)
+  }
+  assert.equal(Object.getPrototypeOf(service), null, 'no way back to the service through its prototype')
+
+  // What it holds and what it hands back are guarded too.
+  const opened = service.open('acme-deck')
+  const settled = await service.later('acme-deck')
+  service.ledgers.first.write('one')
+  service.ledgers.second.write('two')
+  assert.deepEqual(calls, ['open:acme-deck', 'later:acme-deck', 'first:one', 'second:two'])
+  await kernel.unregisterModule('acme-deck')
+  calls.length = 0
+  assert.throws(() => reached('acme-deck', 'mine'), /switched off/)
+  assert.throws(() => opened.send('late'), /switched off/, 'a handle it was handed')
+  assert.throws(() => settled.send('late'), /switched off/, 'a handle a promise handed it')
+  assert.throws(() => service.ledgers.first.write('late'), /switched off/, 'an object the service holds')
+  assert.deepEqual(calls, [])
+})
+
+test('a third-party module switched off reaches no service through the host or the services it kept', async () => {
+  const kernel = kernelWith(bundled, thirdParty, otherThirdParty)
+  const calls: string[] = []
+  const registry = (name: string) => ({
+    call: (moduleId: string, what: string) => {
+      calls.push(`${name}:${moduleId}:${what}`)
+      return what
+    },
+  })
+  type Registry = ReturnType<typeof registry>
+  const tokens: Record<string, ServiceToken<unknown>> = {
+    secrets: serviceTokens.ModuleSecretsServiceToken,
+    storage: serviceTokens.ModuleStorageToken,
+    chats: serviceTokens.ConversationModuleServiceToken,
+    backlog: serviceTokens.BacklogModuleServiceToken,
+    usage: serviceTokens.UsageModuleServiceToken,
+    workspace: serviceTokens.WorkspaceServiceToken,
+  }
+  const host = kernel.hostFor('@host')
+  for (const [name, token] of Object.entries(tokens)) host.provideService(token, () => registry(name) as never)
+  const kept = kernel.hostFor('acme-deck')
+  const held = Object.fromEntries(
+    Object.entries(tokens).map(([name, token]) => [name, kept.requireService(token) as unknown as Registry]),
+  )
+  for (const [name, service] of Object.entries(held)) assert.equal(service.call('acme-deck', 'before'), 'before', name)
+  // Its shutdown hooks may still use them.
+  kept.onShutdown(() => {
+    held.secrets.call('acme-deck', 'goodbye')
+  })
+  await kernel.unregisterModule('acme-deck')
+  calls.length = 0
+
+  // A timer or a promise that outlived its shutdown: every service it holds refuses.
+  for (const [name, service] of Object.entries(held))
+    assert.throws(() => service.call('acme-deck', 'late'), /switched off.*no longer reaches service/, name)
+  // And the host reaches none either.
+  for (const token of Object.values(tokens)) {
+    assert.throws(() => kept.requireService(token), /switched off/)
+    assert.throws(() => kept.getService(token), /switched off/)
+  }
+  assert.throws(() => kept.getModuleDataDir(), /switched off/)
+  assert.throws(() => kept.getModuleAppState('key'), /switched off/)
+  assert.throws(() => kept.getAssetPath('a.png'), /switched off/)
+  await assert.rejects(kept.listChatRuntimes(), /switched off/)
+  await assert.rejects(kept.getSkillStatus('/Users/dev/project', 'skill'), /switched off/)
+  const git = await kept.getWorkspaceGitInfo('ws')
+  assert.equal(!git.ok && git.code, 'unavailable')
+  assert.throws(() => kept.provideService(createServiceToken('acme.late'), () => ({})), /switched off/)
+  assert.deepEqual(calls, [])
+  // Another module's services are untouched.
+  const other = kernel.hostFor('acme-other').requireService(tokens.secrets) as unknown as Registry
+  assert.equal(other.call('acme-other', 'theirs'), 'theirs')
+
+  // Switched on again, its new host and the services it hands out work, still only as itself.
+  const again = kernel.hostFor('acme-deck')
+  const secrets = again.requireService(tokens.secrets) as unknown as Registry
+  assert.notEqual(secrets, held.secrets)
+  assert.equal(secrets.call('acme-deck', 'again'), 'again')
+  assert.throws(() => secrets.call('acme-other', 'theirs'), /only as itself/)
+  assert.equal(again.getService(tokens.secrets), secrets, 'the same view each time within a load')
+  assert.throws(() => held.secrets.call('acme-deck', 'late'), /switched off/, 'the old one stays retired')
+})
+
+test('a first-party module switched off reaches no service through the host it kept', async () => {
+  const kernel = kernelWith(bundled)
+  const service = { ping: () => 'pong' }
+  kernel.hostFor('@host').provideService(serviceTokens.WorkspaceServiceToken, () => service as never)
+  const kept = kernel.hostFor('bundled')
+  assert.equal(kept.requireService(serviceTokens.WorkspaceServiceToken), service)
+  await kernel.unregisterModule('bundled')
+  assert.throws(() => kept.requireService(serviceTokens.WorkspaceServiceToken), /switched off/)
+  assert.throws(() => kept.getService(serviceTokens.WorkspaceServiceToken), /switched off/)
+  assert.equal(kernel.hostFor('bundled').requireService(serviceTokens.WorkspaceServiceToken), service)
 })
 
 test('third-party modules may share services with each other', () => {

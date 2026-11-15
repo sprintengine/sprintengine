@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { phoneChatActivity, studioToolName, urlHost } = require("../../../.mobile-test-build/src/features/conversations/chatActivity.js");
+const { phoneChatActivity, studioToolName, urlHost } = require("../../../.mobile-test-build/mobile/src/features/conversations/chatActivity.js");
 
 const tools = (id, list) => ({ kind: "tools", id, tools: list });
 const tool = (id, name, extra = {}) => ({ id, name, status: "ok", ...extra });

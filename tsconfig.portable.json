@@ -1,0 +1,27 @@
+// What the phone runs from `packages/`, compiled the way React Native would
+// see it: `lib: ES2023`, no DOM and no Node types, and only the globals in
+// `packages/client-runtime/portable/globals.d.ts`, which React Native, a
+// browser and Node all provide. A `window`, `document`, `Buffer`, `process` or
+// Node module reached from the client runtime, the conversation timeline or
+// the protocols they speak fails `npm run typecheck` here, not on the phone.
+{
+  "include": [
+    "packages/client-runtime/portable/globals.d.ts",
+    "packages/client-runtime/src/**/*.ts",
+    "packages/conversation-timeline/src/**/*.ts",
+    "packages/studio-protocol/src/**/*.ts",
+    "packages/conversation-protocol/src/**/*.ts"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023"],
+    "types": [],
+    "strict": true,
+    "noImplicitAny": true,
+    "skipLibCheck": true,
+    "isolatedModules": true
+  }
+}

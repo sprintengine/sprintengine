@@ -16,7 +16,7 @@ import { Screen } from "../../components/Screen";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
-import type { MobileControlBacklogItemStatus } from "../../shared/mobile-control";
+import type { StudioBacklogItemStatus } from "../../../../packages/studio-protocol/src/public";
 import type { BacklogUpdateInput, BacklogCommandCapabilities } from "./BacklogScreen";
 import {
   backlogCriticalityOptions,
@@ -28,7 +28,7 @@ import {
   type BacklogEpicMeta,
   type BacklogRowItem,
 } from "./backlogLogic";
-import { capitalizeToken, OptionRow } from "./createFormShared";
+import { capitalizeToken, OptionRow } from "./triageChips";
 
 /** The three axes `backlog.update` can set beyond `status`. */
 type TriageOverride = Pick<BacklogUpdateInput, "type" | "difficulty" | "criticality">;
@@ -59,7 +59,7 @@ interface TriageEdits {
   criticality?: TriageEdit<NonNullable<TriageOverride["criticality"]>>;
 }
 
-const STATUS_TO_LIFECYCLE: Record<MobileControlBacklogItemStatus, LifecycleState> = {
+const STATUS_TO_LIFECYCLE: Record<StudioBacklogItemStatus, LifecycleState> = {
   idea: "idea",
   ready: "ready",
   in_progress: "in_progress",

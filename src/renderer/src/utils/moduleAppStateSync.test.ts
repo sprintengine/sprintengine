@@ -4,10 +4,15 @@
  * the `module:<id>` namespaces is pushed, and nothing else is.
  */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { initModuleAppStateSync } from './moduleAppStateSync'
+import { adoptExtensionsDouble } from '../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../studio/extensions', () => import('../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 const pushes: Array<Record<string, Record<string, unknown>>> = []
 ;(globalThis as { window?: unknown }).window = {

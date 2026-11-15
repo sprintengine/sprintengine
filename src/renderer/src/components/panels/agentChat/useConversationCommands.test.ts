@@ -2,7 +2,7 @@ import { JSDOM } from 'jsdom'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { ConversationCommand, ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import { mergeConversationCommands, studioAppCommands } from './useConversationCommands'
-import { chatOverStudioUnderTest, installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 const CWD = '/Users/dev/project'
 const catalog = (commands: ConversationCommand[], extra: Partial<ConversationCommandCatalog> = {}) => ({
@@ -202,16 +202,6 @@ test('a chat that must not discover never asks, and shows a list only once one r
   expect(hook.state().catalog).toBeNull()
   await hook.act(async () => push(catalog([{ name: 'compact', source: 'cli' }], { cwd: 'remote-root' })))
   expect(hook.state().catalog?.commands).toHaveLength(1)
-})
-
-// A window on the Studio protocol always has the list: its own Studio serves it.
-test.skipIf(chatOverStudioUnderTest())('a preload without the command list leaves Studio’s own commands', async () => {
-  const hook = await mountHook({})
-  await hook.render()
-  await hook.act(async () => hook.state().refreshIfStale())
-  expect(hook.state().loading).toBe(false)
-  expect(hook.state().catalog).toBeNull()
-  expect(hook.state().commands.map((entry) => entry.name)).toEqual(['model'])
 })
 
 test('a list pushed under another spelling of the chat’s folder is the chat’s list', async () => {

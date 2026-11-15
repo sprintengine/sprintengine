@@ -10,6 +10,7 @@ import {
   type InstallFlowState,
 } from '../settings/installFlow'
 import { EmptyState, GhostButton, InlineNotice, PrimaryButton, Spinner, StatusDot } from '../ui'
+import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // Explicit absence surfaces for module-owned UI. A workspace whose
 // mode's module is not installed — fresh machine, uninstalled, marketplace
@@ -179,9 +180,9 @@ function useMarketplaceModuleEntry(moduleId: string | undefined): MarketplacePlu
   useEffect(() => {
     setEntry(null)
     if (!moduleId) return
-    if (typeof window.api?.readMarketplaceRegistry !== 'function') return
+    if (!windowHasStudio()) return
     let cancelled = false
-    void window.api
+    void extensionsApi
       .readMarketplaceRegistry()
       .then((result) => {
         if (cancelled || !result.ok) return
@@ -222,17 +223,14 @@ function DoorModuleInstallControls({
   const [flow, setFlow] = useState<InstallFlowState>({ status: 'idle' })
 
   const install = useCallback(async () => {
-    if (
-      typeof window.api?.verifyMarketplacePlugin !== 'function' ||
-      typeof window.api?.installMarketplacePluginFromRegistry !== 'function'
-    ) {
+    if (!windowHasStudio() || !windowHasStudio()) {
       setFlow({ status: 'error', message: 'Installing extensions needs a newer app build. Update and restart.' })
       return
     }
     setFlow({ status: 'verifying' })
     let verify
     try {
-      verify = await window.api.verifyMarketplacePlugin({ id: entry.id })
+      verify = await extensionsApi.verifyMarketplacePlugin({ id: entry.id })
     } catch (error) {
       setFlow({ status: 'error', message: error instanceof Error ? error.message : 'Could not verify this extension.' })
       return
@@ -261,7 +259,7 @@ function DoorModuleInstallControls({
       // door may be open with no project at all.
       const { installAndActivateRendererModules } = await import('../../modules')
       const result = await installAndActivateRendererModules(() =>
-        window.api.installMarketplacePluginFromRegistry({ id: entry.id, ...(trustToken ? { trustToken } : {}) }),
+        extensionsApi.installMarketplacePluginFromRegistry({ id: entry.id, ...(trustToken ? { trustToken } : {}) }),
       )
       setFlow(summarizeInstallResult(result))
     } catch (error) {
@@ -364,8 +362,8 @@ export function MissingModulePanelSurface({
   const [moduleName, setModuleName] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    if (typeof window.api?.readMarketplaceRegistry !== 'function') return
-    void window.api
+    if (!windowHasStudio()) return
+    void extensionsApi
       .readMarketplaceRegistry()
       .then((result) => {
         if (cancelled || !result.ok) return

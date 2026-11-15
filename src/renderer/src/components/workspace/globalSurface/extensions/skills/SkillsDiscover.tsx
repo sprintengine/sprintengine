@@ -48,6 +48,7 @@ import {
   type SkillSearchIntent,
   type SkillSearchScheduler,
 } from './discoverModel'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -92,14 +93,14 @@ export function SkillsDiscover({
   const awaiting = useRef('')
 
   const runSearch = useCallback(async (terms: string): Promise<void> => {
-    if (typeof window.api.skillsSearch !== 'function') {
+    if (typeof agentSkillsApi.skillsSearch !== 'function') {
       setHits({ status: 'error', message: MISSING_API_MESSAGE })
       return
     }
     awaiting.current = terms
     setHits({ status: 'loading' })
     try {
-      const result = await window.api.skillsSearch({ query: terms })
+      const result = await agentSkillsApi.skillsSearch({ query: terms })
       if (!mounted.current || awaiting.current !== terms) return
       setHits({ status: 'ready', query: terms, result })
     } catch (error) {
@@ -124,13 +125,13 @@ export function SkillsDiscover({
   useEffect(() => () => scheduler.current?.cancel(), [])
 
   const loadRepos = useCallback(async (): Promise<void> => {
-    if (typeof window.api.skillsListPopularRepos !== 'function') {
+    if (typeof agentSkillsApi.skillsListPopularRepos !== 'function') {
       setRepos({ status: 'error', message: MISSING_API_MESSAGE })
       return
     }
     setRepos({ status: 'loading' })
     try {
-      const result = await window.api.skillsListPopularRepos()
+      const result = await agentSkillsApi.skillsListPopularRepos()
       if (!mounted.current) return
       setRepos({ status: 'ready', query: '', result })
     } catch (error) {

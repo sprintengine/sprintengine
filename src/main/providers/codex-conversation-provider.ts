@@ -3,8 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CONVERSATION_DEFAULT_MODEL_ID, conversationPermissionModes } from '../../shared/conversation-harness'
-import { isWslHostId, type ExecutionHostId } from '../../shared/execution-host'
-import { toWslPath, wslToWindowsPath } from '../../shared/host-paths'
 import type {
   ConversationCliRuntimeOverrides,
   ConversationEvent,
@@ -61,15 +59,6 @@ import type {
   ThreadItem,
   TurnPlanUpdatedNotification,
 } from './codex-protocol'
-import {
-  CONVERSATION_IDENTITY_ENV_KEYS,
-  hostMachineName,
-  mcpServersOnWsl,
-  prepareWslCliTarget,
-  wslTargetForHost,
-  type WslCliChild,
-  type WslCliTarget,
-} from './cli-host-child'
 import { studioGatewayForChat, withStudioGateway, type StudioMcpServerResolver } from './studio-gateway-entry'
 import { GATEWAY_WORKTREE_LEASE_TOOLS, isInGitCheckout, worktreeLeaseInstruction } from './worktree-lease-guidance'
 import { VISUALS_INSTRUCTION } from './visuals-guidance'
@@ -115,7 +104,7 @@ const CODEX_GOAL_PAUSE_TIMEOUT_MS = 2_000
 
 // How long Codex waits for MCP servers before a thread's first request. It
 // leaves out any server still starting then, and its own default of 1 s is
-// shorter than a cold `npx` or `uvx` server, or a stdio bridge into WSL, takes:
+// shorter than a cold `npx` or `uvx` server takes:
 // the first turn of a new chat ran without that server's tools, the app's own
 // gateway included. A server that never comes up now costs only that first
 // turn up to 10 s, not its full start timeout. Set for this process only, as
@@ -233,9 +222,6 @@ type Session = {
   // app-server is restarted before the next turn so the thread resumes
   // without it. Set while a turn was running, when it could not be then.
   resetPolicy?: boolean
-  // The distribution the app-server runs in, for a chat on a WSL machine;
-  // null on this one. Known once the app-server has been started.
-  wsl: WslCliTarget | null
   // How the signed-in account pays, from `account/read`: only a ChatGPT
   // sign-in has plan limits to read. Null until known.
   usageBilling?: 'subscription' | 'api' | null
@@ -257,14 +243,12 @@ export type CodexConversationProviderOptions = {
   saveGeneratedImage?: (input: { sessionId: string; itemId: string; base64: string }) => Promise<string>
   // Where a step's returned pictures are written; tests stand in.
   saveToolImages?: SaveToolResultImages
-  // Readies a WSL machine for a chat whose `codex` runs there; tests stand in.
-  prepareWslTarget?: (hostId: ExecutionHostId) => Promise<WslCliTarget>
   // The app's MCP gateway on the machine the chat's `codex` runs on. Null
   // leaves it out; the chat runs without Studio's tools rather than not at all.
   resolveStudioMcpServer?: StudioMcpServerResolver
   // The size of Codex's log database on the chat's machine, read when a start
   // times out. Tests stand in; the default lists the Codex home folder there.
-  readCodexLogBytes?: (wslDistro: string | null, env: NodeJS.ProcessEnv) => Promise<number | null>
+  readCodexLogBytes?: (env: NodeJS.ProcessEnv) => Promise<number | null>
   // The machine a local `codex` runs on, for the macOS privacy-folder hint on
   // a failed start. Tests stand in; the default is this process's.
   platform?: NodeJS.Platform
@@ -989,10 +973,7 @@ export function createCodexConversationProvider(
   // Where a generated picture is on disk: where Codex saved it, or where this
   // adapter wrote the bytes Codex sent, so it outlives the process that made it.
   async function generatedImagePath(state: Session, item: RecordValue): Promise<string | null> {
-    // Codex in WSL names where it saved a picture the Linux way; the chat
-    // opens it from this machine.
-    if (typeof item.savedPath === 'string' && item.savedPath)
-      return state.wsl ? wslToWindowsPath(item.savedPath, { distro: state.wsl.distro }) : item.savedPath
+    if (typeof item.savedPath === 'string' && item.savedPath) return item.savedPath
     const base64 = text(item.result).replace(/^data:[^;]+;base64,/, '')
     if (!base64) return null
     try {
@@ -1178,22 +1159,19 @@ export function createCodexConversationProvider(
     const transport = state.transport
     const cwd = state.input.workspaceRoot ?? ''
     if (!transport || !cwd) return
-    // Codex is asked about the folder as it names it; the menu is keyed by the
-    // folder as this machine does.
-    const codexCwd = hostCwd(cwd, state.wsl)
     const listing = transport.request('skills/list', {
-      cwds: [codexCwd],
+      cwds: [cwd],
       ...(forceReload ? { forceReload } : {}),
     })
     // A turn starting while this is asked waits for it rather than sending
     // its `$name` mentions as text alone.
     state.skills = listing.then(
-      (listed) => codexListedSkills(listed, codexCwd),
+      (listed) => codexListedSkills(listed, cwd),
       () => [],
     )
     try {
       const listed = await listing
-      publishConversationCommands({ cli: 'codex', cwd, commands: codexConversationCommands(listed, codexCwd) })
+      publishConversationCommands({ cli: 'codex', cwd, commands: codexConversationCommands(listed, cwd) })
     } catch (error) {
       if (state.transport !== transport) return
       publishConversationCommands({
@@ -1275,22 +1253,13 @@ export function createCodexConversationProvider(
     if (state.transport) return
     if (state.starting) return state.starting
     state.starting = (async () => {
-      // A chat on a WSL machine runs that machine's `codex`, with the login
-      // and `config.toml` under its Linux home; everything below is the same.
-      const wsl = await wslTargetForHost(
-        state.input.cliRuntimes?.codex?.hostId,
-        options.prepareWslTarget ?? prepareWslCliTarget,
-      )
-      if (state.closed) throw new Error('Codex conversation was closed.')
       const command = await (options.resolveExecutable ?? resolveExecutable)(state.input)
       const env = await (options.buildEnv ?? buildEnv)(state.input)
-      const hostId = state.input.cliRuntimes?.codex?.hostId
-      const gateway = await options.resolveStudioMcpServer?.({ ...(hostId ? { hostId } : {}) }).catch(() => null)
+      const gateway = await options.resolveStudioMcpServer?.().catch(() => null)
       // Only a chat that has the gateway has the worktree pool's tools, and
       // only one in a git checkout has a repository to lease a worktree of.
       const leasesWorktrees = Boolean(gateway) && (await isInGitCheckout(state.input.workspaceRoot))
       if (state.closed) throw new Error('Codex conversation was closed.')
-      state.wsl = wsl
       // The app's gateway beside the session's own servers. The app-server is
       // issued its own gateway token as it starts (its environment names the
       // chat), and Codex starts a server with only the variables its entry
@@ -1312,13 +1281,12 @@ export function createCodexConversationProvider(
       // pinned into the workspace's `.codex/config.toml` under the same
       // name, so the app-server starts one gateway, the launch's. Their env
       // and header values go in the app-server's environment, which the
-      // overrides name; a WSL child reads them from stdin.
-      const mcp = codexMcpServerArgs(wsl ? mcpServersOnWsl(mcpServers) : mcpServers, env)
+      // overrides name.
+      const mcp = codexMcpServerArgs(mcpServers, env)
       const transport = (options.createTransport ?? createCodexRpcTransport)({
         command,
         cwd: state.input.workspaceRoot ?? '',
         env: { ...env, ...mcp.env },
-        wsl: wsl ? { ...codexWslChild(wsl), stdinEnv: Object.keys(mcp.env) } : null,
         args: [
           ...codexAppServerArgs(env.SPRINTENGINE_CODEX_APP_SERVER_ARGS),
           ...CODEX_MCP_STARTUP_GRACE_ARGS,
@@ -1345,7 +1313,7 @@ export function createCodexConversationProvider(
         noteCodexAccount(state, transport, account)
         const policy = codexPermissionPolicy(state.input.permissionPreset, state.input.permissionMode)
         const threadParams = {
-          cwd: state.input.workspaceRoot === undefined ? undefined : hostCwd(state.input.workspaceRoot, wsl),
+          cwd: state.input.workspaceRoot,
           ...(state.input.modelId !== CONVERSATION_DEFAULT_MODEL_ID ? { model: state.input.modelId } : {}),
           ...(policy.approvalPolicy
             ? {
@@ -1354,11 +1322,7 @@ export function createCodexConversationProvider(
                 sandbox: policy.sandbox,
               }
             : {}),
-          ...(await codexDeveloperInstructions(
-            transport,
-            state.input.workspaceRoot === undefined ? undefined : hostCwd(state.input.workspaceRoot, wsl),
-            leasesWorktrees,
-          )),
+          ...(await codexDeveloperInstructions(transport, state.input.workspaceRoot, leasesWorktrees)),
         }
         let resumeLost = false
         let forkLost = false
@@ -1447,14 +1411,13 @@ export function createCodexConversationProvider(
         if (isCodexInitializeTimeout(error))
           throw await explainCodexInitializeTimeout({
             timeoutMs: CODEX_RPC_TIMEOUT_MS,
-            wslDistro: wsl?.distro ?? null,
             env,
             ...(options.readCodexLogBytes ? { readLogBytes: options.readCodexLogBytes } : {}),
           })
         // A project in Desktop, Documents, Downloads or iCloud Drive that macOS
         // has not let the app into: Codex exits with EPERM before it answers,
-        // and the fix is a setting. Not in WSL, whose folders macOS does not keep.
-        if (error instanceof Error && !wsl)
+        // and the fix is a setting.
+        if (error instanceof Error)
           error.message = withMacosPrivacyFolderHint(error.message, {
             platform: options.platform ?? process.platform,
             folder: state.input.workspaceRoot,
@@ -1470,7 +1433,6 @@ export function createCodexConversationProvider(
   return {
     id: CODEX_CONVERSATION_PROVIDER_ID,
     displayName: 'Codex',
-    executionHostCli: 'codex',
     sessions: 'stateful',
     acceptsMcpServers: true,
     listModels: () => [...models],
@@ -1519,7 +1481,6 @@ export function createCodexConversationProvider(
         spawnedAt: null,
         children: new Map(),
         failedServers: new Set(),
-        wsl: null,
         lastTurnId: null,
       }
       sessions.set(input.sessionId, state)
@@ -1834,20 +1795,9 @@ async function resolveExecutable(input: Pick<MockAdapterSessionInput, 'cliRuntim
   const runtime = input.cliRuntimes?.codex
   const found = await resolveCliExecutable('codex', runtime)
   if (!found.path) {
-    if (isWslHostId(runtime?.hostId))
-      throw new Error(
-        `Codex CLI was not found on ${hostMachineName(runtime.hostId)}. Install it in that distribution (or set its command for that machine in Settings) to chat there.` +
-          (found.error ? ` ${found.error}` : ''),
-      )
     throw new Error('Codex CLI is not installed. Install it or configure its command in Settings.')
   }
   return found.path
-}
-
-// The workspace folder as Codex names it: the Linux spelling for an
-// app-server in WSL (`/home/…`, `/mnt/c/…`), this machine's otherwise.
-function hostCwd(cwd: string, wsl: WslCliTarget | null): string {
-  return wsl ? toWslPath(cwd) : cwd
 }
 
 // Auth that would take a chat's Codex off the person's login.
@@ -1859,14 +1809,6 @@ const CODEX_STRIPPED_AUTH_ENV_KEYS = [
   'OPENAI_PROJECT_ID',
 ] as const
 
-/**
- * What an app-server in WSL is started with of the chat's environment: its
- * identity, and none of the API auth the profile there may export, for the
- * reason `codexChildEnv` strips it here.
- */
-export function codexWslChild(target: WslCliTarget): WslCliChild {
-  return { ...target, forwardEnv: CONVERSATION_IDENTITY_ENV_KEYS, unsetEnv: CODEX_STRIPPED_AUTH_ENV_KEYS }
-}
 async function buildEnv(input: MockAdapterSessionInput): Promise<NodeJS.ProcessEnv> {
   const { getTerminalEnv, applyAgentIdentityEnv } = await import('../terminal-launch')
   return codexChildEnv(
@@ -1898,10 +1840,8 @@ export async function probeCodexConversationCommands(
     resolveExecutable?: (input: Pick<MockAdapterSessionInput, 'cliRuntimes'>) => Promise<string>
     buildEnv?: () => Promise<NodeJS.ProcessEnv>
     createTransport?: (options: CodexRpcOptions) => CodexRpcTransport
-    prepareWslTarget?: (hostId: ExecutionHostId) => Promise<WslCliTarget>
   } = {},
 ): Promise<ConversationCommand[]> {
-  const wsl = await wslTargetForHost(input.cliRuntimes?.codex?.hostId, options.prepareWslTarget ?? prepareWslCliTarget)
   const command = await (options.resolveExecutable ?? resolveExecutable)(input)
   const env =
     (await options.buildEnv?.()) ??
@@ -1915,18 +1855,15 @@ export async function probeCodexConversationCommands(
     command,
     cwd: input.cwd,
     env,
-    // It opens no thread, so it starts no MCP server and is issued no token.
-    wsl: wsl ? codexWslChild({ distro: wsl.distro, agentStateSocketPath: wsl.agentStateSocketPath }) : null,
     args: codexAppServerArgs(env.SPRINTENGINE_CODEX_APP_SERVER_ARGS),
     onMessage: () => undefined,
     onClose: () => undefined,
     timeoutMs: 15_000,
   })
-  const codexCwd = hostCwd(input.cwd, wsl)
   try {
     await transport.request('initialize', CODEX_INITIALIZE)
     transport.notify('initialized', {})
-    const commands = codexConversationCommands(await transport.request('skills/list', { cwds: [codexCwd] }), codexCwd)
+    const commands = codexConversationCommands(await transport.request('skills/list', { cwds: [input.cwd] }), input.cwd)
     publishConversationCommands({ cli: 'codex', cwd: input.cwd, commands })
     return commands
   } finally {

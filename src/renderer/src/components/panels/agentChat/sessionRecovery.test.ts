@@ -23,6 +23,23 @@ test('a send on a session its server no longer holds starts the session again an
   expect(restarts).toBe(1)
 })
 
+test("the send again on the new session carries the first one's command id, so a message that landed runs once", async () => {
+  const sent: [string, string][] = []
+  await sendRecoveringSession({
+    sessionId: 'conv_old',
+    newCommandId: () => 'cmd-1',
+    send: async (sessionId, commandId) => {
+      sent.push([sessionId, commandId])
+      return sessionId === 'conv_old' ? lost : { ok: true as const }
+    },
+    restart: async () => ({ ok: true, sessionId: 'conv_new' }),
+  })
+  expect(sent).toEqual([
+    ['conv_old', 'cmd-1'],
+    ['conv_new', 'cmd-1'],
+  ])
+})
+
 test('a restart that fails says why, and any other refusal is answered as it came', async () => {
   const failed = await sendRecoveringSession({
     sessionId: 'conv_old',

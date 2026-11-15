@@ -33,7 +33,8 @@
           { "context": "Build (ubuntu-latest)", "integration_id": 15368 },
           { "context": "Build (windows-latest)", "integration_id": 15368 },
           { "context": "Build (macos-latest)", "integration_id": 15368 },
-          { "context": "JS tests (ubuntu-latest)", "integration_id": 15368 }
+          { "context": "JS tests (ubuntu-latest)", "integration_id": 15368 },
+          { "context": "Cross-client gate", "integration_id": 15368 }
         ]
       }
     }

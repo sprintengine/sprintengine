@@ -54,16 +54,6 @@ export type ConversationSideQuestionAnswer = { answer: string }
 // ── The context window ──────────────────────────────────────────────────────
 
 /**
- * Read what fills the context window of the chat this socket follows
- * (`conversation-context-breakdown`), as its agent measures it. Answered by a
- * `result` whose `data` is a `ConversationContextBreakdownAnswer`. Refused in
- * words for a chat with no live session, which has no agent to ask until a
- * message starts one: a read never starts a session. Needs only
- * `conversation:read`.
- */
-export type ConversationContextBreakdownRequest = { type: 'getContextBreakdown'; requestId: string }
-
-/**
  * One row of the breakdown. `used` fills the window, `free` is what is left of
  * it, `buffer` is held back for compaction, and `deferred` is listed for
  * awareness but not in the window (tool schemas loaded on demand). A client
@@ -107,12 +97,6 @@ function record(value: unknown): value is Record<string, unknown> {
 function id(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200
 }
-function count(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-}
-function text(value: unknown): value is string {
-  return typeof value === 'string' && value.length <= 1_000
-}
 
 /** A side question frame read as the contract says, or null. Unknown members are dropped. */
 export function parseConversationSideQuestionRequest(
@@ -139,80 +123,5 @@ export function parseConversationSideQuestionRequest(
     questionId: value.questionId,
     question,
     ...(exchanges.length ? { history: exchanges } : {}),
-  }
-}
-
-/** A side question's answer off a `result`'s `data`, or null when it is not one. */
-export function parseConversationSideQuestionAnswer(value: unknown): ConversationSideQuestionAnswer | null {
-  return record(value) && typeof value.answer === 'string' ? { answer: value.answer } : null
-}
-
-function items(value: unknown): ConversationWireContextItem[] | null {
-  if (!Array.isArray(value)) return null
-  const read: ConversationWireContextItem[] = []
-  for (const entry of value) {
-    if (!record(entry) || !text(entry.name) || !count(entry.tokens)) return null
-    read.push({
-      name: entry.name,
-      tokens: entry.tokens,
-      ...(text(entry.detail) ? { detail: entry.detail } : {}),
-    })
-  }
-  return read
-}
-
-/**
- * A breakdown off a `result`'s `data`, or null when it is not one. A row whose
- * shape is wrong spoils the reading, since its totals would not add up; a
- * member this version does not know is dropped.
- */
-export function parseConversationContextBreakdownAnswer(value: unknown): ConversationContextBreakdownAnswer | null {
-  if (!record(value) || !record(value.breakdown)) return null
-  const breakdown = value.breakdown
-  if (
-    !text(breakdown.model) ||
-    !count(breakdown.usedTokens) ||
-    !count(breakdown.windowTokens) ||
-    !count(breakdown.measuredAt) ||
-    typeof breakdown.estimated !== 'boolean' ||
-    !(breakdown.autoCompactAt === null || count(breakdown.autoCompactAt)) ||
-    !Array.isArray(breakdown.categories) ||
-    !Array.isArray(breakdown.mcpServers)
-  )
-    return null
-  const categories: ConversationWireContextCategory[] = []
-  for (const entry of breakdown.categories) {
-    if (!record(entry) || !text(entry.name) || !count(entry.tokens) || !text(entry.kind)) return null
-    categories.push({ name: entry.name, tokens: entry.tokens, kind: entry.kind })
-  }
-  const mcpServers: ConversationWireContextMcpServer[] = []
-  for (const entry of breakdown.mcpServers) {
-    if (!record(entry) || !text(entry.name) || !count(entry.tokens) || !Array.isArray(entry.tools)) return null
-    const tools: ConversationWireContextMcpServer['tools'] = []
-    for (const tool of entry.tools) {
-      if (!record(tool) || !text(tool.name) || !count(tool.tokens) || typeof tool.loaded !== 'boolean') return null
-      tools.push({ name: tool.name, tokens: tool.tokens, loaded: tool.loaded })
-    }
-    mcpServers.push({ name: entry.name, tokens: entry.tokens, tools })
-  }
-  const skills = items(breakdown.skills ?? [])
-  const memoryFiles = items(breakdown.memoryFiles ?? [])
-  const agents = items(breakdown.agents ?? [])
-  if (!skills || !memoryFiles || !agents) return null
-  return {
-    breakdown: {
-      model: breakdown.model,
-      usedTokens: breakdown.usedTokens,
-      windowTokens: breakdown.windowTokens,
-      categories,
-      mcpServers,
-      skills,
-      memoryFiles,
-      agents,
-      autoCompactAt: breakdown.autoCompactAt as number | null,
-      estimated: breakdown.estimated,
-      measuredAt: breakdown.measuredAt,
-    },
-    ...(value.stale === true ? { stale: true as const } : {}),
   }
 }

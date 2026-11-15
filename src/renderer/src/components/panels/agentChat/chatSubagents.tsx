@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type JSX } from 'react'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
-import type { ConversationApprovalDecision } from '../../../../../shared/conversation/approvalRules'
+import type { ConversationApprovalDecision } from '../../../../../shared/conversation-runtime'
 import {
   subagentEnded,
   subagentLiveStatusOf,

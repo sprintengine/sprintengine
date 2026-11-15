@@ -251,6 +251,36 @@ async function getCurrentBranchName(repoRoot: string): Promise<string | null> {
   return result.ok ? branchNameFromHeadRef(result.stdout) : null
 }
 
+const OPERATION_NOUN: Record<GitRepoOperation, string> = {
+  merge: 'The merge',
+  rebase: 'The rebase',
+  'cherry-pick': 'The cherry-pick',
+  revert: 'The revert',
+}
+
+/**
+ * An operation that stopped on conflicts exits non-zero with git's "CONFLICT"
+ * lines on stdout and nothing on stderr, so the message left was the runner's
+ * own "Command failed: git …". That is the expected outcome of a conflicting
+ * merge, not an error: say what happened and what comes next.
+ */
+async function explainConflictStop(
+  repoRoot: string,
+  operation: GitRepoOperation,
+  result: GitCommandResult,
+): Promise<GitCommandResult> {
+  if (result.ok) return result
+  const unmerged = await runGitCommand(repoRoot, ['diff', '--name-only', '--diff-filter=U'])
+  const files = unmerged.ok ? unmerged.stdout.split('\n').filter((line) => line.trim()).length : 0
+  if (files === 0) return result
+  const count = files === 1 ? '1 file' : `${files} files`
+  return {
+    ...result,
+    stoppedOnConflicts: true,
+    message: `${OPERATION_NOUN[operation]} stopped on conflicts in ${count}. Resolve them, then Continue, or Abort to go back.`,
+  }
+}
+
 export async function mergeGitRef(repoRoot: string, ref: string): Promise<GitCommandResult> {
   const target = ref.trim()
   const invalid = validateMergeTarget(target)
@@ -266,7 +296,7 @@ export async function mergeGitRef(repoRoot: string, ref: string): Promise<GitCom
   const unresolved = await resolveTargetCommit(repoRoot, target)
   if (unresolved) return unresolved
 
-  return runGitCommand(repoRoot, ['merge', '--no-edit', target])
+  return explainConflictStop(repoRoot, 'merge', await runGitCommand(repoRoot, ['merge', '--no-edit', target]))
 }
 
 export async function rebaseGitBranch(repoRoot: string, ontoRef: string): Promise<GitCommandResult> {
@@ -284,7 +314,7 @@ export async function rebaseGitBranch(repoRoot: string, ontoRef: string): Promis
   const unresolved = await resolveTargetCommit(repoRoot, target)
   if (unresolved) return unresolved
 
-  return runGitCommand(repoRoot, ['rebase', target], NO_EDITOR_ENV)
+  return explainConflictStop(repoRoot, 'rebase', await runGitCommand(repoRoot, ['rebase', target], NO_EDITOR_ENV))
 }
 
 async function isMergeCommit(repoRoot: string, hash: string): Promise<boolean> {
@@ -305,7 +335,11 @@ export async function cherryPickGitCommit(repoRoot: string, commitHash: string):
     )
   }
 
-  return runGitCommand(repoRoot, ['cherry-pick', hash], NO_EDITOR_ENV)
+  return explainConflictStop(
+    repoRoot,
+    'cherry-pick',
+    await runGitCommand(repoRoot, ['cherry-pick', hash], NO_EDITOR_ENV),
+  )
 }
 
 export async function revertGitCommit(repoRoot: string, commitHash: string): Promise<GitCommandResult> {
@@ -319,7 +353,11 @@ export async function revertGitCommit(repoRoot: string, commitHash: string): Pro
     return fail('This is a merge commit; reverting it needs a mainline parent (git revert -m). Use the Git terminal.')
   }
 
-  return runGitCommand(repoRoot, ['revert', '--no-edit', hash], NO_EDITOR_ENV)
+  return explainConflictStop(
+    repoRoot,
+    'revert',
+    await runGitCommand(repoRoot, ['revert', '--no-edit', hash], NO_EDITOR_ENV),
+  )
 }
 
 const GIT_RESET_MODES: GitResetMode[] = ['soft', 'mixed', 'hard']

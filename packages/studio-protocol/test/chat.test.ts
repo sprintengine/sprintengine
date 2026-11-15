@@ -10,22 +10,28 @@ import {
   type StudioChatMethod,
 } from '../src/chat'
 import { parseStudioServerFrame } from '../src/envelope'
-import { STUDIO_CAPABILITIES, STUDIO_CHAT_CAPABILITIES } from '../src/handshake'
+import { STUDIO_CAPABILITIES, STUDIO_CHAT_CAPABILITIES, STUDIO_FILES_CAPABILITY } from '../src/handshake'
 import { parseStudioConversationKey } from '../src/key'
 import { STUDIO_METHODS, parseStudioMethodParams, parseStudioTopicParams } from '../src/methods'
 
 const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
 const folderKey = { ...key, workspaceRoot: '/Users/dev/project/.worktrees/run-1' }
 
-test('the chat surface is an owner’s, method by method, and each names a scope and a chat capability', () => {
+test('the chat surface reaches a client by its scopes, two methods excepted, and each names a chat capability or the files one', () => {
+  const owners = Object.entries(STUDIO_CHAT_METHODS)
+    .filter(([, spec]) => spec.owner !== undefined)
+    .map(([method]) => method)
+  // A terminal on Studio's screen, and the line a terminal there runs.
+  assert.deepEqual(owners.sort(), ['providers.signIn', 'session.terminalHandoff'])
   for (const [method, spec] of Object.entries(STUDIO_CHAT_METHODS)) {
-    assert.equal(spec.owner, true, method)
     assert.ok(spec.scope, method)
-    assert.ok((STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(spec.capability!), method)
+    // The file reads by path are every Studio's core's, served with or without a chat surface.
+    if (spec.capability === STUDIO_FILES_CAPABILITY) assert.ok(method.startsWith('files.'), method)
+    else assert.ok((STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(spec.capability!), method)
     assert.equal(STUDIO_METHODS[method as StudioChatMethod], spec)
   }
   for (const [topic, spec] of Object.entries(STUDIO_CHAT_TOPICS)) {
-    assert.deepEqual([topic, spec.owner, spec.push], [topic, true, true])
+    assert.deepEqual([topic, spec.owner, spec.push], [topic, undefined, true])
   }
   // Every chat capability is one this package knows.
   for (const capability of STUDIO_CHAT_CAPABILITIES) assert.ok(STUDIO_CAPABILITIES.includes(capability))
@@ -180,6 +186,8 @@ test('revert, rewind and fork take a conversation and a turn; a fork is from a r
       newAgentId: 'a2',
       side: 'assistant',
       turnId: 't',
+      // An older client's name for it: the Studio names a fork itself.
+      title: 'Mine',
     }),
     { ok: true, params: { commandId: 'c', key, newAgentId: 'a2', side: 'assistant', turnId: 't' } },
   )

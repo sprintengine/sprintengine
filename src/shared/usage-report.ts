@@ -1,150 +1,28 @@
 import { cliForConversationProvider } from './conversation-harness'
-import type { MachineColour, MachineKind } from './machine-identity'
 
-// The usage dashboard's contract: what a window asks main for (`usage:report`)
+// The usage dashboard's contract: what a window asks its Studio for (`usage.report`)
 // and the answer, already priced. Main reads every agent's session logs on
 // this machine (src/main/usage) and folds them, with what each machine paired
 // over the tailnet answered for its own (usage-mesh.ts); the window draws, and
 // buckets the hourly series into its own local days, so a day is the reader's day.
 
-/** Where the prices came from: the live list fetched today, an older copy of it, or the bundled table alone. */
-export type UsagePricingSource = 'live' | 'cached' | 'bundled'
-
-export type UsageReportRequest = {
-  /** Epoch ms, inclusive. */
-  from: number
-  /** Epoch ms, exclusive. */
-  to: number
-  /**
-   * Scan the logs now and fetch the price list again, rather than answer from
-   * the last scan. With `peers` asking, it is passed on to the paired machines
-   * instead, and this machine answers from its last scan.
-   */
-  refresh?: boolean
-  /**
-   * What to do about the paired machines. `cached` (the default) asks none of
-   * them and counts what each last answered, so the answer never waits on the
-   * network; `ask` asks every one now; `await` asks again only those whose
-   * answer said they were still reading their logs, and waits for the read.
-   * The dashboard asks in that order, drawing each answer as it comes.
-   */
-  peers?: UsagePeerMode
-  /** Count only these machines (`UsageReportMachine.id`); absent or empty counts every one. */
-  machines?: string[]
-}
-
-export type UsagePeerMode = 'cached' | 'ask' | 'await'
-
-export type UsageReportTokens = {
-  /** Fresh input: not read from or written to the prompt cache. */
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-}
-
-/** The agent a session ran: an agent CLI's id (`claude-code`, `codex`, `opencode`…), or the provider's id for one that is not a CLI. */
-export type UsageAgentId = string
-
-export type UsageReportAgent = {
-  id: UsageAgentId
-  sessions: number
-  tokens: UsageReportTokens
-  /** Priced cost, plus what the agent reported for turns it priced itself. */
-  costUsd: number
-  /** Tokens no price was found for; they are in `tokens`, not in `costUsd`. */
-  unpricedTokens: number
-}
-
-export type UsageReportModel = {
-  agent: UsageAgentId
-  model: string
-  tokens: UsageReportTokens
-  /** Null when nothing priced this model's tokens. */
-  costUsd: number | null
-  requests: number
-}
-
-/** One agent's usage in one hour. */
-export type UsageReportPoint = {
-  hour: number
-  agent: UsageAgentId
-  tokens: number
-  costUsd: number
-}
-
-export type UsageReportSource = {
-  id: string
-  /** Session logs found. */
-  found: number
-  error: string | null
-}
-
-/**
- * Where a machine's figures came from:
- * - `local`: this machine's own logs;
- * - `ok`: the machine answered just now;
- * - `cached`: it did not answer, and what it answered last is counted;
- * - `offline`: it did not answer and has never answered, so nothing is counted;
- * - `unsupported`: its Studio does not serve usage yet;
- * - `unauthorized`: the pairing was revoked, or may not read it;
- * - `error`: it answered, but not with figures.
- */
-export type UsageMachineStatus = 'local' | 'ok' | 'cached' | 'offline' | 'unsupported' | 'unauthorized' | 'error'
-
-/** One machine's part of the report, counted with every machine in it (not just the ones filtered to). */
-export type UsageReportMachine = {
-  /** `local` for this machine, else the paired machine's connection id. */
-  id: string
-  label: string
-  kind: MachineKind
-  color: MachineColour
-  status: UsageMachineStatus
-  /** The machine said its figures predate a read of its logs that is running now. */
-  scanning: boolean
-  /** When that machine last read its logs, by its own answer. */
-  scannedAt: number | null
-  /** When this desktop last heard figures from it; null for this machine. */
-  fetchedAt: number | null
-  /** What went wrong, in the words of the side that knows; null when nothing did. */
-  detail: string | null
-  costUsd: number
-  tokens: number
-  sessions: number
-}
-
-export type UsageReport = {
-  from: number
-  to: number
-  /** When the logs were last read (epoch ms), or null before the first scan finished. */
-  scannedAt: number | null
-  pricing: { source: UsagePricingSource; fetchedAt: number | null }
-  totals: {
-    tokens: UsageReportTokens
-    costUsd: number
-    /** What the cache reads saved over paying full input price for the same tokens. */
-    cacheSavingsUsd: number
-    sessions: number
-    requests: number
-    unpricedTokens: number
-  }
-  agents: UsageReportAgent[]
-  models: UsageReportModel[]
-  points: UsageReportPoint[]
-  sources: UsageReportSource[]
-  /**
-   * This machine, then each paired machine. A session found on two machines (a
-   * shared or synced home folder, a restored backup) counts once, on the
-   * machine first in this list that has it.
-   */
-  machines: UsageReportMachine[]
-  /** Sessions in the report that more than one machine had, counted once. */
-  sharedSessions: number
-}
-
-export const LOCAL_USAGE_MACHINE_ID = 'local'
-
-export type UsageReportResult = { ok: true; report: UsageReport } | { ok: false; message: string }
+export { LOCAL_USAGE_MACHINE_ID } from '../../packages/studio-protocol/src/public'
+export type {
+  UsageAgentId,
+  UsageMachineStatus,
+  UsagePeerMode,
+  UsagePricingSource,
+  UsageReport,
+  UsageReportAgent,
+  UsageReportMachine,
+  UsageReportModel,
+  UsageReportPoint,
+  UsageReportRequest,
+  UsageReportResult,
+  UsageReportSource,
+  UsageReportTokens,
+} from '../../packages/studio-protocol/src/public'
+import type { UsageAgentId, UsageReportTokens } from '../../packages/studio-protocol/src/public'
 
 /** Every token the window processed: fresh input, cache reads and writes, and output. */
 export function usageTokenTotal(tokens: UsageReportTokens): number {

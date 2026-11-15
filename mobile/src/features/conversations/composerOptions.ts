@@ -125,19 +125,8 @@ export function composerHasOptions(rows: readonly ComposerOption[]): boolean {
 
 /** The image types a chat takes, as the desktop's upload accepts them. */
 export const CHAT_IMAGE_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-/** The largest picture a desktop's upload takes, unless it sizes pictures itself. */
+/** The largest picture a desktop's upload takes (`uploads.begin` holds a picture to it). */
 export const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-/**
- * The largest picture a desktop that advertises `conversation-image-downscale`
- * takes: it scales a picture down before the model sees it, so a phone photo
- * straight off the camera need not be refused here first.
- */
-export const CHAT_IMAGE_DOWNSCALED_MAX_BYTES = 20 * 1024 * 1024;
-
-/** The largest picture worth uploading to a desktop, by whether it sizes pictures itself. */
-export function chatImageMaxBytes(desktopDownscales: boolean): number {
-  return desktopDownscales ? CHAT_IMAGE_DOWNSCALED_MAX_BYTES : CHAT_IMAGE_MAX_BYTES;
-}
 
 const IMAGE_EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",

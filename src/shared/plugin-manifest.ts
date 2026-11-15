@@ -7,11 +7,36 @@
 // renderer agent CLI catalog, and provider-only conversation manifests. Provider
 // manifests must never be mixed into the terminal CLI catalog.
 
+import type {
+  PluginModelOption,
+  PluginReasoningOption,
+  PluginSkillFormat,
+  PluginSkillInstallScope,
+  PluginSkillInvocation,
+  PluginSkillSupport,
+  PluginSource,
+} from '../../packages/studio-protocol/src/public'
 import type { ModuleSignature } from './modules/manifest'
 import type {
   StudioProviderAdapterClassification,
   StudioProviderModel,
   StudioProviderType,
+} from '../../packages/studio-protocol/src/public'
+
+// What a client draws of a registered CLI, as the Studio protocol defines it
+// (`extensions-types.ts`), under the names the app has always used.
+export type {
+  PluginModelCatalog,
+  PluginModelOption,
+  PluginReasoningCatalog,
+  PluginReasoningOption,
+  PluginRegistryListEntry,
+  PluginSkillCatalog,
+  PluginSkillFormat,
+  PluginSkillInstallScope,
+  PluginSkillInvocation,
+  PluginSkillSupport,
+  PluginSource,
 } from '../../packages/studio-protocol/src/public'
 
 type PluginVariableType = 'string' | 'enum' | 'boolean' | 'number'
@@ -147,43 +172,11 @@ export type PluginMcpConfigSpec = {
   format: PluginMcpConfigFormat
 }
 
-export type PluginSkillSupport = 'native' | 'prompt-shim' | 'unsupported'
-type PluginSkillInstallScope = 'workspace' | 'user'
-export type PluginSkillFormat = 'agent-skills-v1' | 'claude-code' | 'codex' | 'opencode' | 'generic'
-
 export type PluginSkillInstallTarget = {
   scope: PluginSkillInstallScope
   path: string
   format: PluginSkillFormat
   restartRequired?: boolean
-}
-
-export type PluginSkillInvocation = {
-  fileDropTemplate?: string
-  explicitTemplate?: string
-  nativeSlashCommand?: boolean
-  explicitMention?: boolean
-  implicitInvocation?: boolean
-  /**
-   * The character a person types to name a skill mid-prompt — `/` for a CLI
-   * with real slash commands, `$` for one whose skills are `$`-mentions. Absent
-   * means the CLI has no in-prompt form at all (opencode says "Use the X
-   * skill."), and surfaces that offer a type-ahead must fall back to a picker
-   * rather than inventing a trigger.
-   *
-   * Declared rather than derived: reading the character before `{{skillId}}` in
-   * `explicitTemplate` yields `/`, `$`, and — for the sentence form — `e`.
-   * Right twice and silently wrong once.
-   */
-  mentionPrefix?: string
-  /**
-   * What a picked skill inserts at the caret. Defaults to
-   * `{{mentionPrefix}}{{skillId}}`. Distinct from `explicitTemplate`, which is
-   * the STANDALONE form used to seed a whole prompt (debug launch, connector
-   * chat, backlog handoff) and may be a full sentence — inserting that
-   * mid-sentence would write the user's sentence for them.
-   */
-  mentionTemplate?: string
 }
 
 type PluginSkillIntegration = {
@@ -200,11 +193,6 @@ export type PluginCapabilities = {
   mcpServers: boolean
   imageInput?: boolean
   chatHistoryFile?: string
-}
-
-export type PluginModelOption = {
-  id: string
-  label?: string
 }
 
 // Declares that a CLI supports model selection and how the chosen model id is
@@ -229,10 +217,6 @@ type PluginModelSelectionSpec = {
 // differs from `default`, so an unset (or default) level passes no flag and the
 // CLI's own default effort wins. `levels` is the closed set the CLI accepts —
 // the picker never offers a level the CLI can't parse.
-export type PluginReasoningOption = {
-  id: string
-  label?: string
-}
 
 type PluginReasoningSelectionSpec = {
   args: string[]
@@ -622,8 +606,6 @@ export type PluginManifestValidationIssue = {
 export type PluginManifestValidationResult =
   { ok: true; manifest: PluginManifestFamily } | { ok: false; issues: PluginManifestValidationIssue[] }
 
-export type PluginSource = 'bundled' | 'user'
-
 export type LoadedPlugin = {
   manifest: PluginManifest
   source: PluginSource
@@ -641,74 +623,12 @@ export type LoadedConversationProvider = {
 
 // Renderer-facing model-selection metadata. `args` stays main-process-only;
 // pickers need the choices and whether free-text ids are allowed.
-export type PluginModelCatalog = {
-  options: PluginModelOption[]
-  allowCustomId: boolean
-}
 
 // Renderer-facing reasoning-selection metadata. `args` stays main-process-only;
 // pickers need the levels and which one is the CLI's default.
-export type PluginReasoningCatalog = {
-  levels: PluginReasoningOption[]
-  default?: string
-}
 
 // Renderer-facing skill-integration metadata. Carries the declared install
 // targets verbatim (path template included) because the template *is* the
 // declaration of where a harness keeps its skills — `buildHarnessMap`
 // (src/shared/harness-map.ts) parses it, and nothing anywhere writes a harness
 // directory as a string literal.
-type PluginSkillCatalogTarget = {
-  scope: PluginSkillInstallScope
-  path: string
-  format: PluginSkillFormat
-  restartRequired: boolean
-}
-
-export type PluginSkillCatalog = {
-  support: PluginSkillSupport
-  harnessId: string
-  installTargets: PluginSkillCatalogTarget[]
-  invocation?: PluginSkillInvocation
-}
-
-export type PluginRegistryListEntry = {
-  id: string
-  displayName: string
-  source: PluginSource
-  version: number
-  binary: string
-  // Conversation-resume capabilities projected from `capabilities` so renderer
-  // reducers/components can resolve resume behavior synchronously (including
-  // optimistic pre-launch) without reaching the main-process registry. See
-  // agent-cli-resume.ts (ResumeCapabilities) and resumeCapabilitiesForCli.
-  resumeSession: boolean
-  sessionIdFromCaller: boolean
-  // Projected from `agentStateSpec` presence: whether this CLI can report
-  // authoritative agent state via lifecycle hooks. Hooks are the only
-  // supported status mechanism, so a false here means the CLI is not offered
-  // as an agent (pickers filter on it; the main process refuses launches).
-  agentStateCapable: boolean
-  modelSelection?: PluginModelCatalog
-  reasoningSelection?: PluginReasoningCatalog
-  // Set when this runtime is another CLI's binary redirected at an alternate
-  // provider endpoint (today: `binary: "claude"` + a `launch.env` base-URL
-  // redirect, e.g. zai and kimi-claude). Derived from the manifest, never
-  // declared. Pickers group these under a "Models via Claude Code" section so
-  // they read as hosted models rather than peer CLIs.
-  hostedVia?: 'claude-code'
-  skillIntegration?: PluginSkillCatalog
-  // Present when the CLI declares a credential (`auth`); the renderer uses the
-  // label to render a key-entry row in Agents settings. The secret value itself
-  // is never sent to the renderer — only this descriptor.
-  auth?: { label: string }
-  // The permission presets a terminal launch of this CLI is told in its own
-  // words: `none` always, and each one its manifest names a setting for. The
-  // launcher dims the rest for a terminal agent rather than launching one
-  // with no flag and calling it that mode.
-  permissionPresets?: import('./cli-permission-preset').CliPermissionPreset[]
-  // The CLI's permission modes under its own names, in the manifest's order,
-  // `none` last unless the manifest places it. What every permission menu for
-  // this CLI lists, a chat's included.
-  permissionModes?: import('./cli-permission-mode').CliPermissionModeSpec[]
-}

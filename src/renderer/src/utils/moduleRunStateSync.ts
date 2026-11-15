@@ -22,6 +22,7 @@ import { onThirdPartyRendererModulesLoaded } from '../modules'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { Workspace } from '../types/workspace'
 import { deriveWorkspaceRunGlyph } from './workspaceRunGlyph'
+import { workspaceSyncApi, workspaceSyncReachable } from '../studio/workspaceSync'
 
 /** How often the reading is taken again, for a module whose state moved without the store. */
 const MODULE_RUN_STATE_POLL_MS = 30_000
@@ -32,8 +33,8 @@ const moduleChats = (workspaces: readonly Workspace[]) =>
   workspaces.filter((workspace) => workspace.mode !== 'standard')
 
 export function initModuleRunStateSync(): () => void {
-  const api = typeof window !== 'undefined' ? window.api : undefined
-  if (!api?.setModuleRunStates) return () => undefined
+  if (typeof window === 'undefined' || !workspaceSyncReachable('setModuleRunStates')) return () => undefined
+  const api = workspaceSyncApi
 
   let loaded = false
   let lastPushed: string | null = null

@@ -15,10 +15,14 @@ only locally is not finished, however good it looks on the machine it was
 built on.
 
 - A branch that turns something off away from home is the bug, not the fix.
-  `transport.kind === 'local'`, `transport.kind !== 'remote'` and
-  `stripFacts.machine` deciding whether a feature exists is how this has gone
-  wrong. Quoting a passage shipped that way: a local chat got a chip and a
-  paired one a plain blockquote.
+  A chat's transport has no kind: it names its environment
+  (`transport.environment`), what it may do is negotiated from its server
+  (`transport.capabilities`), and what the window's shell reaches of its disk
+  is `useShellReach`. A "local or remote" check deciding whether a feature
+  exists is how this went wrong (quoting a passage once shipped that way: a
+  local chat got a chip and a paired one a plain blockquote), and
+  `scripts/lint-chat-locality.mjs`, run by `npm run lint`, keeps it out of
+  the chat view.
 - When a feature needs something the wire does not carry, carry it. Add it
   behind a capability (`docs/compatibility.md`). The fallback for an older peer
   is for that peer only, and it says so in words or stays as good as it was.

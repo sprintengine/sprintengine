@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync } from 'fs'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -9,8 +9,6 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { test } from 'vitest'
 
 import { canonicalManifestPayload, validateThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
-import { readTrustedMarketplacePublisherFingerprintsSync } from '../marketplace/trusted-publishers'
 import {
   computeModuleFileDigestsSync,
   manifestFingerprint,
@@ -266,52 +264,6 @@ test('a reserved id is publisher-locked to the first-party key', async () => {
     })
     assert.equal(blocked.ok, false, 'wrong signer cannot claim a reserved id')
     if (!blocked.ok) assert.match(blocked.message, /publisher-locked/)
-  })
-})
-
-// The attack this guards: the first-party review manifest is public and
-// validly signed, but signs no digests. Copied next to code of anybody's
-// choosing and handed over as a module folder, it must not install as the
-// trusted first-party module.
-test('a first-party manifest copied next to other code is not installed from a folder', async () => {
-  await withTempDir(async (dir) => {
-    const manifestPath = findMarketplaceResourcePath('plugins/review/module/manifest.json')
-    assert.ok(manifestPath)
-    const src = join(dir, 'review-lookalike')
-    await mkdir(join(src, 'dist'), { recursive: true })
-    cpSync(manifestPath, join(src, 'manifest.json'))
-    await writeFile(join(src, 'dist', 'main.cjs'), EVIL_SOURCE)
-    await writeFile(join(src, 'dist', 'renderer.mjs'), 'export {}\n')
-    const root = join(dir, 'modules')
-    const ctx: ModuleTrustContext = {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: readTrustedMarketplacePublisherFingerprintsSync({ isPackaged: true }),
-    }
-
-    const install = await installModuleFolder(src, root, ctx)
-    assert.equal(install.ok, false)
-    if (install.ok) return
-    assert.match(install.message, /tampered with|publisher-locked/)
-    // The copied manifest signs the real module's digests, which the swapped-in
-    // code does not match.
-    assert.ok(
-      install.rejected.issues.some(
-        (issue) => issue.path === 'files.dist/main.cjs' && /does not match the signed digests/.test(issue.message),
-      ),
-      JSON.stringify(install.rejected.issues),
-    )
-    assert.equal(existsSync(join(root, 'review')), false, 'nothing was installed')
-
-    // Dropped straight into the module root instead, discovery refuses it too.
-    cpSync(src, join(root, 'review'), { recursive: true })
-    const listed = await discoverUserModules(root, ctx)
-    assert.deepEqual(listed.modules, [])
-    assert.ok(
-      listed.rejected[0]?.issues.some((issue) =>
-        /publisher-locked|does not match the signed digests/.test(issue.message),
-      ),
-      JSON.stringify(listed.rejected),
-    )
   })
 })
 

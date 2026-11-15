@@ -195,6 +195,24 @@ function heldLock(path: string, token: string, fs: Pick<DataDirLockFs, 'unlinkSy
   }
 }
 
+/**
+ * The process holding a data directory's run lock, when it runs on this
+ * machine now: a command that asks the running server for something (`pair`,
+ * `mcp-token`) says which one is there when it cannot reach it. Null when
+ * nothing holds it, the holder is gone, or it names another machine.
+ */
+export function runningDataDirHolder(
+  dataDir: string,
+  deps: Pick<DataDirLockDeps, 'hostname' | 'isRunning'> = {},
+): DataDirHolder | null {
+  const lock = readLock(join(dataDir, DATA_DIR_LOCK_FILE))
+  if (lock === null || lock === 'unreadable') return null
+  if (lock.hostname !== (deps.hostname ?? osHostname())) return null
+  if (!(deps.isRunning ?? processIsRunning)(lock.pid)) return null
+  const { token: _token, ...holder } = lock
+  return holder
+}
+
 function readLock(path: string): LockBody | 'unreadable' | null {
   let text: string
   try {

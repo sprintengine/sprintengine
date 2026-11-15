@@ -104,6 +104,8 @@ import {
   summarizePluginInstall,
   type PluginListItem,
 } from './pluginsSurfaceModel'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { extensionsApi, windowHasStudio } from '../../../../../studio/extensions'
 
 const MISSING_API_MESSAGE = 'Plugins need an app restart before they are available.'
 
@@ -208,8 +210,8 @@ export function PluginsCatalogue({
   const [studioPluginStatus, setStudioPluginStatus] = useState<StudioPluginStatus | null>(null)
   useEffect(() => {
     let cancelled = false
-    if (typeof window.api.studioPluginStatus !== 'function') return
-    void window.api
+    if (!windowHasStudio()) return
+    void extensionsApi
       .studioPluginStatus({ workspaceRoot })
       .then((status) => {
         if (!cancelled) setStudioPluginStatus(status)
@@ -333,14 +335,14 @@ export function PluginsCatalogue({
 
   const readLinked = useCallback(
     async (source: SkillSource, plugin: ScannedPlugin): Promise<void> => {
-      if (typeof window.api.skillsScanLinkedPlugin !== 'function') {
+      if (typeof agentSkillsApi.skillsScanLinkedPlugin !== 'function') {
         setReadError({ pluginId: plugin.id, message: MISSING_API_MESSAGE })
         return
       }
       setReading(plugin.id)
       setReadError(null)
       try {
-        const result = await window.api.skillsScanLinkedPlugin({ sourceId: source.id, pluginId: plugin.id })
+        const result = await agentSkillsApi.skillsScanLinkedPlugin({ sourceId: source.id, pluginId: plugin.id })
         if (!result.ok) {
           setReadError({ pluginId: plugin.id, message: result.message })
           return
@@ -412,14 +414,14 @@ export function PluginsCatalogue({
       busyKey: string,
     ): Promise<boolean> => {
       if (!workspaceRoot) return false
-      if (typeof window.api.skillsInstallPlugin !== 'function') {
+      if (typeof agentSkillsApi.skillsInstallPlugin !== 'function') {
         setReport({ sourceId: source.id, outcome: null, error: MISSING_API_MESSAGE })
         return false
       }
       setBusyItem(busyKey)
       setReport(null)
       try {
-        const result = await window.api.skillsInstallPlugin({
+        const result = await agentSkillsApi.skillsInstallPlugin({
           sourceId: source.id,
           pluginId: plugin.id,
           workspaceRoot,
@@ -447,11 +449,11 @@ export function PluginsCatalogue({
 
   const uninstallPlugin = useCallback(
     async (source: SkillSource, record: InstalledPluginRecord): Promise<void> => {
-      if (!workspaceRoot || typeof window.api.skillsUninstallPlugin !== 'function') return
+      if (!workspaceRoot || typeof agentSkillsApi.skillsUninstallPlugin !== 'function') return
       setBusyItem('plugin')
       setReport(null)
       try {
-        const result = await window.api.skillsUninstallPlugin({
+        const result = await agentSkillsApi.skillsUninstallPlugin({
           sourceId: record.sourceId,
           pluginId: record.pluginId,
           workspaceRoot,
@@ -483,11 +485,11 @@ export function PluginsCatalogue({
 
   const removePluginSkill = useCallback(
     async (source: SkillSource, skillId: string): Promise<void> => {
-      if (!workspaceRoot || typeof window.api.skillsUninstall !== 'function') return
+      if (!workspaceRoot || typeof agentSkillsApi.skillsUninstall !== 'function') return
       setBusyItem(`skill:${skillId}`)
       setReport(null)
       try {
-        const result = await window.api.skillsUninstall({ workspaceRoot, dirName: skillDirName(skillId) })
+        const result = await agentSkillsApi.skillsUninstall({ workspaceRoot, dirName: skillDirName(skillId) })
         setReport({
           sourceId: source.id,
           outcome: result.ok ? `${skillDirName(skillId)} removed.` : null,
@@ -511,8 +513,8 @@ export function PluginsCatalogue({
       setBusyItem(`mcp:${serverId}`)
       setReport(null)
       try {
-        if (record && typeof window.api.skillsUninstallPlugin === 'function') {
-          const result = await window.api.skillsUninstallPlugin({
+        if (record && typeof agentSkillsApi.skillsUninstallPlugin === 'function') {
+          const result = await agentSkillsApi.skillsUninstallPlugin({
             sourceId: record.sourceId,
             pluginId: record.pluginId,
             workspaceRoot,

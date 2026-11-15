@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -91,6 +91,23 @@ test('a paired device gets the workspace tier only: agent-written and outside ar
   assert.equal(written.status === 'refused' && written.reason, 'outside_workspace')
   const inside = await classifyAgentPath(join(workspace, 'src', 'a.ts'), trust({ remote: true }), nodePathPolicyFs)
   assert.equal(inside.status, 'opened')
+})
+
+test('a paired device is not shown a file with a second name (a hard link) elsewhere', async () => {
+  const secret = join(outside, 'second-name-source.txt')
+  await writeFile(secret, 'kept elsewhere\n')
+  const named = join(workspace, 'second-name.txt')
+  await link(secret, named)
+  try {
+    const remote = await classifyAgentPath(named, trust({ remote: true }), nodePathPolicyFs)
+    assert.equal(remote.status, 'refused')
+    assert.equal(remote.status === 'refused' && remote.reason, 'outside_workspace')
+    // An agent here runs as the person, who can name the file anyway.
+    assert.equal((await classifyAgentPath(named, trust(), nodePathPolicyFs)).status, 'opened')
+  } finally {
+    await rm(named, { force: true })
+    await rm(secret, { force: true })
+  }
 })
 
 test('a symlink in the workspace that leads to a credential store is refused, not opened', async () => {

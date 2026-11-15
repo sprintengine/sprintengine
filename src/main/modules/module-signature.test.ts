@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, sign } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { test } from 'vitest'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { canonicalManifestPayload, parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
+import { canonicalManifestPayload } from '../../shared/modules/third-party-manifest'
 import {
   classifyModuleTrust,
   classifySignedManifestTrust,
@@ -97,17 +96,6 @@ test('a signature over a manifest without files still verifies byte for byte', (
   assert.equal(signed.files, undefined)
   assert.equal(canonicalManifestPayload(signed).includes('"files"'), false)
   assert.equal(verifyModuleSignature(signed).valid, true)
-})
-
-test('the shipped review module signs the digests of its own code', () => {
-  const path = findMarketplaceResourcePath('plugins/review/module/manifest.json')
-  assert.ok(path)
-  const parsed = parseThirdPartyModuleManifest(readFileSync(path, 'utf8'))
-  assert.equal(parsed.ok, true)
-  if (!parsed.ok) return
-  assert.ok(parsed.manifest.files?.['dist/main.cjs'])
-  assert.equal(canonicalManifestPayload(parsed.manifest).includes('"files"'), true)
-  assert.equal(verifyModuleSignature(parsed.manifest).valid, true)
 })
 
 test('the files map is part of the signed payload', () => {

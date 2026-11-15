@@ -9,12 +9,16 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { ExtensionTrustReviewData } from '../extensions/ExtensionTrustReview'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import type { ActionResult } from '../ui'
+import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
 import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
 import type { ExtensionUpdate } from './extensionsModel'
 import { classifyVerification, summarizeInstallResult } from './installFlow'
+import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 
-// Settings → Extensions, the third-party half: everything that talks to main.
-// It lists, installs, trusts, revokes, uninstalls and updates; the page and
+// Settings → Extensions, the third-party half. It lists (the shell's view of
+// what is on disk) and updates (the marketplace's); it installs, trusts,
+// revokes and uninstalls through the window's Studio (`module.*`), which owns
+// what runs there. The page and
 // its rows only render what this hands them. The trust, uninstall and update
 // semantics are the ones Settings → Modules had — the presentation moved, the
 // rules did not.
@@ -50,14 +54,15 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   const upsertMcpServer = useWorkspaceStore((state) => state.upsertMcpServer)
   const forgetModules = useWorkspaceStore((state) => state.forgetModules)
   const { confirm: confirmDialog } = useConfirmDialog()
+  const [lifecycle] = useState(() => windowModuleLifecycle())
 
   const load = useCallback(async () => {
-    if (typeof window.api.listThirdPartyModules !== 'function') {
+    if (!windowHasStudio()) {
       setLoaded(true)
       return
     }
     try {
-      const result = await window.api.listThirdPartyModules()
+      const result = await extensionsApi.listThirdPartyModules()
       setModules(result.modules)
       setRejected(result.rejected)
     } catch (error) {
@@ -68,10 +73,10 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   }, [])
 
   const loadUpdateStates = useCallback(async (forceRefresh = false) => {
-    if (typeof window.api.readMarketplacePluginUpdateStates !== 'function') return
+    if (!windowHasStudio()) return
     try {
       setUpdateStates(
-        await window.api.readMarketplacePluginUpdateStates(forceRefresh ? { forceRefresh: true } : undefined),
+        await extensionsApi.readMarketplacePluginUpdateStates(forceRefresh ? { forceRefresh: true } : undefined),
       )
     } catch {
       setUpdateStates(null)
@@ -85,18 +90,21 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // A renderer batch that landed after the first list (trust granted, a slow
   // boot) changes what the rows say about running.
   useEffect(() => onThirdPartyRendererModulesLoaded(() => void load()), [load])
+  // What is installed changed under the window: an install elsewhere, or a
+  // module copied into the drop-in folder while Studio runs.
+  useEffect(() => (windowHasStudio() ? extensionsApi.onThirdPartyModulesChanged(() => void load()) : undefined), [load])
 
   const installFromFolder = useCallback(async () => {
     setInstalling(true)
     setMessage(null)
     try {
-      const result = await addThirdPartyModuleFromFolder(window.api)
+      const result = await addThirdPartyModuleFromFolder(window.api, lifecycle)
       if (result.status === 'failed') setMessage({ tone: 'error', text: result.message })
       if (result.status === 'installed') await load()
     } finally {
       setInstalling(false)
     }
-  }, [load])
+  }, [lifecycle, load])
 
   // Trust and turn on, in one step: the review is the consent, and a trusted
   // module left off would make the person find a second switch for the same
@@ -104,12 +112,12 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // never turns anything on.
   const trustAndEnable = useCallback(
     async (module: ThirdPartyModuleView): Promise<boolean> => {
-      if (typeof window.api.setThirdPartyModuleTrust !== 'function') return false
+      if (!lifecycle) return false
       const id = module.manifest.id
       setPendingId(id)
       setMessage(null)
       try {
-        const result = await window.api.setThirdPartyModuleTrust(id, true)
+        const result = await lifecycle.setTrust(id, true)
         if (!result.ok) {
           setMessage({ tone: 'error', text: result.message ?? `Couldn’t trust ${module.manifest.displayName}.` })
           return false
@@ -125,12 +133,12 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         setPendingId(null)
       }
     },
-    [load, onSetEnabled],
+    [lifecycle, load, onSetEnabled],
   )
 
   const revokeTrust = useCallback(
     async (module: ThirdPartyModuleView) => {
-      if (typeof window.api.setThirdPartyModuleTrust !== 'function') return
+      if (!lifecycle) return
       const id = module.manifest.id
       // Revoking unloads the module's workspace types on next launch: name the
       // workspaces that would lose their surface (nothing on disk is touched,
@@ -153,26 +161,53 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       setPendingId(id)
       setMessage(null)
       try {
-        const result = await window.api.setThirdPartyModuleTrust(id, false)
+        const result = await lifecycle.setTrust(id, false)
         if (!result.ok) setMessage({ tone: 'error', text: result.message ?? 'Couldn’t update trust.' })
         await load()
       } finally {
         setPendingId(null)
       }
     },
-    [confirmDialog, load],
+    [confirmDialog, lifecycle, load],
   )
 
-  const canUninstall = typeof window.api.uninstallThirdPartyModule === 'function'
+  const canUninstall = lifecycle !== null
 
-  // Uninstall, however the module arrived. Main resolves the module's id to the
-  // receipt that owns it when a marketplace or GitHub install put it there (the
-  // bundle's skill copies and MCP servers come out with it), or removes its
-  // folder when it was added from one. Either way its trust grant, enablement
-  // and stored secrets go too, and what this window keeps for it is dropped.
+  // Uninstall, however the module arrived. One a marketplace or GitHub install
+  // put in place belongs to that plugin, and the plugin's own uninstall takes
+  // it out with the rest of its bundle (its skill copies and MCP servers). One
+  // added from a folder is removed by the Studio (`module.uninstall`), which
+  // also names the plugin when it finds one this list did not know. Either
+  // way its trust grant, enablement and stored secrets go too, and what this
+  // window keeps for it is dropped.
+  const removeThroughPlugin = useCallback(
+    async (pluginId: string): Promise<{ ok: true; removedModuleIds: string[] } | { ok: false; message: string }> => {
+      if (!windowHasStudio()) return { ok: false, message: 'Uninstalling plugins needs a newer build.' }
+      const result = await extensionsApi.uninstallMarketplacePlugin({
+        pluginId,
+        ...(workspaceRoot ? { workspaceRoot } : {}),
+        mcpSettings,
+      })
+      // Servers the bundle added and main just took out of the configs.
+      if (result.mcpSettings) {
+        for (const id of Object.keys(mcpSettings.servers)) {
+          if (!(id in result.mcpSettings.servers)) removeMcpServer(id)
+        }
+      }
+      if (!result.ok) return { ok: false, message: result.message }
+      return {
+        ok: true,
+        removedModuleIds: result.removed
+          .filter((component) => component.kind === 'module')
+          .map((component) => component.id),
+      }
+    },
+    [workspaceRoot, mcpSettings, removeMcpServer],
+  )
+
   const uninstall = useCallback(
     async (module: ThirdPartyModuleView) => {
-      if (typeof window.api.uninstallThirdPartyModule !== 'function') return
+      if (!lifecycle) return
       const name = module.manifest.displayName
       const confirmed = await confirmDialog({
         title: `Uninstall ${name}?`,
@@ -191,19 +226,15 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       setPendingId(module.manifest.id)
       setMessage(null)
       try {
-        const result = await window.api.uninstallThirdPartyModule({
-          id: module.manifest.id,
-          ...(workspaceRoot ? { workspaceRoot } : {}),
-          mcpSettings,
-        })
+        const origin = module.origin
+        let result: { ok: true; removedModuleIds: string[] } | { ok: false; message: string }
+        if (origin && origin.kind !== 'folder') result = await removeThroughPlugin(origin.pluginId)
+        else {
+          const removed = await lifecycle.uninstall(module.manifest.id)
+          result = !removed.ok && removed.pluginId ? await removeThroughPlugin(removed.pluginId) : removed
+        }
         if (result.ok) {
           forgetModules(result.removedModuleIds)
-          // Servers the bundle added and main just took out of the configs.
-          if (result.mcpSettings) {
-            for (const id of Object.keys(mcpSettings.servers)) {
-              if (!(id in result.mcpSettings.servers)) removeMcpServer(id)
-            }
-          }
           if (module.launch.mainLoaded) {
             showToast({ tone: 'neutral', title: `Uninstalled ${name}`, description: 'It stops at the next restart.' })
           }
@@ -217,7 +248,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         setPendingId(null)
       }
     },
-    [confirmDialog, load, workspaceRoot, mcpSettings, forgetModules, removeMcpServer],
+    [confirmDialog, lifecycle, load, forgetModules, removeThroughPlugin],
   )
 
   const reveal = useCallback(async (module: ThirdPartyModuleView) => {
@@ -232,7 +263,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // Never a silent grant and never a fake success.
   const runUpdate = useCallback(
     async (module: ThirdPartyModuleView, update: ExtensionUpdate, trustToken?: string) => {
-      if (typeof window.api.updateMarketplacePluginFromRegistry !== 'function') {
+      if (!windowHasStudio()) {
         setMessage({ tone: 'error', text: 'Updating extensions needs a newer build.' })
         return
       }
@@ -240,8 +271,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       setMessage(null)
       try {
         let token = trustToken
-        if (!token && typeof window.api.verifyMarketplacePlugin === 'function') {
-          const verify = await window.api.verifyMarketplacePlugin({ id: update.pluginId })
+        if (!token && windowHasStudio()) {
+          const verify = await extensionsApi.verifyMarketplacePlugin({ id: update.pluginId })
           // A module bundle is code: the unsigned split treats it as such even
           // if the verifier's own flag were missing.
           const outcome = classifyVerification(verify, ['module'])
@@ -255,7 +286,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           }
           token = outcome.trustToken
         }
-        const result = await window.api.updateMarketplacePluginFromRegistry({
+        const result = await extensionsApi.updateMarketplacePluginFromRegistry({
           id: update.pluginId,
           ...(token ? { trustToken: token } : {}),
           workspaceRoot: workspaceRoot ?? undefined,

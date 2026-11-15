@@ -1,5 +1,7 @@
+import { configureWindowStudio } from '../studio/windowStudioClient'
 import { createWebApi } from './createWebApi'
 import { refusedChannels } from './unsupported'
+import { WEB_STUDIO_SETUP } from './webStudio'
 
 // Installed before anything else in a web tab runs (main.tsx), in the place a
 // desktop window's preload puts its own. Nothing in the renderer reads
@@ -8,6 +10,8 @@ import { refusedChannels } from './unsupported'
 
 const api = createWebApi()
 ;(window as unknown as { api: typeof api }).api = api
+// Its Studio is the server that served it, not this device.
+configureWindowStudio(api, WEB_STUDIO_SETUP)
 
 // The missing-member report, for a person or a test driving the tab.
 ;(window as unknown as { __studioWebRefusals?: () => string[] }).__studioWebRefusals = refusedChannels

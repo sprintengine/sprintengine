@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { AutomationServerStatus } from '../../../../shared/automation'
 import { STUDIO_MCP_SERVER_NAME } from '../../../../shared/product-identity'
+import { accessApi } from '../../studio/access'
 import { IconButton, InlineNotice, Tooltip } from '../ui'
 import { CopyIcon } from '../AppIcons'
 import { McpHttpSettings } from './McpHttpSettings'
@@ -15,9 +16,8 @@ export function AutomationServerSettings() {
   const [status, setStatus] = useState<AutomationServerStatus | null>(null)
 
   const refresh = useCallback(async () => {
-    if (typeof window.api.automationGetStatus !== 'function') return
     try {
-      setStatus(await window.api.automationGetStatus())
+      setStatus(await accessApi.automationGetStatus())
     } catch {
       // Status stays unknown; the diagnostics section does not render.
     }

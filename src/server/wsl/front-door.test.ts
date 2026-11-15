@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { afterEach, test } from 'vitest'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
 import { BRIDGE_READY, connectLoopback, openBridge } from './front-door-client'
 import {
   assertFrontDoorBindAddress,
@@ -82,19 +82,32 @@ test('the bind guard admits the literal IPv4 loopback and nothing else', () => {
   }
 })
 
+test('a window socket comes through the door as its own purpose, proven like the others', async () => {
+  const admitted: Array<{ purpose: FrontDoorPurpose; stream: Duplex }> = []
+  const doors = await listeners(admitted)
+  const socket = await connectLoopback(doors.port!)
+  cleanups.push(() => socket.destroy())
+  const stream = await enterFrontDoor(socket, { token: TOKEN, purpose: 'ws' })
+  assert.equal(await readLine(stream), '{"after":"admitted"}')
+  assert.deepEqual(
+    admitted.map((entry) => entry.purpose),
+    ['ws'],
+  )
+})
+
 test('both ends prove themselves over loopback TCP, and the first bytes after the proof arrive intact', async () => {
   const admitted: Array<{ purpose: FrontDoorPurpose; stream: Duplex }> = []
   const doors = await listeners(admitted)
   assert.ok(doors.port && doors.port > 0)
   const socket = await connectLoopback(doors.port)
   cleanups.push(() => socket.destroy())
-  const stream = await enterFrontDoor(socket, { token: TOKEN, purpose: 'backend' })
+  const stream = await enterFrontDoor(socket, { token: TOKEN, purpose: 'studio' })
   assert.equal(await readLine(stream), '{"after":"admitted"}', 'a line sent with the admission is not lost')
   stream.write('hello\n')
   assert.equal(await readLine(stream), 'echo:hello')
   assert.deepEqual(
     admitted.map((entry) => entry.purpose),
-    ['backend'],
+    ['studio'],
   )
 })
 
@@ -103,7 +116,7 @@ test('a front door with the wrong token learns nothing and is refused; the serve
   const doors = await listeners(admitted)
   const socket = await connectLoopback(doors.port!)
   await assert.rejects(
-    enterFrontDoor(socket, { token: 'seown_some-other-token', purpose: 'backend' }),
+    enterFrontDoor(socket, { token: 'seown_some-other-token', purpose: 'studio' }),
     (error: unknown) => error instanceof FrontDoorRefusedError && /could not prove/u.test(error.message),
   )
   assert.equal(admitted.length, 0)
@@ -143,9 +156,9 @@ test('the server refuses a proof for another purpose than the one it proved', as
   const socket = connect(path)
   await new Promise((resolve) => socket.once('connect', resolve))
   const nonce = 'B'.repeat(43)
-  socket.write(`${JSON.stringify({ t: 'front-door', v: 1, purpose: 'backend', nonce })}\n`)
+  socket.write(`${JSON.stringify({ t: 'front-door', v: 1, purpose: 'studio', nonce })}\n`)
   const challenge = JSON.parse(await readLine(socket)) as { serverNonce: string; proof: string }
-  assert.equal(challenge.proof, serverProof(tokenHash, nonce, challenge.serverNonce, 'backend'))
+  assert.equal(challenge.proof, serverProof(tokenHash, nonce, challenge.serverNonce, 'studio'))
   // Replaying the server's own proof as the client's is refused.
   socket.write(`${JSON.stringify({ t: 'prove', proof: challenge.proof })}\n`)
   await new Promise((resolve) => socket.once('close', resolve))
@@ -197,11 +210,11 @@ test('connections that never prove themselves on loopback cannot shut the bridge
   const bridged = connect(doors.socketPath!)
   await new Promise((resolve) => bridged.once('connect', resolve))
   cleanups.push(() => bridged.destroy())
-  const stream = await enterFrontDoor(bridged, { token: TOKEN, purpose: 'backend' })
+  const stream = await enterFrontDoor(bridged, { token: TOKEN, purpose: 'studio' })
   assert.equal(await readLine(stream), '{"after":"admitted"}')
   assert.deepEqual(
     admitted.map((entry) => entry.purpose),
-    ['backend'],
+    ['studio'],
   )
 })
 
@@ -223,7 +236,7 @@ test('the stdio bridge carries the proof and the bytes after it, through a real 
   const doors = await listeners(admitted, { loopback: false })
   assert.equal(doors.port, null)
   const home = shortTemp()
-  const spawnShell = (): HelperProcess =>
+  const spawnShell = (): WslStdioProcess =>
     spawn('sh', ['-s'], { cwd: home, env: { PATH: process.env.PATH, HOME: home }, stdio: ['pipe', 'pipe', 'pipe'] })
   // A profile that prints before the relay starts is read past, not taken as bytes.
   const script = `echo 'motd from a login profile'\nexec '${process.execPath}' '${BRIDGE}'`
@@ -242,7 +255,7 @@ test('the stdio bridge carries the proof and the bytes after it, through a real 
 test('the bridge refuses anything but a socket path, and the marker matches the relay', async () => {
   assert.ok(readFileSync(BRIDGE, 'utf8').includes(`const BRIDGE_READY = '${BRIDGE_READY}'`))
   const home = shortTemp()
-  const spawnShell = (): HelperProcess =>
+  const spawnShell = (): WslStdioProcess =>
     spawn('sh', ['-s'], { cwd: home, env: { PATH: process.env.PATH, HOME: home }, stdio: ['pipe', 'pipe', 'pipe'] })
   await assert.rejects(openBridge(spawnShell, 'exit 0', 'relative.sock'), /absolute Linux path/u)
   await assert.rejects(

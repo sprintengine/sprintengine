@@ -7,10 +7,12 @@ import {
 import { CONVERSATION_SEARCH_MIN_QUERY } from './conversationHistoryProvider'
 import { bestConversationHit } from './conversationSnippet'
 import type { PaletteCommand, PaletteResultProvider } from './paletteProvider'
+import { searchPairedChats } from '../../studio/pairedChats'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
 
 // What was said in the paired machines' chats, beside this computer's
 // (`conversationHistoryProvider.ts`): each machine that takes a search from
-// here (`chat-search`) is asked once for the question, and answers as its own
+// here (`chat-lifecycle`) is asked once for the question, and answers as its own
 // palette would, one row per chat. A row opens the chat here, following it,
 // at the matching message.
 
@@ -35,14 +37,15 @@ export function createRemoteConversationHistoryProvider(
     },
     async load(query, context, publish) {
       const epoch = ++generation
-      if (typeof window.api.meshConversationSearch !== 'function') return []
+      if (!environmentStudioAvailable()) return []
       const rows: PaletteCommand[] = []
       let failure: string | null = null
       let answered = false
       for (const machine of getMachines()) {
-        const found: MeshConversationSearchResult = await window.api
-          .meshConversationSearch({ connectionId: machine.connectionId, query })
-          .catch((error: unknown) => ({ ok: false as const, code: 'failed', message: String(error) }))
+        const found: MeshConversationSearchResult = await searchPairedChats(
+          { id: machine.connectionId, machineName: machine.machineName },
+          query,
+        )
         if (epoch !== generation) return []
         // A machine that cannot answer costs its own rows, not every other's.
         if (!found.ok) {

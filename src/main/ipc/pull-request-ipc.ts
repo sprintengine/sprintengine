@@ -7,7 +7,7 @@ import type { IpcMain } from 'electron'
  *
  * It returns no pull requests. The record is the Studio server's, and a
  * session's list travels the way every other fact about a session does — a
- * `terminal:sessions-delta` snapshot carrying its `pullRequests`, filled from
+ * `terminal.sessions` snapshot carrying its `pullRequests`, filled from
  * what the server answered (terminal-pull-requests.ts). The sidebar's rows read
  * the server's lists by workspace over the Studio protocol themselves.
  *
@@ -21,7 +21,7 @@ import type { IpcMain } from 'electron'
  * a hover must never surface an error.
  */
 export type PullRequestIpcDependencies = {
-  refreshPullRequestsForSession(sessionId: string): boolean
+  refreshPullRequestsForSession(sessionId: string): boolean | Promise<boolean>
 }
 
 /** Cap on an id off the wire. Session ids are uuid-shaped; this is an abuse guard. */

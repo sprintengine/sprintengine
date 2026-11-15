@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -134,4 +134,26 @@ test('a server refuses a held directory, an unusable one, and sealing into a des
   const shared = takeDataDir(platformAt(desktop, false), 'server')
   assert.ok(shared.lock?.isHeld())
   assert.equal(existsSync(join(desktop, DATA_DIR_RECORD_FILE)), false)
+})
+
+test('a server refuses data newer than it reads and lets the lock go; the desktop says so and runs', () => {
+  const newer = dataDir()
+  writeFileSync(join(newer, 'format.json'), JSON.stringify({ format: 99, writtenBy: '9.0.0' }))
+  assert.throws(
+    () => takeDataDir(platformAt(newer), 'server'),
+    (error: unknown) =>
+      error instanceof StudioDataDirUnusableError &&
+      /written by Studio 9\.0\.0.*Update this server/u.test(error.message),
+  )
+  assert.equal(existsSync(join(newer, 'run', 'studio.lock')), false, 'the lock is let go on refusal')
+  const logged: DiagnosticLogInput[] = []
+  const taken = takeDataDir(platformAt(newer), 'desktop', { log: (diagnostic) => logged.push(diagnostic) })
+  assert.ok(taken.lock?.isHeld())
+  assert.ok(logged.some((entry) => entry.title === 'Data directory format' && /9\.0\.0/u.test(entry.message)))
+  taken.lock?.release()
+
+  // A directory with no marker is marked with this build's format as it is taken.
+  const fresh = dataDir()
+  takeDataDir(platformAt(fresh), 'server').lock?.release()
+  assert.deepEqual(JSON.parse(readFileSync(join(fresh, 'format.json'), 'utf8')), { format: 1, writtenBy: '1.0.0' })
 })

@@ -17,12 +17,13 @@ import {
   approvalRequestOf,
   connect,
   fromModuleConversationService,
+  openStudioUpdateSession,
   type ConversationFollowFrame,
   type ConversationEventStream,
   type StudioClient,
   type StudioClientState,
 } from '../src/index'
-import { isTerminalStudioCode } from '../src/errors'
+import { isTerminalStudioCode, presentStudioFailure } from '../src/runtime'
 import { connectToStudio, discoverStudio, socketTransport, studioDataDir } from '../src/node'
 
 const ref = { workspaceId: 'ws-1', agentId: 'agent-1' }
@@ -560,4 +561,96 @@ test('a hello refused as late may be tried again; any other hello refusal ends t
   assert.equal(isTerminalStudioCode('hello_required'), true)
   assert.equal(isTerminalStudioCode('unauthorized', 1_000), true)
   assert.equal(isTerminalStudioCode('shutting_down', 1_000), false)
+})
+
+test('a Studio this client cannot talk to is still reached for its updates, and updated when the grant allows', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'agent-sdk-update-'))
+  const auth = createFakeAuthenticator()
+  const started: Array<{ commandId: string; targetVersion?: string }> = []
+  // A Studio that has moved on to protocol 3, which updates itself.
+  const server = createStudioRpcServer({
+    dataDir,
+    version: '9.0.0',
+    environmentId: 'env-newer',
+    backend: createFakeBackend(),
+    authenticator: auth,
+    protocol: { protocolVersion: 3, minProtocolVersion: 2 },
+    updates: {
+      status: () => ({ method: 'self', state: 'idle' }),
+      start: async (input) => {
+        started.push(input)
+        return { ok: true, targetVersion: '9.1.0' }
+      },
+    },
+  })
+  await server.start()
+  cleanups.push(async () => {
+    await server.stop()
+    await rm(dataDir, { recursive: true, force: true })
+  })
+  const token = pairFakeClient(auth, 'maintainer', ['conversation:read', 'environment:maintain'])
+  // The normal client is refused, in words that tell it which side is behind:
+  // the Studio names its window, and this client judges it against its own.
+  await assert.rejects(
+    connect({
+      transport: socketTransport({ dataDir }),
+      client: { name: 'sdk-test' },
+      auth: { token },
+      reconnect: false,
+    }),
+    (error: StudioError) => {
+      assert.equal(error.code, 'unsupported_protocol_version')
+      assert.deepEqual(error.studio, { protocolVersion: 3, minProtocolVersion: 2 })
+      assert.deepEqual(presentStudioFailure(error), {
+        kind: 'client-outdated',
+        message: 'This Studio needs Studio protocol 2 or newer, and this app speaks 1. Update this app.',
+      })
+      return true
+    },
+  )
+  const session = await openStudioUpdateSession({
+    transport: socketTransport({ dataDir }),
+    client: { name: 'sdk-test' },
+    auth: { token },
+  })
+  cleanups.push(() => session.close())
+  assert.equal(session.compatibility, 'client-outdated')
+  assert.equal(session.welcome, null)
+  assert.equal(session.incompatible?.environment.id, 'env-newer')
+  assert.equal(session.incompatible?.server.version, '9.0.0')
+  assert.equal((await session.status()).method, 'self')
+  assert.deepEqual(await session.start(), { accepted: true, method: 'self', targetVersion: '9.1.0' })
+  // The session minted the command id, which reaches the Studio so a retry of it is answered as it was.
+  assert.equal(started.length, 1)
+  assert.match(started[0]!.commandId, /^update-/u)
+  // A grant without environment:maintain may look, not update.
+  const reader = await openStudioUpdateSession({
+    transport: socketTransport({ dataDir }),
+    client: { name: 'sdk-test' },
+    auth: { token: pairFakeClient(auth, 'reader', ['conversation:read']) },
+  })
+  cleanups.push(() => reader.close())
+  await assert.rejects(reader.start(), (error: StudioError) => error.code === 'scope_required')
+})
+
+test('an update session says at once when the greeting cannot be read, rather than waiting out the hello', async () => {
+  let listener: ((frame: string) => void) | null = null
+  const started = Date.now()
+  await assert.rejects(
+    openStudioUpdateSession({
+      transport: async () => ({
+        send: () => listener?.(JSON.stringify({ t: 'incompatible', protocolVersion: 'two' })),
+        close: () => undefined,
+        onMessage: (next) => {
+          listener = next
+        },
+        onClose: () => undefined,
+      }),
+      client: { name: 'sdk-test' },
+      auth: { token: 'sest_reader_0123456789abcdef' },
+      helloTimeoutMs: 10_000,
+    }),
+    (error: StudioError) => error.code === 'invalid_frame',
+  )
+  assert.ok(Date.now() - started < 5_000)
 })

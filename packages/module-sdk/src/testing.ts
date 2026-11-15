@@ -6,12 +6,12 @@
 //   GitHub, workspaces, the Backlog, usage, activity), held to the host's
 //   rules: the same storage key pattern, root rule and 1 MB cap, the same
 //   `permission_missing` answers for the permissions the host checks, the same
-//   refusals on the renderer bridge. `ipc.invoke` calls the module's channels
-//   the way its renderer would and `tools.call` calls its MCP tools the way an
-//   agent would.
+//   refusals of a declared method's call. `methods.read` / `methods.operate`
+//   call the module's declared methods the way its renderer would and
+//   `tools.call` calls its MCP tools the way an agent would.
 // - `createFakeRendererHost` is a `RendererHost` that records every
 //   registration, toast and opened link, and renders a registered door, panel,
-//   modal, settings section or top-bar item to HTML; `invoke`, `subscribe`, the
+//   modal, settings section or top-bar item to HTML; `methods`, `subscribe`, the
 //   module app state, the Backlog and usage reach a fake main host when given
 //   one.
 // - `installTestingKit` routes `@sprintengine/module-sdk/ui`, `/surface` and
@@ -33,6 +33,8 @@ import { registerHooks } from 'node:module'
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path'
 
 import { HOST_API_VERSION } from './host-api.js'
+import { jsonValueProblem } from './json-value.js'
+import { isModuleMethodName, MODULE_METHOD_MAX_CHARS } from './methods.js'
 import type { HostCapability } from './host-api.js'
 import type {
   BacklogItemAction,
@@ -46,7 +48,13 @@ import type {
   McpToolRegistration,
   McpToolResult,
   ModalSurfaceDefinition,
+  ModuleCallAnswer,
   ModuleColorScheme,
+  ModuleMethodAccess,
+  ModuleMethodContract,
+  ModuleMethodContracts,
+  ModuleMethodRegistration,
+  ModuleMethodsClient,
   ModuleCommandContext,
   ModuleCommandDefinition,
   ModuleFocusTabInput,
@@ -208,12 +216,8 @@ export type FakeUndeclaredUse = {
   checked: boolean
 }
 
-// The bridge accepts its own scope and the broad one it was split out of.
-const BRIDGE_PERMISSIONS = ['module:bridge', 'ipc:invoke'] as const
-
-function refusal(message: string, code: string): Error {
-  return Object.assign(new Error(message), { code })
-}
+// Declaring methods takes their own scope, or the broad one it was split out of.
+const METHOD_PERMISSIONS = ['module:bridge', 'ipc:invoke'] as const
 
 // ── Notifications and events: the host's validation ─────────────────────────
 
@@ -347,17 +351,19 @@ export type FakeMainHost = {
   host: MainHost
   /** The module's declared permissions. Live: add or remove one to test the other branch. */
   permissions: Set<string>
-  /** The renderer's side of the bridge. */
-  ipc: {
-    /**
-     * Call a channel as the module's renderer would with `host.invoke`: own
-     * channels only, refused without `module:bridge` (or `ipc:invoke`), payload
-     * and result structured-cloned as IPC clones them. A refusal rejects with
-     * an Error carrying `code`, as `RendererHost.invoke` does.
-     */
-    invoke(channel: string, payload?: unknown): Promise<unknown>
-    /** The channels registered so far. */
-    channels(): string[]
+  /**
+   * The module's declared methods, called as its renderer (or a client) would
+   * through `RendererHost.methods`: refused as the host refuses
+   * (`module_method_unknown` for a name not declared under that access,
+   * `invalid_params` for params its validator refuses), params and result
+   * passed as JSON, an operate carried out once per command id and told it
+   * under the caller's namespace (`owner:<id>`). A handler that throws, or
+   * answers a result that is not JSON, rejects, as the host would answer
+   * `unavailable`.
+   */
+  methods: ModuleMethodsClient & {
+    /** The methods declared so far, in order. */
+    declared(): Array<{ name: string; access: ModuleMethodAccess }>
   }
   /** The gateway's side of the module's MCP tools. */
   tools: {
@@ -489,7 +495,50 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     for (const [key, value] of Object.entries(values)) fakes.storage.seed(key, value, root)
   }
 
-  const channels = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
+  const declared = new Map<string, ModuleMethodRegistration>()
+  const operated = new Map<string, Promise<ModuleCallAnswer<ModuleMethodContract>>>()
+  let operateSeq = 0
+  async function callMethod(
+    access: ModuleMethodAccess,
+    method: string,
+    params: unknown,
+    commandId?: string,
+  ): Promise<ModuleCallAnswer<ModuleMethodContract>> {
+    const registration = declared.get(method)
+    if (!registration) {
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${moduleId}" declares no method "${method}".`,
+      }
+    }
+    if (registration.access !== access) {
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${moduleId}" declares "${method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+      }
+    }
+    const problem = params === undefined ? null : jsonValueProblem(params, 'params')
+    if (problem) throw new Error(`The params of "${method}" are not JSON: ${problem}`)
+    const parsed = registration.params(params === undefined ? undefined : structuredClone(params))
+    if (!parsed.ok) return { ok: false, code: 'invalid_params', message: parsed.message }
+    const answer = await registration.handler(parsed.params, {
+      clientId: 'owner',
+      ...(commandId === undefined ? {} : { commandId: `owner:${commandId}` }),
+    })
+    if (answer?.ok === true) {
+      const resultProblem = answer.result === undefined ? null : jsonValueProblem(answer.result, 'result')
+      if (resultProblem)
+        throw new Error(`Module "${moduleId}" method "${method}" answered a result that is not JSON: ${resultProblem}`)
+      return { ok: true, result: answer.result === undefined ? null : structuredClone(answer.result) }
+    }
+    if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string')
+      return { ok: false, code: answer.code, message: answer.message }
+    throw new Error(
+      `Module "${moduleId}" method "${method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+    )
+  }
   const tools = new Map<string, McpToolRegistration>()
   const provided = new Map<string, unknown>()
   const startupHooks: Array<() => unknown> = []
@@ -501,23 +550,26 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
   const fake: FakeMainHost = {
     host: undefined as unknown as MainHost,
     permissions,
-    ipc: {
-      async invoke(channel, payload) {
-        if (typeof channel !== 'string' || !channel.startsWith(`${moduleId}:`)) {
-          throw new Error(`Module "${moduleId}" may only invoke its own channels ("${moduleId}:*"); got "${channel}".`)
-        }
-        const handler = channels.get(channel)
-        if (!handler) throw refusal(`No module has registered the IPC channel "${channel}".`, 'unknown_channel')
-        if (!BRIDGE_PERMISSIONS.some((permission) => permissions.has(permission))) {
-          throw refusal(
-            `Module "${moduleId}" does not declare the "module:bridge" permission, so its channels cannot be bridged.`,
-            'permission_missing',
-          )
-        }
-        const result = await handler({ sender: { fake: true } }, structuredClone(payload))
-        return structuredClone(result)
+    methods: {
+      read: (method, params) => callMethod('read', method, params) as never,
+      operate: (method, params, options) => {
+        // As the window does: a call is its own command unless it names one,
+        // and a retry under the same id is answered with the first answer.
+        const commandId = options?.commandId ?? `fake-${(operateSeq += 1)}`
+        const known = operated.get(commandId)
+        if (known) return known as never
+        const answer = callMethod('operate', method, params, commandId)
+        operated.set(commandId, answer)
+        void answer.then(
+          (settled) => {
+            if (!settled.ok && ['module_method_unknown', 'invalid_params'].includes(settled.code))
+              operated.delete(commandId)
+          },
+          () => operated.delete(commandId),
+        )
+        return answer as never
       },
-      channels: () => [...channels.keys()],
+      declared: () => [...declared].map(([name, registration]) => ({ name, access: registration.access })),
     },
     tools: {
       async call(name, args = {}, metadata) {
@@ -630,10 +682,35 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     async listChatRuntimes() {
       return structuredClone(chatRuntimes)
     },
-    registerIpc(channel, handler) {
-      if (channels.has(channel))
-        throw new Error(`IPC channel "${channel}" is already registered by module "${moduleId}".`)
-      channels.set(channel, handler)
+    registerMethods(batch) {
+      if (!METHOD_PERMISSIONS.some((permission) => permissions.has(permission))) {
+        throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
+      }
+      if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
+        throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
+      }
+      const entries = Object.entries(batch as unknown as Record<string, ModuleMethodRegistration>)
+      for (const [name, registration] of entries) {
+        if (!isModuleMethodName(name)) {
+          throw new Error(
+            `Module "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most ${MODULE_METHOD_MAX_CHARS}.`,
+          )
+        }
+        if (declared.has(name)) throw new Error(`Module "${moduleId}" already declares "${name}".`)
+        const access = (registration as { access?: unknown } | null)?.access
+        if (access !== 'read' && access !== 'operate') {
+          throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
+        }
+        if (typeof registration.params !== 'function') {
+          throw new Error(
+            `Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`,
+          )
+        }
+        if (typeof registration.handler !== 'function') {
+          throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)
+        }
+      }
+      for (const [name, registration] of entries) declared.set(name, registration)
     },
     registerMcpTools(batch) {
       if (!permissions.has('mcp:tools')) {
@@ -756,7 +833,12 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     },
     emit(topic, payload) {
       const valid = validateTopic(moduleId, topic)
-      // The payload crosses IPC: one that cannot be cloned throws here as it would there.
+      // The payload crosses the Studio protocol: one that is not JSON throws here as it would there.
+      const problem = payload === undefined ? null : jsonValueProblem(payload)
+      if (problem)
+        throw new Error(
+          `Module "${moduleId}" emitted a "${valid}" payload that cannot be sent to a client: ${problem}.`,
+        )
       const cloned = payload === undefined ? undefined : structuredClone(payload)
       fake.emitted.push(cloned === undefined ? { topic: valid } : { topic: valid, payload: cloned })
       for (const listener of emitListeners) listener(valid, structuredClone(cloned))
@@ -857,7 +939,7 @@ async function renderComponent(component: unknown, props: object): Promise<strin
 
 export type FakeRendererHostOptions = FakeModuleIdentity & {
   /**
-   * The module's main half: `invoke` reaches its channels, `subscribe` hears
+   * The module's main half: `methods` reaches its declared methods, `subscribe` hears
    * its `emit`, and the module app state, the Backlog, usage and workspace
    * git info are its.
    */
@@ -990,11 +1072,11 @@ const RENDERER_METHOD_PERMISSIONS: Readonly<Record<string, readonly string[]>> =
   queryUsage: ['usage:read'],
   watchWorkspaceFile: ['filesystem:read-workspace'],
   openChat: ['chat:draft', 'conversation:operate'],
-  invoke: [...BRIDGE_PERMISSIONS],
+  methods: [...METHOD_PERMISSIONS],
 }
 const CHECKED_RENDERER_METHODS = new Set([
   'openChat',
-  'invoke',
+  'methods',
   'getWorkspaceGitInfo',
   'listBacklogItems',
   'watchBacklogItems',
@@ -1606,13 +1688,19 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       fake.openedUrls.push(safe)
       return { ok: true }
     },
-    async invoke(channel, payload) {
-      record('invoke', [channel, payload])
-      if (typeof channel !== 'string' || !channel.startsWith(`${moduleId}:`)) {
-        throw new Error(`Module "${moduleId}" may only invoke its own channels ("${moduleId}:*"); got "${channel}".`)
+    methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs> {
+      record('methods', [])
+      const absent = (): Promise<ModuleCallAnswer<ModuleMethodContract>> =>
+        Promise.resolve({
+          ok: false,
+          code: 'module_unavailable',
+          message: `Module "${moduleId}" is not running: the fake renderer host was given no main.`,
+        })
+      return {
+        read: (method, params) => (main ? main.methods.read(method, params) : absent()) as never,
+        operate: (method, params, options) =>
+          (main ? main.methods.operate(method, params, options) : absent()) as never,
       }
-      if (!main) throw refusal(`No module has registered the IPC channel "${channel}".`, 'unknown_channel')
-      return main.ipc.invoke(channel, payload)
     },
   }
   fake.host = host

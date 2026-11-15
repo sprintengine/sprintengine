@@ -7,20 +7,25 @@ const {
   rememberSentFile,
   sentFileName,
   splitSentUploads,
-} = require("../../../.mobile-test-build/src/features/conversations/chatFiles.js");
-const { declaresMessageFiles } = require("../../../.mobile-test-build/src/api/tailnetTransport.js");
-const { conversationFileUploadRefusal } = require("../../../.mobile-test-build/src/api/conversationImages.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/chatFiles.js");
+const { phoneChatOffers } = require("../../../.mobile-test-build/mobile/src/api/chatOffers.js");
 
 // Files of any type a person attaches to a chat's message, beside its photos:
 // offered where the desktop declares `conversation-message-files`, held with
 // the name the person knows the file by, refused up front when the desktop
 // would refuse it, and drawn as a file card while the message is on its way.
 
-test("a desktop offers files only where it says it takes them", () => {
-  assert.equal(declaresMessageFiles({ tailnetCapabilities: ["conversations", "conversation-message-files"] }), true);
-  assert.equal(declaresMessageFiles({ tailnetCapabilities: ["conversations", "conversation-message-images"] }), false);
-  // A desktop that declared nothing is an older one, which takes pictures only.
-  assert.equal(declaresMessageFiles({}), false);
+test("files are offered only where the desktop's Studio takes them and the grant may send", () => {
+  const welcome = (capabilities, scopes = ["conversation:read", "conversation:operate"]) => ({
+    capabilities: ["conversations", "conversation-sessions"],
+    conversation: { protocolVersion: 1, minProtocolVersion: 1, capabilities },
+    grant: { clientId: "tailnet:phone", name: "android-phone", owner: false, scopes, ceiling: "bypass" },
+  });
+  assert.equal(phoneChatOffers(welcome(["conversation-message-files"])).attachFiles, true);
+  assert.equal(phoneChatOffers(welcome(["conversation-message-images"])).attachFiles, false);
+  assert.equal(phoneChatOffers(welcome(["conversation-message-files"], ["conversation:read"])).attachFiles, false, "a read-only pairing sends nothing");
+  // Before the desktop has said anything, nothing is offered.
+  assert.equal(phoneChatOffers(null).attachFiles, false);
 });
 
 test("an iOS copy is named by the file's own name", () => {
@@ -94,14 +99,3 @@ test("a message on its way draws the files it carries as files, and the rest as 
   });
 });
 
-test("an older desktop's refusal of a file says to update it, not that the file is a bad picture", () => {
-  assert.equal(
-    conversationFileUploadRefusal(415, { error: { code: "invalid_media_type", message: "Only PNG, JPEG, WebP and GIF images can be attached." } }),
-    "This desktop takes pictures only. Update Studio there to send files.",
-  );
-  assert.equal(
-    conversationFileUploadRefusal(413, { error: { code: "too_large", message: "That file is over the 25MB limit." } }),
-    "That file is over the 25MB limit.",
-  );
-  assert.equal(conversationFileUploadRefusal(500, null), "The desktop refused the file upload.");
-});

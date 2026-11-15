@@ -8,44 +8,38 @@ import {
 } from '../../main/automation/conversation-chat-tools'
 import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { LAUNCH_NOTICE_ORIGIN } from '../../main/agent-launch-notices'
-import { searchChatsHere } from '../../main/automation/conversation-search'
-import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
-import {
-  chatCheckoutFromRegistry,
-  createConversationPullRequestTools,
-} from '../../main/automation/conversation-pull-request-tools'
-import { knownCliAvailability } from '../../main/cli-availability'
+import { createConversationPullRequestTools } from '../../main/automation/conversation-pull-request-tools'
 import { listPluginRegistryEntries } from '../../main/plugin-registry-instance'
-import { createPullRequestCreator } from '../../main/pull-request-create'
 import { sharedGhRunner } from '../../main/github/gh'
 import { createGhHostTokenResolver } from '../../main/github/host-token'
-import { generatePullRequestText } from '../../main/text-generation/text-generation-service'
-import { resolveTextGenerationEngine } from '../../shared/text-generation/contract'
 import {
   createConversationListChangeFilter,
   latestTurnEnd,
   movesWorkspaceList,
 } from '../../main/automation/conversation-lifecycle'
 import { launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
-import { gatewayToolsForCaller } from '../../main/automation/tailnet/tailnet-scopes'
-import { createUsageTools } from '../../main/usage/usage-tools'
-import { appUsageService } from '../../main/usage/usage-service'
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { toolSuccess, toolError } from '../../shared/modules/mcp-tools'
-import type { StudioToolReach } from '../../../packages/studio-protocol/src/public'
+import type { StudioListChange, StudioToolReach } from '../../../packages/studio-protocol/src/public'
 import { createClientToolRegistry, type ClientToolRegistry } from '../tools/client-tool-registry'
 import { createClientToolGateway, type ExpectedShellToolsets } from '../tools/client-tool-gateway'
 import { cancelClientCallsAtTurnEnd } from '../tools/client-tool-turns'
 import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 import { createClientToolsetStore, type ConversationRef } from '../tools/client-toolset-store'
 import { createPullRequestTools } from '../pull-requests/pull-request-tools'
+import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { studioBridgeScriptPath, type StudioCore } from './studio-core'
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import { isMachinePath } from '../../shared/machine-paths'
+import { confineToRoots } from '../../main/studio-rpc/studio-file-confinement'
+import { environmentCommand, environmentPage, launchWhereItLives } from './environment-chat-calls'
 
 // The Studio MCP gateway over a core: the always-on socket agents reach the
-// app through, the opt-in tailnet listener, and the conversation lane paired
-// devices follow chats on. Composed beside the core rather than inside it,
+// app through, and the opt-in tailnet listener, where paired devices speak the
+// Studio protocol. Composed beside the core rather than inside it,
 // because the desktop adds tools that act on what only it has (windows,
 // terminals, the browser pane, the canvas worker); a standalone server serves
 // the core's own tools alone.
@@ -68,7 +62,7 @@ type GatewayToolsOptions = Parameters<typeof createStudioGatewayTools>[0]
 
 export type StudioGatewayOptions = Pick<
   Parameters<typeof createAutomationService>[0],
-  'onTailnetEvent' | 'onMeshEvent' | 'hasWindow' | 'downscaleUpload' | 'canvas'
+  'onTailnetEvent' | 'onMeshEvent' | 'hasWindow' | 'tailnetBindAddress'
 > & {
   /**
    * The gateway's app tools, given the core's own: the desktop places them
@@ -102,8 +96,6 @@ export type StudioGatewayOptions = Pick<
   linkLaunchedAgent?: ConversationToolsDeps['linkLaunchedAgent']
   /** Drop the notice a sub-agent's end would send, its parent having heard from a `wait`. */
   dismissLaunchNotice?: (childSessionId: string) => void
-  /** Deleting a settled chat for a paired desktop; absent where this process has no worktree pool. */
-  settledChatDeletion?: ConversationToolsDeps['settledChatDeletion']
 }
 
 export type StudioGateway = ReturnType<typeof createStudioGateway>
@@ -124,51 +116,19 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   const chats = studioChatControl(core)
   const coreTools = [
     ...createConversationTools({
-      launch: (request) => core.conversationLaunchService.launch(request),
+      // A chat in a workspace an SSH machine holds starts there.
+      launch: launchWhereItLives(
+        core.environmentClients,
+        (workspaceId) => core.workspaceRegistry.getRecord(workspaceId),
+        (request) => core.conversationLaunchService.launch(request),
+      ),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
+      // A paired device moves a chat only into this machine's own projects.
+      deviceMayName: async (folder) => (await confineToRoots(folder, ownWorkspaceFolders(core))).ok,
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
-      // A paired desktop's Delete on a settled chat here: this process's own
-      // deletion where it has one (the desktop in process), none elsewhere.
-      ...(options.settledChatDeletion ? { settledChatDeletion: options.settledChatDeletion } : {}),
-      // A paired desktop's palette, finding what was said in the chats here:
-      // the ones this sidebar lists, most recently spoken in first.
-      searchChats: (query) =>
-        searchChatsHere(query, {
-          chats: () =>
-            core.workspaceRegistry
-              .getRecords()
-              .filter((record) => record.folderPath && !record.remoteOrigin && !isSettledWorkspace(record))
-              .sort((a, b) => workspaceLastUserMessageAt(b) - workspaceLastUserMessageAt(a))
-              .map((record) => ({
-                workspaceId: record.id,
-                workspaceRoot: record.folderPath!,
-                chatTitle: record.name,
-              })),
-          search: (input) => core.conversations.searchThreads(input),
-        }),
-      // A paired desktop's Settings, listing and revoking the "always allow"
-      // rules the chats here run with.
-      approvalRules: {
-        list: () => core.conversations.listApprovalRules(),
-        revoke: (ruleId) => core.conversations.revokeApprovalRule(ruleId),
-      },
-      // A paired desktop's Stop watching on a chat here.
-      pullRequestWatches: {
-        watchedOf: async (key) => {
-          await core.pullRequests.record.whenLoaded()
-          return core.pullRequests.record
-            .forConversation(key)
-            .filter((pr) => pr.watch)
-            .map((pr) => pr.url)
-        },
-        unwatch: async (key, url) => {
-          await core.pullRequests.record.whenLoaded()
-          return core.pullRequests.unwatchForAgent(key, { url })
-        },
-      },
     }),
     // One chat's agent sending to, reading, waiting on and stopping another
     // chat here, through the same host a paired device's commands go through.
@@ -192,39 +152,19 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       subagents: core.subagents,
       chats: {
         ...chats,
+        // A sub-agent runs here, beside the chat that started it.
+        session: localSessionOf(core),
         agentsOf: (workspaceId) => {
           const record = core.workspaceRegistry.getRecord(workspaceId)
-          return record && !record.remoteOrigin ? record.agents : null
+          // A sub-agent runs beside a chat this core holds; never a copy's.
+          return record && !record.remoteOrigin && !record.environment ? record.agents : null
         },
       },
     }),
     // A paired desktop's Create PR on one of this machine's chats: the
     // checkout, git, the forge's CLI and the drafting CLI are here, and so is
     // the record the pull request is kept in.
-    ...createConversationPullRequestTools({
-      checkoutOf: chatCheckoutFromRegistry((workspaceId) => core.workspaceRegistry.getRecord(workspaceId)),
-      creator: createPullRequestCreator(),
-      // The engine a chat here is titled with (chat-titler.ts), read as the
-      // draft starts: this machine's setting, its CLIs and their overrides.
-      draftEngine: () => {
-        const settings = core.textGenerationSettings.get()
-        const cliRuntimes = core.agentLaunchSettings.get().cliRuntimes
-        const engine = resolveTextGenerationEngine(
-          settings,
-          listPluginRegistryEntries().map((entry) => entry.id),
-          (cli) => knownCliAvailability({ cliRuntimes })[cli]?.installed,
-        )
-        return engine ? { engine, cliRuntimes, writingStyle: settings.writingStyle } : null
-      },
-      generate: (request) => generatePullRequestText(request),
-      link: async (input) => {
-        const linked = await core.pullRequests.link(input)
-        return linked.ok ? { ok: true } : { ok: false, message: linked.message }
-      },
-      log: (message) => {
-        void writeDiagnosticLog({ level: 'info', source: 'agents', title: 'Pull request text not drafted', message })
-      },
-    }),
+    ...createConversationPullRequestTools(studioPullRequestCreationDeps(core)),
     ...createPullRequestTools({
       link: (key, input) => core.pullRequests.linkForAgent(key, input),
       watch: (key, input) => core.pullRequests.watchForAgent(key, input),
@@ -238,14 +178,9 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       isSignedInGitHubHost: async (host) => Boolean(await gitHubHostToken(host)),
     }),
     ...createLocalServerTools({ link: (key, input) => core.localServers.linkForAgent(key, input) }),
-    // A paired desktop's usage dashboard counts what this machine spent.
-    ...createUsageTools({
-      usage: () =>
-        appUsageService({
-          dataDir: () => platform.paths.dataDir(),
-          getWorkspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
-        }),
-    }),
+    // `worktree.lease` and `worktree.release`: a worktree of the agent's own
+    // from this core's pool, beside the chats that work in it.
+    ...core.worktrees.tools,
   ]
 
   // The gateway's own tools: what no client may offer under the same family.
@@ -316,14 +251,10 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   })
   // The order agents have always listed: the shell's toolsets in the slots
   // the browser and canvas tools held, Studio's own tools, then any app's.
-  // A tool only a paired device has a use for is left out for everyone else.
   const hideTool = options.hideTool
   const resolveTools = (context?: McpConnectionContext) => [
     ...clientGateway.builtIns(context),
-    ...gatewayToolsForCaller(
-      hideTool ? resolveGatewayTools().filter((tool) => !hideTool(tool.name)) : resolveGatewayTools(),
-      context,
-    ),
+    ...(hideTool ? resolveGatewayTools().filter((tool) => !hideTool(tool.name)) : resolveGatewayTools()),
     ...clientGateway.apps(context),
   ]
 
@@ -334,11 +265,9 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...(options.onTailnetEvent ? { onTailnetEvent: options.onTailnetEvent } : {}),
     ...(options.onMeshEvent ? { onMeshEvent: options.onMeshEvent } : {}),
     ...(options.hasWindow ? { hasWindow: options.hasWindow } : {}),
-    ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
-    ...(options.canvas ? { canvas: options.canvas } : {}),
-    // The tailnet lane advertises `conversation-lifecycle`, so its list is
-    // the one that keeps the capability's promise.
-    resolveConversationHost: () => core.createConversationHost({ lifecycleList: true }),
+    ...(options.tailnetBindAddress === undefined ? {} : { tailnetBindAddress: options.tailnetBindAddress }),
+    // How a paired device draws this machine, on the tailnet's `identity`.
+    selfMachine: () => core.selfMachine(),
     // The run lock's holder removes a stale socket; nobody else does. A desktop
     // that could not take the lock still may, as builds before it did: its
     // single-instance lock already rules out a second app on this profile.
@@ -357,14 +286,17 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     },
   })
 
-  // The change feed (2026-09-05): paired devices used to poll workspace.list
-  // every thirty seconds; now the registry's accepted events become one small
-  // push, throttled in the listener so a burst here is one push there, and a
-  // device re-reads only when told to. A patch of the clocks alone, which
-  // `workspace.list` does not carry (a visit stamped every few seconds while
-  // a chat is on screen), tells it nothing (`movesWorkspaceList`).
+  // The change feed: the registry's accepted events become one small push
+  // to every client on the protocol (`conversations.changed`), folded to one
+  // per list per moment, and a client re-reads only when told to. A patch of
+  // the clocks alone, which the workspace list does not carry (a visit stamped
+  // every few seconds while a chat is on screen), tells it nothing
+  // (`movesWorkspaceList`).
+  const listChanges = createListChangePush()
+  const workspacesChanged = (): void => listChanges.tell('workspaces')
+  const conversationsChanged = (): void => listChanges.tell('conversations')
   workspaceSyncService.subscribeEvents((event) => {
-    if (movesWorkspaceList(event)) automationService.notifyWorkspacesChanged()
+    if (movesWorkspaceList(event)) workspacesChanged()
   })
   // The conversation list reads the desktop's records too (a chat settled,
   // renamed, written to or looked at), so the changes it reads are the same
@@ -377,16 +309,16 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     },
   })
   workspaceSyncService.subscribeEvents((event) => {
-    if (listChanged(event)) automationService.notifyConversationsChanged()
+    if (listChanged(event)) conversationsChanged()
   })
   // A conversation's row on another machine shows its phase: running, waiting
   // on a person, done. The events that move it (never a token of a reply)
   // become the same throttled push.
   // The list names each chat's local servers too, and a server starting or
   // stopping moves none of the above: it is a push of its own.
-  core.localServers.onChanged(() => automationService.notifyConversationsChanged())
+  core.localServers.onChanged(() => conversationsChanged())
   conversations.onEvent((event) => {
-    if (CONVERSATION_LIST_EVENTS.has(event.type)) automationService.notifyConversationsChanged()
+    if (CONVERSATION_LIST_EVENTS.has(event.type)) conversationsChanged()
     // An interrupted turn stops what it was waiting on in a client too.
     cancelClientCallsAtTurnEnd(clientTools, event)
   })
@@ -405,15 +337,18 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
      * a WSL server's agents are offered of this side beside the shell's
      * toolsets (phase 7, 3.7). Not those served to paired devices alone.
      */
-    ownTools: (): McpToolRegistration[] => gatewayToolsForCaller(resolveGatewayTools(), undefined),
+    ownTools: (): McpToolRegistration[] => resolveGatewayTools(),
     /**
      * The names of the core's own tools, without any a module contributes:
      * what the module host refuses a module tool name against.
      */
     coreToolNames: (): ReadonlySet<string> => resolveGatewayTools.coreToolNames(),
+    /** Hear that the chat or workspace list may read differently now (`conversations.changed`). */
+    onListChanged: listChanges.listen,
     /** Link in what the registry reads from the RPC that pairs apps. */
     linkClientTools: (links: ClientToolLinks) => Object.assign(clientToolLinks, links),
     shutdown: async () => {
+      listChanges.close()
       // Every call still waiting on a client is answered before the sockets go.
       clientTools.close()
       await automationService.shutdown()
@@ -429,14 +364,63 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   }
 }
 
+/** How long a burst of list changes is folded into one push per list. */
+const LIST_CHANGE_FOLD_MS = 250
+
+/** The `conversations.changed` push: one per list per moment, to whoever listens. */
+function createListChangePush() {
+  type What = StudioListChange['what']
+  const listeners = new Set<(change: StudioListChange) => void>()
+  const due = new Set<What>()
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return {
+    tell(what: What): void {
+      if (listeners.size === 0) return
+      due.add(what)
+      timer ??= setTimeout(() => {
+        timer = null
+        const told = [...due]
+        due.clear()
+        for (const changed of told) for (const listener of [...listeners]) listener({ what: changed })
+      }, LIST_CHANGE_FOLD_MS)
+    },
+    listen(listener: (change: StudioListChange) => void): () => void {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    close(): void {
+      if (timer) clearTimeout(timer)
+      timer = null
+      due.clear()
+      listeners.clear()
+    },
+  }
+}
+
 /**
  * This core's chats as one agent drives another (conversation-chat-tools.ts).
  * Its sends are recorded as Studio's, not the person's, so a chat an agent
  * messages keeps its place in the lists ordered by when the person last wrote.
+ *
+ * A chat another environment holds (an SSH machine's, its record here only
+ * that machine's copy) is driven there, as a client of that machine's Studio:
+ * the same protocol method a window sends, on the desktop's own client of it
+ * (`environmentClients`), never through this core's runtime (orchestrator
+ * ruling 1). A machine that cannot be reached is said so in words.
  */
 function studioChatControl(core: StudioCore): ConversationChatControl {
   let host: ReturnType<StudioCore['createConversationHost']> | null = null
   const hostOf = () => (host ??= core.createConversationHost({ origin: LAUNCH_NOTICE_ORIGIN }))
+  const routeOf = (workspaceId: string): string | null =>
+    environmentRouteOfRecord(core.workspaceRegistry.getRecord(workspaceId))
+  const localSession = localSessionOf(core)
+  const remoteSession = async (route: string, workspaceId: string, agentId: string) => {
+    const reached = await core.environmentClients?.clientFor(route)
+    if (!reached?.ok) return undefined
+    const listed = await reached.client.request('session.list', { workspaceId, agentId }).catch(() => null)
+    if (!listed?.ok) return undefined
+    return latestSession(listed.sessions)
+  }
   return {
     chatAgentsOf: (workspaceId) => {
       const record = core.workspaceRegistry.getRecord(workspaceId)
@@ -448,15 +432,22 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
     resolveKey: (workspaceId, agentId) => hostOf().resolveKey(workspaceId, agentId),
     chatTitle: (workspaceId) => core.workspaceRegistry.getRecord(workspaceId)?.name,
     session: (workspaceId, agentId) => {
-      const listed = core.conversations.listSessions()
-      if (!listed.ok) return undefined
-      return listed.sessions
-        .filter((session) => session.workspaceId === workspaceId && session.agentId === agentId)
-        .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      const route = routeOf(workspaceId)
+      return route ? remoteSession(route, workspaceId, agentId) : localSession(workspaceId, agentId)
     },
-    permissionOf: (key) => hostOf().permissionOf?.(key) ?? 'manual',
-    command: (key, clientId, commandId, command) => hostOf().command(key, clientId, commandId, command),
+    permissionOf: (key) => {
+      const route = routeOf(key.workspaceId)
+      if (!route) return hostOf().permissionOf?.(key) ?? 'manual'
+      return remoteSession(route, key.workspaceId, key.agentId).then((session) => session?.permissionPreset ?? 'manual')
+    },
+    command: async (key, clientId, commandId, command) => {
+      const route = routeOf(key.workspaceId)
+      if (!route) return hostOf().command(key, clientId, commandId, command)
+      return environmentCommand(core.environmentClients, route, key, commandId, command)
+    },
     readPage: async (key, page) => {
+      const route = routeOf(key.workspaceId)
+      if (route) return environmentPage(core.environmentClients, route, key, page)
       if (page.before !== undefined) {
         const read = await core.conversations.readConversationPage(key, page.before, page.turns)
         return read.ok
@@ -471,3 +462,28 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
     },
   }
 }
+
+/** The folders of the workspaces this core holds itself: never a copy of another environment's chat. */
+function ownWorkspaceFolders(core: StudioCore): string[] {
+  return core.workspaceRegistry
+    .getRecords()
+    .flatMap((record) =>
+      record.folderPath && !environmentRouteOfRecord(record) && !isMachinePath(record.folderPath)
+        ? [record.folderPath]
+        : [],
+    )
+}
+
+/** This core's own sessions of a chat, newest first: what a sub-agent here is read by. */
+function localSessionOf(core: StudioCore) {
+  return (workspaceId: string, agentId: string): ConversationSessionSummary | undefined => {
+    const listed = core.conversations.listSessions()
+    if (!listed.ok) return undefined
+    return latestSession(
+      listed.sessions.filter((session) => session.workspaceId === workspaceId && session.agentId === agentId),
+    )
+  }
+}
+
+const latestSession = (sessions: readonly ConversationSessionSummary[]): ConversationSessionSummary | undefined =>
+  [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0]

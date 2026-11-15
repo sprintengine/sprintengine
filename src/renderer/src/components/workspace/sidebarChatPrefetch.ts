@@ -48,10 +48,12 @@ function prefetch(workspaceId: string): void {
   // The chat's code is loaded here too, the first time: the open needs it.
   void Promise.all([
     import('../panels/agentChat/useConversationSession'),
-    import('../panels/agentChat/conversationTransport'),
+    import('../panels/agentChat/environmentChat'),
   ])
-    .then(([session, transport]) => {
-      for (const key of keys) session.prefetchConversationSession(transport.localConversationTransport, key)
+    .then(([session, environment]) => {
+      // Over the transport its chat view opens it on: an SSH machine's chat there.
+      const transport = environment.conversationTransportOfRecord(workspace?.environment)
+      for (const key of keys) session.prefetchConversationSession(transport, key)
     })
     .catch(() => undefined)
 }

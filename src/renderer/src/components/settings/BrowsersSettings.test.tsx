@@ -94,3 +94,11 @@ test("a paired browser's last-seen time moves on while the panel stays open", as
     vi.useRealTimers()
   }
 })
+
+test('a tab is not handed a pairing link: another browser asks, and is let in here', async () => {
+  await mount({ webDevicesStatus: async () => status })
+  const buttons = [...(host?.querySelectorAll('button') ?? [])].map((button) => button.textContent)
+  expect(buttons).not.toContain('Make a link')
+  expect(host?.textContent).toContain('Open http://127.0.0.1:4791 in it and ask to pair')
+  expect(host?.textContent).toContain('studio-server pair')
+})

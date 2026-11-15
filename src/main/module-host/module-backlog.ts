@@ -1,5 +1,5 @@
 // The Backlog for capability modules (SDK `getBacklogService`, and the
-// renderer's Backlog write methods through the host-service bridge): list,
+// renderer's Backlog write methods over the protocol's `moduleBacklog.*`): list,
 // locate, create and change items of a workspace's Backlog.
 //
 // Nothing here writes a file. Every write is a call into the app's own Backlog
@@ -36,16 +36,20 @@ import type { BacklogTriageInput } from '../../shared/electron-api'
 import { errorMessage } from '../../shared/errors'
 import {
   addOrUpdateBacklogLink,
+  BACKLOG_ITEM_MAX_BYTES,
   createBacklogItem,
   peekBacklogDisplayKey,
   readBacklogItem,
   readBacklogObjectStore,
+  realBacklogFolder,
+  realPathInBacklogFolder,
   resolveBacklogLocation,
   updateBacklogModuleMetadata,
   updateBacklogStatus,
   updateBacklogTriage,
   withBacklogWorkspaceLock,
 } from '../backlog-service'
+import { readConfinedFile } from '../confined-file'
 
 /** A workspace as this service needs it: its id, name and project folder. */
 export type ModuleBacklogWorkspace = { id: string; name: string; folderPath: string | null }
@@ -98,6 +102,22 @@ const nodeBacklogFs: BacklogFilesystemAdapter = {
       modifiedAtMs: info.mtimeMs,
     }
   },
+}
+
+/**
+ * The disk, as a backlog scan reads it, held to the backlog's real folder: a
+ * file that links out of it is reported unreadable rather than read, as every
+ * read in the Backlog service is (`realPathInBacklogFolder`).
+ */
+function nodeBacklogFsIn(folder: string | null): BacklogFilesystemAdapter {
+  return {
+    ...nodeBacklogFs,
+    async readfile(path) {
+      const real = await realPathInBacklogFolder(folder, path)
+      if (!real) throw new Error('This file is a link to a file outside the Backlog folder.')
+      return readConfinedFile(real, 'utf-8', { maxBytes: BACKLOG_ITEM_MAX_BYTES })
+    },
+  }
 }
 
 export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBacklogRegistry {
@@ -183,10 +203,8 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
         const located = await resolveBacklogLocation(resolved.folder)
         if (!located.ok) return failure('backlog_unavailable', located.message)
         if (!located.location.exists) return { ok: true, items: [] }
-        const scan = await scanBacklog(
-          { workspaceRoot: located.location.workspaceRoot, root: located.location.root },
-          nodeBacklogFs,
-        )
+        const location = { workspaceRoot: located.location.workspaceRoot, root: located.location.root }
+        const scan = await scanBacklog(location, nodeBacklogFsIn(await realBacklogFolder(location)))
         if (scan.state === 'error') {
           const cause = scan.errors[0]
           return failure(

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import type { StudioClient } from '../../../../../packages/agent-sdk/src/client'
-import type { ToolCall, ToolDefinition } from '../../../../../packages/agent-sdk/src/tools'
+import type { StudioClient, ToolCall, ToolDefinition } from '../../../../../packages/client-runtime/src/public'
 import { CANVAS_MUTATION_TOOL_NAMES, createCanvasTools } from '../../../../main/automation/canvas-tools'
 import { createCanvasService } from '../../../../main/canvas/canvas-service'
 import type { CanvasServiceInternal, CanvasStoreCatalogue } from '../../../../main/canvas/canvas-service'

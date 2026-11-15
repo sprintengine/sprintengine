@@ -15,8 +15,9 @@ import type { DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalo
 import type { CliModelDiscoveryResult } from '../../../shared/ipc/cli-model-discovery'
 import { windowActivity, type WindowActivity } from '../utils/windowActivity'
 import type { AppSettings } from '../types/workspace'
+import { agentSettingsApi, windowHasStudio, type AgentSettingsApi } from '../studio/agentSettings'
 
-type CliModelDiscoveryApi = Pick<Window['api'], 'cliModelsDiscover' | 'onCliModelsChanged'>
+type CliModelDiscoveryApi = Pick<AgentSettingsApi, 'cliModelsDiscover' | 'onCliModelsChanged'>
 
 type CliModelDiscoveryStore = {
   getState: () => {
@@ -43,7 +44,7 @@ function applyResult(store: CliModelDiscoveryStore, result: CliModelDiscoveryRes
 }
 
 function defaultApi(): CliModelDiscoveryApi | null {
-  return typeof window === 'undefined' ? null : (window.api ?? null)
+  return windowHasStudio() ? agentSettingsApi : null
 }
 
 // How often a window coming to the front asks. A catalog still fresh costs main
@@ -55,7 +56,7 @@ export async function forceCliModelRefresh(
   store: CliModelDiscoveryStore,
   api: CliModelDiscoveryApi | null = defaultApi(),
 ): Promise<CliModelDiscoveryResult | null> {
-  if (!api || typeof api.cliModelsDiscover !== 'function') return null
+  if (!api) return null
   const { cliModelCatalog, cliRuntimes } = store.getState().appSettings
   try {
     const result = await api.cliModelsDiscover({
@@ -82,7 +83,7 @@ export function startCliModelDiscovery(
       : () => {}
 
   const refreshCliModels: CliModelDiscoveryHandle['refreshCliModels'] = async (options = {}) => {
-    if (!api || typeof api.cliModelsDiscover !== 'function') return null
+    if (!api) return null
     const { cliModelCatalog, cliRuntimes } = store.getState().appSettings
     try {
       const result = await api.cliModelsDiscover({

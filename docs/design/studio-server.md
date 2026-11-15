@@ -2,9 +2,20 @@
 
 Status: proposed, 2026-10-01. Phases 1 (the Electron seams), 2 (the Studio
 RPC), 3 (the Electron-free core and the `studio-server` entry) and 4 (the chat
-view over the protocol, behind the `SPRINTENGINE_CHAT_TRANSPORT=studio`
+view over the protocol, at first behind the `SPRINTENGINE_CHAT_TRANSPORT=studio`
 environment variable) have landed (section 13, "As
-landed"); nothing after them is. Phases 5 to 10 were replanned on 2026-10-02
+landed"). Since 2026-11-12 the chat view runs on the
+protocol only: the variable, the window's conversation IPC and the
+`chat-over-studio` test project are gone. Phases 5 to 9 were built too, each
+recorded in its own spec: client tools (`client-tools`, 2026-10-02), the local
+server out of process (behind the Advanced toggle, in process still the
+default), a server inside each WSL distribution, SSH machines, and the web
+listener with its client (2026-10-03). Since 2026-11-13 every WSL distribution
+and SSH machine is an environment of its own, reached on the Studio protocol,
+and since 2026-11-14 the tailnet's conversation lane is gone: a paired device
+speaks the Studio protocol too (`docs/compatibility.md`). Where this file
+describes the lane as a live wire, the WSL helper, or a phase as still to
+come, it is history. Phases 5 to 10 were replanned on 2026-10-02
 for a server with no browser and no canvas (section 1.1). This file replaces
 the remaining steps of the agent SDK plan on `feat/studio-agent-sdk` (the work
 after the protocol package and the tailnet lane and module service that speak
@@ -94,11 +105,19 @@ in WSL and on a minimal Linux box.
 
 **Non-goals for v1**
 
-- **Terminals on the server** (ruling a). The desktop keeps its terminals for
-  the machine it runs on (and for WSL through today's `wsl.exe` path), served
-  by Electron main as today. A remote or headless server has none. The chat
-  features that open a terminal (CLI sign-in, running a code block, Resume in
-  terminal) are hidden on a server that does not advertise them.
+- **Terminals on the server** (ruling a, superseded 2026-11-12 by the one-server
+  plan). The desktop's terminals are now served over the Studio protocol
+  (`terminal.*`, capability `terminals`), and its windows reach them only
+  that way. The terminal runtime, the agent-state reporter's listener and the
+  launch service every terminal launch goes through are the Studio core's
+  (`src/server/core/studio-agent-terminals.ts`), so the ptys run in the server
+  in every mode: in Electron main in process, in the desktop's server out of
+  process, under plain Node standalone. A server that cannot load the pty
+  module (a WSL or SSH machine's tree, until design-wsl-ssh-direct) does not
+  advertise `terminals`, and the chat features that open a terminal (CLI
+  sign-in, running a code block, Resume in terminal) are hidden there. The
+  shell keeps only its part of a launch (its plugin copy, MCP sync, skills
+  and hook install), which the server asks for over the shell bridge.
 - The full git panel, file explorer and editor over the protocol (ruling c).
 - A browser or a canvas renderer in the server (ruling f), and with them any
   Chromium download, screencast or server-side drawing.
@@ -118,23 +137,23 @@ The conversation core is already Electron-free. The coupling sits in the
 composition root, the IPC layer and a handful of lazy `require('electron')`
 calls.
 
-| Group                | Key files                                                                                                                                                                                                                                                                   | Electron use                                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Conversation runtime | `conversation-runtime.ts`, `conversation-session-api.ts` (the transport-independent replay/subscribe/command boundary IPC and the tailnet both wrap), `conversation-event-log.ts`, `conversation-transcript-reader.ts`, `conversation-*-store.ts`, `conversation-commands/` | none directly                                                                                                                                   |
-| Providers            | `providers/claude-agent-provider.ts`, `codex-conversation-provider.ts`, `acp-conversation-provider.ts`, `openai-compatible-provider.ts`, `cli-host-child.ts`, `cli-child-process.ts`                                                                                        | none                                                                                                                                            |
-| Launch               | `conversation-launch-service.ts`, `agent-launch-service.ts`                                                                                                                                                                                                                 | none                                                                                                                                            |
-| Checkpoints          | `conversation-checkpoints.ts` (git refs under `refs/sprintengine/checkpoints/`), `checkpoint-sweep.ts`                                                                                                                                                                      | none                                                                                                                                            |
-| Thread index         | `conversation-index.ts` (per-workspace `index.json` in the workspace sidecar)                                                                                                                                                                                               | none                                                                                                                                            |
-| Git                  | `git-run.ts` (the one place git processes start), `git*.ts`                                                                                                                                                                                                                 | none                                                                                                                                            |
-| MCP gateway          | `automation/automation-service.ts`, `mcp-socket-server.ts`, `mcp-dispatch.ts`, `studio-gateway-tools.ts`, `gateway-audit.ts`, the tool files                                                                                                                                | none; wired in `app-services.ts`                                                                                                                |
-| Tailnet lane         | `automation/tailnet/*`                                                                                                                                                                                                                                                      | `tailnet-mesh-store.ts` lazily requires `safeStorage`                                                                                           |
-| Canvas               | `canvas/canvas-service.ts`, `canvas-board-store.ts`                                                                                                                                                                                                                         | none; `canvas-worker-window.ts` is a hidden `BrowserWindow`; `canvas-subscribers.ts` holds `WebContents`                                        |
-| Browser tools        | `browser/browser-control.ts` over `wc.debugger` and `capturePage`                                                                                                                                                                                                           | inherently Electron today                                                                                                                       |
-| Module host          | `module-host/main-host.ts` (`IpcMain` injected), `load-modules.ts`, `module-conversation-service.ts`, `module-storage.ts`, `module-secrets.ts`                                                                                                                              | type-only, except `modules/agent-runtime-module.ts` (`app`, `safeStorage`) and `modules/scheduled-agents-module.ts` (`BrowserWindow` broadcast) |
-| Settings             | `launch-settings-store.ts`, `workspace-registry-store.ts`, `module-host/enablement-store.ts`, …                                                                                                                                                                             | take `resolveUserDataDir`; `window-material-store.ts` imports `app`                                                                             |
-| Credentials          | `secret-store.ts` (cipher and path injectable, lazy `require('electron')` fallback), `github-token-store.ts` (hard `app` + `safeStorage`)                                                                                                                                   | `safeStorage`                                                                                                                                   |
-| Resources            | `plugin-registry-instance.ts`, `managed-runtime.ts`, `ripgrep-binary.ts`, `builtin-skills.ts`                                                                                                                                                                               | `app.isPackaged`, `app.getAppPath`, `process.resourcesPath`, asar-unpacked paths                                                                |
-| File search          | `conversation-mentions.ts`, `filesystem-search.ts`                                                                                                                                                                                                                          | none (ripgrep path above)                                                                                                                       |
+| Group                | Key files                                                                                                                                                                                                                                                                   | Electron use                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Conversation runtime | `conversation-runtime.ts`, `conversation-session-api.ts` (the transport-independent replay/subscribe/command boundary IPC and the tailnet both wrap), `conversation-event-log.ts`, `conversation-transcript-reader.ts`, `conversation-*-store.ts`, `conversation-commands/` | none directly                                                                                            |
+| Providers            | `providers/claude-agent-provider.ts`, `codex-conversation-provider.ts`, `acp-conversation-provider.ts`, `openai-compatible-provider.ts`, `cli-host-child.ts`, `cli-child-process.ts`                                                                                        | none                                                                                                     |
+| Launch               | `conversation-launch-service.ts`, `agent-launch-service.ts`                                                                                                                                                                                                                 | none                                                                                                     |
+| Checkpoints          | `conversation-checkpoints.ts` (git refs under `refs/sprintengine/checkpoints/`), `checkpoint-sweep.ts`                                                                                                                                                                      | none                                                                                                     |
+| Thread index         | `conversation-index.ts` (per-workspace `index.json` in the workspace sidecar)                                                                                                                                                                                               | none                                                                                                     |
+| Git                  | `git-run.ts` (the one place git processes start), `git*.ts`                                                                                                                                                                                                                 | none                                                                                                     |
+| MCP gateway          | `automation/automation-service.ts`, `mcp-socket-server.ts`, `mcp-dispatch.ts`, `studio-gateway-tools.ts`, `gateway-audit.ts`, the tool files                                                                                                                                | none; wired in `app-services.ts`                                                                         |
+| Tailnet lane         | `automation/tailnet/*`                                                                                                                                                                                                                                                      | `tailnet-mesh-store.ts` lazily requires `safeStorage`                                                    |
+| Canvas               | `canvas/canvas-service.ts`, `canvas-board-store.ts`                                                                                                                                                                                                                         | none; `canvas-worker-window.ts` is a hidden `BrowserWindow`; `canvas-subscribers.ts` holds `WebContents` |
+| Browser tools        | `browser/browser-control.ts` over `wc.debugger` and `capturePage`                                                                                                                                                                                                           | inherently Electron today                                                                                |
+| Module host          | `module-host/main-host.ts` (`IpcMain` injected), `load-modules.ts`, `module-conversation-service.ts`, `module-storage.ts`, `module-secrets.ts`                                                                                                                              | type-only, except `modules/agent-runtime-module.ts` (`app`, `safeStorage`)                               |
+| Settings             | `launch-settings-store.ts`, `workspace-registry-store.ts`, `module-host/enablement-store.ts`, …                                                                                                                                                                             | take `resolveUserDataDir`; `window-material-store.ts` imports `app`                                      |
+| Credentials          | `secret-store.ts` (cipher and path injectable, lazy `require('electron')` fallback), `github-token-store.ts` (hard `app` + `safeStorage`)                                                                                                                                   | `safeStorage`                                                                                            |
+| Resources            | `plugin-registry-instance.ts`, `managed-runtime.ts`, `ripgrep-binary.ts`, `builtin-skills.ts`                                                                                                                                                                               | `app.isPackaged`, `app.getAppPath`, `process.resourcesPath`, asar-unpacked paths                         |
+| File search          | `conversation-mentions.ts`, `filesystem-search.ts`                                                                                                                                                                                                                          | none (ripgrep path above)                                                                                |
 
 In numbers: 113 of 536 non-test files in `src/main` reference Electron, about
 half of them type-only `IpcMain` imports in `src/main/ipc/*`. Seven use a lazy
@@ -211,12 +230,14 @@ document, the command catalog, @-mention search, history — are still direct
   `local` and `wsl:<distro>`. The WSL install pipeline (`wsl-node-runtime.ts`:
   pinned `v24.21.0`, SHA-256 per arch, downloaded on the Windows side;
   `wsl-install.ts`: streamed over `wsl.exe` stdin into a staging directory,
-  `flock`, digest marker, `mv -T`, pruning) and the helper protocol
-  (`resources/wsl-helper/`, newline JSON over stdio, a `boot` line then
-  `hello`) are the template for both the WSL server and the SSH bootstrap.
-- **`ConversationIpcHandlers`** (`ipc/conversation-ipc.ts`): a handler object
-  with no IPC in it, bound to `ipcMain` by a thin function. Every domain that
-  moves to the server gets this shape first.
+  `flock`, digest marker, `mv -T`, pruning) and the WSL helper's protocol
+  (newline JSON over stdio, a `boot` line then `hello`; the helper itself was
+  retired in 2026-11) were the template for both the WSL server and the SSH
+  bootstrap.
+- **`ConversationService`** (`conversation-service.ts`): a service object
+  with no IPC in it, which the Studio protocol's chat surface calls (the
+  conversation IPC that once bound it to `ipcMain` is gone). Every domain that moves to the server
+  gets this shape first.
 
 There was no SSH host, no headless entry point and no Electron-free
 composition root when this was written. Phase 3 added the last two
@@ -282,7 +303,7 @@ standalone server).
 | `PowerEvents` (optional)                                                                                                                     | `powerMonitor`, `net.isOnline`                                                                                                                         | none; the shell forwards wake and online hints as client events                                                               |
 
 `IpcMain` disappears from server code entirely: every domain exposes a handler
-object (the `ConversationIpcHandlers` shape) and is registered on the RPC router
+object (the `ConversationService` shape) and is registered on the RPC router
 and, during the migration only, on `ipcMain` by the shell.
 
 A guard test (`src/server/electron-boundary.test.ts`) walks the import graph
@@ -307,21 +328,21 @@ all: under ruling (f) the canvas is a client module whose boards are files the
 server reads and writes for it, and whose agent tools are a toolset the client
 offers.
 
-| `MainHost` member today                    | On the server                                                                                                          |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `registerIpc(channel, handler)`            | a protocol method `module.invoke { moduleId, channel, payload }`, routed by the same ownership and `ipc:invoke` checks |
-| `emit(topic, payload)`                     | the `module.events` stream, per module, nothing replayed (as today)                                                    |
-| `registerMcpTools`                         | the server's gateway, unchanged                                                                                        |
-| `notify`                                   | the server's `Notifier`                                                                                                |
-| `provideService` / `getService`            | unchanged, in the server process                                                                                       |
-| `registerSkills` / `ensureSkillInstalled`  | unchanged, on the server host's disk                                                                                   |
-| `registerSidecar`                          | unchanged, spawned on the server host                                                                                  |
-| storage, secrets, the conversation service | unchanged, on the server                                                                                               |
+| `MainHost` member today                                  | On the server                                                                                                                                  |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerMethods({ name: { access, params, handler } })` | `module.read` (`modules:read`) and `module.operate` (`modules:operate`, once per command id), by module id and method name; host API 2 (built) |
+| `emit(topic, payload)`                                   | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built)                                              |
+| `registerMcpTools`                                       | the server's gateway, unchanged                                                                                                                |
+| `notify`                                                 | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built)                                             |
+| `provideService` / `getService`                          | unchanged, in the server process                                                                                                               |
+| `registerSkills` / `ensureSkillInstalled`                | unchanged, on the server host's disk                                                                                                           |
+| `registerSidecar`                                        | unchanged, spawned on the server host                                                                                                          |
+| storage, secrets, the conversation service               | unchanged, on the server                                                                                                                       |
 
 | `RendererHost` member                                     | In a client                                                                          |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `registerPanel`, surfaces, commands, settings sections, … | unchanged                                                                            |
-| `invoke(channel)` / `subscribe(topic)`                    | carried by `module.invoke` / `module.events`                                         |
+| `methods()` / `subscribe(topic)`                          | carried by `module.read` and `module.operate` / `module.events` (built)              |
 | workspaces, backlog, chats, app state                     | the matching protocol methods                                                        |
 | `getAssetUrl`                                             | an HTTP path the server serves (`/modules/<id>/assets/…`), signed per client session |
 
@@ -333,8 +354,10 @@ Consequences:
   is an owner-scoped call.
 - Bundled modules that are still wired statically in `app-services.ts` and
   `register-core-ipc.ts` (canvas, backlog, git, design, review) are split the
-  same way when their domain moves (phase 10), and land on the kernel as
-  `createBundledMainModules()` entries rather than as static wiring. Canvas
+  same way when their domain moves (phase 10), and land in the core (as
+  scheduled agents did: `server/core/studio-scheduled-agents.ts`, with
+  `modules/scheduled-agents-switch.ts` holding the person's switch on the
+  kernel) rather than as static wiring. Canvas
   is the exception: it has no server half to split off, and its main-side
   service stays with the desktop shell, which offers it as the `canvas`
   toolset (phase 5).
@@ -348,9 +371,12 @@ Consequences:
 ### 5.1 Shape
 
 One WebSocket per client connection, multiplexing every namespace. (The tailnet
-conversation lane opens one socket per conversation; that stays as the phone's
-wire until phase 10 folds it in.) Frames are JSON text; images and uploads go
-over HTTP beside the socket.
+conversation lane opened one socket per conversation and was planned to stay as
+the phone's wire until phase 10 folded it in. Superseded on 2026-11-14: the
+lane is gone, and a paired device speaks this protocol at
+`/tailnet/v1/studio`.) Frames are JSON text; images and uploads go
+over HTTP beside the socket. (Superseded: uploads go on the socket too, in
+pieces a frame can hold, `uploads.*`.)
 
 ```
 client → server
@@ -373,8 +399,9 @@ server → client
 
 Rules carried over from the conversation lane, unchanged in meaning:
 
-- Every mutation carries a client `commandId`, recorded as a durable receipt
-  before work starts; a retry is answered with the first attempt's result.
+- Every mutation carries a client `commandId`, whose receipt the chat's log
+  keeps (`docs/conversations.md`, "Commands and the chat's log"); a retry is
+  answered from it and never runs twice.
 - Every refusal is correlated to the id of what it refuses.
 - Streams resume from a cursor (`afterSeq` and `generation`); a cursor the
   server cannot vouch for gets a reset snapshot. Sequence numbers increase with
@@ -433,29 +460,39 @@ grants on every frame.
   protocolVersion, minProtocolVersion,            // STUDIO_PROTOCOL_VERSION window
   server: { version, buildStamp },
   environment: { id, label, os, arch, hostKind: 'local' | 'wsl' | 'ssh' | 'tailnet', home },
-  capabilities: [ 'conversations', 'conversation-create', 'files-mention', 'client-tools', 'previews', … ],
+  capabilities: [ 'conversations', 'conversation-create', 'files-mention', 'client-tools', … ],
   conversation: { protocolVersion, minProtocolVersion, capabilities },   // the existing conversation hello answer
   grant: { scopes, owner: boolean },
 }
 ```
 
-- `STUDIO_PROTOCOL_VERSION` is an integer with one version of slack, refused at
-  the handshake by an error that names both numbers — the policy in
-  `docs/compatibility.md`, which gains a row for this wire. The conversation
-  protocol's own version and capability list nest inside, unchanged, so a
-  client that only speaks conversations reads exactly what it reads from the
-  tailnet lane today.
+- `STUDIO_PROTOCOL_VERSION` is an integer with a window of versions a Studio
+  still serves (`STUDIO_PROTOCOL_MIN_SUPPORTED`; both are 1 today, so the
+  window is that one version), a peer outside it refused at the handshake by
+  an error that names both numbers — the policy in `docs/compatibility.md`,
+  which gains a row for this wire. The conversation protocol's own version and
+  capability list nest inside, unchanged, in `welcome.conversation`.
 - Features are asked about by capability, never by version. A purely additive
   namespace or method ships as a capability with no bump.
 - `environment.id` is a stable random id minted when a data directory is
-  created. A client keys its caches and its saved connections on it, so a
-  server reached by two routes (an SSH tunnel and the tailnet) is recognised as
-  one.
+  created (`src/server/environment/environment-id.ts`: created whole or not at
+  all, never written over when it cannot be read). A client keys its caches
+  and its saved connections on it, so a server reached by two routes (an SSH
+  tunnel and the tailnet) is recognised as one. A paired desktop says the same
+  id on the tailnet's `identity`.
 - An unauthenticated `GET /.well-known/sprintengine-studio` answers the
   product, `server.version`, the protocol window and the auth methods it
   accepts, and nothing else (no label, no paths), so a client can tell "wrong
-  version" from "wrong credentials" before it pairs. It is the tailnet lane's
-  `health` route, generalised.
+  version" from "wrong credentials" before it pairs. It is the tailnet
+  listener's `health` route, generalised.
+- A client outside the window that asked to be kept (`update-session` in its
+  hello, and a token) is answered with an `incompatible` frame instead of the
+  welcome: who the Studio is, which side is behind, and how it is updated
+  (`self`: a desktop, through its app updater; `bootstrap`: a WSL or SSH server,
+  by the desktop that installed it; `manual`). Its connection serves
+  `update.status` and `update.start` (scope `environment:maintain`) and nothing
+  else, so a client always has an update or a manual way back. That frame, the
+  two methods and the hello never change shape (`docs/compatibility.md`).
 - The client's `hello` carries its own capabilities (6.4), a `kind`
   (`desktop`, `web`, `app` or `headless`, read only from an owner grant) and
   an `instanceId` that stays the same across one process's reconnects, so the
@@ -467,8 +504,10 @@ grants on every frame.
 The protocol is `@sprintengine/studio-protocol` (owner ruling 2026-10-01), a
 package of its own that depends on `@sprintengine/conversation-protocol` and
 re-exports all of it, so a client imports one package. The conversation
-package stays the conversation lane on its own, the phone's subset, and its
-five pinned files are untouched: the Studio protocol adds the connection around
+package was to stay the conversation lane on its own, the phone's subset, with
+its five pinned files untouched. Since the lane went (2026-11-14) it is the
+conversation contract alone, with no transport of its own, which every client
+reads through this protocol. The Studio protocol adds the connection around
 the contract rather than growing inside it. In this repository the protocol's
 one bridging file re-exports the conversation package's source by path, and
 its build swaps that file for the published dependency; the pack check
@@ -512,7 +551,7 @@ by browser fallbacks, is the web client's `window.api` (section 11).
 | Bucket                                                 | Members (approx.) | Fate                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **v1 server** — what the chat view and its panels call | ~75               | conversation (38), the command catalog, providers/models/secrets, `cliModelsDiscover`, launch settings, workspace sync, `searchFiles`/`cancelFileSearch`, `statPath`, `readImageDataUrl`, `getGitRepoRoot`, skills list/scan, `generateChatTitle`, `compactAgentSession`, `readConversationPeek`, `hostsList`           |
-| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile`, terminals (21, for the local machine)                                                                                         |
+| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile` (terminals moved to `terminal.*`)                                                                                              |
 | **Later server domains**                               | ~250              | git panel (62), file explorer/editor (most of filesystem's 40), backlog (17), skills management, marketplace, modules, mesh (folded into environments), automation/tailnet admin, canvas (a client module; boards via `files` from phase 5), tours, memory graph, design system, scheduled agents, pull requests, voice |
 
 The rule for each domain that moves: extract a handler object with no IPC in it
@@ -582,13 +621,13 @@ The phase 5 spec
 has the frames, names, limits, routing, approval, and what happens to a call
 whose client disconnects.
 
-`terminal.*`, `agent.launch` and `backlog.work` need a terminal, which only the
-desktop shell has (ruling a). They become the shell's `terminal` toolset in
-phase 6, offered only while a desktop that has terminals is attached to a
-server on its own PC: its local server, and its WSL servers through the
-Windows-side front door, which can open terminals there (phase 7 §3.7,
-§12.8). They are still never offered to a tailnet peer, as today. An SSH or
-headless server does not list them.
+`terminal.*`, `agent.launch` and `backlog.work` need a terminal. Since the
+terminals moved into the server (design-terminal-service), they are the
+gateway's own tools wherever the server runs terminals, in process and out;
+before that they were the shell's `terminal` and `agent` toolsets out of
+process. A WSL distribution's agents still reach the desktop's through the
+Windows-side front door (phase 7 §3.7, §12.8). They are still never offered
+to a tailnet peer, as today.
 
 ### 6.4 Client capabilities
 
@@ -751,10 +790,14 @@ but the pull request's author (approval and changes requested said as such),
 merged or closed. The news wakes the chat through the same send a resume after
 a usage limit takes, as one Studio message per wake (`origin` reason
 `pull-request-watch`), never into a running turn, a usage limit, or a settled
-or deleted chat (`pull-request-wakes.ts`). The watch is stored on its pull
-request's row and ends when it merges or closes, when it is stopped, when its
-chat is settled or deleted, after ten wakes in a row that bring only comments,
-or after eight failed reads in a row; a rate limit only waits. A listed pull
+or deleted chat (`pull-request-wakes.ts`). News the chat has not been told
+is stored on the row too, in the same write as the watch state that found it,
+and a message goes under a command id stamped on it first, so a restart
+neither loses news nor tells it twice (`pull-request-untold.ts`). The watch is
+stored on its pull request's row and ends when it merges or closes, when it is
+stopped, when its chat is settled or deleted, after ten wakes in a row that
+bring only comments, or after eight failed reads in a row; a rate limit only
+waits. A listed pull
 request carries `watch` (what it waits on) while it is watched.
 
 **The protocol** (`pull-requests` capability, owners only, `workspaces:read`):
@@ -813,7 +856,8 @@ code and the end of its output) is kept until the next one starts; a stopped
 one has nothing to explain. The server's own end stops every
 run it started, which would otherwise be left holding its port.
 
-**The protocol** (`local-servers` capability, owners only):
+**The protocol** (`local-servers` capability, an owner's by declaration, so
+no paired device or app reaches it whatever its scopes):
 `localServers.list` by workspace or by conversation (`workspaces:read`),
 `localServers.run`, `localServers.stop` and `localServers.remove`
 (`conversation:operate`), and the `localServers.changed` stream.
@@ -1095,7 +1139,11 @@ version } }` on stdout once its listeners are bound, and
 
 ### 10.2 Inside WSL, on the pinned Node
 
-This is what "a chat on WSL" becomes:
+This is what "a chat on WSL" becomes. (The table's "Today" column, and the
+helper this section still compares against, are history: the WSL helper was
+retired on 2026-11-14, its CLI detection and runs moving to the
+distribution's own Studio on the `environment-machine` capability, and every
+WSL chat is that Studio's. See `studio-server/phase-7-wsl-server.md`.)
 
 | Today                                                                                                               | With a server in WSL                                                        |
 | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -1195,30 +1243,59 @@ in `docs/design/studio-server/phase-8-ssh-remotes.md`.
   still read what the newer version left.
 
 **Environments in the app**: a saved connection has a label, a route (`local`,
-`wsl:<distro>`, `ssh:<host alias>`, `tailnet:<device>`) and the
-`environment.id` it last reported. The sidebar groups workspaces by
-environment; the existing Remote band and the machine dropdown in New chat list
-environments instead of paired desktops only.
+`wsl:<distro>`, `ssh:<saved machine id>`, `tailnet:<pairing id>`) and the
+`environment.id` it last reported. The sidebar files every chat under its
+project, wherever it runs (owner ruling 2026-09-11): the machine is a glyph on
+the row, never a group of its own. Settings ▸ Machines and the machine
+dropdown in New chat list environments, whatever kind of machine each is.
+
+_As built so far (2026-11-11)_: the types are in
+`@sprintengine/studio-protocol` (`environment.ts`: `EnvironmentDescriptor`,
+`EnvironmentRoute` with its order, `ChatAddress` `{ environmentId, chatId }`);
+today's machine keys (`hostId`, the router's keys, `ssh://` paths, a
+workspace's SSH record, pairing ids) map onto them in
+`src/shared/environment-keys.ts`; and the desktop keeps the list in
+`src/main/environments/environment-registry.ts`, fed by the WSL settings, the
+saved SSH machines and the paired desktops, with what each route answered kept
+in `environments.json`. An SSH machine and a paired desktop have their ids
+from their own records; a WSL distribution has none until something connects
+to its server and tells the registry what it answered, which the cut-over to
+direct WSL environments does. No call is routed through the registry yet: each
+cut-over moves its callers onto it.
+
+The window reads the registry over three shell channels (`environments:list`,
+`environments:changed`, `environments:retry`; `src/shared/environments.ts`).
+Each entry carries how its connection stands, reported by the owner of each
+route today (the SSH machines' states, the paired desktops' reachability, the
+WSL distributions' states) and by its connection supervisor once the machines
+are direct environments, and a compatibility slot that `design-server-update`
+fills. `environmentStatus` (`src/shared/environment-status.ts`) turns that into
+the words, tone and one action every surface shows: Settings ▸ Machines lists
+every environment in one card, and the Remote popover, the Remote glyph's count
+and a paired machine's rows in the sidebar read the same status.
 
 ### 10.4 The server bundle
 
 - `npm run build:server` builds `out/server/server.mjs`, a single Node ESM
   bundle of `src/server/` and its dependencies, with the pure-JS dependencies
   inlined (`@anthropic-ai/claude-agent-sdk`, `@agentclientprotocol/sdk`,
-  `diff`, `ignore`, `nanoid`, the protocol packages). _As of phase 3 it builds
-  `out/server/server.cjs` instead: CommonJS, as the main bundle the same source
-  goes into is, with every dependency left in `node_modules`. That is what a
-  desktop-spawned server (phase 6, inside the app archive) needs; inlining for
-  hosts with no `node_modules` (WSL, SSH) is phases 7 and 8's packaging, and
-  is where the ESM question is decided, against how the agent SDK finds its
-  own files once inlined._
+  `diff`, `ignore`, `nanoid`, the protocol packages). _Superseded: it builds
+  `out/server/server.cjs`, CommonJS, as the main bundle the same source goes
+  into is, with every dependency left in `node_modules`, which is what a
+  desktop-spawned server (phase 6, inside the app archive) needs. For hosts
+  with no `node_modules` (WSL, SSH), `--wsl` builds `out/wsl-server/`, whose
+  `server.cjs` is CommonJS too, with every dependency inlined
+  (`scripts/build-server.mjs`). No bundle is ESM._
 - Beside it: `resources/` (plugins, hooks, the studio plugin, built-in skills,
   `automation/mcp-stdio-bridge.mjs`), the ripgrep binary for the target
   os/arch, and the web client (section 11), which carries the canvas worker
   page and its fonts for the web client's `canvas` toolset. The server itself
   draws nothing.
-- Not in it: `node-pty` (terminals are out), `electron`, `electron-updater`,
-  xterm, Monaco's main-side pieces.
+- Not in it: `electron`, `electron-updater`, Monaco's main-side pieces, and
+  `node-pty`, which the terminal runtime loads on first use: the WSL and SSH
+  tree carries no native code, so its server starts without it and serves no
+  terminals (until design-wsl-ssh-direct). The desktop's server loads it from
+  the app's `node_modules`, where electron-builder unpacks its native files.
 - One archive per target (`studio-server-<version>-<os>-<arch>.tar.gz`) with a
   manifest of SHA-256s. The desktop package carries its own platform's bundle
   and the Linux x64 and arm64 bundles (for WSL and SSH); a macOS desktop carries
@@ -1312,8 +1389,8 @@ Each phase lands as reviewable commits on `feat/studio-agent-sdk`, leaves
   `require('electron')` sites (`secret-store.ts`, `plugin-registry-instance.ts`,
   `managed-runtime.ts`, `mcp-config-service.ts`, `marketplace/resources.ts`,
   `marketplace/trusted-publishers.ts`, `tailnet-mesh-store.ts`),
-  `github-token-store.ts`, `modules/agent-runtime-module.ts`, the broadcast in
-  `modules/scheduled-agents-module.ts`, `ripgrep-binary.ts`, `builtin-skills.ts`,
+  `github-token-store.ts`, `modules/agent-runtime-module.ts`, the scheduled
+  agents' broadcast (now `server/core/studio-scheduled-agents.ts`), `ripgrep-binary.ts`, `builtin-skills.ts`,
   and `terminal-launch.ts`'s userData paths.
 - **Tests.** Each touched store tested with the Node implementations and a temp
   directory; a guard test listing the server-bound files that must not import
@@ -1369,9 +1446,8 @@ Each phase lands as reviewable commits on `feat/studio-agent-sdk`, leaves
   through `<userData>/run/server.json`. Audit records go into the gateway's one
   log under the `studio-client` connection kind. The service takes its data
   directory and version from the platform's `StudioPaths` and `AppIdentity`,
-  and tells Settings about pairings on the `ClientBus` (topic
-  `studio-local-apps:changed`, a preload channel name that no protocol stream
-  exposes). It seals nothing, so the synchronous `SecretCipher` does not bind
+  and tells Settings about pairings on the `localApps.changed` protocol stream
+  (served to Studio's own desktop windows only, as all of `localApps.*` is). It seals nothing, so the synchronous `SecretCipher` does not bind
   it: a paired app's token is kept only as a hash, and the owner token only in
   memory. It raises no notification, so no `onActivate` has to cross a socket.
 
@@ -1478,7 +1554,9 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     to reach: its helper is a shell concern, so a launch into a distribution
     fails with "the WSL helper is not available in this process", and a chat's
     gateway entry is null for a WSL host. The server for a distribution runs
-    inside it (phase 7).
+    inside it (phase 7). _Superseded on 2026-11-14: the helper and that
+    refusal are gone; a WSL chat is its distribution's own Studio's, which
+    the desktop reaches on the Studio protocol._
   - _Two cores on one data directory._ Every core takes
     `<dataDir>/run/studio.lock` (pid, host, a token; written whole under
     another name and linked into place, so a full disk leaves no half lock)
@@ -1553,18 +1631,22 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
 - **Risks.** Latency on the composer's mention search and on large snapshots;
   measured against IPC before the default flips.
 - **As landed.**
-  - _The way in._ A window does not open a WebSocket with a ticket (5.5): main
-    makes a message channel per connection, serves one end in process
-    (`StudioRpcService.connectWindow`, `framePortStream`) and transfers the
-    other to the window's preload (`studio:connect`, `studio:port`), which
-    keeps the port in its own world and lends the page `studioConnect`,
-    `studioPortSend`, `studioPortListen` and `studioPortClose` by connection
-    id. Only an app window's top-level document gets one (the IPC sender
-    check), at most four at once. The hello still carries a credential: a
-    ticket minted for that one connection, good once within thirty seconds,
-    which is all the page ever holds. This is phase 6's port-per-window
-    decision taken a phase early, so phase 6 hands main's end to the server
-    process and changes nothing in the window.
+  - _The way in._ A window opens a WebSocket with a ticket (5.5). Each
+    server runs a window listener on 127.0.0.1 (`studio-window-listener.ts`,
+    started by `StudioRpcService` on the first ticket), serving the protocol
+    on `/ws` only. Before every connection, reconnects included, the window
+    asks main (`studio:window-ticket`, `studioWindowTicket`); main checks the
+    sender is an app window's top-level document and asks the server that
+    holds the chats (in process directly, out of process over the control
+    channel's `studio.window-ticket`). The ticket is good once, within thirty
+    seconds, from that document's origin only, and is all the page ever
+    holds; the upgrade names it and the hello presents it. The listener also
+    refuses a `Host` other than its own address. Main names each document
+    afresh and revokes it when it goes (a navigation, a crashed renderer, a
+    closed window), which ends its connections; a window holds at most four.
+    A restarted server listens on another port, which the next ticket names.
+    (Until 2026-11 this was a message port per connection brokered by main;
+    it went when the window became a WebSocket client.)
   - _Studio's own window._ A connection attached this way (`ownWindow`) is the
     app's chat view: its events and replies are not redacted, a refusal from
     below is told in its own words, its mutations are not audited, and its
@@ -1636,11 +1718,10 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     invoke-shaped round trip 4.1 µs mean, `files.stat` over the protocol
     9.7 µs (p99 28 µs), `session.send` 10.2 µs, one streamed event backend to
     client 5.3 µs. The protocol adds about 6 µs a call, against 25–36 µs for
-    a call over Electron's own IPC or ports (measured while planning phase 6). A session command
-    over the protocol carries a command id, so the runtime keeps a receipt
-    for it, which the IPC never did: two writes of the conversation's
-    receipts file per command, the first (the intent) awaited before the
-    command runs, the second (its result) after.
+    a call over Electron's own IPC or ports (measured while planning phase 6). The runtime
+    keeps a receipt for every session command in the chat's log, whichever
+    way it came: a send's in the same write as its message, a command's
+    answer appended after it.
   - _Still on IPC, and why._ The shell's own members (clipboard, `platform`,
     open externally, reveal, open in an editor, the picture viewer), the
     terminals behind a code block's Run, CLI sign-in and Resume in terminal
@@ -1651,12 +1732,7 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
   - _Why the IPC stays the default._ The suites prove the renderer's side and
     the RPC's; nothing yet runs the real Electron ports end to end in a
     packaged app. Before the default flips: a packaged smoke run drives a
-    chat over them, and the receipt writes are measured where they cost
-    most, a conversation kept on a WSL path from Windows, where each write
-    crosses into the distribution and the first delays every send, stop and
-    answer to an approval. If that wait is felt, the intent write needs to
-    move off the command's path (written alongside, or batched) first. Keep
-    the IPC behind the setting for one release after.
+    chat over them. Keep the IPC behind the setting for one release after.
 - **Follow-ups.**
   - _Assets beside the socket (phase 9)._ Phase 4 serves nothing over HTTP:
     pictures go over the connection in pieces and come back as data. When the
@@ -1666,8 +1742,11 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     `Cache-Control: no-store` on anything that carries a credential.
   - _Durable answers (phase 6)._ The router keeps a start's, revert's,
     rewind's and fork's first answer, and every command's fingerprint, in
-    memory. Once a server can restart under a window that resends, those need
-    receipts that outlive it, as a session's commands already have.
+    memory. A client sends such a mutation again only to the same server boot
+    (`welcome.bootId`); after a restart it is refused `unknown_outcome`
+    instead. A method whose receipts are moved somewhere that outlives the
+    server is marked `receipts: 'durable'` in its table, and is then sent
+    again across a restart too, as a session's commands are.
   - _Flow control on a port (phase 6)._ A message port does not push back, so
     a window's connection never queues and never resyncs; the renderer holds
     what it is sent, as it does over IPC. A server in its own process should
@@ -1771,6 +1850,9 @@ It replaces "The render host (L)", withdrawn by ruling (f).
   the git panel and file explorer data (ruling c); backlog, scheduled agents,
   tours, design; the tailnet conversation lane folded into the single
   multiplexed socket with the old lane kept for the phone's window.
+  _Superseded on 2026-11-14: the lane went whole, with no window kept for the
+  phone; every paired device speaks the Studio protocol, and a build that
+  does not is told to update (tailnet transport 3)._
 - **Tests.** Per domain, the handler object tested directly and through the
   router.
 - **Risks.** Scope creep; each domain is its own reviewable unit and ships

@@ -35,6 +35,8 @@ vi.mock('../../../store/workspaceStore', () => ({
   },
 }))
 
+vi.mock('../../../studio/agentSettings', () => import('../../../studio/agentSettings.double'))
+const { agentSettingsDouble, resetAgentSettingsDouble } = await import('../../../studio/agentSettings.double')
 const { CLI_UPDATE_PROGRESS_INTERVAL_MS, holdCliUpdateToasts, showCliUpdateToast } = await import('./cliUpdateToast')
 
 const ADVISORY: CliVersionAdvisory = {
@@ -57,14 +59,11 @@ beforeEach(() => {
   opened.availabilityReads.length = 0
   opened.advisoryReads.length = 0
   updateCalls.length = 0
-  anyGlobal.window = {
-    api: {
-      platform: 'win32',
-      cliUpdate: async (...args: unknown[]) => {
-        updateCalls.push(args)
-        return { ok: true, cli: 'codex', installed: true, version: '0.41.0', resolvedPath: null, log: '', error: null }
-      },
-    },
+  anyGlobal.window = { api: { platform: 'win32' } }
+  resetAgentSettingsDouble()
+  agentSettingsDouble.cliUpdate = async (...args: unknown[]) => {
+    updateCalls.push(args)
+    return { ok: true, cli: 'codex', installed: true, version: '0.41.0', resolvedPath: null, log: '', error: null }
   }
   useToastStore.setState({ toasts: [] })
   useNotificationStore.setState({ dismissedUpdates: [] })
@@ -166,12 +165,12 @@ test('holds nest, and a release called twice counts once', () => {
   assert.ok(toast())
 })
 
-// While the update runs, the toast carries the updater's newest line: main
-// streams the output on the install channel, and the toast follows it.
+// While the update runs, the toast carries the updater's newest line: the
+// Studio streams the output on `cliRuntimes.output`, and the toast follows it.
 function streamingUpdate() {
   const listeners = new Set<(chunk: string) => void>()
   let settle: (result: unknown) => void = () => {}
-  const api = (anyGlobal.window as { api: Record<string, unknown> }).api
+  const api = agentSettingsDouble as unknown as Record<string, unknown>
   api.cliUpdate = () =>
     new Promise((resolve) => {
       settle = resolve

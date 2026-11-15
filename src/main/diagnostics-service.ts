@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import type { DiagnosticLogEntry, DiagnosticLogInput } from '../shared/electron-api'
 import { studioPlatform } from '../server/platform/platform'
 import { redactSecrets } from './redact-secrets'
+import { errorMessage } from '../shared/errors'
 
 // The diagnostics log the server appends to. Opening its folder in the OS file
 // manager is the shell's half (diagnostics-folder.ts).
@@ -37,11 +38,19 @@ async function ownerOnly(path: string, mode: number): Promise<void> {
   await chmod(path, mode).catch(() => undefined)
 }
 
+// Folders a write already failed in, so a log folder that cannot be written
+// (read-only, full, or refused by a sandbox) is said once, not on every line.
+const unwritable = new Set<string>()
+
 /**
  * Appends one entry. Every text field goes through `redactSecrets` first, so a
  * caller that passes an error message or a command line with a token in it
  * does not put the token on disk; the entry returned is the one written. The
  * log and its folder are the owner's alone.
+ *
+ * Never rejects: most callers fire and forget, and a log that cannot be
+ * written has nowhere else to go. The failure is said once on the console and
+ * the entry is still returned.
  */
 export async function writeDiagnosticLog(input: DiagnosticLogInput): Promise<DiagnosticLogEntry> {
   const timestamp = new Date()
@@ -57,10 +66,18 @@ export async function writeDiagnosticLog(input: DiagnosticLogInput): Promise<Dia
   }
 
   const dir = dirname(logPath)
-  await mkdir(dir, { recursive: true, mode: 0o700 })
-  await ownerOnly(dir, 0o700)
-  await appendFile(logPath, `${JSON.stringify(entry)}\n`, { encoding: 'utf-8', mode: 0o600 })
-  await ownerOnly(logPath, 0o600)
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    await ownerOnly(dir, 0o700)
+    await appendFile(logPath, `${JSON.stringify(entry)}\n`, { encoding: 'utf-8', mode: 0o600 })
+    await ownerOnly(logPath, 0o600)
+    unwritable.delete(dir)
+  } catch (error) {
+    if (!unwritable.has(dir)) {
+      unwritable.add(dir)
+      console.warn(`[diagnostics] Could not write the diagnostics log in ${dir}: ${errorMessage(error)}`)
+    }
+  }
   return entry
 }
 

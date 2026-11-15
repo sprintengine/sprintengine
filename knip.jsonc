@@ -23,8 +23,6 @@
     "design-system/scripts/*.mjs",
     "resources/marketplace/*.ts",
     "resources/hooks/*.mjs",
-    // The WSL helper runs inside Linux on its own Node; main installs it there.
-    "resources/wsl-helper/**/*.mjs",
     "packages/module-sdk/src/cli.ts",
     // The SDK's `./testing/register` entry: a module's tests load it with
     // `node --import`, so nothing in this repository imports it.
@@ -32,9 +30,16 @@
     "packages/module-sdk/drift/*.ts",
     // The standalone Studio server, bundled by scripts/build-server.mjs.
     "src/server/main.ts",
+    // The cross-client gate's two processes and the phone's file-module
+    // stand-in, bundled by scripts/cross-client-gate.mjs.
+    "tests/cross-client/main.ts",
+    "tests/cross-client/host.ts",
+    "tests/cross-client/expo-file-system-node.ts",
     // The protocol packages' published entries; app code imports their files directly.
     "packages/conversation-protocol/src/public.ts",
     "packages/studio-protocol/src/public.ts",
+    // The client runtime's published entry.
+    "packages/client-runtime/src/public.ts",
     // The agent SDK's published entries, the client and its Node half.
     "packages/agent-sdk/src/index.ts",
     "packages/agent-sdk/src/node.ts",
@@ -59,7 +64,7 @@
   ],
   "ignoreBinaries": [
     // The Windows system launcher for a WSL distribution: it lists the
-    // distributions and starts each one's helper. Not an npm binary.
+    // distributions and starts each one's Studio server. Not an npm binary.
     "wsl.exe",
     // The POSIX tool clone-tree.test.ts makes a FIFO with; Node has no API for it.
     "mkfifo",

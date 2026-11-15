@@ -8,9 +8,17 @@
 // status-line payload, and the Codex app-server's `account/rateLimits/*`. The
 // app never asks a provider for them itself and never reads a credential to.
 
-export type UsageLimitProvider = 'claude' | 'codex'
+import type { UsageLimitProvider, UsageLimitWindow } from '../../packages/studio-protocol/src/public'
 
-export const USAGE_LIMIT_PROVIDERS: readonly UsageLimitProvider[] = ['claude', 'codex']
+export { USAGE_LIMIT_PROVIDERS } from '../../packages/studio-protocol/src/public'
+export type {
+  UsageLimitBilling,
+  UsageLimitProvider,
+  UsageLimitSnapshot,
+  UsageLimitStatus,
+  UsageLimitsState,
+  UsageLimitWindow,
+} from '../../packages/studio-protocol/src/public'
 
 /** The usage-limit provider a conversation provider reports as, or null for one with no plan limits here. */
 export function usageLimitProviderOfConversation(
@@ -27,52 +35,6 @@ export function usageLimitProviderOfCli(cli: string | null | undefined): UsageLi
   if (cli === 'codex') return 'codex'
   return null
 }
-
-/**
- * How the account pays. Limits exist only on a subscription: a provider whose
- * latest session billed by use (an API key, a cloud provider's or a
- * gateway's credentials) shows nothing, and one nothing has said anything
- * about yet shows nothing either, rather than a guess.
- */
-export type UsageLimitBilling = 'subscription' | 'api' | 'unknown'
-
-/** The provider's own word for where a window stands; `rejected` is a limit reached. */
-export type UsageLimitStatus = 'allowed' | 'warning' | 'rejected'
-
-export type UsageLimitWindow = {
-  /** Stable across sources and updates (`five_hour`, `seven_day`, `codex:primary`…): partial updates merge on it. */
-  id: string
-  label: string
-  /** 0..100. Null when the source said where the window stands but not how full it is. */
-  usedPercent: number | null
-  /** Epoch ms the window resets, or null when not reported. */
-  resetsAt: number | null
-  /** How long the window is, for the pace marker; absent when unknown. */
-  durationMs?: number
-  /**
-   * `model` for a window that meters one model's use (Claude's model
-   * weeklies, a Codex bucket under its own limit id): it holds back a chat on
-   * that model, not the provider. Absent for an account-wide window, which
-   * holds back every turn.
-   */
-  scope?: 'model'
-  status: UsageLimitStatus
-  /** When this window was last reported (epoch ms). */
-  observedAt: number
-}
-
-export type UsageLimitSnapshot = {
-  provider: UsageLimitProvider
-  billing: UsageLimitBilling
-  /** The plan the provider named (`max`, `plus`…), when it did. */
-  plan?: string
-  windows: UsageLimitWindow[]
-  /** The newest of the windows' readings (epoch ms). */
-  observedAt: number
-}
-
-/** What main pushes to the renderer: one snapshot per provider that has something to show. */
-export type UsageLimitsState = { snapshots: UsageLimitSnapshot[] }
 
 /** A turn that ended because a usage limit was reached, for whatever waits to resume it. */
 export type UsageLimitHit = {

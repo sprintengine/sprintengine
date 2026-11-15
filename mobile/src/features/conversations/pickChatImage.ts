@@ -21,7 +21,7 @@ import { librarySelection, readPickedImages } from "./photoPicks";
  * the file the picker wrote, not taken from the picker's word for the original
  * photo: Android writes a compressed JPEG for a HEIC, GIF or WebP photo and
  * still reports the original's type and size. `maxBytes` is the largest the
- * desktop takes (`chatImageMaxBytes`), per picture.
+ * desktop takes (`CHAT_IMAGE_MAX_BYTES`), per picture.
  */
 export async function pickChatImages(
   camera: boolean,

@@ -17,6 +17,7 @@ import {
 } from '../ui'
 import { Tooltip } from '../ui/Tooltip'
 import { KnowledgeGraphSettingsIcon } from '../AppIcons'
+import { agentSetupApi } from '../../studio/agentSetup'
 
 type CursorPoint = { x: number; y: number }
 
@@ -53,7 +54,7 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
   const loadGraph = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await window.api.memoryIndex({
+      const result = await agentSetupApi.memoryIndex({
         workspaceRoot: knowledgeConfig?.projectRoot ?? null,
         relativeRoot: knowledgeConfig?.relativeRoot ?? null,
       })
@@ -85,22 +86,22 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
     let cancelled = false
 
     const refreshStatus = () => {
-      void window.api.memoryActivityGetStatus({ workspaceRoot }).then((status) => {
+      void agentSetupApi.memoryActivityGetStatus({ workspaceRoot }).then((status) => {
         if (!cancelled) setActivityStatus(status)
       })
     }
 
     const refreshSynapses = () => {
-      void window.api.memoryActivityGetSynapses({ workspaceRoot }).then((synapses) => {
+      void agentSetupApi.memoryActivityGetSynapses({ workspaceRoot }).then((synapses) => {
         if (!cancelled) setActivitySynapses(synapses)
       })
     }
 
-    void window.api.memoryActivityStartWatching({ workspaceRoot, memoryRelativeRoot: memoryRoot })
+    void agentSetupApi.memoryActivityStartWatching({ workspaceRoot, memoryRelativeRoot: memoryRoot })
     refreshStatus()
     refreshSynapses()
 
-    const offEvent = window.api.onMemoryActivityEvent((event) => {
+    const offEvent = agentSetupApi.onMemoryActivityEvent((event) => {
       if (cancelled) return
       if (event.workspaceRoot !== workspaceRoot) return
       setLatestActivityEvent(event)
@@ -123,13 +124,13 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
       })
     })
 
-    const offStatus = window.api.onMemoryActivityStatus((status) => {
+    const offStatus = agentSetupApi.onMemoryActivityStatus((status) => {
       if (cancelled) return
       if (status.workspaceRoot !== workspaceRoot) return
       setActivityStatus(status)
     })
 
-    const offSynapses = window.api.onMemoryActivitySynapses((payload) => {
+    const offSynapses = agentSetupApi.onMemoryActivitySynapses((payload) => {
       if (cancelled) return
       if (payload.workspaceRoot !== workspaceRoot) return
       setActivitySynapses(payload.synapses)
@@ -163,7 +164,7 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
   const fetchPreview = useCallback(
     async (node: MemoryGraphNode) => {
       setPreview(null)
-      const result = await window.api.memoryReadPreview({
+      const result = await agentSetupApi.memoryReadPreview({
         workspaceRoot: knowledgeConfig?.projectRoot ?? null,
         relativeRoot: knowledgeConfig?.relativeRoot ?? null,
         relativePath: node.relativePath,

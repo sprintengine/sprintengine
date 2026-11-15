@@ -35,7 +35,6 @@ installTestingKit()
 const projectDir = fileURLToPath(new URL('..', import.meta.url))
 const moduleDir = join(projectDir, 'module')
 const raw = JSON.parse(readFileSync(join(moduleDir, 'manifest.json'), 'utf8'))
-const BRIDGE_PERMISSIONS = ['module:bridge', 'ipc:invoke']
 
 const undeclaredMessage = (uses) =>
   uses
@@ -72,7 +71,7 @@ test('the manifest is one the app accepts', () => {
   assert.equal(raw.source, 'third-party')
 })
 
-// The main half, loaded once and shared with the renderer's bridge.
+// The main half, loaded once and shared with the renderer's method calls.
 let main
 
 if (raw.entry?.main) {
@@ -85,19 +84,10 @@ if (raw.entry?.main) {
     main = createFakeMainHost({ manifest: raw })
     await loaded.registerMain(main.host)
 
+    // Declaring methods without "module:bridge" throws from registerMain above.
     const contributed =
-      main.ipc.channels().length + main.tools.list().length + main.skills.registered.length + main.sidecars.length
+      main.methods.declared().length + main.tools.list().length + main.skills.registered.length + main.sidecars.length
     assert.ok(contributed > 0, `registering ${entry} contributed nothing.`)
-
-    for (const channel of main.ipc.channels()) {
-      assert.ok(channel.startsWith(`${raw.id}:`), `IPC channel "${channel}" must start with "${raw.id}:".`)
-    }
-    if (raw.entry?.renderer && main.ipc.channels().length > 0) {
-      assert.ok(
-        BRIDGE_PERMISSIONS.some((permission) => main.permissions.has(permission)),
-        'host.invoke from the renderer to these channels needs the "module:bridge" permission.',
-      )
-    }
 
     // A service resolved while registering must have its provider loaded
     // first; one resolved later (in a handler) need not.

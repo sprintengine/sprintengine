@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 // A middle press on a chat row settles the chat, as the row's tick does: it was
 // Close until Settle became the one way a row is put away. Chromium on Linux
@@ -44,13 +47,13 @@ class NoopResizeObserver {
 anyGlobal.ResizeObserver = NoopResizeObserver
 dom.window.ResizeObserver = NoopResizeObserver as unknown as typeof dom.window.ResizeObserver
 
+terminalsDouble.listTerminals = async () => []
+terminalsDouble.onTerminalSessionsDelta = () => () => {}
+terminalsDouble.closeTerminal = async () => {}
 domWindow.api = {
   platform: 'darwin',
   detectProjectLogo: async () => null,
-  terminalList: async () => [],
-  onTerminalSessionsDelta: () => () => {},
   getWorkspaceChangeSummary: async () => null,
-  terminalKill: async () => {},
 }
 
 async function mount() {

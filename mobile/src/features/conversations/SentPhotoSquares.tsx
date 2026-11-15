@@ -1,14 +1,13 @@
 import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
-import type { ConversationImageSource } from "../../api/conversationImages";
 import { SkeletonBlock } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { FileTypeGlyph } from "../../components/glyphs";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { iconSize, radius, space, typography, type Theme } from "../../theme/tokens";
 import { attachedFileType } from "./attachedFiles";
-import { PictureViewer, type SentImages } from "./ConversationImage";
+import { PictureViewer, useLoadedPicture, type PictureSource, type SentImages } from "./ConversationImage";
 import {
   forgetSentPhoto,
   sentImageLabel,
@@ -56,12 +55,20 @@ function SentPhotoSquare({ image, label, sent }: { image: SentImage; label: stri
   useSyncExternalStore(subscribeSentPhotos, sentPhotosVersion);
   const show = sentImageShows(image, { localUri: sentPhotoUri(image.id), served: !!sent, failed });
   const showKey = show.kind === "local" ? `local:${show.uri}` : show.kind === "desktop" ? `desktop:${show.ref}` : "named";
-  const source = useMemo<ConversationImageSource | null>(
-    () => (show.kind === "local" ? { uri: show.uri } : show.kind === "desktop" && sent ? sent.source(show.ref) : null),
+  // The desktop's copy, read into the phone's cache the first time it is drawn.
+  const fromDesktop = useLoadedPicture(
+    show.kind === "desktop" && sent ? `sent\n${show.ref}` : null,
+    show.kind === "desktop" && sent ? () => sent.load(show.ref) : null,
+  );
+  const desktopUri = fromDesktop.uri;
+  const source = useMemo<PictureSource | null>(
+    () => (show.kind === "local" ? { uri: show.uri } : show.kind === "desktop" && desktopUri ? { uri: desktopUri } : null),
     // The source follows what the square shows, not the object that said so.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [showKey, sent],
+    [showKey, desktopUri],
   );
+  if (show.kind === "desktop" && !source && !fromDesktop.problem)
+    return <View accessibilityLabel={label} style={styles.square}><SkeletonBlock label="Loading image" style={StyleSheet.absoluteFill} /></View>;
   if (!source) return <NamedPhoto label={label} />;
   return (
     <Pressable

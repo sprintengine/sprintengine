@@ -57,41 +57,38 @@ test('the message names the wait and the machine, and the database only above th
   expect(formatBytes(1024 ** 3 - 1)).toBe('1 GB')
 })
 
-test('the machine is the distribution, this desktop, or the server’s own host', () => {
-  expect(codexMachineLabel('Ubuntu', {}, 'win32', true)).toBe('WSL: Ubuntu')
-  expect(codexMachineLabel(null, { WSL_DISTRO_NAME: 'Debian' }, 'linux', false)).toBe('WSL: Debian')
-  expect(codexMachineLabel(null, {}, 'win32', true)).toBe('This PC (Windows)')
-  expect(codexMachineLabel(null, {}, 'darwin', true)).toBe('This Mac')
-  expect(codexMachineLabel(null, {}, 'linux', false).length).toBeGreaterThan(0)
+test('the machine is the distribution the server runs in, this desktop, or the server’s own host', () => {
+  expect(codexMachineLabel({ WSL_DISTRO_NAME: 'Debian' }, 'linux', false)).toBe('WSL: Debian')
+  expect(codexMachineLabel({}, 'win32', true)).toBe('This PC (Windows)')
+  expect(codexMachineLabel({}, 'darwin', true)).toBe('This Mac')
+  expect(codexMachineLabel({}, 'linux', false).length).toBeGreaterThan(0)
 })
 
-test('the size is asked of the machine the chat ran on, and a failed read still explains the wait', async () => {
-  const asked: Array<string | null> = []
+test('the size is asked with the chat’s environment, and a failed read still explains the wait', async () => {
+  const asked: NodeJS.ProcessEnv[] = []
   const error = await explainCodexInitializeTimeout({
     timeoutMs: 30_000,
-    wslDistro: 'Ubuntu',
-    env: {},
-    readLogBytes: async (distro) => {
-      asked.push(distro)
-      throw new Error('the distribution did not answer')
+    env: { CODEX_HOME: '/Users/dev/.codex-work' },
+    readLogBytes: async (env) => {
+      asked.push(env)
+      throw new Error('the folder did not answer')
     },
   })
-  expect(asked).toEqual(['Ubuntu'])
-  expect(error.message).toBe("Codex didn't answer in 30 s. Run `codex` in a terminal on WSL: Ubuntu to see why.")
+  expect(asked).toEqual([{ CODEX_HOME: '/Users/dev/.codex-work' }])
+  expect(error.message).toMatch(/^Codex didn't answer in 30 s\. Run `codex` in a terminal on .+ to see why\.$/u)
 })
 
 test('a size read that never answers cannot hold the failure back', async () => {
   // The machine Codex just failed to start on is the one most likely to be
-  // wedged: a distribution whose share stopped answering would leave the
-  // listing pending, and the chat would never say why it did not start.
+  // wedged: a disk that stopped answering would leave the listing pending,
+  // and the chat would never say why it did not start.
   const started = Date.now()
   const error = await explainCodexInitializeTimeout({
     timeoutMs: 30_000,
-    wslDistro: 'Ubuntu',
     env: {},
     readLogBytes: () => new Promise<number | null>(() => {}),
     readDeadlineMs: 50,
   })
   expect(Date.now() - started).toBeLessThan(2_000)
-  expect(error.message).toBe("Codex didn't answer in 30 s. Run `codex` in a terminal on WSL: Ubuntu to see why.")
+  expect(error.message).toMatch(/^Codex didn't answer in 30 s\. Run `codex` in a terminal on .+ to see why\.$/u)
 })

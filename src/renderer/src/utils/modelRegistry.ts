@@ -1012,6 +1012,20 @@ export function focusOrAddGitConflictTab(
   return true
 }
 
+/** Close the resolver tab for one conflicted file, once there is nothing left in it to resolve. */
+export function removeGitConflictTab(workspaceId: string, repoRoot: string, filePath: string): boolean {
+  const model = models.get(workspaceId)
+  if (!model) return false
+  const tabIds: string[] = []
+  model.visitNodes((node) => {
+    if (!(node instanceof TabNode) || node.getComponent() !== 'git-conflict') return
+    const config = node.getConfig() as { repoRoot?: string; filePath?: string } | undefined
+    if (config?.repoRoot === repoRoot && config.filePath === filePath) tabIds.push(node.getId())
+  })
+  tabIds.forEach((tabId) => deleteTabPreservingRails(model, tabId))
+  return tabIds.length > 0
+}
+
 export function focusComponentTab(workspaceId: string, component: string): boolean {
   const model = models.get(workspaceId)
   if (!model) return false

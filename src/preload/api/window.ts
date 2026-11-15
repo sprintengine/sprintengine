@@ -54,6 +54,13 @@ export const windowApi = {
     ipcRenderer.on(ch, handler)
     return () => ipcRenderer.removeListener(ch, handler)
   },
+  announcePathsRemoved: (paths: string[]): Promise<void> => ipcRenderer.invoke('window:paths-removed', paths),
+  onPathsRemoved: (cb: (paths: string[]) => void): (() => void) => {
+    const ch = 'workspace:paths-removed'
+    const handler = (_: IpcRendererEvent, paths: string[]) => cb(paths)
+    ipcRenderer.on(ch, handler)
+    return () => ipcRenderer.removeListener(ch, handler)
+  },
   dockDiffToWorkspace: (input: DockDiffToWorkspaceInput): Promise<DockDiffToWorkspaceResult> =>
     ipcRenderer.invoke('window:dock-diff', input),
   onDockDiffToWorkspace: (cb: (input: DockDiffToWorkspacePayload) => void): (() => void) => {
@@ -152,6 +159,8 @@ export const windowApi = {
   | 'onAuxWindowRetarget'
   | 'dockFileToWorkspace'
   | 'onDockFileToWorkspace'
+  | 'announcePathsRemoved'
+  | 'onPathsRemoved'
   | 'dockDiffToWorkspace'
   | 'onDockDiffToWorkspace'
   | 'ackDockDiffToWorkspace'

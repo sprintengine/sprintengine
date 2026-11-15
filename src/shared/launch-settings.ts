@@ -22,216 +22,43 @@ import {
   type CliPermissionPreset,
 } from './cli-permission-preset'
 import { defaultPermissionPresetFor, parseCliPermissionModeId } from './cli-permission-mode'
-import {
-  normalizeMachineMarkSetting,
-  normalizeMachineMarkSettings,
-  type MachineMarkSetting,
-  type MachineMarkSettings,
-} from './machine-identity'
+import { normalizeMachineMarkSetting, normalizeMachineMarkSettings } from './machine-identity'
 import {
   normalizeExecutionHostId,
   normalizeExecutionHostSettings,
   type ExecutionHostId,
   type ExecutionHostSettings,
 } from './execution-host'
-import { normalizeProjectUsageMap, withProjectUse, type ProjectUsageMap } from './project-frecency'
+import { normalizeProjectUsageMap, withProjectUse } from './project-frecency'
 import { effectiveWorktreeBranchPrefix, sanitizeWorktreeBranchPrefix } from './worktree-branch'
+import {
+  AGENT_LAUNCH_SETTINGS_SCHEMA_VERSION,
+  type AgentLaunchCliRuntimeSettings,
+  type AgentLaunchSettings,
+  type AgentLaunchSettingsActor,
+  type AgentLaunchSettingsPatch,
+  type AgentLaunchSettingsRecord,
+} from '../../packages/studio-protocol/src/public'
+
+// The settings, a write to them and the Studio's answers, as the Studio
+// protocol carries them (`launchSettings.*`). What each member means is said
+// there, once.
+export type {
+  AgentLaunchCliRuntimeSettings,
+  AgentLaunchSettings,
+  AgentLaunchSettingsActor,
+  AgentLaunchSettingsPatch,
+  AgentLaunchSettingsRecord,
+  AgentLaunchSettingsSnapshot,
+  AgentLaunchSettingsWriteAck,
+} from '../../packages/studio-protocol/src/public'
 
 // 2: the per-CLI "run through WSL" switch left the CLI runtime, and each
 // machine this computer offers (a WSL distribution) got settings of its own in
 // `hosts`. There are no released installs, so a version-1 record is read
 // through the same normalizer rather than migrated: its runtimes keep their
 // commands and models, and the switch is dropped.
-const AGENT_LAUNCH_SETTINGS_SCHEMA_VERSION = 2
 const READABLE_SCHEMA_VERSIONS: readonly number[] = [1, AGENT_LAUNCH_SETTINGS_SCHEMA_VERSION]
-
-/**
- * A CLI's settings that hold on every machine: its models, and its command on
- * THIS machine (the local host). A WSL distribution keeps its own commands in
- * `hosts[id].cliCommands`.
- */
-export type AgentLaunchCliRuntimeSettings = {
-  command: string
-  models?: string[]
-  /** Ids the person took off this CLI's list; a refresh does not bring them back. */
-  removedModels?: string[]
-}
-
-export type AgentLaunchSettings = {
-  cliRuntimes: Record<string, AgentLaunchCliRuntimeSettings>
-  /**
-   * Per-machine settings, keyed by host id (`wsl:<distro>`). The local machine
-   * has no entry in normal use: its commands live on `cliRuntimes`.
-   */
-  hosts: Partial<Record<ExecutionHostId, ExecutionHostSettings>>
-  /**
-   * The kind and colour a person chose for a machine (Settings › Machines),
-   * keyed by its machine id (`shared/machine-identity`): a WSL host id,
-   * `ssh:<host>` or `tailnet:<name>`. A machine with no entry wears its
-   * defaults. Kept beside `hosts` and written the same way, per machine.
-   */
-  machineMarks: MachineMarkSettings
-  mcp: McpSettings
-  projectKnowledgeRoots: Record<string, string | null>
-  /**
-   * The CLI a spawn defaults to when the caller names none. `null` = never
-   * chosen; the reader applies its own default rather than inventing one.
-   */
-  lastSelectedCli: string | null
-  /** The permission preset an agent spawn defaults to. `null` = never chosen. */
-  lastAgentSpawnPermissionPreset: CliPermissionPreset | null
-  /**
-   * The permission preset a spawn on each CLI launches with, keyed by CLI id:
-   * what the spawn footer's picker last chose for that runtime. A CLI with no
-   * entry falls back to `lastAgentSpawnPermissionPreset`. Per CLI and not per
-   * model, because a person trusts a runtime in a repository, and skipping
-   * Claude Code's prompts is not lifting Codex's sandbox (owner ruling
-   * 2026-09-24). Main owns it so
-   * a launch with no window open, and every window, read the same choice.
-   */
-  cliPermissionPresets: Record<string, CliPermissionPreset>
-  /**
-   * The CLI's own mode chosen with that preset, keyed by CLI id, for a CLI
-   * whose choice is one of its modes other than the preset's own (Claude
-   * Code's Accept edits, at Auto). A CLI with no entry runs the preset's own
-   * mode. Read only beside the CLI's entry in `cliPermissionPresets`, which
-   * stays the level everything else reasons with.
-   */
-  cliPermissionModes: Record<string, string>
-  /**
-   * Where chats were started, by project folder (`projectUsageKey`): each
-   * project's frecency score, latest use and use count (`project-frecency.ts`).
-   * Every project picker for a new chat lists by it, here and on a paired
-   * phone through `workspace.list`. Kept beside `lastSelectedCli` because it is
-   * the same kind of memory, of where launches went, and main records a chat
-   * started from the phone with no window open.
-   */
-  projectUsage: ProjectUsageMap
-  /**
-   * What every worktree branch Studio names starts with (Settings ▸
-   * Worktrees): `feat` names `feat/<name>`, and `''` names the branch `<name>`
-   * alone. `null` = never chosen, which reads as `agent`, the prefix there
-   * was before it could be chosen (`effectiveWorktreeBranchPrefix`). Kept
-   * here because main names a launch's worktree with no window open, as it
-   * reads every other launch input; held sanitized (`worktree-branch.ts`).
-   */
-  worktreeBranchPrefix: string | null
-  /**
-   * Whether a chat whose own menu leaves Auto compact unset (`autoCompactEnabled`
-   * null) compacts by itself while it sits idle, just before its prompt cache
-   * expires (Settings ▸ Settled chats). `null` = never chosen, which reads as
-   * off. Kept here because main runs the compaction with no window open
-   * (conversation-auto-compact.ts), as it reads every other launch input.
-   */
-  autoCompactChats: boolean | null
-}
-
-/** Names the process boundary a write came through, never the human. */
-export type AgentLaunchSettingsActor = 'ui' | 'system'
-
-export type AgentLaunchSettingsRecord = {
-  schemaVersion: typeof AGENT_LAUNCH_SETTINGS_SCHEMA_VERSION
-  /**
-   * Monotonic write counter. Broadcasts carry it; a subscriber ignores
-   * anything at or below the revision it already applied, so a slow echo can
-   * never re-assert a stale value over a newer one.
-   */
-  revision: number
-  settings: AgentLaunchSettings
-  changedAt: number
-  lastWrite: { actor: AgentLaunchSettingsActor; at: string }
-}
-
-/**
- * A partial write to main's record. Each field is independent, so two windows
- * editing different CLIs, different MCP servers or different knowledge roots
- * never overwrite each other with a stale copy of the rest.
- *
- * - `cliRuntimes`: per CLI, an entry replaces that CLI's runtime whole and
- *   `null` removes it. CLIs the patch does not name are untouched.
- * - `hosts`: the same, per machine.
- * - `machineMarks`: the same, per machine id.
- * - `mcp.syncEnabled` sets the switch; `mcp.servers` upserts per server id,
- *   `null` removing that server.
- * - `projectKnowledgeRoots`: per project root, a string sets it and `null`
- *   removes the entry.
- * - `lastSelectedCli` and `lastAgentSpawnPermissionPreset` replace the value;
- *   `null` returns it to "never chosen".
- * - `cliPermissionPresets`: per CLI, a preset sets it and `null` removes the
- *   entry, so that CLI reads the app-wide default again. Either way the CLI's
- *   mode goes with it unless the same patch names one, so a window that knows
- *   only presets never leaves a mode behind under a preset it did not choose.
- * - `cliPermissionModes`: per CLI, a mode id sets it and `null` removes it.
- * - `projectUse` records one use of the project at that folder, at `at`
- *   (epoch milliseconds). It adds to what main holds rather than replacing it,
- *   so two windows and the phone each starting a chat all count.
- * - `worktreeBranchPrefix` replaces the prefix, sanitized; `null` returns it
- *   to "never chosen", which reads as `agent`.
- * - `autoCompactChats` replaces the default; `null` returns it to "never
- *   chosen", which reads as off.
- */
-export type AgentLaunchSettingsPatch = {
-  cliRuntimes?: Record<string, AgentLaunchCliRuntimeSettings | null>
-  /** Per host id, an entry replaces that host's settings whole and `null` removes them. */
-  hosts?: Partial<Record<ExecutionHostId, ExecutionHostSettings | null>>
-  /** Per machine id, an entry replaces that machine's mark whole and `null` returns it to the defaults. */
-  machineMarks?: Record<string, MachineMarkSetting | null>
-  mcp?: {
-    syncEnabled?: boolean
-    servers?: Record<string, McpServerConfig | null>
-  }
-  projectKnowledgeRoots?: Record<string, string | null>
-  lastSelectedCli?: string | null
-  lastAgentSpawnPermissionPreset?: CliPermissionPreset | null
-  cliPermissionPresets?: Record<string, CliPermissionPreset | null>
-  cliPermissionModes?: Record<string, string | null>
-  projectUse?: { folderPath: string; at: number }
-  worktreeBranchPrefix?: string | null
-  autoCompactChats?: boolean | null
-}
-
-/**
- * What a window reads at boot. `record` is null until anything has been
- * written; `settings` is what main spawns with either way (an unrevisioned
- * legacy file, or the empty defaults), so a window can render it at once.
- */
-export type AgentLaunchSettingsSnapshot = {
-  record: AgentLaunchSettingsRecord | null
-  settings: AgentLaunchSettings
-  /** Whether `record` is on disk. False for no record, or one a failed write left only in memory. */
-  persisted: boolean
-}
-
-/**
- * Main's answer to an `update` or a `migrate`: the authoritative record it now
- * holds, which the caller adopts over anything it applied optimistically, and
- * whether the call changed it. An update whose content matches the record is
- * not a new revision; a migration offered onto an existing record is refused
- * and reports `changed: false`.
- */
-export type AgentLaunchSettingsWriteAck = {
-  ok: true
-  record: AgentLaunchSettingsRecord
-  changed: boolean
-  /**
-   * Whether `record` is on disk. False when the write failed and main holds it
-   * only in memory until it restarts; a window then keeps its own localStorage
-   * copy of these settings, so the next boot can offer them again.
-   */
-  persisted: boolean
-}
-
-/**
- * The launch-settings channels. `get`, `update` and `migrate` are renderer →
- * main invokes; `changed` is main's broadcast to every window, carrying the
- * new record after each write that changed it.
- */
-export const LAUNCH_SETTINGS_CHANNELS = {
-  get: 'launch-settings:get',
-  update: 'launch-settings:update',
-  migrate: 'launch-settings:migrate',
-  changed: 'launch-settings:changed',
-} as const
 
 /**
  * The CLI a launch runs on when the person never picked one. The window's
