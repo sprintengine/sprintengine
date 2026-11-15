@@ -79,6 +79,20 @@ test("a pane's paths go to the machine plain, and a person's text goes as it was
   })
 })
 
+test('a map keyed by paths goes to the machine keyed as it spells them, and comes back keyed as this computer does', () => {
+  const sent = machinePanePathsIn(ssh('box-1'), {
+    patch: { dependencyInstall: { 'ssh://box-1/home/dev/app': { mode: 'auto' } } },
+  })
+  assert.deepEqual(sent, { patch: { dependencyInstall: { '/home/dev/app': { mode: 'auto' } } } })
+  assert.deepEqual(machinePanePathsOut(ssh('box-1'), sent.patch), {
+    dependencyInstall: { 'ssh://box-1/home/dev/app': { mode: 'auto' } },
+  })
+  // A pool's container, in its snapshot, is the machine's folder.
+  assert.deepEqual(machinePanePathsOut(ssh('box-1'), { containerPath: '/home/dev/.sprintengine-worktrees/app' }), {
+    containerPath: 'ssh://box-1/home/dev/.sprintengine-worktrees/app',
+  })
+})
+
 test("a pane's answer names the machine's files as this computer spells them, never their contents", () => {
   assert.deepEqual(
     machinePanePathsOut(ssh('box-1'), {

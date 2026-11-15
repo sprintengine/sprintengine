@@ -859,6 +859,83 @@ test('NewAgentPanel launch paths', async () => {
       resetNewChatDraftsForTests()
     })
 
+    await check('a chat on an SSH machine offers Worktree where its folder there is a repository', async () => {
+      seedStore()
+      const { resetNewChatDraftsForTests } = await import('./newChatDraft')
+      resetNewChatDraftsForTests()
+      const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+      const asked: string[] = []
+      const repoRoot = api.getGitRepoRoot
+      // The machine's own Studio answers for its folders (`paneStudio.ts`); a
+      // folder of notes there is no repository.
+      api.getGitRepoRoot = async (folder: string) => {
+        asked.push(folder)
+        return folder.endsWith('/notes') ? null : folder
+      }
+      api.sshMachinesEnabled = true
+      api.sshEnvironmentsList = async () => [
+        {
+          id: 'ssh-1',
+          label: 'build-box',
+          destination: 'dev@build-box',
+          resolved: { hostname: 'build-box', user: 'dev', port: 22, proxyJump: null },
+          environmentId: null,
+          settings: {},
+          addedAt: 0,
+          state: 'connected',
+          stateText: 'Connected',
+          working: false,
+          action: null,
+          server: null,
+          notes: [],
+        },
+      ]
+      const typeFolder = async (view: Harness, folder: string) => {
+        const field = view.container.querySelector<HTMLInputElement>('[aria-label="Folder on build-box"]')!
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(field, folder)
+          field.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+        })
+        // The machine is asked once the typing pauses.
+        await act(async () => new Promise((resolve) => dom.window.setTimeout(resolve, 500)))
+      }
+      try {
+        // The door, which starts a chat in a worktree of its own.
+        const view = await render(scheduleProps({ draftKey: 'w' }))
+        await settle()
+        await click(view.container.querySelector('[data-machine-trigger="true"]')!)
+        await click(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]')!)
+        await settle()
+        await typeFolder(view, '/home/dev/notes')
+        assert.equal(
+          view.container.querySelector('input[aria-label^="Worktree name"], [aria-label="Run in a worktree"]'),
+          null,
+          'no Worktree for a folder that is not a repository there',
+        )
+        await typeFolder(view, '/home/dev/app/')
+        assert.ok(asked.includes('ssh://ssh-1/home/dev/app'), `the machine is asked of its folder: ${asked.join(', ')}`)
+        await nameWorktree(view, 'fix-login')
+        await typePrompt(view, 'Fix the login.')
+        await click(sendOf(view)!)
+        await settle()
+        assert.equal(view.launches.length, 1)
+        assert.deepEqual(view.launches[0]?.environment, {
+          kind: 'ssh',
+          id: 'ssh-1',
+          label: 'build-box',
+          folder: '/home/dev/app',
+        })
+        assert.deepEqual(view.launches[0]?.worktree, { name: 'fix-login' }, 'the chat asks for its worktree there')
+        view.unmount()
+      } finally {
+        api.getGitRepoRoot = repoRoot
+        delete api.sshMachinesEnabled
+        delete api.sshEnvironmentsList
+        resetRememberedMachineForTests()
+        resetNewChatDraftsForTests()
+      }
+    })
+
     if (failures > 0) {
       console.error(`NewAgentPanel.launch.test.tsx: ${failures} failing check(s)`)
       process.exit(1)

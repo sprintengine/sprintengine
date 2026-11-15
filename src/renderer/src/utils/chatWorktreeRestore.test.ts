@@ -10,6 +10,7 @@ type FakeWorkspace = {
   settledAt?: number | null
   hostId?: string
   environment?: unknown
+  remoteOrigin?: unknown
 }
 
 const reclaimed: Array<[string, number | null]> = []
@@ -207,16 +208,9 @@ test('a settled agent-branch chat whose folder is gone comes back even without t
     },
     // Settled on the project's own checkout.
     { id: 'in-place', folderPath: '/Users/dev/app', worktree: null, settledAt: 1 },
-    // On another machine.
-    {
-      id: 'ssh',
-      folderPath: `${CONTAINER}/ssh`,
-      worktree: { branch: 'agent/ssh', reclaimedAt: 5 },
-      environment: { kind: 'ssh', id: 'build-box', label: 'build-box' },
-    },
   ]
   const restores = stubApi(new Set(), () => ({ ok: true }))
-  for (const id of ['active', 'opened', 'in-place', 'ssh', 'nobody']) assert.equal(await ensureChatWorktree(id), true)
+  for (const id of ['active', 'opened', 'in-place', 'nobody']) assert.equal(await ensureChatWorktree(id), true)
   assert.equal(restores.length, 0)
   assert.equal(await ensureChatWorktree('unmarked'), true)
   assert.deepEqual(
@@ -286,4 +280,37 @@ test('an unmarked settled chat in a pool slot asks main even with its folder the
     ['pooled', true],
     ['named', true],
   ])
+})
+
+test('a chat on an SSH machine whose worktree the sweep gave back is brought back there, by that machine’s path', async () => {
+  const slot = 'ssh://build-box/home/dev/.sprintengine-worktrees/app/app-01'
+  state.workspaces = [
+    {
+      id: 'ssh',
+      folderPath: slot,
+      worktree: { branch: 'agent/ssh', repoRoot: 'ssh://build-box/home/dev/app', reclaimedAt: 5 },
+      environment: { kind: 'ssh', id: 'build-box', label: 'build-box' },
+    },
+  ]
+  const restores = stubApi(new Set(), () => ({ ok: true }))
+  assert.equal(await ensureChatWorktree('ssh'), true)
+  assert.deepEqual(
+    restores.map((input) => [input.repoRoot, input.path, input.branchName, input.hostId]),
+    [['ssh://build-box/home/dev/app', slot, 'agent/ssh', undefined]],
+  )
+  assert.deepEqual(reclaimed, [['ssh', null]])
+})
+
+test('a paired machine’s chat is left to that machine', async () => {
+  state.workspaces = [
+    {
+      id: 'paired',
+      folderPath: `${CONTAINER}/paired`,
+      worktree: { branch: 'agent/paired', reclaimedAt: 5 },
+      remoteOrigin: { connectionId: 'c1' },
+    },
+  ]
+  const restores = stubApi(new Set(), () => ({ ok: true }))
+  assert.equal(await ensureChatWorktree('paired'), true)
+  assert.equal(restores.length, 0)
 })

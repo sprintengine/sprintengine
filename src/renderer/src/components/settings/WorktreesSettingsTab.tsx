@@ -70,6 +70,14 @@ import { isImeKey } from '../../utils/imeKey'
 import { gitApi } from '../../studio/git'
 import { worktreesApi } from '../../studio/worktrees'
 import { windowStudioIsAnotherMachine } from '../../studio/windowStudioClient'
+import { machineRouteOfPath } from '../../../../shared/machine-spelling'
+import { isMachinePath } from '../../../../shared/machine-paths'
+
+/**
+ * Whether this computer's file manager can show a worktree: a folder on an
+ * SSH machine is not on its disk, so its path is copied instead.
+ */
+const revealable = (path: string): boolean => !isMachinePath(path)
 
 /**
  * Settings ▸ Worktrees (owner, 2026-10-05): every worktree Studio's agents
@@ -153,6 +161,10 @@ export function WorktreesSettingsTab({
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const [inventory, setInventory] = useState<WorktreeInventory | null>(() => lastInventory)
   const [settings, setSettings] = useState<WorktreePoolSettings>(DEFAULT_WORKTREE_POOL_SETTINGS)
+  // The pool settings of each other machine a project here is on (an SSH
+  // machine's, a WSL distribution's), by its route: that machine's own pool
+  // cuts the project's worktrees, so its install choice is kept there.
+  const [machineSettings, setMachineSettings] = useState<ReadonlyMap<string, WorktreePoolSettings>>(new Map())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [measuring, setMeasuring] = useState(false)
   const [result, setResult] = useState<ActionResult | null>(null)
@@ -175,40 +187,58 @@ export function WorktreesSettingsTab({
   // a change announced meanwhile needs no read of its own.
   const measuringNow = useRef(0)
 
-  const read = useCallback(async (measure: boolean) => {
-    if (!hasApi()) return
-    // The projects are read from the store at the moment of asking, not
-    // subscribed to: a background agent's write elsewhere must not re-read
-    // every worktree.
-    const repoRoots = inventoryRootsOf(useWorkspaceStore.getState().workspaces)
-    const sequence = ++latestRead.current
-    if (measure) {
-      measuringNow.current += 1
-      setMeasuring(true)
+  // Each machine's settings, asked of it beside the inventory; one that
+  // cannot be asked keeps what it last said.
+  const readMachineSettings = useCallback(async (repoRoots: readonly string[]) => {
+    const firstRootOf = new Map<string, string>()
+    for (const root of repoRoots) {
+      const route = machineRouteOfPath(root)
+      if (route && !firstRootOf.has(route)) firstRootOf.set(route, root)
     }
-    try {
-      const next = await worktreesApi.getWorktreeInventory({ repoRoots, measure })
-      if (!mounted.current) return
-      if (sequence < appliedRead.current) {
-        // A measurement overtaken by a quicker read: its sizes are kept in
-        // main now, and one more quick read brings them in.
-        if (measure) void read(false)
-        return
-      }
-      appliedRead.current = sequence
-      lastInventory = next
-      setInventory(next)
-      setLoadError(null)
-      setNow(Date.now())
-    } catch (error) {
-      if (mounted.current && sequence >= appliedRead.current) {
-        setLoadError(error instanceof Error ? error.message : String(error))
-      }
-    } finally {
-      if (measure) measuringNow.current -= 1
-      if (measure && mounted.current && measuringNow.current === 0) setMeasuring(false)
+    for (const [route, root] of firstRootOf) {
+      const read = await worktreesApi.getWorktreePoolSettings(root).catch(() => null)
+      if (read && mounted.current) setMachineSettings((current) => new Map(current).set(route, read))
     }
   }, [])
+
+  const read = useCallback(
+    async (measure: boolean) => {
+      if (!hasApi()) return
+      // The projects are read from the store at the moment of asking, not
+      // subscribed to: a background agent's write elsewhere must not re-read
+      // every worktree.
+      const repoRoots = inventoryRootsOf(useWorkspaceStore.getState().workspaces)
+      const sequence = ++latestRead.current
+      void readMachineSettings(repoRoots)
+      if (measure) {
+        measuringNow.current += 1
+        setMeasuring(true)
+      }
+      try {
+        const next = await worktreesApi.getWorktreeInventory({ repoRoots, measure })
+        if (!mounted.current) return
+        if (sequence < appliedRead.current) {
+          // A measurement overtaken by a quicker read: its sizes are kept in
+          // main now, and one more quick read brings them in.
+          if (measure) void read(false)
+          return
+        }
+        appliedRead.current = sequence
+        lastInventory = next
+        setInventory(next)
+        setLoadError(null)
+        setNow(Date.now())
+      } catch (error) {
+        if (mounted.current && sequence >= appliedRead.current) {
+          setLoadError(error instanceof Error ? error.message : String(error))
+        }
+      } finally {
+        if (measure) measuringNow.current -= 1
+        if (measure && mounted.current && measuringNow.current === 0) setMeasuring(false)
+      }
+    },
+    [readMachineSettings],
+  )
 
   useEffect(() => {
     mounted.current = true
@@ -309,8 +339,31 @@ export function WorktreesSettingsTab({
     await updateSettings({ enabled })
   }
 
-  const updateInstall = (repoRoot: string, setting: WorktreeDependencyInstallSetting) =>
-    void updateSettings({ dependencyInstall: withDependencyInstall(settings.dependencyInstall, repoRoot, setting) })
+  /** The pool settings that rule a project: its own machine's pool's. */
+  const settingsOf = (repoRoot: string): WorktreePoolSettings => {
+    const route = machineRouteOfPath(repoRoot)
+    return route ? (machineSettings.get(route) ?? DEFAULT_WORKTREE_POOL_SETTINGS) : settings
+  }
+
+  const updateInstall = (repoRoot: string, setting: WorktreeDependencyInstallSetting) => {
+    const route = machineRouteOfPath(repoRoot)
+    if (!route) {
+      void updateSettings({ dependencyInstall: withDependencyInstall(settings.dependencyInstall, repoRoot, setting) })
+      return
+    }
+    // A project on another machine: its choice is that machine's pool's, which installs there.
+    const patch = {
+      dependencyInstall: withDependencyInstall(settingsOf(repoRoot).dependencyInstall, repoRoot, setting),
+    }
+    void worktreesApi
+      .setWorktreePoolSettings(patch, repoRoot)
+      .then((saved) => {
+        if (mounted.current) setMachineSettings((current) => new Map(current).set(route, saved))
+      })
+      .catch((error: unknown) =>
+        setResult({ tone: 'error', text: error instanceof Error ? error.message : String(error) }),
+      )
+  }
 
   const cancelInstall = async (install: WorktreeDependencyInstallView) => {
     const stopped = await worktreesApi.cancelWorktreeInstall(install.id).catch(() => false)
@@ -799,8 +852,8 @@ export function WorktreesSettingsTab({
             busy={busy}
             onToggleExpanded={(key) => toggle(setExpanded, key)}
             onToggleSelected={(key) => toggle(setSelected, key)}
-            poolEnabled={settings.enabled}
-            install={dependencyInstallSettingFor(settings, project.repoRoot)}
+            poolEnabled={settingsOf(project.repoRoot).enabled}
+            install={dependencyInstallSettingFor(settingsOf(project.repoRoot), project.repoRoot)}
             onInstallChange={(setting) => updateInstall(project.repoRoot, setting)}
             installs={installs}
             actions={{
@@ -940,13 +993,23 @@ function ProjectCard({
             {project.bytes ? ` · ${formatBytes(project.bytes)}` : ''}
           </span>
           <span className="flex-1" />
-          <GhostButton
-            size="xs"
-            className="shrink-0 whitespace-nowrap"
-            onClick={() => void window.api.showItemInFolder(project.containerPath ?? project.repoRoot)}
-          >
-            Show folder
-          </GhostButton>
+          {revealable(project.repoRoot) ? (
+            <GhostButton
+              size="xs"
+              className="shrink-0 whitespace-nowrap"
+              onClick={() => void window.api.showItemInFolder(project.containerPath ?? project.repoRoot)}
+            >
+              Show folder
+            </GhostButton>
+          ) : (
+            <GhostButton
+              size="xs"
+              className="shrink-0 whitespace-nowrap"
+              onClick={() => void navigator.clipboard?.writeText(project.containerPath ?? project.repoRoot)}
+            >
+              Copy path
+            </GhostButton>
+          )}
         </div>
         <div className="flex min-w-0 items-center gap-2 pl-[calc(var(--icon-xs)+--spacing(3.5))] text-meta text-[color:var(--text-subtle)]">
           <FrontTruncatedText text={project.repoRoot} className="font-mono" />
@@ -1058,12 +1121,16 @@ function WorktreeTableRow({
   const isBusy = busy.has(row.key) || row.state === 'busy'
   const selectable = row.removal === 'evict' || row.removal === 'remove'
   const menu: OverflowMenuItem[] = [
-    {
-      id: 'reveal',
-      label: 'Show in Finder',
-      onSelect: () => void window.api.showItemInFolder(row.path),
-      disabled: row.state === 'missing',
-    },
+    ...(revealable(row.path)
+      ? [
+          {
+            id: 'reveal',
+            label: 'Show in Finder',
+            onSelect: () => void window.api.showItemInFolder(row.path),
+            disabled: row.state === 'missing',
+          },
+        ]
+      : []),
     { id: 'copy', label: 'Copy path', onSelect: () => void navigator.clipboard?.writeText(clipboardPath(row.path)) },
   ]
   if (row.state === 'ready') {
@@ -1417,7 +1484,7 @@ function RowDetail({ row, now, actions, busy }: { row: WorktreeRow; now: number;
               </GhostButton>
             </>
           ) : null}
-          {row.state !== 'missing' ? (
+          {row.state !== 'missing' && revealable(row.path) ? (
             <GhostButton size="xs" onClick={() => void window.api.showItemInFolder(row.path)}>
               Show in Finder
             </GhostButton>

@@ -200,6 +200,22 @@ test('the projects sent to main are the local ones, once each, a worktree folded
   expect(inventoryRootsOf(workspaces)).toEqual([REPO, '/code/open-chat', '/code/settled-chat'])
 })
 
+test('a chat on an SSH machine lists its project, which that machine’s own Studio answers for; a paired machine’s does not', () => {
+  const onMachine: WorktreeChatSource = {
+    id: 'w9',
+    name: 'On build-box',
+    folderPath: 'ssh://build-box/home/dev/.sprintengine-worktrees/app/app-01',
+    worktree: { repoRoot: 'ssh://build-box/home/dev/app' },
+    agents: {},
+  }
+  expect(inventoryRootsOf([...workspaces, onMachine])).toEqual([
+    REPO,
+    '/code/open-chat',
+    '/code/settled-chat',
+    'ssh://build-box/home/dev/app',
+  ])
+})
+
 test('sizes read the way a person says them', () => {
   expect(formatBytes(null)).toBe('—')
   expect(formatBytes(1.94 * GB)).toBe('1.9 GB')

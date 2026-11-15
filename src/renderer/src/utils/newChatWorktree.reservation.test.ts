@@ -51,6 +51,8 @@ function stubPool(options: { answer?: 'now' | 'later'; fail?: boolean; catchUp?:
   const creates: GitWorktreeCreateInput[] = []
   const released: string[] = []
   const caughtUp: string[] = []
+  // The worktree each lease action was asked at: its machine's pool holds the lease.
+  const actedAt: Array<string | undefined> = []
   const catchUps: Array<() => void> = []
   const settles: Array<(answer?: Answer) => void> = []
   ;(globalThis as { window?: unknown }).window = {
@@ -61,13 +63,22 @@ function stubPool(options: { answer?: 'now' | 'later'; fail?: boolean; catchUp?:
         const leaseId = `lease-${creates.length}`
         const answer = (result: Answer = options.fail ? { ok: false, message: 'fetch failed' } : { ok: true }) =>
           result.ok
-            ? { ok: true, data: { path: `/pool/${leaseId}`, branch: input.branchName, baseRef: 'main', leaseId } }
+            ? {
+                ok: true,
+                data: {
+                  path: input.repoRoot.startsWith('ssh://') ? `${input.repoRoot}-pool/${leaseId}` : `/pool/${leaseId}`,
+                  branch: input.branchName,
+                  baseRef: 'main',
+                  leaseId,
+                },
+              }
             : result
         if (options.answer === 'later')
           return new Promise((resolve) => settles.push((result) => resolve(answer(result))))
         return Promise.resolve(answer())
       },
-      worktreePoolAction: async (input: { kind: string; leaseId: string }) => {
+      worktreePoolAction: async (input: { kind: string; leaseId: string }, at?: string) => {
+        actedAt.push(at)
         if (input.kind === 'catch-up') {
           caughtUp.push(input.leaseId)
           if (options.catchUp === 'later') await new Promise<void>((resolve) => catchUps.push(resolve))
@@ -76,7 +87,7 @@ function stubPool(options: { answer?: 'now' | 'later'; fail?: boolean; catchUp?:
       },
     },
   }
-  return { creates, released, caughtUp, catchUps, settles }
+  return { creates, released, caughtUp, catchUps, settles, actedAt }
 }
 
 function reserve(owner: string, folder: string, hostId?: string | null) {
@@ -259,7 +270,7 @@ test('a reservation that could not be made says nothing and is not asked for aga
   assert.equal(pool.creates.length, 3)
 })
 
-test('only this computer’s worktree is reserved', async () => {
+test('a folder here another machine’s git would cut is not reserved', async () => {
   const pool = stubPool()
   reserve('door', '/Users/dev/app', 'wsl:Ubuntu')
   await flush()
@@ -267,6 +278,33 @@ test('only this computer’s worktree is reserved', async () => {
   reserve('door', '/Users/dev/app', 'local')
   await flush()
   assert.equal(pool.creates.length, 1)
+})
+
+test('a folder on an SSH machine is reserved from that machine’s pool, and given back to it', async () => {
+  const pool = stubPool()
+  const app = 'ssh://build-box/home/dev/app'
+  reserve('door', app)
+  await flush()
+  assert.equal(pool.creates.length, 1, 'made while the person types, as here')
+  assert.equal(pool.creates[0]?.repoRoot, app)
+  assert.equal(pool.creates[0]?.hostId, undefined, 'no machine of this computer is named')
+  releaseNewChatWorktreeReservation('door')
+  await flush()
+  assert.deepEqual(pool.released, ['lease-1'])
+  assert.deepEqual(pool.actedAt, [`${app}-pool/lease-1`], 'given back at the worktree, so its machine’s pool hears it')
+  reserve('door', app)
+  await flush()
+  const taken = takeReadyNewChatWorktree(app, '', null)
+  assert.equal(taken?.folderPath, `${app}-pool/lease-2`, 'Enter takes it as made')
+})
+
+test('a WSL distribution’s folder is reserved from that distribution’s own pool, whichever machine New chat stands on', async () => {
+  const pool = stubPool()
+  const app = '\\\\wsl.localhost\\Ubuntu\\home\\dev\\app'
+  reserve('door', app, 'wsl:Ubuntu')
+  await flush()
+  assert.equal(pool.creates.length, 1)
+  assert.equal(pool.creates[0]?.hostId, undefined, 'its own Studio cuts it, not this computer’s with WSL’s git')
 })
 
 test('a pending chat takes the reservation and its attempt names the branch it is on', async () => {

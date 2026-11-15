@@ -211,7 +211,14 @@ As built (2026-10-03):
 - New chat's machine menu lists the SSH machines after this computer's; one
   that cannot be used (unsupported, version-blocked) is listed with why.
   Picking one replaces the project picker with a field for the folder's full
-  path on that machine; only a chat can start there.
+  path on that machine; only a chat can start there. Where that folder is a
+  git repository there, the Worktree chip is offered as for a folder here:
+  the machine's own Studio cuts the chat's worktree from its own pool (made
+  while the person types, else on the first send, the chat waiting on it and
+  saying why if it cannot be made), and lists, brings back, sweeps and
+  removes it, each asked of that machine by the window (`studio/worktrees.ts`
+  routes every step to the Studio of the machine its folders are on, as the
+  Files and Git panes do).
 - The sidebar files an SSH machine's chats under that machine's folder, with
   the machine's name, as a paired machine's are; nothing on this computer
   checks that folder (it is not this computer's).
@@ -1464,9 +1471,15 @@ Not built yet:
   not driven through them.
 - **Files**: no watch on a machine's folder (the views refresh when asked
   again). Since design-wsl-ssh-direct PR 2 the Files and Git panes ask the
-  machine's own Studio with the full `files.*` and `git.*` methods; worktrees,
-  agent skills and agent setup on a machine still answer "Not available for
-  SSH machines yet", and terminals are not reached from another computer.
+  machine's own Studio with the full `files.*` and `git.*` methods, and a
+  chat's worktree is that Studio's `worktrees.*`; agent skills and agent setup
+  on a machine still answer "Not available for SSH machines yet", and
+  terminals are not reached from another computer.
+- **Worktrees**: Settings ▸ Worktrees and its pool settings are this
+  computer's pool's; a machine's pool is seen and changed through a chat's
+  Worktree manager in the Git pane. The pool's and installs' streams are
+  followed on this computer's Studio only, so a machine's Worktree manager
+  refreshes when asked again.
 - `auth.sessions.list` for SSH sessions, `server.logs.tail` in Diagnostics
   (they show the bootstrap's steps, the probe and ssh's words), `ssh -W` as a
   diagnostic, the Windows job

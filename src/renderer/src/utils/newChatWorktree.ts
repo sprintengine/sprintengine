@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid'
 
 import type { AgentState } from '../../../shared/agent-state'
 import { LOCAL_HOST_ID, type ExecutionHostId } from '../../../shared/execution-host'
+import { machineRouteOfPath } from '../../../shared/machine-spelling'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import type { AgentId, WorkspaceId, WorkspaceWorktree } from '../types/workspace'
 import { publishDiagnosticSync } from './diagnostics'
@@ -57,7 +58,9 @@ export type NewChatWorktreeOptions = {
  *
  * `hostId` is the machine the chat will run on, which makes its worktree too:
  * a worktree made by another machine's git names a gitdir this one cannot
- * follow.
+ * follow. A folder on an SSH machine or in a WSL distribution's share is that
+ * machine's own Studio's to cut from its own pool (`worktreeHostOf`), as a
+ * folder here is this computer's.
  */
 export async function createNewChatWorktree(
   folderPath: string | null,
@@ -72,7 +75,7 @@ export async function createNewChatWorktree(
   if (!folderPath)
     return fail('Worktree needs a project', 'Choose a project folder before starting a chat on a worktree.')
   const projectFolder = workspaceProjectRootOf({ folderPath }) ?? folderPath
-  const worktreeHostId = hostId ?? undefined
+  const worktreeHostId = worktreeHostOf(projectFolder, hostId)
   try {
     const repoRoot = await gitApi.getGitRepoRoot(projectFolder, worktreeHostId)
     if (!repoRoot) {
@@ -85,10 +88,11 @@ export async function createNewChatWorktree(
     const paths = agentWorktreePaths(repoRoot, name, useWorkspaceStore.getState().appSettings.worktreeBranchPrefix)
     if (!paths) return fail('Worktree name invalid', `"${name}" does not reduce to a usable worktree name.`)
     options.onBranch?.(paths.branchName)
-    // From the worktree pool, on the default branch (main's git.ts): a
-    // reused slot keeps the last agent's installed dependencies. A chat on a
-    // WSL machine is declined by the pool and gets a fresh worktree from that
-    // machine's git, forked from the same default branch.
+    // From the worktree pool of the Studio on the project's machine, on the
+    // default branch (main's git.ts): a reused slot keeps the last agent's
+    // installed dependencies. A folder on this computer that a WSL machine
+    // works in is declined by this computer's pool and gets a fresh worktree
+    // from that machine's git, forked from the same default branch.
     const result = await worktreesApi.createGitWorktree({
       repoRoot,
       containerPath: paths.containerPath,
@@ -244,11 +248,27 @@ export function prepareNewChatWorktree(workspaceId: WorkspaceId): Promise<boolea
 }
 
 /**
+ * The machine whose git makes a worktree of `folder` through this computer's
+ * Studio, or undefined when the Studio the folder is asked of makes it with
+ * its own: this computer's for a folder here, an SSH machine's or a WSL
+ * distribution's for one on it. Only a folder on this computer that a WSL
+ * machine works in (a `C:\` checkout) is made by another machine's git.
+ */
+export function worktreeHostOf(
+  folder: string,
+  hostId: ExecutionHostId | null | undefined,
+): ExecutionHostId | undefined {
+  if (machineRouteOfPath(folder) !== null) return undefined
+  return hostId && hostId !== LOCAL_HOST_ID ? hostId : undefined
+}
+
+/**
  * A worktree made for a chat that went before it landed, given back the way a
- * closed chat's is, without the wait: a pool slot is returned (held instead if
- * anything in it changed), and a fresh worktree is removed only while git
- * finds it clean. One made by another machine's git is left to the sweep, as
- * this one cannot remove it. Failure is silence: the sweep still finds it.
+ * closed chat's is, without the wait: a pool slot is returned to the pool that
+ * leased it (held instead if anything in it changed), and a fresh worktree is
+ * removed only while git finds it clean. One made by another machine's git is
+ * left to the sweep, as this one cannot remove it. Failure is silence: the
+ * sweep still finds it.
  */
 async function giveBackUnusedWorktree(
   made: Extract<NewChatWorktreeResult, { ok: true }>,
@@ -257,8 +277,12 @@ async function giveBackUnusedWorktree(
   if (!made.made) return
   try {
     if (made.made.leaseId)
-      await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId, unused: true })
-    else if (!hostId) await worktreesApi.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
+      await worktreesApi.worktreePoolAction(
+        { kind: 'release', leaseId: made.made.leaseId, unused: true },
+        made.folderPath,
+      )
+    else if (!worktreeHostOf(made.folderPath, hostId))
+      await worktreesApi.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
   } catch {
     // Left for the sweep.
   }
@@ -287,8 +311,8 @@ export function startPendingNewChatInProject(workspaceId: WorkspaceId): boolean 
 // on its way (`obtainNewChatWorktree`), and the chat starts in it with nothing
 // left to wait for, or very little.
 //
-// One reservation per New chat (its `owner`), for one project on this
-// computer, on a branch named at random: a name typed into the chip is a
+// One reservation per New chat (its `owner`), for one project, on a branch
+// named at random: a name typed into the chip is a
 // different branch, so it is made on Enter as before. Turning Worktree off,
 // moving to another project or closing New chat gives the slot back to the
 // pool, clean, for the next chat, and the pool deletes its empty branch then
@@ -344,9 +368,14 @@ export function subscribeNewChatWorktreeReservations(listener: () => void): () =
   return () => reservationListeners.delete(listener)
 }
 
-/** This computer, however it was named: the only machine a reservation is made for. */
-function localHost(hostId: ExecutionHostId | null | undefined): boolean {
-  return !hostId || hostId === LOCAL_HOST_ID
+/**
+ * Whether a reservation can be made for `folder`: when the Studio it is asked
+ * of cuts the worktree from its own pool, which can give it back. This
+ * computer's for a folder here, an SSH machine's or a WSL distribution's for
+ * one there; never a folder here that another machine's git would cut.
+ */
+function reservable(folder: string, hostId: ExecutionHostId | null | undefined): boolean {
+  return worktreeHostOf(folder, hostId) === undefined
 }
 
 function projectOf(folderPath: string): string {
@@ -357,10 +386,11 @@ function projectOf(folderPath: string): string {
  * Make a worktree for the chat New chat (`owner`) is about to start in
  * `folderPath`'s project. Asking again for the same project keeps the one on
  * its way; another project, or another machine, gives that one back first.
- * Only this computer's: another machine's worktree could not be given back.
+ * Only one its project's own Studio cuts (`reservable`): a worktree another
+ * machine's git cut here could not be given back.
  */
 export function reserveNewChatWorktree(owner: string, folderPath: string, hostId?: ExecutionHostId | null): void {
-  if (!localHost(hostId)) {
+  if (!reservable(folderPath, hostId)) {
     releaseNewChatWorktreeReservation(owner)
     return
   }
@@ -447,10 +477,11 @@ export function releaseNewChatWorktreeReservation(owner: string, graceMs = 0): v
  */
 function catchUpReservation(reservation: Reservation): Promise<void> {
   if (reservation.catchingUp) return reservation.catchingUp
-  const leaseId = reservation.settled?.ok ? reservation.settled.made?.leaseId : null
-  if (!leaseId) return Promise.resolve()
+  const made = reservation.settled?.ok ? reservation.settled : null
+  const leaseId = made?.made?.leaseId
+  if (!made || !leaseId) return Promise.resolve()
   const run = worktreesApi
-    .worktreePoolAction({ kind: 'catch-up', leaseId })
+    .worktreePoolAction({ kind: 'catch-up', leaseId }, made.folderPath)
     .then(
       (result) => {
         if (result.ok) reservation.caughtUpAt = Date.now()
@@ -483,8 +514,8 @@ export function hasNewChatWorktreeReservation(owner: string): boolean {
 
 /**
  * The reservation a chat asking for `requestedName` in `folderPath`'s project
- * on `hostId` can take, taken out of the list. Only an unnamed worktree's, on
- * this computer; a stale one is given back instead.
+ * on `hostId` can take, taken out of the list. Only an unnamed worktree's, cut
+ * by its project's own Studio; a stale one is given back instead.
  */
 function claimReservation(
   folderPath: string,
@@ -492,7 +523,7 @@ function claimReservation(
   hostId: ExecutionHostId | null | undefined,
   ready: boolean,
 ): Reservation | null {
-  if (requestedName.trim() || !localHost(hostId)) return null
+  if (requestedName.trim() || !reservable(folderPath, hostId)) return null
   const projectFolder = projectOf(folderPath)
   let found: Reservation | null = null
   for (const reservation of reservations.values()) {

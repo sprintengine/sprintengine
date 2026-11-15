@@ -46,7 +46,6 @@ export type WorktreeChatSource = {
     entries?: Record<string, { path?: string | null; status?: string; ownerAgentId?: string | null } | undefined>
   } | null
   remoteOrigin?: unknown
-  environment?: unknown
 }
 
 export type WorktreeChat = { workspaceId: string; title: string; settled: boolean }
@@ -133,11 +132,16 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
-/** The local projects the window knows of, for the inventory to start from. */
+/**
+ * The projects the window's chats run in, for the inventory to start from:
+ * this computer's, and those on an SSH machine or in a WSL distribution, each
+ * listed by its own machine's Studio. A paired machine's chats are that
+ * machine's to list.
+ */
 export function inventoryRootsOf(workspaces: readonly WorktreeChatSource[]): string[] {
   const roots = new Map<string, string>()
   for (const workspace of workspaces) {
-    if (workspace.remoteOrigin || workspace.environment) continue
+    if (workspace.remoteOrigin) continue
     const root = workspaceProjectRootOf(workspace)
     if (root && !roots.has(comparablePath(root))) roots.set(comparablePath(root), root)
   }
@@ -163,7 +167,7 @@ function indexChats(workspaces: readonly WorktreeChatSource[]): ChatIndex {
   const byWorkspace = new Map<string, WorktreeChat>()
   const byAgent = new Map<string, WorktreeChat>()
   for (const workspace of workspaces) {
-    if (workspace.remoteOrigin || workspace.environment) continue
+    if (workspace.remoteOrigin) continue
     const chat = { workspaceId: workspace.id, title: workspace.name, settled: Boolean(workspace.settledAt) }
     byWorkspace.set(workspace.id, chat)
     const paths = new Set<string>()
