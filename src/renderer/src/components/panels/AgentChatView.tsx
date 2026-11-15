@@ -195,7 +195,12 @@ function openMacosPrivacySettings(): void {
     )
 }
 import { settleDisclosureResize, useStickToBottom } from './agentChat/useStickToBottom'
-import { TRANSCRIPT_FOOT, TRANSCRIPT_SCROLL_PADDING_CLASS, TranscriptHead } from './agentChat/transcriptEnds'
+import {
+  sentMessageRestOffset,
+  TRANSCRIPT_FOOT,
+  TRANSCRIPT_SCROLL_PADDING_CLASS,
+  TranscriptHead,
+} from './agentChat/transcriptEnds'
 import { ConversationRowFrame } from './agentChat/conversationRowFrame'
 import {
   type ChatOpening,
@@ -1274,7 +1279,15 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     pendingUserScrollIdRef.current = null
     setAnchoredUserId(id)
     atBottomRef.current = false
-    void listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: false })
+    // It rests a sixth of the way down the pane, not against its top edge
+    // (transcriptEnds.ts); the trailing space below is sized for the same place.
+    const list = listRef.current
+    void list?.scrollToIndex({
+      index,
+      viewPosition: 0,
+      viewOffset: sentMessageRestOffset(list.getState().scrollLength),
+      animated: false,
+    })
   }, [timelineRows, atBottomRef])
 
   // Surface turn failures (streamed via `turn_failed`) to the app Notifications
@@ -3707,6 +3720,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // old scroll range and leaves the new prompt at the bottom.
   const effectiveAnchorId = pendingUserScrollIdRef.current ?? anchoredUserId
   const anchorUserIndex = effectiveAnchorId ? timelineRows.findIndex((row) => row.id === effectiveAnchorId) : -1
+  // Room enough below for the sent message to come to rest a sixth of the way
+  // down, where the scroll to it puts it.
+  const anchorUserOffset = anchorUserIndex >= 0 ? sentMessageRestOffset(listRef.current?.getState().scrollLength) : 0
   const rememberedRowIndex = scrollMemoryRef.current?.rowId
     ? timelineRows.findIndex((row) => row.id === scrollMemoryRef.current?.rowId)
     : -1
@@ -4419,7 +4435,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     ? { animated: !projection.activeTurn && !prefersReducedMotion(), on: END_FOLLOW_TRIGGERS }
                     : false
                 }
-                anchoredEndSpace={anchorUserIndex >= 0 ? { anchorIndex: anchorUserIndex, anchorOffset: 0 } : undefined}
+                anchoredEndSpace={
+                  anchorUserIndex >= 0 ? { anchorIndex: anchorUserIndex, anchorOffset: anchorUserOffset } : undefined
+                }
               />
             )}
             {minimap}

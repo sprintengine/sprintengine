@@ -3,7 +3,12 @@ import { act, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import type { LegendListRef } from '@legendapp/list/react'
-import { TRANSCRIPT_FOOT, TRANSCRIPT_SCROLL_PADDING_CLASS, TranscriptHead } from './transcriptEnds'
+import {
+  sentMessageRestOffset,
+  TRANSCRIPT_FOOT,
+  TRANSCRIPT_SCROLL_PADDING_CLASS,
+  TranscriptHead,
+} from './transcriptEnds'
 import { isNearConversationEnd } from './useStickToBottom'
 
 // The real virtual list, set up as the chat view sets it up, over a jsdom that
@@ -222,4 +227,15 @@ test('an empty dock adds no space of its own: below the last row is the gap, onc
   const chat = await mountTranscript()
   expect(chat.scroller().scrollHeight).toBe(CONTENT)
   expect(chat.gapBelowLastRow()).toBe(GAP)
+})
+
+// A sent message rests a sixth of the way down the pane, not against its top
+// edge, where it sat under the window's title band.
+test('a sent message comes to rest a sixth of the way down the transcript', () => {
+  expect(sentMessageRestOffset(600)).toBe(100)
+  expect(sentMessageRestOffset(1000)).toBe(167)
+  // A pane not measured yet rests it at the top, as before.
+  expect(sentMessageRestOffset(undefined)).toBe(0)
+  expect(sentMessageRestOffset(0)).toBe(0)
+  expect(sentMessageRestOffset(Number.NaN)).toBe(0)
 })
