@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { projectlessChatFolderName, projectlessChatsRootIn } from '../shared/projectless-chats'
 import { randomId } from '../shared/random-id'
+import { agentHome, agentUser } from './agent-user'
 import { studioStoreHome } from './workspace-store'
 
 // The folders chats started without a project run in
@@ -20,7 +21,9 @@ export type ProjectlessChatFolderDeps = {
 
 /** `~/.sprintengine/chats`, made if it is not there yet. */
 export async function ensureProjectlessChatsRoot(deps: ProjectlessChatFolderDeps = {}): Promise<string> {
-  const root = projectlessChatsRootIn((deps.home ?? studioStoreHome)())
+  // A server whose agents run as another user makes them in the agent's home:
+  // the chat's agent works there, and the server's own home is closed to it.
+  const root = projectlessChatsRootIn((deps.home ?? (() => (agentUser() ? agentHome() : studioStoreHome())))())
   await (deps.makeDir ?? mkdir)(root, { recursive: true })
   return root
 }

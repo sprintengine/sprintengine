@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, sep } from 'node:path'
 
+import { agentReadableDirMode } from '../../agent-user'
 import { legacyUploadOwnerDir, safeUploadName, uploadOwnerDir } from '../../../server/web/web-uploads'
 import { uploadStillSent } from '../../upload-references'
 
@@ -90,7 +91,8 @@ export function createTailnetFileUploads(options: { root: string; now?: () => nu
         uploadOwnerDir(deviceId),
         `${new Date(now()).toISOString().slice(0, 10)}-${randomBytes(6).toString('hex')}`,
       )
-      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      // An agent reads the file by its path: its group may, when it runs as another user.
+      mkdirSync(dir, { recursive: true, mode: agentReadableDirMode() })
       const safe = safeUploadName(name)
       return {
         path: join(dir, safe),

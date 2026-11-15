@@ -165,17 +165,24 @@ test('only names Studio minted are spelled bare in a script', () => {
   assert.ok(script.includes(`src='/Users/dev/it'\\''s $(here)'`))
 })
 
-test('a container is made without capabilities, never with a mount, on the context it was asked under', () => {
+test('a container is made with only the capabilities its server needs to run agents as another user, never with a mount, on the context it was asked under', () => {
   const run = runContainerScript({ name: NAME, image: IMAGE, machineId: '0123456789abcdef', context: 'colima' })
   assert.match(run, /^docker --context colima run -d /u)
-  assert.match(run, / --cap-drop ALL --security-opt no-new-privileges /u)
+  // SETUID and SETGID to start each program as the agent's user, KILL to stop
+  // it; held by the server (root) alone, and none gained through a setuid file.
+  assert.match(
+    run,
+    / --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add KILL --security-opt no-new-privileges /u,
+  )
+  assert.equal(run.match(/--cap-add/gu)?.length, 3)
   assert.match(run, /--label sprintengine\.studio\.container=1 /u)
-  assert.doesNotMatch(run, /-v |--mount|--volume|--privileged|--cap-add/u)
+  assert.doesNotMatch(run, /-v |--mount|--volume|--privileged|--user/u)
   // The host's default context is not named, so DOCKER_HOST still decides it.
   assert.equal(dockerCommand(null), 'docker')
   assert.equal(dockerCommand('default'), 'docker')
   for (const script of [
     execSessionScript(NAME, { context: 'colima' }),
+    execSessionScript(NAME, { context: 'colima', separateUsers: true }),
     removeContainerScript(NAME, 'colima'),
     listContainersScript('colima'),
     copyRepoInScript({ source: '/x', name: NAME, path: '/home/node/work/x', branch: 'b', context: 'colima' }),
@@ -369,4 +376,21 @@ test("the branch comes out with every object checked before it lands in the pers
     ref: 'refs/sprintengine/containers/0123456789abcdef',
   })
   assert.match(script, /git -C "\$src" -c fetch\.fsckObjects=true fetch -q /u)
+})
+
+test("a container's exec channel: as root in root's home where the server and agent are separate users, as node in one made before", () => {
+  const separate = execSessionScript(NAME, { passEnv: ['CLAUDE_CODE_OAUTH_TOKEN'], separateUsers: true })
+  assert.match(
+    separate,
+    /^exec docker exec -i -u 0 -w \/root -e HOME=\/root -e CLAUDE_CODE_OAUTH_TOKEN sprintengine-[0-9a-f]{16} sh -s$/mu,
+  )
+  const before = execSessionScript(NAME, { passEnv: ['CLAUDE_CODE_OAUTH_TOKEN'] })
+  assert.match(
+    before,
+    /^exec docker exec -i -u node -w \/home\/node -e HOME=\/home\/node -e CLAUDE_CODE_OAUTH_TOKEN /mu,
+  )
+  // The copy in is the agent's, readable and writable by its group (the server's) alone.
+  const copy = copyRepoInScript({ source: '/x', name: NAME, path: '/home/node/work/x', branch: 'b' })
+  assert.match(copy, /exec -i -u node /u)
+  assert.ok(copy.includes('umask 007'))
 })

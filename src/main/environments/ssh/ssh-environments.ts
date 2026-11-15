@@ -46,6 +46,8 @@ import { SshEnvironment, type SshServerConnection } from './ssh-environment'
 import type { ContainerHost } from '../../../shared/containers'
 import {
   EXEC_READY_MARKER,
+  CONTAINER_AGENT_IDS,
+  CONTAINER_SERVER_INSTALL_DIR,
   execSessionScript,
   removalOutcome,
   removeContainerScript,
@@ -392,7 +394,14 @@ export class SshEnvironments {
     const machine: SshEnvironment = new SshEnvironment({
       id,
       label: () => this.get(id)?.label ?? saved.label,
-      settings: () => this.get(id)?.settings ?? DEFAULT_SSH_ENVIRONMENT_SETTINGS,
+      settings: () => {
+        const entry = this.get(id) ?? saved
+        const settings = entry.settings ?? DEFAULT_SSH_ENVIRONMENT_SETTINGS
+        // A container whose server and agent are separate users has its server
+        // installed where the agent can run its MCP bridge and not change it.
+        return entry.container?.separateUsers ? { ...settings, installDir: CONTAINER_SERVER_INSTALL_DIR } : settings
+      },
+      agentUser: () => ((this.get(id) ?? saved).container?.separateUsers ? { ...CONTAINER_AGENT_IDS } : null),
       spawn: ({ interactive }) => {
         const entry = this.get(id) ?? saved
         // A container's exec channel is a script on its host: `docker exec -i … sh -s`.
@@ -402,6 +411,7 @@ export class SshEnvironments {
             execSessionScript(entry.container.name, {
               passEnv: Object.keys(env),
               context: entry.container.context ?? null,
+              separateUsers: entry.container.separateUsers === true,
             }),
             { interactive, env, holdUntil: EXEC_READY_MARKER },
           ) as unknown as SessionProcess

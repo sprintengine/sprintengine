@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
 import { copyFile, link, lstat, mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { agentFacingDirectory, agentReadableDirMode } from './agent-user'
 import { MAX_ATTACHMENT_BYTES } from '../shared/conversation-attachments'
 import type {
   ConversationAttachmentResult,
@@ -35,12 +36,21 @@ const MEDIA_TYPE_BY_EXTENSION = new Map(
   Object.entries(ATTACHMENT_IMAGE_EXTENSIONS).map(([mediaType, extension]) => [extension, mediaType]),
 )
 
+/**
+ * Where sent pictures are kept for a data directory: in it, or, for a server
+ * whose agents run as another user, in the folder it shares with them, since
+ * an agent is told each picture's path (agent-user.ts).
+ */
+export function conversationAttachmentsRoot(dataDir: string): string {
+  return agentFacingDirectory(dataDir, STORE_DIRECTORY)
+}
+
 export class ConversationAttachmentStore {
   /** Without a directory nothing is kept, and a replayed bubble shows no images — what tests construct. */
   constructor(private readonly userDataDir?: string) {}
 
   private get root(): string | null {
-    return this.userDataDir ? join(this.userDataDir, STORE_DIRECTORY) : null
+    return this.userDataDir ? conversationAttachmentsRoot(this.userDataDir) : null
   }
 
   /**
@@ -81,7 +91,7 @@ export class ConversationAttachmentStore {
     const root = this.root
     if (!root || attachments.length === 0) return []
     const folder = ConversationAttachmentStore.folderFor(key)
-    await mkdir(join(root, folder), { recursive: true })
+    await mkdir(join(root, folder), { recursive: true, mode: agentReadableDirMode() })
     const stored: ConversationStoredImageAttachment[] = []
     for (const attachment of attachments) {
       const extension = ATTACHMENT_IMAGE_EXTENSIONS[attachment.mediaType]
@@ -122,7 +132,7 @@ export class ConversationAttachmentStore {
     const root = this.root
     if (!root) return attachments
     const folder = ConversationAttachmentStore.folderFor(to)
-    await mkdir(join(root, folder), { recursive: true }).catch(() => undefined)
+    await mkdir(join(root, folder), { recursive: true, mode: agentReadableDirMode() }).catch(() => undefined)
     const copied: unknown[] = []
     for (const attachment of attachments) {
       const ref = (attachment as { ref?: unknown } | null)?.ref

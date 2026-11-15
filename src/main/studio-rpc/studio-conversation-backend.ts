@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises'
+import { shareDirectoryWithAgent } from '../agent-user'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -97,7 +98,11 @@ function uploadStager(
   // Made once and shared; a failed creation is tried again next time.
   let pictures: Promise<string> | null = null
   const pictureFolder = () => {
-    const making = (pictures ??= mkdtemp(join(tmpdir(), 'studio-conversation-images-')))
+    // Shared with the agent's group when agents run as another user: a CLI may read a picture by its path.
+    const making = (pictures ??= mkdtemp(join(tmpdir(), 'studio-conversation-images-')).then(async (dir) => {
+      await shareDirectoryWithAgent(dir)
+      return dir
+    }))
     making.catch(() => {
       if (pictures === making) pictures = null
     })

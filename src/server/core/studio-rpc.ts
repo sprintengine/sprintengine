@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { agentFacingDirectory } from '../../main/agent-user'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -160,7 +161,9 @@ export function createStudioRpc(
         lifecycle: core.conversationLifecycle,
         // A paired device's files sent with a message, kept where the tailnet's
         // upload route keeps them, so one store prunes both.
-        fileUploads: createTailnetFileUploads({ root: join(core.platform.paths.dataDir(), TAILNET_UPLOADS_DIRNAME) }),
+        fileUploads: createTailnetFileUploads({
+          root: agentFacingDirectory(core.platform.paths.dataDir(), TAILNET_UPLOADS_DIRNAME),
+        }),
       }),
     audit: () => gateway.gatewayAudit(),
     tools: gateway.clientTools,

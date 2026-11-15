@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 
 import { MAX_ADOPTED_PART_BYTES } from '../../../packages/studio-protocol/src/public'
 import {
-  CONVERSATION_ATTACHMENTS_DIRECTORY,
+  conversationAttachmentsRoot,
   CONVERSATION_TOOL_IMAGES_DIRECTORY,
 } from '../../main/conversation-attachment-store'
 import { conversationStorageSegment } from '../../main/conversation-index'
@@ -115,7 +115,7 @@ function adoptedChatFilePath(dataDir: string, chat: AdoptedChat, file: AdoptedCh
         ...segments,
       )
     case 'attachments':
-      return join(dataDir, CONVERSATION_ATTACHMENTS_DIRECTORY, ...segments)
+      return join(conversationAttachmentsRoot(dataDir), ...segments)
     case 'images':
       return join(dataDir, CONVERSATION_TOOL_IMAGES_DIRECTORY, ...segments)
     case 'plans':

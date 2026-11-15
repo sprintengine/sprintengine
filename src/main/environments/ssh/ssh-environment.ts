@@ -104,6 +104,11 @@ export type SshEnvironmentDeps = {
   app: { version: string; channel: 'latest' | 'nightly' }
   /** `data`, or `data-<profile>` for a desktop on another profile. */
   dataName: string
+  /**
+   * A container's machine whose server and agent are separate users: the
+   * agent's ids, which its server starts every program as. Null elsewhere.
+   */
+  agentUser?: () => { uid: number; gid: number } | null
   /** "Studio on dev-macbook-air", for the remote's record. */
   startedBy: string
   serverTree(): { dir: string; digest: string } | null
@@ -517,6 +522,7 @@ export class SshEnvironment {
             installDir: this.deps.settings().installDir,
             dataName: this.deps.dataName,
             channel: this.deps.app.channel,
+            agentUser: this.deps.agentUser?.() ?? null,
           }),
         )
         session = current
@@ -941,6 +947,7 @@ export class SshEnvironment {
         installDir: this.deps.settings().installDir,
         dataName: this.deps.dataName,
         channel: this.deps.app.channel,
+        agentUser: this.deps.agentUser?.() ?? null,
       }),
     )
     try {

@@ -31,7 +31,8 @@ import { spawnClaudeLocalProcess } from './claude-local-process'
 import { randomUUID } from 'node:crypto'
 import { cp, lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { agentHome, agentUser, assertAgentTerritory, shareTreeWithAgent } from '../agent-user'
 import { openConfinedExistingFile, readBoundedConversationFile } from '../conversation-file-access'
 import {
   projectCommandsFingerprint,
@@ -1090,8 +1091,10 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     // crash left in it would bring back only the messages after the gap.
     let savedCostUsd = 0
     if (state.providerSessionId) {
-      const configDir = resolveClaudeConfigDir(homedir(), env)
-      const check = await ensureResumableTranscript(configDir, state.workspaceRoot, state.providerSessionId)
+      const configDir = resolveClaudeConfigDir(agentHome(), env)
+      const check = await ensureResumableTranscript(configDir, state.workspaceRoot, state.providerSessionId, Date.now, {
+        repair: !agentUser(),
+      })
       state.resumeNote = transcriptCheckNote(check)
       if ((check.kind === 'ok' || check.kind === 'repaired') && check.savedCostUsd) savedCostUsd = check.savedCostUsd
       // The chat's task list is held in memory, so a chat resumed after the
@@ -2336,6 +2339,10 @@ async function stageAttachedSkills(tempDir: string, workspaceRoot: string, skill
       const source = await attachedSkillSource(workspaceRoot, id)
       await cp(source, join(dir, 'skills', id), { recursive: true })
       const staged = join(dir, 'skills', id, 'SKILL.md')
+      // A server whose agents run as another user reads no SKILL.md the
+      // agent linked out of its own home (the server's own files, say), for
+      // what it writes here the agent reads.
+      if (agentUser()) assertAgentTerritory(dirname(await realpath(staged)))
       const text = await readFile(staged, 'utf8').catch(() => null)
       // A skill the project ships keeps only the frontmatter a project command
       // keeps: the plugin it is staged into is loaded on the person's own
@@ -2348,6 +2355,7 @@ async function stageAttachedSkills(tempDir: string, workspaceRoot: string, skill
         await writeFile(staged, usable)
       }
     }
+    await shareTreeWithAgent(dir)
     return dir
   } catch (error) {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined)

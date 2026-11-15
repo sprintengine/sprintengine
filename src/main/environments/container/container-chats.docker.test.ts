@@ -90,10 +90,30 @@ function setup(profile: string) {
   return { machines, chats, changes }
 }
 
+/** Where the container's Studio server keeps its data: root's own home. */
+const SERVER_DATA = '/root/.local/share/sprintengine-studio/data'
+
+/** The container's Studio server's pid, from its record (read as root: it is root's). */
+function serverPidOf(name: string): string {
+  return docker(
+    'exec',
+    '-u',
+    '0',
+    name,
+    'sh',
+    '-c',
+    `sed -n 's/.*"pid":\\([0-9]*\\).*/\\1/p' ${SERVER_DATA}/run/server.json`,
+  )
+}
+
+/** A command's exit status as the container's `node` user, the agent's: 0 when it was allowed. */
+const asAgent = (name: string, command: string) =>
+  spawnSync('docker', ['exec', '-u', 'node', name, 'sh', '-c', command], { encoding: 'utf8', timeout: 60_000 })
+
 /** A project with one commit, whose `origin` is a bare repository beside it. */
-function project(): { folder: string; origin: string } {
-  const origin = join(scratch, 'origin.git')
-  const folder = join(scratch, 'demo app')
+function project(tag = ''): { folder: string; origin: string } {
+  const origin = join(scratch, `origin${tag}.git`)
+  const folder = join(scratch, `demo app${tag}`)
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origin])
   mkdirSync(folder, { recursive: true })
   git(folder, 'init', '-q', '-b', 'main')
@@ -133,8 +153,14 @@ test.skipIf(!DOCKER_TESTS)(
     assert.equal(docker('inspect', '-f', `{{index .Config.Labels "${CONTAINER_LABEL}"}}`, name), '1')
     // No folder of the host is mounted into it.
     assert.equal(docker('inspect', '-f', '{{len .Mounts}}', name), '0')
-    // No capability, and no way to gain one.
+    // No capability but the three its server needs to run agents as another user, and no way to gain one.
     assert.equal(docker('inspect', '-f', '{{json .HostConfig.CapDrop}}', name), '["ALL"]')
+    assert.deepEqual(
+      (JSON.parse(docker('inspect', '-f', '{{json .HostConfig.CapAdd}}', name)) as string[])
+        .map((each) => each.replace(/^CAP_/u, ''))
+        .sort(),
+      ['KILL', 'SETGID', 'SETUID'],
+    )
     assert.match(docker('inspect', '-f', '{{json .HostConfig.SecurityOpt}}', name), /no-new-privileges/u)
 
     // Studio's own server runs inside, reached as a machine over `docker exec`.
@@ -146,18 +172,8 @@ test.skipIf(!DOCKER_TESTS)(
 
     // The agent's login reached the server it runs under, and nowhere Docker keeps: not the
     // container's saved config, not a command line. No git credential is there.
-    const serverPid = docker(
-      'exec',
-      '-u',
-      'node',
-      name,
-      'sh',
-      '-c',
-      'sed -n \'s/.*"pid":\\([0-9]*\\).*/\\1/p\' /home/node/.local/share/sprintengine-studio/data/run/server.json',
-    )
-    const serverEnv = docker('exec', '-u', 'node', name, 'sh', '-c', `tr '\\0' '\\n' < /proc/${serverPid}/environ`)
-    assert.ok(serverEnv.split('\n').includes(`CLAUDE_CODE_OAUTH_TOKEN=${AGENT_TOKEN}`), 'the server holds the login')
-    assert.doesNotMatch(serverEnv, /^(GH_TOKEN|GITHUB_TOKEN|GIT_ASKPASS|SSH_AUTH_SOCK)=/mu)
+    // (The server's own environment is no process's to read: it is root's, and it stopped being dumpable
+    // when it took the agent's group. What it hands an agent is read from the agent's, in the test below.)
     assert.ok(!docker('inspect', '-f', '{{json .Config.Env}}', name).includes(AGENT_TOKEN), 'not in its saved config')
     assert.ok(!docker('exec', name, 'ps', '-eo', 'args').includes(AGENT_TOKEN), 'not in a command line')
 
@@ -235,4 +251,148 @@ test.skipIf(!DOCKER_TESTS)(
     machines.shutdown()
   },
   10 * 60_000,
+)
+
+test.skipIf(!DOCKER_TESTS)(
+  "the container's Studio server and its agent are separate users: the agent cannot reach the server, and runs as node",
+  async () => {
+    const { machines, chats } = setup('users')
+    const { folder } = project('-users')
+    const created = await chats.create({
+      host: { kind: 'local' },
+      folder,
+      label: 'Two users',
+      image: { kind: 'studio-default' },
+    })
+    assert.ok(created.ok, created.ok ? '' : created.message)
+    const name = machines.get(created.id)!.container!.name
+    made.push(name)
+    assert.equal(machines.get(created.id)!.container!.separateUsers, true)
+    const connection = machines.connection(created.id)!
+    assert.ok(connection, 'connected after create')
+
+    // The server: root, in the agent's group, holding only the three capabilities.
+    const serverPid = serverPidOf(name)
+    assert.match(serverPid, /^\d+$/u)
+    const status = docker('exec', '-u', '0', name, 'cat', `/proc/${serverPid}/status`)
+    assert.match(status, /^Uid:\s+0\s+0\s+0\s+0$/mu)
+    assert.match(status, /^Gid:\s+1000\s+1000\s+1000\s+1000$/mu)
+    assert.match(status, /^CapEff:\s+00000000000000e0$/mu)
+    assert.match(status, /^NoNewPrivs:\s+1$/mu)
+    // Its tree is in /opt, root's and readable; its data in root's home.
+    assert.match(
+      docker('exec', '-u', '0', name, 'sh', '-c', `tr '\\0' ' ' < /proc/${serverPid}/cmdline`),
+      /^\/opt\/sprintengine-studio\//u,
+    )
+
+    // The agent's user: no capability, and none of the server's.
+    assert.match(asAgent(name, 'grep CapEff /proc/self/status').stdout, /CapEff:\s+0{16}/u)
+    assert.notEqual(
+      asAgent(name, `cat ${SERVER_DATA}/run/owner-token`).status,
+      0,
+      'the owner token is not the agent’s to read',
+    )
+    assert.notEqual(asAgent(name, 'ls /root').status, 0, "root's home is closed to it")
+    assert.notEqual(asAgent(name, `kill -0 ${serverPid}`).status, 0, 'it cannot signal the server')
+    assert.notEqual(asAgent(name, `grep . /proc/${serverPid}/environ`).status, 0, "nor read the server's environment")
+    assert.notEqual(asAgent(name, 'touch /opt/sprintengine-studio/planted').status, 0, "nor change the server's tree")
+    assert.equal(asAgent(name, 'test -r /opt/sprintengine-studio/server-*/bridge.mjs').status, 0, 'which it may read')
+
+    // The gateway is the agent's to reach (its MCP bridge runs as it, with the server's Node), and not to replace.
+    const gateway = docker('exec', '-u', '0', name, 'sh', '-c', 'ls -d /var/lib/sprintengine-studio-*')
+    assert.match(asAgent(name, `cat ${gateway}/sprintengine-studio-mcp-info.json`).stdout, /"socketPath"/u)
+    const reach = asAgent(
+      name,
+      `/opt/sprintengine-studio/runtime/node-*/bin/node -e "require('net').connect('${gateway}/automation.sock').on('connect', () => process.exit(0)).on('error', (e) => { console.log(e.code); process.exit(1) })"`,
+    )
+    assert.equal(reach.status, 0, reach.stdout + reach.stderr)
+    assert.notEqual(asAgent(name, `rm -f ${gateway}/automation.sock`).status, 0)
+    assert.notEqual(asAgent(name, `touch ${gateway}/planted`).status, 0)
+
+    // A program the server runs in the agent's repository runs as the agent: git's clean filter, which a
+    // repository's own configuration names, during the Git pane's status (a file whose time changed and
+    // whose size did not is read through it).
+    const repo = created.folder
+    const ran = '/home/node/filter-ran-as'
+    const inRepo = (command: string) => docker('exec', '-u', 'node', '-w', repo, name, 'sh', '-c', command)
+    inRepo(
+      `git config filter.probe.clean 'sh -c "id -u > ${ran}; cat"' && echo 'README.md filter=probe' > .gitattributes`,
+    )
+    // The pane's status is kept and refreshed as the folder changes: the time is moved once that has settled,
+    // and the status asked again until git has read the file through the filter.
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    inRepo('touch -m -d @1 README.md')
+    let filtered = ''
+    for (let tries = 0; tries < 40 && !filtered; tries++) {
+      assert.ok(await connection.owner.request('git.status', { repoRoot: repo }), 'the Git pane read the repository')
+      // Read as node: the agent's home is its group's, and root here holds no capability past that.
+      filtered = asAgent(name, `cat ${ran}`).stdout.trim()
+      if (!filtered) await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    assert.equal(filtered, '1000', 'git ran as node, not as the server')
+
+    // A link the agent put in its repository does not carry a save onto a root-owned file.
+    const motd = docker('exec', '-u', '0', name, 'sh', '-c', 'cat /etc/motd 2>/dev/null; stat -c %U /etc/motd')
+    inRepo('ln -s /etc etc-link && ln -s /etc/motd motd-link')
+    for (const path of [`${repo}/etc-link/motd`, `${repo}/motd-link`]) {
+      await assert.rejects(
+        connection.owner.request('files.writeText', { commandId: `save-${path}`, path, text: 'written by a link' }),
+        // Refused (the reason is in the server's log; a client is told only that it was not carried out).
+        (error: Error) => error.name === 'StudioError',
+        path,
+      )
+    }
+    assert.equal(docker('exec', '-u', '0', name, 'sh', '-c', 'cat /etc/motd 2>/dev/null; stat -c %U /etc/motd'), motd)
+    // A save in the repository itself is the person's, and the agent's to change after.
+    await connection.owner.request('files.writeText', {
+      commandId: 'save-notes',
+      path: `${repo}/NOTES.md`,
+      text: 'hi\n',
+    })
+    assert.equal(inRepo('echo agent >> NOTES.md && cat NOTES.md'), 'hi\nagent')
+
+    // An agent CLI a chat starts runs as node, in the agent's home: the OpenCode stand-in, run with the
+    // server's Node (the stand-in image has none of its own).
+    // Written by root through stdin (a `docker cp` keeps the host's owner, which root here may not change).
+    execFileSync('docker', ['exec', '-i', '-u', '0', name, 'sh', '-c', 'cat > /usr/local/lib/opencode-standin.js'], {
+      input: readFileSync(join(ROOT, 'tests', 'docker', 'bin', 'opencode')),
+    })
+    docker(
+      'exec',
+      '-u',
+      '0',
+      name,
+      'sh',
+      '-c',
+      `printf '#!/bin/sh\\nexec $(ls -d /opt/sprintengine-studio/runtime/node-*/bin/node | head -n 1) /usr/local/lib/opencode-standin.js "$@"\\n' > /usr/local/bin/opencode && chmod 755 /usr/local/bin/opencode && chmod 644 /usr/local/lib/opencode-standin.js`,
+    )
+    const chat = await connection.owner.request('conversation.create', {
+      commandId: 'two-users-chat',
+      noProject: true,
+      cli: 'opencode',
+      prompt: '!slow',
+    })
+    assert.ok(chat, 'a chat started')
+    let agents = ''
+    for (let tries = 0; tries < 60 && !/opencode-standin/u.test(agents); tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      agents = docker('exec', '-u', '0', name, 'ps', '-eo', 'uid=,args=')
+    }
+    const standin = agents.split('\n').find((line) => line.includes('opencode-standin'))
+    assert.ok(standin, `the stand-in agent started:\n${agents}`)
+    assert.match(standin!, /^\s*1000\s/u, 'as node')
+    const agentPid = docker('exec', '-u', '0', name, 'pgrep', '-f', 'opencode-standin').split('\n')[0]
+    // Read as node: the agent's process is node's, and root here holds no capability to read another's.
+    const agentEnv = asAgent(name, `tr '\\0' '\\n' < /proc/${agentPid}/environ`).stdout
+    assert.match(agentEnv, /^HOME=\/home\/node$/mu)
+    assert.match(agentEnv, /^USER=node$/mu)
+    // The agent's login reached it through the server, and no git credential did.
+    assert.ok(agentEnv.split('\n').includes(`CLAUDE_CODE_OAUTH_TOKEN=${AGENT_TOKEN}`), 'the agent holds its login')
+    assert.doesNotMatch(agentEnv, /^(GH_TOKEN|GITHUB_TOKEN|GIT_ASKPASS|SSH_AUTH_SOCK)=/mu)
+    assert.match(asAgent(name, `readlink /proc/${agentPid}/cwd`).stdout.trim(), /^\/home\/node\//u)
+
+    assert.ok((await chats.remove({ id: created.id })).ok)
+    machines.shutdown()
+  },
+  15 * 60_000,
 )

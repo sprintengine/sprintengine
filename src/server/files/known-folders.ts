@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 
 import {
-  CONVERSATION_ATTACHMENTS_DIRECTORY,
+  conversationAttachmentsRoot,
   CONVERSATION_TOOL_IMAGES_DIRECTORY,
 } from '../../main/conversation-attachment-store'
 import { CONVERSATION_PLANS_DIRECTORY } from '../../main/conversation-plan-store'
@@ -27,7 +27,7 @@ export function workspaceFolders(registry: Registry): string[] {
 export function knownFolders(registry: Registry, dataDir: string): string[] {
   return [
     ...workspaceFolders(registry),
-    join(dataDir, CONVERSATION_ATTACHMENTS_DIRECTORY),
+    conversationAttachmentsRoot(dataDir),
     join(dataDir, CONVERSATION_PLANS_DIRECTORY),
     join(dataDir, CONVERSATION_TOOL_IMAGES_DIRECTORY),
   ]

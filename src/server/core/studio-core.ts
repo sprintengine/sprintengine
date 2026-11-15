@@ -41,7 +41,7 @@ import {
 import { ConversationApprovalRuleStore } from '../../main/conversation-approval-rules'
 import {
   ConversationAttachmentStore,
-  CONVERSATION_ATTACHMENTS_DIRECTORY,
+  conversationAttachmentsRoot,
   CONVERSATION_TOOL_IMAGES_DIRECTORY,
 } from '../../main/conversation-attachment-store'
 import { TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
@@ -1125,7 +1125,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         workspaceOf: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
         // What chats sent, the pictures their steps returned, and pasted images.
         imageRoots: () => [
-          join(dataDir, CONVERSATION_ATTACHMENTS_DIRECTORY),
+          conversationAttachmentsRoot(dataDir),
           join(dataDir, CONVERSATION_TOOL_IMAGES_DIRECTORY),
           attachmentImagesRoot(),
         ],

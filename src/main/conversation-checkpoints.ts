@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { Stats } from 'fs'
 import { copyFile, lstat, mkdtemp, realpath, rm, stat, utimes } from 'fs/promises'
+import { shareDirectoryWithAgent } from './agent-user'
 import { tmpdir } from 'os'
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'path'
 import { runGitCommand } from './git-utils'
@@ -478,6 +479,8 @@ export class ConversationCheckpoints {
    */
   private async worktreeTree(root: string, include: string[] = []): Promise<string> {
     const temp = await mkdtemp(join(tmpdir(), 'conversation-index-'))
+    // git, run as the agent's user when agents run as another user, writes the index here.
+    await shareDirectoryWithAgent(temp, { write: true })
     const index = join(temp, 'index')
     const env = { GIT_INDEX_FILE: index, GIT_OPTIONAL_LOCKS: '0' }
     try {
@@ -642,6 +645,7 @@ export class ConversationCheckpoints {
    */
   private async checkoutFiles(root: string, commit: string, paths: string[]): Promise<void> {
     const temp = await mkdtemp(join(tmpdir(), 'conversation-restore-'))
+    await shareDirectoryWithAgent(temp, { write: true })
     const env = { GIT_INDEX_FILE: join(temp, 'index'), GIT_OPTIONAL_LOCKS: '0' }
     try {
       await this.git(root, [...SNAPSHOT_CONFIG, 'read-tree', commit], env)

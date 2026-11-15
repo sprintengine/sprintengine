@@ -45,11 +45,11 @@ channel, reconnects and liveness, window tickets on a loopback route, the
 pane's traffic through the machine, the sign-in dialog, the sidebar, the chat
 views. Only the exec channel differs:
 
-| Machine                     | Exec channel the bootstrap script is written to                                        |
-| --------------------------- | -------------------------------------------------------------------------------------- |
-| SSH machine                 | `ssh … -- <machine> sh -s`                                                             |
-| Container on this computer  | `/bin/sh -c 'docker start <c> && exec docker exec -i -u node -w /home/node <c> sh -s'` |
-| Container on an SSH machine | `ssh … -- <machine> sh -c '<the same docker line>'`                                    |
+| Machine                     | Exec channel the bootstrap script is written to                                |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| SSH machine                 | `ssh … -- <machine> sh -s`                                                     |
+| Container on this computer  | `/bin/sh -c 'docker start <c> && exec docker exec -i -u 0 -w /root <c> sh -s'` |
+| Container on an SSH machine | `ssh … -- <machine> sh -c '<the same docker line>'`                            |
 
 `docker exec -i` gives the same stdin/stdout pair the SSH relay needs, so the
 relay protocol, its marker handshake and its multiplexer are reused byte for
@@ -132,7 +132,8 @@ Only the agent's own login goes inside. Two ways, both built:
   login runs inside the container and its link and code show in Studio's
   dialog (`claude auth login` pastes a code back; `codex login --device-auth`
   shows a device code). The login stays inside the container
-  (`~/.claude/.credentials.json`), kept with the chat and removed with it. A
+  (`/home/node/.claude/.credentials.json`: the sign-in's CLI runs as `node`,
+  as every agent does), kept with the chat and removed with it. A
   chat on another machine whose turn fails to authenticate offers this dialog
   from its failure card (`chatSignInProviderId`), rather than sending the
   person to a terminal on this computer.
@@ -151,8 +152,11 @@ nothing of the person's but the repository copy and its own login.
 
 - **Kept out:** the host's folders (no mounts), the host's git and GitHub
   credentials (only the host pushes; a credential in the remote URL is
-  stripped), the host's SSH agent and keys, every Linux capability
-  (`--cap-drop ALL`) and any way to regain one (`no-new-privileges`).
+  stripped), the host's SSH agent and keys, and Studio's server in the
+  container (next section). The container drops every Linux capability but
+  the three its server needs (`--cap-drop ALL --cap-add SETUID --cap-add
+SETGID --cap-add KILL`), and no process can gain one (`no-new-privileges`);
+  the agent's processes hold none.
 - **Inside, by design:** the repository copy; the agent's own login (the token,
   or what its sign-in wrote), which the agent can read and use or send
   anywhere, since network access is full (owner ruling); whatever the agent
@@ -160,23 +164,69 @@ nothing of the person's but the repository copy and its own login.
 - **Coming out:** only the chat's branch, as a bundle the host fetches with
   object checks into a ref of Studio's and pushes. It is code an agent wrote:
   reviewing it is the pull request's job.
-- **Known gap: the agent and Studio's server share a user.** Both run as the
-  image's `node` user, and the server's data (its run directory, owner token
-  and socket) is in that user's home. An agent can therefore drive its own
-  container's server as its owner, stop it, or stand a process of its own in
-  front of its socket. What that buys it is the protocol the desktop already
-  treats as a remote machine's: the desktop holds such a server to exactly
-  what it holds an SSH machine's server to. Closing the gap means running the
-  server as a user of its own and the CLIs it starts as the agent's user (a
-  follow-up).
+
+### Two users: the server and the agent
+
+The desktop trusts the Studio server inside a container as it trusts an SSH
+machine's: whoever holds its owner token, or answers on its owner socket, is
+that machine's Studio to the desktop. So the agent must not be able to read
+the token, stop the server, or stand a process of its own in its place. It
+cannot, because they are different users:
+
+- **The server runs as root**, started over `docker exec -u 0` in root's home
+  (`/root`, which only root may enter). Its data (`run/`, the owner token and
+  socket, its stores) is there. Its tree (Node and the server) is installed in
+  `/opt/sprintengine-studio`, root's, which anyone may read and run and only
+  root may change. It holds only SETUID, SETGID and KILL, and its group is
+  the agent's (`node`), with umask 007, so what it shares it shares with the
+  agent and nobody else.
+- **Every program the server starts runs as `node`** (uid and gid 1000), with
+  `HOME=/home/node`, not only the agent CLIs and the sign-in flow's CLI but
+  git, gh, rg, a project's installs and dev servers too
+  (`src/main/agent-user.ts`). A program the server ran as root in the agent's
+  repository would run whatever the agent wrote into that repository's
+  configuration (a git filter or hook, an npm script) as root. The server is
+  started with `--agent-uid 1000 --agent-gid 1000`, and from then on Node's
+  every way of starting a program defaults to that user, once for the whole
+  process rather than at each call, so no call can forget. A server on any
+  other machine is started without them and is unchanged.
+- **What the agent reads of the server's:** the MCP gateway's socket and the
+  file naming it, in `/var/lib/sprintengine-studio-<id>` (root's, the agent's
+  group may enter and read, not write); and in folders there, what the server
+  hands it by path: a pasted picture, a file a device sent, staged Claude
+  plugins (skills, the project's commands). Temporary folders the agent's
+  programs work in (a checkpoint's git index, text generation's scratch
+  folder) are shared with its group. The agent's repository and home are the
+  agent's, its group's (the server's) too.
+- **Where the server writes in the agent's world**, a link the agent left must
+  not carry the write to one of root's own files. A save, a new file or
+  folder, a rename, copy or move a client asks for lands only inside the
+  agent's home, by real path (`assertAgentTerritory`), on top of the
+  link-refusing writes every save already goes through. A SKILL.md the agent
+  linked out of its home is not staged. A Claude transcript with a gap is
+  read but not repaired (the repair writes beside it).
+- **Not offered:** a terminal on the container's server (a terminal is a
+  native fork the hooks do not reach, so it would be a root shell).
+
+A container made before this ran both as `node`. It keeps working as it was,
+and Settings › Machines › Containers says so on its row and that removing it
+and starting the chat in a new container separates them (`separateUsers` on
+its record). An existing container's capabilities cannot change.
+
+Left as known gaps: an agent's processes are not given a higher OOM score
+(writing another user's `oom_score_adj` needs a capability the server does not
+hold), and a read the server makes for an agent's tool (a thumbnail, a board)
+is checked by real path against the chat's folders before it is opened, so a
+link swapped in between could still be read once.
 
 ## The image
 
 `resources/container/agent.Dockerfile`, shipped with the app
 (`extraResources` → `container/`): `node:22-bookworm-slim` pinned by digest, git, ripgrep,
-procps, and pinned `@anthropic-ai/claude-code` and `@openai/codex`, running as
-the image's unprivileged `node` user (Claude Code refuses to skip its
-permission prompts as root). It is built on the container's host the first
+procps, and pinned `@anthropic-ai/claude-code` and `@openai/codex`, which run
+as the image's unprivileged `node` user (Claude Code refuses to skip its
+permission prompts as root), whose home is shared with the server's group
+(Two users, above). It is built on the container's host the first
 time a container is made there (`docker build -` with the Dockerfile in the
 script itself, no build context) and tagged `sprintengine-studio-agent:<first 12 hex of the
 file's SHA-256>`, so an app update that changes the file builds a new image and
@@ -282,7 +332,6 @@ saying the same. Windows and WSL say "Containers on … are not built yet".
 - A project's devcontainer or Dockerfile as the image.
 - A worktree inside a container.
 - The host-side proxy that keeps even the token out (above).
-- The server and the agent as separate users (Threat model).
 - Making and using containers from a paired desktop and the phone: the
   methods are on the protocol; what is left is how a device follows the chat
   in a container it made (an owner decision).

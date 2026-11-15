@@ -58,6 +58,12 @@ export type ConnectScriptInput = {
   /** The data directory's name under the data root: `data`, or `data-<profile>` for another profile. */
   dataName: string
   channel: 'latest' | 'nightly'
+  /**
+   * A container's server, run as root, whose every program runs as this user
+   * and group (docs/design/container-chats.md, "Two users"): passed to its
+   * start, and its install made readable so the agent can run the MCP bridge.
+   */
+  agentUser?: { uid: number; gid: number } | null
 }
 
 /**
@@ -103,6 +109,7 @@ export function buildConnectScript(input: ConnectScriptInput): string {
     serverDigest: input.serverDigest,
     nodeDigest: { shellVar: 'sum' },
     keepServer: '$keep_server',
+    readable: Boolean(input.agentUser),
   })
   const installFetch = streamInstallLines({
     stageId: input.stageId,
@@ -110,8 +117,13 @@ export function buildConnectScript(input: ConnectScriptInput): string {
     serverDigest: input.serverDigest,
     nodeDigest: { shellVar: 'sum' },
     keepServer: '$keep_server',
+    readable: Boolean(input.agentUser),
     beforeUnpack: fetchLines(),
   })
+  const agent = input.agentUser
+  if (agent && ![agent.uid, agent.gid].every((id) => Number.isSafeInteger(id) && id > 0))
+    throw new Error('The agent’s user and group are numbers above 0.')
+  const agentArgs = agent ? ` --agent-uid=${agent.uid} --agent-gid=${agent.gid}` : ''
   const indent = (lines: readonly string[]) => lines.map((line) => `    ${line}`)
   // Never run a program from a tree another user could have put there.
   const ownedCheck = `    { owned "$base" && owned "$app"; } || { printf '%sFAIL base-owner %s\\n' "$P" "$base"; exit 7; }`
@@ -216,7 +228,7 @@ export function buildConnectScript(input: ConnectScriptInput): string {
     "    replace=''",
     '    [ "$1" = upgrade ] && replace=--replace',
     ownedCheck,
-    `    "$rt/bin/node" "$app/server.cjs" start --detach --data-dir "$data" "$idle_arg" --started-by-b64="$label" --channel ${channel} $replace </dev/null || exit 5`,
+    `    "$rt/bin/node" "$app/server.cjs" start --detach --data-dir "$data" "$idle_arg" --started-by-b64="$label" --channel ${channel}${agentArgs} $replace </dev/null || exit 5`,
     `    ${relay}`,
     '    ;;',
     '  stop)',

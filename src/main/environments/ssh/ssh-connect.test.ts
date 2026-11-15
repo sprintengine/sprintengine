@@ -389,3 +389,19 @@ test.skipIf(spawnSync('shellcheck', ['--version']).status !== 0)(
     assert.equal(result.status, 0, result.stdout)
   },
 )
+
+test("a container's server is started to run its agents as another user, its install left readable; an SSH machine's is not", () => {
+  const container = script('s1', { agentUser: { uid: 1000, gid: 1000 }, installDir: '/opt/sprintengine-studio' })
+  assert.match(container, /server\.cjs" start --detach .* --agent-uid=1000 --agent-gid=1000 \$replace /u)
+  // The agent runs the MCP bridge with the server's Node: the trees may be read and run by it, never written.
+  assert.ok(container.includes('umask 022'))
+  assert.ok(container.includes('chmod -R go+rX,go-w "$stage"'))
+  assert.ok(!container.includes('umask 077'))
+  assert.ok(container.includes("base='/opt/sprintengine-studio'"))
+  const machine = script('s1')
+  assert.doesNotMatch(machine, /--agent-uid/u)
+  assert.ok(machine.includes('umask 077'))
+  assert.ok(!machine.includes('umask 022'))
+  assert.ok(!machine.includes('chmod -R go+rX'))
+  assert.throws(() => script('s1', { agentUser: { uid: 0, gid: 1000 } }))
+})

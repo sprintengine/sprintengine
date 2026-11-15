@@ -262,6 +262,12 @@ export type StreamInstallInput = {
    */
   nodeDigest: string | { shellVar: string }
   /**
+   * Install trees anyone on the machine may read and run (never write): for a
+   * container's server, whose agents, another user, run its MCP bridge with
+   * its Node. Owner-only otherwise.
+   */
+  readable?: boolean
+  /**
    * A shell word naming a server tree no prune may remove (an SSH machine's
    * previous tree while a failed update leaves it the one to fall back to).
    */
@@ -289,7 +295,7 @@ export function streamInstallLines(input: StreamInstallInput & { beforeUnpack?: 
     "final=''",
     'locked=0',
     `fail() { printf '${FAIL_MARKER} %s\\n' "$*"; rm -rf "$stage" "$stage.err"; [ "$locked" = 1 ] && lock_drop; exit 4; }`,
-    'umask 077',
+    input.readable ? 'umask 022' : 'umask 077',
     'mkdir -p "$base/.stage" || fail "mkdir $base"',
     // Programs are run from here: a directory another user owns (a shared
     // install directory) could have them replaced under us.
@@ -301,6 +307,10 @@ export function streamInstallLines(input: StreamInstallInput & { beforeUnpack?: 
     ...(input.beforeUnpack ?? []),
     `tar -xzf - -C "$stage" 2>"$stage.err" || fail "unpack $(tail -n 2 "$stage.err" 2>/dev/null | tr '\\n' ' ')"`,
     'rm -f "$stage.err"',
+    // An archive keeps its own modes (root's tar restores them): a readable
+    // install makes what it unpacked readable and runnable by all, and
+    // writable by its owner alone.
+    ...(input.readable ? ['chmod -R go+rX,go-w "$stage" || fail "chmod $stage"'] : []),
     'lock_take || fail "lock timeout"',
     'locked=1',
     `if [ -d "$stage/${NODE_RUNTIME_REL}" ]; then`,

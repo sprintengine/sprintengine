@@ -193,3 +193,24 @@ test('a push, a removal or a token change that gets no answer says so in words',
   await flush()
   expect(host.textContent).toContain('The token was not saved. The connection to Studio closed.')
 })
+
+test('a container made before the server and the agent were separate users says they share one', async () => {
+  tokenSet = false
+  const row = (id: string, oneUser: boolean): ContainerSummary => ({
+    id,
+    name: `sprintengine-${id}`,
+    host: { kind: 'local' },
+    hostLabel: 'this Mac',
+    status: 'Up 3 minutes',
+    repo: null,
+    ...(oneUser ? { oneUser: true } : {}),
+  })
+  listed = [row('0123456789abcdef', true), row('fedcba9876543210', false)]
+  act(() => root.render(<ContainersSection api={api as never} />))
+  await flush()
+  const rows = [...host.querySelectorAll('li')].map((each) => each.textContent ?? '')
+  expect(rows.find((text) => text.includes('sprintengine-0123456789abcdef'))).toContain(
+    'Made before Studio ran its server and the agent as separate users',
+  )
+  expect(rows.find((text) => text.includes('sprintengine-fedcba9876543210'))).not.toContain('separate users')
+})

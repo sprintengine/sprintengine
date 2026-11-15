@@ -104,6 +104,7 @@ export async function ensureResumableTranscript(
   cwd: string,
   sessionId: string,
   clock: () => number = Date.now,
+  options: { repair?: boolean } = {},
 ): Promise<TranscriptCheck> {
   try {
     const path = await findTranscript(configDir, cwd, sessionId)
@@ -140,6 +141,10 @@ export async function ensureResumableTranscript(
       previous = row.uuid
     })
     if (links === 0) return { kind: 'ok', savedCostUsd }
+    // A server whose agents run as another user does not write into the
+    // agent's files (agent-user.ts): a name beside the transcript may be a
+    // link the agent put there. The CLI resumes from the file as it is.
+    if (options.repair === false) return { kind: 'ok', savedCostUsd }
     const backupPath = `${path}.before-repair-${clock()}`
     await copyFile(path, backupPath)
     const temp = `${path}.repair-${clock()}.tmp`

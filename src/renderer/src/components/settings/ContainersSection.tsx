@@ -6,6 +6,10 @@ import { showToast } from '../../store/toastStore'
 import { ContainerGlyph, InlineNotice, Input, OutlineButton, ProviderRow } from '../ui'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 
+/** What a container made before the server and the agent were separate users says (docs/design/container-chats.md). */
+const ONE_USER_WORDS =
+  'Made before Studio ran its server and the agent as separate users: here they share one, so the agent can reach its Studio server. Remove it and start the chat in a new container to separate them.'
+
 // Settings › Machines › Containers (docs/design/container-chats.md): every
 // container Studio made for a chat, on every machine it made one on, so none
 // is left running unseen. A chat's container is removed with the chat; here
@@ -125,7 +129,7 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
                   container.id && container.pendingRemoval
                     ? `Its chat was deleted; removing it is waiting. ${container.pendingRemoval}`
                     : container.id
-                      ? `${container.status}${container.repo ? ` · branch ${container.repo.branch} from ${container.repo.source}` : ''}`
+                      ? `${container.status}${container.repo ? ` · branch ${container.repo.branch} from ${container.repo.source}` : ''}${container.oneUser ? `. ${ONE_USER_WORDS}` : ''}`
                       : `${container.status}. Studio has no record of this one: its chat is gone.`
                 }
                 actions={

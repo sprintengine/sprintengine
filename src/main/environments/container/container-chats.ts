@@ -193,6 +193,7 @@ export class ContainerChats {
         repo: null,
         createdAt: this.deps.now?.() ?? Date.now(),
         provisioning: true,
+        separateUsers: true,
       }
       this.deps.machines.addContainer({
         id,
@@ -360,6 +361,7 @@ export class ContainerChats {
             preparing ?? (entry.container!.provisioning ? `Being made, or cut short while it was. ${docker}` : docker),
           repo: entry.container!.repo,
           pendingRemoval: entry.container!.pendingRemoval ?? null,
+          ...(entry.container!.separateUsers ? {} : { oneUser: true }),
         })
       }
       for (const found of listed ?? []) {

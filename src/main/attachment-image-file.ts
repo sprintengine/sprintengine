@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { chmod, lstat, mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { tmpdir } from 'os'
+import { agentReadableDirMode, agentReadableFileMode, agentSharedFolder, shareDirectoryWithAgent } from './agent-user'
 
 // Where an image that exists only as bytes becomes a file on disk. Two callers
 // want the same thing: the composer, which attaches a pasted or dropped image
@@ -65,6 +66,9 @@ const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[
  * named for them; macOS and Windows already give each user a temp folder.
  */
 export function attachmentImagesRoot(platform: NodeJS.Platform = process.platform): string {
+  // A server whose agents run as another user keeps them where the agent's group may read them.
+  const shared = agentSharedFolder('images')
+  if (shared) return shared
   const uid = process.getuid?.()
   return platform === 'linux' && uid !== undefined
     ? join(tmpdir(), `sprintengine-images-${uid}`)
@@ -75,13 +79,13 @@ export function attachmentImagesRoot(platform: NodeJS.Platform = process.platfor
 // first, or a link standing in its place, is not used.
 async function privateImagesRoot(): Promise<string> {
   const root = attachmentImagesRoot()
-  await mkdir(root, { recursive: true, mode: 0o700 })
+  await mkdir(root, { recursive: true, mode: agentReadableDirMode() })
   if (process.platform === 'win32') return root
   const info = await lstat(root)
   const uid = process.getuid?.()
   if (!info.isDirectory() || info.isSymbolicLink() || (uid !== undefined && info.uid !== uid))
     throw new Error('Studio’s folder for images is not this user’s own, so the image was not saved.')
-  if ((info.mode & 0o077) !== 0) await chmod(root, 0o700)
+  if ((info.mode & 0o777) !== agentReadableDirMode()) await chmod(root, agentReadableDirMode())
   return root
 }
 
@@ -93,8 +97,9 @@ export async function writeAttachmentImageFile(input: AttachmentImageInput, fall
   // A fresh folder of this user's own (`mkdtemp` makes it 0700), and the
   // file readable by this user only.
   const directory = await mkdtemp(join(await privateImagesRoot(), 'image-'))
+  await shareDirectoryWithAgent(directory)
   const filePath = join(directory, safeImageFileName(input.name, fallbackStem, extension))
-  await writeFile(filePath, bytes, { flag: 'wx', mode: 0o600 })
+  await writeFile(filePath, bytes, { flag: 'wx', mode: agentReadableFileMode() })
   return filePath
 }
 

@@ -112,3 +112,23 @@ test('pair and mcp-token say why they cannot reach the server, and name one runn
     /studio-server pair asks the server's web listener/u,
   )
 })
+
+test("start --detach takes the agent's uid and gid together, never root's, and nothing else does", () => {
+  const started = parseServerArgs(
+    ['start', '--detach', '--data-dir', '/root/data', '--agent-uid=1000', '--agent-gid=1000'],
+    {},
+  )
+  assert.ok(started.kind === 'start-detached')
+  assert.deepEqual(started.kind === 'start-detached' && started.agentUser, { uid: 1000, gid: 1000 })
+  const plain = parseServerArgs(['start', '--detach', '--data-dir', '/root/data'], {})
+  assert.equal(plain.kind === 'start-detached' && plain.agentUser, null)
+  for (const extra of [['--agent-uid=1000'], ['--agent-uid=0', '--agent-gid=0'], ['--agent-uid=node', '--agent-gid=1']])
+    assert.throws(
+      () => parseServerArgs(['start', '--detach', '--data-dir', '/root/data', ...extra], {}),
+      /go together/u,
+    )
+  assert.throws(
+    () => parseServerArgs(['serve', '--agent-uid=1000', '--agent-gid=1000'], {}),
+    /goes with start --detach/u,
+  )
+})

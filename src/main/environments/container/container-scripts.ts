@@ -21,6 +21,25 @@ export const CONTAINER_USER = 'node'
 export const CONTAINER_HOME = '/home/node'
 /** Where a chat's repository is copied to inside its container. */
 export const CONTAINER_WORK = '/home/node/work'
+/**
+ * The agent's user and group by number, which Studio's server inside starts
+ * every program as (`--agent-uid`, `--agent-gid`): the image's `node` user.
+ */
+export const CONTAINER_AGENT_IDS = { uid: 1000, gid: 1000 } as const
+/**
+ * Where Studio's server is installed in a container whose server and agent
+ * are separate users: owned by root and readable by all, so the agent can run
+ * the MCP bridge from it and cannot change it. Its data stays in root's own
+ * home, which the agent cannot enter.
+ */
+export const CONTAINER_SERVER_INSTALL_DIR = '/opt/sprintengine-studio'
+/**
+ * The capabilities the server needs to start each program as the agent's
+ * user (SETUID, SETGID) and to stop it (KILL); every other one is dropped,
+ * and none can be gained (`no-new-privileges`). A process of the agent's user
+ * holds none of them.
+ */
+export const CONTAINER_SERVER_CAPABILITIES = ['SETUID', 'SETGID', 'KILL'] as const
 
 function checkName(name: string): string {
   if (!CONTAINER_NAME.test(name)) throw new Error(`Not a container name Studio made: ${name}`)
@@ -150,8 +169,10 @@ export function buildImageScript(image: string, dockerfile: string, context: str
 
 /**
  * Start a chat's container: idle, labelled as Studio's, on Docker's default
- * (full) network, with every Linux capability dropped and no way to gain one
- * through a setuid program: nothing in it runs as root.
+ * (full) network, with every Linux capability dropped but the three Studio's
+ * server needs to start its programs as the agent's user, and no way to gain
+ * one through a setuid program. Only the server, run as root, holds those
+ * three; the agent's processes hold none.
  */
 export function runContainerScript(input: {
   name: string
@@ -169,22 +190,26 @@ export function runContainerScript(input: {
     `--label ${CONTAINER_MACHINE_LABEL}=${input.machineId}`,
     '--init',
     '--cap-drop ALL',
+    ...CONTAINER_SERVER_CAPABILITIES.map((capability) => `--cap-add ${capability}`),
     '--security-opt no-new-privileges',
     checkImage(input.image),
   ].join(' ')
 }
 
-/**
- * The container's exec channel, in place of an SSH machine's `sh -s`: started
- * again if Docker stopped it (a restart, Colima stopped overnight), then a
- * shell inside it, as the image's user, reading Studio's script from stdin.
- */
 /** The line the exec channel prints just before it becomes the container's shell (see `hostRunner`'s `holdUntil`). */
 export const EXEC_READY_MARKER = '@@CONTAINER_EXEC'
 
+/**
+ * The container's exec channel, in place of an SSH machine's `sh -s`: started
+ * again if Docker stopped it (a restart, Colima stopped overnight), then a
+ * shell inside it reading Studio's script from stdin. As root, in root's own
+ * home, for a container whose server and agent are separate users (its
+ * server's data is root's, and the server starts the agent as `node`); as
+ * the image's user for one made before they were (`separateUsers` unset).
+ */
 export function execSessionScript(
   name: string,
-  options: { passEnv?: readonly string[]; context?: string | null } = {},
+  options: { passEnv?: readonly string[]; context?: string | null; separateUsers?: boolean } = {},
 ): string {
   const checked = checkName(name)
   const docker = dockerCommand(options.context)
@@ -197,7 +222,9 @@ export function execSessionScript(
     `${docker} start ${checked} >/dev/null || exit 125`,
     // Nothing more is read by this shell: what follows on stdin is the container's.
     `echo ${EXEC_READY_MARKER}`,
-    `exec ${docker} exec -i -u ${CONTAINER_USER} -w ${CONTAINER_HOME} -e HOME=${CONTAINER_HOME}${pass.join('')} ${checked} sh -s`,
+    options.separateUsers
+      ? `exec ${docker} exec -i -u 0 -w /root -e HOME=/root${pass.join('')} ${checked} sh -s`
+      : `exec ${docker} exec -i -u ${CONTAINER_USER} -w ${CONTAINER_HOME} -e HOME=${CONTAINER_HOME}${pass.join('')} ${checked} sh -s`,
   ].join('\n')
 }
 
@@ -284,6 +311,9 @@ export function copyRepoInScript(input: {
   // email: on stdin, never in a command line), then the bundle.
   const inside = [
     'set -e',
+    // The agent's and its server's shared group may read and write the copy
+    // (the server's file explorer writes into it); nobody else may.
+    'umask 007',
     'IFS= read -r url',
     'IFS= read -r who',
     'IFS= read -r mail',

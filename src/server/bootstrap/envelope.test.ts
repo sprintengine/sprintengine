@@ -171,3 +171,18 @@ test('a front door is opened only by a headless server with an owner token hash 
   refused({ wsl: { distro: 'Ubuntu' } }, /profile id/u)
   refused({ wsl: { distro: 'Ubuntu', profile: '../x' } }, /profile id/u)
 })
+
+test("a headless server alone runs its agents as another user, named by a uid and gid that are never root's", () => {
+  const headless = { role: 'headless', secrets: { kind: 'key-file' } }
+  assert.equal(parseServerBootstrapEnvelope(envelope({ ...headless, agentUser: { uid: 1000, gid: 1000 } })).ok, true)
+  for (const [name, value, reason] of [
+    ['root', envelope({ ...headless, agentUser: { uid: 0, gid: 0 } }), /uid and gid above 0/],
+    ['no gid', envelope({ ...headless, agentUser: { uid: 1000 } }), /uid and gid above 0/],
+    ['a name', envelope({ ...headless, agentUser: { uid: 'node', gid: 1000 } }), /uid and gid above 0/],
+    ['the desktop', envelope({ agentUser: { uid: 1000, gid: 1000 } }), /only a headless server/],
+  ] as const) {
+    const parsed = parseServerBootstrapEnvelope(value)
+    assert.equal(parsed.ok, false, name)
+    assert.match(parsed.ok ? '' : parsed.message, reason, name)
+  }
+})

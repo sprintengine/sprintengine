@@ -15,6 +15,7 @@
 //     what it had.
 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { shareDirectoryWithAgent } from '../agent-user'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -204,6 +205,8 @@ export async function generateHeadlessText(
   if (!binaryPath.ok) return binaryPath
   if (request.signal?.aborted) return { ok: false, code: 'cancelled', message: `${cli} was stopped.` }
   const scratch = await mkdtemp(path.join(deps.scratchRoot ?? tmpdir(), SCRATCH_PREFIX))
+  // The CLI works in it, as the agent's user when agents run as another user.
+  await shareDirectoryWithAgent(scratch, { write: true })
   try {
     const env = engineEnv(cli, deps.env)
     const run = deps.run ?? runCommand
@@ -292,6 +295,8 @@ async function runStructuredJob<T>(
   if (job.signal?.aborted) return { ok: false, code: 'cancelled', message: `${engine.cli} was stopped.` }
 
   const scratch = await mkdtemp(path.join(deps.scratchRoot ?? tmpdir(), SCRATCH_PREFIX))
+  // The CLI works in it, as the agent's user when agents run as another user.
+  await shareDirectoryWithAgent(scratch, { write: true })
   try {
     const deadline = callDeadline(startedAt, job.timeoutMs, now)
     let listed = false

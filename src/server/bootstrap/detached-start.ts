@@ -71,6 +71,8 @@ export type DetachedStartOptions = {
   startedBy: string
   replace: boolean
   channel: 'latest' | 'nightly'
+  /** Every program the server starts runs as this user and group (a chat's container); null for the server's own. */
+  agentUser?: { uid: number; gid: number } | null
   /** This bundle: the server's entry, the Node it runs on, and the tree it sits in. */
   entry: string
   execPath: string
@@ -201,6 +203,7 @@ function envelopeFor(options: DetachedStartOptions, tree: ServerTree, tokenHash:
     secrets: { kind: 'key-file' },
     flags: {},
     detached: { idleMs: options.idleMs, origin: 'bootstrap', startedBy: options.startedBy },
+    ...(options.agentUser ? { agentUser: options.agentUser } : {}),
   }
 }
 

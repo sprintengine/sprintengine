@@ -17,6 +17,7 @@ import type { TailnetApprovePairRequestResult } from './tailnet/tailnet-service'
 import type { TailnetPeerScan } from '../../shared/tailnet-peers'
 import { readAutomationSettings, writeAutomationSettings } from './automation-settings'
 import { createGatewayAuditStore, isAuditedCall, type GatewayAuditStore } from './gateway-audit'
+import { agentGatewayDirectory, agentReadableFileMode, agentUser } from '../agent-user'
 import { createMcpSocketServer, type McpSocketServerOptions } from './mcp-socket-server'
 import { createMcpHttpServer, MCP_HTTP_PATH, type McpHttpServer } from './mcp-http-server'
 import { createMcpHttpTokenStore, MCP_HTTP_FILE, type McpHttpTokenStore } from './mcp-http-tokens'
@@ -270,11 +271,15 @@ export function createAutomationService(options: AutomationServiceOptions) {
 
   async function startServer(): Promise<void> {
     if (server?.isRunning()) return
-    const userDataDir = options.resolveUserDataDir()
+    // Where agents find the gateway: the data directory, or, for a server
+    // whose agents run as another user, a directory of its own they can
+    // enter (the data directory is the server's alone).
+    const userDataDir = agentGatewayDirectory(options.resolveUserDataDir())
     socketPath = resolveSocketPath(userDataDir)
     const audit = auditStore()
     const next = createMcpSocketServer({
       socketPath,
+      socketMode: agentUser() ? 0o660 : 0o600,
       serverName: STUDIO_MCP_SERVER_ID,
       serverVersion: options.appVersion,
       resolveTools: options.resolveGatewayTools,
@@ -395,7 +400,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
         warn('Automation server stop failed', lastError)
       }
     }
-    removeServerInfo(options.resolveUserDataDir())
+    removeServerInfo(agentGatewayDirectory(options.resolveUserDataDir()))
   }
 
   async function shutdown(): Promise<void> {
@@ -533,8 +538,8 @@ function writeServerInfo(userDataDir: string, socketPath: string, appVersion: st
   // Canonical discovery plus the legacy filename for existing bridge clients.
   for (const filename of [STUDIO_MCP_SERVER_INFO_FILENAME, AUTOMATION_SERVER_INFO_FILENAME]) {
     const path = join(userDataDir, filename)
-    writeFileSync(path, body, { mode: 0o600 })
-    if (process.platform !== 'win32') chmodSync(path, 0o600)
+    writeFileSync(path, body, { mode: agentReadableFileMode() })
+    if (process.platform !== 'win32') chmodSync(path, agentReadableFileMode())
   }
 }
 

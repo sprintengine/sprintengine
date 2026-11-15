@@ -1,5 +1,6 @@
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 
+import { becomeAgentServer, lookUpAgentUser } from '../../main/agent-user'
 import { ServerBootstrapError, readEnvelope, type ServerControlChannel } from './control-channel'
 import { createControlRpc, type ControlRpc } from './control-rpc'
 import {
@@ -115,6 +116,21 @@ export async function serveOnChannel(channel: ServerControlChannel, options: Ser
       `[build-skew] The shell was built from ${envelope.app.buildStamp.slice(0, 7)} and this server from ` +
         `${options.buildStamp.slice(0, 7)}. Rebuild so both come from one commit.`,
     )
+  }
+
+  if (envelope.agentUser) {
+    // Before anything is started: from here every program this server starts
+    // is the agent's (agent-user.ts says why).
+    try {
+      becomeAgentServer(lookUpAgentUser(envelope.agentUser.uid, envelope.agentUser.gid), {
+        dataDir: envelope.dataDir,
+      })
+    } catch (error) {
+      return fatal(
+        SERVER_EXIT.usage,
+        `This server could not run its agents as user ${envelope.agentUser.uid}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
 
   let state: ServerState = 'starting'

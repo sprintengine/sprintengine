@@ -24,13 +24,22 @@ RUN apt-get -o Acquire::Retries=3 update \
 # container that is kept between chats.
 ENV DISABLE_AUTOUPDATER=1
 
-# Agents run as the image's own unprivileged user (Claude Code refuses to skip
-# its permission prompts as root). Its first-run questions are answered once
-# here, so a chat does not stop on them; the file holds no credential.
+# Agents run as the image's own unprivileged user, `node` (Claude Code refuses
+# to skip its permission prompts as root). Studio's server runs as root beside
+# them, with only the capabilities to start a process as `node` and its data
+# in root's own home, which `node` cannot enter; it starts every agent, and
+# every other program, as `node` (docs/design/container-chats.md, "Two
+# users"). The agent's home is shared with the server through `node`'s group,
+# the server's group too, and with nobody else: the server reads the agent's
+# sessions there and writes what a person saves in the repository.
+# The CLIs' first-run questions are answered once here, so a chat does not
+# stop on them; the file holds no credential.
 USER node
 WORKDIR /home/node
 RUN mkdir -p /home/node/work /home/node/.claude \
- && printf '{"hasCompletedOnboarding":true,"bypassPermissionsModeAccepted":true}\n' > /home/node/.claude.json
+ && printf '{"hasCompletedOnboarding":true,"bypassPermissionsModeAccepted":true}\n' > /home/node/.claude.json \
+ && chmod 770 /home/node /home/node/work /home/node/.claude \
+ && chmod 660 /home/node/.claude.json
 
 # The container idles; Studio's server is started in it over `docker exec`.
 CMD ["sleep", "infinity"]

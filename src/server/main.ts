@@ -142,6 +142,10 @@ Usage: studio-server start --detach --data-dir <dir> [options]
   --started-by-b64 <label>   Who started it, base64url, for Settings ("Studio on dev-macbook-air")
   --replace                  Drain and stop a running server first (an upgrade)
   --channel <latest|nightly> The release channel of the client that starts it
+  --agent-uid <n> --agent-gid <n>
+                             Start every program as this user and group, never as the server
+                             (a chat's container, where the server runs as root with only the
+                             capabilities to do so)
 `
 
 /** How long a managed server on an SSH machine waits with no client and no work (phase 8 spec, 6.4). */
@@ -193,6 +197,7 @@ type Command =
       startedBy: string
       replace: boolean
       channel: 'latest' | 'nightly'
+      agentUser: { uid: number; gid: number } | null
     }
   | { kind: 'serve'; options: StudioServerOptions; stdio: boolean }
   | { kind: 'triage'; agent: TriageAgent; print: boolean; logsDir: string | null; serverLogsDir: string }
@@ -233,6 +238,8 @@ export function parseServerArgs(argv: string[], env = process.env): Command {
       'started-by-b64': { type: 'string' },
       replace: { type: 'boolean' },
       channel: { type: 'string' },
+      'agent-uid': { type: 'string' },
+      'agent-gid': { type: 'string' },
       version: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
       web: { type: 'boolean' },
@@ -263,7 +270,16 @@ export function parseServerArgs(argv: string[], env = process.env): Command {
   }
   const [command = 'serve', ...rest] = positionals
   if (command === 'start' && rest.length === 0) return parseDetachedStart(values)
-  for (const name of ['detach', 'idle-ms', 'keep-running', 'started-by-b64', 'replace', 'channel'] as const) {
+  for (const name of [
+    'detach',
+    'idle-ms',
+    'keep-running',
+    'started-by-b64',
+    'replace',
+    'channel',
+    'agent-uid',
+    'agent-gid',
+  ] as const) {
     if (values[name] !== undefined) throw new Error(`--${name} goes with start --detach.`)
   }
   if (command === 'triage' && rest.length === 0) return parseTriage(values, env)
@@ -554,6 +570,7 @@ function parseDetachedStart(values: Record<string, string | boolean | string[] |
     throw new Error('--started-by-b64 must be base64url.')
   const channel = values.channel ?? 'latest'
   if (channel !== 'latest' && channel !== 'nightly') throw new Error('--channel is latest or nightly.')
+  const agentUser = parseAgentIds(values['agent-uid'], values['agent-gid'])
   const resolved = resolve(dataDir)
   const logsDir =
     typeof values['logs-dir'] === 'string'
@@ -567,7 +584,18 @@ function parseDetachedStart(values: Record<string, string | boolean | string[] |
     startedBy: label ? Buffer.from(label, 'base64url').toString('utf8').slice(0, 200) : '',
     replace: values.replace === true,
     channel,
+    agentUser,
   }
+}
+
+/** `--agent-uid` and `--agent-gid`, both or neither: whole numbers above 0 (an agent never runs as root). */
+export function parseAgentIds(uid: unknown, gid: unknown): { uid: number; gid: number } | null {
+  if (uid === undefined && gid === undefined) return null
+  const read = (value: unknown) => (typeof value === 'string' && /^[1-9][0-9]{0,9}$/u.test(value) ? Number(value) : NaN)
+  const ids = { uid: read(uid), gid: read(gid) }
+  if (!(ids.uid > 0 && ids.uid < 2 ** 31) || !(ids.gid > 0 && ids.gid < 2 ** 31))
+    throw new Error('--agent-uid and --agent-gid go together, each a whole number above 0.')
+  return ids
 }
 
 function say(message: string): void {

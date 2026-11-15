@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import {
   CONVERSATION_ATTACHMENTS_DIRECTORY,
+  conversationAttachmentsRoot,
   ConversationAttachmentStore,
   CONVERSATION_TOOL_IMAGES_DIRECTORY,
 } from '../../main/conversation-attachment-store'
@@ -76,9 +77,20 @@ export async function chatSourceFiles(input: {
     ['images', CONVERSATION_TOOL_IMAGES_DIRECTORY],
     ['plans', CONVERSATION_PLANS_DIRECTORY],
   ] as const)
-    for (const name of await files(join(input.dataDir, directory, folder)))
+    for (const name of await files(join(placeRoot(input.dataDir, directory), folder)))
       // Only a name the machine keeps (environment-chat-files.ts): one it would refuse would refuse the chat.
       if (FOLDER_FILE.test(name))
-        found.push({ place, path: `${folder}/${name}`, source: join(input.dataDir, directory, folder, name) })
+        found.push({
+          place,
+          path: `${folder}/${name}`,
+          source: join(placeRoot(input.dataDir, directory), folder, name),
+        })
   return found
+}
+
+/** Where one of those folders is for a data directory: sent pictures may be kept apart from it (conversationAttachmentsRoot). */
+function placeRoot(dataDir: string, directory: string): string {
+  return directory === CONVERSATION_ATTACHMENTS_DIRECTORY
+    ? conversationAttachmentsRoot(dataDir)
+    : join(dataDir, directory)
 }

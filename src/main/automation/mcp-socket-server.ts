@@ -51,6 +51,11 @@ export type { McpConnectionContext, McpConnectionMetadata, McpToolRegistration, 
 
 export type McpSocketServerOptions = {
   socketPath: string
+  /**
+   * The socket file's mode: the owner's alone (0600) unless the server runs
+   * its agents as another user, whose group must reach it (agent-user.ts).
+   */
+  socketMode?: number
   serverName: string
   serverVersion: string
   /**
@@ -125,7 +130,10 @@ export function createMcpSocketServer(options: McpSocketServerOptions): McpSocke
     })
     if (process.platform !== 'win32') {
       // Owner-only access; the socket is the entire authentication model.
-      chmodSync(options.socketPath, 0o600)
+      // A server whose agents run as another user lets their group in too:
+      // the agents are who it serves, and what they reach is what an agent
+      // of the server's own user reaches.
+      chmodSync(options.socketPath, options.socketMode ?? 0o600)
     }
     next.on('error', (error) => options.log?.(`automation socket server error: ${error.message}`))
     server = next

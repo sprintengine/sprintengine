@@ -14,6 +14,7 @@ import type {
   WorkspaceFolderCheckResult,
 } from '../../../packages/studio-protocol/src/public'
 import { writeAttachmentImageFile } from '../../main/attachment-image-file'
+import { assertAgentTerritory } from '../../main/agent-user'
 import { copyConfined, moveConfined, realFolderPath, writeConfinedFile } from '../../main/confined-file'
 import { resolveEditorSaveTarget } from '../../main/editor-save-target'
 import { getUniqueCopyPath } from '../../main/filesystem-copy'
@@ -187,16 +188,21 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
     // saved for the owner, who may name any file anyway; a client held to
     // known folders is refused it, as the second name may be outside them.
     async writeText(path, text, roots, owner) {
-      await writeConfinedFile(await resolveEditorSaveTarget(path, roots), text, owner ? { hardLinks: 'allow' } : {})
+      const target = await resolveEditorSaveTarget(path, roots)
+      assertAgentTerritory(dirname(target))
+      await writeConfinedFile(target, text, owner ? { hardLinks: 'allow' } : {})
     },
     saveDroppedImage: (input) => writeAttachmentImageFile(input, 'pasted'),
     async createFile(parentPath, name) {
       const entryName = normalizeEntryName(name)
-      await writeConfinedFile(join(await realpath(parentPath), entryName), '', { exclusive: true })
+      const parent = await realpath(parentPath)
+      assertAgentTerritory(parent)
+      await writeConfinedFile(join(parent, entryName), '', { exclusive: true })
       return join(parentPath, entryName)
     },
     async createDirectory(parentPath, name, existing) {
       const dirPath = join(parentPath, normalizeEntryName(name))
+      assertAgentTerritory(await realpath(parentPath))
       await mkdir(dirPath, existing === 'keep' ? { recursive: true } : {})
       return dirPath
     },
@@ -211,6 +217,7 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
       if (targetPath === sourcePath) return targetPath
       if (await pathExists(targetPath)) throw new Error(`A file or folder named "${name}" already exists.`)
       const from = owner ? await realFolderPath(sourcePath) : sourcePath
+      assertAgentTerritory(await realpath(dirname(from)))
       await moveConfined(from, join(dirname(from), name))
       return targetPath
     },
@@ -219,6 +226,7 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
       const from = owner ? await realFolderPath(sourcePath) : sourcePath
       const into = owner ? await realpath(toFolder) : toFolder
       const hardLinks = owner ? 'allow' : 'refuse'
+      assertAgentTerritory(await realpath(into))
       // A folder copied into itself would copy its own copy without end, and a
       // file or folder copied over itself would be emptied before it is read.
       if (isInsideOrEqual(into, from) || join(into, sourceName) === from)
@@ -243,6 +251,8 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
       if (await pathExists(destinationPath)) throw new Error(`A file or folder named "${sourceName}" already exists.`)
       const from = owner ? await realFolderPath(sourcePath) : sourcePath
       const into = owner ? await realpath(toFolder) : toFolder
+      assertAgentTerritory(await realpath(dirname(from)))
+      assertAgentTerritory(await realpath(into))
       await moveConfined(from, join(into, sourceName))
       return destinationPath
     },

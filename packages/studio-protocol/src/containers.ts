@@ -120,6 +120,12 @@ export type ContainerSummary = {
   repo: ContainerRepo | null
   /** Its chat was deleted and removing it is still to be done: why the last try did not. */
   pendingRemoval?: string | null
+  /**
+   * Made before Studio ran a container's server and its agent as separate
+   * users: both run as one user in it (docs/design/container-chats.md, "Two
+   * users"). Absent from a Studio that predates the field.
+   */
+  oneUser?: boolean
 }
 
 /** Whether Claude Code's token for containers is kept, and how: sealed on disk, or for this session only. */

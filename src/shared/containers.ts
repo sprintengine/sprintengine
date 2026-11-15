@@ -55,6 +55,14 @@ export type SavedContainer = {
    * Tried again until it goes.
    */
   pendingRemoval?: string | null
+  /**
+   * Its Studio server runs as root with only the capabilities to start a
+   * process as another user, and every agent (and every program the server
+   * starts) as the image's `node` user, which cannot reach the server's data
+   * (docs/design/container-chats.md, "Two users"). Unset on a container made
+   * before that: there both run as `node`, and Settings says so.
+   */
+  separateUsers?: true
   /** The image it was started from. */
   image: string
   network: ContainerNetwork

@@ -124,6 +124,13 @@ export type ServerBootstrapEnvelope = {
     /** The client that started it, as "Studio on dev-macbook-air", for Settings. */
     startedBy: string
   }
+  /**
+   * Set for a server in a chat's container (docs/design/container-chats.md,
+   * "Two users"): it runs as root with only the capabilities to start a
+   * process as someone else, and every program it starts runs as this user
+   * and group (the agent's), never as the server.
+   */
+  agentUser?: { uid: number; gid: number }
   /** `SPRINTENGINE_*` switches the server would otherwise read from its own environment. */
   flags: Record<string, boolean>
 }
@@ -275,6 +282,12 @@ export function parseServerBootstrapEnvelope(value: unknown): EnvelopeParseResul
     if (typeof detached.startedBy !== 'string' || detached.startedBy.length > 200)
       return fail('detached.startedBy must be a short label.')
   }
+  if (value.agentUser !== undefined) {
+    const agent = value.agentUser
+    if (!isRecord(agent) || !isAgentId(agent.uid) || !isAgentId(agent.gid))
+      return fail('agentUser must name a uid and gid above 0.')
+    if (value.role !== 'headless') return fail('only a headless server runs its agents as another user.')
+  }
   if (value.wsl !== undefined) {
     if (!isRecord(value.wsl) || typeof value.wsl.distro !== 'string' || !/^[A-Za-z0-9._-]+$/u.test(value.wsl.distro))
       return fail('wsl.distro is not a distribution name.')
@@ -293,6 +306,10 @@ export function parseServerBootstrapEnvelope(value: unknown): EnvelopeParseResul
     return fail('flags must map names to true or false.')
   }
   return { ok: true, envelope: value as unknown as ServerBootstrapEnvelope }
+}
+
+function isAgentId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value < 2 ** 31
 }
 
 function absolutePath(value: unknown): value is string {

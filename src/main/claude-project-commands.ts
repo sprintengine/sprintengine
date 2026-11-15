@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
+import { agentSharedFolder, shareTreeWithAgent } from './agent-user'
 import { privateDirectory } from './private-socket-dir'
 
 /**
@@ -30,6 +31,10 @@ export const PROJECT_COMMANDS_PLUGIN = 'project'
  * uses. Attached skills and project commands share it.
  */
 export function stagedPluginsDirectory(tempDir: string): string {
+  // A server whose agents run as another user stages them where the agent's
+  // group may read them (agent-user.ts); the folder is still the server's.
+  const shared = agentSharedFolder('claude-plugins')
+  if (shared) return shared
   return privateDirectory(tempDir, `sprintengine-claude-plugins-${process.getuid?.() ?? 0}`)
 }
 
@@ -213,6 +218,7 @@ export async function writeProjectCommandsPlugin(dir: string, files: readonly Pr
     if (folders.length) await mkdir(join(commands, ...folders), { recursive: true })
     await writeFile(join(commands, ...folders, `${file.segments.at(-1)}.md`), file.text)
   }
+  await shareTreeWithAgent(dir)
 }
 
 export type StagedProjectCommands = { dir: string; fingerprint: string }

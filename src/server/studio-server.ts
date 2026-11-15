@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 
+import { agentGatewayDirectory } from '../main/agent-user'
 import type { DistributionTerminalHost } from './wsl/distribution-terminal-host'
 import type { DistributionMachine } from './wsl/distribution-machine'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
@@ -252,7 +253,9 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
           command: process.execPath,
           args: [studioBridgeScriptPath(platform.paths)],
           env: {
-            SPRINTENGINE_USER_DATA_DIR: platform.paths.dataDir(),
+            // Where the gateway's socket is named: the data directory, or the
+            // agents' own beside it when they run as another user.
+            SPRINTENGINE_USER_DATA_DIR: agentGatewayDirectory(platform.paths.dataDir()),
             ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
           },
         }

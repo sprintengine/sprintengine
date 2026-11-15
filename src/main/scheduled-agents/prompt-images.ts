@@ -3,6 +3,7 @@ import { copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat, utimes, wr
 import { join, sep } from 'node:path'
 
 import { quotePromptPath } from '../../shared/prompt-path'
+import { agentFacingDirectory, agentReadableDirMode, agentReadableFileMode } from '../agent-user'
 import { attachmentImagesRoot } from '../attachment-image-file'
 
 // The images a scheduled agent's prompt names. The launcher attaches a pasted
@@ -41,7 +42,7 @@ export function createScheduledPromptImages(options: {
   tempRoot?: string
   now?: () => number
 }): ScheduledPromptImages {
-  const root = join(options.dataDir, SCHEDULED_IMAGES_DIRNAME)
+  const root = agentFacingDirectory(options.dataDir, SCHEDULED_IMAGES_DIRNAME)
   const tempRoot = options.tempRoot ?? attachmentImagesRoot()
   const now = options.now ?? Date.now
 
@@ -73,7 +74,7 @@ export function createScheduledPromptImages(options: {
       const bytes = await readFile(path)
       const folder = join(root, imageFolderOf(bytes))
       const name = path.slice(path.lastIndexOf(sep) + 1)
-      await mkdir(folder, { recursive: true, mode: 0o700 })
+      await mkdir(folder, { recursive: true, mode: agentReadableDirMode() })
       const kept = join(folder, name)
       await copyFile(path, kept)
       // Fresh again, so a prune racing this save leaves it (see the header).
@@ -161,11 +162,11 @@ export async function keptImagesIn(
 /** Keep an image a handed-over schedule's prompt names, as `keep` keeps a pasted one; answers where. */
 export async function keepScheduledImage(dataDir: string, bytes: Buffer, name: string): Promise<string> {
   const safe = name.replace(/[\\/]/gu, '_').replace(/^\.+/u, '_').slice(0, 200) || 'picture'
-  const folder = join(dataDir, SCHEDULED_IMAGES_DIRNAME, imageFolderOf(bytes))
-  await mkdir(folder, { recursive: true, mode: 0o700 })
+  const folder = join(agentFacingDirectory(dataDir, SCHEDULED_IMAGES_DIRNAME), imageFolderOf(bytes))
+  await mkdir(folder, { recursive: true, mode: agentReadableDirMode() })
   const kept = join(folder, safe)
   const staged = `${kept}.${process.pid}.tmp`
-  await writeFile(staged, bytes, { mode: 0o600 })
+  await writeFile(staged, bytes, { mode: agentReadableFileMode() })
   await rename(staged, kept)
   return kept
 }

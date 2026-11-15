@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { agentUser } from '../../main/agent-user'
 import { readFile, readdir, readlink } from 'node:fs/promises'
 
 // The ports a preview may offer without the person typing one (phase 9 spec,
@@ -87,7 +88,7 @@ export function parseProcNetTcp(table: string): Map<string, number> {
   return listening
 }
 
-type ProcReaders = {
+export type ProcReaders = {
   read: (path: string) => Promise<string>
   list: (path: string) => Promise<string[]>
   link: (path: string) => Promise<string>
@@ -174,11 +175,39 @@ async function listLinux(input: ListAgentListenersInput): Promise<AgentListener[
   const own = new Set(input.ownPorts)
   const ownFree = new Map([...sockets].filter(([, port]) => !own.has(port)))
   const found: AgentListener[] = []
-  for (const { pid, port } of await socketHolders(agents, ownFree, readers)) {
+  // A server whose agents run as another user may not read their open files
+  // (`/proc/<pid>/fd` is theirs alone); a shell of the agent's reads them
+  // instead (agent-user.ts starts it as the agent).
+  const holders = agentUser() && !input.readdir ? await agentFdReaders(agents, input.exec ?? defaultExec) : readers
+  for (const { pid, port } of await socketHolders(agents, ownFree, holders)) {
     const cmdline = await read(`/proc/${pid}/cmdline`).catch(() => '')
     found.push({ port, pid, command: cmdline.split('\0').join(' ').trim().slice(0, COMMAND_CHARS) })
   }
   return found.sort((a, b) => a.port - b.port)
+}
+
+/** Each of `pids`' open files, as a process of the agent's user reads them: `/proc/<pid>/fd/<n>` → what it is. */
+export async function agentFdReaders(
+  pids: Iterable<number>,
+  exec: (file: string, args: string[]) => Promise<string>,
+): Promise<ProcReaders> {
+  const listed = [...pids].filter((pid) => Number.isInteger(pid) && pid > 0).map(String)
+  const links = new Map<string, string>()
+  if (listed.length > 0) {
+    const script =
+      'for p do for f in /proc/"$p"/fd/*; do [ -e "$f" ] && printf "%s %s\\n" "$f" "$(readlink "$f")"; done; done'
+    const out = await exec('sh', ['-c', script, 'sh', ...listed]).catch(() => '')
+    for (const line of out.split('\n')) {
+      const at = line.indexOf(' ')
+      if (at > 0) links.set(line.slice(0, at), line.slice(at + 1))
+    }
+  }
+  return {
+    read: (path) => readFile(path, 'utf8'),
+    list: async (dir) =>
+      [...links.keys()].filter((path) => path.startsWith(`${dir}/`)).map((path) => path.slice(dir.length + 1)),
+    link: async (path) => links.get(path) ?? '',
+  }
 }
 
 /** `ps -A -o pid=,ppid=,comm=`: pid → ppid, and pid → command. */

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 
+import { agentUser } from '../../main/agent-user'
 import { createAgentControlPlane } from '../../main/agent-control-plane'
 import {
   createAgentLaunchNotices,
@@ -126,7 +127,10 @@ const log =
   }
 
 export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
-  if (!ptyAvailable()) return null
+  // A terminal is a native fork the agent-user hooks do not reach
+  // (agent-user.ts): a server whose agents run as another user, root itself,
+  // offers none rather than a root shell in the agent's repository.
+  if (!ptyAvailable() || agentUser()) return null
   const { workspaceRegistry, workspaceSyncService, agentLaunchSettings, conversations } = deps
   const host = deps.host ?? {}
   const dataDir = deps.platform.paths.dataDir()

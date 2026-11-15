@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { listAgentListeners, listProcListeners } from './preview-ports'
+import { agentFdReaders, listAgentListeners, listProcListeners } from './preview-ports'
 
 // A machine with the server (pid 100), an agent it spawned (200), the agent's
 // dev server (300), and an unrelated process (900) that also listens.
@@ -168,4 +168,18 @@ test('macos: no agents means lsof is not asked at all', async () => {
 
 test('another platform lists nothing', async () => {
   expect(await listAgentListeners({ rootPid: 100, ownPorts: [], platform: 'win32' })).toEqual([])
+})
+
+test("an agent of another user's open files are read by a shell of its own, one call for every pid", async () => {
+  const calls: string[][] = []
+  const readers = await agentFdReaders([300, 301], async (file, args) => {
+    calls.push([file, ...args])
+    return '/proc/300/fd/3 socket:[555]\n/proc/300/fd/4 /dev/null\n/proc/301/fd/0 pipe:[9]\n'
+  })
+  expect(calls).toHaveLength(1)
+  expect(calls[0]?.slice(0, 2)).toEqual(['sh', '-c'])
+  expect(calls[0]?.slice(-2)).toEqual(['300', '301'])
+  expect(await readers.list('/proc/300/fd')).toEqual(['3', '4'])
+  expect(await readers.link('/proc/300/fd/3')).toBe('socket:[555]')
+  expect(await readers.link('/proc/302/fd/1')).toBe('')
 })
