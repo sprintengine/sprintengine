@@ -343,6 +343,11 @@ function openPullRequest(url: string): void {
   void window.api?.openExternal?.(url)
 }
 
+/** A pull request on its forge, in the system browser: what a row of the chat's card opens. */
+export function openPullRequestExternally(url: string): void {
+  openPullRequest(url)
+}
+
 function withPaneHint(copy: PullRequestCopy): PullRequestCopy {
   const hint = `Opens in the browser pane; ${window.api?.platform === 'darwin' ? '⌘' : 'Ctrl'}-click opens your browser.`
   return { ...copy, lines: [...copy.lines, hint], ariaLabel: `${copy.ariaLabel} ${hint}` }

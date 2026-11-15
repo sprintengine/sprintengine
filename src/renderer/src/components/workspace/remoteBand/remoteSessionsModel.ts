@@ -1,4 +1,5 @@
 import type { RepositoryIdentity } from '../../../../../shared/repository-identity'
+import type { StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import {
   isMeshConversationPane,
@@ -149,6 +150,12 @@ export type RemoteSessionRow = {
   branch: string | null
   /** The pull requests the chat opened, as its machine's record holds them, newest first. */
   pullRequests: BranchPullRequest[]
+  /** The model the chat runs on over there; absent or null from a machine that does not say. */
+  modelId?: string | null
+  /** The local servers its agents linked over there, as that machine last checked them. */
+  localServers?: StudioLocalServer[]
+  /** Background agents the chat still has out over there; absent or 0 for none. */
+  backgroundAgents?: number
   /** The files the chat's checkout carries over there; null from a machine that does not say, or a chat at rest. */
   changes: ConversationWireChanges | null
   /** The chat works in a worktree of its project over there. */
@@ -448,6 +455,16 @@ function remoteChatRowOf(
     replyPreview: conversation.lastAssistantText ?? null,
     branch: conversation.branch ?? null,
     pullRequests: branchPullRequestsOfWire(conversation.pullRequests ?? []),
+    modelId: conversation.modelId?.trim() || null,
+    // In the shape this computer's own record hands a list, under the chat's
+    // agent there; what a server needs to run again is that machine's.
+    localServers: (conversation.localServers ?? []).map((server) => ({
+      ...server,
+      agentId: conversation.agentId,
+      linkedAt: 0,
+      stateAt: 0,
+    })),
+    backgroundAgents: conversation.backgroundWork?.agents ?? 0,
     changes: conversation.changes ?? null,
     worktree: conversation.worktree === true,
     // A working chat counts from when its stretch of work began, the number
