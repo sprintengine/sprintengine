@@ -116,8 +116,7 @@ export function createStudioContainersHandlers(options: StudioContainersHandlerO
       command('containers.startDocker', commandId, asking, (domain) => domain.startDocker(host)),
     'containers.create': ({ commandId, host, folder, label, image }, asking) =>
       command('containers.create', commandId, asking, (domain) => domain.create({ host, folder, label, image })),
-    'containers.list': () =>
-      read('containers.list', async (domain) => ({ containers: await domain.list() })),
+    'containers.list': () => read('containers.list', async (domain) => ({ containers: await domain.list() })),
     'containers.push': ({ commandId, id }, asking) =>
       command('containers.push', commandId, asking, (domain) => domain.push(id)),
     'containers.remove': ({ commandId, ...target }, asking) =>

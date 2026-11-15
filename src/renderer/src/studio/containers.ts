@@ -26,7 +26,9 @@ export type ContainersApi = {
   containerCreate(request: ContainerCreateRequest): Promise<ContainerCreateResult>
   /** Every container Studio made, so none is left behind unseen. */
   containersList(): Promise<ContainerSummary[]>
-  containerRemove(target: { id: string } | { host: ContainerHost; name: string; context?: string | null }): Promise<ContainerResult>
+  containerRemove(
+    target: { id: string } | { host: ContainerHost; name: string; context?: string | null },
+  ): Promise<ContainerResult>
   /** Bring a container's branch out and push it from its host. */
   containerPush(id: string): Promise<ContainerResult>
   /** A container was made, removed or pushed, or one being made moved a step: list again. Kept across reconnects. */
@@ -83,7 +85,8 @@ export function createContainersApi(api?: TicketApi): ContainersApi {
         onReopen: () => cb(),
       }),
     containerTokenStatus: async () => (await served()).request('containers.tokenStatus', {}),
-    containerTokenSet: async (token) => (await served()).request('containers.setToken', { token, commandId: commandId() }),
+    containerTokenSet: async (token) =>
+      (await served()).request('containers.setToken', { token, commandId: commandId() }),
     containerTokenClear: async () => (await served()).request('containers.clearToken', { commandId: commandId() }),
   }
 }

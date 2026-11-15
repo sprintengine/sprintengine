@@ -63,7 +63,10 @@ test('a token set or forgotten restarts the container servers here; a refused on
   const store = tokenStore()
   const domain = createContainersDomain({
     containers: fakeChats().containers,
-    token: { ...store, set: async (token) => (token === 'bad' ? { ok: false, message: 'Not a token.' } : store.set(token)) },
+    token: {
+      ...store,
+      set: async (token) => (token === 'bad' ? { ok: false, message: 'Not a token.' } : store.set(token)),
+    },
     onTokenChanged: () => void restarts++,
   })
   assert.deepEqual(await domain.setToken('bad'), { ok: false, message: 'Not a token.' })
@@ -76,24 +79,35 @@ test('a token set or forgotten restarts the container servers here; a refused on
 
 test('a server out of process reaches every call through main, and hears each change', async () => {
   const chats = fakeChats()
-  const main = createContainersDomain({ containers: chats.containers, token: tokenStore(), onTokenChanged: () => undefined })
+  const main = createContainersDomain({
+    containers: chats.containers,
+    token: tokenStore(),
+    onTokenChanged: () => undefined,
+  })
   const rpc = channel()
   serveContainersToServer(rpc, main)
   const server = shellContainersDomain(rpc)
   let heard = 0
   server.onChanged(() => void heard++)
   assert.deepEqual(await server.status({ kind: 'ssh', machine: 'build-box' }), READY)
-  assert.deepEqual(await server.create({ host: { kind: 'local' }, folder: '/Users/dev/proj', label: 'Fix it', image: { kind: 'studio-default' } }), {
-    ok: true,
-    id: SAVED_ID,
-    label: 'Fix it',
-    folder: '/home/node/work/proj',
-  })
-  assert.deepEqual(await server.push(SAVED_ID), { ok: true })
   assert.deepEqual(
-    await server.remove({ host: { kind: 'local' }, name: `sprintengine-${SAVED_ID}`, context: null }),
-    { ok: true },
+    await server.create({
+      host: { kind: 'local' },
+      folder: '/Users/dev/proj',
+      label: 'Fix it',
+      image: { kind: 'studio-default' },
+    }),
+    {
+      ok: true,
+      id: SAVED_ID,
+      label: 'Fix it',
+      folder: '/home/node/work/proj',
+    },
   )
+  assert.deepEqual(await server.push(SAVED_ID), { ok: true })
+  assert.deepEqual(await server.remove({ host: { kind: 'local' }, name: `sprintengine-${SAVED_ID}`, context: null }), {
+    ok: true,
+  })
   assert.deepEqual(await server.setToken('sk-ant-oat01-x'), { ok: true })
   assert.deepEqual(await server.tokenStatus(), { set: true, kept: 'sealed' })
   main.changed()
@@ -107,7 +121,11 @@ test('a server out of process reaches every call through main, and hears each ch
 
 test('main checks every call again: an unknown call, or args the protocol would refuse, reach nothing', async () => {
   const chats = fakeChats()
-  const main = createContainersDomain({ containers: chats.containers, token: tokenStore(), onTokenChanged: () => undefined })
+  const main = createContainersDomain({
+    containers: chats.containers,
+    token: tokenStore(),
+    onTokenChanged: () => undefined,
+  })
   for (const payload of [
     null,
     { call: 'changed' },

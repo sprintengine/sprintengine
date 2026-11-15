@@ -22,7 +22,10 @@ async function refusal(asked: Promise<unknown>): Promise<{ code: string; message
   } catch (error) {
     // By its code, not its class: the phone's bundle carries its own copy of the runtime.
     const code = (error as { code?: unknown } | null)?.code
-    return { code: typeof code === 'string' ? code : 'thrown', message: error instanceof Error ? error.message : String(error) }
+    return {
+      code: typeof code === 'string' ? code : 'thrown',
+      message: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
@@ -59,10 +62,16 @@ export async function runContainerLeg(input: {
       // The follow is live once its first read lands: a change before it would be lost.
       await new Promise((resolve) => setTimeout(resolve, 300))
       const before = changes
-      const created = await api.containerCreate({ host: LOCAL, folder, label: 'gate container', image: { kind: 'studio-default' } })
+      const created = await api.containerCreate({
+        host: LOCAL,
+        folder,
+        label: 'gate container',
+        image: { kind: 'studio-default' },
+      })
       if (!created.ok) throw new Error(`desktop: no container: ${created.message}`)
       made = created.id
-      for (let tries = 0; changes === before && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 50))
+      for (let tries = 0; changes === before && tries < 100; tries++)
+        await new Promise((resolve) => setTimeout(resolve, 50))
       if (changes === before) throw new Error('desktop: the window was not told a container was made')
       const listed = await api.containersList()
       const row = listed.find((container) => container.id === created.id)
@@ -107,7 +116,8 @@ export async function runContainerLeg(input: {
           }),
         )
         stop()
-        if (stream?.code !== 'owner_required') wrong.push(`the containers.changed stream was ${stream?.code ?? 'followed'}`)
+        if (stream?.code !== 'owner_required')
+          wrong.push(`the containers.changed stream was ${stream?.code ?? 'followed'}`)
       })
       if (wrong.length) throw new Error(`${device.id}: ${wrong.join('; ')}`)
     })

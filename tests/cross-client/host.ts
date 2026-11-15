@@ -103,13 +103,16 @@ function fakeContainers(): StudioContainersDomain {
         host: request.host,
         hostLabel: 'this computer',
         status: 'Up 1 second',
-        repo: request.folder ? { source: request.folder, path: folder, branch: `studio/container-${id.slice(-8)}`, base: null } : null,
+        repo: request.folder
+          ? { source: request.folder, path: folder, branch: `studio/container-${id.slice(-8)}`, base: null }
+          : null,
       })
       changed()
       return { ok: true, id, label: request.label, folder }
     },
     list: async () => [...made.values()],
-    push: async (id) => (made.has(id) ? { ok: true, message: 'Branch pushed (stand-in).' } : { ok: false, message: 'No such container.' }),
+    push: async (id) =>
+      made.has(id) ? { ok: true, message: 'Branch pushed (stand-in).' } : { ok: false, message: 'No such container.' },
     remove: async (target) => {
       const id = 'id' in target ? target.id : target.name.replace(/^sprintengine-/u, '')
       const removed = made.delete(id)

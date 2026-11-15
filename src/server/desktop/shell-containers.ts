@@ -23,13 +23,13 @@ export const CONTAINER_CALL_TIMEOUT_MS: Record<StudioContainersCall, number> = {
 
 export function shellContainersDomain(rpc: Pick<ControlRpc, 'call' | 'on'>): StudioContainersDomain {
   const ask = <T>(call: StudioContainersCall, args: Record<string, unknown> = {}): Promise<T> =>
-    rpc.call<T>(SHELL_METHODS.containers, { call, args }, { timeoutMs: CONTAINER_CALL_TIMEOUT_MS[call] }).catch(
-      (error: unknown) => {
+    rpc
+      .call<T>(SHELL_METHODS.containers, { call, args }, { timeoutMs: CONTAINER_CALL_TIMEOUT_MS[call] })
+      .catch((error: unknown) => {
         if (error instanceof ControlRpcError && error.code === 'timeout')
           throw new Error('Docker did not answer in time. See Settings › Machines › Containers.')
         throw error
-      },
-    )
+      })
   return {
     status: (host) => ask('status', { host }),
     startDocker: (host) => ask('startDocker', { host }),

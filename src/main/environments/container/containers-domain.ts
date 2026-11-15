@@ -121,7 +121,10 @@ export async function answerContainersCall(domain: StudioContainersDomain, paylo
 }
 
 /** Serve the domain to the desktop's server out of process, and tell it of every change. */
-export function serveContainersToServer(rpc: Pick<ControlRpc, 'handle' | 'emit'>, domain: StudioContainersDomain): void {
+export function serveContainersToServer(
+  rpc: Pick<ControlRpc, 'handle' | 'emit'>,
+  domain: StudioContainersDomain,
+): void {
   rpc.handle(SHELL_METHODS.containers, (payload) => answerContainersCall(domain, payload))
   domain.onChanged(() => rpc.emit(SERVER_EVENTS.containersChanged, {}))
 }

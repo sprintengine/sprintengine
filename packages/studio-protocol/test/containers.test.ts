@@ -53,11 +53,7 @@ test('no paired grant reaches a container: not the making, the push, the removal
   for (const method of Object.keys(STUDIO_CONTAINERS_METHODS) as Array<keyof typeof STUDIO_CONTAINERS_METHODS>) {
     const decision = authorizeStudioMethod(paired, method)
     assert.deepEqual(decision, { ok: false, reason: 'owner_required' }, method)
-    assert.deepEqual(
-      authorizeStudioMethod({ ...paired, owner: true }, method).ok,
-      true,
-      `an owner reaches ${method}`,
-    )
+    assert.deepEqual(authorizeStudioMethod({ ...paired, owner: true }, method).ok, true, `an owner reaches ${method}`)
   }
 })
 

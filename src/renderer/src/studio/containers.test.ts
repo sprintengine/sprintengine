@@ -23,7 +23,12 @@ test('each call is the protocol method of its name, a mutation with a command id
     method === 'containers.list' ? { containers: [] } : { ok: true },
   )
   await containersApi.containerDockerStatus(HOST)
-  await containersApi.containerCreate({ host: HOST, folder: '/Users/dev/proj', label: 'Fix', image: { kind: 'studio-default' } })
+  await containersApi.containerCreate({
+    host: HOST,
+    folder: '/Users/dev/proj',
+    label: 'Fix',
+    image: { kind: 'studio-default' },
+  })
   expect(await containersApi.containersList()).toEqual([])
   await containersApi.containerPush(SAVED_ID)
   await containersApi.containerRemove({ id: SAVED_ID })

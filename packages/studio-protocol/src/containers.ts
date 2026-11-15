@@ -213,7 +213,8 @@ const created = commanded((value) => {
   if (folder !== null && (!text(folder, CONTAINER_MAX_FOLDER) || !folder.trim()))
     return refuse(`"folder" is the project folder on that machine (1 to ${CONTAINER_MAX_FOLDER} characters), or null.`)
   const label = value.label ?? ''
-  if (!text(label, CONTAINER_MAX_LABEL)) return refuse(`"label" is the chat's name: up to ${CONTAINER_MAX_LABEL} characters.`)
+  if (!text(label, CONTAINER_MAX_LABEL))
+    return refuse(`"label" is the chat's name: up to ${CONTAINER_MAX_LABEL} characters.`)
   const image = value.image ?? { kind: 'studio-default' }
   if ((image as { kind?: unknown } | null)?.kind !== 'studio-default')
     return refuse('"image" is { kind: "studio-default" }: Studio\'s own image is the only one for now.')

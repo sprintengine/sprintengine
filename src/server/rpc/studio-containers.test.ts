@@ -37,7 +37,12 @@ const LISTED: ContainerSummary[] = [
     hostLabel: 'this Mac',
     context: 'colima',
     status: 'Up 3 minutes',
-    repo: { source: '/Users/dev/proj', path: '/home/node/work/proj', branch: 'studio/container-01234567', base: 'main' },
+    repo: {
+      source: '/Users/dev/proj',
+      path: '/home/node/work/proj',
+      branch: 'studio/container-01234567',
+      base: 'main',
+    },
   },
 ]
 
@@ -48,7 +53,12 @@ function stub() {
   const held = new Promise<void>((resolve) => {
     release = resolve
   })
-  const ready = { state: 'ready' as const, words: 'Docker 29.2.1 is running on this Mac (Colima).', imageReady: true, canStart: null }
+  const ready = {
+    state: 'ready' as const,
+    words: 'Docker 29.2.1 is running on this Mac (Colima).',
+    imageReady: true,
+    canStart: null,
+  }
   const domain: StudioContainersDomain = {
     status: async (host) => (done.push(['status', host]), ready),
     startDocker: async (host) => (done.push(['startDocker', host]), ready),
@@ -220,7 +230,10 @@ test("an owner's other connection reaches the containers but not the token", asy
     assert.equal(errorCode(await script.request(method, CALLS[method as keyof typeof CALLS])), 'owner_required', method)
   assert.equal((await script.request('containers.list', {})).ok, true)
   assert.equal((await script.request('containers.push', { commandId: 'p1', id: SAVED_ID })).ok, true)
-  assert.equal(done.some(([name]) => WINDOW_ONLY.includes(`containers.${name}`)), false)
+  assert.equal(
+    done.some(([name]) => WINDOW_ONLY.includes(`containers.${name}`)),
+    false,
+  )
 })
 
 test('a paired app is refused every method and the stream, whatever it holds, and nothing reaches Docker', async () => {
