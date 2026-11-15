@@ -43,6 +43,15 @@ import {
   type SshDestination,
 } from './ssh-command'
 import { SshEnvironment, type SshServerConnection } from './ssh-environment'
+import type { ContainerHost } from '../../../shared/containers'
+import { execSessionScript, removeContainerScript } from '../container/container-scripts'
+import {
+  localHostRunner,
+  runOnHost,
+  sshRemoteLine,
+  type HostProcess,
+  type HostRunner,
+} from '../container/docker-host'
 import { ensureNodeBinary, serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
 
@@ -74,6 +83,8 @@ export type SshEnvironmentsDeps = {
   /** A `-F` ssh config for every session (the integration suites); null for the person's own. */
   configFile?: string | null
   sshBinary?: string | null
+  /** How a script runs on this computer for a container here; `/bin/sh -c` unless a suite says otherwise. */
+  localRunner?: HostRunner
   /** A machine was forgotten (its pane forward closes; its browsing data goes when asked). */
   onForget?(saved: SavedSshEnvironment, options: { clearBrowsingData: boolean }): Promise<void> | void
   log?(message: string): void
@@ -145,7 +156,17 @@ const LOGIN_COMMANDS: Readonly<Record<string, string>> = {
 }
 
 /** The words for a CLI Studio cannot sign in without a terminal: the exact command, over the person's own SSH. */
-export function signInOverSsh(cli: string, saved: Pick<SavedSshEnvironment, 'destination' | 'label'>): string {
+export function signInOverSsh(
+  cli: string,
+  saved: Pick<SavedSshEnvironment, 'destination' | 'label' | 'container'>,
+): string {
+  if (saved.container) {
+    const login = LOGIN_COMMANDS[cli]
+    const where = saved.container.host.kind === 'local' ? 'in a terminal here' : 'on the machine it runs on'
+    return login
+      ? `Sign ${cli} in once inside the container, ${where}: docker exec -it ${saved.container.name} ${login}`
+      : `${cli} signs in with an API key: set it for the chat, or sign it in inside the container as its own documentation says.`
+  }
   const parsed = parseDestination(saved.destination)
   const destination = parsed.ok ? parsed.destination.argv : saved.destination
   const login = LOGIN_COMMANDS[cli]
@@ -217,6 +238,48 @@ export class SshEnvironments {
 
   get(id: string): SavedSshEnvironment | null {
     return this.saved.find((entry) => entry.id === id) ?? null
+  }
+
+  /**
+   * How a script runs on a container's host (container/docker-host.ts): this
+   * computer's shell, or the saved SSH machine's over the person's own ssh,
+   * asking through Studio's dialogs when `interactive`.
+   */
+  hostRunner(host: ContainerHost): HostRunner {
+    if (host.kind === 'local') return this.deps.localRunner ?? localHostRunner()
+    return (script, options = {}) => {
+      const entry = this.get(host.machine)
+      if (!entry || entry.container) throw new Error('That SSH machine is no longer saved in Settings › Machines.')
+      return spawnSshSession({
+        ssh: this.ssh(),
+        destination: this.destinationOf(host.machine),
+        label: entry.label,
+        interactive: options.interactive === true,
+        askpass: options.interactive ? this.brokerReady : null,
+        configFile: this.deps.configFile ?? null,
+        remote: sshRemoteLine(script),
+      }) as unknown as HostProcess
+    }
+  }
+
+  /** Make sure the dialogs ssh asks through are listening before an interactive host script runs. */
+  async readyToAsk(): Promise<void> {
+    await this.askpass()
+  }
+
+  /** Save a container Studio has just started as a machine, under the id its labels carry. */
+  addContainer(entry: SavedSshEnvironment & { container: NonNullable<SavedSshEnvironment['container']> }): void {
+    this.saved = this.saved.filter((each) => each.id !== entry.id)
+    this.saved.push(entry)
+    this.persist()
+  }
+
+  /** Change a saved container's record (its repository, once copied in). */
+  updateContainer(id: string, patch: Partial<NonNullable<SavedSshEnvironment['container']>>): void {
+    const entry = this.get(id)
+    if (!entry?.container) return
+    entry.container = { ...entry.container, ...patch }
+    this.persist()
   }
 
   private destinationOf(id: string): SshDestination {
@@ -310,15 +373,22 @@ export class SshEnvironments {
       id,
       label: () => this.get(id)?.label ?? saved.label,
       settings: () => this.get(id)?.settings ?? DEFAULT_SSH_ENVIRONMENT_SETTINGS,
-      spawn: ({ interactive }) =>
-        spawnSshSession({
+      spawn: ({ interactive }) => {
+        const entry = this.get(id) ?? saved
+        // A container's exec channel is a script on its host: `docker exec -i … sh -s`.
+        if (entry.container)
+          return this.hostRunner(entry.container.host)(execSessionScript(entry.container.name), {
+            interactive,
+          }) as unknown as SessionProcess
+        return spawnSshSession({
           ssh: this.ssh(),
           destination: this.destinationOf(id),
-          label: this.get(id)?.label ?? saved.label,
+          label: entry.label,
           interactive,
           askpass: this.brokerReady,
           configFile: this.deps.configFile ?? null,
-        }) as unknown as SessionProcess,
+        }) as unknown as SessionProcess
+      },
       app: this.deps.app,
       dataName: this.dataName(),
       startedBy: this.deps.startedBy,
@@ -715,7 +785,21 @@ export class SshEnvironments {
   ): Promise<SshEnvironmentResult> {
     const machine = this.machines.get(id)
     const saved = this.get(id)
-    if (options.stopServer) {
+    if (saved?.container) {
+      // A container Studio made goes with its record: Docker removes it, and
+      // only when it carries Studio's label (container-scripts.ts).
+      machine?.disconnect()
+      if (saved.container.host.kind === 'ssh') await this.askpass().catch(() => undefined)
+      const removed = await runOnHost(this.hostRunner(saved.container.host), removeContainerScript(saved.container.name), {
+        timeoutMs: 120_000,
+        interactive: saved.container.host.kind === 'ssh',
+      }).catch((error: unknown) => ({ code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) }))
+      if (!/@@removed (yes|absent)/u.test(removed.stdout))
+        return {
+          ok: false,
+          message: `The container ${saved.container.name} could not be removed: ${(removed.stderr.trim().split('\n').pop() ?? '') || 'Docker did not say why.'}`,
+        }
+    } else if (options.stopServer) {
       const stopped = await this.stopServer(id)
       if (!stopped.ok) return stopped
     }
