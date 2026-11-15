@@ -103,7 +103,7 @@ test('a press while downloading does nothing', async () => {
     updateVersion: '0.7.0',
     progress: { percent: 50, transferred: 1, total: 2, bytesPerSecond: 1 },
   })
-  expect(button()?.getAttribute('aria-label')).toBe('Downloading 0.7.0 (50%)')
+  expect(button()?.getAttribute('aria-label')).toBe('Downloading update… 50%')
   await click()
   expect(calls).toEqual([])
 })

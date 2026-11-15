@@ -16,6 +16,7 @@
 //
 // Pure: the component that reads the store is AppUpdateRailButton.
 
+import { copy } from '../../../../shared/copy'
 import type { AppUpdateState } from '../../../../shared/electron-api'
 
 export type AppUpdateRailPhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'installing'
@@ -33,11 +34,7 @@ export type AppUpdateRailView = {
   label: string
 }
 
-const APP_NAME = 'SprintEngine Studio'
-
-function named(version: string | null): string {
-  return version ? `${APP_NAME} ${version}` : `The ${APP_NAME} update`
-}
+const t = copy.appUpdate
 
 /**
  * What the glyph shows and what pressing it does, from update-service's own
@@ -49,7 +46,7 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
   const version = state.updateVersion
 
   if (state.status === 'installing') {
-    return { phase: 'installing', action: 'none', lit: true, percent: null, label: 'Installing update…' }
+    return { phase: 'installing', action: 'none', lit: true, percent: null, label: t.installing }
   }
   // Main puts a refused install back to `downloaded`, so this is also the retry.
   if (state.downloaded || state.status === 'downloaded') {
@@ -58,7 +55,7 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
       action: 'install',
       lit: true,
       percent: null,
-      label: `${named(version)} is downloaded. Restart to install it.`,
+      label: t.ready(version),
     }
   }
   if (state.status === 'downloading') {
@@ -68,7 +65,7 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
       action: 'none',
       lit: true,
       percent,
-      label: version ? `Downloading ${version} (${percent}%)` : `Downloading update (${percent}%)`,
+      label: t.downloading(percent),
     }
   }
   if (state.status === 'error' && version) {
@@ -77,7 +74,7 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
       action: 'download',
       lit: true,
       percent: null,
-      label: `${named(version)} did not download. Click to try again.`,
+      label: t.downloadFailed(version),
     }
   }
   // The hourly re-check of an update already found is still the same offer:
@@ -88,11 +85,11 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
       action: 'download',
       lit: true,
       percent: null,
-      label: `${named(version)} is available. Click to download.`,
+      label: t.available(version),
     }
   }
   if (state.status === 'checking') {
-    return { phase: 'checking', action: 'none', lit: false, percent: null, label: 'Checking for updates…' }
+    return { phase: 'checking', action: 'none', lit: false, percent: null, label: t.checking }
   }
   if (state.status === 'error') {
     return {
@@ -100,7 +97,7 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
       action: 'check',
       lit: false,
       percent: null,
-      label: 'The update check failed. Click to try again.',
+      label: t.checkFailed,
     }
   }
   if (state.status === 'not_available') {
@@ -109,10 +106,10 @@ export function appUpdateRailView(state: AppUpdateState | null): AppUpdateRailVi
       action: 'check',
       lit: false,
       percent: null,
-      label: `${APP_NAME} is up to date. Click to check again.`,
+      label: t.upToDate,
     }
   }
-  return { phase: 'idle', action: 'check', lit: false, percent: null, label: 'Check for updates' }
+  return { phase: 'idle', action: 'check', lit: false, percent: null, label: t.check }
 }
 
 /** The question the ready glyph asks before it restarts the app. */
@@ -121,10 +118,9 @@ export function appUpdateInstallConfirmation(state: Pick<AppUpdateState, 'update
   body: string
   confirmLabel: string
 } {
-  const admin = state.installRequiresAdmin ? ' Windows will ask for administrator permission.' : ''
   return {
-    title: state.updateVersion ? `Install ${APP_NAME} ${state.updateVersion}?` : 'Install the update?',
-    body: `${APP_NAME} quits and reopens on the new version. Agents that are still working are interrupted.${admin}`,
-    confirmLabel: 'Restart to update',
+    title: t.confirmTitle(state.updateVersion),
+    body: t.confirmBody(state.installRequiresAdmin),
+    confirmLabel: t.confirmLabel,
   }
 }
