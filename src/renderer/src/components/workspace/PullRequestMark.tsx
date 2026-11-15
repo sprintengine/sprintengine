@@ -95,10 +95,24 @@ function watchLines(pr: BranchPullRequest): string[] {
 }
 
 /**
- * The sidebar line's mark (mockup frame 4): the number and the state, then what
- * clicking does, then one line per earlier pull request — newest first, never
- * dropped, because the line has no chevron and this tooltip is the only place
- * the rest of the record is visible from the sidebar (decision 6).
+ * The state as the line's short tooltip says it: "draft" where the spoken and
+ * the card's words say "open, a draft", because the tooltip is one line and
+ * every word in it is read at a glance.
+ */
+function briefStateLabel(pr: BranchPullRequest): string {
+  return pr.state === 'open' && pr.isDraft && !pr.forge ? 'draft' : pullRequestStateLabel(pr)
+}
+
+/**
+ * The sidebar line's mark: ONE line naming the pull request the glyph draws,
+ * its state, and how many came before it ("Pull request #472 · draft · +69
+ * earlier"), then what a click does.
+ *
+ * The earlier ones are counted, never listed. A line per earlier pull request
+ * was a tooltip seventy lines tall for an agent that had opened seventy, run
+ * off the bottom of the screen with nothing in it pressable. The whole record
+ * is on the chat's card now, which opens from the same row: a short list,
+ * open ones first, each row a link (`ConversationPeekCard`).
  *
  * Null when there is no pull request, which is the caller's signal to draw
  * nothing at all.
@@ -107,28 +121,18 @@ export function sidebarMarkCopy(list: readonly BranchPullRequest[]): PullRequest
   const primary = primaryPullRequest(list)
   if (!primary) return null
   const spans = pullRequestsSpanRepositories(list)
-  const earlier = earlierPullRequests(list)
-  const stateOf = (pr: BranchPullRequest) => pullRequestStateLabel(pr)
+  const earlier = earlierPullRequests(list).length
+  const identity = spans ? writtenNumber(primary, spans) : `Pull request ${writtenNumber(primary, spans)}`
   return {
-    title: spans
-      ? `${writtenNumber(primary, spans)} · ${stateOf(primary)}`
-      : `Pull request ${writtenNumber(primary, spans)} ${stateOf(primary)}`,
-    lines: [
-      ...watchLines(primary),
-      pullRequestOpenLabel(primary),
-      ...earlier.map((pr) =>
-        spans
-          ? `Earlier: ${writtenNumber(pr, spans)} · ${stateOf(pr)}`
-          : `Earlier: ${writtenNumber(pr, spans)} ${stateOf(pr)}`,
-      ),
-    ],
-    // The spoken name carries the state and the earlier pull requests too: the
-    // tooltip is portalled on hover and a person who cannot summon it must lose
-    // nothing (design-system/components/tooltip → Accessibility).
+    title: [identity, briefStateLabel(primary), ...(earlier > 0 ? [`+${earlier} earlier`] : [])].join(' · '),
+    lines: [...watchLines(primary), pullRequestOpenLabel(primary)],
+    // The spoken name says the count too: the tooltip is portalled on hover
+    // and a person who cannot summon it must lose nothing
+    // (design-system/components/tooltip → Accessibility).
     ariaLabel: [
-      `${spokenNumber(primary, spans)}, ${stateOf(primary)}.`,
+      `${spokenNumber(primary, spans)}, ${pullRequestStateLabel(primary)}.`,
       ...watchLines(primary),
-      ...earlier.map((pr) => `Earlier: ${spokenNumber(pr, spans).toLowerCase()}, ${stateOf(pr)}.`),
+      ...(earlier > 0 ? [`${earlier} earlier pull request${earlier === 1 ? '' : 's'}.`] : []),
       pullRequestOpenLabel(primary),
     ].join(' '),
   }
