@@ -64,7 +64,7 @@ test("a child's environment is the agent's: its home and names where the server'
   ])
 })
 
-test("every shape of a child_process call gets the agent's uid and gid, unless the caller named its own", () => {
+test("every shape of a child_process call gets the agent's uid and gid, whatever the caller named", () => {
   // A call that names no environment inherits the server's own, whose home is replaced.
   const SERVER = { home: process.env.HOME ?? '', name: process.env.USER ?? '' }
   const uidOf = (args: unknown[], at: number) => args[at] as { uid: number; gid: number; env: { HOME: string } }
@@ -85,8 +85,9 @@ test("every shape of a child_process call gets the agent's uid and gid, unless t
     assert.equal(uidOf(out, at).env.HOME, '/home/node')
     if (kind === 'file' && at === 2 && args[1] !== null) assert.ok(Array.isArray(out[1]))
   }
-  const named = agentArguments('file', ['id', [], { uid: 1234, gid: 5678 }], AGENT, SERVER)[2] as { uid: number }
-  assert.equal(named.uid, 1234)
+  // Not even root: no call may opt out.
+  const named = agentArguments('file', ['id', [], { uid: 0, gid: 0 }], AGENT, SERVER)[2] as { uid: number; gid: number }
+  assert.deepEqual([named.uid, named.gid], [1000, 1000])
   // What the caller passed is not changed under it.
   const given = { cwd: '/x' }
   agentArguments('file', ['git', [], given], AGENT, SERVER)
@@ -112,7 +113,7 @@ test.skipIf(!POSIX)(
       writeFileSync(
         probe,
         `
-const { spawn: takenBefore, execFile } = require('node:child_process')
+const { spawn: takenBefore, execFile, execFileSync: syncTakenBefore } = require('node:child_process')
 const cp = require('node:child_process')
 const { startProgramsAsAgent } = require(${JSON.stringify(bundle)})
 const user = { uid: process.getuid(), gid: process.getgid(), name: 'agent-probe', home: ${JSON.stringify(join(dir, 'home'))} }
@@ -122,6 +123,7 @@ const out = {}
 out.execFileSync = cp.execFileSync('sh', ['-c', say]).toString()
 out.execSync = cp.execSync(say).toString()
 out.spawnSync = cp.spawnSync('sh', ['-c', say]).stdout.toString()
+out.syncTakenBefore = syncTakenBefore('sh', ['-c', say]).toString()
 const child = takenBefore('sh', ['-c', say])
 let spawned = ''
 child.stdout.on('data', (d) => (spawned += d))
@@ -143,6 +145,7 @@ child.on('close', () => {
         'execSync',
         'spawnSync',
         'spawnTakenBefore',
+        'syncTakenBefore',
       ])
     } finally {
       rmSync(dir, { recursive: true, force: true })

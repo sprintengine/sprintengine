@@ -213,7 +213,10 @@ and Settings › Machines › Containers says so on its row and that removing it
 and starting the chat in a new container separates them (`separateUsers` on
 its record). An existing container's capabilities cannot change.
 
-Left as known gaps: an agent's processes are not given a higher OOM score
+Left as known gaps: skills and settings Studio would install for a machine's
+CLIs land in the server's home, not the agent's (no surface installs them into
+a container today; a skill attached to a chat reaches it as a staged plugin);
+an agent's processes are not given a higher OOM score
 (writing another user's `oom_score_adj` needs a capability the server does not
 hold), and a read the server makes for an agent's tool (a thumbnail, a board)
 is checked by real path against the chat's folders before it is opened, so a

@@ -94,7 +94,7 @@ export function agentEnvPairs(
 
 type SpawnOptions = { uid?: number; gid?: number; env?: Env; [key: string]: unknown }
 
-/** One call's options as the agent's: its uid and gid unless the caller named some, and its environment. */
+/** One call's options as the agent's: its uid and gid, whatever the caller named, and its environment. */
 export function asAgent(
   options: SpawnOptions | undefined,
   user: AgentUser,
@@ -103,8 +103,8 @@ export function asAgent(
   const given = options ?? {}
   return {
     ...given,
-    uid: given.uid ?? user.uid,
-    gid: given.gid ?? user.gid,
+    uid: user.uid,
+    gid: user.gid,
     env: agentEnv((given.env ?? process.env) as Env, user, server),
   }
 }
@@ -140,29 +140,49 @@ let hooked = false
 const nodeChildProcess = (): Record<string, unknown> & { ChildProcess: typeof ChildProcess } =>
   createRequire('/')('node:child_process') as Record<string, unknown> & { ChildProcess: typeof ChildProcess }
 
+type NormalizedSpawn = { uid?: number; gid?: number; envPairs?: string[] }
+
+/** One start's options, as Node has read them, made the agent's: its uid and gid always, and its environment. */
+function asAgentSpawn(
+  options: NormalizedSpawn,
+  user: AgentUser,
+  server: { home: string; name: string },
+): NormalizedSpawn {
+  return { ...options, uid: user.uid, gid: user.gid, envPairs: agentEnvPairs(options.envPairs ?? [], user, server) }
+}
+
 /**
- * Make every program this process starts the agent's, from now on. Every
- * asynchronous start (`spawn`, `exec`, `execFile`, `fork`, and any library's,
- * however it holds the function) goes through `ChildProcess.prototype.spawn`
- * with its arguments already read, so that one is wrapped; the synchronous
- * ones are wrapped at the module's exports, and ES modules' bindings are made
- * to match.
+ * Make every program this process starts the agent's, from now on, with no
+ * exception a call could ask for. Node starts every program at one of two
+ * places, with its arguments already read: `ChildProcess.prototype.spawn` for
+ * `spawn`, `exec`, `execFile` and `fork`, and the `spawn_sync` binding for
+ * their synchronous forms. Both are wrapped, so a function a module took
+ * before this ran, or a library's own, is held to it too. (Where the binding
+ * cannot be reached, the synchronous functions are wrapped at the module's
+ * exports instead, and ES modules' bindings made to match.)
  */
 export function startProgramsAsAgent(user: AgentUser): void {
   if (hooked) return
   hooked = true
   const server = { home: homedir(), name: process.env.USER || process.env.LOGNAME || 'root' }
   const exports = nodeChildProcess()
-  const proto = exports.ChildProcess.prototype as unknown as {
-    spawn(options: { uid?: number; gid?: number; envPairs?: string[] }): unknown
-  }
+  const proto = exports.ChildProcess.prototype as unknown as { spawn(options: NormalizedSpawn): unknown }
   const spawn = proto.spawn
   proto.spawn = function (this: unknown, options) {
-    const next = { ...options }
-    if (next.uid === undefined) next.uid = user.uid
-    if (next.gid === undefined) next.gid = user.gid
-    next.envPairs = agentEnvPairs(next.envPairs ?? [], user, server)
-    return spawn.call(this, next)
+    return spawn.call(this, asAgentSpawn(options, user, server))
+  }
+  let binding: { spawn(options: NormalizedSpawn): unknown } | null = null
+  try {
+    binding = (process as unknown as { binding(name: string): typeof binding }).binding('spawn_sync')
+  } catch {
+    binding = null
+  }
+  if (binding && typeof binding.spawn === 'function') {
+    const spawnSync = binding.spawn
+    binding.spawn = function (this: unknown, options) {
+      return spawnSync.call(this, asAgentSpawn(options, user, server))
+    }
+    return
   }
   for (const [name, kind] of [
     ['spawnSync', 'file'],

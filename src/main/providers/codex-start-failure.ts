@@ -10,8 +10,9 @@
 // that match, through the file system of the machine the chat runs on. Moving
 // the files aside is the person's call.
 
+import { agentHome } from '../agent-user'
 import { readdir, stat } from 'node:fs/promises'
-import { hostname, homedir } from 'node:os'
+import { hostname } from 'node:os'
 import { join } from 'node:path'
 
 import { executionHostLabel, LOCAL_HOST_ID } from '../../shared/execution-host'
@@ -88,7 +89,7 @@ export function codexMachineLabel(
 
 /** The Codex home folder on this machine, where its chats' `codex` runs. */
 function codexHomeFor(env: NodeJS.ProcessEnv): string {
-  return env.CODEX_HOME?.trim() || join(homedir(), '.codex')
+  return env.CODEX_HOME?.trim() || join(agentHome(), '.codex')
 }
 
 /**
