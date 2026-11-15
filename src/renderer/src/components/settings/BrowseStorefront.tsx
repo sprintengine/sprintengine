@@ -129,7 +129,7 @@ export function PluginDetailPanel({
     // would be written, and issues the token — they are executable config, so
     // they always route through the explicit trust prompt.
     if (!windowHasStudio()) {
-      setFlow({ status: 'error', message: 'Installing extensions needs a newer app build. Update and restart.' })
+      setFlow({ status: 'error', message: 'Update and restart to install extensions.' })
       return
     }
     setFlow({ status: 'verifying' })
@@ -253,8 +253,7 @@ export function PluginDetailPanel({
 
           {claudePlugin && installView.action?.kind === 'install' ? (
             <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-              Installing adds this plugin’s skills to this workspace for your installed agent CLIs. Its slash commands
-              stay Claude-native.
+              Adds its skills to this workspace for your agent CLIs. Slash commands work in Claude only.
             </p>
           ) : null}
         </div>

@@ -37,7 +37,7 @@ function askSchedules<T>(
     STUDIO_SCHEDULES_CAPABILITY,
     (machineName) => ({
       code: 'scheduled_agents_unsupported',
-      message: `${machineName} cannot take schedules from here yet. Update SprintEngine Studio there to use its schedules from here.`,
+      message: `${machineName} can't take schedules from here yet. Update Studio there.`,
     }),
     work,
     {
@@ -61,11 +61,11 @@ function changeRefusal<T>(answer: EnvironmentAnswer<T>, machineName: string, don
   return /did not answer in time/u.test(answer.message)
     ? {
         ...answer,
-        message: `${machineName} did not answer in time. It may still be ${done} there once it answers; trying again does not do it twice.`,
+        message: `${machineName} didn't answer in time. It may still be ${done}; retrying won't do it twice.`,
       }
     : {
         ...answer,
-        message: `${machineName} is not connected, so nothing was ${done} there. Try again once it is back.`,
+        message: `${machineName} isn't connected; nothing was ${done}. Try again once it's back.`,
       }
 }
 
@@ -184,7 +184,11 @@ export async function createPairedScheduledAgent(
   const agent = scheduledAgentViewOf(answer.value.schedule)
   return agent
     ? { ok: true, agent }
-    : { ok: false, code: 'unreadable_result', message: 'That machine scheduled it, in a shape this build cannot read.' }
+    : {
+        ok: false,
+        code: 'unreadable_result',
+        message: "That machine scheduled it, but this build can't read the reply.",
+      }
 }
 
 /** Save an edit to one of them there. What the editor shows is the whole of it. */
@@ -223,7 +227,7 @@ export async function updatePairedScheduledAgent(
   const agent = scheduledAgentViewOf(answer.value.schedule)
   return agent
     ? { ok: true, agent }
-    : { ok: false, code: 'unreadable_result', message: 'That machine saved it, in a shape this build cannot read.' }
+    : { ok: false, code: 'unreadable_result', message: "That machine saved it, but this build can't read the reply." }
 }
 
 const SCHEDULED_AGENT_ACTIONS: ReadonlySet<MeshScheduledAgentAction> = new Set(['run', 'pause', 'resume', 'delete'])

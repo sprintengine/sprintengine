@@ -141,9 +141,8 @@ export function NewProjectStep({
           Create {visibility === 'private' ? 'a private' : 'a public'} repository on GitHub?
         </p>
         <p className="text-meta text-[color:var(--text-muted)]">
-          <span className="font-mono text-[color:var(--text-default)]">{repositoryName}</span> is made on your GitHub
-          account{visibility === 'public' ? ', visible to everyone,' : ''} and the project&apos;s first commit is pushed
-          to it.
+          <span className="font-mono text-[color:var(--text-default)]">{repositoryName}</span> goes on your GitHub
+          account{visibility === 'public' ? ', visible to everyone,' : ''} with the first commit pushed.
         </p>
         {error ? (
           <p role="alert" className="text-micro leading-4 text-[color:var(--tone-error)]">
@@ -206,9 +205,7 @@ export function NewProjectStep({
           {nameProblem ? (
             <span className="text-[color:var(--tone-error)]">{nameProblem}</span>
           ) : (
-            <span className="text-[color:var(--text-subtle)]">
-              A folder of that name on this machine, with a README and a first commit.
-            </span>
+            <span className="text-[color:var(--text-subtle)]">A local folder with a README and a first commit.</span>
           )}
         </p>
       </div>

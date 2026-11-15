@@ -65,7 +65,7 @@ export function createBacklogReader(deps: BacklogReaderDeps): BacklogReader {
               const cause = snapshot.scan.errors[0]
               reject(
                 new Error(
-                  `The Backlog for "${workspaceId}" could not be read${cause ? `: ${cause.relativePath}: ${cause.message}` : '.'}`,
+                  `Couldn't read the Backlog for "${workspaceId}"${cause ? `: ${cause.relativePath}: ${cause.message}` : '.'}`,
                 ),
               )
             } else {
@@ -113,7 +113,7 @@ export function createBacklogReader(deps: BacklogReaderDeps): BacklogReader {
               const cause = snapshot.scan.errors[0]
               fail({
                 code: 'scan_failed',
-                message: `The Backlog for "${workspaceId}" could not be read${cause ? `: ${cause.relativePath}: ${cause.message}` : '.'}`,
+                message: `Couldn't read the Backlog for "${workspaceId}"${cause ? `: ${cause.relativePath}: ${cause.message}` : '.'}`,
               })
               return
             }
@@ -128,7 +128,7 @@ export function createBacklogReader(deps: BacklogReaderDeps): BacklogReader {
           fail(
             {
               code: 'unknown_workspace',
-              message: `Workspace "${workspaceId}" could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+              message: `Couldn't find workspace "${workspaceId}": ${error instanceof Error ? error.message : String(error)}`,
             },
             error,
           )

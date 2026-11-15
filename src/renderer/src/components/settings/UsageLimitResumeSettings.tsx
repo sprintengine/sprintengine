@@ -17,7 +17,7 @@ export function UsageLimitResumeSettings() {
   return (
     <SettingToggle
       label="Resume after usage limits"
-      description="When a Claude or Codex chat runs out of its plan's session or weekly limit, Studio tells it to carry on a minute after the limit resets. Off: the chat offers Resume at reset, and you choose."
+      description="Claude and Codex chats carry on once their usage limit resets. Off: you choose."
       enabled={autoResume}
       onChange={(enabled) => void updateUsageLimitResume({ kind: 'auto', enabled })}
     />

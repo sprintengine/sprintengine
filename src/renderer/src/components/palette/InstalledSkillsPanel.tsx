@@ -409,7 +409,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
           >
             {!pluginId ? (
               <p className="px-4 py-3 text-meta text-[color:var(--text-muted)]">
-                Focus an agent to see the skills its CLI has installed.
+                Focus an agent to see its installed skills.
               </p>
             ) : !result ? (
               <p role="status" className="flex items-center gap-2 px-4 py-3 text-meta text-[color:var(--text-muted)]">
@@ -482,7 +482,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
         </>
       )}
       <p className="px-4 py-2 text-micro text-[color:var(--text-muted)]">
-        Installed on this machine. Running agents may need a restart to pick up changes.
+        Installed here. Running agents may need a restart to see changes.
       </p>
     </section>
   )

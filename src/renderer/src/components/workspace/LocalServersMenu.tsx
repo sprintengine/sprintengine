@@ -211,7 +211,7 @@ export function localServerRunQuestion(server: StudioLocalServer): ConfirmDialog
     title: `Run ${server.title}?`,
     body: (
       <div className="flex flex-col gap-2">
-        <span>An agent gave Studio this command to start it. Studio runs it as you, in this folder.</span>
+        <span>An agent suggested this command. It runs as you, in this folder.</span>
         <span className="break-all font-mono text-meta text-[color:var(--text-strong)]" data-local-server-confirm="">
           $ {server.command}
           <span className="block break-all text-[color:var(--text-subtle)]">

@@ -303,7 +303,7 @@ export function BacklogItemDetailScreen({
         ) : null}
         {!updateEligible ? (
           <Text style={styles.unavailableText}>
-            Backlog actions are not available from mobile in this session.
+            Backlog actions aren’t available in this session.
           </Text>
         ) : null}
       </View>

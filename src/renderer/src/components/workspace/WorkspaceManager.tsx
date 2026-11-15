@@ -1505,7 +1505,7 @@ export default function WorkspaceManager() {
           level: 'error',
           source: 'workspace',
           title: 'New chat unavailable',
-          message: 'The Solo layout template is missing, so a one-agent chat cannot be created.',
+          message: "The Solo layout template is missing, so a one-agent chat can't be created.",
         })
         return null
       }
@@ -2941,7 +2941,7 @@ export default function WorkspaceManager() {
       showToast({
         tone: 'warn',
         title: `Only a chat runs on ${environment.label}`,
-        description: 'Terminals run on this computer. Pick a chat engine to start on that machine.',
+        description: 'Terminals only run on this computer. Pick a chat engine instead.',
       })
       return Promise.resolve(null)
     }
@@ -3374,9 +3374,9 @@ export default function WorkspaceManager() {
         // when there was more to do, how much of it did not run.
         showToast({
           tone: 'warn',
-          title: `${card.title} ${ran ? 'did not finish' : 'did not run'}`,
+          title: `${card.title} ${ran ? "didn't finish" : "didn't run"}`,
           description:
-            ran && notRun > 0 ? `${said} ${notRun} later ${notRun === 1 ? 'step' : 'steps'} did not run.` : said,
+            ran && notRun > 0 ? `${said} ${notRun} later ${notRun === 1 ? 'step' : 'steps'} didn't run.` : said,
         })
         return
       }
@@ -3488,9 +3488,8 @@ export default function WorkspaceManager() {
             .workspaces.find((workspace) => workspace.id === windowActiveWorkspaceId)
           showToast({
             tone: 'neutral',
-            title: `${card.title} started in ${landed?.name ?? 'the project you pressed Go in'}`,
-            description:
-              'You moved to another project while it was setting up, so the chat opened where the card installed.',
+            title: `${card.title} started in ${landed?.name ?? 'its original project'}`,
+            description: 'You switched projects during setup, so it opened there.',
           })
         }
         return
@@ -3534,8 +3533,8 @@ export default function WorkspaceManager() {
           tone: 'neutral',
           title: `${card.title} is ready`,
           description: movedWorkspace
-            ? 'The clone is not a project yet, so the prompt is waiting in New chat — press Start and it runs in the clone.'
-            : 'There is no project open, so the prompt is waiting in New chat — choose a folder and press Start.',
+            ? 'The prompt is waiting in New chat. Press Start to run it in the clone.'
+            : 'The prompt is waiting in New chat. Choose a folder and press Start.',
         })
       }
     },
@@ -4020,7 +4019,7 @@ export default function WorkspaceManager() {
       if (!SOLO_CHAT_TEMPLATE) {
         showToast({
           tone: 'error',
-          title: `Could not open ${spec.title} from ${spec.machineName}`,
+          title: `Couldn't open ${spec.title} from ${spec.machineName}`,
           description: 'The Solo layout template is missing.',
         })
         return null
@@ -4131,7 +4130,7 @@ export default function WorkspaceManager() {
         showToast({
           tone: 'error',
           title: `Started on ${launch.machineName}, but no pane could open`,
-          description: `The Solo layout template is missing. "${created.title}" is listed under Remote in the sidebar.`,
+          description: `The Solo layout template is missing. Find "${created.title}" under Remote in the sidebar.`,
         })
         closeNewChatPanel()
         return
@@ -5127,13 +5126,13 @@ export default function WorkspaceManager() {
             showToast({
               tone: 'warn',
               title: 'That link matches chats on more than one machine',
-              description: `It was copied before links named their machine. Open the chat from the sidebar: ${places.join(', ')}.`,
+              description: `Open the chat from the sidebar: ${places.join(', ')}.`,
             }),
           notOnThisMachine: () =>
             showToast({
               tone: 'warn',
               title: "That chat isn't on this machine",
-              description: 'It was closed here, or it was started on another computer.',
+              description: 'It was closed here, or started on another computer.',
             }),
         })
       })

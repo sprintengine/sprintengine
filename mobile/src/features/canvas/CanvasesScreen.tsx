@@ -125,8 +125,7 @@ export function CanvasesScreen({
           <>
             <Card>
               <Text style={styles.notice}>
-                No boards yet. When an agent draws on a desktop&apos;s Canvas, the board is listed here, and its picture
-                opens on this phone.
+                No boards yet. When an agent draws on a desktop&apos;s Canvas, it shows here.
               </Text>
             </Card>
             {desktops.flatMap((desktop) =>

@@ -217,7 +217,7 @@ export async function pairedWorkspaceExtensions(
     STUDIO_WORKSPACES_CAPABILITY,
     (machineName) => ({
       code: 'skills_unsupported',
-      message: `${machineName} cannot take skills from here yet. Update SprintEngine Studio there, or remove the skills.`,
+      message: `${machineName} can't take skills from here yet. Update Studio there, or remove the skills.`,
     }),
     (client) => client.rpc['workspaces.extensions']({ workspaceId, ...(cli ? { cli } : {}) }),
   )
@@ -283,7 +283,7 @@ export async function createPairedChat(
     STUDIO_WORKSPACES_CAPABILITY,
     (machineName) => ({
       code: 'outdated',
-      message: `${machineName} cannot start chat agents from here yet. Update SprintEngine Studio there to start one from here.`,
+      message: `${machineName} can't start chat agents from here yet. Update Studio there.`,
     }),
     async (client) => {
       const created = await client.rpc['conversation.create'](

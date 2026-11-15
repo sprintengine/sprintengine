@@ -43,7 +43,7 @@ export function createPullRequestApi(target: DesktopTarget, options: DesktopStud
         : {
             ok: false,
             errorCode: "invalid_payload",
-            message: "The desktop's answer about this pull request could not be read.",
+            message: "Couldn't read this pull request from the desktop.",
           };
     },
     async diff(url, path, offset = 0) {
@@ -55,7 +55,7 @@ export function createPullRequestApi(target: DesktopTarget, options: DesktopStud
         : {
             ok: false,
             errorCode: "invalid_payload",
-            message: "The desktop's answer about this file could not be read.",
+            message: "Couldn't read this file from the desktop.",
           };
     },
   };

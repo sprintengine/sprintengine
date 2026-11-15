@@ -31,7 +31,7 @@ export default function ConversationImportCard({
           <p className="mt-0.5 text-meta leading-5 text-[color:var(--text-muted)]">
             {found === 1 ? 'Found 1 session' : `Found ${found} sessions`} you ran in the terminal (
             {describeFound(scan.folders)}
-            ). Each one you pick becomes a chat with its history, and carries on the same session when you reply.
+            ). Each becomes a chat with its history and continues the same session.
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">

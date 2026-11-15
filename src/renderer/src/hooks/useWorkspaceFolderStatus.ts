@@ -40,7 +40,7 @@ async function checkAfterRestore(
       status: 'missing',
       path: folderPath,
       checkedPath: folderPath,
-      message: 'This chat’s worktree could not be brought back.',
+      message: 'Couldn’t restore this chat’s worktree.',
     }
   }
   return filesApi.checkWorkspaceFolder(folderPath)

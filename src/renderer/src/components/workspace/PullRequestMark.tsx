@@ -621,7 +621,7 @@ export function PullRequestPeekMark({
           // mark's marker is on its button. One pull request or several, the
           // mark is found the same way and pressed in the same place.
           primaryData={{ name: 'data-pull-request-mark', value: primary.url }}
-          menuAriaLabel={`All pull requests from this conversation, ${pullRequests.length}`}
+          menuAriaLabel={`All pull requests in this chat, ${pullRequests.length}`}
           // One target draws the primary half alone — the group's own chrome,
           // the 24px hit floor, the hover fill, and no chevron over a menu with
           // one row in it (`SplitButton`'s own rule). The solo arm used to be a
@@ -765,8 +765,8 @@ export function PullRequestPanelButton({
           primaryData={{ name: 'data-panel-pull-request', value: pr.url }}
           menuAriaLabel={
             watching
-              ? `All pull requests from this conversation, ${pullRequests.length}, and Stop watching`
-              : `All pull requests from this conversation, ${pullRequests.length}`
+              ? `All pull requests in this chat, ${pullRequests.length}, and Stop watching`
+              : `All pull requests in this chat, ${pullRequests.length}`
           }
           items={items}
           onPrimary={() => openPullRequest(pr.url)}

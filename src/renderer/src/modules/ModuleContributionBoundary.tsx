@@ -104,7 +104,7 @@ export function ModuleContributionErrorFallback({
     <div className="p-3">
       <InlineNotice
         tone="error"
-        title={`${label} hit a problem and stopped. The rest of the app is unaffected.`}
+        title={`${label} hit a problem and stopped. The rest of the app is fine.`}
         hint={`From ${moduleId}`}
         action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
       />

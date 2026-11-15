@@ -90,7 +90,7 @@ export function ChooseProjectScreen({ onBack, onChoose }: { onBack: () => void; 
         ) : groups.length === 0 ? (
           <Card>
             <Text style={styles.notice}>
-              No projects are open on a paired desktop. Open one in Studio and it appears here.
+              No projects open on a paired desktop. Open one in Studio to see it here.
             </Text>
           </Card>
         ) : (

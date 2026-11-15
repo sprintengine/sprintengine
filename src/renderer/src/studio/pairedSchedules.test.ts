@@ -33,7 +33,7 @@ test('a machine away refuses a new schedule at once, asks nothing of it, and say
   studio.setState(MACHINE.route, 'reconnecting')
   const refused = await createPairedScheduledAgent(MACHINE, { ...DRAFT, prompt: 'while away' }, 'cmd-2')
   assert.equal(refused.ok, false)
-  assert.match(refused.ok ? '' : refused.message, /dev@build-box is not connected, so nothing was scheduled there/u)
+  assert.match(refused.ok ? '' : refused.message, /dev@build-box isn't connected; nothing was scheduled/u)
   assert.deepEqual(
     studio.calls.filter((call) => call.method === 'schedules.create').map((call) => call.params.prompt),
     ['echo hi'],
@@ -72,7 +72,7 @@ test('a machine that does not connect in time is asked nothing once it does', as
   await vi.advanceTimersByTimeAsync(16_000)
   const answer = await asked
   assert.equal(answer.ok, false)
-  assert.match(answer.ok ? '' : answer.message, /not connected, so nothing was scheduled/u)
+  assert.match(answer.ok ? '' : answer.message, /isn't connected; nothing was scheduled/u)
   connect()
   await vi.advanceTimersByTimeAsync(10)
   assert.deepEqual(calls, [], 'nothing went once it connected')
@@ -94,6 +94,6 @@ test('pausing, running or deleting one while its machine is away is refused, not
   studio.setState(MACHINE.route, 'reconnecting')
   const paused = await pairedScheduledAgentAction(MACHINE, 'sa-1', 'pause')
   assert.equal(paused.ok, false)
-  assert.match(paused.ok ? '' : paused.message, /nothing was paused there/u)
+  assert.match(paused.ok ? '' : paused.message, /nothing was paused\./u)
   assert.equal(studio.calls.filter((call) => call.method === 'schedules.pause').length, 0)
 })

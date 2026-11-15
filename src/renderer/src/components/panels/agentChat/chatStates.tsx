@@ -63,7 +63,7 @@ export function ReadinessState({
           The worktree couldn’t be made
         </h2>
         <p className="mb-5 max-w-[44ch] text-body leading-[1.55] text-[color:var(--text-muted)]">
-          {readiness.message} Nothing was sent; your message is back in the box below.
+          {readiness.message} Nothing was sent; your message is still below.
         </p>
         {worktreeActions ? (
           <div className="flex items-center gap-2">

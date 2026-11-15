@@ -207,7 +207,7 @@ test("the glyph is there only while there is something to take, and says what a 
     phase: "available",
     pressable: true,
     percent: null,
-    label: "Sprint Engine 0.1.0-main.1250+0123abc is available. Tap to download and install.",
+    label: "Download update 0.1.0-main.1250+0123abc",
   });
   const downloading = appUpdateView({ ...base, phase: "downloading", received: 42.9, total: 100 });
   assert.equal(downloading.percent, 42);

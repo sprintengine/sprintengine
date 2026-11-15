@@ -142,8 +142,8 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
           <div className="px-3 pt-3">
             <InlineNotice
               tone="error"
-              title={`${plugin.name} could not be read.`}
-              hint="Its components are not listed below — this is not an empty plugin."
+              title={`Couldn't read ${plugin.name}`}
+              hint="Its components can't be listed"
               detail={props.readError}
               action={<GhostButton onClick={props.onRetryRead}>Try again</GhostButton>}
             />
@@ -288,8 +288,8 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
           <div className="px-3 pb-3">
             <InlineNotice
               tone="warn"
-              title={`This plugin declares ${hooks.length === 1 ? 'a hook command' : `${hooks.length} hook commands`}.`}
-              hint="Hooks run on your machine when the agent works. Installing a skill or server here copies no hooks; the commands listed above are exactly what would run if you loaded this plugin in Claude Code yourself. Unsigned; not reviewed by SprintEngine Studio."
+              title={`Declares ${hooks.length === 1 ? 'a hook command' : `${hooks.length} hook commands`}`}
+              hint="Hooks run on your machine as the agent works. Installing here copies no hooks. Unsigned and unreviewed."
             />
           </div>
         ) : null}

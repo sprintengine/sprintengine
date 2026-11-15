@@ -55,10 +55,7 @@ test('a draft that cannot run is refused with the reason', () => {
     refused({ schedule: { cron: '0 9 * * *', timezone: 'Mars/Olympus' } }),
     '"Mars/Olympus" is not a timezone this computer knows.',
   )
-  assert.equal(
-    refused({ schedule: { cron: '0 0 30 2 *', timezone: 'UTC' } }),
-    'That schedule never comes round — no calendar has that day.',
-  )
+  assert.equal(refused({ schedule: { cron: '0 0 30 2 *', timezone: 'UTC' } }), 'No such date, so it never runs')
   assert.equal(
     refused({ hostId: 'build-box' }),
     'A scheduled agent runs on this machine or one of its WSL distributions.',

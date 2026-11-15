@@ -299,13 +299,13 @@ export function ProjectSourceMenu({
               </span>
             ) : (
               <span className="text-[color:var(--text-subtle)]">
-                GitHub, GitLab, Bitbucket, Azure DevOps, Gitea, or any Git server — public or self-hosted.
+                GitHub, GitLab, or any Git server, public or self-hosted
               </span>
             )}
           </p>
           {source?.insecure ? (
             <p className="px-0.5 text-micro leading-4 text-[color:var(--tone-warn)]">
-              Not encrypted: this address sends the code, and any sign-in, in the clear.
+              Not encrypted: code and any sign-in are sent in the clear.
             </p>
           ) : null}
         </div>

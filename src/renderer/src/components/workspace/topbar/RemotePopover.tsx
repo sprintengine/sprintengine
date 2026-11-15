@@ -159,7 +159,7 @@ function ConnectedDeviceRow({ device, now }: { device: TailnetLiveDevice; now: n
             than "Revoke" — the tooltip and the accessible name carry what it
             does and to whom. */}
         <Tooltip
-          content={`Revoke ${shortMachineName(device.deviceName)} — it must pair again to come back`}
+          content={`Revoke ${shortMachineName(device.deviceName)} (must pair again)`}
           placement="left"
           wrapperClassName="shrink-0"
         >
@@ -246,7 +246,7 @@ function MachineRow({
       showToast({
         tone: 'neutral',
         title: `${name} disconnected`,
-        description: `Revoke “${connection.deviceName}” in that machine's Remote settings to end the grant it gave this device.`,
+        description: `Revoke “${connection.deviceName}” in that machine's Remote settings to end this device's access.`,
       })
     } catch (error) {
       showToast({

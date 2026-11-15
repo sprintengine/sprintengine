@@ -81,7 +81,7 @@ export default function FirstRunCliCard({ onDismiss }: { onDismiss: () => void }
           {/* Not helper copy: this states what the probe found on THIS machine,
               which is the only reason the card is on screen at all. */}
           <p className="mt-0.5 text-meta leading-5 text-[color:var(--text-muted)]">
-            Agents run through a command-line tool. We couldn’t find one installed — install one to start.
+            No agent CLI is installed. Install one to start.
           </p>
         </div>
 

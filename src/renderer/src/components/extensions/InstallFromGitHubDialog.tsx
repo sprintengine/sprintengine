@@ -104,7 +104,7 @@ export function InstallFromGitHubDialog({
     const value = url.trim()
     if (!value) return
     if (!windowHasStudio()) {
-      setPhase({ kind: 'failed', message: 'Installing from GitHub needs a newer app build. Update and restart.' })
+      setPhase({ kind: 'failed', message: 'Update and restart the app to install from GitHub.' })
       return
     }
     setPhase({ kind: 'resolving' })
@@ -246,7 +246,7 @@ export function InstallFromGitHubDialog({
             />
             {workspaceBlocked ? (
               <InlineNotice tone="warn">
-                It adds MCP servers or skills to a project. Open the project it is for, then install it.
+                It adds MCP servers or skills to a project. Open that project, then install.
               </InlineNotice>
             ) : null}
           </>

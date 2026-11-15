@@ -97,26 +97,20 @@ function EditFromHereButton({ entry, running, canRestoreFiles, onRestoreDraft, c
         if (restoreError)
           showToast({
             tone: 'error',
-            title: `The conversation went back to before this message, but its files were not restored: ${restoreError}`,
+            title: `Chat rewound, but files weren't restored: ${restoreError}`,
           })
       }
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Could not edit from here: ${error instanceof Error ? error.message : String(error)}`,
+        title: `Couldn't edit from here: ${error instanceof Error ? error.message : String(error)}`,
       })
     } finally {
       setPending(false)
     }
   }
   return (
-    <Tooltip
-      content={
-        running
-          ? 'Stop the running turn before editing an earlier message'
-          : 'Go back to before this message and edit it'
-      }
-    >
+    <Tooltip content={running ? 'Stop the running turn to edit' : 'Go back to before this message and edit it'}>
       <span className={className}>
         <GhostButton size="inline" disabled={running || pending} onClick={() => void editFromHere()}>
           {pending ? 'Preparing…' : 'Edit from here'}
@@ -163,8 +157,8 @@ function EditFromHereBody({
   return (
     <>
       <p>
-        This message and everything after it leave the conversation, and the agent forgets them. The message goes back
-        into the composer so you can change it and send it again.
+        This message and everything after it are removed, and the agent forgets them. The message returns to the
+        composer to edit.
       </p>
       {files.length > 0 ? (
         <div className="mt-3">

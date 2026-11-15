@@ -76,7 +76,7 @@ test("a removed project reads as the desktop says it", () => {
 test("a desktop serving no boards says to open Studio there, in a person's words", () => {
   assert.equal(
     canvasRefusalWords("mac-mini", refused("unavailable", "This Studio does not serve canvas.list."), "list"),
-    "mac-mini is not offering its boards right now. Open SprintEngine Studio there and try again.",
+    "mac-mini isn't sharing boards right now. Open Studio there and try again.",
   );
   assert.match(canvasRefusalWords("mac-mini", refused(null, "nope", "unauthorized"), "list"), /may not read mac-mini's projects/);
   assert.equal(canvasRefusalWords("mac-mini", refused("no_picture"), "picture"), "mac-mini sent no picture of this board.");
@@ -100,7 +100,7 @@ test("a desktop that refuses is a read with the words in it, never a throw", asy
     chat: null,
     boards: fakeBoards(refused("unavailable", "This Studio does not serve canvas.list.")).api,
   });
-  assert.deepEqual([off.boards, off.error], [null, "mac-mini is not offering its boards right now. Open SprintEngine Studio there and try again."]);
+  assert.deepEqual([off.boards, off.error], [null, "mac-mini isn't sharing boards right now. Open Studio there and try again."]);
   const thrown = await readCanvasDesktop({
     machine: "mac-mini",
     chat: null,
@@ -134,7 +134,7 @@ test("a new chat starts beside the board, else in the asking chat's project, els
   assert.deepEqual(where({ workspaceId: null }, true), { kind: "no-project" });
   const refusal = where({ workspaceId: null }, false);
   assert.equal(refusal.kind, "refused");
-  assert.match(refusal.message, /project is gone from mac-mini.*Update SprintEngine Studio there/);
+  assert.match(refusal.message, /project is gone from mac-mini.*Update Studio there/);
 });
 
 test("a board survives the trip through a route's flat params, a removed project included", () => {

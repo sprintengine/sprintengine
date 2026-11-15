@@ -326,9 +326,8 @@ export function WorktreesSettingsTab({
         body: (
           <p>
             The {totals.ready} ready worktree{totals.ready === 1 ? ' is' : 's are'} removed now
-            {totals.bytes.ready ? `, freeing up to ${formatBytes(totals.bytes.ready)}` : ''}, except any holding a
-            chat&apos;s history. Worktrees in use or holding changes stay. New chats get a fresh worktree, with no
-            dependencies installed.
+            {totals.bytes.ready ? `, freeing up to ${formatBytes(totals.bytes.ready)}` : ''}. Ones in use, holding
+            changes or holding a chat&apos;s history stay.
           </p>
         ),
         confirmLabel: 'Turn off and remove',
@@ -440,8 +439,8 @@ export function WorktreesSettingsTab({
       title: `Remove ${rows.length} worktree${rows.length === 1 ? '' : 's'}?`,
       body: (
         <p>
-          Deletes their folders{bytes ? ` and frees ${formatBytes(bytes)}` : ''}. None has uncommitted changes, and
-          their branches are kept.
+          Deletes their folders{bytes ? ` and frees ${formatBytes(bytes)}` : ''}. None has uncommitted changes; branches
+          are kept.
         </p>
       ),
       confirmLabel: 'Remove',
@@ -473,12 +472,7 @@ export function WorktreesSettingsTab({
     if (ask) {
       const confirmed = await dialog.confirm({
         title: `Clear ignored files in ${row.name}?`,
-        body: (
-          <p>
-            Deletes its installed dependencies and build output (everything git ignores). The worktree stays in the
-            pool; the next agent in it runs the install from the start.
-          </p>
-        ),
+        body: <p>Deletes its dependencies and build output. The next agent here reinstalls from scratch.</p>,
         confirmLabel: 'Clear',
         tone: 'danger',
       })
@@ -505,12 +499,7 @@ export function WorktreesSettingsTab({
     if (action === 'discard') {
       const confirmed = await dialog.confirm({
         title: `Discard the changes in ${row.name}?`,
-        body: (
-          <p>
-            Its uncommitted changes and untracked files are deleted, and the worktree goes back to the pool. Commits on
-            the branch are kept. This cannot be undone.
-          </p>
-        ),
+        body: <p>Deletes uncommitted changes and untracked files. Commits are kept. Can&apos;t be undone.</p>,
         confirmLabel: 'Discard',
         tone: 'danger',
       })
@@ -539,14 +528,14 @@ export function WorktreesSettingsTab({
         if (!listed.ok)
           return {
             ok: true,
-            message: `Git pruned the project's missing worktrees; whether it forgot ${row.name} could not be read back.`,
+            message: `Git pruned missing worktrees but couldn't confirm ${row.name}.`,
           }
         const still = listed.data.worktrees.find((worktree) => samePath(worktree.path, row.path))
         if (still) {
           return {
             ok: false,
             message: still.locked
-              ? `Git kept ${row.name}: it is locked${still.lockedReason ? ` (${still.lockedReason})` : ''}. Unlock it from the Worktree manager first.`
+              ? `Git kept ${row.name}: it is locked${still.lockedReason ? ` (${still.lockedReason})` : ''}. Unlock it in the Worktree manager.`
               : `Git still lists ${row.name}.`,
           }
         }
@@ -562,7 +551,7 @@ export function WorktreesSettingsTab({
         return {
           ok: true,
           message: others
-            ? `Git forgot ${row.name}, and the project's ${others} other missing worktree${others === 1 ? '' : 's'}.`
+            ? `Git forgot ${row.name} and ${others} other missing worktree${others === 1 ? '' : 's'}.`
             : `Git forgot ${row.name}.`,
         }
       },
@@ -717,7 +706,7 @@ export function WorktreesSettingsTab({
       <SettingCard className="mb-6">
         <SettingToggle
           label="Reuse worktrees for new chats"
-          description="A new chat or an agent's worktree comes from the pool instead of a fresh checkout, reset to the default branch as fetched at that moment. Its ignored files (node_modules, build output) are kept, so installs are faster. Turning it off removes every ready worktree; ones in use or holding work stay."
+          description="New chats and agents reuse a pooled worktree, reset to the default branch, with installs kept. Turning it off removes the ready ones."
           enabled={settings.enabled}
           onChange={(enabled) => void setPoolEnabled(enabled)}
         />
@@ -833,11 +822,7 @@ export function WorktreesSettingsTab({
         <EmptyState
           density="list"
           title={projects.length === 0 ? 'No worktrees yet.' : 'Nothing matches.'}
-          body={
-            projects.length === 0
-              ? 'A new chat gets a worktree of its own, and it appears here with the project it belongs to.'
-              : undefined
-          }
+          body={projects.length === 0 ? 'Each new chat gets its own worktree, listed here.' : undefined}
         />
       ) : (
         visibleProjects.map(({ project, poolRows, otherRows }) => (
@@ -1020,8 +1005,8 @@ function ProjectCard({
         <InlineNotice
           tone="warn"
           className="m-3"
-          title="Another copy of SprintEngine Studio manages this pool."
-          hint="Its worktrees are shown here; change them from that copy."
+          title="Another copy of Studio manages this pool"
+          hint="Change its worktrees from that copy"
         />
       ) : null}
       {project.error ? <InlineNotice tone="error" className="m-3" title={project.error} /> : null}
@@ -1291,7 +1276,7 @@ function DependencyInstallSettings({
     <div className="border-b border-[color:var(--border-subtle)]">
       <SettingToggle
         label="Install dependencies when the lockfile changes"
-        description="Before an agent starts in one of this project's pooled worktrees, the install runs if the lockfile changed since that worktree last installed, and the agent waits for it. It runs the project's own install scripts with your permissions, so turn it on only for code you trust."
+        description="Reinstalls before an agent starts if the lockfile changed. Runs the project's install scripts as you, so only turn on for code you trust."
         enabled={enabled}
         disabled={disabled}
         onChange={(next) => onChange({ enabled: next, command: install?.command ?? null })}
@@ -1421,7 +1406,7 @@ function RowDetail({ row, now, actions, busy }: { row: WorktreeRow; now: number;
       slot?.lease
         ? {
             term: 'Leased',
-            description: `${formatRelativeMsAgo(slot.lease.leasedAt, now)}${slot.lease.agentId ? ', by the agent itself (worktree.lease)' : ''}. It comes back to the pool when its chat is done, or once it has sat clean, pushed and unused for the idle period.`,
+            description: `${formatRelativeMsAgo(slot.lease.leasedAt, now)}${slot.lease.agentId ? ', by the agent (worktree.lease)' : ''}. Returns to the pool when its chat is done, or once idle, clean and pushed.`,
           }
         : null,
       slot ? { term: 'Leases served', description: String(slot.uses) } : null,
@@ -1431,7 +1416,7 @@ function RowDetail({ row, now, actions, busy }: { row: WorktreeRow; now: number;
       slot?.kept && row.state === 'ready'
         ? {
             term: 'Kept',
-            description: `${slot.kept.charAt(0).toUpperCase()}${slot.kept.slice(1)}. The idle and disk limits leave it on disk until its ignored files are cleared.`,
+            description: `${slot.kept.charAt(0).toUpperCase()}${slot.kept.slice(1)}. Stays on disk until its ignored files are cleared.`,
           }
         : null,
     ] as Array<DefinitionItem | null>

@@ -34,7 +34,7 @@ export function readSchedule(cron: string, timezone: string, now: number): Sched
   } catch {
     runs = [];
   }
-  if (runs.length === 0) return { ok: false, message: "That schedule never comes round — no calendar has that day." };
+  if (runs.length === 0) return { ok: false, message: "No such date, so it never runs" };
   return { ok: true, words: describeCronSchedule(parsed.schedule), next: formatRunTimes(runs, timezone, now) };
 }
 

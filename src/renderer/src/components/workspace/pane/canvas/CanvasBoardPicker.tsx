@@ -555,9 +555,9 @@ export function CanvasBoardPicker({
             body={
               source.kind === 'paired'
                 ? canCreate
-                  ? `Boards on ${source.machineName} are listed here. You and the agents there can both draw on them.`
-                  : `Agents on ${source.machineName} draw boards there, and they are listed here.`
-                : 'Boards are kept by the app, outside your repository — you and your agents can both draw on them. Export one to a folder when it belongs in the project.'
+                  ? `Boards on ${source.machineName} show up here. You and its agents can both draw on them.`
+                  : `Boards drawn by agents on ${source.machineName} show up here.`
+                : 'Boards live outside your repository; you and your agents can both draw on them. Export one to a folder to add it.'
             }
           />
         ) : (

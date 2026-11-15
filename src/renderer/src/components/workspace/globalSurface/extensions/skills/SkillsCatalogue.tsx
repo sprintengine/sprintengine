@@ -402,7 +402,7 @@ export function SkillsCatalogue({
               <span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">Installed</span>
             ) : installing !== null && installing !== item.skillId ? (
               // A disabled Install says why rather than leaving a blocked cursor to guess at.
-              <Tooltip content="Another skill is installing — this one can install when it finishes.">
+              <Tooltip content="Wait for the other install to finish">
                 <GhostButton
                   size="sm"
                   disabled
@@ -511,8 +511,8 @@ export function SkillsCatalogue({
       return (
         <InlineNotice
           tone="error"
-          title="Your skill sources could not be read."
-          hint="Nothing was changed. Try again, or add a source to start a fresh list."
+          title="Couldn't read your skill sources."
+          hint="Nothing changed. Try again, or add a source."
           detail={sources.sourcesLoad.message}
           action={<GhostButton onClick={sources.refreshSources}>Try again</GhostButton>}
         />
@@ -557,8 +557,8 @@ export function SkillsCatalogue({
       return (
         <InlineNotice
           tone="error"
-          title={`${catalogueTabLabel(activeSource)} could not be read.`}
-          hint="Its skills are not listed below — this is not an empty source."
+          title={`Couldn't read ${catalogueTabLabel(activeSource)}.`}
+          hint="Its skills can't be shown right now."
           detail={activeScan.message}
           action={<GhostButton onClick={() => sources.refreshScan(activeSource.id)}>Try again</GhostButton>}
         />

@@ -275,10 +275,10 @@ test('a machine whose Studio serves no boards: the pane says to update it there'
   const access = await here.lane.access('conn-1')
   assert.ok(access.ok)
   assert.equal(access.live, false)
-  assert.match(access.reason ?? '', /mac-mini runs a Studio that does not serve its boards here/u)
+  assert.match(access.reason ?? '', /mac-mini can't share its boards here yet/u)
   const opened = await here.lane.open(here.viewer(1), here.board('plan'))
   assert.ok(!opened.ok)
-  assert.match(opened.error.message, /Update SprintEngine Studio there/u)
+  assert.match(opened.error.message, /Update Studio there/u)
 })
 
 test('the link drops and comes back: what was drawn meanwhile is saved, and the windows are told', async () => {

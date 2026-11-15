@@ -71,11 +71,11 @@ test('the toast an import ends with says what it made and what it could not', ()
   assert.deepEqual(describeImportResult({ ok: true, imported: [made], skipped: 0, failed: [failure] }), {
     tone: 'neutral',
     title: 'Imported 1 conversation.',
-    description: '1 conversation could not be imported. Add caching: Disk full.',
+    description: '1 conversation failed. Add caching: Disk full.',
   })
   assert.deepEqual(describeImportResult({ ok: true, imported: [], skipped: 0, failed: [failure] }), {
     tone: 'error',
-    title: 'Could not import 1 conversation.',
+    title: "Couldn't import 1 conversation.",
     description: 'Add caching: Disk full.',
   })
   assert.equal(

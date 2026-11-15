@@ -149,12 +149,12 @@ export function ContainerChip({
               ) : null}
               {status && status.state === 'ready' && !status.imageReady ? (
                 <span className="mt-0.5 block text-[color:var(--text-subtle)]">
-                  The first container here builds Studio’s image, which takes a few minutes.
+                  The first one builds the image, which takes a few minutes.
                 </span>
               ) : null}
             </dd>
             <dt className="text-[color:var(--text-subtle)]">Image</dt>
-            <dd className="text-[color:var(--text-muted)]">Studio’s default: Node 22, git, Claude Code and Codex</dd>
+            <dd className="text-[color:var(--text-muted)]">Node 22, git, Claude Code and Codex</dd>
             <dt className="text-[color:var(--text-subtle)]">Repo</dt>
             <dd className="text-[color:var(--text-muted)]">Cloned in; changes leave as a pushed branch</dd>
             <dt className="text-[color:var(--text-subtle)]">Network</dt>

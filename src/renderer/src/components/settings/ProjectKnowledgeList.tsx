@@ -64,7 +64,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
           ok: false,
           status: 'invalid-relative-path',
           relativeRoot: null,
-          message: 'Knowledge path must be relative to the project folder.',
+          message: 'Use a path relative to the project folder.',
         },
       }))
       return
@@ -133,7 +133,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
             ok: false,
             status: 'invalid-relative-path',
             relativeRoot: null,
-            message: 'Choose a folder that can be expressed relative to the project folder.',
+            message: "Can't make that folder relative to the project. Choose another.",
           },
         }))
         return
@@ -173,7 +173,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
             ok: false,
             status: 'invalid-relative-path',
             relativeRoot: null,
-            message: `Cannot express ${dir} relative to this project folder.`,
+            message: `Can't make ${dir} relative to this project.`,
           },
         }))
         continue

@@ -235,7 +235,7 @@ function PullRequestBody({
         }
       >
         {detail.files === null ? (
-          <Text style={styles.meta}>The desktop could not read which files this pull request changes.</Text>
+          <Text style={styles.meta}>The desktop couldn&apos;t read this pull request&apos;s files.</Text>
         ) : detail.files.items.length === 0 ? (
           <Text style={styles.meta}>This pull request changes no files.</Text>
         ) : (
@@ -275,7 +275,7 @@ function PullRequestBody({
         )}
         {detail.files && filesNotListed(detail.files) > 0 ? (
           <Text style={styles.meta}>
-            {filesNotListed(detail.files)} more not listed here. Open it on GitHub to see every file.
+            {filesNotListed(detail.files)} more not listed. See every file on GitHub.
           </Text>
         ) : null}
       </Section>

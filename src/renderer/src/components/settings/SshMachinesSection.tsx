@@ -115,7 +115,7 @@ export function SshMachineActions({
         onClick={() =>
           void confirmDialog({
             title: `Update the Studio server on ${machine.label}?`,
-            body: `It was started outside this app, and may be serving other clients. Its chats are given a minute to finish, then it is replaced by this app's version.`,
+            body: `It was started outside this app and may serve other clients. Its chats get a minute to finish first.`,
             confirmLabel: 'Update it',
           }).then((yes) => (yes ? api.sshEnvironmentUpgradeServer(machine.id) : undefined))
         }
@@ -180,7 +180,7 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
         ) : null}
         <SettingToggle
           label="Keep the server running"
-          description="Otherwise it stops five minutes after the last client leaves, once no chat is working and it has no schedule, pull request watch or message waiting to send."
+          description="Otherwise it stops when idle for five minutes with no clients or pending work."
           enabled={machine.settings.keepRunning}
           onChange={(keepRunning) => write({ keepRunning })}
         />
@@ -189,7 +189,7 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
           help={`What this machine's browser tabs reach through ${machine.label}. With everything, its localhost is the machine's.`}
         >
           <Select
-            ariaLabel={`What browser tabs for ${machine.label} send through it`}
+            ariaLabel={`Browser tab traffic through ${machine.label}`}
             items={PANE_TRAFFIC_ITEMS}
             value={machine.settings.paneTraffic}
             onChange={(paneTraffic) => write({ paneTraffic })}
@@ -197,7 +197,7 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
         </SettingsRow>
         <SettingToggle
           label="Download Node.js on the machine"
-          description="For a machine on a faster network than this computer. Checked there against the digest this app pins."
+          description="For a machine on a faster network. Checked against a pinned digest."
           enabled={machine.settings.remoteDownload}
           onChange={(remoteDownload) => write({ remoteDownload })}
         />
@@ -226,7 +226,7 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
             onClick={() =>
               void confirmDialog({
                 title: `Stop the Studio server on ${machine.label}?`,
-                body: 'Chats still working there get a minute to finish first.',
+                body: 'Running chats get a minute to finish.',
                 confirmLabel: 'Stop it',
                 tone: 'danger',
               }).then((yes) => (yes ? api.sshEnvironmentStopServer(machine.id) : undefined))
@@ -250,7 +250,7 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
           onClick={() =>
             void confirmDialog({
               title: `Forget ${machine.label}?`,
-              body: 'Its chats stay on the machine. Its Studio server keeps running there, and stops on its own when idle.',
+              body: 'Its chats stay on the machine. Its server stops on its own when idle.',
               confirmLabel: 'Forget',
               tone: 'danger',
             }).then(async (yes) => {
@@ -274,8 +274,8 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
                 setDiagnostics(removed.message)
               }
               const recordsOnly = await confirmDialog({
-                title: `Forget ${machine.label} and its containers' records only?`,
-                body: `The containers stay on ${machine.label}, and Studio stops keeping track of them. Choose this only if ${machine.label} is gone.`,
+                title: `Forget ${machine.label}'s container records only?`,
+                body: `The containers stay on ${machine.label}, untracked. Only do this if ${machine.label} is gone.`,
                 confirmLabel: 'Forget the records',
                 tone: 'danger',
               })
@@ -389,7 +389,7 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
                 through <ProviderStateId>{checked.resolved.proxyJump}</ProviderStateId>
               </>
             ) : null}
-            . On the first connection, SSH shows the machine's fingerprint for you to check.
+            . SSH will show its fingerprint to check on first connect.
           </p>
           {checked.resolved.notes.map((note) => (
             <p key={note} className={MUTED}>

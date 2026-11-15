@@ -195,7 +195,7 @@ test('every item of a chat’s menu, here or on a paired machine, has a tooltip'
     const star = walkTo('Star')
     const tip = dom.window.document.querySelector('[role="tooltip"]')
     assert.ok(tip, 'focus shows the row’s tooltip')
-    assert.match(tip.textContent ?? '', /Saved on mac-mini/)
+    assert.match(tip.textContent ?? '', /syncs to mac-mini/)
     assert.equal(star.getAttribute('aria-describedby'), tip.id)
 
     // Auto-settle says when it settles a chat.
@@ -208,7 +208,7 @@ test('every item of a chat’s menu, here or on a paired machine, has a tooltip'
       snooze.focus()
     })
     assert.equal(dom.window.document.activeElement, snooze)
-    assert.match(dom.window.document.querySelector('[role="tooltip"]')?.textContent ?? '', /Hide this chat/)
+    assert.match(dom.window.document.querySelector('[role="tooltip"]')?.textContent ?? '', /Hide until/)
     await act(async () => {
       snooze.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })

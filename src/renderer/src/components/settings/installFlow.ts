@@ -138,7 +138,7 @@ export function classifyVerification(
         return {
           kind: 'blocked',
           classification: 'invalid',
-          message: verify.message || 'This extension can’t be approved for install right now.',
+          message: verify.message || 'Can’t approve this extension right now.',
           issues: verify.issues?.map((issue) => issue.message),
         }
       }

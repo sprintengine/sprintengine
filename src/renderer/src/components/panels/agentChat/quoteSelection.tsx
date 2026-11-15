@@ -139,7 +139,7 @@ export function quoteSelectionInto(
     showToast({
       tone: 'neutral',
       title: 'Selection too long to quote',
-      description: `A quote holds up to ${QUOTE_MAX_CHARS.toLocaleString('en-US')} characters; this one is ${quote.length.toLocaleString('en-US')}. Select a shorter passage.`,
+      description: `Limit is ${QUOTE_MAX_CHARS.toLocaleString('en-US')} characters; this is ${quote.length.toLocaleString('en-US')}.`,
     })
     return true
   }

@@ -315,7 +315,7 @@ test('agentBacklogLinks', async () => {
       false,
     )
     assert.equal(unreachable.calls.diagnostics.length, 1)
-    assert.match(unreachable.calls.diagnostics[0], /Could not open the agent terminal/)
+    assert.match(unreachable.calls.diagnostics[0], /Couldn't open this item's agent terminal/)
 
     console.log('agentBacklogLinks.test.ts passed')
   }

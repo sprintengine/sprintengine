@@ -134,7 +134,7 @@ test("an older desktop, an unpaired phone, and a desktop that does not answer", 
     ok: false,
     failure: "unsupported",
     title: "mac-mini cannot start chat agents yet.",
-    message: "Update SprintEngine Studio there to start one from the phone.",
+    message: "Update Studio there first.",
   });
   const unpaired = fakeDesktopStudio({ answer: () => ({}), ticketStatus: () => 401 });
   assert.equal(
@@ -154,7 +154,7 @@ test("an older desktop, an unpaired phone, and a desktop that does not answer", 
   const nameless = fakeDesktopStudio({ answer: () => ({ conversation: { ...launched, agentId: "" } }) });
   assert.equal(
     (await createConversation(target(), { workspaceId: "w" }, { fetchImpl: nameless.fetchImpl, WebSocket: nameless.WebSocket })).title,
-    "mac-mini started the chat but did not say which one it is.",
+    "mac-mini didn't say which chat it started.",
   );
   closeDesktopStudios();
 });

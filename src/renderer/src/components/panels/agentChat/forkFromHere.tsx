@@ -107,7 +107,7 @@ export function ForkMessageAction({
   return (
     <ForkFromHereButton
       running={running}
-      tooltip="Open a new chat with the conversation before this message, and this message ready to send"
+      tooltip="Fork with this message ready to send"
       className={className}
       onFork={async () => {
         // The message goes back as it was sent, its images included, read from
@@ -149,7 +149,7 @@ export function ForkReplyAction({
   return (
     <ForkFromHereButton
       running={running}
-      tooltip="Open a new chat with the conversation up to this reply"
+      tooltip="Fork the chat up to this reply"
       className={className}
       onFork={() => onFork({ side: 'assistant', turnId })}
     />
@@ -176,14 +176,14 @@ function ForkFromHereButton({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Could not fork from here: ${error instanceof Error ? error.message : String(error)}`,
+        title: `Couldn't fork: ${error instanceof Error ? error.message : String(error)}`,
       })
     } finally {
       setPending(false)
     }
   }
   return (
-    <Tooltip content={running ? 'Stop the running turn before forking from an earlier message' : tooltip}>
+    <Tooltip content={running ? 'Stop the running turn to fork' : tooltip}>
       <span className={className}>
         <GhostButton size="inline" disabled={running || pending} onClick={() => void fork()}>
           {pending ? 'Forking…' : 'Fork from here'}
@@ -225,7 +225,7 @@ export async function forkChat(input: {
   })
   if (!forked.ok) throw new Error(forked.message)
   const { environment } = input.transport
-  const lost = 'Studio made the fork but did not say where it is. Reload the window to find it.'
+  const lost = 'Forked, but couldn’t find it. Reload the window.'
   if (!forked.name || (environment.id !== null && forked.address.environmentId !== environment.id))
     throw new Error(lost)
   const connectionId = pairedConnectionOf(environment.route)
@@ -291,7 +291,7 @@ async function openFork(
       mentions: [],
     })
   placeSpawnedAgentTab(workspaceId, agentId, name, { afterAgentId })
-  showToast({ tone: 'neutral', title: `Forked into ${name}. Both chats work in the same files.` })
+  showToast({ tone: 'neutral', title: `Forked into ${name}. Both share the same files.` })
 }
 
 /**
@@ -345,7 +345,7 @@ async function openPairedFork(input: {
       showToast({
         tone: 'neutral',
         title: `Forked into ${name} on ${machineName}`,
-        description: `No pane could open for it here. It is listed under ${machineName} in the sidebar.`,
+        description: `Find it under ${machineName} in the sidebar`,
       })
       return
     }
@@ -367,6 +367,6 @@ async function openPairedFork(input: {
     composerDraftStore().getState().put(workspaceId, agentId, { text: target.draft.text, skillIds: [], mentions: [] })
   showToast({
     tone: 'neutral',
-    title: `Forked into ${name} on ${machineName}. Both chats work in the same files there.`,
+    title: `Forked into ${name} on ${machineName}. Both share the same files.`,
   })
 }

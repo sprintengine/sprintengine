@@ -146,8 +146,7 @@ export function ScheduledAgentsScreen({
         ) : withAgents.length === 0 ? (
           <Card>
             <Text style={styles.notice}>
-              No scheduled agents yet. A scheduled agent starts a chat with its prompt each time its schedule comes
-              round, on the desktop, whether or not this phone is awake.
+              No scheduled agents yet. Each starts a chat on the desktop on schedule, even while this phone sleeps.
             </Text>
           </Card>
         ) : (

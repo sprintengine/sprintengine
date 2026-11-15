@@ -1121,7 +1121,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         : `${topLevelEntries.length} selected items`
     const confirmed = await dialog.confirm({
       title: 'Move to Trash?',
-      body: `This moves ${targetLabel} to the system Trash. You can restore it from Trash until it is emptied.`,
+      body: `Moves ${targetLabel} to the Trash. You can restore it from there.`,
       confirmLabel: 'Move to Trash',
       tone: 'danger',
     })

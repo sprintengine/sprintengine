@@ -227,9 +227,7 @@ const GitChangeRowItem = React.memo(function GitChangeRowItem({
               every other box on screen does — travels with the
               name where a screen reader meets it first. */}
           {row.partial ? (
-            <span className="sr-only">
-              , partial: {groupTitle}’s changes only. Ticking stages that list’s hunks of this file.
-            </span>
+            <span className="sr-only">, partial: {groupTitle}’s changes only. Ticking stages just those hunks.</span>
           ) : null}
         </span>
       }
@@ -504,8 +502,7 @@ export const GitChangesList = React.memo(function GitChangesList({
               </div>
               {group.omittedCount > 0 ? (
                 <div className="mx-2 mt-1 rounded-sm border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] px-2 py-1.5 text-micro text-[color:var(--text-subtle)]">
-                  {group.omittedCount} more changes are hidden to keep the panel responsive. The group’s checkbox still
-                  stages or unstages every one of them.
+                  {group.omittedCount} more changes hidden. The group’s checkbox still covers them all.
                 </div>
               ) : null}
             </div>

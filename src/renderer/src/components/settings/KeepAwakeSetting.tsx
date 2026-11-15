@@ -8,7 +8,7 @@ export function KeepAwakeSetting() {
   return (
     <MainOwnedSettingToggle
       label="Keep the computer awake while agents work"
-      description="The computer does not go to sleep while an agent is mid-turn. The display can still turn off and lock."
+      description="No sleep while an agent is mid-turn. The display can still lock."
       read={window.api?.getKeepAwake}
       write={(enabled) => window.api.setKeepAwake(enabled)}
     />

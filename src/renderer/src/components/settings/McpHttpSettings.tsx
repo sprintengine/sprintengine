@@ -62,7 +62,7 @@ export function McpHttpSettings() {
   const revoke = async (id: string, clientName: string) => {
     const confirmed = await dialog.confirm({
       title: `Revoke ${clientName}?`,
-      body: 'Its token stops working at once. Copy a new MCP URL to let it back in.',
+      body: 'Its token stops working now. Copy a new MCP URL to reconnect.',
       confirmLabel: 'Revoke',
       tone: 'danger',
     })
@@ -125,7 +125,7 @@ export function McpHttpSettings() {
       </SettingCard>
       {name === null && !mints ? (
         <p className="text-meta text-[color:var(--text-muted)]">
-          A new MCP URL is made in the desktop app, or on this server’s machine with{' '}
+          Make a new MCP URL in the desktop app, or on the server with{' '}
           <code>studio-server mcp-token --name &lt;client&gt;</code>.
         </p>
       ) : null}

@@ -642,10 +642,8 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               <p className="text-[color:var(--text-muted)]">Process metrics unavailable.</p>
             )}
             <p className="mt-1 text-micro text-[color:var(--text-subtle)]">
-              Electron rows use Electron working set; child rows use OS RSS. Their sum is reported process memory, not
-              macOS physical footprint or pressure attribution. Activity Monitor Memory can differ, especially for
-              GPU-owned IOSurfaces. CPU % is the rolling share since the previous sample. Thread counts are sampled from
-              the OS off the poll path (refreshed every few seconds); FD counts are not collected.
+              Electron rows: working set; child rows: OS RSS. Not macOS physical footprint, so Activity Monitor may
+              differ. CPU % is since the last sample. FD counts aren't collected.
             </p>
           </section>
 
@@ -792,8 +790,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               </span>
             </div>
             <p className="mt-0.5 text-micro text-[color:var(--text-subtle)]">
-              Catches per-frame jank (style/layout/compositing) that no single &gt;50ms task shows. Main-thread cadence
-              — pure GPU draw stalls can read low here; confirm those in DevTools.
+              Per-frame jank no single &gt;50ms task shows. GPU draw stalls may read low; check DevTools.
             </p>
           </section>
 
@@ -830,9 +827,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </tbody>
               </Table>
             ) : (
-              <p className="text-[color:var(--text-muted)]">
-                No perf events captured yet. They accrue as instrumented paths run.
-              </p>
+              <p className="text-[color:var(--text-muted)]">No perf events yet.</p>
             )}
           </section>
         </TabPanel>
@@ -934,9 +929,8 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               Reaped terminals ({metrics?.reapEvents?.length ?? 0})
             </h2>
             <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-              Idle agents the reaper suspended (outside the hot set, past the idle threshold) or the 24h stale backstop
-              disposed. Most recent first; bounded ring buffer, cleared on app restart. A reaped agent keeps its resume
-              flags and relaunches with --resume on reopen.
+              Idle agents suspended by the reaper or disposed after 24h stale. Newest first; cleared on restart.
+              Reopening one resumes it.
             </p>
             {metrics?.reapEvents && metrics.reapEvents.length > 0 ? (
               <Table>
@@ -992,9 +986,8 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               Workspaces ({workspacesByMemory.length})
             </h2>
             <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-              Memory is the real RSS of each workspace's agent/terminal subtrees (the CLI plus its MCP/dev-server
-              children), summed in the main process. Shared app overhead (main, renderer, GPU) is not attributed here,
-              so these sum to less than the app total. &quot;Live for&quot; is since the oldest live terminal started.
+              RSS of each workspace's agent and terminal processes. Shared app overhead isn't counted, so these sum to
+              less than the app total. &quot;Live for&quot; counts from the oldest live terminal.
             </p>
             {workspacesByMemory.length > 0 ? (
               <Table>
@@ -1102,7 +1095,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               </Table>
             ) : (
               <p className="text-[color:var(--text-muted)]">
-                IPC accounting is active only when diagnostics is enabled (dev or SPRINTENGINE_DIAGNOSTICS=1).
+                IPC accounting needs diagnostics on (dev or SPRINTENGINE_DIAGNOSTICS=1).
               </p>
             )}
           </section>
@@ -1146,8 +1139,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               </Table>
             ) : (
               <p className="text-[color:var(--text-muted)]">
-                No replay profiles captured in this window. Profiles are recorded in the window that owns the terminals
-                (reattach a terminal there to record one).
+                No replay profiles here. They record in the window that owns the terminal.
               </p>
             )}
           </section>

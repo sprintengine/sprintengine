@@ -125,8 +125,8 @@ export function showAppUpdateReadyToast(state: Pick<AppUpdateState, 'updateVersi
     tone: 'good',
     title: 'Update downloaded',
     description: state.updateVersion
-      ? `${APP_NAME} ${state.updateVersion} is ready. Restart from the update button on the rail to install it.`
-      : 'Restart from the update button on the rail to install it.',
+      ? `Version ${state.updateVersion} is ready. Restart from the update button on the rail.`
+      : 'Restart from the update button on the rail.',
     onDismissPressed: dismissUpdate(state.updateVersion, 'ready'),
     actions: opensNotes
       ? [
@@ -160,7 +160,7 @@ export async function restartToUpdateFromToast(
     tone: 'neutral',
     title: 'Installing update',
     description: installNeedsAdmin
-      ? 'Windows will ask for administrator permission, then Studio restarts.'
+      ? 'Windows asks for admin permission, then Studio restarts.'
       : 'Studio will restart in a moment…',
     autoDismissMs: false,
     actions: [restartAction(true)],

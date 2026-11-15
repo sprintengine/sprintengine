@@ -16,13 +16,13 @@ export function AgentBrowserSettings() {
             a browser tab, which offers none, leaves the row out. */}
         <MainOwnedSettingToggle
           label="Let agents use the built-in browser"
-          description="Agents can open, read and click through pages in the pane's browser. Off, they are given no browser tools; an agent already running picks the change up in its next session."
+          description="Agents can open, read and click pages. Running agents pick this up next session."
           read={window.api?.getAgentBrowserTools}
           write={(enabled) => window.api.setAgentBrowserTools(enabled)}
         />
         <SettingToggle
           label="Show the page while an agent uses it"
-          description="With the pane closed, a page an agent opens or drives, or a board it draws on, floats in a corner over the chat. Close it to keep it out of the way while that agent works."
+          description="With the pane closed, float the agent’s page or board over the chat."
           enabled={autoFloat}
           onChange={setAutoFloat}
         />

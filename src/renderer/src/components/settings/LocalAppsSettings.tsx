@@ -39,45 +39,42 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
   {
     scope: 'conversation:read',
     title: 'Read chats',
-    description: 'List this machine’s chats and follow them as they run.',
+    description: 'See this machine’s chats as they run.',
   },
   {
     scope: 'conversation:operate',
     title: 'Drive chats',
-    description: 'Send messages, answer approvals and questions, switch model or preset, interrupt and stop.',
+    description: 'Send messages, answer approvals, change model or preset, and stop.',
   },
   {
     scope: 'conversation:create',
     title: 'Start chats',
-    description: 'Start new chats in a workspace, with a prompt and skills.',
+    description: 'Start new chats with a prompt and skills.',
   },
   {
     scope: 'tools:offer',
     title: 'Give agents tools from this app',
-    description:
-      'Offer tools that Studio’s agents can call, which run in the app. Every call still asks as the chat’s own permissions say.',
+    description: 'Offer tools that run in the app. Each call follows the chat’s permissions.',
   },
   {
     scope: 'environment:maintain',
     title: 'Update Studio',
-    description: 'Download a new version of Studio and restart into it. Running turns get time to finish first.',
+    description: 'Install updates and restart. Running turns finish first.',
   },
   {
     scope: 'settings:write',
     title: 'Change settings',
-    description: 'Set or remove a provider’s API key, and revoke a rule that answers approvals by itself.',
+    description: 'Set or remove API keys, and revoke auto-approve rules.',
   },
   {
     scope: 'modules:read',
     title: 'Hear extensions',
-    description:
-      'Hear what this machine’s extensions say, their events and the notifications they raise, and ask them what they declare as reading only.',
+    description: 'Receive extensions’ events and notifications, and run their read-only actions.',
   },
   {
     scope: 'modules:operate',
     title: 'Use extensions',
-    description:
-      'Ask this machine’s extensions to do what they declare as changing something. What that is depends on each extension and the permissions you trusted it with.',
+    description: 'Run extensions’ actions that change things, within the permissions you gave each.',
   },
 ]
 
@@ -161,14 +158,14 @@ export function LocalAppsSettings() {
       setDraft(null)
       setNow(Date.now())
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'The pairing code could not be made.')
+      setError(failure instanceof Error ? failure.message : 'Couldn’t make a pairing code.')
     }
   }
 
   const revoke = async (id: string, name: string) => {
     const confirmed = await dialog.confirm({
       title: `Revoke ${name}?`,
-      body: 'Its token stops working at once, and any connection it has open is closed. Pair it again to let it back in.',
+      body: 'It’s disconnected at once. Pair it again to let it back in.',
       confirmLabel: 'Revoke',
       tone: 'danger',
     })

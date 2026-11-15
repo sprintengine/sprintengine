@@ -83,14 +83,14 @@ export function promptCacheCopy(
   if (state.kind === "expiring")
     return {
       label: `Cache expires in ${minutes(state.remainingMs)}`,
-      detail: `After that, the next message re-sends ${tokens} uncached. Compacting now, while the cache is warm, is cheap.`,
+      detail: `Then the next message re-sends ${tokens} uncached. Compacting now is cheap.`,
     };
   const ago = state.expiredAt !== null && now - state.expiredAt >= 60_000 ? minutes(now - state.expiredAt) : "";
   return {
     label: ago ? `Cache expired ${ago} ago` : "Cache cold",
     // Compacting a cold cache re-reads the conversation uncached too; what it
     // buys is every message after it.
-    detail: `The next message re-sends ${tokens} uncached, a compaction included. Compacting first makes every message after it smaller.`,
+    detail: `The next message re-sends ${tokens} uncached, a compaction included. Compacting shrinks later messages.`,
   };
 }
 

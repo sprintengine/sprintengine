@@ -43,8 +43,7 @@ export function ConversationApprovalSettings() {
         Remembered chat permissions
       </SettingsSectionTitle>
       <p className="text-body text-[color:var(--sem-color-text-muted)]">
-        Workspace grants apply only to the named tool and matcher. Removing one makes future requests ask again.
-        Conversation-only grants expire when that chat session closes.
+        Each grant covers one tool and matcher. Revoked ones ask again. Chat-only grants end with the chat session.
       </p>
       {error ? (
         <InlineNotice
@@ -75,9 +74,7 @@ export function ConversationApprovalSettings() {
           ))}
         </SettingCard>
       ) : (
-        <p className="text-body text-[color:var(--sem-color-text-muted)]">
-          No workspace permissions have been remembered.
-        </p>
+        <p className="text-body text-[color:var(--sem-color-text-muted)]">No remembered permissions.</p>
       )}
       <PairedMachineApprovalRules />
     </section>
@@ -160,9 +157,7 @@ function PairedMachineApprovalRules() {
                 ))}
               </SettingCard>
             ) : (
-              <p className="text-body text-[color:var(--sem-color-text-muted)]">
-                No workspace permissions have been remembered there.
-              </p>
+              <p className="text-body text-[color:var(--sem-color-text-muted)]">No remembered permissions.</p>
             )}
           </div>
         )

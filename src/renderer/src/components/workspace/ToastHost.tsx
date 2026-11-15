@@ -211,7 +211,7 @@ function useMeshToastBridge(): void {
             id: toastId,
             tone: 'warn',
             title: `${event.machineName} revoked this device`,
-            description: 'Its pairing was taken back over there. Pair again from the Mesh when you want it back.',
+            description: 'Pair again from the Mesh to reconnect.',
           })
         } else if (event.reachable && revokedConnections.current.delete(event.connectionId)) {
           useToastStore.getState().dismissToast(toastId)

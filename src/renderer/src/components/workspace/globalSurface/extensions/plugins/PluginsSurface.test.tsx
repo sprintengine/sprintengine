@@ -92,11 +92,8 @@ test('PluginsSurface', async () => {
       markup.includes('PreToolUse on Edit|Write: node &quot;${CLAUDE_PLUGIN_ROOT}/hooks/check.js&quot;'),
       'the command, verbatim',
     )
-    assert.ok(markup.includes('declares a hook command'), 'the warning names what the plugin carries')
-    assert.ok(
-      markup.includes('Installing a skill or server here copies no hooks'),
-      'and what an install here does with it',
-    )
+    assert.ok(markup.includes('Declares a hook command'), 'the warning names what the plugin carries')
+    assert.ok(markup.includes('Installing here copies no hooks'), 'and what an install here does with it')
     assert.equal(markup.includes('type="checkbox"'), false, 'no acknowledgement gate — hooks are not copied')
     assert.equal(markup.includes('Install to this workspace'), false, 'there is no all-in install')
     assert.equal(markup.includes('Enabled as security-guidance@claude-plugins-official'), false)

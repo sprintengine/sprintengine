@@ -353,7 +353,7 @@ export function createStudioChatServices(
         outcome(async () => {
           // Only a Studio that opens terminals offers it.
           if (!(await client()).supports(STUDIO_TERMINAL_HANDOFF_CAPABILITY))
-            return { ok: false as const, message: 'This Studio cannot open a terminal to resume the chat in.' }
+            return { ok: false as const, message: "This Studio can't open a terminal to resume in." }
           return await ask(client, 'session.terminalHandoff', {
             ...('sessionId' in input
               ? { sessionId: input.sessionId }
@@ -762,7 +762,7 @@ export function createStudioConversationParts(
         if (!isChatAddress(forked.address) || forked.address.agentId !== input.newAgentId || !forked.name)
           return {
             ok: false as const,
-            message: 'Studio made the fork but did not say where it is. Reload the window to find it.',
+            message: "Forked, but couldn't find it. Reload the window.",
           }
         return { ok: true as const, address: forked.address, name: forked.name }
       }),

@@ -33,7 +33,7 @@ import { askEnvironment, environmentCommandId, pairedTarget, type PairedMachine 
 
 const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
   code: 'lifecycle_unsupported',
-  message: `${machineName} cannot ${doing} from here yet. Update SprintEngine Studio there to do it from here.`,
+  message: `${machineName} can’t ${doing} from here yet. Update Studio there.`,
 })
 
 /**
@@ -48,7 +48,7 @@ export async function listPairedChats(machine: PairedMachine): Promise<MeshConve
     STUDIO_CONVERSATIONS_CAPABILITY,
     (machineName) => ({
       code: 'conversations_unsupported',
-      message: `${machineName} cannot list its chats here yet. Update SprintEngine Studio there to see them from here.`,
+      message: `${machineName} can’t list its chats here yet. Update Studio there.`,
     }),
     async (client) => ({ listed: await client.request('conversation.list', {}), grant: client.welcome?.grant ?? null }),
   )
@@ -119,7 +119,7 @@ export async function changePairedChat(
       STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
       (machineName) => ({
         code: 'row_menu_unsupported',
-        message: `${machineName} cannot stop watching its chats' pull requests from here yet. Update SprintEngine Studio there to do it from here.`,
+        message: `${machineName} can’t stop watching pull requests from here yet. Update Studio there.`,
       }),
       (client) => client.rpc['pullRequests.unwatch']({ conversation: { workspaceId, agentId }, url }),
     )
@@ -132,7 +132,7 @@ export async function changePairedChat(
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'row_menu_unsupported',
-      message: `${machineName} cannot ${call.ask} from here yet. Update SprintEngine Studio there to do it from here.`,
+      message: `${machineName} can’t ${call.ask} from here yet. Update Studio there.`,
     }),
     (client) => call.send(client, { workspaceId, commandId: environmentCommandId() }),
   )
@@ -141,7 +141,7 @@ export async function changePairedChat(
 
 const deleteUnsupported = (machineName: string) => ({
   code: 'delete_unsupported',
-  message: `${machineName} cannot delete its chats from here yet. Update SprintEngine Studio there to do it from here.`,
+  message: `${machineName} can’t delete its chats from here yet. Update Studio there.`,
 })
 
 /** What deleting a settled chat there would do, as that machine plans it. */
@@ -174,7 +174,7 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'search_unsupported',
-      message: `${machineName} cannot search its chats from here yet. Update SprintEngine Studio there to do it from here.`,
+      message: `${machineName} can’t search its chats from here yet. Update Studio there.`,
     }),
     (client) => client.rpc['conversation.searchChats']({ query: asked }),
   )
@@ -183,7 +183,7 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
 
 const rulesUnsupported = (machineName: string) => ({
   code: 'approval_rules_unsupported',
-  message: `${machineName} does not share its chat permissions yet. Update SprintEngine Studio there to see them from here.`,
+  message: `${machineName} doesn’t share its chat permissions yet. Update Studio there.`,
 })
 
 /** The "always allow" rules that machine's chats run with, for Settings. */

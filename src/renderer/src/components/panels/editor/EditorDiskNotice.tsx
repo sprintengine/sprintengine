@@ -24,7 +24,7 @@ export function EditorDiskNotice({
         <InlineNotice
           tone="warn"
           title="Changed on disk"
-          hint="This file changed on disk while it had unsaved edits here. Reload takes the version on disk; Keep mine keeps yours, and the next save writes it over the other."
+          hint="Reload takes the disk version; Keep mine overwrites it on next save"
           action={
             <>
               <OutlineButton size="xs" onClick={onReload}>
@@ -37,11 +37,7 @@ export function EditorDiskNotice({
           }
         />
       ) : (
-        <InlineNotice
-          tone="warn"
-          title="Deleted on disk"
-          hint="The file is gone from disk. It stays open here, and saving writes it back."
-        />
+        <InlineNotice tone="warn" title="Deleted on disk" hint="Still open here; saving writes it back" />
       )}
     </div>
   )
@@ -51,7 +47,7 @@ export function EditorDiskNotice({
 export function overwriteOnDiskConfirmation(fileName: string) {
   return {
     title: `Overwrite ${fileName}?`,
-    body: 'It changed on disk after it was opened here, perhaps by an agent. Saving replaces that version with yours.',
+    body: 'It changed on disk since it was opened. Saving replaces that version with yours.',
     confirmLabel: 'Overwrite',
     tone: 'danger' as const,
   }

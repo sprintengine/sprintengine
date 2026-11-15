@@ -97,8 +97,7 @@ export function CanvasFarBoard({
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--border-subtle)] px-3 py-2">
         {/* A line of its own: a docked pane has no room for it beside the actions. */}
         <p className="w-full text-meta text-[color:var(--text-muted)]">
-          {reason ?? `A picture of this board on ${source.machineName}.`} To change it from here, continue in a new chat
-          there.
+          {reason ?? `A picture of this board on ${source.machineName}.`} To change it, continue in a new chat there.
         </p>
         <GhostButton onClick={onSwitchBoard} className="ml-auto">
           Boards

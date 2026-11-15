@@ -34,7 +34,7 @@ export function WelcomeScreen({ onStartPairing }: { onStartPairing: () => void }
       </View>
 
       <View style={styles.actions}>
-        <Text style={styles.lead}>Pair with Sprint Engine Studio on a desktop in your tailnet.</Text>
+        <Text style={styles.lead}>Pair with Studio on a desktop in your tailnet.</Text>
         <PrimaryButton label="Pair with a desktop" onPress={onStartPairing} />
       </View>
     </View>

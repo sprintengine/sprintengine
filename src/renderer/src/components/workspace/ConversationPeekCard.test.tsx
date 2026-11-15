@@ -302,7 +302,7 @@ test('ConversationPeekCard', async () => {
     })
     assert.match(two, /aria-haspopup="menu"/, 'the split control appears at two')
     assert.match(two, /aria-expanded="false"/, 'and says whether its menu is up')
-    assert.match(two, /aria-label="All pull requests from this conversation, 2"/)
+    assert.match(two, /aria-label="All pull requests in this chat, 2"/)
     assert.match(two, /Pull request 421, open/, 'the primary is still the most recent open one')
   })
 

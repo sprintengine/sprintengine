@@ -99,7 +99,7 @@ test('a chat whose code failed to load loads it again on Reload chat, and offers
     // The import is refused a turn later: wait for the pane to say so.
     for (let tries = 0; !host.querySelector('[role="alert"]') && tries < 50; tries++)
       await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('This chat could not load its code.')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("This chat couldn't load.")
     const buttons = () => [...host.querySelectorAll('button')].map((button) => button.textContent)
     expect(buttons()).toEqual(['Reload chat', 'Reload window'])
     expect(loads, 'a failed chunk is not fetched again by itself').toBe(1)

@@ -98,8 +98,7 @@ export function ConversationAgentsScreen({
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No subagents yet</Text>
           <Text style={styles.meta}>
-            When this chat sends subagents off to work, to search the code, plan, or take on part of a task, they
-            show up here.
+            Subagents this chat sends off to work show up here.
           </Text>
         </View>
       ) : (
@@ -108,7 +107,7 @@ export function ConversationAgentsScreen({
           {section("Finished", finished)}
           {live.page.hasMore ? (
             <Text style={styles.meta}>
-              Older subagents are in earlier turns; load them in the chat to see them here.
+              Older subagents are in earlier turns. Load them in the chat.
             </Text>
           ) : null}
           {footer ? <Text style={styles.footer}>{footer}</Text> : null}
@@ -116,7 +115,7 @@ export function ConversationAgentsScreen({
       )}
       {live && !live.watchesSubagents ? (
         <Text style={styles.meta}>
-          Subagents this chat started with Studio are listed once the desktop is updated.
+          Update the desktop to see subagents started with Studio.
         </Text>
       ) : null}
     </Screen>

@@ -60,8 +60,8 @@ export function BrowsersSettings() {
     const confirmed = await dialog.confirm({
       title: current ? 'Remove this browser?' : `Remove ${name}?`,
       body: current
-        ? 'This browser leaves Studio now, and has to be paired again to come back.'
-        : 'It is disconnected now, and has to be paired again to come back.',
+        ? 'Disconnects this browser now. Pair it again to reconnect.'
+        : 'Disconnects it now. Pair it again to reconnect.',
       confirmLabel: 'Remove',
       tone: 'danger',
     })

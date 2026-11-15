@@ -150,7 +150,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       if (affected.length > 0) {
         const confirmed = await confirmDialog({
           title: `Revoke trust in ${module.manifest.displayName}?`,
-          body: `These workspaces use it and show “module not installed” until you trust it again. Their files stay on disk: ${affected
+          body: `These workspaces stop working until you trust it again. Files stay on disk: ${affected
             .map((workspace) => workspace.name)
             .join(', ')}.`,
           confirmLabel: 'Revoke trust',

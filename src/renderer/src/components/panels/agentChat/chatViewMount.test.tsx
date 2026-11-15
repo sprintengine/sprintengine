@@ -735,7 +735,7 @@ test('a launcher image that is gone leaves the text as the draft, with the reaso
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
     expect(sendTurn).not.toHaveBeenCalled()
     expect(chat.draft()).toBe('It looks wrong')
-    expect(chat.host.textContent).toContain('Could not attach Screenshot 2026-10-04 at 12.15.13.png')
+    expect(chat.host.textContent).toContain("Couldn't attach Screenshot 2026-10-04 at 12.15.13.png")
   } finally {
     await chat.unmount()
   }
@@ -1844,7 +1844,7 @@ test('a pasted image path that can no longer be read goes in as text, with the r
     )
     expect(chat.draft()).toBe(pasted)
     expect(chat.host.textContent).toContain(
-      'Could not attach Screenshot 2026-09-27 at 22.41.31.png: the file no longer exists.',
+      "Couldn't attach Screenshot 2026-09-27 at 22.41.31.png: the file no longer exists.",
     )
   } finally {
     await chat.unmount()
@@ -1996,7 +1996,7 @@ test('an error that is not a failed send has no Retry', async () => {
     await chat.act(async () => {
       chat.field().dispatchEvent(paste)
     })
-    expect(chat.host.textContent).toContain('Could not attach Screenshot.png')
+    expect(chat.host.textContent).toContain("Couldn't attach Screenshot.png")
     expect(chat.button('Retry'), 'nothing to send again').toBeUndefined()
     expect(sendTurn).not.toHaveBeenCalled()
   } finally {
@@ -2707,9 +2707,7 @@ test('the ring opens what fills the window, read from the chat’s agent', async
     const note = () => chat.dom.window.document.querySelector('[data-context-breakdown-note]')?.textContent
     await chat.act(async () => ring().click())
     // Before a session is live there is no agent to ask, and the panel says so.
-    expect(note()).toBe(
-      'Claude Code is not running for this chat now. Send a message and it can say what fills the window.',
-    )
+    expect(note()).toBe("Claude Code isn't running. Send a message to see what fills the window.")
     await chat.act(async () => ring().click())
     expect(readContextBreakdown).not.toHaveBeenCalled()
     // A message starts the session; the ring then asks it.

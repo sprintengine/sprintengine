@@ -547,8 +547,8 @@ export function NewChatScreen({
       setMachineState({
         status: "error",
         message: result?.ok
-          ? `${target.projectName} is not open on ${next.name}. Open it in Studio there, or pick another machine.`
-          : `${next.name} did not answer. Is Tailscale up on both devices?`,
+          ? `${target.projectName} isn't open on ${next.name}. Open it there, or pick another machine.`
+          : `${next.name} didn't answer. Is Tailscale up on both devices?`,
       });
       return;
     }
@@ -642,7 +642,7 @@ export function NewChatScreen({
             render: () => (
               <Pressable
                 accessibilityHint={
-                  worktreeOn ? "Runs in a worktree of its own. Turn off to start in the project's folder." : "Run in a worktree of its own."
+                  worktreeOn ? "Runs in its own worktree. Turn off to use the project folder." : "Run in its own worktree."
                 }
                 accessibilityLabel="Worktree"
                 accessibilityRole="switch"
@@ -675,7 +675,7 @@ export function NewChatScreen({
       render: () => (
         <View
           accessible
-          accessibilityLabel="No container. Chats in containers are started from a desktop for now."
+          accessibilityLabel="No container. Start container chats from a desktop."
           style={styles.stripItem}
         >
           <ContainerGlyph size={iconSize.xs} tone="textSubtle" />

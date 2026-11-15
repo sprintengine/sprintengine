@@ -64,37 +64,37 @@ function reviewCopy(review: ExtensionTrustReviewData): { heading: string; body: 
   if (trustCodeRequired(review)) {
     return {
       heading: 'Unsigned code — review before trusting',
-      body: 'This extension runs code inside SprintEngine Studio, and it isn’t signed, so nobody can vouch for who wrote it. Trust it only if you trust where it came from — it runs with the app’s access, not in a sandbox.',
+      body: 'Unsigned code that runs with the app’s full access, not in a sandbox. Trust it only if you trust its source.',
     }
   }
   const inlineMcp = !review.sourceUrl && (review.mcpServers?.length ?? 0) > 0
   if (inlineMcp) {
     return {
       heading: 'Inline MCP server — review it before trusting',
-      body: 'This entry runs a local command or connects to a remote endpoint as an MCP server. Trusting it adds and starts the server below — review it before you continue.',
+      body: 'Runs a local command or connects to a remote endpoint. Trusting it adds and starts the server below.',
     }
   }
   if (review.files?.length) {
     return {
       heading: 'Unsigned plugin skills — review before trusting',
-      body: 'Skills are instruction files your agents read and follow. This plugin isn’t signed, so its contents can’t be verified — trusting it copies the skills below into this workspace for your installed agent CLIs.',
+      body: 'Skills are instructions your agents follow. This plugin is unsigned; trusting it adds the skills below to this workspace.',
     }
   }
   if (review.classification === 'unsigned') {
     return {
       heading: 'Unsigned extension — review before trusting',
-      body: 'This extension isn’t signed, so its publisher and contents can’t be verified. Trusting it installs it with the app’s access — install-time disclosure, not a runtime sandbox.',
+      body: 'Unsigned, so its publisher and contents can’t be verified. It installs with the app’s access, not in a sandbox.',
     }
   }
   if (review.classification === 'verified') {
     return {
       heading: 'Verified extension — review what it adds',
-      body: 'This extension is signed by a publisher SprintEngine Studio trusts. It installs with the access below.',
+      body: 'Signed by a trusted publisher. It installs with the access below.',
     }
   }
   return {
-    heading: 'Community extension — review the access it requests',
-    body: 'This publisher isn’t verified. Trusting it lets its code run with the app’s access — requested access is install-time disclosure, not a runtime sandbox.',
+    heading: 'Community extension — review its access',
+    body: 'Unverified publisher. Its code runs with the app’s access, not in a sandbox.',
   }
 }
 
@@ -143,8 +143,7 @@ export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Elem
       {trustCodeRequired(props) ? (
         <>
           <InlineNotice tone="warn">
-            Unsigned code can read and change anything SprintEngine Studio can, including your projects and the
-            credentials your agents use.
+            Unsigned code can read and change anything Studio can, including your projects and agent credentials.
           </InlineNotice>
           <Checkbox
             checked={props.trustCode === true}

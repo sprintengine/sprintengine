@@ -24,8 +24,8 @@ test('ModuleSettingsSection', async () => {
   // --- Fallback surface --------------------------------------------------------
   const fallbackMarkup = renderToStaticMarkup(<ModuleSectionErrorFallback section={section} onRetry={() => {}} />)
   assert.match(fallbackMarkup, /role="alert"/, 'failure is announced to assistive tech')
-  assert.match(fallbackMarkup, /Demo Module failed to render/, 'failure names the section')
-  assert.match(fallbackMarkup, /The rest of Settings is unaffected/, 'copy scopes the failure')
+  assert.match(fallbackMarkup, /Demo Module couldn&#x27;t load/, 'failure names the section')
+  assert.match(fallbackMarkup, /Other settings still work/, 'copy scopes the failure')
   assert.match(fallbackMarkup, /From demo-module/, 'ownership is visible: the failing module is named')
   assert.match(fallbackMarkup, /Try again/, 'a recovery action is offered')
   assert.match(fallbackMarkup, /type="button"/, 'recovery is a real button, not a link')

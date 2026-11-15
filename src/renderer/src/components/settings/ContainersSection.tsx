@@ -86,7 +86,7 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
       showToast({
         tone: 'warn',
         title: 'Not confirmed',
-        description: `${messageOf(error)} The list shows what is there now.`,
+        description: `${messageOf(error)} Check the list.`,
       })
     } finally {
       setBusy(null)
@@ -98,8 +98,7 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
     <section className="space-y-2">
       <SettingsSectionTitle {...(containers ? { count: containers.length } : {})}>Containers</SettingsSectionTitle>
       <p className="text-body leading-5 text-[color:var(--text-muted)]">
-        The containers Studio made for chats. Each is kept after its chat settles and removed with the chat. A chat’s
-        changes leave only as its branch, pushed from the machine the container runs on.
+        Containers made for chats, removed with their chat. Changes leave only as a pushed branch.
       </p>
       <ClaudeTokenRow api={api} />
       {failure ? (

@@ -65,7 +65,7 @@ export class GlobalSurfaceErrorBoundary extends React.Component<
           <SurfaceCanvasState
             kind="error"
             title={`${this.props.surfaceLabel} hit a problem and stopped.`}
-            hint="The rest of the app is unaffected. Reload the surface, or close it and keep working."
+            hint="The rest of the app is fine. Reload or close it."
             onRetry={() => this.setState({ failed: false })}
             retryLabel="Reload surface"
             extraAction={<GhostButton onClick={this.props.onClose}>Close</GhostButton>}

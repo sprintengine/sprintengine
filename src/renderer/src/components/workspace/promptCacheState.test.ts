@@ -56,8 +56,7 @@ test('the words say what the next message costs and what compacting buys', () =>
   const expiring = promptCacheState({ ttl: '1h', expiresAt: NOW + 8 * MINUTE, recacheTokens: 310_200 }, NOW)!
   assert.deepEqual(promptCacheCopy(expiring, NOW), {
     label: 'Cache expires in 8m',
-    detail:
-      'After that, the next message re-sends ~310k tokens uncached. Compacting now, while the cache is warm, is cheap.',
+    detail: 'Then the next message re-sends ~310k tokens uncached. Compacting now is cheap.',
   })
   const cold = promptCacheState({ ttl: '1h', expiresAt: NOW - 2 * 60 * MINUTE, recacheTokens: 310_200 }, NOW)!
   assert.equal(promptCacheCopy(cold, NOW).label, 'Cache expired 2h ago')

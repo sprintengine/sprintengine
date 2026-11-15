@@ -245,7 +245,7 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
           <MemoryNotice
             tone="info"
             title="Knowledge Graph is not configured"
-            message="Set a project-relative knowledge path in Settings → Knowledge to render the graph. A folder is never guessed for you."
+            message="Set a knowledge path in Settings → Knowledge to see the graph."
           />
         ) : loading ? (
           <LoadingOverlay label="Indexing knowledge…" />
@@ -254,7 +254,7 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
             tone="error"
             title="Knowledge folder unavailable"
             message={indexResult.message}
-            hint="Do not guess another folder — check Settings or create the configured path."
+            hint="Check Settings, or create the configured folder"
           />
         ) : allNodes.length === 0 ? (
           <MemoryNotice
@@ -263,7 +263,7 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
             message={
               query.trim()
                 ? `No notes match "${query.trim()}".`
-                : 'The configured knowledge folder is empty. Add a Markdown file to start building the graph.'
+                : 'The knowledge folder is empty. Add a Markdown file to start.'
             }
           />
         ) : (

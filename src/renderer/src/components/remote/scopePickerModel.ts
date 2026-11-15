@@ -64,7 +64,7 @@ export const SCOPE_ROWS: readonly ScopeRow[] = [
     scope: 'conversation:operate',
     title: 'Operate conversations',
     code: 'conversation:operate',
-    description: 'Send messages, stop turns and answer approvals and questions in chats.',
+    description: 'Send messages, stop turns, answer approvals and questions.',
   },
 ]
 
