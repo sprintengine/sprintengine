@@ -80,6 +80,43 @@ test('a lock whose process is gone, or that names this very process, is taken ov
   again.lock.release()
 })
 
+test('a lock from before the container (or machine) last started is taken over, whoever has its id now', () => {
+  const dir = dataDir()
+  const before = acquireDataDirLock(dir, 'server', {
+    pid: 66,
+    hostname: host,
+    isRunning: running(66),
+    boot: () => '1000',
+  })
+  assert.ok(before.ok)
+  // Started again: its home kept the lock, and some new process came to be 66.
+  assert.equal(runningDataDirHolder(dir, { hostname: host, isRunning: running(66), boot: () => '2000' }), null)
+  const after = acquireDataDirLock(dir, 'server', {
+    pid: 70,
+    hostname: host,
+    isRunning: running(66, 70),
+    boot: () => '2000',
+  })
+  assert.ok(after.ok, 'taken over')
+  // Within one start, a running holder still refuses.
+  const second = acquireDataDirLock(dir, 'server', {
+    pid: 71,
+    hostname: host,
+    isRunning: running(70, 71),
+    boot: () => '2000',
+  })
+  assert.equal(second.ok, false)
+  after.lock.release()
+  // Where process 1's start cannot be read, the process id alone decides, as before.
+  const plain = acquireDataDirLock(dir, 'server', { pid: 80, hostname: host, isRunning: running(80), boot: () => null })
+  assert.ok(plain.ok)
+  assert.equal(
+    acquireDataDirLock(dir, 'server', { pid: 81, hostname: host, isRunning: running(80, 81), boot: () => '3000' }).ok,
+    false,
+  )
+  plain.lock.release()
+})
+
 test('the running holder is named only while it runs on this machine', () => {
   const dir = dataDir()
   assert.equal(runningDataDirHolder(dir, { hostname: host, isRunning: running(100) }), null, 'nothing holds it')
