@@ -1,291 +1,170 @@
-# Chats in containers
+# Containers
 
-Status: built 2026-11-15 (first cut). Owner decisions of 2026-11-15 are quoted
-as rulings below. Where the code and this file disagree, fix one of them in the
-same change.
+Status: owner's design of 2026-11-15 (the second one: "a container is just a
+machine"). It replaces the first cut, which made a disposable container for
+each chat. Where the code and this file disagree, fix one of them in the same
+change.
 
 ## What it is
 
-A chat can run in a Docker container of its own. In New chat, the strip under
-the composer reads `Machine ▾ · Project ▾ · Worktree · Container ▾`. Container
-is off by default ("No container"). Turned on ("Container"), Enter makes a
-container on the machine the machine picker names, copies the project's
-repository into it, and starts the chat there. The agent works inside the
-container; its changes leave only as a branch, which Studio pushes from the
-machine outside.
+A container is a machine. It is exactly like an SSH machine, except that
+Studio reaches it with `docker exec` rather than `ssh`. A person makes one
+with **New container**, on this computer or on any SSH machine that has
+Docker (Colima on a Mac is just a Docker host). It is listed in Settings ›
+Machines and in New chat's machine picker. Repositories are cloned inside it,
+chats there use worktrees, and Files, terminals, pull requests and everything
+else work because it is a machine. A container lives until the person deletes
+it.
 
-The Container chip wears a still isometric cube (`ContainerGlyph`,
-`design-system/glyphs/container.svg`): three faces, the top shaded .45 and the
-right .18, outline 1.4 in `currentColor` on the 16 grid. It never animates
-(ruling). Its popover is the container's settings for the picked machine:
+There is one way to run a chat in a container: pick the container as the
+chat's machine.
 
-| Row              | What it says                                                                                                                                                                                                                                                                                       |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Docker           | Whether Docker is there, in words: "Docker 29.2.1 is running on this Mac (Colima).", "Colima is installed on this Mac, but it is stopped." with a Start Colima button, "Docker is installed on build-box, but it is not running.", "Docker was not found on build-box." No status dot (AGENTS.md). |
-| Image            | Studio's default (below). A devcontainer or a project's Dockerfile is a later choice; `ContainerImageChoice` is the room left for it.                                                                                                                                                              |
-| Repo             | Cloned in; changes leave as a pushed branch.                                                                                                                                                                                                                                                       |
-| Network          | Full (ruling: full by default).                                                                                                                                                                                                                                                                    |
-| After it settles | Kept, until the chat is deleted (ruling).                                                                                                                                                                                                                                                          |
+## New chat: the cube
 
-Container is a separate choice from the machine and from Worktree (ruling). It
-works on this computer and on any SSH machine Studio drives that has Docker.
-WSL distributions and paired machines say "Containers on … are not built yet."
-While Container is on, the Worktree chip is hidden: the container's copy is
-already the chat's own checkout, on a branch of its own. A worktree inside a
-container is later work.
+The cube chip sits beside Worktree in New chat, wearing the still isometric
+cube (`ContainerGlyph`, `design-system/glyphs/container.svg`; it never
+animates). It reads the picked container's name, or "No container". It opens
+a card, "Where this chat runs":
 
-## Architecture: a container is another machine
+- this computer;
+- each container, with the machine it runs on ("on this Mac", "on
+  build-box");
+- **New container…**, which makes one there and then picks it.
 
-A container runs Studio's own server, as an SSH machine does, and is saved in
-the same list of machines (`SavedSshEnvironment.container`,
-`userData/ssh-environments.json`). Everything the SSH machines built works on
-it unchanged: the probe, the streamed install of the pinned Node and the
-server tree, the managed server's start and attach, the relay over an exec
-channel, reconnects and liveness, window tickets on a loopback route, the
-pane's traffic through the machine, the sign-in dialog, the sidebar, the chat
-views. Only the exec channel differs:
+Picking a container is the same as picking it in the machine picker: the
+folder is typed as for an SSH machine (`/home/node/work/<repo>`), and
+Worktree is offered when that folder is a git repository.
 
-| Machine                     | Exec channel the bootstrap script is written to                                        |
+## Making one
+
+New container asks three things: where it runs (this computer, or an SSH
+machine), a name, and optionally a repository to clone into
+`/home/node/work`. Docker on that machine is said in words, never with a dot
+("Docker 29.2.1 is running on this Mac (Colima).", "Colima is installed on
+this Mac, but it is stopped." with a **Start Colima** button, "Docker was not
+found on build-box.").
+
+Then Studio:
+
+1. builds the image on that machine if it is not there yet (below);
+2. saves the container as a machine (`SavedSshEnvironment.container` in
+   `userData/ssh-environments.json`) before Docker is asked to start it, so a
+   making that is cut short is still listed and can be deleted;
+3. starts it: `docker run -d --init --cap-drop ALL --security-opt
+no-new-privileges`, as the image's unprivileged `node` user, on Docker's
+   default network (full network), labelled `sprintengine.studio.container=1`,
+   with two volumes: the container's own home (`sprintengine-home-<id>` at
+   `/home/node`) and the machine's logins (below);
+4. installs and connects Studio's server in it, as for an SSH machine;
+5. clones the repository, if one was given.
+
+If any step after the start fails, the container and its home volume are
+removed again. Each step is said in words on the container's row while it
+runs.
+
+The container is kept on the Docker context it was made under (`docker
+context show` then), and that context is named on every later call. A
+container Docker stopped (a restart, Colima stopped overnight) is started
+again by the next connection.
+
+## How Studio reaches it
+
+A container runs Studio's own server, as an SSH machine does. Everything the
+SSH machines built works on it unchanged: the probe, the install of the
+pinned Node and the server tree, the managed server, the relay, reconnects,
+window tickets, the pane's traffic, the sign-in dialog, worktrees from the
+machine's own pool. Only the exec channel differs:
+
+| Machine                     | Exec channel                                                                           |
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | SSH machine                 | `ssh … -- <machine> sh -s`                                                             |
 | Container on this computer  | `/bin/sh -c 'docker start <c> && exec docker exec -i -u node -w /home/node <c> sh -s'` |
-| Container on an SSH machine | `ssh … -- <machine> sh -c '<the same docker line>'`                                    |
+| Container on an SSH machine | `ssh … -- <machine> sh -s`, running the same docker lines                              |
 
-`docker exec -i` gives the same stdin/stdout pair the SSH relay needs, so the
-relay protocol, its marker handshake and its multiplexer are reused byte for
-byte (`ssh-session.ts`, `relay-client.ts`). `SshEnvironment` was already
-written against a `spawn()` that returns a stdin/stdout/stderr process, so the
-container's `spawn` is the only new code on that path
-(`ssh-environments.ts`, `machine()`).
+Every other Docker action is a short POSIX shell script run on the
+container's host (`container/docker-host.ts`, `container/container-scripts.ts`).
+Values from outside Studio are single-quoted; container, volume and image
+names are Studio's and checked before they are spelled.
 
-Every other Docker action is also a short POSIX shell script run on the
-container's host (`container/docker-host.ts`, `container/container-scripts.ts`):
-this computer's `/bin/sh -c`, or the SSH machine's over the person's own ssh.
-That is how one piece of code finds Docker, builds the image, starts, lists and
-removes containers, and copies a repository in and a branch out, on whichever
-machine Docker is on. Values from outside Studio (a folder path) are always
-single-quoted; container and image names are Studio-minted and validated
-before they are spelled.
+A container's chats are recorded as `environment: { kind: 'ssh', id }` and
+reached by the `ssh:<id>` route. The route kind `ssh` names "a machine this
+desktop saved and reaches over an exec channel it spawns"; a separate route
+kind would have to be taught to every file that reads route kinds for no
+difference in behaviour. Containers are managed through the same channels as
+SSH machines (`SSH_ENV_CHANNELS`), in main, which runs Docker and holds the
+sessions.
 
-### No new route kind
+## Logins
 
-A container chat's workspace is recorded as `environment: { kind: 'ssh', id }`
-and reached by the `ssh:<id>` route, where `id` is the container's saved
-machine id. A separate `container:` route kind would have to be taught to about
-sixty files that read the route kind (paths, spelling, the sidebar, the
-pane, the gateway) for no difference in behaviour: every one of them treats the
-container exactly as an SSH machine. The route kind `ssh` therefore names "a
-machine this desktop saved and reaches over an exec channel it spawns". The
-server inside says `hostKind: 'ssh'` in its welcome for the same reason. If the
-distinction is ever needed on the wire, it is a new `hostKind`, behind a
-capability (`docs/compatibility.md`).
+One Docker volume per Docker host, `sprintengine-logins`, is mounted at
+`/studio-logins` in every container Studio makes on that host. It holds
+every agent's login and the git and GitHub credentials, so signing in once
+on a host serves every container there, and a container that is deleted or
+made again keeps them. Each CLI is pointed there by its own variable, set on
+the container (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_DATA_HOME` and
+`XDG_CONFIG_HOME` for OpenCode and the GitHub CLI, the git credential store's
+file), each checked against where that CLI really writes inside the image.
 
-## The repository: copied in, a branch out
-
-Never a bind mount of the host's folder (ruling). On Enter:
-
-1. Studio checks the folder on the host is a git repository, before anything
-   is started.
-2. `git bundle create - HEAD refs/heads/<the branch HEAD is on>` on the host
-   (not every branch and tag there) is piped into `docker exec -i … git clone`
-   inside the container, at `/home/node/work/<folder name>`. Uncommitted
-   changes stay on the host.
-3. Inside, `origin` is set back to the host's remote URL, as an address only:
-   over http(s) everything before `@` is dropped (`https://TOKEN@host/…`,
-   `https://user:token@host/…`); elsewhere a user name is kept and a password
-   dropped. The copy's author is the host repository's `user.name` and
-   `user.email`. These three travel on the clone's stdin ahead of the bundle,
-   never in a command line. The chat works on a branch of its own,
-   `studio/container-<id>`.
-
-The branch leaves the same way, in reverse (`pushOutScript`): `docker exec … git
-bundle create - refs/heads/<branch>` on the host, fetched into a ref of
-Studio's own (`refs/sprintengine/containers/<id>`) in the host repository with
-every object checked (`fetch.fsckObjects`), and pushed with the host's git: `git push origin <that ref>:refs/heads/<branch>`.
-The person's branches and working tree are never written. The owner's git and
-GitHub credentials never enter the container (the owner's proposal,
-implemented): only the host pushes. Push is offered today as "Push branch" on
-the container's row in Settings › Machines › Containers. A container chat's
-panel draws no Create PR (as an SSH machine's chat draws none: its checkout is
-not this computer's), so nothing there fails on a container's missing
-credentials.
-
-## Agent sign-in inside the container
-
-Only the agent's own login goes inside. Two ways, both built:
-
-- **A token, pasted once.** Settings › Machines › Containers takes a token
-  from `claude setup-token` (run in a terminal on this computer). It is sealed
-  with the app's keychain cipher (`container-agent-token.ts`) and handed to the
-  Studio server of each container on this computer when it starts, as Claude
-  Code's own `CLAUDE_CODE_OAUTH_TOKEN`. It goes by name: the host's `sh` and
-  `docker exec -e CLAUDE_CODE_OAUTH_TOKEN` carry it in their environment
-  (readable by the person's own user on the host, as any process's environment
-  is), never in a command line, an image, or the container's saved config. A
-  container's server is never started before the token has been read at app
-  start, and setting or forgetting it restarts the servers of the containers
-  on this computer, so none runs on a stale login. A container on an SSH
-  machine is not given it (the value would have to cross ssh); it signs in the
-  second way.
-- **The machine's sign-in dialog**, as an SSH machine's chat does
-  (`providers.signInStart`, `server/machine/machine-sign-in.ts`): the CLI's own
-  login runs inside the container and its link and code show in Studio's
-  dialog (`claude auth login` pastes a code back; `codex login --device-auth`
-  shows a device code). The login stays inside the container
-  (`~/.claude/.credentials.json`), kept with the chat and removed with it. A
-  chat on another machine whose turn fails to authenticate offers this dialog
-  from its failure card (`chatSignInProviderId`), rather than sending the
-  person to a terminal on this computer.
-
-The image answers Claude Code's first-run questions once
-(`hasCompletedOnboarding` in `~/.claude.json`, no credential) and turns its
-self-update off, so a kept container does not stop on them.
-
-A stronger variant keeps even the token out: a placeholder inside and a proxy
-on the host that adds the real `Authorization` header. Not built.
-
-## Threat model
-
-What a container is for: an agent that runs commands without asking reaches
-nothing of the person's but the repository copy and its own login.
-
-- **Kept out:** the host's folders (no mounts), the host's git and GitHub
-  credentials (only the host pushes; a credential in the remote URL is
-  stripped), the host's SSH agent and keys, every Linux capability
-  (`--cap-drop ALL`) and any way to regain one (`no-new-privileges`).
-- **Inside, by design:** the repository copy; the agent's own login (the token,
-  or what its sign-in wrote), which the agent can read and use or send
-  anywhere, since network access is full (owner ruling); whatever the agent
-  downloads.
-- **Coming out:** only the chat's branch, as a bundle the host fetches with
-  object checks into a ref of Studio's and pushes. It is code an agent wrote:
-  reviewing it is the pull request's job.
-- **Known gap: the agent and Studio's server share a user.** Both run as the
-  image's `node` user, and the server's data (its run directory, owner token
-  and socket) is in that user's home. An agent can therefore drive its own
-  container's server as its owner, stop it, or stand a process of its own in
-  front of its socket. What that buys it is the protocol the desktop already
-  treats as a remote machine's: the desktop holds such a server to exactly
-  what it holds an SSH machine's server to. Closing the gap means running the
-  server as a user of its own and the CLIs it starts as the agent's user (a
-  follow-up).
+Signing in uses the machine sign-in dialog (`providers.signInStart`,
+`server/machine/machine-sign-in.ts`): each CLI's own login runs inside the
+container and its link and code show in Studio (a device code, or a code
+pasted back). GitHub signs in the same way with `gh auth login`'s device flow,
+and `gh` is git's credential helper there. No credential on the host is ever
+copied in.
 
 ## The image
 
-`resources/container/agent.Dockerfile`, shipped with the app
-(`extraResources` → `container/`): `node:22-bookworm-slim` pinned by digest, git, ripgrep,
-procps, and pinned `@anthropic-ai/claude-code` and `@openai/codex`, running as
-the image's unprivileged `node` user (Claude Code refuses to skip its
-permission prompts as root). It is built on the container's host the first
-time a container is made there (`docker build -` with the Dockerfile in the
-script itself, no build context) and tagged `sprintengine-studio-agent:<first 12 hex of the
-file's SHA-256>`, so an app update that changes the file builds a new image and
-an unchanged one is reused. Studio's server brings its own pinned Node; the
-image's Node is the project's. The first build takes a few minutes and the
-image is about 1.6 GB, mostly the two CLIs; the popover says so before the
-first container on a machine.
+Built on the container's host from the agents the person has turned on in
+Studio, at the versions this build of Studio pins: a base layer (pinned Node
+image, git, `gh`, ripgrep) and one layer per agent, so adding an agent
+rebuilds only its layer. Tagged by a digest of what went into it, so a
+changed set builds a new image and an unchanged one is reused. An agent
+without a Linux CLI is left out and said so with its reason. A container made
+before the set changed says so on its row, and **Rebuild** makes it again on
+the new image, keeping its home volume (repositories, worktrees, Studio's
+server) and the logins.
 
-## Lifecycle
+## Deleting one
 
-- Named `sprintengine-<saved id>` (16 hex) and labelled
-  `sprintengine.studio.container=1` and `sprintengine.studio.machine=<id>`.
-- Saved before Docker is asked to start it (`provisioning`), so one whose
-  making is cut short (Studio quits, the machine goes away) is still listed and
-  can be removed.
-- Kept on the Docker context it was made under (`docker context show` then),
-  named on every later call, so a changed default context cannot lose it.
-- Kept after the chat settles. Its server keeps running between turns
-  (`keepRunning`); a container Docker stopped (a restart, Colima stopped
-  overnight) is started again by the next session (`docker start` in the exec
-  channel).
-- Removed when its chat is deleted (`container-chat-lifecycle.ts`): once no
-  workspace is on a container that one was on, it goes, record and all. A
-  container made for a chat that never started is not removed by that sweep;
-  it is listed. When removing cannot happen now (Docker not running, the
-  machine away) the container is marked as waiting on its record, Settings
-  says why, and it is tried again on every registry change and every five
-  minutes until it goes. A container is called gone only when Docker answers
-  that it has no such container.
-- An SSH machine that has containers is not forgotten silently: Studio removes
-  them first, or, when the person says the machine is gone, drops only their
-  records.
-- Settings › Machines › Containers lists every container Studio made: the
-  saved ones, and any Docker still has with Studio's label but no record here
-  (a crash between start and save), each with Docker's own status words and a
-  Remove. Containers are left out of the Machines list above it and out of the
-  New chat machine picker.
-- Studio removes only containers that carry its label (`removeContainerScript`
-  checks it in the same script that removes). It never prunes images.
-- Anything that fails after a container started removes it again.
+**Delete container** in Settings › Machines first lists every branch in the
+container's repositories with commits no remote has, and asks. Deleting
+removes the container and its home volume, only when they carry Studio's
+label. The host's logins volume stays: other containers there use it. A
+Docker that does not answer keeps the record, so nothing is lost track of.
+An SSH machine with containers on it is not forgotten silently: Studio
+deletes them first, or, when the person says the machine is gone, drops only
+their records.
 
-## What the reference does
+## Paired devices and the phone
 
-The reference has no container or sandbox feature for agents: its
-devcontainer is for its own development only, and its "sandbox" is each
-provider's own permission or sandbox mode. There is no counterpart for the
-container, its image, its lifecycle, or bringing changes out of one. What this
-design copies from it is the remote-machine model the SSH machines already
-follow: the server is installed and started on the other machine and the
-client speaks the same protocol to it; a CLI signs in on the machine it runs
-on, through the CLI's own login; and git pushes run where the repository is.
-Pushing from the host rather than from inside the container is the owner's
-ruling, and departs from the reference on purpose: no git credential goes
-inside.
-
-## Reaching every surface
-
-A container chat is an SSH-machine chat to every client: the window, a paired
-desktop and the phone see and drive it as they do one on an SSH machine.
-Making, listing, pushing and removing containers, Docker's status and
-Claude Code's token are served on the Studio protocol by the desktop that runs
-Docker (`containers.*` and the `containers.changed` stream, capability
-`containers`, `packages/studio-protocol/src/containers.ts`). Main holds
-`ContainerChats`, since it runs Docker and holds the SSH sessions; the
-desktop's Studio forwards each call to it over the shell's control channel when
-it runs in a process of its own (`SHELL_METHODS.containers`). The window's New
-chat and Settings › Machines › Containers use these methods; there is no IPC
+A container's chats behave like an SSH machine's: paired devices do not reach
+SSH machines through the desktop (owner ruling), so nothing extra is built
 for them.
 
-Every method and the stream is served to Studio's own desktop windows only:
-not a paired device, not an owner's web tab, and not an app or script holding
-the owner's credential. No other surface uses them yet.
+## Threat model
 
-| Methods                                 | Why                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create`                                | A container's chat runs on its own Studio (`ssh:<id>`), which paired devices do not reach through this desktop (#602), so a device that made one could not follow its chat (an owner decision is pending). From a web tab it would start a chat outside the folders a tailnet browser may start one in, and on SSH machines reached from the desktop alone. |
-| `push`                                  | It pushes with the host's git credentials.                                                                                                                                                                                                                                                                                                                  |
-| `remove`                                | It destroys the container and its chat's work.                                                                                                                                                                                                                                                                                                              |
-| `startDocker`                           | It starts a VM on the host.                                                                                                                                                                                                                                                                                                                                 |
-| `status`, `list`, `containers.changed`  | The status probes Docker on the host and may raise an SSH passphrase dialog on the desktop; the list names folders on this computer and its SSH machines.                                                                                                                                                                                                   |
-| `tokenStatus`, `setToken`, `clearToken` | A credential sealed with this computer's keychain.                                                                                                                                                                                                                                                                                                          |
+- **Kept out:** the host's folders (no bind mounts), the host's credentials
+  of every kind, its SSH agent and keys, every Linux capability and any way to
+  regain one.
+- **Inside, by design:** the repositories cloned there, the logins on the
+  host's logins volume (which an agent in any container on that host can read
+  and use, since the network is full), whatever an agent downloads.
+- **Known gap:** the agent and Studio's server run as the same user, so an
+  agent can drive its own container's server. The desktop already holds that
+  server to what it holds an SSH machine's server to.
 
-A create can take half an hour (the first image build on a host). Create, push
-and remove carry the client's command id through to main, which keeps what
-each id did on disk (`container-command-receipts.ts`), and they are
-`receipts: 'durable'`: when the desktop's server restarts mid-build, the window
-sends the create again under its id and is answered with the one container,
-never a second. One that was running when Studio itself stopped is answered
-in words that send the person to Settings › Machines › Containers. A request is recorded as started, on disk, before anything is done, and is not carried out when that record cannot be written; a record that exists and cannot be read refuses every create, push and remove in words and is left for a person to look at, never read as empty. An answer
-that never came is never called "No container" in New chat.
+## Containers from the first cut
 
-So a paired desktop's New chat still shows the Container chip for that machine
-with the words "A chat in a container on <machine> is started from <machine>
-itself for now", and the phone's New chat shows "No container" with the cube,
-saying the same. Windows and WSL say "Containers on … are not built yet".
+The first cut's per-chat containers are not migrated. Their records still
+read as container machines: each is listed in Settings › Machines and can be
+deleted there.
 
 ## Left for later
 
-- Save and resume anywhere (owner idea): `docker commit` the container to an
-  image plus the chat's records through the machine hand-over, resumed on any
-  machine with Docker. Nothing here designs it out: a container's filesystem is
-  its state, and its records are an ordinary machine's.
+- Disposable per-chat containers.
+- Copying a repository on this computer into a container.
+- Saving a container and moving it to another machine.
+- A credential proxy that keeps even the logins out.
+- Network allow-lists.
 - A project's devcontainer or Dockerfile as the image.
-- A worktree inside a container.
-- The host-side proxy that keeps even the token out (above).
-- The server and the agent as separate users (Threat model).
-- Making and using containers from a paired desktop and the phone: the
-  methods are on the protocol; what is left is how a device follows the chat
-  in a container it made (an owner decision).
-- Push from the chat itself (its pull-request flow), not only from Settings.
 - Containers in WSL.
-- Network choices other than full.
