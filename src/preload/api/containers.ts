@@ -20,8 +20,9 @@ export const containersApi = {
   containerCreate: (request: ContainerCreateRequest): Promise<ContainerCreateResult> =>
     ipcRenderer.invoke(CONTAINER_CHANNELS.create, request),
   containersList: (): Promise<ContainerSummary[]> => ipcRenderer.invoke(CONTAINER_CHANNELS.list),
-  containerRemove: (target: { id: string } | { host: ContainerHost; name: string }): Promise<ContainerResult> =>
-    ipcRenderer.invoke(CONTAINER_CHANNELS.remove, target),
+  containerRemove: (
+    target: { id: string } | { host: ContainerHost; name: string; context?: string | null },
+  ): Promise<ContainerResult> => ipcRenderer.invoke(CONTAINER_CHANNELS.remove, target),
   containerPush: (id: string): Promise<ContainerResult> => ipcRenderer.invoke(CONTAINER_CHANNELS.push, { id }),
   containerTokenStatus: (): Promise<ContainerTokenStatus> => ipcRenderer.invoke(CONTAINER_CHANNELS.tokenStatus),
   containerTokenSet: (token: string): Promise<ContainerResult> =>

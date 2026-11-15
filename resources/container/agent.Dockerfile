@@ -6,7 +6,9 @@
 #
 # Nothing secret is ever built into it: an agent signs in inside the container
 # it runs in, and the repository is copied in after the container starts.
-FROM node:22-bookworm-slim
+# Pinned by digest (the multi-platform index), so the image a Dockerfile's
+# digest names is the same wherever it is built; moved on purpose, with the CLIs.
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
 
 ARG CLAUDE_CODE_VERSION=2.1.325
 ARG CODEX_VERSION=0.169.0

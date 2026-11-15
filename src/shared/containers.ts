@@ -38,6 +38,24 @@ export type SavedContainer = {
   host: ContainerHost
   /** Docker's name for it: `sprintengine-<saved id>`. */
   name: string
+  /**
+   * The Docker context it was made under on its host (`docker context show`),
+   * named on every later call so a changed default context cannot lose it;
+   * null for the host's own default.
+   */
+  context?: string | null
+  /**
+   * Set from the moment Studio asks Docker to start it until it is ready, so a
+   * container whose making was cut short (Studio quit, the machine went away)
+   * is still on the list to be found and removed.
+   */
+  provisioning?: boolean
+  /**
+   * Its chat was deleted and it is waiting to be removed (Docker was not
+   * running, the machine was away): why the last try did not, in words.
+   * Tried again until it goes.
+   */
+  pendingRemoval?: string | null
   /** The image it was started from. */
   image: string
   network: ContainerNetwork
@@ -61,6 +79,8 @@ export type DockerStatus = {
   imageReady: boolean
   /** What starting it would run, when Studio can: Colima's own `colima start`. */
   canStart: 'colima' | null
+  /** The Docker context that answered (`ready` only); a container made now is kept on it. */
+  context?: string | null
 }
 
 /** The image a container starts from. Only Studio's own for now; a devcontainer or Dockerfile may follow. */
@@ -85,9 +105,13 @@ export type ContainerSummary = {
   name: string
   host: ContainerHost
   hostLabel: string
+  /** The Docker context it is under there; null for the host's default. */
+  context?: string | null
   /** Docker's own words for it ("Up 3 minutes", "Exited (0) 2 hours ago"), or why it could not be read. */
   status: string
   repo: ContainerRepo | null
+  /** Its chat was deleted and removing it is still to be done: why the last try did not. */
+  pendingRemoval?: string | null
 }
 
 /** Whether Claude Code's token for containers is kept, and how: sealed on disk, or for this session only. */

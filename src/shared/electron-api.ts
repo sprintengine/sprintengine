@@ -547,8 +547,13 @@ export type ElectronApi = {
   sshEnvironmentUpgradeServer: (id: string) => Promise<SshEnvironmentResult>
   sshEnvironmentForget: (
     id: string,
-    options?: { stopServer?: boolean; clearBrowsingData?: boolean },
-  ) => Promise<SshEnvironmentResult>
+    options?: {
+      stopServer?: boolean
+      clearBrowsingData?: boolean
+      /** Containers Studio made on the machine: refused by default, removed first, or only their records dropped. */
+      containers?: 'refuse' | 'remove' | 'forget-records'
+    },
+  ) => Promise<SshEnvironmentResult & { containers?: string[] }>
   sshEnvironmentDiagnostics: (id: string) => Promise<{ ok: true; text: string } | { ok: false; message: string }>
   /** Sign a chat's CLI in on an SSH machine, with no terminal (decision R34). */
   sshSignIn: (id: string, providerId: string) => Promise<SshEnvironmentResult>
@@ -566,7 +571,9 @@ export type ElectronApi = {
   containerCreate: (request: ContainerCreateRequest) => Promise<ContainerCreateResult>
   /** Every container Studio made, so none is left behind unseen. */
   containersList: () => Promise<ContainerSummary[]>
-  containerRemove: (target: { id: string } | { host: ContainerHost; name: string }) => Promise<ContainerResult>
+  containerRemove: (
+    target: { id: string } | { host: ContainerHost; name: string; context?: string | null },
+  ) => Promise<ContainerResult>
   /** Bring a container's branch out and push it from its host. */
   containerPush: (id: string) => Promise<ContainerResult>
   onContainersChanged: (cb: () => void) => () => void

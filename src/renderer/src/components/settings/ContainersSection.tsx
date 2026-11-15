@@ -31,8 +31,19 @@ export function useContainers(api: Api | null): { containers: ContainerSummary[]
   }, [api])
   useEffect(() => {
     void reload()
-    const off = typeof api?.onContainersChanged === 'function' ? api.onContainersChanged(() => void reload()) : null
-    return typeof off === 'function' ? off : undefined
+    // A container being made says each step: one read for a burst of them.
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const off =
+      typeof api?.onContainersChanged === 'function'
+        ? api.onContainersChanged(() => {
+            if (timer) clearTimeout(timer)
+            timer = setTimeout(() => void reload(), 400)
+          })
+        : null
+    return () => {
+      if (timer) clearTimeout(timer)
+      if (typeof off === 'function') off()
+    }
   }, [api, reload])
   return { containers, reload }
 }
@@ -78,9 +89,11 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
                 name={container.name}
                 version={container.hostLabel}
                 stateLine={
-                  container.id
-                    ? `${container.status}${container.repo ? ` · branch ${container.repo.branch} from ${container.repo.source}` : ''}`
-                    : `${container.status}. Studio has no record of this one: its chat is gone.`
+                  container.id && container.pendingRemoval
+                    ? `Its chat was deleted; removing it is waiting. ${container.pendingRemoval}`
+                    : container.id
+                      ? `${container.status}${container.repo ? ` · branch ${container.repo.branch} from ${container.repo.source}` : ''}`
+                      : `${container.status}. Studio has no record of this one: its chat is gone.`
                 }
                 actions={
                   <>
@@ -104,7 +117,11 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
                           () =>
                             container.id
                               ? api.containerRemove({ id: container.id })
-                              : api.containerRemove({ host: container.host, name: container.name }),
+                              : api.containerRemove({
+                                  host: container.host,
+                                  name: container.name,
+                                  context: container.context ?? null,
+                                }),
                           'Container removed',
                         )
                       }
@@ -164,7 +181,7 @@ function ClaudeTokenRow({ api }: { api: Api }): React.JSX.Element | null {
         label="Claude Code in containers"
         help={
           status.set
-            ? `Containers made on this computer from now on sign Claude Code in with your token${status.kept === 'session' ? ' (kept until Studio quits: this computer has no keychain to seal it with)' : ''}. Nothing else of yours goes inside.`
+            ? `Containers on this computer sign Claude Code in with your token${status.kept === 'session' ? ' (kept until Studio quits: this computer has no keychain to seal it with)' : ''}. Nothing else of yours goes inside. Setting or forgetting it restarts their Studio servers, which stops a turn that is running.`
             : 'Run claude setup-token in a terminal here and paste the token it prints. Without one, Claude Code signs in inside each container the first time a chat asks.'
         }
         htmlFor="container-claude-token"

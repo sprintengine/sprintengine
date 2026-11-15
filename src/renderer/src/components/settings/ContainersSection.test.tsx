@@ -88,7 +88,7 @@ test('every container Studio made is listed: one with no record too, removable b
   await flush()
   expect(calls).toEqual([
     ['push', '0123456789abcdef'],
-    ['remove', { host: { kind: 'ssh', machine: 'm1' }, name: 'sprintengine-fedcba9876543210' }],
+    ['remove', { host: { kind: 'ssh', machine: 'm1' }, name: 'sprintengine-fedcba9876543210', context: null }],
   ])
 })
 
@@ -116,4 +116,24 @@ test("Claude Code's token for containers: pasted once, kept, never shown back, a
   await act(async () => forget.click())
   await flush()
   expect(calls).toContainEqual(['token-clear', null])
+})
+
+test("a deleted chat's container still waiting to be removed says so, and why", async () => {
+  tokenSet = false
+  listed = [
+    {
+      id: '0123456789abcdef',
+      name: 'sprintengine-0123456789abcdef',
+      host: { kind: 'local' },
+      hostLabel: 'this Mac',
+      status: 'Exited (0) 2 hours ago',
+      repo: null,
+      pendingRemoval: 'Docker is not running on this Mac, so it is still there.',
+    },
+  ]
+  act(() => root.render(<ContainersSection api={api as never} />))
+  await flush()
+  expect(host.textContent).toContain(
+    'Its chat was deleted; removing it is waiting. Docker is not running on this Mac, so it is still there.',
+  )
 })

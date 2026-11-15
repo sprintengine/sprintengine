@@ -1057,6 +1057,64 @@ test('NewAgentPanel launch paths', async () => {
           await settle()
           assert.deepEqual([created[0]?.host, created[0]?.folder], [{ kind: 'local' }, '/Users/dev/proj'])
           fromContainer.unmount()
+          // A second Enter while the container is still being made makes no second
+          // one, even from a New chat opened again meanwhile.
+          created.length = 0
+          let finish: (value: Record<string, unknown>) => void = () => undefined
+          api.containerCreate = (request: Record<string, unknown>) => {
+            created.push(request)
+            return new Promise((resolve) => (finish = resolve))
+          }
+          const first = await render(scheduleProps())
+          await settle()
+          await click(first.container.querySelector('[data-container-trigger="true"]')!)
+          await settle()
+          await click(dom.window.document.querySelector('[data-container-settings="true"] [role="switch"]')!)
+          await typePrompt(first, 'Fix the login.')
+          await click(sendOf(first)!)
+          await settle()
+          first.unmount()
+          const second = await render(scheduleProps())
+          await settle()
+          assert.match(
+            second.container.querySelector('[data-container-trigger="true"]')?.textContent ?? '',
+            /Making container/u,
+            'a New chat opened again still shows the container being made',
+          )
+          await click(second.container.querySelector('[data-container-trigger="true"]')!)
+          await settle()
+          await click(dom.window.document.querySelector('[data-container-settings="true"] [role="switch"]')!)
+          await typePrompt(second, 'Fix it again.')
+          await click(sendOf(second)!)
+          await settle()
+          assert.equal(created.length, 1, 'one container')
+          finish({ ok: false, message: 'stopped' })
+          await settle()
+          second.unmount()
+
+          // Windows itself does not run containers yet: said in words, and Container
+          // on never starts the chat without one.
+          created.length = 0
+          api.containerCreate = async (request: Record<string, unknown>) => {
+            created.push(request)
+            return answer
+          }
+          const platform = Object.getOwnPropertyDescriptor(dom.window.navigator, 'platform')
+          Object.defineProperty(dom.window.navigator, 'platform', { value: 'Win32', configurable: true })
+          try {
+            const onWindows = await render(scheduleProps())
+            await settle()
+            await click(onWindows.container.querySelector('[data-container-trigger="true"]')!)
+            await settle()
+            const settings = dom.window.document.querySelector('[data-container-settings="true"]')!
+            assert.match(settings.textContent ?? '', /Containers on this PC are not built yet\./u)
+            assert.equal(settings.querySelector('[role="switch"]')?.hasAttribute('disabled'), true)
+            onWindows.unmount()
+          } finally {
+            if (platform) Object.defineProperty(dom.window.navigator, 'platform', platform)
+            else delete (dom.window.navigator as unknown as Record<string, unknown>).platform
+          }
+          assert.equal(created.length, 0)
         } finally {
           delete api.sshMachinesEnabled
           delete api.sshEnvironmentsList

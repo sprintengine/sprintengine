@@ -126,7 +126,7 @@ export const SSH_FIXED_OPTIONS = [
  */
 export function buildSshArgs(
   destination: SshDestination,
-  options: { batch: boolean; configFile?: string | null; remote?: string | null },
+  options: { batch: boolean; configFile?: string | null },
 ): string[] {
   return [
     ...(options.configFile ? ['-F', options.configFile] : []),
@@ -134,10 +134,8 @@ export function buildSshArgs(
     ...(options.batch ? ['-o', 'BatchMode=yes'] : []),
     '--',
     destination.argv,
-    // The remote's login shell runs this line: `sh -s` reads Studio's script
-    // from stdin; a container on the machine is reached by a `docker exec`
-    // line here instead (container/docker-host.ts), quoted for that shell.
-    ...(options.remote ? [options.remote] : ['sh', '-s']),
+    'sh',
+    '-s',
   ]
 }
 
@@ -396,17 +394,11 @@ export function spawnSshSession(input: {
   askpass: AskpassIssuer | null
   configFile?: string | null
   env?: NodeJS.ProcessEnv
-  /** The line the remote runs in place of `sh -s` (buildSshArgs). */
-  remote?: string | null
 }) {
   const issued = input.interactive && input.askpass ? input.askpass.issue(input.label) : null
   const child = spawn(
     input.ssh,
-    buildSshArgs(input.destination, {
-      batch: !input.interactive,
-      configFile: input.configFile ?? null,
-      remote: input.remote ?? null,
-    }),
+    buildSshArgs(input.destination, { batch: !input.interactive, configFile: input.configFile ?? null }),
     {
       env: sshEnvironment(input.env ?? process.env, issued?.env ?? null),
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -23,6 +23,7 @@ import {
   parseContainerList,
   parseDockerStatus,
   pushOutScript,
+  removalOutcome,
   removeContainerScript,
   runContainerScript,
   startColimaScript,
@@ -91,11 +92,15 @@ export class ContainerChats {
     this.log = deps.log ?? (() => undefined)
   }
 
-  private run(host: ContainerHost, script: string, options: { input?: string | Buffer; timeoutMs: number }) {
-    // On an SSH machine ssh may need to ask (a passphrase): the dialogs listen first.
-    const ask = host.kind === 'ssh'
+  /**
+   * Run a script on a host. On an SSH machine ssh may need to ask (a
+   * passphrase), so the dialogs listen first; a background read (`quiet`)
+   * never asks, and simply fails where it would have had to.
+   */
+  private run(host: ContainerHost, script: string, options: { timeoutMs: number; quiet?: boolean }) {
+    const ask = host.kind === 'ssh' && !options.quiet
     return (ask ? this.deps.machines.readyToAsk() : Promise.resolve()).then(() =>
-      runOnHost(this.deps.machines.hostRunner(host), script, { ...options, interactive: ask }),
+      runOnHost(this.deps.machines.hostRunner(host), script, { timeoutMs: options.timeoutMs, interactive: ask }),
     )
   }
 
@@ -160,34 +165,34 @@ export class ContainerChats {
     const id = randomBytes(8).toString('hex')
     const name = `sprintengine-${id}`
     const label = request.label.trim().slice(0, 60) || 'Container'
+    const context = docker.context ?? null
     const step = (words: string) => {
       this.preparing.set(id, words)
       this.deps.onChange()
     }
+    let recorded = false
     try {
       if (!docker.imageReady) {
         step(`Building Studio's container image on ${where} (the first time takes a few minutes)…`)
-        const built = await this.run(request.host, buildImageScript(image.tag), {
-          input: image.dockerfile,
+        const built = await this.run(request.host, buildImageScript(image.tag, image.dockerfile, context), {
           timeoutMs: this.timing.buildMs,
         })
         if (built.code !== 0)
           return { ok: false, message: `Studio's container image did not build on ${where}: ${lastLine(built)}` }
       }
-      step(`Starting a container on ${where}…`)
-      const started = await this.run(request.host, runContainerScript({ name, image: image.tag, machineId: id }), {
-        timeoutMs: this.timing.runMs,
-      })
-      if (started.code !== 0)
-        return { ok: false, message: `The container did not start on ${where}: ${lastLine(started)}` }
+      // Saved before Docker is asked to start it: a container whose making is
+      // cut short (Studio quits, the machine goes away) is still on the list,
+      // to be found and removed, never left running unseen.
       const container: SavedContainer = {
         host: request.host,
         name,
+        context,
         image: image.tag,
         network: 'full',
         afterSettle: 'keep',
         repo: null,
         createdAt: this.deps.now?.() ?? Date.now(),
+        provisioning: true,
       }
       this.deps.machines.addContainer({
         id,
@@ -200,6 +205,24 @@ export class ContainerChats {
         addedAt: container.createdAt,
         container,
       })
+      recorded = true
+      step(`Starting a container on ${where}…`)
+      const started = await this.run(
+        request.host,
+        runContainerScript({ name, image: image.tag, machineId: id, context }),
+        { timeoutMs: this.timing.runMs },
+      )
+      if (started.code !== 0) {
+        const removed = await this.deps.machines.forget(id)
+        recorded = !removed.ok
+        return {
+          ok: false,
+          message:
+            started.code === null
+              ? `Docker on ${where} did not answer in time.${recorded ? ' A container may have been started; it is listed in Settings › Machines › Containers.' : ''}`
+              : `The container did not start on ${where}: ${lastLine(started)}`,
+        }
+      }
       step(`Installing Studio's server in the container on ${where}…`)
       const connected = await this.deps.machines.connect(id)
       if (!connected.ok) {
@@ -211,9 +234,11 @@ export class ContainerChats {
         step(`Copying the repository into the container…`)
         const path = `${CONTAINER_WORK}/${workFolderName(request.folder)}`
         const branch = `studio/container-${id.slice(0, 8)}`
-        const copied = await this.run(request.host, copyRepoInScript({ source: request.folder, name, path, branch }), {
-          timeoutMs: this.timing.copyMs,
-        })
+        const copied = await this.run(
+          request.host,
+          copyRepoInScript({ source: request.folder, name, path, branch, context }),
+          { timeoutMs: this.timing.copyMs },
+        )
         if (/@@repo not-a-repo/u.test(copied.stdout)) {
           await this.deps.machines.forget(id)
           return {
@@ -229,9 +254,10 @@ export class ContainerChats {
         this.deps.machines.updateContainer(id, { repo: { source: request.folder, path, branch, base } })
         folder = path
       }
+      this.deps.machines.updateContainer(id, { provisioning: false })
       return { ok: true, id, label: `${label} (container)`, folder }
     } catch (error) {
-      if (this.deps.machines.get(id)) await this.deps.machines.forget(id).catch(() => undefined)
+      if (recorded && this.deps.machines.get(id)) await this.deps.machines.forget(id).catch(() => undefined)
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     } finally {
       this.preparing.delete(id)
@@ -256,6 +282,7 @@ export class ContainerChats {
         path: container.repo.path,
         branch: container.repo.branch,
         ref: `refs/sprintengine/containers/${id}`,
+        context: container.context ?? null,
       }),
       { timeoutMs: this.timing.pushMs },
     )
@@ -278,53 +305,87 @@ export class ContainerChats {
   }
 
   /**
-   * Every container Studio made, on every host it has made one on: the saved
-   * ones, and any Docker still has that Studio no longer has a record of (a
-   * crash between starting one and saving it), so none is left unseen.
+   * Every container Studio made, on every host and Docker context it has made
+   * one on: the saved ones (with why one waiting to be removed is still
+   * there), and any Docker still has with Studio's label that Studio no longer
+   * has a record of, so none is left unseen. Hosts are asked at once, each
+   * with a deadline, and an SSH machine is never asked to prompt here.
    */
   async list(): Promise<ContainerSummary[]> {
     const saved = this.deps.machines.list().filter((entry) => entry.container)
-    const hosts: ContainerHost[] = [{ kind: 'local' }]
-    for (const entry of saved)
-      if (!hosts.some((host) => sameContainerHost(host, entry.container!.host))) hosts.push(entry.container!.host)
+    type Place = { host: ContainerHost; context: string | null }
+    const places: Place[] = [{ host: { kind: 'local' }, context: null }]
+    for (const entry of saved) {
+      const place = { host: entry.container!.host, context: entry.container!.context ?? null }
+      if (!places.some((each) => sameContainerHost(each.host, place.host) && each.context === place.context))
+        places.push(place)
+    }
+    const answers = await Promise.all(
+      places.map(async (place) => {
+        try {
+          const result = await this.run(place.host, listContainersScript(place.context), {
+            timeoutMs: this.timing.listMs,
+            quiet: true,
+          })
+          return result.code === 0
+            ? { place, listed: parseContainerList(result.stdout), why: '' }
+            : { place, listed: null, why: lastLine(result) || 'Docker did not answer.' }
+        } catch (error) {
+          return { place, listed: null, why: error instanceof Error ? error.message : String(error) }
+        }
+      }),
+    )
     const out: ContainerSummary[] = []
-    for (const host of hosts) {
-      const hostLabel = this.deps.hostLabel(host)
-      const here = saved.filter((entry) => sameContainerHost(entry.container!.host, host))
-      let listed: ReturnType<typeof parseContainerList> | null = null
-      let why = ''
-      // Only this computer is asked unprompted; an SSH machine is asked when one of its containers is saved.
-      try {
-        const result = await this.run(host, listContainersScript(), { timeoutMs: this.timing.listMs })
-        if (result.code === 0) listed = parseContainerList(result.stdout)
-        else why = lastLine(result) || 'Docker did not answer.'
-      } catch (error) {
-        why = error instanceof Error ? error.message : String(error)
-      }
-      if (!listed && host.kind === 'local' && here.length === 0) continue
+    // One engine can answer under two contexts (`default` and `colima` on a Mac with Colima):
+    // a saved container is never listed again as one with no record, nor an unsaved one twice.
+    const hostKey = (host: ContainerHost) => (host.kind === 'local' ? 'local' : `ssh:${host.machine}`)
+    const seen = new Set<string>(saved.map((entry) => `${hostKey(entry.container!.host)}:${entry.container!.name}`))
+    for (const { place, listed, why } of answers) {
+      const hostLabel = this.deps.hostLabel(place.host)
+      const here = saved.filter(
+        (entry) =>
+          sameContainerHost(entry.container!.host, place.host) && (entry.container!.context ?? null) === place.context,
+      )
       for (const entry of here) {
         const found = listed?.find((each) => each.name === entry.container!.name)
         const preparing = this.preparing.get(entry.id)
+        const docker = found ? found.status : listed ? 'Gone from Docker' : `Not read: ${why}`
         out.push({
           id: entry.id,
           name: entry.container!.name,
-          host,
+          host: place.host,
           hostLabel,
-          status: preparing ?? (found ? found.status : listed ? 'Gone from Docker' : `Not read: ${why}`),
+          context: place.context,
+          status:
+            preparing ?? (entry.container!.provisioning ? `Being made, or cut short while it was. ${docker}` : docker),
           repo: entry.container!.repo,
+          pendingRemoval: entry.container!.pendingRemoval ?? null,
         })
       }
       for (const found of listed ?? []) {
         if (here.some((entry) => entry.container!.name === found.name)) continue
+        const key = `${hostKey(place.host)}:${found.name}`
+        if (seen.has(key)) continue
+        seen.add(key)
         // A container another of this person's Studio profiles saved is still listed: it is Studio's.
-        out.push({ id: null, name: found.name, host, hostLabel, status: found.status, repo: null })
+        out.push({
+          id: null,
+          name: found.name,
+          host: place.host,
+          hostLabel,
+          context: place.context,
+          status: found.status,
+          repo: null,
+        })
       }
     }
     return out
   }
 
   /** Remove a saved container (its record too), or one Docker has with no record here. */
-  async remove(target: { id: string } | { host: ContainerHost; name: string }): Promise<ContainerResult> {
+  async remove(
+    target: { id: string } | { host: ContainerHost; name: string; context?: string | null },
+  ): Promise<ContainerResult> {
     if ('id' in target) {
       const saved = this.deps.machines.get(target.id)
       if (!saved?.container) return { ok: false, message: 'That container is no longer one of yours.' }
@@ -333,14 +394,10 @@ export class ContainerChats {
       return forgotten
     }
     if (!CONTAINER_NAME.test(target.name)) return { ok: false, message: 'That is not a container Studio made.' }
-    const result = await this.run(target.host, removeContainerScript(target.name), { timeoutMs: 120_000 })
+    const result = await this.run(target.host, removeContainerScript(target.name, target.context ?? null), {
+      timeoutMs: 120_000,
+    })
     this.deps.onChange()
-    if (/@@removed (yes|absent)/u.test(result.stdout)) return { ok: true }
-    if (/@@removed not-ours/u.test(result.stdout))
-      return { ok: false, message: `${target.name} is not a container Studio made, so it was left alone.` }
-    return {
-      ok: false,
-      message: `${target.name} could not be removed: ${lastLine(result) || 'Docker did not say why.'}`,
-    }
+    return removalOutcome(result, target.name, this.deps.hostLabel(target.host))
   }
 }

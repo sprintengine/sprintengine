@@ -55,7 +55,11 @@ export function registerContainersIpc(
     const record = (payload ?? {}) as Record<string, unknown>
     const host = parseContainerHost(record.host)
     if (!host || typeof record.name !== 'string') return { ok: false, message: 'That container is not one of yours.' }
-    return containers.remove({ host, name: record.name })
+    const context =
+      typeof record.context === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(record.context)
+        ? record.context
+        : null
+    return containers.remove({ host, name: record.name, context })
   })
   handle(CONTAINER_CHANNELS.push, (payload) => {
     const id = idOf(payload)

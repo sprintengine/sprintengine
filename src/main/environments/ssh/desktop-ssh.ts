@@ -50,6 +50,7 @@ export function createDesktopSsh(deps: {
   })
   void app.whenReady().then(() => containerToken.value())
   const sshEnvironments = new SshEnvironments({
+    containerEnvReady: () => containerToken.value().then(() => undefined),
     containerEnv: (): Record<string, string> => {
       const token = containerToken.current()
       return token ? { [CLAUDE_TOKEN_ENV]: token } : {}
@@ -97,7 +98,19 @@ export function createDesktopSsh(deps: {
       void writeDiagnosticLog({ level: 'info', title: 'Container', message, source: 'workspace' })
     },
   })
-  registerContainersIpc(ipcMain, containers, containerToken)
+  // A token set or forgotten reaches the servers already running in containers here by restarting them.
+  registerContainersIpc(ipcMain, containers, {
+    status: () => containerToken.status(),
+    set: async (token) => {
+      const result = await containerToken.set(token)
+      if (result.ok) void sshEnvironments.restartContainerServers()
+      return result
+    },
+    clear: async () => {
+      await containerToken.clear()
+      void sshEnvironments.restartContainerServers()
+    },
+  })
   // The pane's tabs for a workspace on an SSH machine: that machine's own
   // partition, behind an authenticated proxy on loopback that sends their
   // traffic through the machine (phase 8 spec, 6.8; decisions R75, R76).

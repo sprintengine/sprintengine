@@ -84,11 +84,7 @@ import {
   TruncatedText,
 } from '../ui'
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
-import {
-  CONVERSATION_DEFAULT_MODEL_ID,
-  cliForConversationProvider,
-  conversationSignIn,
-} from '../../../../shared/conversation-harness'
+import { CONVERSATION_DEFAULT_MODEL_ID, cliForConversationProvider } from '../../../../shared/conversation-harness'
 import { isLooserCliPermissionPreset, parseCliPermissionPreset } from '../../../../shared/cli-permission-preset'
 import { parseCliPermissionModeId } from '../../../../shared/cli-permission-mode'
 import { pickRandomAgentName } from '../../../../shared/agent-names'
@@ -130,7 +126,7 @@ import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
 import { useConversationTransport } from './agentChat/conversationTransport'
 import type { ChatCommandSource } from './agentChat/chatServices'
-import { openCliSignInTerminal } from './agentChat/cliSignIn'
+import { chatSignInProviderId, openCliSignInTerminal } from './agentChat/cliSignIn'
 import { useLocalChatBinding, type ChatBinding } from './agentChat/chatBinding'
 import { latestReplyTurnId } from './agentChat/turnFolds'
 import { useComposerDraft, type ComposerDraftMetadata } from './agentChat/useComposerDraft'
@@ -2640,14 +2636,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     return environment?.kind === 'ssh' ? environment.id : null
   })
   const sshMachinesOn = window.api?.sshMachinesEnabled === true
-  const signInProviderId =
-    transport.capabilities.providerSignIn &&
-    (!machineId || sshMachinesOn) &&
-    (machineId
-      ? cliForConversationProvider(conversation?.providerId)
-      : conversationSignIn(cliForConversationProvider(conversation?.providerId)))
-      ? conversation?.providerId
-      : undefined
+  const signInProviderId = chatSignInProviderId({
+    providerId: conversation?.providerId,
+    machineId,
+    sshMachinesOn,
+    providerSignIn: transport.capabilities.providerSignIn,
+  })
   const signIn = useCallback(async () => {
     if (!signInProviderId) return
     try {

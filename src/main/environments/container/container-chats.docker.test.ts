@@ -133,6 +133,9 @@ test.skipIf(!DOCKER_TESTS)(
     assert.equal(docker('inspect', '-f', `{{index .Config.Labels "${CONTAINER_LABEL}"}}`, name), '1')
     // No folder of the host is mounted into it.
     assert.equal(docker('inspect', '-f', '{{len .Mounts}}', name), '0')
+    // No capability, and no way to gain one.
+    assert.equal(docker('inspect', '-f', '{{json .HostConfig.CapDrop}}', name), '["ALL"]')
+    assert.match(docker('inspect', '-f', '{{json .HostConfig.SecurityOpt}}', name), /no-new-privileges/u)
 
     // Studio's own server runs inside, reached as a machine over `docker exec`.
     const connection = machines.connection(created.id)

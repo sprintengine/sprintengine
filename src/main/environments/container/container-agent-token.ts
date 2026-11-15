@@ -35,6 +35,8 @@ export class ContainerAgentToken {
   /** The token, or null; read once and kept in memory after. */
   async value(): Promise<string | null> {
     if (this.cached !== undefined) return this.cached
+    // Before the keychain can answer (Linux, until the app is ready) nothing is decided yet.
+    if (!this.deps.cipher.available()) return null
     try {
       const sealed = await readFile(this.deps.path)
       this.cached = (await openSecret(this.deps.cipher, sealed)).trim() || null

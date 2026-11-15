@@ -34,8 +34,13 @@ export const sshEnvironmentsApi = {
     ipcRenderer.invoke(SSH_ENV_CHANNELS.upgradeServer, { id }),
   sshEnvironmentForget: (
     id: string,
-    options: { stopServer?: boolean; clearBrowsingData?: boolean } = {},
-  ): Promise<SshEnvironmentResult> => ipcRenderer.invoke(SSH_ENV_CHANNELS.forget, { id, ...options }),
+    options: {
+      stopServer?: boolean
+      clearBrowsingData?: boolean
+      containers?: 'refuse' | 'remove' | 'forget-records'
+    } = {},
+  ): Promise<SshEnvironmentResult & { containers?: string[] }> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.forget, { id, ...options }),
   sshEnvironmentDiagnostics: (id: string): Promise<{ ok: true; text: string } | { ok: false; message: string }> =>
     ipcRenderer.invoke(SSH_ENV_CHANNELS.diagnostics, { id }),
   sshSignIn: (id: string, providerId: string): Promise<SshEnvironmentResult> =>

@@ -11,7 +11,7 @@ vi.mock('../../../utils/modelRegistry', () => ({
   },
 }))
 
-import { openCliSignInTerminal } from './cliSignIn'
+import { chatSignInProviderId, openCliSignInTerminal } from './cliSignIn'
 import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 type Calls = { spawns: unknown[][]; writes: Array<{ sessionId: string; data: string }>; signIns: unknown[] }
@@ -104,4 +104,23 @@ test('a terminal that fails to start opens no tab and reports the spawn failure'
   expect(result).toEqual({ ok: false, message: 'powershell.exe not found' })
   expect(calls.writes).toEqual([])
   expect(openedTabs).toEqual([])
+})
+
+test("a chat on another machine (SSH, a container) offers that machine's sign-in, whatever its transport serves", () => {
+  const offered = (providerId: string, sshMachinesOn: boolean, providerSignIn: boolean) =>
+    chatSignInProviderId({ providerId, machineId: 'c1', sshMachinesOn, providerSignIn })
+  // Its transport does not serve a provider sign-in: the desktop's dialog for the machine does.
+  expect(offered('claude-agent', true, false)).toBe('claude-agent')
+  // Codex too: the machine's dialog answers for every CLI, in words where it has no flow.
+  expect(offered('codex-agent', true, false)).toBe('codex-agent')
+  // With machines off there is nowhere to sign it in.
+  expect(offered('claude-agent', false, true)).toBeUndefined()
+})
+
+test("this machine's chat signs in where its transport serves it, for a CLI Studio can open a sign-in for", () => {
+  const offered = (providerId: string, providerSignIn: boolean) =>
+    chatSignInProviderId({ providerId, machineId: null, sshMachinesOn: true, providerSignIn })
+  expect(offered('claude-agent', true)).toBe('claude-agent')
+  expect(offered('claude-agent', false)).toBeUndefined()
+  expect(offered('mock-provider', true)).toBeUndefined()
 })

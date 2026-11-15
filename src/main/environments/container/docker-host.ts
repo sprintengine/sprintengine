@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { PassThrough } from 'node:stream'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
@@ -35,6 +36,12 @@ export type HostRunner = (
      * line. An SSH machine's runner does not carry them.
      */
     env?: Record<string, string>
+    /**
+     * A line the script prints once it has read all of itself: what the
+     * caller writes to stdin is held until then, so a shell reading its script
+     * from stdin never swallows the bytes meant for the command it becomes.
+     */
+    holdUntil?: string
   },
 ) => HostProcess
 
@@ -96,9 +103,35 @@ export function localHostRunner(
   }
 }
 
-/** The line an SSH machine's login shell is given for `script`: `sh -c '<script>'`. */
-export function sshRemoteLine(script: string): string {
-  return `sh -c ${shellQuote(script)}`
+/**
+ * What an SSH machine's `sh -s` is sent for `script`: the script inside one
+ * compound command, so the shell has parsed all of it before any of it runs
+ * (the SSH bootstrap's rule, phase 8 spec E2). Sent on stdin rather than as a
+ * `sh -c '…'` line, which a csh login shell refuses for its newlines.
+ */
+export function sshScriptBody(script: string): string {
+  return `{\n${script}\n}\n`
+}
+
+/**
+ * The child with its stdin swapped for one that holds every write until
+ * `marker` has been printed on stdout. The script itself is written first,
+ * straight to the real stdin.
+ */
+export function holdStdinUntil(child: HostProcess, marker: string): HostProcess {
+  const real = child.stdin
+  const held = new PassThrough()
+  let seen = ''
+  const watch = (chunk: Buffer) => {
+    seen = (seen + chunk.toString('utf8')).slice(-4096)
+    if (!seen.split('\n').some((line) => line.replace(/\r$/u, '') === marker)) return
+    child.stdout.off('data', watch)
+    held.pipe(real)
+  }
+  child.stdout.on('data', watch)
+  held.on('error', () => undefined)
+  Object.defineProperty(child, 'stdin', { value: held, configurable: true, writable: true })
+  return child
 }
 
 export type HostResult = { code: number | null; stdout: string; stderr: string }

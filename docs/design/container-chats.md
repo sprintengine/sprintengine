@@ -86,55 +86,99 @@ Never a bind mount of the host's folder (ruling). On Enter:
 
 1. Studio checks the folder on the host is a git repository, before anything
    is started.
-2. `git bundle create - HEAD --branches --tags` on the host is piped into
-   `docker exec -i … git clone` inside the container, at
-   `/home/node/work/<folder name>`. Uncommitted changes stay on the host.
-3. Inside, `origin` is set back to the host's remote URL (an address only: a
-   password or token written into the URL is taken out), the copy's author is the host repository's `user.name` and
-   `user.email`, and the chat works on a branch of its own,
+2. `git bundle create - HEAD refs/heads/<the branch HEAD is on>` on the host
+   (not every branch and tag there) is piped into `docker exec -i … git clone`
+   inside the container, at `/home/node/work/<folder name>`. Uncommitted
+   changes stay on the host.
+3. Inside, `origin` is set back to the host's remote URL, as an address only:
+   over http(s) everything before `@` is dropped (`https://TOKEN@host/…`,
+   `https://user:token@host/…`); elsewhere a user name is kept and a password
+   dropped. The copy's author is the host repository's `user.name` and
+   `user.email`. These three travel on the clone's stdin ahead of the bundle,
+   never in a command line. The chat works on a branch of its own,
    `studio/container-<id>`.
 
 The branch leaves the same way, in reverse (`pushOutScript`): `docker exec … git
 bundle create - refs/heads/<branch>` on the host, fetched into a ref of
-Studio's own (`refs/sprintengine/containers/<id>`) in the host repository, and
-pushed with the host's git: `git push origin <that ref>:refs/heads/<branch>`.
+Studio's own (`refs/sprintengine/containers/<id>`) in the host repository with
+every object checked (`fetch.fsckObjects`), and pushed with the host's git: `git push origin <that ref>:refs/heads/<branch>`.
 The person's branches and working tree are never written. The owner's git and
 GitHub credentials never enter the container (the owner's proposal,
 implemented): only the host pushes. Push is offered today as "Push branch" on
-the container's row in Settings › Machines › Containers.
+the container's row in Settings › Machines › Containers. A container chat's
+panel draws no Create PR (as an SSH machine's chat draws none: its checkout is
+not this computer's), so nothing there fails on a container's missing
+credentials.
 
 ## Agent sign-in inside the container
 
-Only the agent's own login goes inside. A container chat signs its CLI in the
-way an SSH machine's does: the machine's sign-in flow
-(`providers.signInStart`, `server/machine/machine-sign-in.ts`) runs the CLI's
-own login inside the container and shows its link and code in Studio's dialog
-(`claude auth login` pastes a code back; `codex login --device-auth` shows a
-device code). The CLI keeps its login where it would on any Linux machine,
-inside the container (`~/.claude/.credentials.json`), which is kept with the
-chat and removed with it. A CLI with no such flow is told the exact
-`docker exec -it <container> <login>` to run once.
+Only the agent's own login goes inside. Two ways, both built:
+
+- **A token, pasted once.** Settings › Machines › Containers takes a token
+  from `claude setup-token` (run in a terminal on this computer). It is sealed
+  with the app's keychain cipher (`container-agent-token.ts`) and handed to the
+  Studio server of each container on this computer when it starts, as Claude
+  Code's own `CLAUDE_CODE_OAUTH_TOKEN`. It goes by name: the host's `sh` and
+  `docker exec -e CLAUDE_CODE_OAUTH_TOKEN` carry it in their environment
+  (readable by the person's own user on the host, as any process's environment
+  is), never in a command line, an image, or the container's saved config. A
+  container's server is never started before the token has been read at app
+  start, and setting or forgetting it restarts the servers of the containers
+  on this computer, so none runs on a stale login. A container on an SSH
+  machine is not given it (the value would have to cross ssh); it signs in the
+  second way.
+- **The machine's sign-in dialog**, as an SSH machine's chat does
+  (`providers.signInStart`, `server/machine/machine-sign-in.ts`): the CLI's own
+  login runs inside the container and its link and code show in Studio's
+  dialog (`claude auth login` pastes a code back; `codex login --device-auth`
+  shows a device code). The login stays inside the container
+  (`~/.claude/.credentials.json`), kept with the chat and removed with it. A
+  chat on another machine whose turn fails to authenticate offers this dialog
+  from its failure card (`chatSignInProviderId`), rather than sending the
+  person to a terminal on this computer.
 
 The image answers Claude Code's first-run questions once
 (`hasCompletedOnboarding` in `~/.claude.json`, no credential) and turns its
 self-update off, so a kept container does not stop on them.
 
-Not built yet: a long-lived token from `claude setup-token` (or an API key)
-kept in this computer's secret store and handed to the container's server at
-start (`docker exec -e CLAUDE_CODE_OAUTH_TOKEN`, value from the docker CLI's
-environment, never its argv). A stronger variant keeps even that out: a
-placeholder token inside and a proxy on the host that adds the real
-`Authorization` header. Either is a later change; the sign-in dialog works now.
+A stronger variant keeps even the token out: a placeholder inside and a proxy
+on the host that adds the real `Authorization` header. Not built.
+
+## Threat model
+
+What a container is for: an agent that runs commands without asking reaches
+nothing of the person's but the repository copy and its own login.
+
+- **Kept out:** the host's folders (no mounts), the host's git and GitHub
+  credentials (only the host pushes; a credential in the remote URL is
+  stripped), the host's SSH agent and keys, every Linux capability
+  (`--cap-drop ALL`) and any way to regain one (`no-new-privileges`).
+- **Inside, by design:** the repository copy; the agent's own login (the token,
+  or what its sign-in wrote), which the agent can read and use or send
+  anywhere, since network access is full (owner ruling); whatever the agent
+  downloads.
+- **Coming out:** only the chat's branch, as a bundle the host fetches with
+  object checks into a ref of Studio's and pushes. It is code an agent wrote:
+  reviewing it is the pull request's job.
+- **Known gap: the agent and Studio's server share a user.** Both run as the
+  image's `node` user, and the server's data (its run directory, owner token
+  and socket) is in that user's home. An agent can therefore drive its own
+  container's server as its owner, stop it, or stand a process of its own in
+  front of its socket. What that buys it is the protocol the desktop already
+  treats as a remote machine's: the desktop holds such a server to exactly
+  what it holds an SSH machine's server to. Closing the gap means running the
+  server as a user of its own and the CLIs it starts as the agent's user (a
+  follow-up).
 
 ## The image
 
 `resources/container/agent.Dockerfile`, shipped with the app
-(`extraResources` → `container/`): `node:22-bookworm-slim`, git, ripgrep,
+(`extraResources` → `container/`): `node:22-bookworm-slim` pinned by digest, git, ripgrep,
 procps, and pinned `@anthropic-ai/claude-code` and `@openai/codex`, running as
 the image's unprivileged `node` user (Claude Code refuses to skip its
 permission prompts as root). It is built on the container's host the first
-time a container is made there (`docker build -` with the Dockerfile on stdin,
-no build context) and tagged `sprintengine-studio-agent:<first 12 hex of the
+time a container is made there (`docker build -` with the Dockerfile in the
+script itself, no build context) and tagged `sprintengine-studio-agent:<first 12 hex of the
 file's SHA-256>`, so an app update that changes the file builds a new image and
 an unchanged one is reused. Studio's server brings its own pinned Node; the
 image's Node is the project's. The first build takes a few minutes and the
@@ -145,6 +189,11 @@ first container on a machine.
 
 - Named `sprintengine-<saved id>` (16 hex) and labelled
   `sprintengine.studio.container=1` and `sprintengine.studio.machine=<id>`.
+- Saved before Docker is asked to start it (`provisioning`), so one whose
+  making is cut short (Studio quits, the machine goes away) is still listed and
+  can be removed.
+- Kept on the Docker context it was made under (`docker context show` then),
+  named on every later call, so a changed default context cannot lose it.
 - Kept after the chat settles. Its server keeps running between turns
   (`keepRunning`); a container Docker stopped (a restart, Colima stopped
   overnight) is started again by the next session (`docker start` in the exec
@@ -152,7 +201,14 @@ first container on a machine.
 - Removed when its chat is deleted (`container-chat-lifecycle.ts`): once no
   workspace is on a container that one was on, it goes, record and all. A
   container made for a chat that never started is not removed by that sweep;
-  it is listed.
+  it is listed. When removing cannot happen now (Docker not running, the
+  machine away) the container is marked as waiting on its record, Settings
+  says why, and it is tried again on every registry change and every five
+  minutes until it goes. A container is called gone only when Docker answers
+  that it has no such container.
+- An SSH machine that has containers is not forgotten silently: Studio removes
+  them first, or, when the person says the machine is gone, drops only their
+  records.
 - Settings › Machines › Containers lists every container Studio made: the
   saved ones, and any Docker still has with Studio's label but no record here
   (a crash between start and save), each with Docker's own status words and a
@@ -181,8 +237,12 @@ inside.
 A container chat is an SSH-machine chat to every client: the window, a paired
 desktop and the phone see and drive it as they do one on an SSH machine.
 Making a container, and pushing its branch, are this desktop's actions (it
-runs Docker), like adding an SSH machine; the phone and a paired desktop do not
-offer them.
+runs Docker) over its own IPC, like adding an SSH machine. A paired desktop's
+New chat shows the Container chip for that machine with the words "A chat in a
+container on <machine> is started from <machine> itself for now", and the
+phone's New chat shows "No container" with the cube, saying the same. Making
+containers from a paired desktop or the phone over the Studio protocol is a
+follow-up. Windows and WSL say "Containers on … are not built yet".
 
 ## Left for later
 
@@ -192,7 +252,10 @@ offer them.
   its state, and its records are an ordinary machine's.
 - A project's devcontainer or Dockerfile as the image.
 - A worktree inside a container.
-- The token path for sign-in, and the host-side proxy variant (above).
+- The host-side proxy that keeps even the token out (above).
+- The server and the agent as separate users (Threat model).
+- Making, pushing and removing containers over the Studio protocol, for a
+  paired desktop and the phone.
 - Push from the chat itself (its pull-request flow), not only from Settings.
 - Containers in WSL.
 - Network choices other than full.

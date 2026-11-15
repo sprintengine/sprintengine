@@ -253,7 +253,37 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
               body: 'Its chats stay on the machine. Its Studio server keeps running there, and stops on its own when idle.',
               confirmLabel: 'Forget',
               tone: 'danger',
-            }).then((yes) => (yes ? api.sshEnvironmentForget(machine.id) : undefined))
+            }).then(async (yes) => {
+              if (!yes) return
+              const forgotten = await api.sshEnvironmentForget(machine.id)
+              if (forgotten.ok || !forgotten.containers?.length) {
+                if (!forgotten.ok) setDiagnostics(forgotten.message)
+                return
+              }
+              // Containers Studio made there would be stranded: removed first, or (the machine
+              // being gone) only their records dropped, as the person says.
+              const remove = await confirmDialog({
+                title: `Remove the containers on ${machine.label} first?`,
+                body: forgotten.message,
+                confirmLabel: 'Remove them, then forget',
+                tone: 'danger',
+              })
+              if (remove) {
+                const removed = await api.sshEnvironmentForget(machine.id, { containers: 'remove' })
+                if (removed.ok) return
+                setDiagnostics(removed.message)
+              }
+              const recordsOnly = await confirmDialog({
+                title: `Forget ${machine.label} and its containers' records only?`,
+                body: `The containers stay on ${machine.label}, and Studio stops keeping track of them. Choose this only if ${machine.label} is gone.`,
+                confirmLabel: 'Forget the records',
+                tone: 'danger',
+              })
+              if (recordsOnly) {
+                const dropped = await api.sshEnvironmentForget(machine.id, { containers: 'forget-records' })
+                if (!dropped.ok) setDiagnostics(dropped.message)
+              }
+            })
           }
         >
           Forget

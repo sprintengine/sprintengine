@@ -1871,12 +1871,13 @@ export function createAppServices(
     watchContainerChats({
       workspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
       subscribe: (listener) => workspaceSyncService.subscribeEvents(listener),
-      containerIds: () =>
+      containers: () =>
         ssh.environments
           .list()
           .filter((entry) => entry.container)
-          .map((entry) => entry.id),
+          .map((entry) => ({ id: entry.id, pendingRemoval: entry.container?.pendingRemoval ?? null })),
       remove: (id) => ssh.containers.remove({ id }),
+      markPending: (id, why) => ssh.environments.updateContainer(id, { pendingRemoval: why }),
       log: (message) => console.warn(`[containers] ${message}`),
     })
   workspaceSyncService.subscribeEvents(() => {

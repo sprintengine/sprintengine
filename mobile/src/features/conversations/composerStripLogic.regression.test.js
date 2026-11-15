@@ -61,8 +61,8 @@ const layout = (width, extra = {}) =>
 // Everything whole: 22 + (16 + 21·8) + 70 + 2 gaps of 4.
 const FULL = 22 + 16 + 21 * CHAR + 70 + 2 * 4;
 
-test("the drop order is branch, then diff, then the machine glyph, then Worktree", () => {
-  assert.deepEqual(STRIP_DROP_ORDER, { branch: 1, diff: 2, machine: 3, worktree: 4 });
+test("the drop order is Container, then branch, then diff, then the machine glyph, then Worktree", () => {
+  assert.deepEqual(STRIP_DROP_ORDER, { container: 0, branch: 1, diff: 2, machine: 3, worktree: 4 });
 });
 
 test("with room, everything is on the line, the branch whole, and no ⋮", () => {
@@ -149,3 +149,4 @@ test("the chat's changes add up every turn's, and only checkpointed turns open, 
   assert.equal(changes.removedLines, 2);
   assert.deepEqual(changes.openable.map((turn) => turn.id), ["c", "a"]);
 });
+
