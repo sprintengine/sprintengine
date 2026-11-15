@@ -111,7 +111,7 @@ export function WorktreeGlyph({ className }: GlyphProps): React.JSX.Element {
 
 /**
  * A cube drawn in isometric outline, its top and right faces shaded: a
- * container. The strip's Container switch (owner ruling 2026-11-15). Still:
+ * container. New chat's cube, which picks where a chat runs (owner ruling 2026-11-15). Still:
  * it never spins or pulses, whatever the container is doing.
  * `glyphs/container.svg`.
  */

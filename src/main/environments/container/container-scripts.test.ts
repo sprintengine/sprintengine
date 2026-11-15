@@ -1,25 +1,25 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
 
 import {
   buildImageScript,
-  copyRepoInScript,
+  cloneAddress,
+  cloneFolderName,
+  cloneScript,
   dockerCommand,
   dockerStatusScript,
   EXEC_READY_MARKER,
   execSessionScript,
-  listContainersScript,
-  parseContainerList,
   parseDockerStatus,
-  pushOutScript,
+  parseUnpushed,
   removalOutcome,
   removeContainerScript,
   runContainerScript,
-  workFolderName,
+  unpushedScript,
 } from './container-scripts'
 import {
   dockerSearchPath,
@@ -151,42 +151,33 @@ test('only names Studio minted are spelled bare in a script', () => {
   assert.throws(() => removeContainerScript('postgres'))
   assert.throws(() => runContainerScript({ name: NAME, image: 'x; id', machineId: '0123456789abcdef' }))
   assert.throws(() => dockerCommand('colima; id'))
-  assert.throws(() => copyRepoInScript({ source: '/x', name: NAME, path: '/etc/passwd', branch: 'b' }))
-  assert.throws(() =>
-    pushOutScript({ source: '/x', name: NAME, path: '/home/node/work/x', branch: 'b', ref: 'refs/heads/main' }),
-  )
-  // A folder's path is a quoted word, whatever it holds.
-  const script = copyRepoInScript({
-    source: "/Users/dev/it's $(here)",
-    name: NAME,
-    path: '/home/node/work/x',
-    branch: 'studio/container-01234567',
-  })
-  assert.ok(script.includes(`src='/Users/dev/it'\\''s $(here)'`))
+  assert.throws(() => cloneScript({ name: NAME, address: 'x', folder: '../etc' }))
+  assert.throws(() => unpushedScript('sprintengine-x; id'))
+  // A repository's address is a quoted word, whatever it holds.
+  const script = cloneScript({ name: NAME, address: "https://example.com/it's $(here).git", folder: 'x' })
+  assert.ok(script.includes(`'https://example.com/it'\\''s $(here).git'`))
 })
 
-test('a container is made without capabilities, never with a mount, on the context it was asked under', () => {
+test('a container is made without capabilities, with only its own home as a volume, on the context it was asked under', () => {
   const run = runContainerScript({ name: NAME, image: IMAGE, machineId: '0123456789abcdef', context: 'colima' })
-  assert.match(run, /^docker --context colima run -d /u)
+  assert.match(
+    run,
+    /^docker --context colima volume create --label sprintengine\.studio\.container=1 --label sprintengine\.studio\.machine=0123456789abcdef sprintengine-0123456789abcdef-home /u,
+  )
+  assert.match(run, /\ndocker --context colima run -d /u)
   assert.match(run, / --cap-drop ALL --security-opt no-new-privileges /u)
   assert.match(run, /--label sprintengine\.studio\.container=1 /u)
-  assert.doesNotMatch(run, /-v |--mount|--volume|--privileged|--cap-add/u)
+  // The one volume is Studio's own; nothing of the host's folders is mounted.
+  assert.deepEqual(run.match(/-v \S+/gu), ['-v sprintengine-0123456789abcdef-home:/home/node'])
+  assert.doesNotMatch(run, /--mount|--privileged|--cap-add|-v \//u)
   // The host's default context is not named, so DOCKER_HOST still decides it.
   assert.equal(dockerCommand(null), 'docker')
   assert.equal(dockerCommand('default'), 'docker')
   for (const script of [
     execSessionScript(NAME, { context: 'colima' }),
     removeContainerScript(NAME, 'colima'),
-    listContainersScript('colima'),
-    copyRepoInScript({ source: '/x', name: NAME, path: '/home/node/work/x', branch: 'b', context: 'colima' }),
-    pushOutScript({
-      source: '/x',
-      name: NAME,
-      path: '/home/node/work/x',
-      branch: 'b',
-      ref: 'refs/sprintengine/containers/0123456789abcdef',
-      context: 'colima',
-    }),
+    cloneScript({ name: NAME, address: 'https://github.com/acme/app.git', folder: 'app', context: 'colima' }),
+    unpushedScript(NAME, 'colima'),
   ])
     assert.doesNotMatch(script.replace(/docker --context colima /gu, ''), /\bdocker /u, script)
 })
@@ -211,6 +202,7 @@ test("a container is removed only when it carries Studio's label, and called gon
         `  version) ${version} ;;`,
         `  inspect) ${inspect} ;;`,
         '  rm) echo "removed $3" >&2 ;;',
+        `  volume) case "$2" in inspect) ${inspect} ;; rm) echo "volume removed $3" >&2 ;; esac ;;`,
         'esac',
       ].join('\n'),
     })
@@ -227,6 +219,8 @@ test("a container is removed only when it carries Studio's label, and called gon
   assert.deepEqual(absent.outcome, { ok: true })
   const ours = await remove(docker('echo 1'))
   assert.equal(ours.said, 'yes')
+  // Its home volume goes with it, by its own name.
+  assert.match(ours.result.stderr, /volume removed sprintengine-0123456789abcdef-home/u)
   const theirs = await remove(docker('echo ""'))
   assert.equal(theirs.said, 'not-ours')
   assert.doesNotMatch(theirs.result.stderr, /removed/u)
@@ -244,25 +238,88 @@ test("a container is removed only when it carries Studio's label, and called gon
   assert.match(odd.outcome.ok ? '' : odd.outcome.message, /permission denied/u)
 })
 
-test('the containers Docker lists, and the folder a repository is copied to', () => {
-  assert.deepEqual(
-    parseContainerList(
-      [
-        'noise',
-        `@@c ${NAME}\t0123456789abcdef\tUp 3 minutes`,
-        '@@c sprintengine-fedcba9876543210\t\tExited (0) 2 hours ago',
-        '@@c postgres\t\tUp',
-      ].join('\n'),
-    ),
-    [
-      { name: NAME, machineId: '0123456789abcdef', status: 'Up 3 minutes' },
-      { name: 'sprintengine-fedcba9876543210', machineId: null, status: 'Exited (0) 2 hours ago' },
-    ],
+test('a repository to clone, as a person types it, and the folder it lands in', () => {
+  assert.equal(cloneAddress('acme/app'), 'https://github.com/acme/app.git')
+  assert.equal(cloneAddress(' acme/app.git '), 'https://github.com/acme/app.git')
+  assert.equal(cloneAddress('https://github.com/acme/app'), 'https://github.com/acme/app')
+  assert.equal(cloneAddress('git@github.com:acme/app.git'), 'git@github.com:acme/app.git')
+  assert.equal(cloneAddress('ssh://git@example.com/acme/app.git'), 'ssh://git@example.com/acme/app.git')
+  for (const bad of ['', 'app', '--upload-pack=id', 'file:///etc', 'https://x y/z', '/Users/dev/app'])
+    assert.equal(cloneAddress(bad), null, bad)
+  assert.equal(cloneFolderName('https://github.com/acme/demo-app.git'), 'demo-app')
+  assert.equal(cloneFolderName('git@github.com:acme/app.git'), 'app')
+  assert.equal(cloneFolderName('https://example.com/a/..'), 'repo')
+})
+
+test('a clone runs inside as the agent, with no password prompt, and never over a folder already there', async () => {
+  const dir = fakeBin('clone', {
+    docker: ['case "$1" in', '  start) exit 0 ;;', '  exec) echo "args: $*" ;;', 'esac'].join('\n'),
+  })
+  const result = await runOnHost(
+    runnerFor(dir),
+    cloneScript({ name: NAME, address: 'https://github.com/acme/app.git', folder: 'app' }),
   )
-  assert.equal(workFolderName('/Users/dev/demo app/'), 'demo-app')
-  assert.equal(workFolderName('C:\\work\\repo'), 'repo')
-  assert.equal(workFolderName('/Users/dev/..'), 'project')
-  assert.equal(workFolderName(null), 'project')
+  assert.match(
+    result.stdout,
+    /args: exec -u node -e HOME=\/home\/node -w \/home\/node sprintengine-0123456789abcdef sh -c /u,
+  )
+  assert.match(result.stdout, /GIT_TERMINAL_PROMPT=0 git clone -q -- "\$1" \/home\/node\/work\/app/u)
+  assert.match(result.stdout, /if \[ -e \/home\/node\/work\/app \]; then echo "@@clone exists/u)
+  assert.match(result.stdout, / sh https:\/\/github\.com\/acme\/app\.git$/mu)
+})
+
+test('what deleting a container would lose: unpushed branches, uncommitted changes, detached commits and stashes', async () => {
+  const work = realpathSync(mkdtempSync(join(scratch, 'unpushed-')))
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=Dev', '-c', 'user.email=dev@example.com', ...args], {
+      cwd,
+      encoding: 'utf8',
+    })
+  const origin = join(work, 'origin.git')
+  execFileSync('git', ['init', '-q', '--bare', origin])
+  const repo = join(work, 'home', 'work', 'app')
+  mkdirSync(repo, { recursive: true })
+  git(repo, 'init', '-q', '-b', 'main')
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'one')
+  git(repo, 'remote', 'add', 'origin', origin)
+  git(repo, 'push', '-q', 'origin', 'main')
+  // A branch with no upstream and two commits of its own.
+  git(repo, 'checkout', '-q', '-b', 'agent/fix')
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'two')
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'three')
+  git(repo, 'checkout', '-q', 'main')
+  // A stash.
+  writeFileSync(join(repo, 'stashed.txt'), 'x\n')
+  git(repo, 'stash', 'push', '-q', '-u')
+  // A worktree with an untracked file and an uncommitted change.
+  const dirty = join(work, 'home', 'work', '.sprintengine-worktrees', 'app', 'dirty')
+  git(repo, 'worktree', 'add', '-q', '-b', 'agent/dirty', dirty, 'main')
+  writeFileSync(join(dirty, 'new.txt'), 'x\n')
+  // A detached worktree with a commit on no branch.
+  const detached = join(work, 'home', 'work', '.sprintengine-worktrees', 'app', 'detached')
+  git(repo, 'worktree', 'add', '-q', '--detach', detached, 'main')
+  git(detached, 'commit', '-q', '--allow-empty', '-m', 'adrift')
+  // A stand-in docker that runs the inside script here, with this scratch home as the container's.
+  const inside = join(work, 'home')
+  const dir = fakeBin('unpushed', {
+    docker: [
+      'case "$1" in',
+      '  start) exit 0 ;;',
+      `  exec) shift 6; script="$3"; script="$(printf '%s' "$script" | sed 's#/home/node#${inside}#g')"; exec /bin/sh -c "$script" ;;`,
+      'esac',
+    ].join('\n'),
+  })
+  const result = await runOnHost(
+    localHostRunner({ env: { PATH: `${dir}:${BASE}:/usr/bin:/bin`, HOME: scratch }, searchPath: false }),
+    unpushedScript(NAME),
+  )
+  assert.deepEqual(parseUnpushed(result.stdout), {
+    branches: [{ repo, branch: 'agent/fix', commits: 2 }],
+    dirty: [{ worktree: dirty, files: 1 }],
+    detached: [{ worktree: detached, commits: 1 }],
+    stashes: [{ repo, count: 1 }],
+  })
+  assert.equal(parseUnpushed('@@branch 1\t/x\tb\n'), null, 'an answer that did not finish is not "nothing"')
 })
 
 test("Docker's usual homes join the PATH an app opened from the Dock has", () => {
@@ -281,92 +338,14 @@ test("Docker's usual homes join the PATH an app opened from the Dock has", () =>
   ])
 })
 
-test("the agent's login reaches a container's session by name: its value is in no command line", async () => {
-  assert.throws(() => execSessionScript(NAME, { passEnv: ['A; id'] }))
+test("a container's session is a shell inside it, as the agent's user, once Docker has started it", async () => {
   const dir = fakeBin('exec', {
-    docker: [
-      'case "$1" in',
-      '  start) exit 0 ;;',
-      '  exec) echo "args: $*"; echo "env: ${CLAUDE_CODE_OAUTH_TOKEN:-unset}" ;;',
-      'esac',
-    ].join('\n'),
+    docker: ['case "$1" in', '  start) echo started >&2 ;;', '  exec) echo "args: $*" ;;', 'esac'].join('\n'),
   })
-  const run = runnerFor(dir)
-  const result = await runOnHost(
-    (script, options) => run(script, { ...options, env: { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-secret' } }),
-    execSessionScript(NAME, { passEnv: ['CLAUDE_CODE_OAUTH_TOKEN'] }),
-  )
+  const result = await runOnHost(runnerFor(dir), execSessionScript(NAME))
+  assert.match(result.stderr, /started/u)
   assert.match(
     result.stdout,
-    /args: exec -i -u node -w \/home\/node -e HOME=\/home\/node -e CLAUDE_CODE_OAUTH_TOKEN sprintengine-0123456789abcdef sh -s/u,
+    /args: exec -i -u node -w \/home\/node -e HOME=\/home\/node sprintengine-0123456789abcdef sh -s/u,
   )
-  assert.doesNotMatch(
-    result.stdout.split('\n').find((line) => line.startsWith('args:'))!,
-    /sk-ant-secret/u,
-  )
-  assert.match(result.stdout, /env: sk-ant-secret/u)
-})
-
-test("the host's remote address is copied in without any credential, on stdin, never in a command line", async () => {
-  const urls: Record<string, string> = {
-    'https://dev:ghp_secret@github.com/acme/app.git': 'https://github.com/acme/app.git',
-    'https://ghp_secret@github.com/acme/app.git': 'https://github.com/acme/app.git',
-    'https://dev@github.com/acme/app.git': 'https://github.com/acme/app.git',
-    'HTTP://u:p@example.com/app.git': 'HTTP://example.com/app.git',
-    'git@github.com:acme/app.git': 'git@github.com:acme/app.git',
-    'ssh://git@github.com/acme/app.git': 'ssh://git@github.com/acme/app.git',
-    'ssh://git:ghp_secret@github.com/acme/app.git': 'ssh://git@github.com/acme/app.git',
-  }
-  let index = 0
-  for (const [given, copied] of Object.entries(urls)) {
-    const dir = fakeBin(`url-${index++}`, {
-      git: [
-        'case "$*" in',
-        '  *rev-parse*) exit 0 ;;',
-        '  *symbolic-ref*) echo main ;;',
-        `  *"remote get-url"*) echo '${given}' ;;`,
-        '  *"config user.name"*) echo Dev ;;',
-        '  *"config user.email"*) echo dev@example.com ;;',
-        '  *bundle*) echo "$*" > "$HOME/bundle-args"; printf BUNDLE ;;',
-        'esac',
-      ].join('\n'),
-      // The container's side: its argv, then the three lines it reads first, then the bundle.
-      docker: [
-        'echo "docker-args: $*" >&2',
-        'IFS= read -r url; IFS= read -r who; IFS= read -r mail',
-        'echo "url=$url"; echo "who=$who"; echo "mail=$mail"; echo "rest=$(cat)"',
-      ].join('\n'),
-    })
-    const result = await runOnHost(
-      runnerFor(dir),
-      copyRepoInScript({
-        source: '/Users/dev/app',
-        name: NAME,
-        path: '/home/node/work/app',
-        branch: 'studio/container-01234567',
-      }),
-    )
-    assert.ok(result.stdout.split('\n').includes(`url=${copied}`), `${given}: ${result.stdout}`)
-    assert.match(result.stdout, /^who=Dev$/mu)
-    assert.match(result.stdout, /^mail=dev@example\.com$/mu)
-    assert.match(result.stdout, /^rest=BUNDLE$/mu)
-    assert.doesNotMatch(result.stdout, /ghp_secret|u:p@/u)
-    assert.doesNotMatch(result.stderr, /github\.com|example\.com/u, 'the address is in no command line')
-    // Only what the chat starts from: HEAD and its branch.
-    assert.equal(
-      execFileSync('cat', [join(scratch, 'bundle-args')], { encoding: 'utf8' }).trim(),
-      '-C /Users/dev/app bundle create - HEAD refs/heads/main',
-    )
-  }
-})
-
-test("the branch comes out with every object checked before it lands in the person's repository", () => {
-  const script = pushOutScript({
-    source: '/x',
-    name: NAME,
-    path: '/home/node/work/x',
-    branch: 'studio/container-01234567',
-    ref: 'refs/sprintengine/containers/0123456789abcdef',
-  })
-  assert.match(script, /git -C "\$src" -c fetch\.fsckObjects=true fetch -q /u)
 })

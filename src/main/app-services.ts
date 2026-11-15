@@ -21,7 +21,6 @@ import { createAgentStateService } from './agent-state-service'
 import { primeDefaultWslDistro } from './hosts/wsl-distro'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
-import { watchContainerChats } from './environments/container/container-chat-lifecycle'
 import { createDesktopEnvironments } from './environments/desktop-environments'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import type { EnvironmentTicketResult } from '../shared/environments'
@@ -1709,9 +1708,6 @@ export function createAppServices(
         // windows and agents use, and the same tools that list and draw them,
         // each held to where a board's file really is.
         canvas: canvasRemoteSubscribers.host(canvasService, canvasToolsOver),
-        // Chats' containers on the hosts this desktop drives, where the SSH
-        // machines preview is on (docs/design/container-chats.md).
-        ...(ssh ? { containers: ssh.containersDomain } : {}),
       })
     : null
   // Where the person's attention is, for routing a call to the window in
@@ -1869,20 +1865,6 @@ export function createAppServices(
   // agent spawn like the hook and the MCP config — an agent that reaches its
   // first prompt without the skills has already lost the session they were for
   // (backlog/2026-09-06-sprintengine-studio-ships-as-a-plugin.md).
-  // A chat's container goes when the chat is deleted (docs/design/container-chats.md).
-  if (ssh)
-    watchContainerChats({
-      workspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
-      subscribe: (listener) => workspaceSyncService.subscribeEvents(listener),
-      containers: () =>
-        ssh.environments
-          .list()
-          .filter((entry) => entry.container)
-          .map((entry) => ({ id: entry.id, pendingRemoval: entry.container?.pendingRemoval ?? null })),
-      remove: (id) => ssh.containers.remove({ id }),
-      markPending: (id, why) => ssh.environments.updateContainer(id, { pendingRemoval: why }),
-      log: (message) => console.warn(`[containers] ${message}`),
-    })
   workspaceSyncService.subscribeEvents(() => {
     void studioPluginService.ensureInstalledForRoots(
       uniqueResolvedRoots(listKnownWorkspaceRoots(workspaceSyncService.getSnapshot())),

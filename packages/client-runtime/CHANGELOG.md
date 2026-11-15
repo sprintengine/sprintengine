@@ -2,12 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- `STUDIO_DEFAULT_READ_TIMEOUT_MS`: how long a read waits for its answer
-  unless the client says otherwise (60 s), so a service that answers a read
-  can keep its own budget under it.
-
 ### Fixed
 
 - A protocol mismatch names the side to update. `presentStudioFailure(error)`

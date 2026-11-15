@@ -1,21 +1,14 @@
+import { rmSync } from 'node:fs'
 import { hostname } from 'node:os'
+import { join } from 'node:path'
 
 import { app, ipcMain, MessageChannelMain, net, powerMonitor, session } from 'electron'
 
 import { writeDiagnosticLog } from '../../diagnostics-service'
 import { allowMachinePartitions } from '../../browser/guest-policy'
 import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
-import { ContainerChats } from '../container/container-chats'
-import { ContainerCommandReceipts } from '../container/container-command-receipts'
-import {
-  createContainersDomain,
-  serveContainersToServer,
-  type DesktopContainersDomain,
-} from '../container/containers-domain'
+import { ContainerMachines } from '../container/container-machines'
 import { readAgentImage } from '../container/container-image'
-import { ContainerAgentToken, CLAUDE_TOKEN_ENV } from '../container/container-agent-token'
-import { studioPlatform } from '../../../server/platform/platform'
-import { join } from 'node:path'
 import { channelForVersion } from '../../update-channel-store'
 import { readStudioEnv } from '../../../shared/studio-env'
 import type { WorkspaceEnvironmentRef } from '../../../shared/workspace'
@@ -36,9 +29,7 @@ import { prefixedId } from '../../../shared/random-id'
 export type DesktopSsh = {
   environments: SshEnvironments
   panes: PanePartitions
-  containers: ContainerChats
-  /** The same containers as the desktop's Studio serves them to its clients (`containers.*`). */
-  containersDomain: DesktopContainersDomain
+  containers: ContainerMachines
 }
 
 export function createDesktopSsh(deps: {
@@ -48,23 +39,16 @@ export function createDesktopSsh(deps: {
   /** The SSH machine a workspace is on, from main's registry. */
   workspaceEnvironment(workspaceId: string): WorkspaceEnvironmentRef | null
 }): DesktopSsh {
-  // Claude Code's login for chats in containers, sealed with the app's keychain
-  // cipher, read once the app is ready and handed only to containers on this computer.
-  const containerToken = new ContainerAgentToken({
-    path: join(app.getPath('userData'), 'container-claude-token'),
-    cipher: {
-      available: () => studioPlatform().secrets.available(),
-      seal: (plaintext) => studioPlatform().secrets.seal(plaintext),
-      open: (sealed) => studioPlatform().secrets.open(sealed),
-    },
-  })
-  void app.whenReady().then(() => containerToken.value())
+  // The first containers kept a sealed agent token and per-request receipts
+  // here (one nightly only); neither is read any more, so neither is kept.
+  for (const leftover of ['container-claude-token', 'container-commands.json']) {
+    try {
+      rmSync(join(app.getPath('userData'), leftover), { force: true })
+    } catch {
+      // Left for the next start.
+    }
+  }
   const sshEnvironments = new SshEnvironments({
-    containerEnvReady: () => containerToken.value().then(() => undefined),
-    containerEnv: (): Record<string, string> => {
-      const token = containerToken.current()
-      return token ? { [CLAUDE_TOKEN_ENV]: token } : {}
-    },
     userDataDir: app.getPath('userData'),
     app: {
       version: deps.version,
@@ -86,15 +70,14 @@ export function createDesktopSsh(deps: {
       void writeDiagnosticLog({ level: 'info', title: 'SSH machine', message, source: 'workspace' })
     },
   })
-  registerSshEnvironmentsIpc(ipcMain, sshEnvironments)
-  // Chats in containers (docs/design/container-chats.md): each one a saved
-  // machine of the list above, reached over `docker exec` on its host.
+  // Containers (docs/design/container-chats.md): each one a saved machine of
+  // the list above, reached over `docker exec` on its host.
   const imagePaths = {
     packaged: app.isPackaged,
     resourcesDir: app.isPackaged ? process.resourcesPath : null,
     appRoot: app.getAppPath(),
   }
-  const containers = new ContainerChats({
+  const containers = new ContainerMachines({
     machines: sshEnvironments,
     image: () => readAgentImage(imagePaths),
     hostLabel: (host) =>
@@ -103,22 +86,11 @@ export function createDesktopSsh(deps: {
           ? 'this Mac'
           : 'this computer'
         : (sshEnvironments.get(host.machine)?.label ?? 'that SSH machine'),
-    onChange: () => containersDomain.changed(),
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', title: 'Container', message, source: 'workspace' })
     },
   })
-  // What the desktop's Studio serves of them (`containers.*`). A token set or
-  // forgotten reaches the servers already running in containers here by
-  // restarting them.
-  const containersDomain: DesktopContainersDomain = createContainersDomain({
-    containers,
-    token: containerToken,
-    // What each create, push and remove did, by the client's command id, kept
-    // on disk: one sent again after the server restarted is answered, not redone.
-    receipts: new ContainerCommandReceipts({ path: join(app.getPath('userData'), 'container-commands.json') }),
-    onTokenChanged: () => void sshEnvironments.restartContainerServers(),
-  })
+  registerSshEnvironmentsIpc(ipcMain, sshEnvironments, containers)
   // The pane's tabs for a workspace on an SSH machine: that machine's own
   // partition, behind an authenticated proxy on loopback that sends their
   // traffic through the machine (phase 8 spec, 6.8; decisions R75, R76).
@@ -168,11 +140,8 @@ export function createDesktopSsh(deps: {
     poll.unref?.()
   })
 
-  if (deps.server) {
-    serveSshToServer(deps.server, sshEnvironments)
-    serveContainersToServer(deps.server.rpc, containersDomain)
-  }
-  return { environments: sshEnvironments, panes: panePartitions, containers, containersDomain }
+  if (deps.server) serveSshToServer(deps.server, sshEnvironments)
+  return { environments: sshEnvironments, panes: panePartitions, containers }
 }
 
 /**

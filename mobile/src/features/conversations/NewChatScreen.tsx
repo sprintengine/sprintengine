@@ -16,7 +16,7 @@ import { createDesktopConversationsApi } from "../../api/desktopConversations";
 import type { WorkspaceCheckout } from "../../api/tailnetWorkspaces";
 import type { MobileSession } from "../../api/types";
 import { BottomSheet } from "../../components/BottomSheet";
-import { BoltIcon, ChevronIcon, ContainerGlyph, FolderGlyph, iconSize, WorktreeGlyph } from "../../components/glyphs";
+import { BoltIcon, ChevronIcon, FolderGlyph, iconSize, WorktreeGlyph } from "../../components/glyphs";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { SheetOption } from "../../components/SheetOption";
@@ -664,27 +664,6 @@ export function NewChatScreen({
           },
         ]
       : []),
-    // Container, as the desktop's strip has it, said in words: a chat in a
-    // container is made by the desktop that runs Docker, not from here yet.
-    {
-      id: "container",
-      drop: STRIP_DROP_ORDER.container,
-      overflowLabel: "No container (started from a desktop)",
-      overflowIcon: <ContainerGlyph size={iconSize.sm} tone="textMuted" />,
-      onOverflowPress: () => undefined,
-      render: () => (
-        <View
-          accessible
-          accessibilityLabel="No container. Chats in containers are started from a desktop for now."
-          style={styles.stripItem}
-        >
-          <ContainerGlyph size={iconSize.xs} tone="textSubtle" />
-          <Text numberOfLines={1} style={styles.stripText}>
-            No container
-          </Text>
-        </View>
-      ),
-    },
     ...(cutting
       ? fromBranch
         ? [

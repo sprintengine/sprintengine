@@ -125,13 +125,6 @@ export const SHELL_METHODS = {
   /** `{ path }` → nothing once moved: a removed skill's folder to this computer's Trash. */
   trash: 'shell.trash',
   /**
-   * `{ call, args }` → the call's answer: one of the containers domain's calls
-   * (`STUDIO_CONTAINERS_CALLS`), which main carries out on its
-   * `ContainerChats` and the token it seals, for a client's `containers.*`.
-   * Only those calls, each with its args checked again by main.
-   */
-  containers: 'shell.containers',
-  /**
    * `{ file, width, height }` → `{ png }` (base64) or null: a picture of a page
    * about to be published, for its card, drawn in a hidden window of the
    * app's Chromium, which only the shell has.
@@ -195,8 +188,6 @@ export const SERVER_EVENTS = {
   updateState: 'update.state',
   /** Shell → server: an SSH machine connected or reconnected `{ key }`; the server follows its chats (phase 8). */
   sshConnected: 'ssh.connected',
-  /** Shell → server: a container was made, removed or pushed, or one being made moved a step; `containers.changed` tells the clients. */
-  containersChanged: 'containers.changed',
   /** Server → shell: `{ id }`, a natively asked artifacts set-up question is no longer wanted (its call was cancelled). */
   artifactsSetupConsentClosed: 'artifacts.setup-consent-closed',
   /** Shell → server hints (6.3). */

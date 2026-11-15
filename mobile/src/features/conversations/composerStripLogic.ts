@@ -115,10 +115,9 @@ export function layoutComposerStrip(input: {
 /**
  * The order items leave the line in: lowest first. `diff` is the slot New's
  * project takes. Worktree is a choice rather than a fact, and leaves last;
- * the "⋮" still toggles it. Container only says where such chats are started
- * (a desktop), so it leaves first.
+ * the "⋮" still toggles it.
  */
-export const STRIP_DROP_ORDER = { container: 0, branch: 1, diff: 2, machine: 3, worktree: 4 } as const;
+export const STRIP_DROP_ORDER = { branch: 1, diff: 2, machine: 3, worktree: 4 } as const;
 
 /** What the chat's turns changed, added up for its page. */
 export type ConversationChanges = {

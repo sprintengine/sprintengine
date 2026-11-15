@@ -42,6 +42,13 @@ export type DataDirHolder = {
   pid: number
   hostname: string
   startedAt: string
+  /**
+   * When this machine's process 1 started (`pidBoot`): a container started
+   * again, or a machine rebooted, gives every process a new one, so a lock
+   * from before names a process id that may since belong to another process.
+   * Absent where it cannot be read (not Linux) and in a lock written before it.
+   */
+  boot?: string
 }
 
 export type DataDirLock = {
@@ -76,6 +83,8 @@ export type DataDirLockDeps = {
   now?: () => Date
   /** Whether a process with this id is running on this machine. */
   isRunning?: (pid: number) => boolean
+  /** When this machine's process 1 started, or null where that cannot be read (`pidBoot`). */
+  boot?: () => string | null
   /**
    * Whether to displace a holder that would otherwise refuse this process: one
    * still running, one on another machine, or one whose file cannot be read.
@@ -115,6 +124,7 @@ export function acquireDataDirLock(dataDir: string, role: StudioRole, deps: Data
   const pid = deps.pid ?? process.pid
   const host = deps.hostname ?? osHostname()
   const isRunning = deps.isRunning ?? processIsRunning
+  const boot = (deps.boot ?? pidBoot)()
   const fs: DataDirLockFs = { mkdirSync, writeFileSync, linkSync, renameSync, unlinkSync, ...deps.fs }
   const path = join(dataDir, DATA_DIR_LOCK_FILE)
 
@@ -129,6 +139,7 @@ export function acquireDataDirLock(dataDir: string, role: StudioRole, deps: Data
     pid,
     hostname: host,
     startedAt: (deps.now?.() ?? new Date()).toISOString(),
+    ...(boot ? { boot } : {}),
     token: randomUUID(),
   }
   const staged = `${path}.${body.token}`
@@ -145,7 +156,7 @@ export function acquireDataDirLock(dataDir: string, role: StudioRole, deps: Data
       const holder = existing === 'unreadable' ? UNKNOWN_HOLDER : existing
       const abandoned =
         existing === null ||
-        (existing === 'unreadable' ? unreadableForLong(path) : isAbandoned(existing, { pid, host, isRunning }))
+        (existing === 'unreadable' ? unreadableForLong(path) : isAbandoned(existing, { pid, host, boot, isRunning }))
       if (holder && !abandoned) {
         if (!deps.takeOver?.(holder)) return refused(holder, path)
         // Displaced in one step: the file never goes missing in between, so a
@@ -203,11 +214,13 @@ function heldLock(path: string, token: string, fs: Pick<DataDirLockFs, 'unlinkSy
  */
 export function runningDataDirHolder(
   dataDir: string,
-  deps: Pick<DataDirLockDeps, 'hostname' | 'isRunning'> = {},
+  deps: Pick<DataDirLockDeps, 'hostname' | 'isRunning' | 'boot'> = {},
 ): DataDirHolder | null {
   const lock = readLock(join(dataDir, DATA_DIR_LOCK_FILE))
   if (lock === null || lock === 'unreadable') return null
   if (lock.hostname !== (deps.hostname ?? osHostname())) return null
+  const boot = (deps.boot ?? pidBoot)()
+  if (lock.boot && boot && lock.boot !== boot) return null
   if (!(deps.isRunning ?? processIsRunning)(lock.pid)) return null
   const { token: _token, ...holder } = lock
   return holder
@@ -234,6 +247,7 @@ function readLock(path: string): LockBody | 'unreadable' | null {
         pid: parsed.pid,
         hostname: parsed.hostname,
         startedAt: typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
+        ...(typeof parsed.boot === 'string' ? { boot: parsed.boot } : {}),
         token: parsed.token,
       }
     }
@@ -241,6 +255,24 @@ function readLock(path: string): LockBody | 'unreadable' | null {
     // Falls through to unreadable.
   }
   return 'unreadable'
+}
+
+/**
+ * When this machine's process 1 started, in clock ticks since the kernel
+ * booted (`/proc/1/stat`, field 22): the same for every process until the
+ * machine reboots or, in a container, until the container starts again. Null
+ * where there is no such file (not Linux) or it cannot be read.
+ */
+export function pidBoot(): string | null {
+  try {
+    const stat = readFileSync('/proc/1/stat', 'utf8')
+    // The command name is in parentheses and may hold spaces: count fields after it.
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+    const start = fields[19]
+    return start && /^\d+$/u.test(start) ? start : null
+  } catch {
+    return null
+  }
 }
 
 function unreadableForLong(path: string): boolean {
@@ -253,10 +285,14 @@ function unreadableForLong(path: string): boolean {
 
 function isAbandoned(
   holder: DataDirHolder,
-  self: { pid: number; host: string; isRunning: (pid: number) => boolean },
+  self: { pid: number; host: string; boot: string | null; isRunning: (pid: number) => boolean },
 ): boolean {
   // Another machine's process cannot be asked about from here.
   if (holder.hostname !== self.host) return false
+  // Written before this container (or machine) last started: its process is
+  // gone, whatever process has its id now. A container whose home is a volume
+  // keeps the lock across a restart, and its new processes reuse low ids.
+  if (holder.boot && self.boot && holder.boot !== self.boot) return true
   // This process's own id: a crashed run whose id came round again, which in a
   // container that restarts its one process is every run.
   if (holder.pid === self.pid) return true

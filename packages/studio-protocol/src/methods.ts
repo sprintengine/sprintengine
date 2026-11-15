@@ -198,12 +198,6 @@ import {
   type StudioHostsMethodMap,
   type StudioHostsTopicMap,
 } from './hosts.js'
-import {
-  STUDIO_CONTAINERS_METHODS,
-  STUDIO_CONTAINERS_TOPICS,
-  type StudioContainersMethodMap,
-  type StudioContainersTopicMap,
-} from './containers.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -341,8 +335,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioAccessMethodMap &
   StudioWebDevicesMethodMap &
   StudioTailnetMethodMap &
-  StudioHostsMethodMap &
-  StudioContainersMethodMap
+  StudioHostsMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -806,7 +799,6 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_WEB_DEVICES_METHODS,
   ...STUDIO_TAILNET_METHODS,
   ...STUDIO_HOSTS_METHODS,
-  ...STUDIO_CONTAINERS_METHODS,
 }
 
 /**
@@ -875,7 +867,6 @@ export type StudioTopicMap = {
   StudioWebDevicesTopicMap &
   StudioTailnetTopicMap &
   StudioHostsTopicMap &
-  StudioContainersTopicMap &
   StudioEnvironmentAccessTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
@@ -929,7 +920,6 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_WEB_DEVICES_TOPICS,
   ...STUDIO_TAILNET_TOPICS,
   ...STUDIO_HOSTS_TOPICS,
-  ...STUDIO_CONTAINERS_TOPICS,
   ...STUDIO_ENVIRONMENT_ACCESS_TOPICS,
 }
 

@@ -9,6 +9,13 @@ import {
   type SshResolveResult,
 } from '../../shared/ssh-environments'
 import { SSH_PREVIEW_CHANNELS, type SshPreviewStatus } from '../../shared/ssh-preview'
+import type {
+  ContainerCreateRequest,
+  ContainerCreateResult,
+  ContainerHost,
+  ContainerUnpushed,
+  DockerStatus,
+} from '../../shared/containers'
 
 // SSH machines (phase 8): main holds their sessions and asks their questions.
 export const sshEnvironmentsApi = {
@@ -37,7 +44,8 @@ export const sshEnvironmentsApi = {
     options: {
       stopServer?: boolean
       clearBrowsingData?: boolean
-      containers?: 'refuse' | 'remove' | 'forget-records'
+      containers?: 'refuse' | 'forget-records'
+      recordOnly?: boolean
     } = {},
   ): Promise<SshEnvironmentResult & { containers?: string[] }> =>
     ipcRenderer.invoke(SSH_ENV_CHANNELS.forget, { id, ...options }),
@@ -45,6 +53,19 @@ export const sshEnvironmentsApi = {
     ipcRenderer.invoke(SSH_ENV_CHANNELS.diagnostics, { id }),
   sshSignIn: (id: string, providerId: string): Promise<SshEnvironmentResult> =>
     ipcRenderer.invoke(SSH_ENV_CHANNELS.signIn, { id, providerId }),
+  containerDockerStatus: (host: ContainerHost): Promise<DockerStatus> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.dockerStatus, { host }),
+  containerStartDocker: (host: ContainerHost): Promise<DockerStatus> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.startDocker, { host }),
+  containerCreate: (request: ContainerCreateRequest): Promise<ContainerCreateResult> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.containerCreate, request),
+  containerClone: (
+    id: string,
+    address: string,
+  ): Promise<{ ok: true; folder: string } | { ok: false; message: string }> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.containerClone, { id, address }),
+  containerUnpushed: (id: string): Promise<ContainerUnpushed> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.containerUnpushed, { id }),
   onSshEnvironmentsChanged: (cb: () => void): (() => void) => {
     const handler = () => cb()
     ipcRenderer.on(SSH_ENV_CHANNELS.changed, handler)

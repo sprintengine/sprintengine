@@ -4,7 +4,6 @@ import { createInterface } from 'node:readline'
 import { createStudioConversationParts } from '../../../src/renderer/src/components/panels/agentChat/studioChat'
 import type { StudioClient, StudioWebSocketConstructor } from '../../../packages/client-runtime/src/public'
 import { configureWindowStudio, windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
-import { createContainersApi, type ContainersApi } from '../../../src/renderer/src/studio/containers'
 import { followWindowStudioPush } from '../../../src/renderer/src/studio/windowStudioPush'
 import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../packages/studio-protocol/src/public'
 import { conversationNewChatSeed } from '../../../src/renderer/src/components/workspace/conversationSpawnOptions'
@@ -71,7 +70,7 @@ export function desktopClient(
   cutter: Cutter,
   brokerPath: string,
   recordChat: RecordChat,
-): GateClient & { studio(): Promise<StudioClient>; containers: ContainersApi } {
+): GateClient & { studio(): Promise<StudioClient> } {
   const api = brokerTicketApi(brokerPath, cutter)
   configureWindowStudio(api, { WebSocket: windowWebSocket() })
   const parts = createStudioConversationParts(() => windowStudioClient(api))
@@ -201,8 +200,6 @@ export function desktopClient(
     },
     /** The window's own Studio client: an owner's connection, for asks the gate checks against. */
     studio: () => windowStudioClient(api),
-    /** Chats' containers as the window's New chat and Settings ▸ Machines reach them. */
-    containers: createContainersApi(api),
     cut: () => cutter.cut(),
     heal: () => cutter.heal(),
     async close() {

@@ -47,7 +47,6 @@ import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioAccessDomain } from './studio-access'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioTailnetDomain } from './studio-tailnet'
-import type { StudioContainersDomain } from './studio-containers'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioGit } from '../git/studio-git-types'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
@@ -395,7 +394,6 @@ export async function startTestServer(
     access?: StudioAccessDomain
     webDevices?: () => StudioWebDevicesDomain | null
     tailnet?: StudioTailnetDomain
-    containers?: StudioContainersDomain
     pullRequests?: StudioPullRequests
     pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
@@ -459,7 +457,6 @@ export async function startTestServer(
     ...(input.access ? { access: input.access } : {}),
     ...(input.webDevices ? { webDevices: input.webDevices } : {}),
     ...(input.tailnet ? { tailnet: input.tailnet } : {}),
-    ...(input.containers ? { containers: input.containers } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),

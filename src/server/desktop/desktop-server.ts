@@ -67,7 +67,6 @@ import {
   type ServerMirrorRegistry,
   type ServerMirrorState,
 } from './server-methods'
-import { shellContainersDomain } from './shell-containers'
 import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
 import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
@@ -483,9 +482,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       },
     },
     githubTokens: githubTokenStore,
-    // Chats' containers on the hosts this desktop drives: main runs Docker and
-    // holds the SSH sessions and the keychain, so each call is asked of it.
-    ...(envelope.flags.sshMachines ? { containers: shellContainersDomain(rpc) } : {}),
   })
   const domains = provideServerChat({
     core,

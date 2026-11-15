@@ -324,7 +324,7 @@ test('what main and the server register, and what the preload uses, is the inven
   registerAppRestartIpc(shell, anything())
   registerSshPreviewIpc(shell, { enabled: false, fromEnvironment: false }, scratch)
   registerStudioServerIpc(shell, anything())
-  registerSshEnvironmentsIpc(shell, anything())
+  registerSshEnvironmentsIpc(shell, anything(), anything())
   registerEnvironmentsIpc(shell, anything())
   registerChatLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
   createHostRecordingEncoder({ ipcMain: shell, tabs: anything() })
