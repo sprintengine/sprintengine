@@ -20,7 +20,14 @@
       "source": "./plugin",
       "category": "design",
       "homepage": "https://impeccable.style",
-      "tags": ["design", "frontend", "ui", "ux", "skills", "commands"]
+      "tags": [
+        "design",
+        "frontend",
+        "ui",
+        "ux",
+        "skills",
+        "commands"
+      ]
     }
   ]
 }

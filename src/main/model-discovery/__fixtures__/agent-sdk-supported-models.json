@@ -5,7 +5,13 @@
     "displayName": "Default (recommended)",
     "description": "Opus 5.5 with 1M context · Best for everyday, complex tasks",
     "supportsEffort": true,
-    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportedEffortLevels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
     "supportsAdaptiveThinking": true,
     "supportsFastMode": true,
     "supportsAutoMode": true
@@ -16,7 +22,13 @@
     "displayName": "Opus (1M context)",
     "description": "Opus 5.5 with 1M context · Best for everyday, complex tasks",
     "supportsEffort": true,
-    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportedEffortLevels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
     "supportsAdaptiveThinking": true,
     "supportsFastMode": true,
     "supportsAutoMode": true
@@ -27,7 +39,13 @@
     "displayName": "Fable",
     "description": "Fable 5.1 · Most capable for your hardest and longest-running tasks",
     "supportsEffort": true,
-    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportedEffortLevels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
     "supportsAdaptiveThinking": true,
     "supportsAutoMode": true
   },
@@ -37,7 +55,13 @@
     "displayName": "Sonnet",
     "description": "Sonnet 5 · Efficient for routine tasks",
     "supportsEffort": true,
-    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportedEffortLevels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
     "supportsAdaptiveThinking": true,
     "supportsAutoMode": true
   },
