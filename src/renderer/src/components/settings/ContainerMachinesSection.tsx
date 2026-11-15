@@ -85,7 +85,12 @@ export function NewContainerForm({
   const [making, setMaking] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const where = hosts.find((each) => each.value === hostValue)?.label ?? thisComputerWords()
+  // Asked again after a container is made: its image is built there now.
+  const [asked, setAsked] = useState(0)
+  const where =
+    hostValue === 'local'
+      ? thisComputerWords()
+      : (hosts.find((each) => each.value === hostValue)?.label ?? thisComputerWords())
 
   useEffect(() => {
     let cancelled = false
@@ -107,7 +112,7 @@ export function NewContainerForm({
     return () => {
       cancelled = true
     }
-  }, [api, hostValue])
+  }, [api, hostValue, asked])
 
   const startDocker = async () => {
     setStarting(true)
@@ -131,6 +136,7 @@ export function NewContainerForm({
       if (made.cloneFailed) setNote(`${label.trim()} is made, but the clone did not work: ${made.cloneFailed}`)
       setLabel('')
       setClone('')
+      setAsked((count) => count + 1)
       onMade?.({ id: made.id, folder: made.folder })
     } catch (error) {
       setProblem(error instanceof Error ? error.message : String(error))

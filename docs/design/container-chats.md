@@ -12,9 +12,10 @@ Studio reaches it with `docker exec` rather than `ssh`. A person makes one
 with **New container**, on this computer or on any SSH machine that has
 Docker (Colima on a Mac is just a Docker host). It is listed in Settings ›
 Machines and in New chat's machine picker. Repositories are cloned inside it,
-chats there use worktrees, and Files, terminals, pull requests and everything
-else work because it is a machine. A container lives until the person deletes
-it.
+chats there use worktrees, and a chat there has everything a chat on an SSH
+machine has, because it is a machine: what SSH machines gain (Files and
+terminals in the pane are still to come for them), containers gain with them.
+A container lives until the person deletes it.
 
 There is one way to run a chat in a container: pick the container as the
 chat's machine.

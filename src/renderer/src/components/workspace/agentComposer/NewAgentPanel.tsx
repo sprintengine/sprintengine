@@ -856,6 +856,10 @@ export default function NewAgentPanel({
   // that machine — and the press would start a plain chat there, with no
   // agent saved or extension made in the project here.
   const sshPickedWhileChatOnly = chatOnly && pickedSshId !== null
+  // The cube (docs/design/container-chats.md): beside Worktree, another way
+  // to pick the machine, offered wherever the machine picker offers SSH
+  // machines.
+  const containerOffered = Boolean(window.api?.sshMachinesEnabled) && hostChoosable && !editing && !chatOnly
   React.useEffect(() => {
     if (sshPickedWhileChatOnly) pickSsh(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1440,11 +1444,6 @@ export default function NewAgentPanel({
   // the worktree rather than carrying one nobody could see: a folder that is
   // not a git repository would fail to make it and keep the chat from
   // starting, and an older paired machine would ignore it.
-  // The cube (docs/design/container-chats.md): beside Worktree, another way
-  // to pick the chat's machine, offered where the machine picker offers SSH
-  // machines.
-  const containerOffered =
-    Boolean(window.api?.sshMachinesEnabled) && hostChoosable && !editing && !extensionMode && isChatLaunch && !scheduled
   const buildLaunchConfirm = (target: AgentComposerSelection): AgentComposerConfirm => {
     const confirm = composer.buildConfirm(target)
     if (worktreeOffered || confirm.kind === 'terminal' || !confirm.worktree) return confirm
