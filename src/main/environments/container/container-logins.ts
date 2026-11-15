@@ -39,15 +39,17 @@ export const LOGINS_ENV: Readonly<Record<string, string>> = {
 /**
  * The CLIs that keep their login under the home and read no variable for it:
  * each such folder in the home is a link into the volume (`.kimi-code` →
- * `kimi-code`), made after the container starts (`linkLoginsScript`).
+ * `kimi-code`), made once the container is made or made again
+ * (`prepareLoginsScript`).
  */
 export const LOGINS_HOME_LINKS: Readonly<Record<string, string>> = {
   '.kimi-code': 'kimi-code',
 }
 
 /**
- * Files the volume starts with, written only where none is there yet, after
- * each start (a volume made by an older image has none of a newer one's):
+ * Files the volume starts with, written only where none is there yet, once a
+ * container is made or made again (a volume made by an older image has none
+ * of a newer one's):
  * Claude Code's first-run answers, and git's use of the GitHub CLI for GitHub.
  * Neither holds a credential.
  */

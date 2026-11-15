@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { containerAgentFor, IMAGE_BASE_COMMANDS, imageFor } from './container-image'
+import { containerAgentFor, IMAGE_BASE_COMMANDS, imageFor, imageForSetUp } from './container-image'
 
 // The image a container gets, as Studio writes it from the agents set up on
 // this computer (docs/design/container-chats.md): a pinned base, one layer per
@@ -67,4 +67,38 @@ test('an agent set up in Studio is found by the command it runs, and one with no
   assert.deepEqual(image.refused, [
     { cli: 'Desktop Agent', why: 'Desktop Agent has no Linux build Studio can install, so a container cannot run it.' },
   ])
+})
+
+test('the agents set up in Studio, by the command each runs: shared commands once, a shell skipped, the unknown named', () => {
+  const entries = [
+    { id: 'claude-code', displayName: 'Claude Code', binary: 'claude' },
+    { id: 'kimi-claude', displayName: 'Kimi on Claude Code', binary: 'claude' },
+    { id: 'zai', displayName: 'Z.ai', binary: 'claude' },
+    { id: 'generic-shell', displayName: 'Generic Shell', binary: 'sh' },
+    { id: 'desktop-only', displayName: 'Desktop Agent', binary: 'desktop-agent' },
+    { id: 'codex', displayName: 'Codex', binary: 'codex' },
+    // A chat provider with no command of its own is not an agent to install.
+    { id: 'claude-agent', displayName: 'Claude', binary: null },
+  ]
+  const image = imageForSetUp(entries, {
+    'claude-code': { installed: false },
+    'kimi-claude': { installed: true },
+    zai: { installed: true },
+    'generic-shell': { installed: true },
+    'desktop-only': { installed: true },
+    codex: { installed: false },
+  })
+  assert.deepEqual(
+    image.agents.map((agent) => agent.cli),
+    ['claude-code'],
+  )
+  assert.deepEqual(
+    image.refused.map((each) => each.cli),
+    ['Desktop Agent'],
+  )
+  // A check that gave no answer is not "not set up": no image of a guess.
+  assert.throws(
+    () => imageForSetUp(entries, { 'claude-code': { installed: true } }),
+    /could not tell whether Kimi on Claude Code, Z\.ai, Generic Shell, Desktop Agent, Codex are set up/u,
+  )
 })

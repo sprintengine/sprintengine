@@ -8,7 +8,7 @@ import { writeDiagnosticLog } from '../../diagnostics-service'
 import { allowMachinePartitions } from '../../browser/guest-policy'
 import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
 import { ContainerMachines } from '../container/container-machines'
-import { containerAgentFor, IMAGE_BASE_COMMANDS, imageFor, type ContainerImage } from '../container/container-image'
+import { imageForSetUp, type ContainerImage } from '../container/container-image'
 import { detectAgentCliAvailability } from '../../cli-availability'
 import { listPluginRegistryEntries } from '../../plugin-registry-instance'
 import { channelForVersion } from '../../update-channel-store'
@@ -77,17 +77,12 @@ export function createDesktopSsh(deps: {
   // The image a container gets: the agent CLIs set up on this computer (what
   // Settings › Agents shows as installed), each by the command it runs.
   const agentImage = async (): Promise<ContainerImage> => {
-    const installed = await detectAgentCliAvailability().catch(() => ({}))
-    const clis = new Set<string>()
-    const without = new Set<string>()
-    for (const entry of listPluginRegistryEntries()) {
-      if (!(installed as Record<string, { installed?: boolean }>)[entry.id]?.installed) continue
-      if (IMAGE_BASE_COMMANDS.has(entry.binary)) continue
-      const cli = containerAgentFor(entry.binary)
-      if (cli) clis.add(cli)
-      else without.add(entry.displayName)
-    }
-    return imageFor([...clis], [...without])
+    const installed = await detectAgentCliAvailability().catch((error: unknown) => {
+      throw new Error(
+        `Studio could not tell which agents are set up on this computer (${error instanceof Error ? error.message : String(error)}), so it cannot work out a container's image. Try again in a moment.`,
+      )
+    })
+    return imageForSetUp(listPluginRegistryEntries(), installed)
   }
   const containers = new ContainerMachines({
     machines: sshEnvironments,

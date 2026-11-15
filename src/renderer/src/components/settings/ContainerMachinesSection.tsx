@@ -232,6 +232,7 @@ export function NewContainerForm({
         </SettingsRow>
       </div>
       {status?.image ? <ImageAgents plan={status.image} /> : null}
+      {status?.imageProblem ? <InlineNotice tone="warn" title={status.imageProblem} /> : null}
       {status?.state === 'ready' && !status.imageReady ? (
         <p className={MUTED}>The first container on {where} builds Studio’s image, which takes a few minutes.</p>
       ) : null}
@@ -240,7 +241,7 @@ export function NewContainerForm({
       <div className="flex items-center gap-2">
         <OutlineButton
           size="sm"
-          disabled={making || status?.state !== 'ready' || !label.trim()}
+          disabled={making || status?.state !== 'ready' || !label.trim() || Boolean(status.imageProblem)}
           onClick={() => void make()}
         >
           Make container
@@ -329,6 +330,10 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
         </p>
       )}
       <p className="mt-2">{chats}</p>
+      <p className="mt-2">
+        What stays is on this machine's logins volume, which every container here shares: each agent's sign-in, history,
+        sessions and settings, and git's and the GitHub CLI's configuration.
+      </p>
     </>
   )
 }
@@ -407,6 +412,21 @@ export function ContainerMachineDetail({
     setBusy('rebuilding')
     setSaid(null)
     try {
+      // Its chats stop with the old container: said, and asked, first.
+      const work = await api.containerUnpushed(machine.id).catch(() => null)
+      const running = work?.ok ? work.chatsRunning : null
+      const yes = await askFirst({
+        title: `Rebuild ${machine.label}?`,
+        body: `${
+          running === null
+            ? 'Studio could not ask its server whether a chat is running in it.'
+            : running > 0
+              ? `${running === 1 ? '1 chat is' : `${running} chats are`} running in it now, and stop when it is made again.`
+              : 'No chat is running in it.'
+        } Its repositories, worktrees, Studio's server and the logins are kept; anything installed outside its home goes with the old container.`,
+        confirmLabel: 'Rebuild',
+      })
+      if (!yes) return
       const rebuilt = await api.containerRebuild(machine.id)
       setSaid(
         rebuilt.ok

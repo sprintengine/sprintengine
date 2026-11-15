@@ -400,7 +400,39 @@ test('made again on a new image: only a container Studio made is replaced, and o
   assert.match(calls, /^rm -f sprintengine-0123456789abcdef$/mu)
 })
 
-test('the logins volume is readied after each start: every folder, first files only where none is, the home linked', () => {
+test('a Rebuild touches nothing until the new image is there, and never says it ran a container that did not start', async () => {
+  const docker = (image: string, run: string) =>
+    fakeBin(`replace-${Math.random().toString(36).slice(2)}`, {
+      docker: [
+        'echo "$*" >> "$HOME/replace-fail-calls"',
+        'case "$1" in',
+        `  image) ${image} ;;`,
+        '  inspect) echo 1 ;;',
+        `  run) ${run} ;;`,
+        'esac',
+      ].join('\n'),
+    })
+  const input = { name: NAME, image: IMAGE, machineId: '0123456789abcdef' }
+  const noImage = await runOnHost(runnerFor(docker('exit 1', 'exit 0')), replaceContainerScript(input))
+  assert.match(noImage.stdout, /^@@replaced no-image$/mu)
+  assert.doesNotMatch(
+    execFileSync('cat', [join(scratch, 'replace-fail-calls')], { encoding: 'utf8' }),
+    /rm -f/u,
+    'the old container is left',
+  )
+  const runFails = await runOnHost(
+    runnerFor(docker('exit 0', 'echo "no space left" >&2; exit 125')),
+    replaceContainerScript(input),
+  )
+  assert.doesNotMatch(runFails.stdout, /@@replaced/u)
+  assert.notEqual(runFails.code, 0)
+  assert.match(runFails.stderr, /no space left/u)
+  // Making one fails the same way.
+  const made = await runOnHost(runnerFor(docker('exit 0', 'exit 125')), runContainerScript(input))
+  assert.notEqual(made.code, 0)
+})
+
+test('the logins volume is readied once a container is made: every folder, first files only where none is, the home linked', () => {
   const script = prepareLoginsScript(NAME)
   assert.match(script, /^docker exec -u node -e HOME=\/home\/node sprintengine-0123456789abcdef sh -c /u)
   // Run for real against a scratch folder standing in for the volume and the home.

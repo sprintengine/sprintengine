@@ -28,6 +28,8 @@ export type DockerStatus = {
   context?: string | null
   /** The image a container made now gets: from the agents set up in Studio. */
   image?: ContainerImagePlan
+  /** Why that image cannot be worked out now (which agents are set up could not be told), in words. */
+  imageProblem?: string
 }
 
 /** One agent in a container's image: its name and its version in words. */

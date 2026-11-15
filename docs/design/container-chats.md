@@ -103,7 +103,12 @@ container Studio makes on that host. It holds every agent's login and the git
 and GitHub credentials, so signing in once on a host serves every container
 there, and a container that is deleted or made again keeps them. Each CLI is
 pointed there by its own variable, set on the container, read from where that
-CLI really writes inside the image (`container/container-logins.ts`):
+CLI really writes inside the image (`container/container-logins.ts`). Each
+is the CLI's whole folder, not only its login (see Threat model). Once a
+container is made or made again, Studio readies the volume: every folder, the
+first files (Claude Code's first-run answers, `gh` as git's credential helper)
+only where none is yet, and the home's links; a failure there fails the make
+or the Rebuild, in words:
 
 | CLI         | Where its login is kept                                                |
 | ----------- | ---------------------------------------------------------------------- |
@@ -113,7 +118,7 @@ CLI really writes inside the image (`container/container-logins.ts`):
 | OpenCode    | `XDG_DATA_HOME/opencode`                                               |
 | Cursor      | `XDG_CONFIG_HOME/cursor`                                               |
 | Muse        | `XDG_CONFIG_HOME/muse`                                                 |
-| Kimi Code   | `~/.kimi-code`, a link into the volume made after it starts            |
+| Kimi Code   | `~/.kimi-code`, a link into the volume                                 |
 | GitHub CLI  | `XDG_CONFIG_HOME/gh`                                                   |
 | git         | `XDG_CONFIG_HOME/git/config`: `gh` is its credential helper for GitHub |
 
@@ -138,11 +143,18 @@ with their own scripts, which take the newest build when the image is built:
 New container says so beside them. Each script installs under `/opt`, outside
 the home volume, which a new image would never reach. An agent with no Linux
 build at all is left out and said so. The image is tagged by a digest of its
-Dockerfile, so a changed set builds a new one and an unchanged one is reused.
+Dockerfile, so a changed set builds a new one and an unchanged one is reused. When which agents
+are set up cannot be told (a check failed, or a CLI was being updated), no
+image is worked out and New container says why, rather than build one of a
+guess.
 
 A container made before the set or a version changed says so in its detail,
 and **Rebuild** makes it again on the new image, keeping its home volume
-(repositories, worktrees, Studio's server) and the logins. Its server's run
+(repositories, worktrees, Studio's server) and the logins. It first says
+whether a chat is running in it (one would stop) and asks. The new image must
+be there, under the container's own Docker context, before the old container
+is removed; the record names the new image only once the new container runs
+and its logins are readied, so a Rebuild that fails is offered again. Its server's run
 lock, kept in the home, is from before the container started again, and is
 taken over (`server/core/data-dir.ts`).
 
@@ -173,9 +185,15 @@ for them.
 - **Kept out:** the host's folders (no bind mounts), the host's credentials
   of every kind, its SSH agent and keys, every Linux capability and any way to
   regain one.
-- **Inside, by design:** the repositories cloned there, the logins on the
-  host's logins volume (which an agent in any container on that host can read
-  and use, since the network is full), whatever an agent downloads.
+- **Inside, by design:** the repositories cloned there, whatever an agent
+  downloads, and the host's logins volume, which holds more than logins: each
+  CLI's whole folder there (Claude Code's, Codex's and Grok's homes with their
+  transcripts, history, sessions, settings and hooks; OpenCode's data;
+  Cursor's and Muse's configuration; Kimi Code's home folder), the GitHub
+  CLI's login, and git's global configuration (`XDG_CONFIG_HOME/git/config`).
+  Every container on that host mounts it, so an agent in any of them can read
+  and change all of it (and send it anywhere: the network is full), and it
+  stays when a container is deleted. Delete says so.
 - **Known gap:** the agent and Studio's server run as the same user, so an
   agent can drive its own container's server. The desktop already holds that
   server to what it holds an SSH machine's server to.

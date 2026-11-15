@@ -44,6 +44,7 @@ import {
 import { SshEnvironment, type SshServerConnection } from './ssh-environment'
 import type { ContainerHost } from '../../../shared/containers'
 import {
+  dockerCommand,
   EXEC_READY_MARKER,
   execSessionScript,
   removalOutcome,
@@ -172,7 +173,7 @@ export function signInOverSsh(
     const login = LOGIN_COMMANDS[cli]
     const where = saved.container.host.kind === 'local' ? 'in a terminal here' : 'on the machine it runs on'
     return login
-      ? `Sign ${cli} in once inside the container, ${where}: docker exec -it ${saved.container.name} ${login}`
+      ? `Sign ${cli} in once inside the container, ${where}: ${dockerCommand(saved.container.context)} exec -it ${saved.container.name} ${login}`
       : `${cli} signs in with an API key: set it for the chat, or sign it in inside the container as its own documentation says.`
   }
   const parsed = parseDestination(saved.destination)

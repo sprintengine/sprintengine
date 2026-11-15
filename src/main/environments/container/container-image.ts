@@ -89,6 +89,39 @@ export function containerAgentFor(binary: string): string | null {
 /** Commands every image has already (a plain shell agent runs `sh`): nothing to install, nothing to refuse. */
 export const IMAGE_BASE_COMMANDS: ReadonlySet<string> = new Set(['sh', 'bash', 'node', 'npm', 'git', 'gh'])
 
+/**
+ * The image for the agent CLIs set up on this computer: each registered agent
+ * whose command was found (`installed`, keyed by its id), by the command it
+ * runs. One whose check gave no answer (it failed, or the CLI was being
+ * updated) refuses the lot, in words: an image of a guess would differ from
+ * the next one and offer a Rebuild for nothing.
+ */
+export function imageForSetUp(
+  entries: ReadonlyArray<{ id: string; displayName: string; binary?: string | null }>,
+  installed: Readonly<Record<string, { installed?: boolean } | undefined>>,
+): ContainerImage {
+  const clis = new Set<string>()
+  const without = new Set<string>()
+  const unknown: string[] = []
+  for (const entry of entries) {
+    if (!entry.binary) continue
+    const found = installed[entry.id]
+    if (!found) {
+      unknown.push(entry.displayName)
+      continue
+    }
+    if (!found.installed || IMAGE_BASE_COMMANDS.has(entry.binary)) continue
+    const cli = containerAgentFor(entry.binary)
+    if (cli) clis.add(cli)
+    else without.add(entry.displayName)
+  }
+  if (unknown.length > 0)
+    throw new Error(
+      `Studio could not tell whether ${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} set up on this computer, so it cannot work out a container's image. Try again in a moment.`,
+    )
+  return imageFor([...clis], [...without])
+}
+
 const lines = (...each: string[]) => each.join('\n')
 
 /**

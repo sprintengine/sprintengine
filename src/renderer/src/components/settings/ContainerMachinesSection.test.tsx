@@ -136,6 +136,7 @@ test('Delete container first lists what exists only in it, and deletes only when
   await act(async () => button('Delete container')!.click())
   await flush()
   const items = [...document.querySelectorAll('[data-unpushed-work="true"] li')].map((each) => each.textContent)
+  expect(document.body.textContent).toContain("What stays is on this machine's logins volume")
   expect(items).toEqual([
     'agent/fix in ~/work/app: 2 commits on no remote',
     '~/work/.sprintengine-worktrees/app/one: 3 files changed and not committed',
@@ -267,8 +268,22 @@ test('a container on an older image offers Rebuild, and each of its agents and G
   planTag = 'sprintengine-studio-agent:fedcba987654'
   await renderDetail()
   await flush()
+  unpushed = { ok: true, ...nothing, chatsRunning: 2 }
   await act(async () => button('Rebuild')!.click())
   await flush()
-  expect(calls).toEqual([['rebuild', '0123456789abcdef']])
+  // Asked first: its chats stop with the old container.
+  expect(document.body.textContent).toContain('2 chats are running in it now, and stop when it is made again.')
+  expect(calls).toEqual([['unpushed', '0123456789abcdef']])
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((each) => each.textContent === 'Rebuild')
+      .pop()!
+      .click(),
+  )
+  await flush()
+  expect(calls).toEqual([
+    ['unpushed', '0123456789abcdef'],
+    ['rebuild', '0123456789abcdef'],
+  ])
   expect(host.textContent).toContain('sandbox is made again on the new image, with its repositories and logins.')
 })

@@ -170,7 +170,16 @@ test('a container is saved before Docker is asked to start it; one whose start d
 })
 
 /** A stand-in `docker` under the Colima context that logs every call, its answers set per case. */
-function loggingDocker(answers: { image: string; build: string; exec: string }): string {
+function loggingDocker(answers: {
+  image: string
+  build: string
+  exec: string
+  /** The image asked for under the Colima context (a container's own); present unless said. */
+  contextImage?: string
+  run?: string
+  /** The logins readied, as the agent's user (`exec -u`); `exec` answers it unless said. */
+  prepare?: string
+}): string {
   return [
     'echo "$*" >> "$HOME/calls"',
     'case "$1" in',
@@ -180,9 +189,11 @@ function loggingDocker(answers: { image: string; build: string; exec: string }):
     '  --context) case "$3" in',
     `    build) cat >/dev/null; ${answers.build} ;;`,
     '    version) echo 29 ;;',
+    `    image) ${answers.contextImage ?? 'exit 0'} ;;`,
     '    volume) case "$4" in inspect) echo 1 ;; esac ;;',
-    '    run|start|rm) exit 0 ;;',
-    `    exec) ${answers.exec} ;;`,
+    `    run) ${answers.run ?? 'exit 0'} ;;`,
+    '    start|rm) exit 0 ;;',
+    `    exec) case "$4" in -u) ${answers.prepare ?? answers.exec} ;; *) ${answers.exec} ;; esac ;;`,
     '    inspect) echo 1 ;;',
     '  esac ;;',
     'esac',
@@ -240,5 +251,101 @@ test('New container refuses a name already taken and an address that is not a re
   const unnamed = await containers.create({ host: { kind: 'local' }, label: '  ', clone: null })
   assert.match(unnamed.ok ? '' : unnamed.message, /Give the container a name/u)
   assert.throws(() => readFileSync(join(dir, 'asked')), 'Docker was never asked')
+  machines.shutdown()
+})
+
+test('a container whose logins cannot be readied is removed again, and says why', async () => {
+  const { machines, dir } = setup(
+    loggingDocker({
+      image: 'exit 0',
+      build: 'exit 0',
+      exec: 'exit 1',
+      prepare: 'echo "read-only file system" >&2; exit 1',
+    }),
+  )
+  const containers = new ContainerMachines({ machines, image: async () => STAND_IN_IMAGE, hostLabel: () => 'this Mac' })
+  const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
+  assert.match(
+    created.ok ? '' : created.message,
+    /The logins could not be readied in the container: read-only file system/u,
+  )
+  assert.equal(machines.list().filter((entry) => entry.container).length, 0, 'no record')
+  assert.match(readFileSync(join(dir, 'calls'), 'utf8'), /--context colima rm -f sprintengine-/u)
+  machines.shutdown()
+})
+
+/** A saved container under the Colima context, on an older image than `STAND_IN_IMAGE`. */
+const olderContainer = () => {
+  const entry = localContainer('0123456789abcdef')
+  entry.container = { ...entry.container!, context: 'colima', image: 'sprintengine-studio-agent:aaaaaaaaaaaa' }
+  return entry
+}
+const NEXT = { ...STAND_IN_IMAGE, agents: [{ cli: 'codex', name: 'Codex', version: '0.169.0' }] }
+
+test('Rebuild looks for the new image under the container’s own context, and builds nothing already there', async () => {
+  const { machines, dir } = setup(
+    // Not under the default context, but there under the container's.
+    loggingDocker({ image: 'exit 1', contextImage: 'exit 0', build: 'exit 0', exec: 'exit 0' }),
+    [olderContainer()],
+  )
+  const containers = new ContainerMachines({
+    machines,
+    image: async () => NEXT,
+    hostLabel: () => 'this Mac',
+    timing: { runMs: 5_000 },
+  })
+  await containers.rebuild('0123456789abcdef')
+  const calls = readFileSync(join(dir, 'calls'), 'utf8')
+  assert.doesNotMatch(calls, / build /u, 'nothing built')
+  assert.match(calls, /--context colima image inspect sprintengine-studio-agent:0123456789ab/u)
+  machines.shutdown()
+}, 60_000)
+
+test('a Rebuild whose new container does not start says so, and keeps the old image on the record so it is offered again', async () => {
+  const { machines } = setup(
+    loggingDocker({
+      image: 'exit 0',
+      build: 'exit 0',
+      exec: 'exit 0',
+      run: 'echo "port is already allocated" >&2; exit 125',
+    }),
+    [olderContainer()],
+  )
+  const containers = new ContainerMachines({ machines, image: async () => NEXT, hostLabel: () => 'this Mac' })
+  const rebuilt = await containers.rebuild('0123456789abcdef')
+  assert.equal(rebuilt.ok, false)
+  assert.match(rebuilt.ok ? '' : rebuilt.message, /was not made again on this Mac: port is already allocated/u)
+  assert.equal(machines.get('0123456789abcdef')?.container?.image, 'sprintengine-studio-agent:aaaaaaaaaaaa')
+  machines.shutdown()
+})
+
+test('a Rebuild whose server cannot be reached afterwards says so, the record on the new image it now runs', async () => {
+  const { machines } = setup(
+    loggingDocker({ image: 'exit 0', build: 'exit 0', exec: 'echo "exec failed" >&2; exit 1', prepare: 'exit 0' }),
+    [olderContainer()],
+  )
+  const containers = new ContainerMachines({ machines, image: async () => NEXT, hostLabel: () => 'this Mac' })
+  const rebuilt = await containers.rebuild('0123456789abcdef')
+  assert.equal(rebuilt.ok, false)
+  assert.equal(machines.get('0123456789abcdef')?.container?.image, STAND_IN_IMAGE.tag)
+  assert.deepEqual(machines.get('0123456789abcdef')?.container?.agents, ['codex'])
+  machines.shutdown()
+}, 60_000)
+
+test('which agents are set up cannot be told: no container is made, and New container says why', async () => {
+  const { machines, dir } = setup(loggingDocker({ image: 'exit 0', build: 'exit 0', exec: 'exit 0' }))
+  const containers = new ContainerMachines({
+    machines,
+    image: async () => {
+      throw new Error('Studio could not tell whether Codex is set up on this computer.')
+    },
+    hostLabel: () => 'this Mac',
+  })
+  const status = await containers.status({ kind: 'local' })
+  assert.equal(status.imageProblem, 'Studio could not tell whether Codex is set up on this computer.')
+  assert.equal(status.image, undefined)
+  const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
+  assert.match(created.ok ? '' : created.message, /could not tell whether Codex is set up/u)
+  assert.doesNotMatch(readFileSync(join(dir, 'calls'), 'utf8'), / run /u)
   machines.shutdown()
 })

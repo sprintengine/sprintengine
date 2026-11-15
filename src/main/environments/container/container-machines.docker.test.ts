@@ -20,7 +20,6 @@ import { afterAll, beforeAll, test } from 'vitest'
 import { CONTAINER_LABEL } from '../../../shared/containers'
 import { SshEnvironments } from '../ssh/ssh-environments'
 import { ContainerMachines } from './container-machines'
-import { LOGINS_VOLUME } from './container-logins'
 
 const DOCKER_TESTS = process.env.STUDIO_TEST_DOCKER === '1' && spawnSync('docker', ['info']).status === 0
 const ROOT = join(__dirname, '..', '..', '..', '..')
@@ -36,6 +35,8 @@ const IMAGE = {
 // The same stand-in under another tag: what a changed set of agents builds.
 const NEXT_IMAGE = { ...IMAGE, tag: `${IMAGE.tag.slice(0, -4)}beef`, dockerfile: `${DOCKERFILE}# next\n` }
 let image = IMAGE
+// A logins volume of this suite's own: Studio's real one on this Docker is never touched.
+const LOGINS = `sprintengine-logins-suite-${randomBytes(4).toString('hex')}`
 
 let scratch = ''
 const made: string[] = []
@@ -61,7 +62,7 @@ afterAll(() => {
   // The stand-in image is this suite's own: removed with it. Studio's real image is never touched here.
   if (DOCKER_TESTS)
     for (const tag of [IMAGE.tag, NEXT_IMAGE.tag]) spawnSync('docker', ['image', 'rm', tag], { stdio: 'ignore' })
-  // The logins volume is the host's, shared with Studio itself: only this suite's own file in it goes.
+  if (DOCKER_TESTS) spawnSync('docker', ['volume', 'rm', LOGINS], { stdio: 'ignore' })
   if (scratch) rmSync(scratch, { recursive: true, force: true })
 })
 
@@ -89,6 +90,7 @@ function setup(profile: string) {
     machines,
     image: async () => image,
     hostLabel: (host) => (host.kind === 'local' ? 'this Mac' : host.machine),
+    loginsVolume: LOGINS,
   })
   return { machines, containers, changes }
 }
@@ -116,7 +118,7 @@ test.skipIf(!DOCKER_TESTS)(
         .split('\n')
         .filter(Boolean)
         .sort(),
-      [`volume ${LOGINS_VOLUME} /studio-logins`, `volume ${name}-home /home/node`].sort(),
+      [`volume ${LOGINS} /studio-logins`, `volume ${name}-home /home/node`].sort(),
     )
     // Each CLI is pointed into the logins, and a CLI that keeps its login in the home is linked there.
     const env = docker('exec', '-u', 'node', name, 'sh', '-c', 'env')
