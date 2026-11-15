@@ -477,9 +477,7 @@ test('a module added from a folder is uninstalled by the Studio, and forgotten h
   await mount()
   await click(button('More for Decision Log'))
   await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
-  const confirm = buttons(document.querySelector('[role="alertdialog"], [role="dialog"]')!).find(
-    (candidate) => candidate.textContent?.trim() === 'Uninstall',
-  )
+  const confirm = buttons(modal()!).find((candidate) => candidate.textContent?.trim() === 'Uninstall')
   expect(document.body.textContent).toContain('Work it saved in your projects stays')
   await click(confirm)
 
@@ -496,9 +494,7 @@ test('a module a plugin put in place is uninstalled with its plugin, carrying th
   await mount()
   await click(button('More for Weather Deck'))
   await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
-  const confirm = buttons(document.querySelector('[role="alertdialog"], [role="dialog"]')!).find(
-    (candidate) => candidate.textContent?.trim() === 'Uninstall',
-  )
+  const confirm = buttons(modal()!).find((candidate) => candidate.textContent?.trim() === 'Uninstall')
   await click(confirm)
 
   expect(uninstallCalls).toHaveLength(0)

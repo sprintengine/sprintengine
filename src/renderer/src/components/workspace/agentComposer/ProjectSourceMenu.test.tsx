@@ -30,13 +30,11 @@ test('ProjectSourceMenu', async () => {
   anyGlobal.cancelAnimationFrame = (id: number) => dom.window.clearTimeout(id)
   anyGlobal.IS_REACT_ACT_ENVIRONMENT = true
 
-  let repoAnswer: () => Promise<Record<string, unknown>> = async () => ({ ok: false, reason: 'no_token' })
   type ProgressListener = (progress: Record<string, unknown>) => void
   const progressListeners = new Set<ProgressListener>()
   const cancelled: string[] = []
   ;(dom.window as unknown as { api: Record<string, unknown> }).api = {
     platform: 'darwin',
-    listGitHubRepos: () => repoAnswer(),
     onRepositoryCloneProgress: (cb: ProgressListener) => {
       progressListeners.add(cb)
       return () => progressListeners.delete(cb)
@@ -262,7 +260,6 @@ test('ProjectSourceMenu', async () => {
     })
 
     await check('Import from Git swaps the same surface to the repo step, and back preserves the search', async () => {
-      repoAnswer = async () => ({ ok: false, reason: 'no_token' })
       const view = await mount(async () => ({ ok: false, message: 'unused' }))
       try {
         const search = surface()!.querySelector<HTMLInputElement>('[aria-label="Search projects"]')!
@@ -272,13 +269,12 @@ test('ProjectSourceMenu', async () => {
         assert.ok(surface(), 'still the one popover surface — no second dialog')
         assert.ok(surface()!.querySelector('[aria-label="Repository URL"]'), 'the Git step shows the URL lane')
         assert.equal(surface()!.querySelector('[aria-label="Search projects"]'), null, 'the project step is gone')
-        assert.ok(
-          /Settings → Version control/.test(surface()!.textContent ?? ''),
-          'no token → the inline pointer, not an error',
-        )
+        const text = surface()!.textContent ?? ''
+        assert.doesNotMatch(text, /Your GitHub repositories|Settings → Version control/, 'no repository list')
+        assert.doesNotMatch(text, /Bitbucket|Azure DevOps|Gitea/, 'no list of hosts under the field')
         const url = surface()!.querySelector<HTMLInputElement>('[aria-label="Repository URL"]')!
         await type(url, 'https://github.com/acme/repo')
-        await click(buttonWithText(surface()!, '←'))
+        await click(surface()!.querySelector('button[aria-label="Back to projects"]'))
         await settle()
         const searchAgain = surface()!.querySelector<HTMLInputElement>('[aria-label="Search projects"]')
         assert.ok(searchAgain, 'back returns to the projects step')
@@ -297,7 +293,6 @@ test('ProjectSourceMenu', async () => {
     })
 
     await check('a failed clone surfaces git’s error inline and leaves the selection untouched', async () => {
-      repoAnswer = async () => ({ ok: false, reason: 'no_token' })
       const view = await mount(async () => ({ ok: false, message: 'fatal: repository not found' }))
       try {
         await click(buttonWithText(surface()!, 'Import from Git'))
@@ -328,7 +323,6 @@ test('ProjectSourceMenu', async () => {
     await check(
       'a clone that succeeds closes the selector; adoption is the host’s, so a closed selector loses nothing',
       async () => {
-        repoAnswer = async () => ({ ok: false, reason: 'no_token' })
         let resolveClone: (value: { ok: true; path: string }) => void = () => {}
         const view = await mount(
           () =>
@@ -374,7 +368,6 @@ test('ProjectSourceMenu', async () => {
     await check(
       'a pasted page URL previews its host and fills the branch and folder; edits ride the request',
       async () => {
-        repoAnswer = async () => ({ ok: false, reason: 'no_token' })
         const view = await mount(async () => ({ ok: false, message: 'unused' }))
         try {
           const url = await openGitStep()
@@ -398,8 +391,28 @@ test('ProjectSourceMenu', async () => {
       },
     )
 
+    await check('Enter in a field clones once there is something to clone', async () => {
+      const view = await mount(async () => ({ ok: false, message: 'nope' }))
+      try {
+        const url = await openGitStep()
+        const form = url.closest('form')!
+        await act(async () => {
+          form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+        })
+        assert.equal(view.clones.length, 0, 'an empty field clones nothing')
+        await type(url, 'acme/widget')
+        await act(async () => {
+          form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+        })
+        await settle()
+        assert.equal(view.clones[0]?.url, 'https://github.com/acme/widget')
+        assert.equal(buttonWithText(surface()!, 'Clone')!.getAttribute('type'), 'submit')
+      } finally {
+        view.unmount()
+      }
+    })
+
     await check('a URL that does not parse says why under the field, and Clone stays off', async () => {
-      repoAnswer = async () => ({ ok: false, reason: 'no_token' })
       const view = await mount(async () => ({ ok: false, message: 'unused' }))
       try {
         const url = await openGitStep()
@@ -412,7 +425,6 @@ test('ProjectSourceMenu', async () => {
     })
 
     await check('a running clone says its progress in words and can be cancelled quietly', async () => {
-      repoAnswer = async () => ({ ok: false, reason: 'no_token' })
       let finish: (value: { ok: false; message: string; reason: string }) => void = () => {}
       const view = await mount(
         () =>
@@ -451,7 +463,6 @@ test('ProjectSourceMenu', async () => {
     })
 
     await check('a folder that is already this clone offers to open it instead', async () => {
-      repoAnswer = async () => ({ ok: false, reason: 'no_token' })
       const view = await mount(async () => ({
         ok: false,
         reason: 'exists',
@@ -470,40 +481,6 @@ test('ProjectSourceMenu', async () => {
         view.unmount()
       }
     })
-
-    await check(
-      'picking one of the account’s repositories fills the URL field, and picking it again clears it',
-      async () => {
-        repoAnswer = async () => ({
-          ok: true,
-          repos: [
-            {
-              fullName: 'acme/widget',
-              name: 'widget',
-              owner: 'acme',
-              isPrivate: true,
-              description: null,
-              cloneUrl: 'https://github.com/acme/widget.git',
-              defaultBranch: 'main',
-              pushedAt: null,
-            },
-          ],
-        })
-        const view = await mount(async () => ({ ok: false, message: 'unused' }))
-        try {
-          const url = await openGitStep()
-          await settle()
-          const row = () => surface()!.querySelector('[role="option"]')!
-          await click(row())
-          assert.equal(url.value, 'https://github.com/acme/widget.git')
-          assert.equal(row().getAttribute('aria-selected'), 'true', 'the row the field names reads as picked')
-          await click(row())
-          assert.equal(url.value, '')
-        } finally {
-          view.unmount()
-        }
-      },
-    )
 
     await check(
       'a cold start with no parent to clone beside says what to do rather than "open a project first"',
