@@ -1,5 +1,5 @@
 import { type JSX, type ReactNode, useCallback, useMemo, useRef } from 'react'
-import { GhostButton, InlineNotice, LinkButton, OutlineButton, TruncatedText } from '../../ui'
+import { GhostButton, InlineNotice, LinkButton, OutlineButton, OverflowMenu, TruncatedText } from '../../ui'
 import { useChatViewActive } from './chatViewActivity'
 import { LaneChatView } from './LaneChatView'
 import { SubagentFamilyScope, type SubagentFamily } from './subagentFamily'
@@ -56,6 +56,21 @@ export function subagentCrumbs(
   ]
 }
 
+/**
+ * The crumbs the band shows by name, and those it folds behind "…". The chat
+ * it started from and the parent just above stay named; every view between
+ * them folds, so a sub-agent of a sub-agent of a sub-agent reads
+ * "‹ Chat / … / Parent / This one" however deep it goes.
+ */
+export function foldSubagentCrumbs(crumbs: readonly SubagentChatCrumb[]): {
+  first: SubagentChatCrumb | undefined
+  folded: SubagentChatCrumb[]
+  last: SubagentChatCrumb | undefined
+} {
+  if (crumbs.length <= 2) return { first: crumbs[0], folded: [], last: crumbs[1] }
+  return { first: crumbs[0], folded: crumbs.slice(1, -1), last: crumbs.at(-1) }
+}
+
 /** The band over a subagent's chat: the way back up, its name, and how it is doing. */
 export function SubagentViewHeader({
   crumbs,
@@ -74,29 +89,70 @@ export function SubagentViewHeader({
   action?: ReactNode
   onCrumb: (depth: number) => void
 }): JSX.Element {
+  const { first, folded, last } = foldSubagentCrumbs(crumbs)
+  // In a narrow band (the side panel open beside the chat) the chat it started
+  // from folds too, behind the same "…", and the parent just above is the one
+  // named way back. A wide band folds only what lies between. The band is its
+  // own container, so the width read is its own and not the window's.
+  const foldMenu = (items: readonly SubagentChatCrumb[], className: string) =>
+    items.length ? (
+      <span className={`shrink-0 items-center gap-2 ${className}`}>
+        <OverflowMenu
+          ariaLabel={`${items.length === 1 ? 'One more step' : `${items.length} more steps`} back up`}
+          align="start"
+          items={items.map((crumb, index) => ({
+            id: crumb.key,
+            label: `${index === 0 && crumb.depth === 0 ? '‹ ' : ''}${crumb.name}`,
+            onSelect: () => onCrumb(crumb.depth),
+          }))}
+          renderTriggerControl={(props) => (
+            <LinkButton {...props} ink="quiet">
+              …
+            </LinkButton>
+          )}
+        />
+        <span aria-hidden="true">/</span>
+      </span>
+    ) : null
+  // Each named step shrinks before the name of the agent in view, never to
+  // nothing, and truncates inside its own box: a link laid out inline cannot
+  // be narrower than its words, so its words ran out under the next step's.
+  const crumbLink = (crumb: SubagentChatCrumb, className: string) => (
+    <span key={crumb.key} className={`min-w-12 shrink-[3] items-center gap-2 ${className}`}>
+      <LinkButton ink="quiet" layout="row" onClick={() => onCrumb(crumb.depth)} className="min-w-0">
+        <TruncatedText as="span" text={`${crumb.depth === 0 ? '‹ ' : ''}${crumb.name}`} className="min-w-0" />
+      </LinkButton>
+      <span aria-hidden="true">/</span>
+    </span>
+  )
   return (
     <div
       data-subagent-header=""
-      className="flex h-control-lg shrink-0 items-center gap-2 border-b border-[color:var(--border-subtle)] bg-[color:var(--agent-surface)] px-3 text-meta text-[color:var(--text-muted)]"
+      className="@container flex h-control-lg shrink-0 items-center gap-2 border-b border-[color:var(--border-subtle)] bg-[color:var(--agent-surface)] px-3 text-meta text-[color:var(--text-muted)]"
     >
-      <nav aria-label="Back up to the chat" className="flex min-w-0 flex-1 items-center gap-2">
-        {crumbs.map((crumb, index) => (
-          <span key={crumb.key} className="flex min-w-0 shrink items-center gap-2">
-            {index > 0 ? <span aria-hidden="true">/</span> : null}
-            <LinkButton ink="quiet" onClick={() => onCrumb(crumb.depth)} className="min-w-0 max-w-full">
-              <TruncatedText as="span" text={`${index === 0 ? '‹ ' : ''}${crumb.name}`} className="min-w-0" />
-            </LinkButton>
-          </span>
-        ))}
-        <span aria-hidden="true">/</span>
-        <span aria-current="page" className="flex min-w-0 shrink-[2] font-medium text-[color:var(--text-strong)]">
+      <nav aria-label="Back up to the chat" className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        {first ? (
+          <>
+            {/* Wide: the chat it started from, then what lies between folded. */}
+            {crumbLink(first, last ? 'flex @max-xl:hidden' : 'flex')}
+            {foldMenu(folded, 'flex @max-xl:hidden')}
+            {/* Narrow: all but the parent folded, the chat included. */}
+            {last ? foldMenu([first, ...folded], 'hidden @max-xl:flex') : null}
+          </>
+        ) : null}
+        {last ? crumbLink(last, 'flex') : null}
+        <span aria-current="page" className="flex min-w-0 shrink font-medium text-[color:var(--text-strong)]">
           <TruncatedText as="span" text={name} className="min-w-0" />
         </span>
       </nav>
       {facts || status ? (
         <span className="ml-auto flex shrink-0 items-center gap-1 text-micro tabular-nums">
           {facts ? <span className="@max-[420px]:hidden">{facts}</span> : null}
-          {facts && status ? <span aria-hidden="true">·</span> : null}
+          {facts && status ? (
+            <span aria-hidden="true" className="@max-[420px]:hidden">
+              ·
+            </span>
+          ) : null}
           {status}
         </span>
       ) : null}
