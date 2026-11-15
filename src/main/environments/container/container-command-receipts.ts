@@ -28,6 +28,24 @@ export const CONTAINER_COMMAND_INTERRUPTED = {
     'Studio stopped while this was being done, so it may be half done. See Settings › Machines › Containers for what was made.',
 }
 
+/** What a command is answered with when what it does cannot be recorded first: it is not carried out. */
+export function containerCommandUnrecorded(path: string, error: unknown) {
+  return {
+    ok: false as const,
+    message: `Studio could not record this request before carrying it out (${path}: ${messageOf(error)}), so it did nothing. Free some disk space or check that folder, then try again.`,
+  }
+}
+
+/** What every command is answered with while the record of earlier ones cannot be read: nothing is carried out. */
+export function containerCommandsUnreadable(path: string, error: unknown) {
+  return {
+    ok: false as const,
+    message: `Studio could not read its record of container requests (${path}: ${messageOf(error)}), so it will not make, push or remove a container until that file is fixed or moved away. Nothing was done.`,
+  }
+}
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
 export const CONTAINER_COMMAND_CONFLICT = {
   ok: false as const,
   message: 'That request was sent again with different details. Try it once more.',
@@ -54,13 +72,34 @@ export class ContainerCommandReceipts {
   private readonly receipts = new Map<string, Receipt>()
   private readonly running = new Map<string, Promise<unknown>>()
   private readonly now: () => number
+  private readonly write: (path: string, data: string) => void
+  /** Why the record on disk could not be read: every command is refused, and the file is left as it is. */
+  private unreadable: unknown = null
 
-  constructor(private readonly options: { path: string | null; now?: () => number }) {
+  constructor(
+    private readonly options: {
+      path: string | null
+      now?: () => number
+      /** How the record is written; an atomic, flushed replace unless a test says otherwise. */
+      write?: (path: string, data: string) => void
+    },
+  ) {
     this.now = options.now ?? Date.now
+    this.write = options.write ?? ((path, data) => writeFileAtomicSync(path, data, { mode: 0o600, durable: true }))
     if (!options.path) return
+    let text: string
     try {
-      const stored = JSON.parse(readFileSync(options.path, 'utf8')) as { receipts?: unknown }
-      for (const entry of Array.isArray(stored.receipts) ? stored.receipts : []) {
+      text = readFileSync(options.path, 'utf8')
+    } catch (error) {
+      // None yet is a first run; anything else is a record that exists and cannot be read.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.unreadable = error
+      return
+    }
+    try {
+      const stored = JSON.parse(text) as { receipts?: unknown }
+      if (!stored || typeof stored !== 'object' || !Array.isArray(stored.receipts))
+        throw new Error('it is not a record of container requests')
+      for (const entry of stored.receipts) {
         const receipt = entry as Partial<Receipt>
         if (typeof receipt.id !== 'string' || typeof receipt.fingerprint !== 'string' || typeof receipt.at !== 'number')
           continue
@@ -72,8 +111,12 @@ export class ContainerCommandReceipts {
           answer: 'answer' in receipt ? receipt.answer : CONTAINER_COMMAND_INTERRUPTED,
         })
       }
-    } catch {
-      // None yet, or unreadable: nothing is known, and nothing is lost but the memory.
+    } catch (error) {
+      // Read as empty, a command it holds could be carried out a second time:
+      // refused instead, and the file kept for a person to look at.
+      this.unreadable = error
+      this.receipts.clear()
+      return
     }
     this.prune()
   }
@@ -89,8 +132,17 @@ export class ContainerCommandReceipts {
     if (known && known.fingerprint !== fingerprint) return Promise.resolve(CONTAINER_COMMAND_CONFLICT as T)
     if (pending) return pending as Promise<T>
     if (known && 'answer' in known) return Promise.resolve(known.answer as T)
+    if (this.unreadable !== null)
+      return Promise.resolve(containerCommandsUnreadable(this.options.path ?? '', this.unreadable) as T)
+    // Recorded as started before anything is done: a command whose start is
+    // not on disk could be carried out again after a restart, so it is not
+    // carried out at all.
     this.receipts.set(id, { id, fingerprint, at: this.now() })
-    this.save()
+    const unsaved = this.save()
+    if (unsaved !== null) {
+      this.receipts.delete(id)
+      return Promise.resolve(containerCommandUnrecorded(this.options.path ?? '', unsaved) as T)
+    }
     const promise = work().then(
       (answer) => this.settle(id, answer),
       (error: unknown) => {
@@ -124,14 +176,18 @@ export class ContainerCommandReceipts {
     }
   }
 
-  private save(): void {
-    if (!this.options.path) return
+  /**
+   * Write the record whole (a temporary file renamed over it, flushed), or say
+   * why not. An answer that cannot be written leaves its command recorded as
+   * started, which after a restart is answered in words, never carried out again.
+   */
+  private save(): unknown {
+    if (!this.options.path || this.unreadable !== null) return null
     try {
-      writeFileAtomicSync(this.options.path, `${JSON.stringify({ receipts: [...this.receipts.values()] })}\n`, {
-        mode: 0o600,
-      })
-    } catch {
-      // A full disk loses only the memory of answers, never the work.
+      this.write(this.options.path, `${JSON.stringify({ receipts: [...this.receipts.values()] })}\n`)
+      return null
+    } catch (error) {
+      return error
     }
   }
 }

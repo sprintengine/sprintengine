@@ -84,6 +84,15 @@ const METHOD_OF: Record<StudioContainersCall, keyof typeof STUDIO_METHODS> = {
   clearToken: 'containers.clearToken',
 }
 
+/**
+ * A command id as the server forwards it: the client's own, which the
+ * protocol takes as any string of 1 to 200 characters without a NUL, behind
+ * the namespace the server puts before it (`owner:`, `client:<id>:`).
+ */
+function forwardedCommandId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 512 && !value.includes('\0')
+}
+
 /** The calls main carries out once per command id: what changes a host. */
 const ONCE_PER_ID: ReadonlySet<StudioContainersCall> = new Set(['create', 'push', 'remove'])
 
@@ -101,7 +110,7 @@ export async function answerContainersCall(domain: StudioContainersDomain, paylo
   // (longer than a client's own), which the domain carries it out once by;
   // the rest is read as the method reads it.
   const { commandId, ...rest } = raw
-  if (ONCE_PER_ID.has(named) && (typeof commandId !== 'string' || !/^\S{1,512}$/u.test(commandId)))
+  if (ONCE_PER_ID.has(named) && !forwardedCommandId(commandId))
     throw new Error('That container request carried no command id.')
   const parsed = STUDIO_METHODS[METHOD_OF[named]].params({ ...rest, commandId: 'shell' })
   if (!parsed.ok) throw new Error(parsed.message)

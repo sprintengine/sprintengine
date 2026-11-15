@@ -265,7 +265,7 @@ each id did on disk (`container-command-receipts.ts`), and they are
 `receipts: 'durable'`: when the desktop's server restarts mid-build, the window
 sends the create again under its id and is answered with the one container,
 never a second. One that was running when Studio itself stopped is answered
-in words that send the person to Settings › Machines › Containers. An answer
+in words that send the person to Settings › Machines › Containers. A request is recorded as started, on disk, before anything is done, and is not carried out when that record cannot be written; a record that exists and cannot be read refuses every create, push and remove in words and is left for a person to look at, never read as empty. An answer
 that never came is never called "No container" in New chat.
 
 So a paired desktop's New chat still shows the Container chip for that machine

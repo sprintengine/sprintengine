@@ -10,6 +10,7 @@ import { CONTAINER_CALL_TIMEOUT_MS, shellContainersDomain } from '../../../serve
 import type { ControlRpc } from '../../../server/bootstrap/control-rpc'
 import { answerContainersCall, createContainersDomain, serveContainersToServer } from './containers-domain'
 import { CONTAINER_COMMAND_INTERRUPTED, ContainerCommandReceipts } from './container-command-receipts'
+import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 
 // The containers as main serves them to the desktop's Studio: in process the
 // domain itself, out of process each call over the control channel, checked
@@ -235,4 +236,114 @@ test('a read gets its answer, or this side’s words, before the client gives up
   // in time", not the client's bare "did not answer".
   for (const read of ['status', 'list', 'tokenStatus'] as const)
     assert.ok(CONTAINER_CALL_TIMEOUT_MS[read] < STUDIO_DEFAULT_READ_TIMEOUT_MS, read)
+})
+
+test('a request whose start cannot be recorded is not carried out: no container is made', async () => {
+  const chats = fakeChats()
+  const main = createContainersDomain({
+    containers: chats.containers,
+    token: tokenStore(),
+    receipts: new ContainerCommandReceipts({
+      path: '/Users/dev/container-commands.json',
+      write: () => {
+        throw new Error('ENOSPC: no space left on device')
+      },
+    }),
+    onTokenChanged: () => undefined,
+  })
+  const answer = await main.create(REQUEST, 'owner:k1')
+  assert.equal(answer.ok, false)
+  assert.match((answer as { message: string }).message, /could not record this request.*ENOSPC/u)
+  assert.equal(chats.done.length, 0, 'no container was made')
+})
+
+test('a record that cannot be read refuses every request in words and is left as it was, never read as empty', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'container-receipts-'))
+  try {
+    const path = join(dir, 'container-commands.json')
+    for (const broken of ['{"receipts": [ {"id": "owner:k1"', '"not a record"']) {
+      writeFileSync(path, broken)
+      const chats = fakeChats()
+      const main = createContainersDomain({
+        containers: chats.containers,
+        token: tokenStore(),
+        receipts: new ContainerCommandReceipts({ path }),
+        onTokenChanged: () => undefined,
+      })
+      for (const answer of [
+        await main.create(REQUEST, 'owner:k1'),
+        await main.push(SAVED_ID, 'owner:k2'),
+        await main.remove({ id: SAVED_ID }, 'owner:k3'),
+      ]) {
+        assert.equal(answer.ok, false)
+        assert.match((answer as { message: string }).message, /could not read its record.*Nothing was done/u)
+      }
+      assert.equal(chats.done.length, 0)
+      assert.equal(readFileSync(path, 'utf8'), broken, 'the file is left for a person to look at')
+      // Reads go on: the list and the status are no command.
+      assert.deepEqual(await main.status({ kind: 'local' }), READY)
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('no record yet is a first run: a request is carried out and recorded', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'container-receipts-'))
+  try {
+    const path = join(dir, 'container-commands.json')
+    const chats = fakeChats()
+    const main = createContainersDomain({
+      containers: chats.containers,
+      token: tokenStore(),
+      receipts: new ContainerCommandReceipts({ path }),
+      onTokenChanged: () => undefined,
+    })
+    assert.equal((await main.create(REQUEST, 'owner:k1')).ok, true)
+    assert.ok(existsSync(path))
+    // After a restart, the same id is the same answer.
+    const replayed = createContainersDomain({
+      containers: chats.containers,
+      token: tokenStore(),
+      receipts: new ContainerCommandReceipts({ path }),
+      onTokenChanged: () => undefined,
+    })
+    assert.equal((await replayed.create(REQUEST, 'owner:k1')).ok, true)
+    assert.equal(chats.done.filter(([name]) => name === 'create').length, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a command id the protocol takes works the same in process and forwarded to main', async () => {
+  // Spaces and punctuation are a client's to choose; the server puts its namespace before them.
+  const id = 'owner:create chat 1 (retry)'
+  const inProcess = fakeChats()
+  const direct = createContainersDomain({
+    containers: inProcess.containers,
+    token: tokenStore(),
+    receipts: new ContainerCommandReceipts({ path: null }),
+    onTokenChanged: () => undefined,
+  })
+  assert.equal((await direct.create(REQUEST, id)).ok, true)
+  assert.equal((await direct.push(SAVED_ID, id + ' push')).ok, true)
+  const forwardedChats = fakeChats()
+  const main = createContainersDomain({
+    containers: forwardedChats.containers,
+    token: tokenStore(),
+    receipts: new ContainerCommandReceipts({ path: null }),
+    onTokenChanged: () => undefined,
+  })
+  const rpc = channel()
+  serveContainersToServer(rpc, main)
+  const server = shellContainersDomain(rpc)
+  assert.equal((await server.create(REQUEST, id)).ok, true)
+  assert.equal((await server.push(SAVED_ID, id + ' push')).ok, true)
+  assert.deepEqual(
+    forwardedChats.done.map(([name]) => name),
+    inProcess.done.map(([name]) => name),
+  )
+  // What the protocol refuses, main refuses too.
+  await assert.rejects(answerContainersCall(main, { call: 'push', args: { id: SAVED_ID, commandId: 'a\0b' } }))
+  await assert.rejects(answerContainersCall(main, { call: 'push', args: { id: SAVED_ID, commandId: '' } }))
 })
