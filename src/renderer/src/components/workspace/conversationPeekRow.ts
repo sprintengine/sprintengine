@@ -3,14 +3,18 @@ import { formatRelativeMs } from '../../utils/relativeTime'
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
 import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
 import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
-import type { AgentState, Workspace } from '../../../../shared/workspace'
+import type { AgentCli, AgentState, Workspace } from '../../../../shared/workspace'
 import type {
   ConversationPeekIdentity,
   ConversationPeekMachine,
   ConversationPeekPlace,
+  ConversationPeekServer,
   ConversationPeekStatus,
 } from './ConversationPeekCard'
+import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { executionHostLabel, isWslHostId, LOCAL_HOST_ID } from '../../../../shared/execution-host'
+import { cliForConversationProvider } from '../../../../shared/conversation-harness'
+import type { RemoteSessionRow } from './remoteBand/remoteSessionsModel'
 
 // What a SIDEBAR ROW knows about the conversations behind it.
 //
@@ -153,7 +157,30 @@ export function rowConversationPeekIdentities(input: {
   now: number
   /** The OS the Studio server runs on, which names this computer ("This Mac"). */
   platform: string
+  /**
+   * The pull requests the Studio's record files under each of the row's
+   * conversations (`pullRequests.list` by conversation), by agent id. A chat's
+   * card lists its own; a terminal agent's snapshot already carries its own.
+   */
+  pullRequestsByAgent?: Readonly<Record<string, readonly BranchPullRequest[]>>
+  /** The row's pull requests by workspace, for a row with one agent whose own list is empty. */
+  rowPullRequests?: readonly BranchPullRequest[]
+  /** The local servers the chat's agents started (`localServers.list` by workspace). */
+  servers?: readonly ConversationPeekServer[]
+  /** Goes to one agent's own view. */
+  openAgent?: (agentId: string, name: string) => void
+  /** Opens one of the chat's servers. */
+  openServer?: (server: ConversationPeekServer) => void
 }): ConversationPeekIdentity[] {
+  const openOf = (agentId: string | null | undefined, name: string) =>
+    agentId && input.openAgent ? () => input.openAgent?.(agentId, name) : null
+  const pullRequestsOf = (agentId: string | null | undefined): BranchPullRequest[] => [
+    ...((agentId && input.pullRequestsByAgent?.[agentId]) || []),
+  ]
+  const held = {
+    ...(input.servers && input.servers.length > 0 ? { servers: input.servers } : {}),
+    ...(input.openServer ? { openServer: input.openServer } : {}),
+  }
   const agents = input.workspace.agents
   const byId = new Map<string, { identity: ConversationPeekIdentity; live: boolean; at: number }>()
   // Which agents already have a session on the list. Deduplicating by session
@@ -167,6 +194,7 @@ export function rowConversationPeekIdentities(input: {
     if (session.kind !== 'agent') continue
     if (session.agentId) seenAgents.add(session.agentId)
     const record = session.agentId ? agents?.[session.agentId] : undefined
+    const agentName = record?.name ?? null
     byId.set(session.sessionId, {
       identity: {
         // The ROW's title, not the agent's: the card opens out of the row and
@@ -175,8 +203,11 @@ export function rowConversationPeekIdentities(input: {
         name: input.workspace.name,
         place: peekPlaceOf(input.workspace, session, input.platform),
         status: agentStatusOf(session, input.now),
+        open: openOf(session.agentId ?? record?.id, agentName ?? input.workspace.name),
+        ...held,
         agent: {
           sessionId: session.sessionId,
+          name: agentName,
           agentId: session.agentId ?? record?.id ?? null,
           cli: record?.cli ?? session.cli ?? null,
           model: record?.cliModel ?? null,
@@ -184,7 +215,7 @@ export function rowConversationPeekIdentities(input: {
           // own union of the branch's pull requests and the ones this session
           // opened itself in any repository. Absent on an older snapshot, and
           // an absent answer draws exactly what an empty one draws.
-          pullRequests: session.pullRequests ?? [],
+          pullRequests: session.pullRequests?.length ? session.pullRequests : pullRequestsOf(session.agentId),
           activeSubagents: session.activeSubagents ?? 0,
           contextUsage: session.contextUsage ?? null,
         },
@@ -196,10 +227,13 @@ export function rowConversationPeekIdentities(input: {
 
   for (const session of input.conversations ?? []) {
     const phase = conversationSummaryPhase(session)
+    const agentName = agents?.[session.agentId]?.name ?? session.displayName ?? null
     byId.set(session.sessionId, {
       identity: {
         name: input.workspace.name,
         place: peekPlaceOf(input.workspace, null, input.platform),
+        open: openOf(session.agentId, agentName ?? input.workspace.name),
+        ...held,
         status:
           phase === 'running' || phase === 'starting'
             ? { kind: 'working', label: 'Working' }
@@ -212,10 +246,13 @@ export function rowConversationPeekIdentities(input: {
                   : { kind: 'idle', label: 'Idle' },
         agent: {
           sessionId: session.sessionId,
+          name: agentName,
           agentId: session.agentId,
-          cli: null,
+          cli: cliForConversationProvider(session.providerId) as AgentCli | null,
           model: session.modelId,
-          pullRequests: [],
+          // The ones the record files under this conversation: what its own
+          // line in the sidebar wears.
+          pullRequests: pullRequestsOf(session.agentId),
           activeSubagents: session.backgroundAgents ?? 0,
           contextUsage: null,
         },
@@ -239,17 +276,18 @@ export function rowConversationPeekIdentities(input: {
           name: input.workspace.name,
           place: peekPlaceOf(input.workspace, null, input.platform),
           status: agentStatusOf(null, input.now),
+          open: openOf(record.id, record.name || input.workspace.name),
+          ...held,
           agent: {
             sessionId,
+            name: record.name || null,
             agentId: record.id,
             cli: record.cli ?? null,
             model: record.cliModel ?? null,
-            // A parked record is not a session: main holds no ledger for it,
-            // and an empty list is the honest answer rather than a stale one.
-            // Its pull requests are the same story — the record is keyed by
-            // repo and branch on main's side, and this row has no session to
-            // ask about.
-            pullRequests: [],
+            // A parked record is not a session: main holds no ledger for it.
+            // Its pull requests are the conversation's in the Studio's record,
+            // which files them by agent whether or not anything is running.
+            pullRequests: pullRequestsOf(record.id),
             activeSubagents: 0,
             contextUsage: null,
           },
@@ -270,7 +308,79 @@ export function rowConversationPeekIdentities(input: {
 
   // One terminal: the row IS the agent, so the row's own status wins — it knows
   // about needs-input, and its idle clock is the one the row is already showing.
+  // Its pull requests are the row's too where its own list is empty: the
+  // record files a pull request under the workspace when it cannot tell which
+  // of its agents opened it, and the row's mark already wears those.
   const only = ordered[0]
-  if (ordered.length === 1 && only) return [{ ...only, status: input.status }]
+  if (ordered.length === 1 && only) {
+    const rowPullRequests = input.rowPullRequests ?? []
+    return [
+      {
+        ...only,
+        status: input.status,
+        agent:
+          only.agent.pullRequests.length === 0 && rowPullRequests.length > 0
+            ? { ...only.agent, pullRequests: [...rowPullRequests] }
+            : only.agent,
+      },
+    ]
+  }
   return ordered
+}
+
+/** What a paired machine lists of one agent of its chat: the fields of a band row the card reads. */
+export type RemotePeekAgent = Pick<
+  RemoteSessionRow,
+  'sessionId' | 'title' | 'cli' | 'phase' | 'activity' | 'since' | 'branch' | 'pullRequests' | 'lastTurnEndedAt'
+> &
+  Partial<Pick<RemoteSessionRow, 'modelId' | 'localServers' | 'backgroundAgents'>>
+
+/** A listed agent's state, in the corner's words: the phase its machine listed, as a local chat's card says it. */
+function remoteStatusOf(row: RemotePeekAgent): ConversationPeekStatus {
+  if (row.activity === 'working') return { kind: 'working', label: 'Working' }
+  if (row.activity === 'needs-input')
+    return { kind: 'attention', label: row.phase === 'waiting_for_input' ? 'Asked a question' : 'Needs approval' }
+  if (row.phase === 'failed') return { kind: 'attention', label: 'Failed' }
+  const since = row.lastTurnEndedAt ?? row.since
+  return since !== null
+    ? { kind: 'idle', label: 'Idle', aged: { label: 'Idle', since } }
+    : { kind: 'idle', label: 'Idle' }
+}
+
+/**
+ * One card per agent of a chat on a paired machine, built from what that
+ * machine's list carries and nothing of this computer's: its agents, their
+ * branch and model, the pull requests the chat opened and the local servers
+ * its agents started there, as the machine last recorded them, and how many
+ * sub-agents are out. The same card a local chat's row opens, so a chat reads
+ * the same whichever machine it runs on.
+ *
+ * Its servers are listed and not opened: an address an agent gave there
+ * (`localhost:5173`) is that machine's own, and opens only there. A row goes
+ * to its agent through `openAgent`, which follows it in a pane here.
+ */
+export function remoteConversationPeekIdentities<Row extends RemotePeekAgent>(input: {
+  /** The chat's title, as its machine's sidebar shows it. */
+  name: string
+  machineName: string
+  agents: readonly Row[]
+  openAgent?: (row: Row) => void
+}): ConversationPeekIdentity[] {
+  return input.agents.map((row) => ({
+    name: input.name,
+    place: { machine: { label: input.machineName, kind: 'remote' }, branch: row.branch?.trim() || null },
+    status: remoteStatusOf(row),
+    open: input.openAgent ? () => input.openAgent?.(row) : null,
+    ...(row.localServers && row.localServers.length > 0 ? { servers: row.localServers } : {}),
+    agent: {
+      sessionId: row.sessionId,
+      name: row.title,
+      cli: row.cli as AgentCli | null,
+      model: row.modelId ?? null,
+      pullRequests: row.pullRequests,
+      activeSubagents: row.backgroundAgents ?? 0,
+      // The list carries no context reading; a line at 0% would claim one.
+      contextUsage: null,
+    },
+  }))
 }

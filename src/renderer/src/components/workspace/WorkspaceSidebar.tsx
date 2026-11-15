@@ -40,7 +40,15 @@ import {
   usePullRequestsByConversation,
   type ConversationPullRequests,
 } from './useConversationPullRequests'
-import { activityAt, peekStatusOf, rowConversationPeekIdentities } from './conversationPeekRow'
+import {
+  activityAt,
+  peekStatusOf,
+  remoteConversationPeekIdentities,
+  rowConversationPeekIdentities,
+} from './conversationPeekRow'
+import type { ConversationPeekServer } from './ConversationPeekCard'
+import { revealAgentTerminalTab } from '../../utils/agentTabReveal'
+import { openUrlInPane } from './pane/browser/openInPane'
 import { cancelOpenIntent, intendToOpenWorkspace } from './sidebarChatPrefetch'
 import { changelistOwnerId } from '../../../../shared/git/changelists'
 import { folderIdentityKey, useFolderRepositoryIdentities } from './useFolderRepositoryIdentities'
@@ -106,6 +114,7 @@ import { publishRemoteSearchMachines } from './remoteBand/remoteChatSearch'
 import {
   attachedConversations,
   buildRemoteBand,
+  openSpecOf,
   openSpecOfConversation,
   remoteRowActivity,
   remoteRowFinishUnseen,
@@ -3412,7 +3421,15 @@ function WorkspaceSidebar({
         <AttentionPulse active={needsAttention} resetKey={conversation.key} />
         <AttentionPulse active={unseenDone} resetKey={conversation.key} tone="good" />
         <div className="flex min-w-0 items-center gap-2">
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <ConversationPeekPopover
+            identities={remoteConversationPeekIdentities({
+              name: conversation.title,
+              machineName: conversation.machineName,
+              agents: conversation.agents,
+              openAgent: (row) => onOpenRemoteSession?.(openSpecOf(row)),
+            })}
+            now={now}
+          >
             {/* In the tree the project header is above and carries no machine,
                 so the row wears the glyph; in the flat stream the project line
                 already wears it, right of the folder icon. */}
@@ -3455,7 +3472,7 @@ function WorkspaceSidebar({
             {asleepUntil !== null ? <span className="sr-only"> (snoozed)</span> : null}
             {needsAttention ? <span className="sr-only"> (needs your input)</span> : null}
             {unseenDone ? <span className="sr-only"> (finished while you were away)</span> : null}
-          </span>
+          </ConversationPeekPopover>
         </div>
         {/* One line per agent, the way a local chat draws its chats.
             `disambiguate` is what makes a row of three say WHICH of them is
@@ -5563,14 +5580,37 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
   // question — whether there is an id to ask about is.
   // One identity per agent (2026-09-09): the card opens from the agent line
   // the pointer is on, and a chat with a single agent opens from its row.
-  const peekIdentities = rowConversationPeekIdentities({
+  // What the chat holds rides the card too (owner, 2026-11-15): each agent's
+  // pull requests as the record files them, the servers its agents started,
+  // and a way into each agent. A chat followed from a paired machine has no
+  // session here, so its card is built from what that machine's list says.
+  const localPeekIdentities = rowConversationPeekIdentities({
     workspace,
     sessions: peekSessions,
     conversations: conversationSessions,
     status: peekStatusOf(seatActivity, idleRecencyText),
     now,
     platform: hostPlatform(),
+    pullRequestsByAgent: chatLinePullRequestsByAgent,
+    rowPullRequests: rowConversationPullRequests,
+    servers: rowLocalServers,
+    openAgent: (agentId, name) => {
+      revealAgentTerminalTab({ workspaceId: workspace.id, agentId, name })
+    },
+    openServer: (server: ConversationPeekServer) => {
+      if (!openUrlInPane(workspace.id, server.url)) void window.api?.openExternal?.(server.url)
+    },
   })
+  const peekIdentities =
+    localPeekIdentities.length > 0 || !rowConversation
+      ? localPeekIdentities
+      : remoteConversationPeekIdentities({
+          name: rowTitle,
+          machineName: rowConversation.machineName,
+          agents: rowConversation.agents,
+          // The pane here follows the chat; selecting the row brings it forward.
+          openAgent: () => onSelectWorkspace(workspace.id),
+        })
   const hasPeek = peekIdentities.length > 0
   // The whole row is the peek's hover target (owner ruling 2026-09-07), which
   // costs the title its own tooltip. `TruncatedText` opens one the moment a

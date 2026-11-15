@@ -1304,7 +1304,7 @@ export function ConversationScreen({
               accessibilityLabel={`${chatTitle}, chat details`}
               accessibilityRole="button"
               onPress={() => setPageOpen(true)}
-              style={({ pressed }) => [styles.titlePill, pressed ? styles.chipPressed : null]}
+              style={({ pressed }) => [styles.titlePill, pressed ? styles.titlePillPressed : null]}
             >
               <Text numberOfLines={1} style={styles.titlePillText}>
                 {chatTitle}
@@ -2729,10 +2729,16 @@ const createStyles = ({ colors, cardShadowOpacity }: Theme) =>
       paddingLeft: space.xl,
       paddingRight: space.md,
       borderRadius: radius.chip,
-      backgroundColor: colors.bgSurfaceRaised,
+      // The composer's ground, one step above the conversation it floats on,
+      // with the strong hairline: on the raised paper it was the conversation's
+      // own colour (`agentSurface` is that paper) and its edge was all there
+      // was of it, as on the desktop's pill over a chat.
+      backgroundColor: colors.composerSurface,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.borderDefault,
+      borderColor: colors.borderStrong,
     },
+    // Its ground is already the hover step, so pressing goes one further.
+    titlePillPressed: { backgroundColor: colors.bgActive },
     titlePillText: { ...typography.heading, color: colors.textPrimary, flexShrink: 1 },
     floatStatus: { ...typography.micro, color: colors.textMuted, paddingLeft: space.xl },
     blockedBar: {

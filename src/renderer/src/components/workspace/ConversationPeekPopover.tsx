@@ -201,6 +201,21 @@ export function ConversationPeekPopover({
     return () => window.removeEventListener('scroll', dismiss, true)
   }, [closeNow, open])
 
+  // Going into an agent from the card puts the card away: the view it opens
+  // is the answer, and a card left over it would cover what was asked for.
+  const leaving = (entry: ConversationPeekIdentity): ConversationPeekIdentity => {
+    const open = entry.open
+    return open
+      ? {
+          ...entry,
+          open: () => {
+            closeNow()
+            open()
+          },
+        }
+      : entry
+  }
+
   return (
     <span ref={anchorRef} className={className ?? 'flex min-w-0 flex-1 items-center gap-1.5'}>
       {children}
@@ -219,7 +234,7 @@ export function ConversationPeekPopover({
               across the gap from the row. */}
           <div ref={cardRef} onMouseEnter={keepOpen} onMouseLeave={closeSoon}>
             <React.Suspense fallback={null}>
-              <ConversationPeekCard identity={identity} now={cardNow} />
+              <ConversationPeekCard identity={leaving(identity)} roster={identities.map(leaving)} now={cardNow} />
             </React.Suspense>
           </div>
         </PointerPopover>

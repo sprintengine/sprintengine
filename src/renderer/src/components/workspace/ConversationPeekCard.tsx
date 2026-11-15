@@ -1,14 +1,16 @@
 import React from 'react'
 
 import CliIcon from '../CliIcon'
-import { GitBranchGlyph, RemoteMachineGlyph, WslMachineGlyph } from '../AppIcons'
-import { ContextRing, TruncatedText, WorkingMark } from '../ui'
+import { ChatGlyph, GitBranchGlyph, LocalServerGlyph, RemoteMachineGlyph, WslMachineGlyph } from '../AppIcons'
+import { ContextRing, PullRequestGlyph, RowButton, Section, TruncatedText, WorkingMark } from '../ui'
 import { formatRelativeMs } from '../../utils/relativeTime'
 import { useRelativeNow } from '../../hooks/useRelativeNow'
 import type { AgentCli } from '../../../../shared/workspace'
 import type { SessionContextUsage } from '../../../../shared/electron-api'
-import type { BranchPullRequest } from '../../../../shared/git/pull-request'
-import { PullRequestPeekMark } from './PullRequestMark'
+import { PULL_REQUEST_TONE_VAR, pullRequestTone, type BranchPullRequest } from '../../../../shared/git/pull-request'
+import type { StudioLocalServer } from '../../../../../packages/studio-protocol/src/public'
+import { PullRequestPeekMark, openPullRequestExternally, pullRequestMenuGroups } from './PullRequestMark'
+import { localServerStateWord } from './LocalServersMenu'
 import { labelForCliRuntime } from './newWorkspace/cliRuntimeOptions'
 import { formatTokenCount } from '../../utils/tokenFormat'
 
@@ -34,6 +36,15 @@ import { formatTokenCount } from '../../utils/tokenFormat'
 // ONE AGENT PER CARD (owner, 2026-09-09). The sidebar already lists a chat's
 // agents as its own sub-lines, so the person points at the one they mean and
 // the card is that agent's.
+//
+// WHAT THE CHAT HOLDS (owner, 2026-11-15). Below the facts, the card lists
+// what the chat has out in the world, each a short section that is not drawn
+// when it is empty: its agents (the chat's others, and how many sub-agents
+// are out), each a way into that agent; its pull requests, open ones first,
+// in a list that scrolls past a few rows, each a link to GitHub; and the
+// local servers its agents started. Everything here rides the identity the
+// shell built from what the row already reads (the Studio's records, or a
+// paired machine's list), so a chat on another machine says the same.
 
 /**
  * The chat's live state, in the corner's voice.
@@ -74,6 +85,11 @@ export type ConversationPeekStatus = {
 export type ConversationPeekAgent = {
   /** The terminal session this card is about — what the shells key on. */
   sessionId: string
+  /**
+   * The agent's own name ("Gael Corry"), which the card's agent list shows;
+   * absent where the shell knows none, and the list then says the chat's.
+   */
+  name?: string | null
   /** The agent behind the session, when there is one. */
   agentId?: string | null
   /** Runtime id; null when unknown. */
@@ -117,9 +133,25 @@ export type ConversationPeekPlace = {
   branch: string | null
 }
 
+/** A local server one of the chat's agents started, as the card lists it. */
+export type ConversationPeekServer = Pick<StudioLocalServer, 'id' | 'url' | 'title' | 'state'>
+
 export type ConversationPeekIdentity = {
   /** The chat's name — the tab's or the row's title. */
   name: string
+  /**
+   * Goes to this agent's own view: its tab here, or the pane following it on
+   * its machine. Absent where there is nowhere further to go (the tab's own
+   * card, opened from the tab it would go to).
+   */
+  open?: (() => void) | null
+  /** The local servers the chat's agents started, newest first. Absent or empty draws no section. */
+  servers?: readonly ConversationPeekServer[]
+  /**
+   * Opens one of them. Absent, the servers are listed as facts: a paired
+   * machine's address is that machine's own, and opens only there.
+   */
+  openServer?: ((server: ConversationPeekServer) => void) | null
   /**
    * Where it runs. Absent on the TAB's card: a tab sits inside the chat's own
    * window, whose header already says the machine and branch.
@@ -230,12 +262,239 @@ function Fact({
   )
 }
 
+/** A section's list: rows on the card's own inset, scrolling past a few when there are many. */
+function SectionList({
+  children,
+  label,
+  scroll = false,
+}: {
+  children: React.ReactNode
+  label: string
+  scroll?: boolean
+}) {
+  return (
+    <ul
+      aria-label={label}
+      className={`m-0 flex list-none flex-col px-1.5 ${scroll ? 'max-h-40 overflow-y-auto overscroll-contain' : ''}`}
+    >
+      {children}
+    </ul>
+  )
+}
+
+/** One row: a glyph, the words, and a fact at its end. A button where it leads somewhere, plain words where it does not. */
+function SectionRow({
+  glyph,
+  children,
+  end,
+  ariaLabel,
+  onOpen,
+  current = false,
+}: {
+  glyph: React.ReactNode
+  children: React.ReactNode
+  end?: React.ReactNode
+  ariaLabel: string
+  onOpen?: (() => void) | null
+  current?: boolean
+}) {
+  const body = (
+    <>
+      <span className="flex w-3.5 shrink-0 justify-center" aria-hidden="true">
+        {glyph}
+      </span>
+      <span className="flex min-w-0 flex-1 items-center gap-1.5 text-left">{children}</span>
+      {end ? (
+        <span className="flex shrink-0 items-center gap-1 text-meta text-[color:var(--text-subtle)]">{end}</span>
+      ) : null}
+    </>
+  )
+  return (
+    <li className="min-w-0">
+      {onOpen ? (
+        <RowButton
+          density="row"
+          selected={current || undefined}
+          aria-label={ariaLabel}
+          onClick={onOpen}
+          className="flex w-full min-w-0 items-center gap-2 py-1 text-meta"
+        >
+          {body}
+        </RowButton>
+      ) : (
+        <div aria-label={ariaLabel} className="flex w-full min-w-0 items-center gap-2 px-2 py-1 text-meta">
+          {body}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/**
+ * The chat's agents: every one the row holds, the one this card is about
+ * marked, each a way into it; then how many sub-agents are out, which goes to
+ * this agent's own view, where they are listed by name. Drawn only when there
+ * is more than this one agent to name.
+ */
+function AgentsSection({
+  identity,
+  roster,
+}: {
+  identity: ConversationPeekIdentity
+  roster: readonly ConversationPeekIdentity[]
+}) {
+  const others = roster.filter((entry) => entry.agent.sessionId !== identity.agent.sessionId)
+  // The corner's rule: a count from an agent that is not working is stale.
+  const out = identity.status?.kind === 'working' ? identity.agent.activeSubagents : 0
+  if (others.length === 0 && out <= 0) return null
+  const listed = others.length > 0 ? roster : []
+  return (
+    <Section title="Agents" count={listed.length > 0 ? listed.length : undefined} inset={false}>
+      <SectionList label="Agents in this chat">
+        {listed.map((entry) => {
+          const name = entry.agent.name?.trim() || entry.name
+          const current = entry.agent.sessionId === identity.agent.sessionId
+          const state = entry.status?.label ?? null
+          return (
+            <SectionRow
+              key={entry.agent.sessionId}
+              glyph={
+                entry.agent.cli ? (
+                  <CliIcon cli={entry.agent.cli} className="icon-xs" />
+                ) : (
+                  <ChatGlyph className="icon-xs text-[color:var(--text-subtle)]" />
+                )
+              }
+              end={state}
+              ariaLabel={`${name}${state ? `, ${state.toLowerCase()}` : ''}${entry.open ? '. Open this agent' : ''}`}
+              onOpen={entry.open ?? null}
+              current={current}
+            >
+              <TruncatedText as="span" text={name} className="min-w-0 flex-1 text-[color:var(--text-default)]" />
+            </SectionRow>
+          )
+        })}
+        {out > 0 ? (
+          <SectionRow
+            glyph={<WorkingMark label={`${out} sub-agent${out === 1 ? '' : 's'} running`} />}
+            ariaLabel={`${out} sub-agent${out === 1 ? '' : 's'} running${identity.open ? '. Open the agent that started them' : ''}`}
+            onOpen={identity.open ?? null}
+          >
+            <span className="min-w-0 flex-1 truncate text-[color:var(--text-muted)]">
+              {out} sub-agent{out === 1 ? '' : 's'} running
+            </span>
+          </SectionRow>
+        ) : null}
+      </SectionList>
+    </Section>
+  )
+}
+
+/**
+ * Every pull request the chat opened, open ones first and newest first within
+ * each state (`pullRequestMenuGroups`, the order the header mark's menu
+ * keeps), each a link to GitHub. The list scrolls past a few rows, so an
+ * agent that opened seventy is a short box rather than a column off the
+ * screen. The state is the glyph's shape and its tone, and the row's name
+ * says it in words.
+ */
+function PullRequestsSection({ pullRequests, now }: { pullRequests: readonly BranchPullRequest[]; now: number }) {
+  const rows = pullRequestMenuGroups(pullRequests, now).flatMap((group) => group.rows)
+  if (rows.length === 0) return null
+  return (
+    <Section title="Pull requests" count={rows.length} inset={false}>
+      <SectionList label="Pull requests from this chat" scroll={rows.length > 5}>
+        {rows.map((row) => (
+          <SectionRow
+            key={row.url}
+            glyph={
+              <span style={{ color: PULL_REQUEST_TONE_VAR[pullRequestTone(row.state)] }}>
+                <PullRequestGlyph state={row.state} className="icon-xs" />
+              </span>
+            }
+            end={row.age || undefined}
+            ariaLabel={row.ariaLabel}
+            onOpen={() => openPullRequestExternally(row.url)}
+          >
+            <span className="shrink-0 font-mono tabular-nums text-[color:var(--text-muted)]">{row.number}</span>
+            {row.title ? (
+              <TruncatedText as="span" text={row.title} className="min-w-0 flex-1 text-[color:var(--text-default)]" />
+            ) : null}
+          </SectionRow>
+        ))}
+      </SectionList>
+    </Section>
+  )
+}
+
+/** The address without its scheme: "localhost:5173", which is what a person reads a dev server by. */
+function serverAddress(url: string): string {
+  return url.replace(/^[a-z]+:\/\//i, '').replace(/\/$/, '')
+}
+
+/**
+ * The local servers the chat's agents started, running ones first, each with
+ * its state in words. A row opens the server where the shell can; where it
+ * cannot (a paired machine's own localhost) the row is the fact alone.
+ */
+function ServersSection({
+  servers,
+  openServer,
+}: {
+  servers: readonly ConversationPeekServer[]
+  openServer: ((server: ConversationPeekServer) => void) | null
+}) {
+  if (servers.length === 0) return null
+  const rank = (server: ConversationPeekServer) => (server.state === 'stopped' ? 1 : 0)
+  const ordered = [...servers].sort((a, b) => rank(a) - rank(b))
+  return (
+    <Section title="Servers" count={ordered.length} inset={false}>
+      <SectionList label="Local servers in this chat" scroll={ordered.length > 4}>
+        {ordered.map((server) => {
+          const state = localServerStateWord(server.state)
+          const address = serverAddress(server.url)
+          return (
+            <SectionRow
+              key={server.id}
+              glyph={<LocalServerGlyph className="icon-xs text-[color:var(--text-subtle)]" />}
+              end={state}
+              ariaLabel={`Local server ${server.title}, ${address}, ${state.toLowerCase()}${openServer ? '. Open it' : ''}`}
+              onOpen={openServer ? () => openServer(server) : null}
+            >
+              <TruncatedText
+                as="span"
+                text={server.title}
+                className="min-w-0 shrink text-[color:var(--text-default)]"
+              />
+              {server.title !== address ? (
+                <span className="min-w-0 shrink truncate font-mono text-[color:var(--text-subtle)]">{address}</span>
+              ) : null}
+            </SectionRow>
+          )
+        })}
+      </SectionList>
+    </Section>
+  )
+}
+
 /**
  * The card: a header that names the chat and says what it is doing, then one
- * line per fact the shells could answer. A fact nobody knows is not drawn —
+ * line per fact the shells could answer, then what the chat holds (its
+ * agents, its pull requests, its servers). A fact nobody knows is not drawn —
  * an empty "Branch" line is the card describing its own absence.
+ *
+ * `roster` is every agent the row the card opened from holds, this one among
+ * them; absent, the card is about one agent and lists no others.
  */
-export function ConversationPeekCard({ identity, now }: { identity: ConversationPeekIdentity; now: number }) {
+export function ConversationPeekCard({
+  identity,
+  now,
+  roster,
+}: {
+  identity: ConversationPeekIdentity
+  now: number
+  roster?: readonly ConversationPeekIdentity[]
+}) {
   const agent = identity.agent
   const place = identity.place ?? null
   const runtime = agent.cli ? labelForCliRuntime(agent.cli) : null
@@ -283,6 +542,12 @@ export function ConversationPeekCard({ identity, now }: { identity: Conversation
           </Fact>
         ) : null}
       </ul>
+
+      <div className="flex flex-col pb-1.5 empty:hidden">
+        <AgentsSection identity={identity} roster={roster ?? [identity]} />
+        <PullRequestsSection pullRequests={agent.pullRequests} now={now} />
+        <ServersSection servers={identity.servers ?? []} openServer={identity.openServer ?? null} />
+      </div>
     </>
   )
 }
