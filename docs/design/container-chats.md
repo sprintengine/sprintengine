@@ -3,11 +3,7 @@
 Status: owner's design of 2026-11-15 (the second one: "a container is just a
 machine"). It replaces the first cut, which made a disposable container for
 each chat. Where the code and this file disagree, fix one of them in the same
-change. Built so far: containers as machines, New container, the cube and
-Delete. The logins volume, signing in inside a container and the image built
-from the agents set up in Studio (Logins, The image, Rebuild) are the next
-change; until then a container gets the image of Claude Code and Codex the
-app ships, and no logins volume.
+change.
 
 ## What it is
 
@@ -59,7 +55,7 @@ Then Studio:
 no-new-privileges`, as the image's unprivileged `node` user, on Docker's
    default network (full network), labelled `sprintengine.studio.container=1`,
    with the container's own home on a volume (`sprintengine-<id>-home` at
-   `/home/node`), and (next change) the machine's logins (below);
+   `/home/node`), and the machine's logins (below);
 4. installs and connects Studio's server in it, as for an SSH machine;
 5. clones the repository, if one was given.
 
@@ -99,35 +95,56 @@ difference in behaviour. Containers are managed through the same channels as
 SSH machines (`SSH_ENV_CHANNELS`), in main, which runs Docker and holds the
 sessions.
 
-## Logins (next change)
+## Logins
 
-One Docker volume per Docker host, `sprintengine-logins`, is mounted at
-`/studio-logins` in every container Studio makes on that host. It holds
-every agent's login and the git and GitHub credentials, so signing in once
-on a host serves every container there, and a container that is deleted or
-made again keeps them. Each CLI is pointed there by its own variable, set on
-the container (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_DATA_HOME` and
-`XDG_CONFIG_HOME` for OpenCode and the GitHub CLI, the git credential store's
-file), each checked against where that CLI really writes inside the image.
+One Docker volume per Docker host, `sprintengine-logins` (labelled
+`sprintengine.studio.logins=1`), is mounted at `/studio-logins` in every
+container Studio makes on that host. It holds every agent's login and the git
+and GitHub credentials, so signing in once on a host serves every container
+there, and a container that is deleted or made again keeps them. Each CLI is
+pointed there by its own variable, set on the container, read from where that
+CLI really writes inside the image (`container/container-logins.ts`):
+
+| CLI         | Where its login is kept                                                |
+| ----------- | ---------------------------------------------------------------------- |
+| Claude Code | `CLAUDE_CONFIG_DIR`, with its first-run answers seeded                 |
+| Codex       | `CODEX_HOME`                                                           |
+| Grok        | `GROK_HOME`                                                            |
+| OpenCode    | `XDG_DATA_HOME/opencode`                                               |
+| Cursor      | `XDG_CONFIG_HOME/cursor`                                               |
+| Muse        | `XDG_CONFIG_HOME/muse`                                                 |
+| Kimi Code   | `~/.kimi-code`, a link into the volume made after it starts            |
+| GitHub CLI  | `XDG_CONFIG_HOME/gh`                                                   |
+| git         | `XDG_CONFIG_HOME/git/config`: `gh` is its credential helper for GitHub |
 
 Signing in uses the machine sign-in dialog (`providers.signInStart`,
-`server/machine/machine-sign-in.ts`): each CLI's own login runs inside the
-container and its link and code show in Studio (a device code, or a code
-pasted back). GitHub signs in the same way with `gh auth login`'s device flow,
-and `gh` is git's credential helper there. No credential on the host is ever
-copied in.
+`server/machine/machine-sign-in.ts`), from a container's Sign in row in
+Settings › Machines or a chat's sign-in failure: each CLI's own login runs
+inside the container and its link and code show in Studio (a device code, or
+a code pasted back), as does GitHub's (`gh auth login --web`). OpenCode has
+no login Studio can run without a terminal; it is told the command. No
+credential on the host is ever copied in.
 
-## The image (next change)
+## The image
 
-Built on the container's host from the agents the person has turned on in
-Studio, at the versions this build of Studio pins: a base layer (pinned Node
-image, git, `gh`, ripgrep) and one layer per agent, so adding an agent
-rebuilds only its layer. Tagged by a digest of what went into it, so a
-changed set builds a new image and an unchanged one is reused. An agent
-without a Linux CLI is left out and said so with its reason. A container made
-before the set changed says so on its row, and **Rebuild** makes it again on
-the new image, keeping its home volume (repositories, worktrees, Studio's
-server) and the logins.
+Written by Studio (`container/container-image.ts`) from the agent CLIs set
+up on this computer (what Settings › Agents shows as installed), and built on
+the container's host. A base layer (Node 22 pinned by digest, git, ripgrep,
+and the GitHub CLI checked against its published digest), then one layer per
+agent in a fixed order, so a changed set rebuilds only from its first
+difference. Claude Code, Codex, OpenCode and Grok are npm packages at the
+versions this build of Studio pins. Cursor, Kimi Code and Muse install only
+with their own scripts, which take the newest build when the image is built:
+New container says so beside them. Each script installs under `/opt`, outside
+the home volume, which a new image would never reach. An agent with no Linux
+build at all is left out and said so. The image is tagged by a digest of its
+Dockerfile, so a changed set builds a new one and an unchanged one is reused.
+
+A container made before the set or a version changed says so in its detail,
+and **Rebuild** makes it again on the new image, keeping its home volume
+(repositories, worktrees, Studio's server) and the logins. Its server's run
+lock, kept in the home, is from before the container started again, and is
+taken over (`server/core/data-dir.ts`).
 
 ## Deleting one
 

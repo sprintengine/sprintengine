@@ -64,6 +64,8 @@ export const sshEnvironmentsApi = {
     address: string,
   ): Promise<{ ok: true; folder: string } | { ok: false; message: string }> =>
     ipcRenderer.invoke(SSH_ENV_CHANNELS.containerClone, { id, address }),
+  containerRebuild: (id: string): Promise<SshEnvironmentResult> =>
+    ipcRenderer.invoke(SSH_ENV_CHANNELS.containerRebuild, { id }),
   containerUnpushed: (id: string): Promise<ContainerUnpushed> =>
     ipcRenderer.invoke(SSH_ENV_CHANNELS.containerUnpushed, { id }),
   onSshEnvironmentsChanged: (cb: () => void): (() => void) => {

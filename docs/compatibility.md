@@ -741,7 +741,12 @@ that machine with no terminal (decision R34), named by provider, never by a
 command line. They are an owner's (`settings:write`), and no device reaches them.
 Served where the desktop holds the machine's Studio over its front door. They
 replace the backend wire's `backend.sign-in`. Additive: an older Studio answers
-`unknown_method` and leaves both capabilities out.
+`unknown_method` and leaves both capabilities out. Since 2026-11-15
+`providerId` may also name a CLI by its own id (`grok`, `muse`, …) or
+`github` (the GitHub CLI's login, for a container's git and pull requests);
+no capability marks it. An older Studio answers those in words ("This chat
+has no CLI to sign in"), and a container's Studio is always the desktop's
+own build.
 `chat-stores` (2026-11-12) is what a Studio keeps beside its chats, for every
 chat at once: `usageLimits.get` with `usageLimits.changed`,
 `usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the

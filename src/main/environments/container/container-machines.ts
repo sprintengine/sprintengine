@@ -16,8 +16,10 @@ import {
   cloneFolderName,
   cloneScript,
   dockerStatusScript,
+  prepareLoginsScript,
   parseDockerStatus,
   parseUnpushed,
+  replaceContainerScript,
   runContainerScript,
   startColimaScript,
   unpushedScript,
@@ -26,9 +28,9 @@ import { runOnHost, type HostResult, type HostRunner } from './docker-host'
 
 // Containers as machines (docs/design/container-chats.md), in main: Docker on
 // a host in words, New container (the image built on first use, the
-// container started and saved as a machine, Studio's server installed in it,
-// a repository cloned), a clone into one later, and what deleting one would
-// lose. Once made, a container is one more saved machine
+// container started and saved as a machine with the host's logins, Studio's
+// server installed in it, a repository cloned), a clone into one later,
+// Rebuild on a new image, and what deleting one would lose. Once made, a container is one more saved machine
 // (`SavedSshEnvironment.container`): the SSH machines' code connects to it,
 // reconnects, signs its CLIs in and deletes it, over `docker exec`.
 
@@ -52,13 +54,14 @@ export type ContainerMachinesStore = {
       ): Promise<{ conversations: Array<{ phase: string }> }>
     }
   } | null
+  disconnect(id: string): unknown
   forget(id: string): Promise<{ ok: true } | { ok: false; message: string }>
 }
 
 export type ContainerMachinesDeps = {
   machines: ContainerMachinesStore
-  /** Studio's image, or null when the app has no Dockerfile (a broken install). */
-  image(): ContainerImage | null
+  /** The image a container gets now: from the agents set up in Studio, at the versions this build pins. */
+  image(): Promise<ContainerImage>
   /** "this Mac", or an SSH machine's label. */
   hostLabel(host: ContainerHost): string
   log?(message: string): void
@@ -86,8 +89,6 @@ const lastLine = (result: HostResult): string =>
     .pop()
     ?.trim() ?? ''
 
-const NO_IMAGE = 'This copy of Studio has no container image to build. Reinstall it.'
-
 export class ContainerMachines {
   private readonly timing: typeof TIMING
   private readonly log: (message: string) => void
@@ -108,20 +109,38 @@ export class ContainerMachines {
     )
   }
 
-  /** Docker on a host, in words, and whether Studio's image is built there. */
+  /** Docker on a host, in words, whether the image a container gets now is built there, and what is in it. */
   async status(host: ContainerHost): Promise<DockerStatus> {
     const where = this.deps.hostLabel(host)
-    const image = this.deps.image()
-    if (!image) return { state: 'missing', words: NO_IMAGE, imageReady: false, canStart: null }
+    const image = await this.deps.image()
+    const plan = { tag: image.tag, agents: image.agents, refused: image.refused }
     try {
       const result = await this.run(host, dockerStatusScript(image.tag), this.timing.statusMs)
       const status = parseDockerStatus(result.stdout, where)
       if (status.state === 'unreachable' && lastLine(result)) this.log(`Docker on ${where}: ${lastLine(result)}`)
-      return status
+      return { ...status, image: plan }
     } catch (error) {
       this.log(`Docker on ${where} could not be asked: ${error instanceof Error ? error.message : String(error)}`)
-      return parseDockerStatus('', where)
+      return { ...parseDockerStatus('', where), image: plan }
     }
+  }
+
+  /** Build the image on a host when it is not there yet, saying so on the container's row. */
+  private async ensureImage(
+    host: ContainerHost,
+    image: ContainerImage,
+    docker: DockerStatus,
+    step: (words: string) => void,
+  ): Promise<string | null> {
+    if (docker.imageReady) return null
+    const where = this.deps.hostLabel(host)
+    step(`Building Studio's container image on ${where} (the first time takes a few minutes)…`)
+    const built = await this.run(
+      host,
+      buildImageScript(image.tag, image.dockerfile, docker.context ?? null),
+      this.timing.buildMs,
+    )
+    return built.code === 0 ? null : `Studio's container image did not build on ${where}: ${lastLine(built)}`
   }
 
   /** Start Colima where it is installed and stopped, with its own saved settings. */
@@ -152,8 +171,7 @@ export class ContainerMachines {
         ok: false,
         message: `${request.clone.trim()} is not a repository address. Use https://…, git@host:owner/repo, or owner/repo for GitHub.`,
       }
-    const image = this.deps.image()
-    if (!image) return { ok: false, message: NO_IMAGE }
+    const image = await this.deps.image()
     const docker = await this.status(request.host)
     if (docker.state !== 'ready') return { ok: false, message: docker.words }
     const id = randomBytes(8).toString('hex')
@@ -170,6 +188,7 @@ export class ContainerMachines {
         name,
         context,
         image: image.tag,
+        agents: image.agents.map((agent) => agent.cli),
         createdAt: this.deps.now?.() ?? Date.now(),
         provisioning: true,
       }
@@ -185,18 +204,11 @@ export class ContainerMachines {
         container,
       })
       recorded = true
-      if (!docker.imageReady) {
-        step(`Building Studio's container image on ${where} (the first time takes a few minutes)…`)
-        const built = await this.run(
-          request.host,
-          buildImageScript(image.tag, image.dockerfile, context),
-          this.timing.buildMs,
-        )
-        if (built.code !== 0) {
-          await this.deps.machines.forget(id)
-          recorded = false
-          return { ok: false, message: `Studio's container image did not build on ${where}: ${lastLine(built)}` }
-        }
+      const unbuilt = await this.ensureImage(request.host, image, docker, step)
+      if (unbuilt) {
+        await this.deps.machines.forget(id)
+        recorded = false
+        return { ok: false, message: unbuilt }
       }
       step(`Starting the container on ${where}…`)
       const started = await this.run(
@@ -218,6 +230,8 @@ export class ContainerMachines {
         recorded = !removed.ok
         return { ok: false, message: `The container did not start on ${where}: ${lastLine(started)}` }
       }
+      // The host's logins volume ready for every CLI: its folders, its first files, the home's links.
+      await this.run(request.host, prepareLoginsScript(name, context), this.timing.runMs)
       step(`Installing Studio's server in the container…`)
       const connected = await this.deps.machines.connect(id)
       if (!connected.ok) {
@@ -238,6 +252,55 @@ export class ContainerMachines {
     } catch (error) {
       if (recorded && this.deps.machines.get(id)?.container?.provisioning)
         await this.deps.machines.forget(id).catch(() => undefined)
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    } finally {
+      this.deps.machines.setPreparing(id, null)
+    }
+  }
+
+  /**
+   * Make a container again on the image a container gets now (the agents set
+   * up in Studio changed, or this build moved a version), keeping its home
+   * volume (repositories, worktrees, Studio's server) and the host's logins.
+   * Its chats' server stops with the old container and starts in the new one.
+   */
+  async rebuild(id: string): Promise<{ ok: true } | { ok: false; message: string }> {
+    const saved = this.deps.machines.get(id)
+    const container = saved?.container
+    if (!saved || !container) return { ok: false, message: 'That container is no longer one of your machines.' }
+    const image = await this.deps.image()
+    const docker = await this.status(container.host)
+    if (docker.state !== 'ready') return { ok: false, message: docker.words }
+    const where = this.deps.hostLabel(container.host)
+    const step = (words: string) => this.deps.machines.setPreparing(id, words)
+    try {
+      // Built under the context the container is kept on, which is where it is made again.
+      const unbuilt = await this.ensureImage(
+        container.host,
+        image,
+        { ...docker, context: container.context ?? null },
+        step,
+      )
+      if (unbuilt) return { ok: false, message: unbuilt }
+      step(`Making ${saved.label} again on the new image…`)
+      this.deps.machines.disconnect(id)
+      const replaced = await this.run(
+        container.host,
+        replaceContainerScript({ name: container.name, image: image.tag, machineId: id, context: container.context }),
+        this.timing.runMs,
+      )
+      if (!/^@@replaced$/mu.test(replaced.stdout))
+        return {
+          ok: false,
+          message: /@@replaced not-ours/u.test(replaced.stdout)
+            ? `${container.name} on ${where} is not a container Studio made, so it was left alone.`
+            : `The container was not made again on ${where}: ${lastLine(replaced) || 'Docker said nothing.'}`,
+        }
+      this.deps.machines.updateContainer(id, { image: image.tag, agents: image.agents.map((agent) => agent.cli) })
+      await this.run(container.host, prepareLoginsScript(container.name, container.context ?? null), this.timing.runMs)
+      step(`Starting Studio's server in the container…`)
+      return await this.deps.machines.connect(id)
+    } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     } finally {
       this.deps.machines.setPreparing(id, null)

@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react'
 
-import type { ContainerHost, ContainerUnpushed, DockerStatus } from '../../../../shared/containers'
+import type { ContainerHost, ContainerImagePlan, ContainerUnpushed, DockerStatus } from '../../../../shared/containers'
 import type { SshEnvironmentSummary } from '../../../../shared/ssh-environments'
 import { GhostButton, InlineNotice, Input, OutlineButton, Select, useConfirmDialog, WorkingMark } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
@@ -19,6 +19,8 @@ export type ContainerApi = Pick<
   | 'containerCreate'
   | 'containerClone'
   | 'containerUnpushed'
+  | 'containerRebuild'
+  | 'sshSignIn'
   | 'sshEnvironmentForget'
   | 'sshEnvironmentDiagnostics'
 >
@@ -51,6 +53,24 @@ function containerHosts(machines: readonly SshEnvironmentSummary[]): Array<{ val
 
 function hostOf(value: string): ContainerHost {
   return value === 'local' ? { kind: 'local' } : { kind: 'ssh', machine: value.slice('ssh:'.length) }
+}
+
+/** The agents an image has, each with its version, and the ones set up in Studio it cannot have. */
+function ImageAgents({ plan }: { plan: ContainerImagePlan }): React.JSX.Element {
+  return (
+    <div data-container-agents="true" className="space-y-1">
+      <p className={MUTED}>
+        {plan.agents.length > 0
+          ? `Agents: ${plan.agents.map((agent) => `${agent.name} (${agent.version})`).join(', ')}, and the GitHub CLI. Each signs in once on this machine's logins, which every container here shares.`
+          : 'No agent is set up in Studio, so a container gets only git and the GitHub CLI. Set one up in Settings › Agents.'}
+      </p>
+      {plan.refused.map((each) => (
+        <p key={each.cli} className={MUTED}>
+          {each.why}
+        </p>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -211,6 +231,7 @@ export function NewContainerForm({
           />
         </SettingsRow>
       </div>
+      {status?.image ? <ImageAgents plan={status.image} /> : null}
       {status?.state === 'ready' && !status.imageReady ? (
         <p className={MUTED}>The first container on {where} builds Studio’s image, which takes a few minutes.</p>
       ) : null}
@@ -359,11 +380,60 @@ export function ContainerMachineDetail({
   const { confirm: askFirst } = useConfirmDialog()
   const cloneId = useId()
   const [clone, setClone] = useState('')
-  const [busy, setBusy] = useState<'cloning' | 'deleting' | null>(null)
+  const [busy, setBusy] = useState<'cloning' | 'deleting' | 'rebuilding' | 'signing-in' | null>(null)
   const [said, setSaid] = useState<{ tone: 'warn' | 'good'; text: string } | null>(null)
   const [diagnostics, setDiagnostics] = useState<string | null>(null)
+  // The image a container on this host gets now, to say whether this one is on it.
+  const [plan, setPlan] = useState<ContainerImagePlan | null>(null)
   const container = machine.container
+  const hostKey = container ? JSON.stringify(container.host) : null
+  useEffect(() => {
+    if (!hostKey) return
+    let cancelled = false
+    void api
+      .containerDockerStatus(JSON.parse(hostKey) as ContainerHost)
+      .then((status) => {
+        if (!cancelled) setPlan(status.image ?? null)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [api, hostKey, container?.image])
   if (!container) return null
+  const agentName = (cli: string) => plan?.agents.find((agent) => agent.cli === cli)?.name ?? cli
+  const outdated = plan !== null && plan.tag !== container.image
+  const rebuild = async () => {
+    setBusy('rebuilding')
+    setSaid(null)
+    try {
+      const rebuilt = await api.containerRebuild(machine.id)
+      setSaid(
+        rebuilt.ok
+          ? { tone: 'good', text: `${machine.label} is made again on the new image, with its repositories and logins.` }
+          : { tone: 'warn', text: rebuilt.message },
+      )
+    } finally {
+      setBusy(null)
+    }
+  }
+  const signIn = async (cli: string, name: string) => {
+    setBusy('signing-in')
+    setSaid(null)
+    try {
+      const signed = await api.sshSignIn(machine.id, cli)
+      setSaid(
+        signed.ok
+          ? {
+              tone: 'good',
+              text: `Signed in to ${name}. Every container on ${containerHostWords(container.host, machines)} has it.`,
+            }
+          : { tone: 'warn', text: signed.message },
+      )
+    } finally {
+      setBusy(null)
+    }
+  }
   const cloneNow = async () => {
     setBusy('cloning')
     setSaid(null)
@@ -387,6 +457,41 @@ export function ContainerMachineDetail({
         </SettingsRow>
         <SettingsRow label="Docker name" help={`Image ${container.image}`}>
           <span className="font-mono text-body text-[color:var(--text-default)]">{container.name}</span>
+        </SettingsRow>
+        {outdated ? (
+          <SettingsRow
+            label="Image"
+            help="The agents set up in Studio, or their versions, changed since it was made. Rebuild makes it again on the new image and keeps its repositories, worktrees and logins."
+          >
+            <OutlineButton size="sm" disabled={busy !== null} onClick={() => void rebuild()}>
+              {busy === 'rebuilding' ? 'Rebuilding…' : 'Rebuild'}
+            </OutlineButton>
+          </SettingsRow>
+        ) : null}
+        <SettingsRow
+          label="Sign in"
+          help="Each agent's own login, and GitHub's for git and pull requests, kept on this machine's logins: every container here shares them."
+          stacked
+        >
+          <span data-container-sign-in="true" className="flex flex-wrap gap-2">
+            {(container.agents ?? []).map((cli) => (
+              <OutlineButton
+                key={cli}
+                size="xs"
+                disabled={busy !== null || machine.state !== 'connected'}
+                onClick={() => void signIn(cli, agentName(cli))}
+              >
+                {agentName(cli)}
+              </OutlineButton>
+            ))}
+            <OutlineButton
+              size="xs"
+              disabled={busy !== null || machine.state !== 'connected'}
+              onClick={() => void signIn('github', 'GitHub')}
+            >
+              GitHub
+            </OutlineButton>
+          </span>
         </SettingsRow>
         {machine.server ? (
           <SettingsRow label="Studio server" help="Installed in the container, and kept running there.">

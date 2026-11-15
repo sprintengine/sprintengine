@@ -8,7 +8,9 @@ import { writeDiagnosticLog } from '../../diagnostics-service'
 import { allowMachinePartitions } from '../../browser/guest-policy'
 import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
 import { ContainerMachines } from '../container/container-machines'
-import { readAgentImage } from '../container/container-image'
+import { containerAgentFor, IMAGE_BASE_COMMANDS, imageFor, type ContainerImage } from '../container/container-image'
+import { detectAgentCliAvailability } from '../../cli-availability'
+import { listPluginRegistryEntries } from '../../plugin-registry-instance'
 import { channelForVersion } from '../../update-channel-store'
 import { readStudioEnv } from '../../../shared/studio-env'
 import type { WorkspaceEnvironmentRef } from '../../../shared/workspace'
@@ -72,14 +74,24 @@ export function createDesktopSsh(deps: {
   })
   // Containers (docs/design/container-chats.md): each one a saved machine of
   // the list above, reached over `docker exec` on its host.
-  const imagePaths = {
-    packaged: app.isPackaged,
-    resourcesDir: app.isPackaged ? process.resourcesPath : null,
-    appRoot: app.getAppPath(),
+  // The image a container gets: the agent CLIs set up on this computer (what
+  // Settings › Agents shows as installed), each by the command it runs.
+  const agentImage = async (): Promise<ContainerImage> => {
+    const installed = await detectAgentCliAvailability().catch(() => ({}))
+    const clis = new Set<string>()
+    const without = new Set<string>()
+    for (const entry of listPluginRegistryEntries()) {
+      if (!(installed as Record<string, { installed?: boolean }>)[entry.id]?.installed) continue
+      if (IMAGE_BASE_COMMANDS.has(entry.binary)) continue
+      const cli = containerAgentFor(entry.binary)
+      if (cli) clis.add(cli)
+      else without.add(entry.displayName)
+    }
+    return imageFor([...clis], [...without])
   }
   const containers = new ContainerMachines({
     machines: sshEnvironments,
-    image: () => readAgentImage(imagePaths),
+    image: agentImage,
     hostLabel: (host) =>
       host.kind === 'local'
         ? process.platform === 'darwin'

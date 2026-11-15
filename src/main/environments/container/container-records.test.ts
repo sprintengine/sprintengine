@@ -8,7 +8,6 @@ import { afterAll, test } from 'vitest'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS, type SavedSshEnvironment } from '../../../shared/ssh-environments'
 import { SshEnvironments } from '../ssh/ssh-environments'
 import { ContainerMachines } from './container-machines'
-import { imageFor } from './container-image'
 import { localHostRunner } from './docker-host'
 
 // Containers as saved machines, with a stand-in `docker` on this computer:
@@ -34,6 +33,12 @@ for (const tool of ['sed', 'cat', 'sleep']) {
 }
 
 let made = 0
+const STAND_IN_IMAGE = {
+  tag: 'sprintengine-studio-agent:0123456789ab',
+  dockerfile: 'FROM scratch\n',
+  agents: [],
+  refused: [],
+}
 function setup(docker: string, saved: SavedSshEnvironment[] = [], extra: Record<string, unknown> = {}) {
   const dir = join(scratch, `case-${made++}`)
   const bin = join(dir, 'bin')
@@ -143,7 +148,7 @@ test('a container is saved before Docker is asked to start it; one whose start d
   )
   const containers = new ContainerMachines({
     machines,
-    image: () => imageFor('FROM scratch\n'),
+    image: async () => STAND_IN_IMAGE,
     hostLabel: () => 'this Mac',
     timing: { runMs: 300 },
   })
@@ -190,7 +195,7 @@ test('an image that does not build leaves no container and no record', async () 
   )
   const containers = new ContainerMachines({
     machines,
-    image: () => imageFor('FROM scratch\n'),
+    image: async () => STAND_IN_IMAGE,
     hostLabel: () => 'this Mac',
   })
   const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
@@ -207,7 +212,7 @@ test('a container whose server cannot be reached is removed again, its home volu
   )
   const containers = new ContainerMachines({
     machines,
-    image: () => imageFor('FROM scratch\n'),
+    image: async () => STAND_IN_IMAGE,
     hostLabel: () => 'this Mac',
   })
   const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
@@ -225,7 +230,7 @@ test('New container refuses a name already taken and an address that is not a re
   const { machines, dir } = setup('echo asked >> "$HOME/asked"', [localContainer('0123456789abcdef')])
   const containers = new ContainerMachines({
     machines,
-    image: () => imageFor('FROM scratch\n'),
+    image: async () => STAND_IN_IMAGE,
     hostLabel: () => 'this Mac',
   })
   const taken = await containers.create({ host: { kind: 'local' }, label: '0123456789abcdef (container)', clone: null })

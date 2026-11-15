@@ -11,12 +11,28 @@ import { ContainerMachineDetail, type ContainerApi } from './ContainerMachinesSe
 let root: Root
 let host: HTMLDivElement
 const calls: Array<[string, unknown]> = []
+let planTag = 'sprintengine-studio-agent:0123456789ab'
 const nothing = { branches: [], dirty: [], detached: [], stashes: [], chatsRunning: 0 }
 let unpushed: ContainerUnpushed = { ok: true, ...nothing }
 let forgetAnswers: Array<{ ok: true } | { ok: false; message: string; containers?: string[] }> = []
 
 const api = {
-  containerDockerStatus: async () => ({ state: 'ready', words: '', imageReady: true, canStart: null }),
+  containerDockerStatus: async () => ({
+    state: 'ready',
+    words: '',
+    imageReady: true,
+    canStart: null,
+    image: {
+      tag: planTag,
+      agents: [
+        { cli: 'claude-code', name: 'Claude Code', version: '2.1.325' },
+        { cli: 'cursor', name: 'Cursor', version: 'the newest when the image was built' },
+      ],
+      refused: [],
+    },
+  }),
+  containerRebuild: async (id: string) => (calls.push(['rebuild', id]), { ok: true as const }),
+  sshSignIn: async (id: string, cli: string) => (calls.push(['sign-in', [id, cli]]), { ok: true as const }),
   containerStartDocker: async () => ({ state: 'ready', words: '', imageReady: true, canStart: null }),
   containerCreate: async () => ({ ok: false, message: 'not here' }),
   containerClone: async (id: string, address: string) => (
@@ -43,6 +59,7 @@ const sandbox: SshEnvironmentSummary = {
     host: { kind: 'ssh', machine: 'aaaaaaaaaaaaaaaa' },
     name: 'sprintengine-0123456789abcdef',
     image: 'sprintengine-studio-agent:0123456789ab',
+    agents: ['claude-code'],
     createdAt: 0,
   },
   state: 'connected',
@@ -70,6 +87,7 @@ beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   calls.length = 0
   forgetAnswers = []
+  planTag = 'sprintengine-studio-agent:0123456789ab'
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -227,4 +245,30 @@ test("an SSH machine's containers are each deleted the same way before it is for
     ['forget', '0123456789abcdef'],
     ['forget', 'aaaaaaaaaaaaaaaa'],
   ])
+})
+
+test('a container on an older image offers Rebuild, and each of its agents and GitHub a sign-in', async () => {
+  await renderDetail()
+  await flush()
+  expect(button('Rebuild')).toBeUndefined()
+  await act(async () => button('Claude Code')!.click())
+  await flush()
+  expect(host.textContent).toContain('Signed in to Claude Code. Every container on build-box has it.')
+  await act(async () => button('GitHub')!.click())
+  await flush()
+  expect(calls).toEqual([
+    ['sign-in', ['0123456789abcdef', 'claude-code']],
+    ['sign-in', ['0123456789abcdef', 'github']],
+  ])
+  act(() => root.unmount())
+  root = createRoot(host)
+  calls.length = 0
+  // The agents set up in Studio changed since it was made.
+  planTag = 'sprintengine-studio-agent:fedcba987654'
+  await renderDetail()
+  await flush()
+  await act(async () => button('Rebuild')!.click())
+  await flush()
+  expect(calls).toEqual([['rebuild', '0123456789abcdef']])
+  expect(host.textContent).toContain('sandbox is made again on the new image, with its repositories and logins.')
 })

@@ -26,6 +26,18 @@ export type DockerStatus = {
   canStart: 'colima' | null
   /** The Docker context that answered (`ready` only); a container made now is kept on it. */
   context?: string | null
+  /** The image a container made now gets: from the agents set up in Studio. */
+  image?: ContainerImagePlan
+}
+
+/** One agent in a container's image: its name and its version in words. */
+export type ContainerImageAgent = { cli: string; name: string; version: string }
+
+/** The image a container gets: its tag, the agents in it, and the ones set up in Studio it cannot have. */
+export type ContainerImagePlan = {
+  tag: string
+  agents: ContainerImageAgent[]
+  refused: Array<{ cli: string; why: string }>
 }
 
 /** New container: where it runs, its name, and a repository to clone into it, if any. */
@@ -79,6 +91,8 @@ export type SavedContainer = {
   provisioning?: boolean
   /** The image it was started from. */
   image: string
+  /** The agents in that image, by CLI id (none recorded for a container made before images listed them). */
+  agents?: string[]
   createdAt: number
 }
 

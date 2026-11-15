@@ -20,7 +20,7 @@ const unknown = { ok: false as const, message: 'That SSH machine is not one of y
 export function registerSshEnvironmentsIpc(
   ipcMain: IpcMain,
   machines: SshEnvironments,
-  containers: Pick<ContainerMachines, 'status' | 'startDocker' | 'create' | 'clone' | 'unpushed'>,
+  containers: Pick<ContainerMachines, 'status' | 'startDocker' | 'create' | 'rebuild' | 'clone' | 'unpushed'>,
 ): () => void {
   const handle = (channel: string, run: (payload: unknown) => unknown) =>
     ipcMain.handle(channel, (_event, payload) => run(payload))
@@ -107,6 +107,7 @@ export function registerSshEnvironmentsIpc(
       : { ok: false, message: 'Type the repository to clone.' },
   )
   byId(SSH_ENV_CHANNELS.containerUnpushed, (id) => containers.unpushed(id))
+  byId(SSH_ENV_CHANNELS.containerRebuild, (id) => containers.rebuild(id))
   const onAnswer = (_event: unknown, payload: unknown) => {
     const id = (payload as { id?: unknown } | null)?.id
     const answer = (payload as { answer?: unknown } | null)?.answer
@@ -132,6 +133,7 @@ export function registerSshEnvironmentsIpc(
       SSH_ENV_CHANNELS.containerCreate,
       SSH_ENV_CHANNELS.containerClone,
       SSH_ENV_CHANNELS.containerUnpushed,
+      SSH_ENV_CHANNELS.containerRebuild,
     ])
       ipcMain.removeHandler(channel)
     ipcMain.removeListener(SSH_ENV_CHANNELS.answer, onAnswer)

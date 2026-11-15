@@ -215,13 +215,6 @@
         ]
       },
       {
-        "from": "resources/container",
-        "to": "container",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
         "from": "out/wsl-server",
         "to": "wsl-server",
         "filter": [
