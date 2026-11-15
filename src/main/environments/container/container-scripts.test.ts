@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
@@ -268,8 +268,8 @@ test('a clone runs inside as the agent, with no password prompt, and never over 
   assert.match(result.stdout, / sh https:\/\/github\.com\/acme\/app\.git$/mu)
 })
 
-test('what deleting a container would lose: each branch with commits no remote has', async () => {
-  const work = mkdtempSync(join(scratch, 'unpushed-'))
+test('what deleting a container would lose: unpushed branches, uncommitted changes, detached commits and stashes', async () => {
+  const work = realpathSync(mkdtempSync(join(scratch, 'unpushed-')))
   const git = (cwd: string, ...args: string[]) =>
     execFileSync('git', ['-c', 'user.name=Dev', '-c', 'user.email=dev@example.com', ...args], {
       cwd,
@@ -283,9 +283,22 @@ test('what deleting a container would lose: each branch with commits no remote h
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'one')
   git(repo, 'remote', 'add', 'origin', origin)
   git(repo, 'push', '-q', 'origin', 'main')
+  // A branch with no upstream and two commits of its own.
   git(repo, 'checkout', '-q', '-b', 'agent/fix')
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'two')
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'three')
+  git(repo, 'checkout', '-q', 'main')
+  // A stash.
+  writeFileSync(join(repo, 'stashed.txt'), 'x\n')
+  git(repo, 'stash', 'push', '-q', '-u')
+  // A worktree with an untracked file and an uncommitted change.
+  const dirty = join(work, 'home', 'work', '.sprintengine-worktrees', 'app', 'dirty')
+  git(repo, 'worktree', 'add', '-q', '-b', 'agent/dirty', dirty, 'main')
+  writeFileSync(join(dirty, 'new.txt'), 'x\n')
+  // A detached worktree with a commit on no branch.
+  const detached = join(work, 'home', 'work', '.sprintengine-worktrees', 'app', 'detached')
+  git(repo, 'worktree', 'add', '-q', '--detach', detached, 'main')
+  git(detached, 'commit', '-q', '--allow-empty', '-m', 'adrift')
   // A stand-in docker that runs the inside script here, with this scratch home as the container's.
   const inside = join(work, 'home')
   const dir = fakeBin('unpushed', {
@@ -300,8 +313,13 @@ test('what deleting a container would lose: each branch with commits no remote h
     localHostRunner({ env: { PATH: `${dir}:${BASE}:/usr/bin:/bin`, HOME: scratch }, searchPath: false }),
     unpushedScript(NAME),
   )
-  assert.deepEqual(parseUnpushed(result.stdout), [{ repo, branch: 'agent/fix', commits: 2 }])
-  assert.equal(parseUnpushed('@@unpushed 1\t/x\tb\n'), null, 'an answer that did not finish is not "nothing"')
+  assert.deepEqual(parseUnpushed(result.stdout), {
+    branches: [{ repo, branch: 'agent/fix', commits: 2 }],
+    dirty: [{ worktree: dirty, files: 1 }],
+    detached: [{ worktree: detached, commits: 1 }],
+    stashes: [{ repo, count: 1 }],
+  })
+  assert.equal(parseUnpushed('@@branch 1\t/x\tb\n'), null, 'an answer that did not finish is not "nothing"')
 })
 
 test("Docker's usual homes join the PATH an app opened from the Dock has", () => {

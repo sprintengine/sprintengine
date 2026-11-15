@@ -44,7 +44,8 @@ export const sshEnvironmentsApi = {
     options: {
       stopServer?: boolean
       clearBrowsingData?: boolean
-      containers?: 'refuse' | 'remove' | 'forget-records'
+      containers?: 'refuse' | 'forget-records'
+      recordOnly?: boolean
     } = {},
   ): Promise<SshEnvironmentResult & { containers?: string[] }> =>
     ipcRenderer.invoke(SSH_ENV_CHANNELS.forget, { id, ...options }),

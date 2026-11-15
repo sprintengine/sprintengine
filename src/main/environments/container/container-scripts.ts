@@ -3,6 +3,7 @@ import {
   CONTAINER_MACHINE_LABEL,
   CONTAINER_NAME,
   IMAGE_LABEL,
+  type ContainerWork,
   type DockerStatus,
 } from '../../../shared/containers'
 import { shellQuote } from './docker-host'
@@ -287,10 +288,17 @@ export function cloneScript(input: { name: string; address: string; folder: stri
 }
 
 /**
- * Every branch in the container's repositories with commits no remote has:
- * what deleting the container would lose. Looks in the home's folders (not
- * its hidden ones, where Studio's server and the CLIs keep their own), four
- * deep. Prints `@@unpushed <commits>\t<repo>\t<branch>` each, then `@@done`.
+ * Everything in the container's repositories that exists nowhere else, what
+ * deleting the container would lose. Looks in the home's folders (not its
+ * hidden ones, where Studio's server and the CLIs keep their own), four deep,
+ * and in every worktree of each repository found:
+ *
+ *   @@branch <commits>\t<repo>\t<branch>     a branch with commits no remote has
+ *   @@dirty <files>\t<worktree>              uncommitted or untracked changes
+ *   @@detached <commits>\t<worktree>         a detached HEAD's commits on no branch or remote
+ *   @@stash <count>\t<repo>                  stashed changes
+ *
+ * then `@@done`, so an answer cut short is never read as "nothing".
  */
 export function unpushedScript(name: string, context: string | null = null): string {
   const checked = checkName(name)
@@ -301,7 +309,18 @@ export function unpushedScript(name: string, context: string | null = null): str
     '  r="${g%/.git}"',
     '  git -C "$r" for-each-ref --format=\'%(refname:short)\' refs/heads | while IFS= read -r b; do',
     '    n="$(git -C "$r" rev-list --count "refs/heads/$b" --not --remotes 2>/dev/null)"',
-    '    if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@unpushed %s\\t%s\\t%s\\n\' "$n" "$r" "$b"; fi',
+    '    if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@branch %s\\t%s\\t%s\\n\' "$n" "$r" "$b"; fi',
+    '  done',
+    '  n="$(git -C "$r" stash list 2>/dev/null | wc -l | tr -d " ")"',
+    '  if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@stash %s\\t%s\\n\' "$n" "$r"; fi',
+    '  git -C "$r" worktree list --porcelain 2>/dev/null | sed -n \'s/^worktree //p\' | while IFS= read -r w; do',
+    '    [ -d "$w" ] || continue',
+    '    n="$(git -C "$w" status --porcelain 2>/dev/null | wc -l | tr -d " ")"',
+    '    if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@dirty %s\\t%s\\n\' "$n" "$w"; fi',
+    '    if ! git -C "$w" symbolic-ref -q HEAD >/dev/null 2>&1; then',
+    '      n="$(git -C "$w" rev-list --count HEAD --not --branches --remotes 2>/dev/null)"',
+    '      if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@detached %s\\t%s\\n\' "$n" "$w"; fi',
+    '    fi',
     '  done',
     'done',
     'echo "@@done"',
@@ -313,16 +332,21 @@ export function unpushedScript(name: string, context: string | null = null): str
 }
 
 /** What `unpushedScript` printed: null when it did not finish (Docker did not answer). */
-export function parseUnpushed(stdout: string): Array<{ repo: string; branch: string; commits: number }> | null {
+export function parseUnpushed(stdout: string): Omit<ContainerWork, 'chatsRunning'> | null {
   if (!/^@@done$/mu.test(stdout)) return null
-  const out: Array<{ repo: string; branch: string; commits: number }> = []
+  const work: Omit<ContainerWork, 'chatsRunning'> = { branches: [], dirty: [], detached: [], stashes: [] }
   for (const line of stdout.split('\n')) {
-    if (!line.startsWith('@@unpushed ')) continue
-    const [commits = '', repo = '', branch = ''] = line.slice('@@unpushed '.length).split('\t')
-    const count = Number.parseInt(commits, 10)
-    if (Number.isFinite(count) && count > 0 && repo && branch) out.push({ repo, branch: branch.trim(), commits: count })
+    const said = /^@@(branch|dirty|detached|stash) (\d+)\t([^\t]+)(?:\t(.+))?$/u.exec(line.trimEnd())
+    if (!said) continue
+    const count = Number.parseInt(said[2]!, 10)
+    if (!(count > 0)) continue
+    const path = said[3]!
+    if (said[1] === 'branch' && said[4]) work.branches.push({ repo: path, branch: said[4], commits: count })
+    if (said[1] === 'dirty') work.dirty.push({ worktree: path, files: count })
+    if (said[1] === 'detached') work.detached.push({ worktree: path, commits: count })
+    if (said[1] === 'stash') work.stashes.push({ repo: path, count })
   }
-  return out
+  return work
 }
 
 /** What `removeContainerScript` said, in words: `ok` only when the container is gone. */
@@ -335,12 +359,12 @@ export function removalOutcome(
   if (said === 'yes' || said === 'absent') return { ok: true }
   if (said === 'not-ours')
     return { ok: false, message: `${name} is not a container Studio made, so it was left alone.` }
+  // Nothing removes it later: the person deletes it again once Docker answers, or forgets its record.
+  const after = `Delete it again once Docker answers there, or forget only its record.`
   if (said === 'no-docker')
-    return {
-      ok: false,
-      message: `Docker is not running on ${where}, so ${name} is still there. Studio removes it once Docker answers again.`,
-    }
+    return { ok: false, message: `Docker is not running on ${where}, so ${name} is still there. ${after}` }
   const last = result.stderr.trim().split('\n').filter(Boolean).pop()?.trim()
-  if (result.code === null) return { ok: false, message: `${where} did not answer in time, so ${name} is still there.` }
-  return { ok: false, message: `${name} could not be removed on ${where}${last ? `: ${last}` : '.'}` }
+  if (result.code === null)
+    return { ok: false, message: `${where} did not answer in time, so ${name} is still there. ${after}` }
+  return { ok: false, message: `${name} could not be removed on ${where}${last ? `: ${last}` : '.'} ${after}` }
 }

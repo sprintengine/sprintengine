@@ -136,6 +136,10 @@ test.skipIf(!DOCKER_TESTS)(
     assert.deepEqual(unpushed, {
       ok: true,
       branches: [{ repo: '/home/node/work/app', branch: 'agent/fix', commits: 1 }],
+      dirty: [],
+      detached: [],
+      stashes: [],
+      chatsRunning: 0,
     })
     // A clone never lands over a folder already there.
     const over = await containers.clone(created.id, 'acme/app')

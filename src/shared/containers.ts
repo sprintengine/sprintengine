@@ -43,11 +43,22 @@ export type ContainerCreateRequest = {
 export type ContainerCreateResult =
   { ok: true; id: string; folder: string | null; cloneFailed?: string } | { ok: false; message: string }
 
-/** A branch inside a container with commits no remote has: what deleting the container would lose. */
-export type ContainerUnpushedBranch = { repo: string; branch: string; commits: number }
+/**
+ * What exists only inside a container, which deleting it would lose: branches
+ * with commits no remote has, worktrees with uncommitted or untracked changes,
+ * commits on a detached HEAD on no branch or remote, and stashes; and how many
+ * chats are running in it (null when its server could not be asked).
+ */
+export type ContainerWork = {
+  branches: Array<{ repo: string; branch: string; commits: number }>
+  dirty: Array<{ worktree: string; files: number }>
+  detached: Array<{ worktree: string; commits: number }>
+  stashes: Array<{ repo: string; count: number }>
+  chatsRunning: number | null
+}
 
 /** What deleting a container would lose, or why that could not be read. */
-export type ContainerUnpushed = { ok: true; branches: ContainerUnpushedBranch[] } | { ok: false; message: string }
+export type ContainerUnpushed = ({ ok: true } & ContainerWork) | { ok: false; message: string }
 
 /** A container Studio made, as the desktop keeps it with its saved machines. */
 export type SavedContainer = {

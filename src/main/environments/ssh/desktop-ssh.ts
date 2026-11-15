@@ -1,4 +1,6 @@
+import { rmSync } from 'node:fs'
 import { hostname } from 'node:os'
+import { join } from 'node:path'
 
 import { app, ipcMain, MessageChannelMain, net, powerMonitor, session } from 'electron'
 
@@ -37,6 +39,15 @@ export function createDesktopSsh(deps: {
   /** The SSH machine a workspace is on, from main's registry. */
   workspaceEnvironment(workspaceId: string): WorkspaceEnvironmentRef | null
 }): DesktopSsh {
+  // The first containers kept a sealed agent token and per-request receipts
+  // here (one nightly only); neither is read any more, so neither is kept.
+  for (const leftover of ['container-claude-token', 'container-commands.json']) {
+    try {
+      rmSync(join(app.getPath('userData'), leftover), { force: true })
+    } catch {
+      // Left for the next start.
+    }
+  }
   const sshEnvironments = new SshEnvironments({
     userDataDir: app.getPath('userData'),
     app: {

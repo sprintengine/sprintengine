@@ -43,6 +43,17 @@ export type ContainerMachinesStore = {
   /** What a container being made is doing now, shown as its row's state; null once it is done. */
   setPreparing(id: string, words: string | null): void
   connect(id: string): Promise<{ ok: true } | { ok: false; message: string }>
+  /** The machine's live connection, or null; never connects. */
+  connection(
+    id: string,
+  ): {
+    owner: {
+      request(
+        method: 'conversation.list',
+        params: Record<string, never>,
+      ): Promise<{ conversations: Array<{ phase: string }> }>
+    }
+  } | null
   forget(id: string): Promise<{ ok: true } | { ok: false; message: string }>
 }
 
@@ -65,6 +76,9 @@ const TIMING = {
   cloneMs: 15 * 60_000,
   unpushedMs: 60_000,
 }
+
+/** A chat in one of these is doing something deleting its container would cut short. */
+const RUNNING = new Set(['starting', 'running', 'waiting_for_approval', 'waiting_for_input'])
 
 const lastLine = (result: HostResult): string =>
   result.stderr
@@ -192,16 +206,19 @@ export class ContainerMachines {
         runContainerScript({ name, image: image.tag, machineId: id, context }),
         this.timing.runMs,
       )
+      if (started.code === null) {
+        // Docker did not answer in time, and its own command may still be
+        // starting the container: the record is kept, so it stays listed and
+        // can be deleted once Docker answers, never dropped while it may run.
+        return {
+          ok: false,
+          message: `Docker on ${where} did not answer in time. The container may have been started; it is listed in Settings › Machines, where it can be deleted.`,
+        }
+      }
       if (started.code !== 0) {
         const removed = await this.deps.machines.forget(id)
         recorded = !removed.ok
-        return {
-          ok: false,
-          message:
-            started.code === null
-              ? `Docker on ${where} did not answer in time.${recorded ? ` The container may have been started; it is listed in Settings › Machines, where it can be deleted.` : ''}`
-              : `The container did not start on ${where}: ${lastLine(started)}`,
-        }
+        return { ok: false, message: `The container did not start on ${where}: ${lastLine(started)}` }
       }
       step(`Installing Studio's server in the container…`)
       const connected = await this.deps.machines.connect(id)
@@ -252,7 +269,11 @@ export class ContainerMachines {
     return { ok: false, message: `git clone did not work: ${lastLine(result) || 'it said nothing.'}` }
   }
 
-  /** Every branch in the container's repositories with commits no remote has, or why that could not be read. */
+  /**
+   * What exists only inside the container (unpushed branches, uncommitted
+   * changes, detached commits, stashes), and how many chats run in it now,
+   * or why that could not be read.
+   */
   async unpushed(id: string): Promise<ContainerUnpushed> {
     const container = this.deps.machines.get(id)?.container
     if (!container) return { ok: false, message: 'That container is no longer one of your machines.' }
@@ -263,14 +284,27 @@ export class ContainerMachines {
         unpushedScript(container.name, container.context ?? null),
         this.timing.unpushedMs,
       )
-      const branches = parseUnpushed(result.stdout)
-      if (branches) return { ok: true, branches }
-      return {
-        ok: false,
-        message: `Studio could not look inside the container on ${where}${lastLine(result) ? `: ${lastLine(result)}` : '.'}`,
-      }
+      const work = parseUnpushed(result.stdout)
+      if (!work)
+        return {
+          ok: false,
+          message: `Studio could not look inside the container on ${where}${lastLine(result) ? `: ${lastLine(result)}` : '.'}`,
+        }
+      return { ok: true, ...work, chatsRunning: await this.chatsRunning(id) }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /** How many chats its own Studio is running now; null when it is not connected or did not answer. */
+  private async chatsRunning(id: string): Promise<number | null> {
+    const connection = this.deps.machines.connection(id)
+    if (!connection) return null
+    try {
+      const listed = await connection.owner.request('conversation.list', {})
+      return listed.conversations.filter((each) => RUNNING.has(each.phase)).length
+    } catch {
+      return null
     }
   }
 }

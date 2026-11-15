@@ -3,7 +3,11 @@
 Status: owner's design of 2026-11-15 (the second one: "a container is just a
 machine"). It replaces the first cut, which made a disposable container for
 each chat. Where the code and this file disagree, fix one of them in the same
-change.
+change. Built so far: containers as machines, New container, the cube and
+Delete. The logins volume, signing in inside a container and the image built
+from the agents set up in Studio (Logins, The image, Rebuild) are the next
+change; until then a container gets the image of Claude Code and Codex the
+app ships, and no logins volume.
 
 ## What it is
 
@@ -54,8 +58,8 @@ Then Studio:
 3. starts it: `docker run -d --init --cap-drop ALL --security-opt
 no-new-privileges`, as the image's unprivileged `node` user, on Docker's
    default network (full network), labelled `sprintengine.studio.container=1`,
-   with two volumes: the container's own home (`sprintengine-<id>-home` at
-   `/home/node`) and the machine's logins (below);
+   with the container's own home on a volume (`sprintengine-<id>-home` at
+   `/home/node`), and (next change) the machine's logins (below);
 4. installs and connects Studio's server in it, as for an SSH machine;
 5. clones the repository, if one was given.
 
@@ -95,7 +99,7 @@ difference in behaviour. Containers are managed through the same channels as
 SSH machines (`SSH_ENV_CHANNELS`), in main, which runs Docker and holds the
 sessions.
 
-## Logins
+## Logins (next change)
 
 One Docker volume per Docker host, `sprintengine-logins`, is mounted at
 `/studio-logins` in every container Studio makes on that host. It holds
@@ -113,7 +117,7 @@ pasted back). GitHub signs in the same way with `gh auth login`'s device flow,
 and `gh` is git's credential helper there. No credential on the host is ever
 copied in.
 
-## The image
+## The image (next change)
 
 Built on the container's host from the agents the person has turned on in
 Studio, at the versions this build of Studio pins: a base layer (pinned Node
@@ -127,14 +131,19 @@ server) and the logins.
 
 ## Deleting one
 
-**Delete container** in Settings › Machines first lists every branch in the
-container's repositories with commits no remote has, and asks. Deleting
-removes the container and its home volume, only when they carry Studio's
-label. The host's logins volume stays: other containers there use it. A
-Docker that does not answer keeps the record, so nothing is lost track of.
-An SSH machine with containers on it is not forgotten silently: Studio
-deletes them first, or, when the person says the machine is gone, drops only
-their records.
+**Delete container** in Settings › Machines first says what exists only in
+the container, and asks: in each repository in its home (four folders deep)
+and every worktree of it, branches with commits no remote has, uncommitted or
+untracked changes, commits on a detached HEAD on no branch or remote, and
+stashes; and whether a chat is running in it. It says only what it looked
+at. Deleting removes the container and its home volume, only when they carry
+Studio's label. The host's logins volume stays: other containers there use
+it. When Docker cannot remove it (not running, the machine away) the record
+is kept and the person may forget only the record, which touches nothing in
+Docker. A container whose start did not answer in time keeps its record too,
+since Docker may still be starting it. An SSH machine with containers on it
+is not forgotten silently: each is deleted first, the same way, or, when the
+person says the machine is gone, only their records are dropped.
 
 ## Paired devices and the phone
 

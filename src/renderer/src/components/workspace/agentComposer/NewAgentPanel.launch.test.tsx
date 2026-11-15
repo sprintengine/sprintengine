@@ -1025,6 +1025,22 @@ test('NewAgentPanel launch paths', async () => {
           })
           view.unmount()
 
+          // With an SSH machine picked, the card's first row is that machine, ticked, not this computer.
+          const onSsh = await render(scheduleProps())
+          await settle()
+          await click(onSsh.container.querySelector('[data-machine-trigger="true"]')!)
+          await click(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]')!)
+          await settle()
+          await click(onSsh.container.querySelector('[data-container-trigger="true"]')!)
+          await settle()
+          const first = dom.window.document.querySelector('[data-container-option="none"]')!
+          assert.equal(first.textContent, 'build-box')
+          assert.equal(first.getAttribute('aria-checked'), 'true')
+          await click(first)
+          await settle()
+          assert.ok(onSsh.container.querySelector('[aria-label="Folder on build-box"]'), 'still on build-box')
+          onSsh.unmount()
+
           // New container… makes one from the card and picks it, with the folder its clone landed in.
           const again = await render(scheduleProps())
           await settle()

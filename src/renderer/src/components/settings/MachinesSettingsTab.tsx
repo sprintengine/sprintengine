@@ -314,7 +314,7 @@ function RouteDetail({
     return <MachineDetail host={host} settings={hostSettings} onChange={onHostChange} />
   if (route.kind === 'ssh' && ssh?.container)
     return <ContainerMachineDetail machine={ssh} machines={sshMachines} api={window.api} />
-  if (route.kind === 'ssh' && ssh) return <SshMachineDetail machine={ssh} api={window.api} />
+  if (route.kind === 'ssh' && ssh) return <SshMachineDetail machine={ssh} machines={sshMachines} api={window.api} />
   if (route.kind === 'tailnet')
     return (
       <div className="flex items-center gap-3">

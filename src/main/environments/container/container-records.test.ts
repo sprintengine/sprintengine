@@ -85,6 +85,14 @@ test('a container is not forgotten while Docker cannot say it is gone: its recor
     /Docker is not running on this computer, so sprintengine-0123456789abcdef is still there/u,
   )
   assert.ok(machines.get('0123456789abcdef'), 'the record is kept')
+  assert.match(
+    forgotten.ok ? '' : forgotten.message,
+    /Delete it again once Docker answers there, or forget only its record/u,
+  )
+  // Docker gone for good: the person forgets only the record, and nothing is asked of Docker.
+  const dropped = await machines.forget('0123456789abcdef', { recordOnly: true })
+  assert.equal(dropped.ok, true)
+  assert.equal(machines.get('0123456789abcdef'), null)
   machines.shutdown()
 })
 
@@ -107,10 +115,10 @@ test('an SSH machine with containers on it is not forgotten silently; its record
   const { machines } = setup('exit 1', [ssh, onIt])
   const refused = await machines.forget('aaaaaaaaaaaaaaaa')
   assert.equal(refused.ok, false)
-  assert.deepEqual(refused.containers, ['sprintengine-0123456789abcdef'])
+  assert.deepEqual(refused.containers, ['0123456789abcdef'])
   assert.match(
     refused.ok ? '' : refused.message,
-    /build-box has a container Studio made \(sprintengine-0123456789abcdef\)/u,
+    /build-box has a container Studio made \(0123456789abcdef \(container\)\)\. Delete it first/u,
   )
   assert.ok(machines.get('aaaaaaaaaaaaaaaa') && machines.get('0123456789abcdef'), 'both still saved')
   const dropped = await machines.forget('aaaaaaaaaaaaaaaa', { containers: 'forget-records' })
@@ -120,15 +128,16 @@ test('an SSH machine with containers on it is not forgotten silently; its record
   machines.shutdown()
 })
 
-test('a container is saved before Docker is asked to start it; one cut short stays listed', async () => {
+test('a container is saved before Docker is asked to start it; one whose start did not answer stays listed', async () => {
   const { machines } = setup(
     [
       'case "$1" in',
       '  version) echo 29.2.1 ;;',
       '  context) echo colima ;;',
       '  image) exit 0 ;;',
-      // Docker is asked to start it and does not answer.
-      '  --context) case "$3" in run) sleep 5 ;; version) echo 29 ;; inspect) echo "Cannot connect" >&2; exit 1 ;; esac ;;',
+      // Docker is asked to start it and does not answer. Asked about it, it has no
+      // such container yet: the record is kept anyway, since its own command may still make it.
+      '  --context) case "$3" in volume) exit 0 ;; run) sleep 5 ;; version) echo 29 ;; inspect) echo "Error: No such object: x" >&2; exit 1 ;; esac ;;',
       'esac',
     ].join('\n'),
   )
@@ -154,6 +163,63 @@ test('a container is saved before Docker is asked to start it; one cut short sta
   assert.equal(kept[0]!.action, null)
   machines.shutdown()
 })
+
+/** A stand-in `docker` under the Colima context that logs every call, its answers set per case. */
+function loggingDocker(answers: { image: string; build: string; exec: string }): string {
+  return [
+    'echo "$*" >> "$HOME/calls"',
+    'case "$1" in',
+    '  version) echo 29.2.1 ;;',
+    '  context) echo colima ;;',
+    `  image) ${answers.image} ;;`,
+    '  --context) case "$3" in',
+    `    build) cat >/dev/null; ${answers.build} ;;`,
+    '    version) echo 29 ;;',
+    '    volume) case "$4" in inspect) echo 1 ;; esac ;;',
+    '    run|start|rm) exit 0 ;;',
+    `    exec) ${answers.exec} ;;`,
+    '    inspect) echo 1 ;;',
+    '  esac ;;',
+    'esac',
+  ].join('\n')
+}
+
+test('an image that does not build leaves no container and no record', async () => {
+  const { machines, dir } = setup(
+    loggingDocker({ image: 'exit 1', build: 'echo "no space left" >&2; exit 1', exec: 'exit 1' }),
+  )
+  const containers = new ContainerMachines({
+    machines,
+    image: () => imageFor('FROM scratch\n'),
+    hostLabel: () => 'this Mac',
+  })
+  const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
+  assert.match(created.ok ? '' : created.message, /did not build on this Mac: no space left/u)
+  assert.equal(machines.list().filter((entry) => entry.container).length, 0, 'no record')
+  const calls = readFileSync(join(dir, 'calls'), 'utf8')
+  assert.doesNotMatch(calls, / run /u, 'nothing was started')
+  machines.shutdown()
+})
+
+test('a container whose server cannot be reached is removed again, its home volume with it', async () => {
+  const { machines, dir } = setup(
+    loggingDocker({ image: 'exit 0', build: 'exit 0', exec: 'echo "exec failed" >&2; exit 1' }),
+  )
+  const containers = new ContainerMachines({
+    machines,
+    image: () => imageFor('FROM scratch\n'),
+    hostLabel: () => 'this Mac',
+  })
+  const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
+  assert.equal(created.ok, false)
+  assert.equal(machines.list().filter((entry) => entry.container).length, 0, 'no record')
+  const calls = readFileSync(join(dir, 'calls'), 'utf8')
+  const name = /--name (sprintengine-[a-f0-9]{16})/u.exec(calls)?.[1]
+  assert.ok(name, 'it was started')
+  assert.match(calls, new RegExp(`--context colima rm -f ${name}`, 'u'))
+  assert.match(calls, new RegExp(`--context colima volume rm ${name}-home`, 'u'))
+  machines.shutdown()
+}, 60_000)
 
 test('New container refuses a name already taken and an address that is not a repository, before Docker is asked', async () => {
   const { machines, dir } = setup('echo asked >> "$HOME/asked"', [localContainer('0123456789abcdef')])

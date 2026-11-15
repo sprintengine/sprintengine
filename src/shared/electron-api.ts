@@ -548,8 +548,10 @@ export type ElectronApi = {
     options?: {
       stopServer?: boolean
       clearBrowsingData?: boolean
-      /** Containers Studio made on the machine: refused by default, removed first, or only their records dropped. */
-      containers?: 'refuse' | 'remove' | 'forget-records'
+      /** Containers Studio made on the machine: refused by default (each is deleted first), or only their records dropped. */
+      containers?: 'refuse' | 'forget-records'
+      /** A container: forget only its record, touching nothing in Docker (Docker or its machine gone). */
+      recordOnly?: boolean
     },
   ) => Promise<SshEnvironmentResult & { containers?: string[] }>
   sshEnvironmentDiagnostics: (id: string) => Promise<{ ok: true; text: string } | { ok: false; message: string }>

@@ -10,11 +10,14 @@ import { ChipCaretGlyph } from './agentSpawnShared'
  * (docs/design/container-chats.md): the front door to containers. A
  * container is a machine, so the chip is another way to pick the chat's
  * machine: it reads the picked container's name, or "No container", and opens
- * a card, "Where this chat runs", listing this computer, every container
- * with the machine it runs on, and New container…, which makes one and picks
- * it. Picking a container here is picking it in the machine picker.
+ * a card, "Where this chat runs", listing the machine the chat is on when it
+ * is not in a container (this computer, or the SSH machine, distribution or
+ * paired machine picked), every container with the machine it runs on, and
+ * New container…, which makes one and picks it. Picking a container here is
+ * picking it in the machine picker.
  */
 export function ContainerChip({
+  elsewhere,
   containers,
   machines,
   selectedId,
@@ -22,13 +25,15 @@ export function ContainerChip({
   onMade,
   api,
 }: {
+  /** The machine the chat runs on outside a container, by name: the card's first row. Null for this computer. */
+  elsewhere: string | null
   /** The saved machines that are containers. */
   containers: readonly SshEnvironmentSummary[]
   /** Every saved machine: a container's host is named from them, and New container offers them. */
   machines: readonly SshEnvironmentSummary[]
   /** The container picked as the chat's machine, or null when the chat runs elsewhere. */
   selectedId: string | null
-  /** A container picked, or null for this computer. */
+  /** A container picked, or null for the machine outside a container (`elsewhere`). */
   onSelect: (id: string | null) => void
   /** New container made one: pick it, with the folder its clone landed in. */
   onMade: (made: { id: string; folder: string | null }) => void
@@ -91,7 +96,7 @@ export function ContainerChip({
               onClick={() => pick(null)}
               icon={<span aria-hidden="true" className="icon-xs shrink-0" />}
             >
-              <span className="block truncate">{thisComputer.replace(/^this/u, 'This')}</span>
+              <span className="block truncate">{elsewhere ?? thisComputer.replace(/^this/u, 'This')}</span>
             </MenuOption>
             {containers.map((container) => (
               <MenuOption

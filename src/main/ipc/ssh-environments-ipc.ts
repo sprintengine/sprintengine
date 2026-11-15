@@ -73,8 +73,8 @@ export function registerSshEnvironmentsIpc(
     machines.forget(id, {
       stopServer: payload.stopServer === true,
       clearBrowsingData: payload.clearBrowsingData === true,
-      containers:
-        payload.containers === 'remove' || payload.containers === 'forget-records' ? payload.containers : 'refuse',
+      containers: payload.containers === 'forget-records' ? 'forget-records' : 'refuse',
+      recordOnly: payload.recordOnly === true,
     }),
   )
   const noHost = { ok: false as const, message: 'That is not a machine Docker can run on.' }

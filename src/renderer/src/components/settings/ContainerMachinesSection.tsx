@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react'
 
-import type { ContainerHost, DockerStatus } from '../../../../shared/containers'
+import type { ContainerHost, ContainerUnpushed, DockerStatus } from '../../../../shared/containers'
 import type { SshEnvironmentSummary } from '../../../../shared/ssh-environments'
 import { GhostButton, InlineNotice, Input, OutlineButton, Select, useConfirmDialog, WorkingMark } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
@@ -9,8 +9,8 @@ import { SettingsRow } from './SettingsAtoms'
 // A container is a machine: its row is the machine list's, as an SSH
 // machine's is. What is a container's own is here: New container (where it
 // runs, Docker there in words, its name, a repository to clone), and a
-// container's detail (where it runs, a clone, Delete, which first says
-// which branches have commits no remote has).
+// container's detail (where it runs, a clone, Delete, which first says what
+// exists only in it).
 
 export type ContainerApi = Pick<
   Window['api'],
@@ -235,51 +235,115 @@ export function NewContainerForm({
   )
 }
 
+const homePath = (path: string) => path.replace(/^\/home\/node\//u, '~/')
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
+
+/** What deleting a container would lose, in words: only what was looked at, and what was found. */
+function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.Element {
+  if (!work.ok)
+    return (
+      <>
+        <p>Studio could not look inside it for work that exists only there: {work.message}</p>
+        <p className="mt-2">Deleting it removes its repositories and everything else in it.</p>
+      </>
+    )
+  const found = [
+    ...work.branches.map((each) => ({
+      key: `b:${each.repo}:${each.branch}`,
+      what: (
+        <>
+          <span className="font-mono">{each.branch}</span> in <span className="font-mono">{homePath(each.repo)}</span>:{' '}
+          {plural(each.commits, 'commit', 'commits')} on no remote
+        </>
+      ),
+    })),
+    ...work.dirty.map((each) => ({
+      key: `d:${each.worktree}`,
+      what: (
+        <>
+          <span className="font-mono">{homePath(each.worktree)}</span>: {plural(each.files, 'file', 'files')} changed
+          and not committed
+        </>
+      ),
+    })),
+    ...work.detached.map((each) => ({
+      key: `h:${each.worktree}`,
+      what: (
+        <>
+          <span className="font-mono">{homePath(each.worktree)}</span>: {plural(each.commits, 'commit', 'commits')} on a
+          detached HEAD, on no branch or remote
+        </>
+      ),
+    })),
+    ...work.stashes.map((each) => ({
+      key: `s:${each.repo}`,
+      what: (
+        <>
+          <span className="font-mono">{homePath(each.repo)}</span>: {plural(each.count, 'stash', 'stashes')}
+        </>
+      ),
+    })),
+  ]
+  const chats =
+    work.chatsRunning === null
+      ? 'Studio could not ask its server whether a chat is running in it.'
+      : work.chatsRunning > 0
+        ? `${plural(work.chatsRunning, 'chat is', 'chats are')} running in it now, and stop with it.`
+        : 'No chat is running in it.'
+  return (
+    <>
+      {found.length > 0 ? (
+        <>
+          <p>This exists only in the container, and goes with it:</p>
+          <ul data-unpushed-work="true" className="mt-2 list-disc space-y-0.5 pl-5">
+            {found.map((each) => (
+              <li key={each.key}>{each.what}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p>
+          In its repositories (in the home, four folders deep) and their worktrees, Studio found no commit on no remote,
+          no uncommitted change and no stash. Anything else in it is removed too.
+        </p>
+      )}
+      <p className="mt-2">{chats}</p>
+    </>
+  )
+}
+
 /**
- * Delete a container, after saying what would be lost: every branch in its
- * repositories with commits no remote has, or that Studio could not look.
- * Resolves with why it was not deleted, or null once it is (or the person
- * said no).
+ * Delete a container, after saying what would be lost (`ContainerWorkWords`).
+ * When Docker cannot remove it (not running, the machine away), the person
+ * may forget only its record. Resolves with whether it went, and why not.
  */
 export async function deleteContainer(
   machine: SshEnvironmentSummary,
   api: ContainerApi,
   askFirst: ReturnType<typeof useConfirmDialog>['confirm'],
-): Promise<string | null> {
-  const unpushed = await api.containerUnpushed(machine.id).catch((error: unknown) => ({
-    ok: false as const,
+): Promise<{ deleted: boolean; message: string | null }> {
+  const work = await api.containerUnpushed(machine.id).catch((error: unknown): ContainerUnpushed => ({
+    ok: false,
     message: error instanceof Error ? error.message : String(error),
   }))
-  const body = !unpushed.ok ? (
-    <>
-      <p>Studio could not look inside it for work that is not pushed: {unpushed.message}</p>
-      <p className="mt-2">Deleting it removes its repositories and everything else in it.</p>
-    </>
-  ) : unpushed.branches.length > 0 ? (
-    <>
-      <p>These branches have commits that are not pushed anywhere, and go with it:</p>
-      <ul data-unpushed-branches="true" className="mt-2 list-disc space-y-0.5 pl-5">
-        {unpushed.branches.map((branch) => (
-          <li key={`${branch.repo}:${branch.branch}`}>
-            <span className="font-mono">{branch.branch}</span> in{' '}
-            <span className="font-mono">{branch.repo.replace(/^\/home\/node\//u, '~/')}</span> ({branch.commits}{' '}
-            {branch.commits === 1 ? 'commit' : 'commits'})
-          </li>
-        ))}
-      </ul>
-    </>
-  ) : (
-    <p>Every branch in it is pushed. Its repositories and everything else in it are removed.</p>
-  )
   const yes = await askFirst({
     title: `Delete ${machine.label}?`,
-    body,
+    body: <ContainerWorkWords work={work} />,
     confirmLabel: 'Delete container',
     tone: 'danger',
   })
-  if (!yes) return null
+  if (!yes) return { deleted: false, message: null }
   const forgotten = await api.sshEnvironmentForget(machine.id)
-  return forgotten.ok ? null : forgotten.message
+  if (forgotten.ok) return { deleted: true, message: null }
+  const recordOnly = await askFirst({
+    title: `Forget only ${machine.label}'s record?`,
+    body: `${forgotten.message} Forgetting its record leaves whatever Docker has untouched, and Studio stops listing it.`,
+    confirmLabel: 'Forget its record',
+    tone: 'danger',
+  })
+  if (!recordOnly) return { deleted: false, message: forgotten.message }
+  const dropped = await api.sshEnvironmentForget(machine.id, { recordOnly: true })
+  return dropped.ok ? { deleted: true, message: null } : { deleted: false, message: dropped.message }
 }
 
 /** A container's detail in Settings › Machines: where it runs, a clone, its diagnostics, and Delete. */
@@ -371,7 +435,7 @@ export function ContainerMachineDetail({
           onClick={() => {
             setBusy('deleting')
             void deleteContainer(machine, api, askFirst)
-              .then((why) => setSaid(why ? { tone: 'warn', text: why } : null))
+              .then((outcome) => setSaid(outcome.message ? { tone: 'warn', text: outcome.message } : null))
               .finally(() => setBusy(null))
           }}
         >

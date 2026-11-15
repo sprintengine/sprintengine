@@ -3134,13 +3134,24 @@ export default function NewAgentPanel({
             {worktreeOffered ? <WorktreeChip name={composer.worktreeName} onChange={composer.setWorktreeName} /> : null}
             {containerOffered ? (
               <ContainerChip
+                elsewhere={
+                  remoteTarget
+                    ? remoteTarget.connection.machineName
+                    : pickedSsh && !pickedSsh.container
+                      ? pickedSsh.label
+                      : hostId !== LOCAL_HOST_ID && !pickedSsh
+                        ? (localHosts.find((host) => host.id === hostId)?.label ?? null)
+                        : null
+                }
                 containers={sshMachinesAll.filter((machine) => machine.container)}
                 machines={sshMachinesAll}
                 selectedId={pickedSsh?.container ? pickedSsh.id : null}
                 onSelect={(id) => {
-                  pickRemoteMachine(null)
-                  if (id) pickSsh(id)
-                  else pickLocalHost(LOCAL_HOST_ID)
+                  if (id) {
+                    pickRemoteMachine(null)
+                    pickSsh(id)
+                  } else if (pickedSsh?.container) pickLocalHost(LOCAL_HOST_ID)
+                  // Otherwise the chat already runs outside a container, where it is.
                 }}
                 onMade={({ id, folder }) => {
                   pickRemoteMachine(null)

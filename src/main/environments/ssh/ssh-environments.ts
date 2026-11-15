@@ -819,30 +819,35 @@ export class SshEnvironments {
       clearBrowsingData?: boolean
       /**
        * The containers Studio made on this machine: by default the machine is
-       * not forgotten while it has any (they would be stranded); `remove`
-       * removes them first, `forget-records` drops only their records here
-       * (for a machine that is gone), leaving them on it.
+       * not forgotten while it has any (they would be stranded: each is
+       * deleted first, as a container is, after its unpushed work is shown);
+       * `forget-records` drops only their records here (for a machine that is
+       * gone), leaving them on it.
        */
-      containers?: 'refuse' | 'remove' | 'forget-records'
+      containers?: 'refuse' | 'forget-records'
+      /**
+       * A container: drop only its record, leaving whatever Docker has (Docker
+       * gone, or the machine it ran on gone). Nothing on its host is touched.
+       */
+      recordOnly?: boolean
     } = {},
   ): Promise<SshEnvironmentResult & { containers?: string[] }> {
     const machine = this.machines.get(id)
     const saved = this.get(id)
+    if (saved?.container && options.recordOnly) {
+      this.dropRecord(id)
+      await this.deps.onForget?.(saved, { clearBrowsingData: options.clearBrowsingData === true })
+      return { ok: true }
+    }
     const hosted = saved && !saved.container ? this.containersOn(id) : []
     if (hosted.length > 0) {
-      const mode = options.containers ?? 'refuse'
-      if (mode === 'refuse')
+      if (options.containers !== 'forget-records')
         return {
           ok: false,
-          containers: hosted.map((entry) => entry.container!.name),
-          message: `${saved!.label} has ${hosted.length === 1 ? 'a container' : `${hosted.length} containers`} Studio made (${hosted.map((entry) => entry.container!.name).join(', ')}). Remove ${hosted.length === 1 ? 'it' : 'them'} first, or forget only ${hosted.length === 1 ? 'its record' : 'their records'} if ${saved!.label} is gone.`,
+          containers: hosted.map((entry) => entry.id),
+          message: `${saved!.label} has ${hosted.length === 1 ? 'a container' : `${hosted.length} containers`} Studio made (${hosted.map((entry) => entry.label).join(', ')}). Delete ${hosted.length === 1 ? 'it' : 'them'} first, or forget only ${hosted.length === 1 ? 'its record' : 'their records'} if ${saved!.label} is gone.`,
         }
-      for (const entry of hosted) {
-        if (mode === 'remove') {
-          const removed = await this.forget(entry.id)
-          if (!removed.ok) return removed
-        } else this.dropRecord(entry.id)
-      }
+      for (const entry of hosted) this.dropRecord(entry.id)
     }
     if (saved?.container) {
       // A container Studio made goes with its record: Docker removes it, and
