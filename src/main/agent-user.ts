@@ -1,8 +1,7 @@
-import type { ChildProcess } from 'node:child_process'
+import { ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { chmod, lstat, readdir } from 'node:fs/promises'
-import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 
@@ -92,53 +91,7 @@ export function agentEnvPairs(
   return Object.entries(agentEnv(env, user, server)).map(([key, value]) => `${key}=${value ?? ''}`)
 }
 
-type SpawnOptions = { uid?: number; gid?: number; env?: Env; [key: string]: unknown }
-
-/** One call's options as the agent's: its uid and gid, whatever the caller named, and its environment. */
-export function asAgent(
-  options: SpawnOptions | undefined,
-  user: AgentUser,
-  server: { home: string; name: string },
-): SpawnOptions {
-  const given = options ?? {}
-  return {
-    ...given,
-    uid: user.uid,
-    gid: user.gid,
-    env: agentEnv((given.env ?? process.env) as Env, user, server),
-  }
-}
-
-const isOptions = (value: unknown): value is SpawnOptions =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-/**
- * The arguments of one `child_process` call with its options made the
- * agent's: `(file, [args], [options], [callback])`, or `(command, [options],
- * [callback])` for `exec` and `execSync`, as Node reads them.
- */
-export function agentArguments(
-  kind: 'file' | 'command',
-  args: readonly unknown[],
-  user: AgentUser,
-  server: { home: string; name: string },
-): unknown[] {
-  const out = [...args]
-  let at = 1
-  if (kind === 'file' && (Array.isArray(out[1]) || (out[1] == null && out.length > 2))) at = 2
-  if (isOptions(out[at])) out[at] = asAgent(out[at] as SpawnOptions, user, server)
-  else if (out[at] === undefined || typeof out[at] === 'function') {
-    if (at === 2 && out[1] === undefined) out[1] = []
-    out.splice(at, out[at] === undefined ? 1 : 0, asAgent(undefined, user, server))
-  }
-  return out
-}
-
 let hooked = false
-
-/** Node's own `child_process` exports: the object every caller's functions are read from. */
-const nodeChildProcess = (): Record<string, unknown> & { ChildProcess: typeof ChildProcess } =>
-  createRequire('/')('node:child_process') as Record<string, unknown> & { ChildProcess: typeof ChildProcess }
 
 type NormalizedSpawn = { uid?: number; gid?: number; envPairs?: string[] }
 
@@ -157,42 +110,31 @@ function asAgentSpawn(
  * places, with its arguments already read: `ChildProcess.prototype.spawn` for
  * `spawn`, `exec`, `execFile` and `fork`, and the `spawn_sync` binding for
  * their synchronous forms. Both are wrapped, so a function a module took
- * before this ran, or a library's own, is held to it too. (Where the binding
- * cannot be reached, the synchronous functions are wrapped at the module's
- * exports instead, and ES modules' bindings made to match.)
+ * before this ran, or a library's own, is held to it too. A Node whose
+ * binding cannot be reached is refused: a synchronous start would then run as
+ * the server.
  */
 export function startProgramsAsAgent(user: AgentUser): void {
   if (hooked) return
-  hooked = true
-  const server = { home: homedir(), name: process.env.USER || process.env.LOGNAME || 'root' }
-  const exports = nodeChildProcess()
-  const proto = exports.ChildProcess.prototype as unknown as { spawn(options: NormalizedSpawn): unknown }
-  const spawn = proto.spawn
-  proto.spawn = function (this: unknown, options) {
-    return spawn.call(this, asAgentSpawn(options, user, server))
-  }
   let binding: { spawn(options: NormalizedSpawn): unknown } | null = null
   try {
     binding = (process as unknown as { binding(name: string): typeof binding }).binding('spawn_sync')
   } catch {
     binding = null
   }
-  if (binding && typeof binding.spawn === 'function') {
-    const spawnSync = binding.spawn
-    binding.spawn = function (this: unknown, options) {
-      return spawnSync.call(this, asAgentSpawn(options, user, server))
-    }
-    return
+  if (!binding || typeof binding.spawn !== 'function')
+    throw new Error('This Node does not let Studio start its synchronous programs as the agent’s user.')
+  hooked = true
+  const server = { home: homedir(), name: process.env.USER || process.env.LOGNAME || 'root' }
+  const proto = ChildProcess.prototype as unknown as { spawn(options: NormalizedSpawn): unknown }
+  const spawn = proto.spawn
+  proto.spawn = function (this: unknown, options) {
+    return spawn.call(this, asAgentSpawn(options, user, server))
   }
-  for (const [name, kind] of [
-    ['spawnSync', 'file'],
-    ['execFileSync', 'file'],
-    ['execSync', 'command'],
-  ] as const) {
-    const original = exports[name] as (...args: unknown[]) => unknown
-    exports[name] = (...args: unknown[]) => original(...agentArguments(kind, args, user, server))
+  const spawnSync = binding.spawn
+  binding.spawn = function (this: unknown, options) {
+    return spawnSync.call(this, asAgentSpawn(options, user, server))
   }
-  syncBuiltinESMExports()
 }
 
 /**

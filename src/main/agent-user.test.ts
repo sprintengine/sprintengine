@@ -7,7 +7,6 @@ import { buildSync } from 'esbuild'
 import { afterEach, test } from 'vitest'
 
 import {
-  agentArguments,
   agentEnv,
   agentEnvPairs,
   agentFacingDirectory,
@@ -62,36 +61,6 @@ test("a child's environment is the agent's: its home and names where the server'
     'LOGNAME=node',
     'USER=node',
   ])
-})
-
-test("every shape of a child_process call gets the agent's uid and gid, whatever the caller named", () => {
-  // A call that names no environment inherits the server's own, whose home is replaced.
-  const SERVER = { home: process.env.HOME ?? '', name: process.env.USER ?? '' }
-  const uidOf = (args: unknown[], at: number) => args[at] as { uid: number; gid: number; env: { HOME: string } }
-  // spawnSync(file), (file, args), (file, args, options), (file, options); execFileSync alike; execSync(command, options).
-  const cases: Array<['file' | 'command', unknown[], number]> = [
-    ['file', ['git'], 1],
-    ['file', ['git', ['status']], 2],
-    ['file', ['git', ['status'], { cwd: '/home/node/work' }], 2],
-    ['file', ['git', { cwd: '/x' }], 1],
-    ['file', ['git', null, { cwd: '/x' }], 2],
-    ['command', ['git status'], 1],
-    ['command', ['git status', { cwd: '/x' }], 1],
-  ]
-  for (const [kind, args, at] of cases) {
-    const out = agentArguments(kind, args, AGENT, SERVER)
-    assert.equal(uidOf(out, at).uid, 1000, JSON.stringify(args))
-    assert.equal(uidOf(out, at).gid, 1000)
-    assert.equal(uidOf(out, at).env.HOME, '/home/node')
-    if (kind === 'file' && at === 2 && args[1] !== null) assert.ok(Array.isArray(out[1]))
-  }
-  // Not even root: no call may opt out.
-  const named = agentArguments('file', ['id', [], { uid: 0, gid: 0 }], AGENT, SERVER)[2] as { uid: number; gid: number }
-  assert.deepEqual([named.uid, named.gid], [1000, 1000])
-  // What the caller passed is not changed under it.
-  const given = { cwd: '/x' }
-  agentArguments('file', ['git', [], given], AGENT, SERVER)
-  assert.deepEqual(given, { cwd: '/x' })
 })
 
 test.skipIf(!POSIX)(
