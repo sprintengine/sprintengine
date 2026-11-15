@@ -3,8 +3,6 @@ import React, { useCallback, useEffect, useId, useRef, useState, type JSX } from
 import type {
   ConversationContextBreakdown,
   ConversationContextBreakdownResult,
-  ConversationContextItem,
-  ConversationContextMcpServer,
 } from '../../../../../shared/conversation-runtime'
 import { formatTokenCount } from '../../../utils/tokenFormat'
 import { formatTimeOfDay } from '../../../utils/clockFormat'
@@ -22,21 +20,25 @@ import {
 import { Meter } from '../../ui/Meter'
 import { ChevronRightGlyph } from './toolRows/ToolKindGlyph'
 import {
+  categoryGroup,
+  contextPercentLabel,
   contextSegments,
   contextShareLabel,
+  deferredLabel,
   deferredRows,
   groupTokens,
-  heaviestLoaded,
   memoryFileLabel,
-  type ContextHeaviest,
+  type ContextGroup,
   type ContextSegment,
 } from './contextBreakdownShape'
+import { ConversationFileLink } from './conversationLinks'
 
 // What fills the context window, opened from the composer strip's ring. The
 // ring says how full; this says with what — the system prompt, the tools, the
 // MCP servers and skills a person chose to load, the memory files, the
-// conversation itself — and which one item weighs most, because that is the
-// one a person can do something about.
+// conversation itself. One list under the bar, numbers in columns: what is big
+// reads first, the slivers wait behind one row, and each category opens to
+// the items in it, heaviest first, a memory file opening in the editor.
 //
 // The rows are the agent's own reading (Claude Code's `/context`), asked for
 // when the panel opens and again when a turn ends while it is open, never on
@@ -158,8 +160,11 @@ function segmentFill(segment: ContextSegment): string {
   return SLOT_FILL[segment.slot ?? 'other']
 }
 
+// A key the shape of the bar's own segments, a short upright block, rather
+// than a disc: the app draws no status dots, and a coloured bullet beside a
+// name reads as one.
 function Swatch({ segment }: { segment: ContextSegment }): JSX.Element {
-  return <span aria-hidden="true" className={`size-2 shrink-0 rounded-xs ${segmentFill(segment)}`} />
+  return <span aria-hidden="true" className={`h-2.5 w-1 shrink-0 ${segmentFill(segment)}`} />
 }
 
 function ContextBar({
@@ -204,253 +209,215 @@ function ContextBar({
   )
 }
 
-const HEAVIEST_WORDS: Record<ContextHeaviest['group'], string> = {
-  mcp: 'MCP server',
-  skill: 'skill',
-  memory: 'memory file',
-  agent: 'custom agent',
-}
+// Every row is one grid of the same four columns — key, name, tokens, share —
+// so the numbers line up down the list whichever row they are on, and a row
+// that opens is the same height as one that does not.
+const ROW_CLASS = 'flex h-control-xs w-full min-w-0 items-center gap-2 px-2 text-meta'
+const TOKENS_CLASS = 'w-12 shrink-0 text-right tabular-nums'
+const SHARE_CLASS = 'w-9 shrink-0 text-right tabular-nums text-[color:var(--text-subtle)]'
 
-function heaviestLabel(heaviest: ContextHeaviest): string {
-  return heaviest.group === 'memory' ? memoryFileLabel(heaviest.name) : heaviest.name
-}
+// design-tokens-allow: structure, not rhythm — a row inside another starts just past its parent's name (the row's 8px inset, the 4px key and its 8px gap put that name at 20px; `pl-6` is 24px), and one level further in is one more step (`pl-10`).
+const INDENT_CLASS = ['', 'pl-6', 'pl-10'] as const
 
-function Disclosure({
-  title,
-  count,
-  tokens,
-  windowTokens,
-  children,
-  defaultOpen = false,
-  dataGroup,
-}: {
-  title: string
-  count?: number
-  tokens: number
-  windowTokens: number
-  children: React.ReactNode
-  defaultOpen?: boolean
-  dataGroup: string
-}): JSX.Element {
-  const [open, setOpen] = useState(defaultOpen)
-  const bodyId = useId()
-  return (
-    <section data-context-group={dataGroup} className="flex flex-col">
-      <GhostButton
-        size="xs"
-        tone="subtle"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((was) => !was)}
-        className="w-full justify-start gap-2"
-      >
-        <ChevronRightGlyph className={`icon-xs shrink-0 ${open ? 'rotate-90' : ''}`} />
-        <span className="min-w-0 truncate text-[color:var(--text-default)]">{title}</span>
-        {count !== undefined ? <span className="tabular-nums text-[color:var(--text-subtle)]">{count}</span> : null}
-        <span className="ml-auto shrink-0 tabular-nums text-[color:var(--text-subtle)]">
-          {formatTokenCount(tokens)} · {contextShareLabel(tokens, windowTokens)}
-        </span>
-      </GhostButton>
-      {open ? (
-        <ul id={bodyId} className="flex flex-col">
-          {children}
-        </ul>
-      ) : null}
-    </section>
-  )
-}
-
-function ItemRow({
-  name,
-  detail,
-  tokens,
-  windowTokens,
-  outside = false,
-  nested = false,
-  title,
-}: {
-  name: string
+type RowProps = {
+  /** The swatch at the top level; nothing below it, where the row is part of one above. */
+  segment?: ContextSegment
+  name: React.ReactNode
   detail?: string
   tokens: number
-  windowTokens: number
-  /** Listed but not in the window (a tool loaded only when used): its size, and no share. */
+  /** The top level says each row's share of the window; a row inside one says only its tokens. */
+  share?: string | null
+  level: 0 | 1 | 2
+  /** Listed but not in the window (an MCP tool loaded only when used). */
   outside?: boolean
-  /** A server's tool, one level further in. */
-  nested?: boolean
-  title?: string
-}): JSX.Element {
-  return (
-    // design-tokens-allow: structure, not rhythm — the indent puts an item's name under its group's title: the button's 8px inset, the 12px chevron and the 8px gap make 28px (`pl-7`), and a server's tools sit one more chevron in, under the server's name, at 48px (`pl-12`).
-    <li className={`flex min-h-6 items-center gap-2 pr-2 text-meta ${nested ? 'pl-12' : 'pl-7'}`} title={title}>
+  children?: React.ReactNode
+  data?: Record<string, string>
+}
+
+function LegendRow({ segment, name, detail, tokens, share, level, outside = false, children, data }: RowProps) {
+  const [open, setOpen] = useState(false)
+  const bodyId = useId()
+  // Under 1% is there to be found, not to be read first: the name steps down
+  // a tone with its number.
+  const quiet = outside || level > 0 || (segment !== undefined && share === null)
+  const inner = (
+    <>
+      {segment ? <Swatch segment={segment} /> : null}
       <span
-        className={`min-w-0 truncate ${outside ? 'text-[color:var(--text-subtle)]' : 'text-[color:var(--text-default)]'}`}
+        className={`min-w-0 truncate ${quiet ? 'text-[color:var(--text-muted)]' : 'text-[color:var(--text-default)]'}`}
       >
         {name}
       </span>
       {detail ? (
         <span className="min-w-0 shrink truncate text-micro text-[color:var(--text-subtle)]">{detail}</span>
       ) : null}
-      <span className="ml-auto shrink-0 tabular-nums text-[color:var(--text-subtle)]">
-        {formatTokenCount(tokens)} · {outside ? 'not loaded' : contextShareLabel(tokens, windowTokens)}
+      {children ? (
+        <ChevronRightGlyph className={`icon-xs shrink-0 text-[color:var(--text-subtle)] ${open ? 'rotate-90' : ''}`} />
+      ) : null}
+      <span className="min-w-2 flex-1" />
+      <span className={`${TOKENS_CLASS} text-[color:var(--text-subtle)]`}>
+        {outside ? 'not loaded' : formatTokenCount(tokens)}
       </span>
-    </li>
+      {/* Empty below the top level, and still there, so the tokens stay in their column. */}
+      <span className={SHARE_CLASS}>{level === 0 ? (share ?? '') : ''}</span>
+    </>
   )
-}
-
-function McpServerRow({
-  server,
-  windowTokens,
-}: {
-  server: ConversationContextMcpServer
-  windowTokens: number
-}): JSX.Element {
-  const loaded = server.tools.filter((tool) => tool.loaded)
-  const deferred = server.tools.length - loaded.length
-  const [open, setOpen] = useState(false)
-  const bodyId = useId()
-  // Which of its tools are in the window: a deferred one is listed but not
-  // loaded until the agent reaches for it.
-  const toolWords =
-    deferred > 0
-      ? `${loaded.length} of ${server.tools.length} loaded`
-      : `${loaded.length} ${loaded.length === 1 ? 'tool' : 'tools'}`
   return (
-    <li className="flex flex-col pl-5" data-context-mcp-server={server.name}>
-      <GhostButton
-        size="xs"
-        tone="subtle"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((was) => !was)}
-        className="w-full justify-start gap-2"
-      >
-        <ChevronRightGlyph className={`icon-xs shrink-0 ${open ? 'rotate-90' : ''}`} />
-        <span className="min-w-0 max-w-40 shrink-0 truncate text-[color:var(--text-default)]">{server.name}</span>
-        <span className="min-w-0 shrink truncate text-micro text-[color:var(--text-subtle)]">{toolWords}</span>
-        <span className="ml-auto shrink-0 tabular-nums text-[color:var(--text-subtle)]">
-          {formatTokenCount(server.tokens)} · {contextShareLabel(server.tokens, windowTokens)}
-        </span>
-      </GhostButton>
-      {open ? (
-        <ul id={bodyId} className="-ml-5 flex flex-col">
-          {server.tools.map((tool) => (
-            <ItemRow
-              key={tool.name}
-              name={tool.name}
-              tokens={tool.tokens}
-              windowTokens={windowTokens}
-              outside={!tool.loaded}
-              nested
-            />
-          ))}
+    <li className="flex flex-col" {...data}>
+      {children ? (
+        <GhostButton
+          size="xs"
+          tone="subtle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((was) => !was)}
+          className={`${ROW_CLASS} justify-start ${INDENT_CLASS[level]}`}
+        >
+          {inner}
+        </GhostButton>
+      ) : (
+        <div className={`${ROW_CLASS} ${INDENT_CLASS[level]}`}>{inner}</div>
+      )}
+      {children && open ? (
+        <ul id={bodyId} className="flex flex-col">
+          {children}
         </ul>
       ) : null}
     </li>
   )
 }
 
-function ItemGroup({
-  title,
-  dataGroup,
-  items,
-  windowTokens,
-  label = (item) => item.name,
-}: {
-  title: string
-  dataGroup: string
-  items: ConversationContextItem[]
-  windowTokens: number
-  label?: (item: ConversationContextItem) => string
-}): JSX.Element | null {
-  if (items.length === 0) return null
+/**
+ * A memory file's name, opening the file where the chat's other file links
+ * do: the transcript's link, in Studio's own editor. Where that link is text
+ * (a chat whose disk this window does not reach), so is this, with the whole
+ * path one hover away.
+ */
+export function ContextMemoryFile({ path }: { path: string }): JSX.Element {
   return (
-    <Disclosure
-      title={title}
-      count={items.length}
-      tokens={groupTokens(items)}
-      windowTokens={windowTokens}
-      dataGroup={dataGroup}
-    >
-      {items.map((item) => (
-        <ItemRow
-          key={item.name}
-          name={label(item)}
-          {...(item.detail ? { detail: item.detail } : {})}
-          tokens={item.tokens}
-          windowTokens={windowTokens}
-          title={item.name}
-        />
-      ))}
-    </Disclosure>
+    <span title={path} className="min-w-0 truncate">
+      <ConversationFileLink token={path} label={memoryFileLabel(path)} ink="quiet" />
+    </span>
   )
 }
 
-/** The breakdown itself: the bar, its rows, the heaviest item, and each group. */
+/** The rows a category opens to: its servers, skills, memory files or agents. */
+function groupRows(group: ContextGroup, breakdown: ConversationContextBreakdown, level: 1 | 2): React.ReactNode {
+  if (group === 'mcp') {
+    if (breakdown.mcpServers.length === 0) return null
+    return breakdown.mcpServers.map((server) => {
+      const loaded = server.tools.filter((tool) => tool.loaded).length
+      // Which of its tools are in the window: a deferred one is listed but
+      // not loaded until the agent reaches for it.
+      const detail =
+        loaded < server.tools.length
+          ? `${loaded} of ${server.tools.length} loaded`
+          : `${loaded} ${loaded === 1 ? 'tool' : 'tools'}`
+      return (
+        <LegendRow
+          key={server.name}
+          name={server.name}
+          detail={detail}
+          tokens={server.tokens}
+          level={level}
+          data={{ 'data-context-mcp-server': server.name }}
+        >
+          {level < 2
+            ? server.tools.map((tool) => (
+                <LegendRow key={tool.name} name={tool.name} tokens={tool.tokens} outside={!tool.loaded} level={2} />
+              ))
+            : null}
+        </LegendRow>
+      )
+    })
+  }
+  const items = group === 'skills' ? breakdown.skills : group === 'memory' ? breakdown.memoryFiles : breakdown.agents
+  if (items.length === 0) return null
+  return items.map((item) => (
+    <LegendRow
+      key={item.name}
+      name={group === 'memory' ? <ContextMemoryFile path={item.name} /> : item.name}
+      {...(item.detail ? { detail: item.detail } : {})}
+      tokens={item.tokens}
+      level={level}
+      data={{ 'data-context-item': group }}
+    />
+  ))
+}
+
+const GROUP_TITLES: Record<ContextGroup, string> = {
+  mcp: 'MCP servers',
+  skills: 'Skills',
+  memory: 'Memory files',
+  agents: 'Custom agents',
+}
+
+/**
+ * The breakdown itself: the bar, and under it one list that is the bar's key
+ * and its detail at once — a row per segment, the slivers folded into one, and
+ * each category opening to the servers, skills, files or agents it holds.
+ */
 export function ContextBreakdownView({ breakdown }: { breakdown: ConversationContextBreakdown }): JSX.Element {
   const segments = contextSegments(breakdown)
   const deferred = deferredRows(breakdown)
-  const heaviest = heaviestLoaded(breakdown)
   const window = breakdown.windowTokens
   const barLabel = segments.map((segment) => `${segment.name} ${contextShareLabel(segment.tokens, window)}`).join(', ')
-  const mcpTokens = breakdown.mcpServers.reduce((sum, server) => sum + server.tokens, 0)
+  const placed = new Set<ContextGroup>()
+  const categoryRow = (segment: ContextSegment, level: 0 | 1, index: number): JSX.Element => {
+    const group = segment.kind === 'used' ? categoryGroup(segment.name) : null
+    const opens = group ? groupRows(group, breakdown, (level + 1) as 1 | 2) : null
+    if (group && opens) placed.add(group)
+    return (
+      <LegendRow
+        key={`${segment.name}-${index}`}
+        segment={level === 0 ? segment : undefined}
+        name={segment.name}
+        tokens={segment.tokens}
+        share={level === 0 ? contextPercentLabel(segment.tokens, window) : undefined}
+        level={level}
+        data={{ 'data-context-category': segment.members ? 'folded' : segment.kind }}
+      >
+        {segment.members ? segment.members.map((member, at) => categoryRow(member, 1, at)) : opens}
+      </LegendRow>
+    )
+  }
+  const rows = segments.map((segment, index) => categoryRow(segment, 0, index))
+  // A list whose category the agent named in words this does not know is
+  // still drawn, after the rows, rather than lost.
+  const unplaced = (['mcp', 'skills', 'memory', 'agents'] as const).filter((group) => !placed.has(group))
   return (
     <div className="flex flex-col gap-3">
       <ContextBar segments={segments} label={`What fills the window: ${barLabel}`} total={window} />
-      <ul className="flex flex-col gap-0.5" aria-label="By category">
-        {segments.map((segment, index) => (
-          <li
-            key={`${segment.name}-${index}`}
-            className="flex items-center gap-2 px-2 text-meta"
-            data-context-category={segment.kind}
-          >
-            <Swatch segment={segment} />
-            <span className="min-w-0 truncate text-[color:var(--text-default)]">{segment.name}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-[color:var(--text-subtle)]">
-              {formatTokenCount(segment.tokens)} · {contextShareLabel(segment.tokens, window)}
-            </span>
-          </li>
-        ))}
-        {deferred.map((row) => (
-          <li key={row.name} className="flex items-center gap-2 px-2 text-meta" data-context-category="deferred">
-            <span aria-hidden="true" className="size-2 shrink-0" />
-            <span className="min-w-0 truncate text-[color:var(--text-subtle)]">{row.name}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-[color:var(--text-subtle)]">
-              {formatTokenCount(row.tokens)} · not in the window
-            </span>
-          </li>
-        ))}
+      <ul className="-mx-1 flex flex-col" aria-label="By category">
+        {rows}
+        {unplaced.map((group) => {
+          const opens = groupRows(group, breakdown, 1)
+          if (!opens) return null
+          const tokens =
+            group === 'mcp'
+              ? breakdown.mcpServers.reduce((sum, server) => sum + server.tokens, 0)
+              : groupTokens(
+                  group === 'skills' ? breakdown.skills : group === 'memory' ? breakdown.memoryFiles : breakdown.agents,
+                )
+          return (
+            <LegendRow
+              key={group}
+              name={GROUP_TITLES[group]}
+              tokens={tokens}
+              share={contextPercentLabel(tokens, window)}
+              level={0}
+              data={{ 'data-context-group': group }}
+            >
+              {opens}
+            </LegendRow>
+          )
+        })}
       </ul>
-      {heaviest ? (
-        <p className="px-2 text-meta text-[color:var(--text-default)]" data-context-heaviest={heaviest.group}>
-          <span className="text-[color:var(--text-subtle)]">Heaviest you loaded: </span>
-          the <span className="font-medium text-[color:var(--text-strong)]">{heaviestLabel(heaviest)}</span>
-          {` ${HEAVIEST_WORDS[heaviest.group]}, ${formatTokenCount(heaviest.tokens)} tokens (${contextShareLabel(heaviest.tokens, window)} of the window)`}
+      {deferred.length > 0 ? (
+        <p className="px-1 text-micro text-[color:var(--text-subtle)]" data-context-deferred="">
+          Loaded only when used: {deferredLabel(deferred)}
         </p>
       ) : null}
-      <div className="flex flex-col">
-        {breakdown.mcpServers.length > 0 ? (
-          <Disclosure
-            title="MCP servers"
-            count={breakdown.mcpServers.length}
-            tokens={mcpTokens}
-            windowTokens={window}
-            dataGroup="mcp"
-          >
-            {breakdown.mcpServers.map((server) => (
-              <McpServerRow key={server.name} server={server} windowTokens={window} />
-            ))}
-          </Disclosure>
-        ) : null}
-        <ItemGroup title="Skills" dataGroup="skills" items={breakdown.skills} windowTokens={window} />
-        <ItemGroup
-          title="Memory files"
-          dataGroup="memory"
-          items={breakdown.memoryFiles}
-          windowTokens={window}
-          label={(item) => memoryFileLabel(item.name)}
-        />
-        <ItemGroup title="Custom agents" dataGroup="agents" items={breakdown.agents} windowTokens={window} />
-      </div>
     </div>
   )
 }
@@ -490,7 +457,8 @@ export function ContextBreakdownPanel({
           Context window
         </h3>
         <span className="ml-auto shrink-0 tabular-nums text-meta text-[color:var(--text-subtle)]">
-          {percent}% · {formatTokenCount(used)} of {formatTokenCount(total)}
+          <span className="font-medium text-[color:var(--text-strong)]">{percent}%</span> · {formatTokenCount(used)} of{' '}
+          {formatTokenCount(total)}
         </span>
         {/* Always here while there is an agent to ask, busy while it
             answers: the one control the dialog is sure to hold, so focus
@@ -525,7 +493,7 @@ export function ContextBreakdownPanel({
         </>
       )}
       {breakdown ? (
-        <p className="px-2 text-micro text-[color:var(--text-subtle)]" data-context-reading-note="">
+        <p className="px-1 text-micro text-[color:var(--text-subtle)]" data-context-reading-note="">
           {contextReadingNote(breakdown, result?.ok === true && result.stale === true, agentName)}
         </p>
       ) : null}

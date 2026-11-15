@@ -2,9 +2,10 @@
 //
 // The composer strip's context ring as a button, and what it opens: the
 // window's breakdown as the agent read it — a bar of every row, the rows in
-// words, the heaviest thing loaded, and the MCP servers, skills and memory
-// files heaviest first — read when it opens and again as a turn ends; and
-// for an agent that gives no breakdown, the total alone, said as such.
+// one aligned list whose categories open to their MCP servers, skills and
+// memory files heaviest first, and the rows not in the window as one line —
+// read when it opens and again as a turn ends; and for an agent that gives no
+// breakdown, the total alone, said as such.
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -15,6 +16,7 @@ import type {
 } from '../../../../../shared/conversation-runtime'
 import {
   ContextBreakdownPanel,
+  ContextBreakdownView,
   ContextComposerButton,
   resetContextBreakdownCache,
   type ContextBreakdownSource,
@@ -126,7 +128,7 @@ test('an agent with no breakdown opens on the total alone, said as such', async 
   )
 })
 
-test('opening reads the breakdown and draws the bar, its rows and the heaviest item', async () => {
+test('opening reads the breakdown and draws the bar, its rows, and the rows not in the window as one line', async () => {
   const load = vi.fn(async (): Promise<ConversationContextBreakdownResult> => ({ ok: true, breakdown: breakdown() }))
   const strip = await render(<ContextComposerButton context={CONTEXT} source={source(load)} />)
   expect(load).not.toHaveBeenCalled()
@@ -144,15 +146,47 @@ test('opening reads the breakdown and draws the bar, its rows and the heaviest i
     'buffer',
   ])
   const rows = [...panel.querySelectorAll('[data-context-category]')].map((row) => row.textContent)
-  expect(rows).toContain('Messages30k · 15%')
-  expect(rows).toContain('MCP tools (deferred)9k · not in the window')
-  expect(panel.querySelector('[data-context-heaviest="mcp"]')?.textContent).toBe(
-    'Heaviest you loaded: the sprintengine-studio MCP server, 12k tokens (6% of the window)',
-  )
+  expect(rows).toContain('Messages30k15%')
+  expect(rows.some((row) => row?.includes('deferred'))).toBe(false)
+  expect(panel.querySelector('[data-context-deferred]')?.textContent).toBe('Loaded only when used: MCP tools 9k')
+  expect(panel.textContent).not.toContain('Heaviest')
   expect(panel.querySelector('[data-context-reading-note]')?.textContent).toMatch(/^Claude Code’s estimate · /)
 })
 
-test('the groups open from the keyboard’s button, heaviest first, and a server opens to its tools', async () => {
+test('rows under 1% fold into one row, which opens to them, heaviest first, with no share of their own', async () => {
+  const panel = await render(
+    <ContextBreakdownView
+      breakdown={breakdown({
+        windowTokens: 1_000_000,
+        categories: [
+          { name: 'System prompt', tokens: 2_100, kind: 'used' },
+          { name: 'Memory files', tokens: 1_900, kind: 'used' },
+          { name: 'Skills', tokens: 1_500, kind: 'used' },
+          { name: 'Messages', tokens: 251_000, kind: 'used' },
+          { name: 'Free space', tokens: 743_500, kind: 'free' },
+        ],
+      })}
+    />,
+  )
+  const folded = panel.querySelector('[data-context-category="folded"]')!
+  const toggle = folded.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+  expect(toggle.textContent).toBe('3 more under 1%5.5k')
+  expect(panel.querySelectorAll('[data-context-segment]').length).toBe(3)
+  await act(async () => toggle.click())
+  const inside = [...folded.querySelectorAll('ul > [data-context-category]')].map((row) => row.textContent)
+  expect(inside).toEqual(['System prompt2.1k', 'Memory files1.9k', 'Skills1.5k'])
+  // The category opens to its own list, here inside the folded row.
+  const memory = [...folded.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')].find((button) =>
+    button.textContent?.startsWith('Memory files'),
+  )!
+  await act(async () => memory.click())
+  expect(folded.querySelector('[data-context-item="memory"]')?.textContent).toBe('…/acme/CLAUDE.mdProject1.9k')
+  // Nothing is drawn twice: the lists live under their rows, not again below.
+  expect(panel.querySelector('[data-context-group="memory"]')).toBe(null)
+  expect(panel.querySelector('[data-context-group="skills"]')).toBe(null)
+})
+
+test('a category opens to its list from the keyboard’s button, and a server opens to its tools', async () => {
   const panel = await render(
     <ContextBreakdownPanel
       context={CONTEXT}
@@ -161,10 +195,11 @@ test('the groups open from the keyboard’s button, heaviest first, and a server
       onRefresh={() => undefined}
     />,
   )
-  const mcp = panel.querySelector('[data-context-group="mcp"]')!
+  const mcp = [...panel.querySelectorAll('[data-context-category="used"]')].find((row) =>
+    row.textContent?.startsWith('MCP tools'),
+  )!
   const toggle = mcp.querySelector<HTMLButtonElement>('button[aria-expanded]')!
-  expect(toggle.textContent).toContain('MCP servers')
-  expect(toggle.textContent).toContain('14k · 7%')
+  expect(toggle.textContent).toBe('MCP tools14k7%')
   expect(toggle.getAttribute('aria-expanded')).toBe('false')
   await act(async () => toggle.click())
   expect(toggle.getAttribute('aria-expanded')).toBe('true')
@@ -176,18 +211,16 @@ test('the groups open from the keyboard’s button, heaviest first, and a server
   expect(servers[0]!.textContent).toContain('2 of 3 loaded')
   await act(async () => servers[0]!.querySelector<HTMLButtonElement>('button')!.click())
   const tools = [...servers[0]!.querySelectorAll('li')].map((row) => row.textContent)
-  expect(tools[0]).toBe('tour_create9k · not loaded')
-  expect(tools[1]).toBe('browser_open7k · 4%')
+  expect(tools[0]).toBe('tour_createnot loaded')
+  expect(tools[1]).toBe('browser_open7k')
 
+  // Lists whose category the reading does not name are still drawn, after the rows.
   const skills = panel.querySelector('[data-context-group="skills"]')!
   await act(async () => skills.querySelector<HTMLButtonElement>('button')!.click())
-  expect([...skills.querySelectorAll('li')].map((row) => row.textContent)).toEqual([
-    'deployplugin1.2k · <1%',
-    'reviewprojectSettings300 · <1%',
+  expect([...skills.querySelectorAll('[data-context-item]')].map((row) => row.textContent)).toEqual([
+    'deployplugin1.2k',
+    'reviewprojectSettings300',
   ])
-  const memory = panel.querySelector('[data-context-group="memory"]')!
-  await act(async () => memory.querySelector<HTMLButtonElement>('button')!.click())
-  expect(memory.querySelector('li')?.textContent).toBe('…/acme/CLAUDE.mdProject1.9k · <1%')
   expect(panel.querySelector('[data-context-group="agents"]')).toBe(null)
 })
 
