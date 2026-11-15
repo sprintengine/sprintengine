@@ -30,6 +30,7 @@ import { FocusTrap } from './FocusTrap'
 import { OverlaySurfaceContext } from './overlaySurface'
 import { TruncatedText } from './TruncatedText'
 import { FOCUS_RING_INSET_CLASS, OVERLAY_SHELL_CLASS, overlayWidthStyle, type OverlayWidth } from './tokens'
+import { copy } from '../../../../shared/copy'
 
 type ModalProps = {
   open: boolean
@@ -126,7 +127,7 @@ export function Modal({
   useEffect(() => {
     if (!open) return
     return acquireTerminalRepaintPause({
-      label: 'Modal',
+      label: copy.ui.modal.modal,
       isAlive: () => ref.current?.isConnected === true,
     })
   }, [open])
@@ -260,7 +261,7 @@ export function ModalHeader({ title, subtitle, titleId, onClose, leading }: Moda
           {subtitle ? <p className="mt-1 text-meta leading-5 text-[color:var(--text-muted)]">{subtitle}</p> : null}
         </div>
       </div>
-      {onClose ? <CloseIconButton size="md" aria-label="Close" onClick={onClose} /> : null}
+      {onClose ? <CloseIconButton size="md" aria-label={copy.ui.modal.close} onClick={onClose} /> : null}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import type {
   NotificationActionContext,
   RegisteredNotificationActionProvider,
 } from '../modules/renderer-host'
+import { copy } from '../../../shared/copy'
 
 // The shape a notification row consumes (id + label + a fire-and-forget run).
 // Structurally identical to NotificationsPopover's NotificationRowAction, kept
@@ -65,7 +66,7 @@ export function resolveNotificationActions(input: {
         ? [
             {
               id: 'reveal-workspace',
-              label: 'Open',
+              label: copy.utils.notificationActions.open,
               run: (ctx: NotificationActionContext) => ctx.revealWorkspace(workspaceId),
             },
           ]
@@ -87,7 +88,7 @@ function resolveModuleRowActions(
   const actions: ResolvedNotificationAction[] = []
   const target = notification.surfaceTarget
   const open = target ? (openModuleSurface?.(moduleId, target) ?? null) : null
-  if (open) actions.push({ id: 'open-module-surface', label: 'Open', run: open })
+  if (open) actions.push({ id: 'open-module-surface', label: copy.utils.notificationActions.open, run: open })
   for (const provider of providers) {
     if (provider.moduleId !== moduleId || provider.source !== moduleId) continue
     for (const action of provider.resolveActions(context)) {

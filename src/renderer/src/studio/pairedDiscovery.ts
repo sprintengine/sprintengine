@@ -30,6 +30,7 @@ import {
   withEnvironmentStudio,
   type PairedMachine,
 } from './environmentStudio'
+import { copy } from '../../../shared/copy'
 
 // What this window reads of a paired machine before it starts a chat there,
 // and the start itself, asked of that machine's Studio on the window's own
@@ -102,7 +103,7 @@ export async function browsePairedMachine(
         gaps.push({
           part: 'workspaces',
           code: 'scope_required',
-          message: "This pairing may not read that machine's workspaces.",
+          message: copy.studio.pairedDiscovery.thisPairingMayNotRead,
         })
       else
         try {
@@ -166,7 +167,7 @@ export async function pairedWorkspaceCheckout(
   workspaceId: string,
 ): Promise<MeshWorkspaceCheckoutResult> {
   if (!workspaceId)
-    return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose checkout to read.' }
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedDiscovery.nameTheWorkspaceWhoseCheckout }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_WORKSPACES_CAPABILITY,
@@ -211,13 +212,14 @@ export async function pairedWorkspaceExtensions(
   workspaceId: string,
   cli?: string,
 ): Promise<MeshWorkspaceExtensionsResult> {
-  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose skills to list.' }
+  if (!workspaceId)
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedDiscovery.nameTheWorkspaceWhoseSkills }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_WORKSPACES_CAPABILITY,
     (machineName) => ({
       code: 'skills_unsupported',
-      message: `${machineName} can't take skills from here yet. Update Studio there, or remove the skills.`,
+      message: copy.studio.pairedDiscovery.canTTakeSkillsFrom(machineName),
     }),
     (client) => client.rpc['workspaces.extensions']({ workspaceId, ...(cli ? { cli } : {}) }),
   )
@@ -257,9 +259,9 @@ export async function createPairedChat(
   launch: PairedChatLaunch,
 ): Promise<MeshCreateConversationResult> {
   if (!launch.noProject && !launch.workspaceId)
-    return { ok: false, code: 'invalid_arguments', message: 'Name the remote workspace to start the chat in.' }
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedDiscovery.nameTheRemoteWorkspaceTo }
   if (launch.worktree?.kind === 'existing' && !launch.worktree.path.trim())
-    return { ok: false, code: 'invalid_arguments', message: 'Name the worktree to start the chat in.' }
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedDiscovery.nameTheWorktreeToStart }
   const images = launch.images ?? []
   const skills = launch.skills ?? []
   const worktreeName = launch.worktree?.kind === 'new' ? launch.worktree.name.trim() : ''
@@ -283,7 +285,7 @@ export async function createPairedChat(
     STUDIO_WORKSPACES_CAPABILITY,
     (machineName) => ({
       code: 'outdated',
-      message: `${machineName} can't start chat agents from here yet. Update Studio there.`,
+      message: copy.studio.pairedDiscovery.canTStartChatAgents(machineName),
     }),
     async (client) => {
       const created = await client.rpc['conversation.create'](
@@ -315,13 +317,17 @@ export async function createPairedChat(
   if (first !== null) {
     // An empty chat nobody asked for is put to rest there, so it does not sit in its list.
     void settlePairedChat(machine, conversation.workspaceId).catch(() => undefined)
-    return { ok: false, code: 'first_message_failed', message: `Its first message did not go: ${first}` }
+    return {
+      ok: false,
+      code: 'first_message_failed',
+      message: copy.studio.pairedDiscovery.itsFirstMessageDidNot(first),
+    }
   }
   return {
     ok: true,
     workspaceId: conversation.workspaceId,
     agentId: conversation.agentId,
-    title: conversation.name || 'Chat',
+    title: conversation.name || copy.studio.pairedDiscovery.chat,
     providerId: conversation.providerId,
     modelId: conversation.modelId,
     worktree: conversation.worktree ?? null,

@@ -6,6 +6,7 @@ import {
   resolveSkillInvocation,
 } from '../../../shared/skill-invocation'
 import { agentSkillsApi } from '../studio/agentSkills'
+import { copy as appCopy } from '../../../shared/copy'
 
 // Re-exported from the node-free shared module (its home now that the automation
 // backlog.work handoff composes invocations in main); existing renderer callers
@@ -155,12 +156,12 @@ export async function ensureSkillForAgent(input: {
     if (usable.length > 0) return { ok: true, targets: result.targets }
     return {
       ok: false,
-      message: result.targets[0]?.message ?? 'Unable to install the skill.',
+      message: result.targets[0]?.message ?? appCopy.utils.skillInvocation.unableToInstallTheSkill,
     }
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : 'Unable to install the skill.',
+      message: error instanceof Error ? error.message : appCopy.utils.skillInvocation.unableToInstallTheSkill,
     }
   }
 }

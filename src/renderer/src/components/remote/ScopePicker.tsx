@@ -3,6 +3,7 @@ import React from 'react'
 import type { TailnetScope } from '../../../../shared/tailnet'
 import { DescribedCheckRow, DescribedCheckRowList, SegmentedControl } from '../ui'
 import { SCOPE_ROWS, presetFor, scopesForPreset, toggleScope, type ScopePreset } from './scopePickerModel'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The permission body, once (remote-settings-rebuild): a preset strip and the
 // six described rows, in `TAILNET_SCOPES` order.
@@ -55,8 +56,8 @@ export function ScopePicker({
   const preset = presetFor(value)
   const items = React.useMemo(
     () => [
-      { value: 'read-only' as PresetValue, label: 'Read only', disabled },
-      { value: 'standard' as PresetValue, label: 'Standard', disabled },
+      { value: 'read-only' as PresetValue, label: appCopy.remote.scopePicker.readOnly, disabled },
+      { value: 'standard' as PresetValue, label: appCopy.remote.scopePicker.standard, disabled },
     ],
     [disabled],
   )
@@ -64,9 +65,11 @@ export function ScopePicker({
   return (
     <div className={['flex flex-col gap-2', className ?? ''].join(' ')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-body font-medium text-[color:var(--text-default)]">Permissions</span>
+        <span className="text-body font-medium text-[color:var(--text-default)]">
+          {appCopy.remote.scopePicker.permissions}
+        </span>
         <SegmentedControl<PresetValue>
-          ariaLabel="Permission preset"
+          ariaLabel={appCopy.remote.scopePicker.permissionPreset}
           size="sm"
           items={items}
           // `NO_PRESET` matches no segment, so a hand-picked set leaves both
@@ -77,7 +80,7 @@ export function ScopePicker({
           }}
         />
       </div>
-      <DescribedCheckRowList ariaLabel="Permissions">
+      <DescribedCheckRowList ariaLabel={appCopy.remote.scopePicker.permissions}>
         {SCOPE_ROWS.map((row) => (
           <DescribedCheckRow
             key={row.scope}

@@ -11,6 +11,7 @@ import {
 import { CheckIcon, ChevronDownIcon } from '../AppIcons'
 import { Input, MenuOption, Popover, ScrollArea, TriggerButton } from '../ui'
 import { fontPickerOptions, selectedFontOptionKey, type FontPickerOption } from './fontPickerModel'
+import { copy } from '../../../../shared/copy'
 
 type FontFamilyPickerProps = {
   /** The setting's name, which is the trigger's and the surface's accessible name. */
@@ -107,16 +108,16 @@ export function FontFamilyPicker({
     if (option.kind === 'typed' && !isFontFamilyAvailable(option.family)) {
       showToast({
         tone: 'warn',
-        title: `“${option.family}” isn’t installed`,
-        description: 'Kept the current font. Check the name or install it.',
+        title: copy.settings.fontFamilyPicker.isnTInstalled(option.family),
+        description: copy.settings.fontFamilyPicker.keptTheCurrentFontCheck,
       })
       return
     }
     if (monospace && !isMonospaceFamily(option.family)) {
       showToast({
         tone: 'warn',
-        title: `“${option.family}” isn’t monospace`,
-        description: 'Code and the terminal need a fixed-width font. Kept the current one.',
+        title: copy.settings.fontFamilyPicker.isnTMonospace(option.family),
+        description: copy.settings.fontFamilyPicker.codeAndTheTerminalNeed,
       })
       return
     }
@@ -188,7 +189,7 @@ export function FontFamilyPicker({
             ref={ref}
             open={open}
             onClick={togglePopover}
-            aria-label={`${label}: ${shownFamily}${stored.length === 0 ? ' (default)' : ''}`}
+            aria-label={`${label}: ${shownFamily}${stored.length === 0 ? copy.settings.fontFamilyPicker.default : ''}`}
             className="w-56"
             data-font-picker-trigger={label}
             {...triggerProps}
@@ -198,7 +199,9 @@ export function FontFamilyPicker({
               {shownFamily}
             </span>
             {stored.length === 0 ? (
-              <span className="shrink-0 text-micro text-[color:var(--text-subtle)]">Default</span>
+              <span className="shrink-0 text-micro text-[color:var(--text-subtle)]">
+                {copy.settings.fontFamilyPicker.default2}
+              </span>
             ) : null}
             <ChevronDownIcon className="icon-xs shrink-0 text-[color:var(--text-muted)]" />
           </TriggerButton>
@@ -218,9 +221,13 @@ export function FontFamilyPicker({
             aria-controls={listId}
             aria-activedescendant={activeIndex >= 0 ? optionId(options[activeIndex]!.key) : undefined}
             aria-autocomplete="list"
-            aria-label={`Search ${label.toLocaleLowerCase()}`}
+            aria-label={copy.settings.fontFamilyPicker.search(label.toLocaleLowerCase())}
             data-font-search="true"
-            placeholder={list.status === 'unavailable' ? 'Type a font’s name…' : 'Search fonts…'}
+            placeholder={
+              list.status === 'unavailable'
+                ? copy.settings.fontFamilyPicker.typeAFontSName
+                : copy.settings.fontFamilyPicker.searchFonts
+            }
             spellCheck={false}
             autoComplete="off"
             maxLength={200}
@@ -234,7 +241,7 @@ export function FontFamilyPicker({
         </div>
         {list.status === 'unavailable' ? (
           <p className="m-0 px-2.5 pt-2 text-micro text-[color:var(--text-muted)]">
-            Couldn’t list fonts. Type an installed font’s name.
+            {copy.settings.fontFamilyPicker.couldnTListFontsType}
           </p>
         ) : null}
         <FontOptionList
@@ -365,11 +372,11 @@ function FontOptionList({
       ))}
       {loading ? (
         <p className="m-0 px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]" role="status">
-          Reading installed fonts…
+          {copy.settings.fontFamilyPicker.readingInstalledFonts}
         </p>
       ) : options.length === 0 ? (
         <p className="m-0 px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]" role="status">
-          No fonts match.
+          {copy.settings.fontFamilyPicker.noFontsMatch}
         </p>
       ) : null}
     </ScrollArea>

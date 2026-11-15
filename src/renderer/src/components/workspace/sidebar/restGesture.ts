@@ -1,5 +1,6 @@
 import type { WorkspaceLifecycleResult } from '../../../../../shared/workspace-lifecycle'
 import type { ShowToastInput } from '../../../store/toastStore'
+import { copy } from '../../../../../shared/copy'
 
 // What a Settle or Snooze from the row menu does once main has answered it.
 // The row moves at once (the store applies the gesture), but what follows it
@@ -22,8 +23,8 @@ export function mainAgreed(answer: WorkspaceLifecycleResult | null): boolean {
 export function stillWorkingToast(name: string): ShowToastInput {
   return {
     tone: 'neutral',
-    title: `${name} is still working`,
-    description: 'It can be snoozed once its agents finish.',
+    title: copy.workspace.sidebar.restGesture.isStillWorking(name),
+    description: copy.workspace.sidebar.restGesture.itCanBeSnoozedOnce,
   }
 }
 

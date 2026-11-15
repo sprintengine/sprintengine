@@ -7,6 +7,7 @@ import { GhostButton, LinkButton, MicroChip, OutlineButton, Popover, SettingCard
 import { conversationGapNote, missingScopes } from './scopePickerModel'
 import { platformLabel } from './machineRowModel'
 import { pairRoute } from './pairRouteModel'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // One machine in Settings → Remote (remote-settings-rebuild), whichever
 // directions it is known from.
@@ -88,7 +89,7 @@ export function MachineRow({
   if (machine.live) {
     supporting.push(
       <span key="live" className="font-medium text-[color:var(--tone-good)]">
-        Live
+        {appCopy.remote.machineRow.live}
       </span>,
     )
   } else if (!machine.isSelf && seen.short) {
@@ -121,7 +122,7 @@ export function MachineRow({
           ].join(' ')}
         >
           <span className="truncate">{machine.name}</span>
-          {machine.isSelf ? <MicroChip>This device</MicroChip> : null}
+          {machine.isSelf ? <MicroChip>{appCopy.remote.machineRow.thisDevice}</MicroChip> : null}
         </div>
         {supporting.length > 0 ? (
           <div
@@ -146,7 +147,7 @@ export function MachineRow({
       <div className="flex shrink-0 items-center gap-1.5">
         {machine.isSelf ? null : paired ? (
           <GhostButton size="xs" tone="danger" disabled={busy} onClick={() => onRevoke(machine)}>
-            Revoke
+            {appCopy.remote.machineRow.revoke}
           </GhostButton>
         ) : (
           // Dead rather than absent for a machine that is asleep or runs no
@@ -154,7 +155,7 @@ export function MachineRow({
           // a button that vanished would read as the scan having missed it. The
           // supporting line says which of the two it is.
           <OutlineButton size="xs" disabled={busy || route.route === 'unavailable'} onClick={() => onPair(machine)}>
-            Pair
+            {appCopy.remote.machineRow.pair}
           </OutlineButton>
         )}
       </div>
@@ -195,7 +196,7 @@ function ScopesPopover({
     <Popover
       open={open}
       onOpenChange={onOpenChange}
-      ariaLabel={`Scopes granted to ${machine.name}`}
+      ariaLabel={appCopy.remote.machineRow.scopesGrantedTo(machine.name)}
       popupRole="dialog"
       placement="bottom-start"
       className="align-baseline"
@@ -211,15 +212,19 @@ function ScopesPopover({
       <div className="flex min-w-[236px] max-w-[300px] flex-col gap-2 px-3 py-2">
         {machine.inbound ? (
           <>
-            <div className="text-meta font-semibold text-[color:var(--text-strong)]">Granted scopes</div>
+            <div className="text-meta font-semibold text-[color:var(--text-strong)]">
+              {appCopy.remote.machineRow.grantedScopes}
+            </div>
             <ScopeLines scopes={granted} />
             {missing.length > 0 ? (
               <>
                 <div className="h-px bg-[color:var(--border-subtle)]" />
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-meta font-semibold text-[color:var(--text-muted)]">Not granted</span>
+                  <span className="text-meta font-semibold text-[color:var(--text-muted)]">
+                    {appCopy.remote.machineRow.notGranted}
+                  </span>
                   <LinkButton onClick={onGrant} disabled={busy}>
-                    Grant
+                    {appCopy.remote.machineRow.grant}
                   </LinkButton>
                 </div>
                 <ScopeLines scopes={missing} missing />
@@ -231,7 +236,9 @@ function ScopesPopover({
         {differs || !machine.inbound ? (
           <>
             {machine.inbound ? <div className="h-px bg-[color:var(--border-subtle)]" /> : null}
-            <div className="text-meta font-semibold text-[color:var(--text-strong)]">What you can do there</div>
+            <div className="text-meta font-semibold text-[color:var(--text-strong)]">
+              {appCopy.remote.machineRow.whatYouCanDoThere}
+            </div>
             <ScopeLines scopes={outbound ?? []} />
           </>
         ) : null}

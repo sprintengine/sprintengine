@@ -3,6 +3,7 @@ import React, { useEffect, useId, useState, type JSX } from 'react'
 import type { ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { AccessCareList, AccessChips, Checkbox, RefreshIcon, type AccessItem } from '../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
+import { copy } from '../../../../shared/copy'
 
 // Review → trust and turn on, in one step. The dialog is the consent: what
 // needs care with a short why for each, the rest as quiet pills, and — for
@@ -44,23 +45,37 @@ export function TrustReviewDialog({
   const ready = !busy && (!unsigned || trustUnsigned)
   return (
     <Modal open onClose={onCancel} labelledBy={titleId} size="standard">
-      <ModalHeader title={`Trust ${module.manifest.displayName}?`} titleId={titleId} subtitle={meta} leading={icon} />
+      <ModalHeader
+        title={copy.settings.trustReviewDialog.trust(module.manifest.displayName)}
+        titleId={titleId}
+        subtitle={meta}
+        leading={icon}
+      />
       <ModalBody className="space-y-4">
         {care.length > 0 ? (
           <section
-            aria-label="Needs care"
+            aria-label={copy.settings.trustReviewDialog.needsCare}
             className="rounded-md border border-[color:var(--border-default)] px-3 pb-3 pt-2.5"
           >
-            <h3 className="mb-2 text-meta font-semibold text-[color:var(--text-muted)]">Needs care</h3>
-            <AccessCareList items={care} ariaLabel="Needs care" />
+            <h3 className="mb-2 text-meta font-semibold text-[color:var(--text-muted)]">
+              {copy.settings.trustReviewDialog.needsCare}
+            </h3>
+            <AccessCareList items={care} ariaLabel={copy.settings.trustReviewDialog.needsCare} />
           </section>
         ) : null}
         {standard.length > 0 ? (
-          <section aria-label={care.length > 0 ? 'Also' : 'Access'}>
+          <section
+            aria-label={care.length > 0 ? copy.settings.trustReviewDialog.also : copy.settings.trustReviewDialog.access}
+          >
             <h3 className="mb-1.5 text-meta font-semibold text-[color:var(--text-muted)]">
               {care.length > 0 ? 'Also' : 'Access'}
             </h3>
-            <AccessChips items={standard} ariaLabel={care.length > 0 ? 'Also' : 'Access'} />
+            <AccessChips
+              items={standard}
+              ariaLabel={
+                care.length > 0 ? copy.settings.trustReviewDialog.also : copy.settings.trustReviewDialog.access
+              }
+            />
           </section>
         ) : null}
         {unsigned ? (
@@ -69,7 +84,11 @@ export function TrustReviewDialog({
               checked={trustUnsigned}
               onChange={setTrustUnsigned}
               size="body"
-              label={<span className="font-medium text-[color:var(--text-strong)]">I trust this unsigned code</span>}
+              label={
+                <span className="font-medium text-[color:var(--text-strong)]">
+                  {copy.settings.trustReviewDialog.iTrustThisUnsignedCode}
+                </span>
+              }
             />
           </div>
         ) : null}
@@ -78,14 +97,14 @@ export function TrustReviewDialog({
         {module.launch.hasMainEntry ? (
           <span className="mr-auto inline-flex items-center gap-1.5 text-meta text-[color:var(--text-muted)]">
             <RefreshIcon className="icon-xs shrink-0" />
-            Starts after a restart
+            {copy.settings.trustReviewDialog.startsAfterARestart}
           </span>
         ) : null}
         <ModalButton variant="ghost" onClick={onCancel}>
-          Cancel
+          {copy.settings.trustReviewDialog.cancel}
         </ModalButton>
         <ModalButton variant="primary" disabled={!ready} onClick={onTrust}>
-          Trust and turn on
+          {copy.settings.trustReviewDialog.trustAndTurnOn}
         </ModalButton>
       </ModalFooter>
     </Modal>

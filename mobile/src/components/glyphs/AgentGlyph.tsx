@@ -17,6 +17,7 @@ import { bakeKeyframes } from "./agentGlyph/keyframes";
 import { AGENT_KEYFRAMES, AGENT_MOTION, type AgentKeyframes, type AgentLoop } from "./agentGlyph/motion";
 import { pickAgentCharacter } from "./agentGlyph/seasons";
 import type { LifecycleState } from "./lifecycleTone";
+import { copy } from "../../../../src/shared/copy";
 
 // A spawned agent drawn as a small character: working while its agent runs
 // (it moves; reduced motion holds it still), content when it is done, crossed
@@ -73,7 +74,7 @@ export function AgentGlyph({
       // The mark's 12pt grid in the glyph's 16pt box, as the desktop sets it.
       return (
         <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-          <WorkingMark label={label ?? "Agent working"} size={(size * 3) / 4} />
+          <WorkingMark label={label ?? copy.phone.components.glyphs.agentGlyph.agentWorking} size={(size * 3) / 4} />
         </View>
       );
     }

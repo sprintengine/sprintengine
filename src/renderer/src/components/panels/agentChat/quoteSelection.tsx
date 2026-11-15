@@ -7,6 +7,7 @@ import { selectionClipboard } from '../../../utils/selectionToMarkdown'
 import { showToast } from '../../../store/toastStore'
 import { quoteAsMarkdown } from '../../../../../shared/chat-quotes'
 import { citationForRange, type QuoteCitation } from './quoteAnchors'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Quote a stretch of the conversation back into the composer: select text in
 // the transcript and a small toolbar (or the quote shortcut) carries it down,
@@ -138,8 +139,11 @@ export function quoteSelectionInto(
   if (quote.kind === 'too-long') {
     showToast({
       tone: 'neutral',
-      title: 'Selection too long to quote',
-      description: `Limit is ${QUOTE_MAX_CHARS.toLocaleString('en-US')} characters; this is ${quote.length.toLocaleString('en-US')}.`,
+      title: appCopy.panels.agentChat.quoteSelection.selectionTooLongToQuote,
+      description: appCopy.panels.agentChat.quoteSelection.limitIsCharactersThisIs(
+        QUOTE_MAX_CHARS.toLocaleString('en-US'),
+        quote.length.toLocaleString('en-US'),
+      ),
     })
     return true
   }
@@ -333,12 +337,18 @@ export const QuoteSelectionToolbar = memo(function QuoteSelectionToolbar({
     <div
       ref={toolbarRef}
       role="toolbar"
-      aria-label="Selection"
+      aria-label={appCopy.panels.agentChat.quoteSelection.selection}
       data-quote-toolbar=""
       className={`fixed z-[var(--z-popover)] p-0.5 ${OVERLAY_SURFACE_CLASS}`}
       style={{ left: selection.anchor.right, top: selection.anchor.bottom + TOOLBAR_GAP }}
     >
-      <Tooltip content={shortcut ? `Quote in reply (${shortcut})` : 'Quote in reply'}>
+      <Tooltip
+        content={
+          shortcut
+            ? appCopy.panels.agentChat.quoteSelection.quoteInReply(shortcut)
+            : appCopy.panels.agentChat.quoteSelection.quoteInReply2
+        }
+      >
         <GhostButton
           size="xs"
           // Keep the selection: a press that took focus would collapse it first.
@@ -351,7 +361,7 @@ export const QuoteSelectionToolbar = memo(function QuoteSelectionToolbar({
           }}
         >
           <QuoteGlyph className="icon-xs shrink-0" />
-          Quote
+          {appCopy.panels.agentChat.quoteSelection.quote}
         </GhostButton>
       </Tooltip>
     </div>,

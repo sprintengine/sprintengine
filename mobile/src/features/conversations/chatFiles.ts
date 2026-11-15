@@ -12,6 +12,8 @@
 // app, so no new native module and no new build: pickChatFile.ts.
 
 /** The largest file a desktop takes with a message, as its upload route caps it. */
+import { copy as appCopy } from "../../../../src/shared/copy";
+
 export const CHAT_FILE_MAX_BYTES = 25 * 1024 * 1024;
 
 /** A file the picker handed back, before it is uploaded. */
@@ -102,9 +104,9 @@ export function readPickedFile(
   maxBytes: number = CHAT_FILE_MAX_BYTES,
 ): { ok: true; file: PickedFile } | { ok: false; message: string } {
   if (typeof picked.size === "number" && picked.size > maxBytes) {
-    return { ok: false, message: `Choose a file smaller than ${megabytes(maxBytes)}.` };
+    return { ok: false, message: appCopy.phone.conversations.chatFiles.chooseAFileSmallerThan(megabytes(maxBytes)) };
   }
-  if (picked.size === 0) return { ok: false, message: "That file is empty." };
+  if (picked.size === 0) return { ok: false, message: appCopy.phone.conversations.chatFiles.thatFileIsEmpty };
   const type = picked.type?.trim().toLowerCase() ?? "";
   const mediaType = MEDIA_TYPE.test(type) ? type : "application/octet-stream";
   return { ok: true, file: { uri: picked.uri, name: pickedFileName(picked.uri, mediaType), mediaType } };

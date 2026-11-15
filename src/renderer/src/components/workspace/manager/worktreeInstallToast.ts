@@ -9,6 +9,7 @@
 import type { WorktreeDependencyInstallView } from '../../../../../shared/electron-api'
 import { showToast } from '../../../store/toastStore'
 import { publishDiagnosticSync } from '../../../utils/diagnostics'
+import { copy } from '../../../../../shared/copy'
 
 const REASON: Record<WorktreeDependencyInstallView['reason'], string> = {
   first: 'its first install',
@@ -44,23 +45,28 @@ export function showWorktreeInstallToast(view: WorktreeDependencyInstallView, op
     showToast({
       id,
       tone: 'accent',
-      title: 'Installing dependencies',
-      description: `${where}: ${REASON[view.reason]}. The agent starts after.`,
+      title: copy.workspace.manager.worktreeInstallToast.installingDependencies,
+      description: copy.workspace.manager.worktreeInstallToast.theAgentStartsAfter(where, REASON[view.reason]),
       autoDismissMs: false,
     })
     return
   }
   announced.delete(view.id)
   if (view.state === 'succeeded') {
-    showToast({ id, tone: 'good', title: 'Dependencies installed', description: `${where}, ${seconds(view)}.` })
+    showToast({
+      id,
+      tone: 'good',
+      title: copy.workspace.manager.worktreeInstallToast.dependenciesInstalled,
+      description: `${where}, ${seconds(view)}.`,
+    })
     return
   }
   if (view.state === 'cancelled') {
     showToast({
       id,
       tone: 'neutral',
-      title: 'Dependency install cancelled',
-      description: `The agent started without it. The next chat in ${worktreeName(view.path)} retries.`,
+      title: copy.workspace.manager.worktreeInstallToast.dependencyInstallCancelled,
+      description: copy.workspace.manager.worktreeInstallToast.theAgentStartedWithoutIt(worktreeName(view.path)),
     })
     return
   }
@@ -71,15 +77,15 @@ export function showWorktreeInstallToast(view: WorktreeDependencyInstallView, op
   showToast({
     id,
     tone: 'warn',
-    title: 'Dependencies did not install',
-    description: `${what} The agent started anyway; the next chat retries.`,
+    title: copy.workspace.manager.worktreeInstallToast.dependenciesDidNotInstall,
+    description: copy.workspace.manager.worktreeInstallToast.theAgentStartedAnywayThe(what),
   })
   if (!options.report) return
   publishDiagnosticSync({
     level: 'warning',
     source: 'workspace',
-    title: 'Dependencies did not install',
-    message: `${what} The agent on ${view.branch} started without them.`,
+    title: copy.workspace.manager.worktreeInstallToast.dependenciesDidNotInstall,
+    message: copy.workspace.manager.worktreeInstallToast.theAgentOnStartedWithout(what, view.branch),
     ...(view.output ? { details: view.output } : {}),
     navigationTarget: { kind: 'settings', ref: 'worktrees' },
   })

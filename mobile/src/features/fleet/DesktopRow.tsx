@@ -8,6 +8,7 @@ import { StatusPill } from "../../components/StatusPill";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
 import { fleetHeadline, sessionDisplayStatus, sessionStatusLabel, sessionStatusTone, type FleetRowState } from "./fleetLogic";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 interface DesktopRowProps {
   session: MobileSession;
@@ -33,7 +34,7 @@ export function DesktopRow({ session, isActive, rowState, onSelect, onRemove }: 
   return (
     <View style={styles.stack}>
       <Pressable
-        accessibilityLabel={`${session.desktopName}, ${sessionStatusLabel[status]}${isActive ? ", active desktop" : ""}`}
+        accessibilityLabel={`${session.desktopName}, ${sessionStatusLabel[status]}${isActive ? appCopy.phone.fleet.desktopRow.activeDesktop : ""}`}
         accessibilityRole="button"
         accessibilityState={{ selected: isActive, disabled: isRevoked }}
         disabled={isRevoked}
@@ -54,10 +55,10 @@ export function DesktopRow({ session, isActive, rowState, onSelect, onRemove }: 
       </Pressable>
       {isRevoked ? (
         <View style={styles.revokedActions}>
-          <Text style={styles.meta}>Revoked by the desktop. Pair again to reconnect.</Text>
+          <Text style={styles.meta}>{appCopy.phone.fleet.desktopRow.revokedByTheDesktopPair}</Text>
           <PrimaryButton
-            accessibilityLabel={`Remove ${session.desktopName} from this phone`}
-            label="Remove from phone"
+            accessibilityLabel={appCopy.phone.fleet.desktopRow.removeFromThisPhone(session.desktopName)}
+            label={appCopy.phone.fleet.desktopRow.removeFromPhone}
             onPress={onRemove}
             variant="danger"
           />

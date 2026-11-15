@@ -184,12 +184,17 @@ function openMacosPrivacySettings(): void {
   void window.api
     .openExternal(MACOS_FILES_AND_FOLDERS_SETTINGS_URL)
     .then((result) => {
-      if (!result.ok) showToast({ tone: 'error', title: 'System Settings did not open', description: result.message })
+      if (!result.ok)
+        showToast({
+          tone: 'error',
+          title: appCopy.panels.agentChatView.systemSettingsDidNotOpen,
+          description: result.message,
+        })
     })
     .catch((error: unknown) =>
       showToast({
         tone: 'error',
-        title: 'System Settings did not open',
+        title: appCopy.panels.agentChatView.systemSettingsDidNotOpen,
         description: error instanceof Error ? error.message : String(error),
       }),
     )
@@ -357,6 +362,7 @@ export {
 export type { MountedChatView } from './agentChat/mountedChatViews'
 import { ContextWindowNotice } from './agentChat/ContextWindowNotice'
 import { buildModelGroups } from './agentChat/modelGroups'
+import { copy as appCopy } from '../../../../shared/copy'
 export { buildModelGroups } from './agentChat/modelGroups'
 export type { ModelGroup } from './agentChat/modelGroups'
 
@@ -438,7 +444,7 @@ export default function AgentChatView({ workspaceId, agentId }: Props) {
     return (
       <ChatShell>
         <InlineNotice tone="error" className="mx-3 my-2">
-          This agent has no conversation provider selected.
+          {appCopy.panels.agentChatView.thisAgentHasNoConversation}
         </InlineNotice>
       </ChatShell>
     )
@@ -834,7 +840,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         setReadiness({ kind: 'ready' })
       } catch (err) {
         if (!cancelled)
-          setReadiness({ kind: 'error', message: err instanceof Error ? err.message : 'Provider check failed.' })
+          setReadiness({
+            kind: 'error',
+            message: err instanceof Error ? err.message : appCopy.panels.agentChatView.providerCheckFailed,
+          })
       }
     })()
     return () => {
@@ -1304,7 +1313,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     publishDiagnosticSync({
       level: 'error',
       source: 'workspace',
-      title: `${label} turn failed`,
+      title: appCopy.panels.agentChatView.turnFailed(label),
       message,
       ...(projection.lastErrorDetail && projection.lastErrorDetail !== message
         ? { details: projection.lastErrorDetail }
@@ -1334,7 +1343,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     publishDiagnosticSync({
       level: 'error',
       source: 'workspace',
-      title: `${label} could not start`,
+      title: appCopy.panels.agentChatView.couldNotStart(label),
       message: actionErrorMessage,
       workspaceId,
       workspaceName: workspace?.name,
@@ -1406,7 +1415,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       setSession(result.session)
       return { ok: true, sessionId: result.session.sessionId }
     } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : 'Could not start the conversation.' }
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : appCopy.panels.agentChatView.couldNotStartTheConversation,
+      }
     }
   }, [agentId, cliRuntimes, conversation, permissionMode, permissionPreset, workspaceId, workspaceRoot, transport])
   const ensureSession = useCallback(async (): Promise<string | null> => {
@@ -1678,7 +1690,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         }
         if (turnAttachments.length) setAttachments((current) => (current.length ? current : turnAttachments))
         setActionError({
-          message: err instanceof Error ? err.message : 'Could not send the message.',
+          message: err instanceof Error ? err.message : appCopy.panels.agentChatView.couldNotSendTheMessage,
           retry: thisSend,
         })
       } finally {
@@ -1725,8 +1737,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         : ''
     showToast({
       tone: 'warn',
-      title: 'Your last message may not have been sent',
-      description: `It's back in the composer. Send it again.${lostPictures}`,
+      title: appCopy.panels.agentChatView.yourLastMessageMayNot,
+      description: appCopy.panels.agentChatView.itSBackInThe(lostPictures),
     })
   }, [pendingSend, hydrated, events, settlePendingSend])
 
@@ -1770,7 +1782,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           ...(files.length ? { files } : {}),
         })
       } catch (err) {
-        result = { ok: false, message: err instanceof Error ? err.message : 'The message did not reach it.' }
+        result = {
+          ok: false,
+          message: err instanceof Error ? err.message : appCopy.panels.agentChatView.theMessageDidNotReach,
+        }
       }
       setHandingOff((current) => current.filter((entry) => entry !== turn))
       if (result.ok) return true
@@ -2296,8 +2311,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       async ask({ requestId, question, history }) {
         const started = await ensureSession()
         if (calledOff.delete(requestId))
-          return { ok: false, cancelled: true, message: 'The side question was called off.' }
-        if (!started) return { ok: false, message: 'The chat could not be started to answer it.' }
+          return { ok: false, cancelled: true, message: appCopy.panels.agentChatView.theSideQuestionWasCalled }
+        if (!started) return { ok: false, message: appCopy.panels.agentChatView.theChatCouldNotBe }
         askedOf.set(requestId, started)
         try {
           const result = await transport.askSideQuestion!({
@@ -2307,7 +2322,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             ...(history.length ? { history } : {}),
           })
           if (!result.ok && !result.cancelled && forgetLostSession(result))
-            return { ok: false, message: 'The chat’s session ended. Ask again to start it.' }
+            return { ok: false, message: appCopy.panels.agentChatView.theChatSSessionEnded }
           return result
         } finally {
           askedOf.delete(requestId)
@@ -2974,12 +2989,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       // machine whose Studio restarts sessions.
       showToast({
         tone: 'warn',
-        title: 'This chat cannot be restarted from here',
+        title: appCopy.panels.agentChatView.thisChatCannotBeRestarted,
         description: !transport.capabilities.operate
-          ? 'This window may read this chat but not drive it.'
+          ? appCopy.panels.agentChatView.thisWindowMayReadThis
           : environment.label
-            ? `Update Studio on ${environment.label} to restart its chats.`
-            : "Its server doesn't support restarts.",
+            ? appCopy.panels.agentChatView.updateStudioOnToRestart(environment.label)
+            : appCopy.panels.agentChatView.itsServerDoesnTSupport,
       })
       return
     }
@@ -2990,8 +3005,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (working) {
       showToast({
         tone: 'warn',
-        title: 'The agent is still working',
-        description: 'Stop it first, then restart the session.',
+        title: appCopy.panels.agentChatView.theAgentIsStillWorking,
+        description: appCopy.panels.agentChatView.stopItFirstThenRestart,
       })
       return
     }
@@ -3000,18 +3015,22 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       message: error instanceof Error ? error.message : String(error),
     }))
     if (!result.ok) {
-      showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
+      showToast({
+        tone: 'error',
+        title: appCopy.panels.agentChatView.theSessionWasNotRestarted,
+        description: result.message,
+      })
       return
     }
     conversationCommands.refresh()
     // A notice is the server saying it had no agent running for the chat.
     showToast(
       result.notice
-        ? { tone: 'neutral', title: 'No agent session to restart', description: result.notice }
+        ? { tone: 'neutral', title: appCopy.panels.agentChatView.noAgentSessionToRestart, description: result.notice }
         : {
             tone: 'good',
-            title: 'Agent session restarted',
-            description: 'Your next message starts it again, history intact.',
+            title: appCopy.panels.agentChatView.agentSessionRestarted,
+            description: appCopy.panels.agentChatView.yourNextMessageStartsIt,
           },
     )
   }
@@ -3259,7 +3278,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 : async () => ({
                     ok: false,
                     reason: 'not-running',
-                    message: `${assistantName} isn't running. Send a message to see what fills the window.`,
+                    message: appCopy.panels.agentChatView.isnTRunningSendA(assistantName),
                   })
               : null,
             agentName: assistantName,
@@ -3465,7 +3484,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       ? {
           commands: conversationCommands.commands,
           status: {
-            cliLabel: chatCliOption?.label ?? providerEntry?.displayName ?? chatCli ?? 'The CLI',
+            cliLabel:
+              chatCliOption?.label ?? providerEntry?.displayName ?? chatCli ?? appCopy.panels.agentChatView.theCLI,
             loading: conversationCommands.loading,
             error: commandCatalog?.error,
             answered: Boolean(commandCatalog?.fetchedAt),
@@ -3607,7 +3627,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     } catch (error) {
       showToast({
         tone: 'error',
-        title: 'The chat was not handed off',
+        title: appCopy.panels.agentChatView.theChatWasNotHanded,
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -3777,7 +3797,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             .filter((preset) => isLooserCliPermissionPreset(preset, permissionPreset) && !presetRefusals?.[preset])
             .map((preset) => ({
               preset,
-              label: `Allow and switch to ${selectedPermissionOption(permissionOptions, preset)?.label ?? PRESET_CHIP_LABEL[preset]}`,
+              label: appCopy.panels.agentChatView.allowAndSwitchTo(
+                selectedPermissionOption(permissionOptions, preset)?.label ?? PRESET_CHIP_LABEL[preset],
+              ),
             }))
         : [],
     [permissionsEditable, chatCli, permissionPreset, presetRefusals, permissionOptions],
@@ -4025,7 +4047,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       try {
         result = await call({ key: chatKey, scheduledId: message.id })
       } catch (err) {
-        result = { ok: false, message: err instanceof Error ? err.message : 'It did not answer.' }
+        result = {
+          ok: false,
+          message: err instanceof Error ? err.message : appCopy.panels.agentChatView.itDidNotAnswer,
+        }
       }
       if (!result.ok)
         setActionError(
@@ -4078,9 +4103,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         message: text,
         sendAt,
         ...(untilLimitReset ? { untilLimitReset } : {}),
-      })) ?? { ok: false, message: 'it does not schedule messages' }
+      })) ?? { ok: false, message: appCopy.panels.agentChatView.itDoesNotScheduleMessages }
     } catch (err) {
-      kept = { ok: false, message: err instanceof Error ? err.message : 'it did not answer' }
+      kept = { ok: false, message: err instanceof Error ? err.message : appCopy.panels.agentChatView.itDidNotAnswer2 }
     }
     if (!kept.ok) {
       setActionError(`${serverName} could not schedule the message: ${kept.message.replace(/\.$/u, '')}.`)
@@ -4278,7 +4303,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             replay, which draws over the live chat it would be searching. */}
           {chatFind.open && replay === null ? (
             <FindBar
-              label="Find in chat"
+              label={appCopy.panels.agentChatView.findInChat}
               query={chatFind.query}
               onQueryChange={chatFind.setQuery}
               status={chatFind.status}
@@ -4311,7 +4336,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             // the chat (and the composer, typeToComposer) and the arrow keys
             // scroll it.
             tabIndex={-1}
-            aria-label={`${label} conversation`}
+            aria-label={appCopy.panels.agentChatView.conversation(label)}
             aria-live="off"
             aria-busy={!hydrated || loadingEarlier}
             onClickCapture={preserveDisclosurePosition}
@@ -4342,7 +4367,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 // first message; a chat with none yet only says so.
                 <div className="flex h-full items-center justify-center">
                   <p className="max-w-[280px] text-center text-meta leading-5 text-[color:var(--text-muted)]">
-                    No messages yet
+                    {appCopy.panels.agentChatView.noMessagesYet}
                   </p>
                 </div>
               )
@@ -4630,7 +4655,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   shortcutLabel={sendNowShortcutLabel}
                   onSendNow={() => undefined}
                   status="Queuing"
-                  statusHint={`On its way to ${hostQueue.machineName}; sends after this turn`}
+                  statusHint={appCopy.panels.agentChatView.onItsWayToSends(hostQueue.machineName)}
                 />
               ) : null}
               {hostQueue?.messages.map((message) => (
@@ -4641,7 +4666,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   carries={heldMessageCarries(message)}
                   {...(message.images?.length || message.files?.length
                     ? {
-                        editHint: 'Take it back into the composer, without pictures or files',
+                        editHint: appCopy.panels.agentChatView.takeItBackIntoThe,
                       }
                     : {})}
                   sendNow={
@@ -4658,8 +4683,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   status={message.failure !== undefined ? `Couldn't send: ${message.failure}` : 'Queued'}
                   statusHint={
                     message.failure !== undefined
-                      ? `${hostQueue.machineName} couldn't send it`
-                      : `${hostQueue.machineName} sends it after this turn`
+                      ? appCopy.panels.agentChatView.couldnTSendIt(hostQueue.machineName)
+                      : appCopy.panels.agentChatView.sendsItAfterThisTurn(hostQueue.machineName)
                   }
                 />
               ))}
@@ -4722,7 +4747,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     </OutlineButton>
                   }
                 >
-                  Part of this chat was too long to send, so it's cut short.
+                  {appCopy.panels.agentChatView.partOfThisChatWas}
                 </ComposerTrayRow>
               ) : null}
               {composerError && composerError !== dismissedError ? (
@@ -4732,7 +4757,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   actions={
                     composerRetry ? (
                       <OutlineButton size="xs" onClick={composerRetry} disabled={composerDisabled}>
-                        Retry
+                        {appCopy.panels.agentChatView.retry}
                       </OutlineButton>
                     ) : null
                   }
@@ -4817,7 +4842,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 <ComposerField
                   ref={composerRef}
                   contentAttributes={{
-                    'aria-label': `Message ${label}`,
+                    'aria-label': appCopy.panels.agentChatView.message(label),
                     ...contextPicker.comboboxProps,
                     ...stashPicker.comboboxProps,
                   }}
@@ -5033,7 +5058,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     data-composer-schedule-send="true"
                     className="shrink-0 gap-1.5 pl-3 pr-2.5"
                   >
-                    Schedule
+                    {appCopy.panels.agentChatView.schedule}
                     <ScheduleGlyph className="icon-sm" />
                   </SendButton>
                 ) : projection.activeTurn && !operate ? null : (
@@ -5041,7 +5066,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     {projection.activeTurn ? (
                       <ComposerActionButton
                         tone="neutral"
-                        ariaLabel={pending === 'stopping' ? 'Stopping' : 'Stop responding'}
+                        ariaLabel={
+                          pending === 'stopping'
+                            ? appCopy.panels.agentChatView.stopping
+                            : appCopy.panels.agentChatView.stopResponding
+                        }
                         onClick={() => void interrupt()}
                         disabled={stopDisabledForPending(pending)}
                       >

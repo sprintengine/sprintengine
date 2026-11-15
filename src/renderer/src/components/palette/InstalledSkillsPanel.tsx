@@ -12,6 +12,7 @@ import { WorkingMark } from '../ui/WorkingMark'
 import { hostPlatform } from '../../clientCapabilities'
 import { listTerminals, writeTerminal } from '../../studio/terminals'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { copy as appCopy } from '../../../../shared/copy'
 
 /** The listbox the palette's field controls while the Skills tab is showing. */
 export const INSTALLED_SKILLS_RESULTS_ID = 'installed-skills-results'
@@ -181,7 +182,10 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
             context: contextKey,
             result: {
               ok: false,
-              message: failure instanceof Error ? failure.message : 'Could not read installed skills.',
+              message:
+                failure instanceof Error
+                  ? failure.message
+                  : appCopy.palette.installedSkillsPanel.couldNotReadInstalledSkills,
             },
           })
       })
@@ -324,7 +328,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
   return (
     <section
       id="command-palette-panel-skills"
-      aria-label="Installed skills"
+      aria-label={appCopy.palette.installedSkillsPanel.installedSkills}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && detail) {
           event.preventDefault()
@@ -343,7 +347,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
       {detail ? (
         <div ref={detailRef} tabIndex={-1} className="space-y-2 px-4 py-3 outline-none">
           <GhostButton size="xs" onClick={back} disabled={busy}>
-            Back to installed skills
+            {appCopy.palette.installedSkillsPanel.backToInstalledSkills}
           </GhostButton>
           <p className="text-heading text-[color:var(--text-strong)]">{detail.name}</p>
           <p className="text-meta text-[color:var(--text-muted)]">{detail.description}</p>
@@ -359,28 +363,28 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
                 {detail.linked
                   ? 'Move this link to Trash? The source folder stays in place.'
                   : `Move this ${detail.scope} installation to Trash?`}
-                {detail.scope === 'global' ? ' This affects every project using this installation.' : ''} Other
-                installations stay in place.
+                {detail.scope === 'global' ? ' This affects every project using this installation.' : ''}
+                {appCopy.palette.installedSkillsPanel.otherInstallationsStayInPlace}
               </p>
               <div className="flex gap-2">
                 <OutlineButton tone="danger" disabled={busy} busy={busy} onClick={() => void removeSkill(detail)}>
-                  Move to Trash
+                  {appCopy.palette.installedSkillsPanel.moveToTrash}
                 </OutlineButton>
                 <GhostButton disabled={busy} onClick={() => setConfirmRemove(false)}>
-                  Cancel
+                  {appCopy.palette.installedSkillsPanel.cancel}
                 </GhostButton>
               </div>
             </>
           ) : (
             <div className="flex gap-2">
               <OutlineButton disabled={busy} onClick={() => void useSkill(detail)}>
-                Use in agent
+                {appCopy.palette.installedSkillsPanel.useInAgent}
               </OutlineButton>
               <GhostButton disabled={busy} onClick={() => void run(() => window.api.showItemInFolder(detail.path))}>
-                Show folder
+                {appCopy.palette.installedSkillsPanel.showFolder}
               </GhostButton>
               <GhostButton tone="danger" disabled={busy || !detail.removable} onClick={() => setConfirmRemove(true)}>
-                Remove…
+                {appCopy.palette.installedSkillsPanel.remove}
               </GhostButton>
             </div>
           )}
@@ -395,25 +399,26 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
               {pluginId ? `${cliName} skills${wsl ? ' in WSL' : ''}` : 'No agent in focus'}
             </span>
             <GhostButton size="xs" disabled={busy || !pluginId} onClick={() => setRefresh((value) => value + 1)}>
-              Refresh
+              {appCopy.palette.installedSkillsPanel.refresh}
             </GhostButton>
             <GhostButton size="xs" onClick={onBrowse}>
-              Browse skills
+              {appCopy.palette.installedSkillsPanel.browseSkills}
             </GhostButton>
           </div>
           <div
             id={INSTALLED_SKILLS_RESULTS_ID}
             role="listbox"
-            aria-label="Installed skills by scope"
+            aria-label={appCopy.palette.installedSkillsPanel.installedSkillsByScope}
             className="max-h-[360px] overflow-y-auto py-1"
           >
             {!pluginId ? (
               <p className="px-4 py-3 text-meta text-[color:var(--text-muted)]">
-                Focus an agent to see its installed skills.
+                {appCopy.palette.installedSkillsPanel.focusAnAgentToSee}
               </p>
             ) : !result ? (
               <p role="status" className="flex items-center gap-2 px-4 py-3 text-meta text-[color:var(--text-muted)]">
-                Reading installed skills <WorkingMark label="Reading installed skills" />
+                {appCopy.palette.installedSkillsPanel.readingInstalledSkills}
+                <WorkingMark label={appCopy.palette.installedSkillsPanel.readingInstalledSkills2} />
               </p>
             ) : !result.ok ? (
               <p role="alert" className="px-4 py-3 text-meta text-[color:var(--tone-error)]">
@@ -427,7 +432,15 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
                   </p>
                 ))}
                 {groups.map(({ scope, total, entries: rows }) => (
-                  <div key={scope} role="group" aria-label={scope === 'project' ? 'Project skills' : 'Global skills'}>
+                  <div
+                    key={scope}
+                    role="group"
+                    aria-label={
+                      scope === 'project'
+                        ? appCopy.palette.installedSkillsPanel.projectSkills
+                        : appCopy.palette.installedSkillsPanel.globalSkills
+                    }
+                  >
                     <div aria-hidden="true" className="px-4 pb-1 pt-2 text-meta text-[color:var(--text-muted)]">
                       {scope === 'project' ? 'Project' : 'Global'}
                     </div>
@@ -467,7 +480,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
                             </span>
                           ) : (
                             <span className="block min-w-0 px-2 text-meta text-[color:var(--text-muted)]">
-                              Show more
+                              {appCopy.palette.installedSkillsPanel.showMore}
                               <span className="text-[color:var(--text-disabled)]"> · {entry.remaining} more</span>
                             </span>
                           )}
@@ -482,7 +495,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
         </>
       )}
       <p className="px-4 py-2 text-micro text-[color:var(--text-muted)]">
-        Installed here. Running agents may need a restart to see changes.
+        {appCopy.palette.installedSkillsPanel.installedHereRunningAgentsMay}
       </p>
     </section>
   )

@@ -2,6 +2,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { APP_THEMES, systemThemeChoices, type ResolvedAppTheme } from '../../../../shared/app-theme'
 import { Select } from '../ui'
 import { SettingCard, SettingsRow } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 const labelOf = (id: ResolvedAppTheme): string => APP_THEMES.find((theme) => theme.id === id)?.label ?? id
 
@@ -18,17 +19,23 @@ export function SystemThemeRows() {
   if (theme !== 'system') return null
   return (
     <SettingCard>
-      <SettingsRow label="In light mode" help="The theme System uses while the OS is set to light.">
+      <SettingsRow
+        label={copy.settings.systemThemeRows.inLightMode}
+        help="The theme System uses while the OS is set to light."
+      >
         <Select<ResolvedAppTheme>
-          ariaLabel="Theme in light mode"
+          ariaLabel={copy.settings.systemThemeRows.themeInLightMode}
           items={systemThemeChoices('light').map((id) => ({ value: id, label: labelOf(id) }))}
           value={light}
           onChange={(next) => setSystemTheme('light', next)}
         />
       </SettingsRow>
-      <SettingsRow label="In dark mode" help="The theme System uses while the OS is set to dark.">
+      <SettingsRow
+        label={copy.settings.systemThemeRows.inDarkMode}
+        help="The theme System uses while the OS is set to dark."
+      >
         <Select<ResolvedAppTheme>
-          ariaLabel="Theme in dark mode"
+          ariaLabel={copy.settings.systemThemeRows.themeInDarkMode}
           items={systemThemeChoices('dark').map((id) => ({ value: id, label: labelOf(id) }))}
           value={dark}
           onChange={(next) => setSystemTheme('dark', next)}

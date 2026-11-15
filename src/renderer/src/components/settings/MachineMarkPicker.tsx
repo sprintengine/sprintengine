@@ -24,6 +24,7 @@ import {
   MachineKindGlyph,
   Popover,
 } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // Settings › Machines: a machine's kind and colour (owner ruling 2026-10-04).
 // Every machine row but this computer's carries its mark in the leading slot
@@ -65,7 +66,7 @@ export function MachineMarkPicker({ machine, name }: { machine: MachineRef; name
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel={`Kind and colour for ${name}`}
+      ariaLabel={copy.settings.machineMarkPicker.kindAndColourFor(name)}
       popupRole="dialog"
       placement="bottom-end"
       surfaceClassName="w-[300px] p-3"
@@ -74,15 +75,18 @@ export function MachineMarkPicker({ machine, name }: { machine: MachineRef; name
           ref={ref}
           size="xs"
           onClick={togglePopover}
-          aria-label={`Change the mark for ${name}`}
+          aria-label={copy.settings.machineMarkPicker.changeTheMarkFor(name)}
           {...triggerProps}
         >
-          Change
+          {copy.settings.machineMarkPicker.change}
         </GhostButton>
       )}
     >
       <div className="flex flex-col gap-3">
-        <PickerGroup label="Kind" ariaLabel={`Kind for ${name}`}>
+        <PickerGroup
+          label={copy.settings.machineMarkPicker.kind}
+          ariaLabel={copy.settings.machineMarkPicker.kindFor(name)}
+        >
           {MACHINE_KINDS.map((kind) => (
             <IconButton
               key={kind}
@@ -100,7 +104,10 @@ export function MachineMarkPicker({ machine, name }: { machine: MachineRef; name
             </IconButton>
           ))}
         </PickerGroup>
-        <PickerGroup label="Colour" ariaLabel={`Colour for ${name}`}>
+        <PickerGroup
+          label={copy.settings.machineMarkPicker.colour}
+          ariaLabel={copy.settings.machineMarkPicker.colourFor(name)}
+        >
           {MACHINE_COLOURS.map((colour) => (
             <IconButton
               key={colour}
@@ -126,7 +133,9 @@ export function MachineMarkPicker({ machine, name }: { machine: MachineRef; name
             {machineMarkWords(identity)}
           </span>
           {identity.overridden ? (
-            <LinkButton onClick={() => setMachineMark(id, null)}>Use the defaults</LinkButton>
+            <LinkButton onClick={() => setMachineMark(id, null)}>
+              {copy.settings.machineMarkPicker.useTheDefaults}
+            </LinkButton>
           ) : null}
         </div>
       </div>

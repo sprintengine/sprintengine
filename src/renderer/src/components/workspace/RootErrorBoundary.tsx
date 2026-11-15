@@ -2,6 +2,7 @@ import React from 'react'
 
 import { PrimaryButton } from '../ui/Buttons'
 import { EmptyState } from '../ui/EmptyState'
+import { copy } from '../../../../shared/copy'
 
 // The boundary at the top of every window's tree. Without it, one render that
 // throws (a reply in a shape a component did not expect, a lazy chunk that
@@ -41,9 +42,9 @@ export class RootErrorBoundary extends React.Component<RootErrorBoundaryProps, R
     return (
       <div role="alert" className="h-screen w-screen bg-[color:var(--bg-canvas)]">
         <EmptyState
-          title="This window stopped drawing"
-          body="Your chats and agents are still running. Reload to pick up where you were."
-          action={<PrimaryButton onClick={reload}>Reload window</PrimaryButton>}
+          title={copy.workspace.rootErrorBoundary.thisWindowStoppedDrawing}
+          body={copy.workspace.rootErrorBoundary.yourChatsAndAgentsAre}
+          action={<PrimaryButton onClick={reload}>{copy.workspace.rootErrorBoundary.reloadWindow}</PrimaryButton>}
         />
       </div>
     )

@@ -35,6 +35,7 @@ import {
   writeCachedProviderList,
 } from './providerSettings'
 import { isImeKey } from '../../utils/imeKey'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The field is `ui/Input`; this module used to carry a copy of SettingsPanel's
 // `INPUT_CLASS` under the same name. `font-mono` stays because an API
@@ -153,9 +154,9 @@ export function ProviderSettingsTab() {
   const clearKey = useCallback(
     async (provider: ConversationProviderListEntry) => {
       const confirmed = await dialog.confirm({
-        title: `Remove ${provider.displayName} API key?`,
-        body: 'Removes the key from this device. You can add it again later.',
-        confirmLabel: 'Remove key',
+        title: appCopy.settings.providerSettingsTab.removeAPIKey(provider.displayName),
+        body: appCopy.settings.providerSettingsTab.removesTheKeyFromThis,
+        confirmLabel: appCopy.settings.providerSettingsTab.removeKey,
       })
       if (!confirmed) return
       setPending((current) => ({ ...current, [provider.id]: 'clearing' }))
@@ -180,12 +181,16 @@ export function ProviderSettingsTab() {
   return (
     <div role="tabpanel" id="settings-panel-providers" aria-labelledby="settings-tab-providers" className="space-y-5">
       <SettingsPageHeader
-        title="Providers"
+        title={appCopy.settings.providerSettingsTab.providers}
         // The one sign a remembered list is being read again: quiet, in the
         // header's chrome, and gone when main has answered.
         actions={
           refreshing && tabState.kind === 'ready' ? (
-            <span className="inline-flex" role="status" aria-label="Checking for changes">
+            <span
+              className="inline-flex"
+              role="status"
+              aria-label={appCopy.settings.providerSettingsTab.checkingForChanges}
+            >
               <Spinner className="icon-sm" />
             </span>
           ) : undefined
@@ -199,29 +204,31 @@ export function ProviderSettingsTab() {
       {tabState.kind === 'loading' ? (
         // The kit's loading state, not a bare word: the same working mark and
         // one sentence every other surface still fetching shows.
-        <LoadingOverlay label="Loading providers…" className="py-8" />
+        <LoadingOverlay label={appCopy.settings.providerSettingsTab.loadingProviders} className="py-8" />
       ) : null}
 
       {tabState.kind === 'error' ? (
         <InlineNotice
           tone="error"
-          title="Could not load the conversation providers."
+          title={appCopy.settings.providerSettingsTab.couldNotLoadTheConversation}
           hint={tabState.message}
           action={
             <OutlineButton size="xs" onClick={() => void loadProviders()}>
-              Retry
+              {appCopy.settings.providerSettingsTab.retry}
             </OutlineButton>
           }
         />
       ) : null}
 
-      {tabState.kind === 'empty' ? <EmptyState density="list" title="No providers installed." /> : null}
+      {tabState.kind === 'empty' ? (
+        <EmptyState density="list" title={appCopy.settings.providerSettingsTab.noProvidersInstalled} />
+      ) : null}
 
       {/* One list card, one row a provider (2026-11-04). It was a section title
           and a card of its own for each, so a page of providers that need no
           key repeated "No API key needed." under seven headings. */}
       {tabState.kind === 'ready' ? (
-        <SettingCard as="ul" ariaLabel="Conversation providers">
+        <SettingCard as="ul" ariaLabel={appCopy.settings.providerSettingsTab.conversationProviders}>
           {tabState.providers.map((provider) => (
             <ProviderRow
               key={provider.id}
@@ -296,7 +303,7 @@ function ProviderRow({
                 <Input
                   readOnly
                   value="••••••••••••"
-                  aria-label={`${provider.displayName} API key is saved`}
+                  aria-label={appCopy.settings.providerSettingsTab.aPIKeyIsSaved(provider.displayName)}
                   size="md"
                   className="tracking-[0.3em] text-[color:var(--text-muted)]"
                 />
@@ -307,15 +314,20 @@ function ProviderRow({
                 ) : null}
               </div>
               {!canClear ? (
-                <p className="text-meta leading-5 text-[color:var(--text-subtle)]">Set from the environment.</p>
+                <p className="text-meta leading-5 text-[color:var(--text-subtle)]">
+                  {appCopy.settings.providerSettingsTab.setFromTheEnvironment}
+                </p>
               ) : secretView.persistence === 'session' ? (
-                <p className="text-meta leading-5 text-[color:var(--tone-warn)]">Kept for this session only.</p>
+                <p className="text-meta leading-5 text-[color:var(--tone-warn)]">
+                  {appCopy.settings.providerSettingsTab.keptForThisSessionOnly}
+                </p>
               ) : null}
             </div>
           ) : (
             <div className="space-y-1.5">
               <label htmlFor={inputId} className="sr-only">
-                {provider.displayName} API key
+                {provider.displayName}
+                {appCopy.settings.providerSettingsTab.aPIKey}
               </label>
               <div className="flex items-center gap-2">
                 <Input
@@ -327,7 +339,7 @@ function ProviderRow({
                     if (isImeKey(event)) return
                     if (event.key === 'Enter' && draft.trim() && !busy) onSave()
                   }}
-                  placeholder="Paste API key"
+                  placeholder={appCopy.settings.providerSettingsTab.pasteAPIKey}
                   autoComplete="off"
                   disabled={busy}
                   size="md"

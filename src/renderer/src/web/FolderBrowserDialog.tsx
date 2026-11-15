@@ -8,6 +8,7 @@ import { InlineNotice } from '../components/ui/InlineNotice'
 import { Input } from '../components/ui/Input'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../components/ui/Modal'
 import { RowButton } from '../components/ui/RowButton'
+import { copy } from '../../../shared/copy'
 
 // The folder picker a web tab shows where a desktop window opens the OS's own
 // (phase 9 spec, 4.1 #7, 6.5). The folders are the server's, listed by the
@@ -62,8 +63,8 @@ export function FolderBrowserDialog({
     <Modal open onClose={() => onDone(null)} labelledBy={titleId} size="standard" layout="panel">
       <ModalHeader
         titleId={titleId}
-        title="Choose a folder"
-        subtitle="Folders on the machine Studio runs on."
+        title={copy.web.folderBrowserDialog.chooseAFolder}
+        subtitle={copy.web.folderBrowserDialog.foldersOnTheMachineStudio}
         onClose={() => onDone(null)}
       />
       <ModalBody className="flex min-h-0 flex-1 flex-col gap-3">
@@ -74,7 +75,7 @@ export function FolderBrowserDialog({
           }}
         >
           <Input
-            aria-label="Folder path"
+            aria-label={copy.web.folderBrowserDialog.folderPath}
             value={typed}
             spellCheck={false}
             autoComplete="off"
@@ -82,7 +83,12 @@ export function FolderBrowserDialog({
           />
         </form>
         {error ? <InlineNotice tone="error" title={error} /> : null}
-        <div role="list" aria-label="Folders" aria-busy={loading} className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          role="list"
+          aria-label={copy.web.folderBrowserDialog.folders}
+          aria-busy={loading}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
           {listing?.parent ? (
             <div role="listitem">
               <RowButton onClick={() => void open(listing.parent ?? undefined, showHidden)}>
@@ -97,25 +103,31 @@ export function FolderBrowserDialog({
                 <FolderGlyph />
                 <span className="min-w-0 flex-1 truncate">{entry.name}</span>
                 {entry.project ? (
-                  <span className="text-meta text-[color:var(--text-muted)]">Git repository</span>
+                  <span className="text-meta text-[color:var(--text-muted)]">
+                    {copy.web.folderBrowserDialog.gitRepository}
+                  </span>
                 ) : entry.hint === 'not-a-project' ? (
-                  <span className="text-meta text-[color:var(--text-subtle)]">Probably not a project</span>
+                  <span className="text-meta text-[color:var(--text-subtle)]">
+                    {copy.web.folderBrowserDialog.probablyNotAProject}
+                  </span>
                 ) : null}
               </RowButton>
             </div>
           ))}
           {listing && listing.entries.length === 0 ? (
-            <p className="px-2 py-3 text-meta text-[color:var(--text-muted)]">No folders here.</p>
+            <p className="px-2 py-3 text-meta text-[color:var(--text-muted)]">
+              {copy.web.folderBrowserDialog.noFoldersHere}
+            </p>
           ) : null}
           {listing?.truncated ? (
             <p className="px-2 py-3 text-meta text-[color:var(--text-muted)]">
-              Showing the first 1,000 folders. Type a path to go further.
+              {copy.web.folderBrowserDialog.showingTheFirst1000}
             </p>
           ) : null}
         </div>
         <Checkbox
           checked={showHidden}
-          label="Show hidden folders"
+          label={copy.web.folderBrowserDialog.showHiddenFolders}
           onChange={(next) => {
             setShowHidden(next)
             void open(listing?.path, next)
@@ -123,9 +135,9 @@ export function FolderBrowserDialog({
         />
       </ModalBody>
       <ModalFooter>
-        <ModalButton onClick={() => onDone(null)}>Cancel</ModalButton>
+        <ModalButton onClick={() => onDone(null)}>{copy.web.folderBrowserDialog.cancel}</ModalButton>
         <ModalButton variant="primary" disabled={!listing} onClick={() => listing && onDone(listing.path)}>
-          Choose this folder
+          {copy.web.folderBrowserDialog.chooseThisFolder}
         </ModalButton>
       </ModalFooter>
     </Modal>

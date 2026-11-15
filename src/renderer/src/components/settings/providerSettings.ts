@@ -16,6 +16,7 @@ import type {
   ConversationSecretStatus,
   ConversationSecretStatusResult,
 } from '../../../../shared/electron-api'
+import { copy } from '../../../../shared/copy'
 
 export type { ConversationProviderListEntry }
 
@@ -54,12 +55,15 @@ export function deriveProviderTabState(
   if (!available) {
     return {
       kind: 'unavailable',
-      message: 'Restart the app to use this tab.',
+      message: copy.settings.providerSettings.restartTheAppToUse,
     }
   }
   if (result === null) return { kind: 'loading' }
   if (!result.ok) {
-    return { kind: 'error', message: result.message || 'Conversation providers are unavailable.' }
+    return {
+      kind: 'error',
+      message: result.message || copy.settings.providerSettings.conversationProvidersAreUnavailable,
+    }
   }
   if (result.providers.length === 0) return { kind: 'empty' }
   return { kind: 'ready', providers: orderProviders(result.providers) }

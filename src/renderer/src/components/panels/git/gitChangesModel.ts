@@ -37,6 +37,7 @@ import {
   type Changelist,
 } from '../../../../../shared/git/changelists'
 import type { CheckRowCheckedState } from '../../ui/CheckRow'
+import { copy } from '../../../../../shared/copy'
 
 /** How many rows one group renders before the rest are summarised. Four hundred
  *  `CheckRow`s is fine; four thousand is a frozen panel. */
@@ -378,7 +379,7 @@ export function buildGitChangeGroups(
     groups.push({
       id: 'conflicts',
       kind: 'conflicts',
-      title: 'Conflicts',
+      title: copy.panels.git.gitChangesModel.conflicts,
       totalCount: conflicts.length,
       rows,
       allRows,
@@ -442,7 +443,7 @@ export function buildGitChangeGroups(
           {
             id: `directory:${directory}`,
             kind: 'changes',
-            title: directory || 'Repository root',
+            title: directory || copy.panels.git.gitChangesModel.repositoryRoot,
           },
           byDirectory.get(directory) ?? [],
           limit,
@@ -450,11 +451,19 @@ export function buildGitChangeGroups(
       )
     }
   } else {
-    groups.push(cappedGroup({ id: 'changes', kind: 'changes', title: 'Changes' }, tracked, limit))
+    groups.push(
+      cappedGroup({ id: 'changes', kind: 'changes', title: copy.panels.git.gitChangesModel.changes }, tracked, limit),
+    )
   }
 
   if (untracked.length > 0) {
-    groups.push(cappedGroup({ id: 'untracked', kind: 'untracked', title: 'Untracked files' }, untracked, limit))
+    groups.push(
+      cappedGroup(
+        { id: 'untracked', kind: 'untracked', title: copy.panels.git.gitChangesModel.untrackedFiles },
+        untracked,
+        limit,
+      ),
+    )
   }
   return groups
 }

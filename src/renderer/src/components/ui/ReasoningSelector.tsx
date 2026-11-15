@@ -8,6 +8,7 @@ import { MENU_DIVIDER_CLASS, MENU_GROUP_LABEL_CLASS, MENU_ITEM_CLASS, MENU_LIST_
 import { FOCUS_RING_CLASS } from './tokens'
 import type { CliModelFamily } from './cliRuntimeCatalog'
 import type { PluginReasoningCatalog, PluginReasoningOption } from '../../../../shared/plugin-manifest'
+import { copy } from '../../../../shared/copy'
 
 // The runtime's second control: how hard the model thinks, and how much it can
 // hold. It sits beside the model trigger rather than inside the model list,
@@ -257,9 +258,9 @@ export function ReasoningSelector({
       )}
     >
       {levels.length > 0 ? (
-        <ReasoningGroup heading={grouped ? 'Reasoning' : undefined}>
+        <ReasoningGroup heading={grouped ? copy.ui.reasoningSelector.reasoning : undefined}>
           <EffortSlider
-            ariaLabel={grouped ? 'Reasoning' : ariaLabel}
+            ariaLabel={grouped ? copy.ui.reasoningSelector.reasoning : ariaLabel}
             levels={levels}
             reasoning={reasoning}
             catalogDefault={reasoningSelection?.default}
@@ -275,7 +276,7 @@ export function ReasoningSelector({
       ) : null}
       {grouped ? <div role="separator" className={MENU_DIVIDER_CLASS} /> : null}
       {variants.length > 0 ? (
-        <ReasoningGroup heading={grouped ? 'Context window' : undefined}>
+        <ReasoningGroup heading={grouped ? copy.ui.reasoningSelector.contextWindow : undefined}>
           {variants.map((variant) => (
             <ReasoningMenuItem
               key={variant.id}

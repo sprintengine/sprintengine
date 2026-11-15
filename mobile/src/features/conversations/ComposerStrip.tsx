@@ -8,6 +8,7 @@ import { useSheetHandoff } from "../../components/useSheetHandoff";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, touchSlop, type Theme } from "../../theme/tokens";
 import { layoutComposerStrip, type StripEntrySpec } from "./composerStripLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /** How far the strip runs up under the composer's box. */
 export const STRIP_TUCK = space.xl;
@@ -131,7 +132,7 @@ export function ComposerStrip({ entries }: { entries: readonly ComposerStripEntr
               ))}
             {layout.overflow ? (
               <Pressable
-                accessibilityLabel={`More: ${hidden.map((entry) => entry.overflowLabel).join(", ")}`}
+                accessibilityLabel={copy.phone.conversations.composerStrip.more(hidden.map((entry) => entry.overflowLabel).join(", "))}
                 accessibilityRole="button"
                 hitSlop={touchSlop(STRIP_ITEM_HEIGHT, OVERFLOW_WIDTH)}
                 onPress={() => setMoreOpen(true)}
@@ -147,7 +148,7 @@ export function ComposerStrip({ entries }: { entries: readonly ComposerStripEntr
         ) : null}
       </View>
 
-      <BottomSheet onClose={() => setMoreOpen(false)} onDismiss={handoff.onDismiss} title="More" visible={moreOpen}>
+      <BottomSheet onClose={() => setMoreOpen(false)} onDismiss={handoff.onDismiss} title={copy.phone.conversations.composerStrip.more2} visible={moreOpen}>
         {hidden.map((entry) => (
           <SheetOption
             icon={entry.overflowIcon}

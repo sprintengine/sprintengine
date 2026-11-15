@@ -11,6 +11,7 @@ import { clientSupports, hostPlatform } from '../../../clientCapabilities'
 import { showToast } from '../../../store/toastStore'
 import { revealLabel } from '../../../utils/revealLabel'
 import { mountedChatViewFor } from './mountedChatViews'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Export chat, the window's half: offered on a chat tab's menu and in the
 // palette. The chat is read from the Studio that holds it, page by page
@@ -21,11 +22,11 @@ import { mountedChatViewFor } from './mountedChatViews'
 
 /** The rows of the menu's flyout, in order: the two copies, then the files. */
 export const CHAT_EXPORT_MENU: readonly { action: ChatExportAction; label: string }[] = [
-  { action: 'copy', label: 'Copy chat' },
-  { action: 'copy-markdown', label: 'Copy chat as Markdown' },
-  { action: 'pdf', label: 'PDF…' },
-  { action: 'docx', label: 'Word document…' },
-  { action: 'markdown', label: 'Markdown…' },
+  { action: 'copy', label: appCopy.panels.agentChat.chatExport.copyChat },
+  { action: 'copy-markdown', label: appCopy.panels.agentChat.chatExport.copyChatAsMarkdown },
+  { action: 'pdf', label: appCopy.panels.agentChat.chatExport.pDF },
+  { action: 'docx', label: appCopy.panels.agentChat.chatExport.wordDocument },
+  { action: 'markdown', label: appCopy.panels.agentChat.chatExport.markdown },
 ]
 
 /** Why the export rows are off for a chat with nothing in it. */
@@ -116,27 +117,29 @@ export async function exportChatOrToast(input: {
   const copying = action === 'copy' || action === 'copy-markdown'
   const failed = (error: unknown) => ({
     ok: false as const,
-    message: error instanceof Error ? error.message : 'The chat could not be exported.',
+    message: error instanceof Error ? error.message : appCopy.panels.agentChat.chatExport.theChatCouldNotBe,
   })
   const read = remote ? remote() : windowStudioClient().then((client) => readStudioChatExport(client, chat))
   const result = await read.then((source) => window.api.saveChatExport({ action, source })).catch(failed)
   if (!result.ok) {
     showToast({
       tone: 'error',
-      title: copying ? 'Could not copy the chat' : 'Could not export the chat',
+      title: copying
+        ? appCopy.panels.agentChat.chatExport.couldNotCopyTheChat
+        : appCopy.panels.agentChat.chatExport.couldNotExportTheChat,
       description: result.message,
     })
     return
   }
   if (result.kind === 'cancelled') return
   if (result.kind === 'copied') {
-    showToast({ tone: 'good', title: 'Chat copied' })
+    showToast({ tone: 'good', title: appCopy.panels.agentChat.chatExport.chatCopied })
     return
   }
   const { path } = result
   showToast({
     tone: 'good',
-    title: 'Chat exported',
+    title: appCopy.panels.agentChat.chatExport.chatExported,
     description: result.fileName,
     ...(clientSupports('reveal-in-folder')
       ? {

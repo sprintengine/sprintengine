@@ -271,6 +271,7 @@ import { cancelNextMiddleButtonRelease } from '../../utils/middleButtonRelease'
 import { isImeKey } from '../../utils/imeKey'
 import { schedulesApi } from '../../studio/schedules'
 import { workspaceSyncApi, workspaceSyncReachable } from '../../studio/workspaceSync'
+import { copy as appCopy } from '../../../../shared/copy'
 
 export { TerminalLineView } from './sidebar/TerminalLineView'
 
@@ -553,8 +554,12 @@ function WorkspaceSidebar({
         const failure = !result.ok ? result.message : !result.run.ok ? result.run.message : null
         showToast(
           failure === null
-            ? { tone: 'good', title: 'Started', description: 'Its chat is in the list.' }
-            : { tone: 'error', title: 'Did not run', description: failure },
+            ? {
+                tone: 'good',
+                title: appCopy.workspace.workspaceSidebar.started,
+                description: appCopy.workspace.workspaceSidebar.itsChatIsInThe,
+              }
+            : { tone: 'error', title: appCopy.workspace.workspaceSidebar.didNotRun, description: failure },
         )
       })
       .catch(() => {})
@@ -568,8 +573,12 @@ function WorkspaceSidebar({
       .then((removed) => {
         showToast(
           removed.ok
-            ? { tone: 'neutral', title: 'Scheduled agent closed', description: 'It will not run again.' }
-            : { tone: 'error', title: 'Not closed', description: removed.message },
+            ? {
+                tone: 'neutral',
+                title: appCopy.workspace.workspaceSidebar.scheduledAgentClosed,
+                description: appCopy.workspace.workspaceSidebar.itWillNotRunAgain,
+              }
+            : { tone: 'error', title: appCopy.workspace.workspaceSidebar.notClosed, description: removed.message },
         )
       })
       .catch(() => {})
@@ -1727,7 +1736,11 @@ function WorkspaceSidebar({
           next.delete(conversation.key)
           return next
         })
-        showToast({ tone: 'error', title: `${conversation.title} was not settled`, description: message })
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.workspaceSidebar.wasNotSettled(conversation.title),
+          description: message,
+        })
       }
       setSettlingRemote((current) => new Set(current).add(conversation.key))
       void settlePairedChat(
@@ -1860,12 +1873,17 @@ function WorkspaceSidebar({
     void workspaceSyncApi
       .workspaceMarkUnread(workspaceId)
       .then((answer) => {
-        if (!answer.ok) showToast({ tone: 'error', title: 'Not marked unread', description: answer.message })
+        if (!answer.ok)
+          showToast({
+            tone: 'error',
+            title: appCopy.workspace.workspaceSidebar.notMarkedUnread,
+            description: answer.message,
+          })
       })
       .catch((error: unknown) =>
         showToast({
           tone: 'error',
-          title: 'Not marked unread',
+          title: appCopy.workspace.workspaceSidebar.notMarkedUnread,
           description: error instanceof Error ? error.message : String(error),
         }),
       )
@@ -2062,7 +2080,9 @@ function WorkspaceSidebar({
       const refused = (message: string) =>
         showToast({
           tone: 'error',
-          title: settled ? `${workspace.name} was not settled` : `${workspace.name} was not brought back`,
+          title: settled
+            ? appCopy.workspace.workspaceSidebar.wasNotSettled2(workspace.name)
+            : appCopy.workspace.workspaceSidebar.wasNotBroughtBack(workspace.name),
           description: message,
         })
       void settlePairedChat(
@@ -2596,8 +2616,8 @@ function WorkspaceSidebar({
     else
       showToast({
         tone: 'neutral',
-        title: `${workspace.name} is still working`,
-        description: 'It can be settled once its agents finish.',
+        title: appCopy.workspace.workspaceSidebar.isStillWorking(workspace.name),
+        description: appCopy.workspace.workspaceSidebar.itCanBeSettledOnce,
       })
   })
   // `chat.regenerateTitle`, the row menu's Regenerate title for the chat on
@@ -2608,16 +2628,21 @@ function WorkspaceSidebar({
     if (!canRegenerateTitleOf(workspace)) {
       showToast({
         tone: 'neutral',
-        title: `${workspace.name} was not renamed`,
+        title: appCopy.workspace.workspaceSidebar.wasNotRenamed(workspace.name),
         description: workspace.remoteOrigin
-          ? 'Chats from a paired machine are named there.'
-          : "There's nothing in it to name it from yet.",
+          ? appCopy.workspace.workspaceSidebar.chatsFromAPairedMachine
+          : appCopy.workspace.workspaceSidebar.thereSNothingInIt,
       })
       return
     }
     const before = workspace.name
     void regenerateStoreWorkspaceTitle(id).then((result) => {
-      if (!result.ok) showToast({ tone: 'error', title: `${before} was not renamed`, description: result.message })
+      if (!result.ok)
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.workspaceSidebar.wasNotRenamed2(before),
+          description: result.message,
+        })
     })
   })
   useEffect(() => {
@@ -2944,8 +2969,8 @@ function WorkspaceSidebar({
       if (movingAgentId && destination?.agents[movingAgentId]) {
         showToast({
           tone: 'error',
-          title: 'Agent not moved',
-          description: `${workspace.name} already has this agent. Drop it on New chat instead.`,
+          title: appCopy.workspace.workspaceSidebar.agentNotMoved,
+          description: appCopy.workspace.workspaceSidebar.alreadyHasThisAgentDrop(workspace.name),
         })
         return
       }
@@ -3082,7 +3107,10 @@ function WorkspaceSidebar({
         if (failed.length === 0) return
         showToast({
           tone: 'error',
-          title: failed.length === 1 ? `${failed[0]!.name} was not renamed` : `${failed.length} chats were not renamed`,
+          title:
+            failed.length === 1
+              ? appCopy.workspace.workspaceSidebar.wasNotRenamed(failed[0]!.name)
+              : appCopy.workspace.workspaceSidebar.chatsWereNotRenamed(failed.length),
           description: failed[0]!.result.ok ? undefined : failed[0]!.result.message,
         })
       })
@@ -3297,7 +3325,7 @@ function WorkspaceSidebar({
     // "More actions", then Settle, which waits while the agent works.
     const actions = (
       <span className="pointer-events-none absolute inset-y-0 right-0 inline-flex items-center gap-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-        <Tooltip content="More actions">
+        <Tooltip content={appCopy.workspace.workspaceSidebar.moreActions}>
           <IconButton
             onClick={(event) => {
               event.stopPropagation()
@@ -3305,7 +3333,7 @@ function WorkspaceSidebar({
               setRemoteMenu({ key: conversation.key, x: bounds.right, y: bounds.bottom })
             }}
             tone="quiet"
-            aria-label="Chat actions"
+            aria-label={appCopy.workspace.workspaceSidebar.chatActions}
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="icon-xs" aria-hidden="true">
               <circle cx="3.5" cy="8" r="1.2" />
@@ -3316,7 +3344,7 @@ function WorkspaceSidebar({
         </Tooltip>
         {/* A sleeping row's seat is Wake, as a local one's is. */}
         {asleepUntil !== null && conversation.rowMenu ? (
-          <Tooltip content="Wake now">
+          <Tooltip content={appCopy.workspace.workspaceSidebar.wakeNow}>
             <IconButton
               onClick={(event) => {
                 event.stopPropagation()
@@ -3331,13 +3359,19 @@ function WorkspaceSidebar({
                 )
               }}
               tone="quiet"
-              aria-label={`Wake ${conversation.title}`}
+              aria-label={appCopy.workspace.workspaceSidebar.wake(conversation.title)}
             >
               {WAKE_ALARM_GLYPH}
             </IconButton>
           </Tooltip>
         ) : agent.lifecycle ? (
-          <Tooltip content={working ? 'Settle once its agents finish' : 'Settle'}>
+          <Tooltip
+            content={
+              working
+                ? appCopy.workspace.workspaceSidebar.settleOnceItsAgentsFinish
+                : appCopy.workspace.workspaceSidebar.settle
+            }
+          >
             <IconButton
               onClick={(event) => {
                 event.stopPropagation()
@@ -3346,7 +3380,7 @@ function WorkspaceSidebar({
               }}
               tone="quiet"
               aria-disabled={working || undefined}
-              aria-label={`Settle ${conversation.title}`}
+              aria-label={appCopy.workspace.workspaceSidebar.settle2(conversation.title)}
             >
               {SETTLE_TICK_GLYPH}
             </IconButton>
@@ -3363,11 +3397,17 @@ function WorkspaceSidebar({
         <span className="inline-flex items-center gap-1 group-hover:opacity-0 group-focus-within:opacity-0">
           {asleepUntil !== null ? (
             <RowTooltip
-              content={`Wakes ${relativeFromNow(asleepUntil, now)} (${new Date(asleepUntil).toLocaleString()})`}
+              content={appCopy.workspace.workspaceSidebar.wakes(
+                relativeFromNow(asleepUntil, now),
+                new Date(asleepUntil).toLocaleString(),
+              )}
             >
               <span className="text-meta tabular-nums text-[color:var(--text-subtle)]">
                 <span aria-hidden="true">{snoozeWakeLabel(asleepUntil, now)}</span>
-                <span className="sr-only">Wakes in {snoozeWakeLabel(asleepUntil, now)}</span>
+                <span className="sr-only">
+                  {appCopy.workspace.workspaceSidebar.wakesIn}
+                  {snoozeWakeLabel(asleepUntil, now)}
+                </span>
               </span>
             </RowTooltip>
           ) : working ? (
@@ -3377,11 +3417,17 @@ function WorkspaceSidebar({
             </>
           ) : idleText ? (
             <RowTooltip
-              content={`Idle ${formatRelativeMsAgo(idleSince, now)} (${new Date(idleSince!).toLocaleString()})`}
+              content={appCopy.workspace.workspaceSidebar.idle(
+                formatRelativeMsAgo(idleSince, now),
+                new Date(idleSince!).toLocaleString(),
+              )}
             >
               <span className="text-meta tabular-nums text-[color:var(--text-subtle)]">
                 <span aria-hidden="true">{idleText}</span>
-                <span className="sr-only">Idle {formatRelativeMsAgo(idleSince, now)}</span>
+                <span className="sr-only">
+                  {appCopy.workspace.workspaceSidebar.idle2}
+                  {formatRelativeMsAgo(idleSince, now)}
+                </span>
               </span>
             </RowTooltip>
           ) : null}
@@ -3438,7 +3484,11 @@ function WorkspaceSidebar({
                 machine's row wears beside the title, in both shapes of the list. */}
             {scheduledAgentId ? <ScheduledRunGlyph scheduledAgentId={scheduledAgentId} /> : null}
             {starred ? (
-              <StarGlyph filled className="icon-xs shrink-0 text-[color:var(--tone-warn)]" label="Starred" />
+              <StarGlyph
+                filled
+                className="icon-xs shrink-0 text-[color:var(--tone-warn)]"
+                label={appCopy.workspace.workspaceSidebar.starred}
+              />
             ) : null}
             {/* Weight marks a running turn, or one that wants you, the way
                 `workspaceRowEmphasis` weights a local row. Renamed in place,
@@ -3448,7 +3498,7 @@ function WorkspaceSidebar({
                 ref={remoteRenameInputRef}
                 size="none"
                 fullWidth={false}
-                aria-label={`Rename ${conversation.title}`}
+                aria-label={appCopy.workspace.workspaceSidebar.rename(conversation.title)}
                 value={renamingRemote.value}
                 onChange={(event) => setRenamingRemote({ key: conversation.key, value: event.target.value })}
                 onBlur={commitRemoteRename}
@@ -3468,10 +3518,20 @@ function WorkspaceSidebar({
                 className={`min-w-0 flex-1 ${working || needsAttention || unseenDone ? 'font-semibold' : ''}`}
               />
             )}
-            <span className="sr-only"> (on {conversation.machineName}, not open here)</span>
-            {asleepUntil !== null ? <span className="sr-only"> (snoozed)</span> : null}
-            {needsAttention ? <span className="sr-only"> (needs your input)</span> : null}
-            {unseenDone ? <span className="sr-only"> (finished while you were away)</span> : null}
+            <span className="sr-only">
+              {appCopy.workspace.workspaceSidebar.on}
+              {conversation.machineName}
+              {appCopy.workspace.workspaceSidebar.notOpenHere}
+            </span>
+            {asleepUntil !== null ? (
+              <span className="sr-only">{appCopy.workspace.workspaceSidebar.snoozed}</span>
+            ) : null}
+            {needsAttention ? (
+              <span className="sr-only">{appCopy.workspace.workspaceSidebar.needsYourInput}</span>
+            ) : null}
+            {unseenDone ? (
+              <span className="sr-only">{appCopy.workspace.workspaceSidebar.finishedWhileYouWereAway}</span>
+            ) : null}
           </ConversationPeekPopover>
         </div>
         {/* One line per agent, the way a local chat draws its chats.
@@ -3556,7 +3616,7 @@ function WorkspaceSidebar({
       <div id={folderBodyId}>
         {rows}
         <ShelfFoldRow
-          label="Snoozed"
+          label={appCopy.workspace.workspaceSidebar.snoozed2}
           count={sleeping.length}
           expanded={snoozeExpanded}
           controlsId={snoozeShelfId}
@@ -3565,7 +3625,7 @@ function WorkspaceSidebar({
         <div
           id={snoozeShelfId}
           role="group"
-          aria-label={`Snoozed chats in ${group.displayName}`}
+          aria-label={appCopy.workspace.workspaceSidebar.snoozedChatsIn(group.displayName)}
           hidden={!snoozeExpanded}
         >
           {snoozeExpanded
@@ -3631,9 +3691,9 @@ function WorkspaceSidebar({
     if (scheduledAgents.length === 0 && remoteCount === 0 && !scheduledHeld) return null
     const expanded = expandedShelves[SCHEDULED_SHELF_KEY] !== false
     return (
-      <section role="group" className="relative pt-1" aria-label="Scheduled agents">
+      <section role="group" className="relative pt-1" aria-label={appCopy.workspace.workspaceSidebar.scheduledAgents}>
         <ShelfFoldRow
-          label="Scheduled"
+          label={appCopy.workspace.workspaceSidebar.scheduled}
           count={scheduledAgents.length + remoteCount}
           expanded={expanded}
           flush
@@ -3643,7 +3703,12 @@ function WorkspaceSidebar({
         />
         {scheduledHeld ? <ScheduledAgentsHeldNotice reason={scheduledHeld} /> : null}
         {scheduledPausedAll ? <ScheduledAgentsPausedNotice pause={scheduledPausedAll} now={now} /> : null}
-        <div id={SCHEDULED_SHELF_ID} role="group" aria-label="Scheduled agents" hidden={!expanded}>
+        <div
+          id={SCHEDULED_SHELF_ID}
+          role="group"
+          aria-label={appCopy.workspace.workspaceSidebar.scheduledAgents}
+          hidden={!expanded}
+        >
           {expanded
             ? scheduledAgents.map((agent) => (
                 <ScheduledAgentRow
@@ -3731,16 +3796,21 @@ function WorkspaceSidebar({
     if (rows.length === 0) return null
     const expanded = expandedShelves[WORKING_SHELF_KEY] !== false
     return (
-      <section role="group" className="relative pt-1" aria-label="Working">
+      <section role="group" className="relative pt-1" aria-label={appCopy.workspace.workspaceSidebar.working}>
         <ShelfFoldRow
-          label="Working"
+          label={appCopy.workspace.workspaceSidebar.working}
           count={rows.length}
           expanded={expanded}
           flush
           controlsId={WORKING_SHELF_ID}
           onToggle={() => setExpandedShelves((prev) => ({ ...prev, [WORKING_SHELF_KEY]: !expanded }))}
         />
-        <div id={WORKING_SHELF_ID} role="group" aria-label="Chats working" hidden={!expanded}>
+        <div
+          id={WORKING_SHELF_ID}
+          role="group"
+          aria-label={appCopy.workspace.workspaceSidebar.chatsWorking}
+          hidden={!expanded}
+        >
           {expanded ? rows.map(renderWorkingRow) : null}
         </div>
       </section>
@@ -3765,14 +3835,19 @@ function WorkspaceSidebar({
     return (
       <>
         <ShelfFoldRow
-          label="Working"
+          label={appCopy.workspace.workspaceSidebar.working}
           count={rows.length}
           expanded={expanded}
           flush
           controlsId={STATUS_WORKING_SHELF_ID}
           onToggle={() => setExpandedShelves((prev) => ({ ...prev, [STATUS_WORKING_SHELF_KEY]: !expanded }))}
         />
-        <div id={STATUS_WORKING_SHELF_ID} role="group" aria-label="Chats working" hidden={!expanded}>
+        <div
+          id={STATUS_WORKING_SHELF_ID}
+          role="group"
+          aria-label={appCopy.workspace.workspaceSidebar.chatsWorking}
+          hidden={!expanded}
+        >
           {expanded ? rows.map(renderWorkingRow) : null}
         </div>
       </>
@@ -3826,7 +3901,13 @@ function WorkspaceSidebar({
       <section
         role="group"
         className="relative pt-1"
-        aria-label={byStatus ? 'Chats by status' : view === 'date' ? 'Chats by date' : 'All chats'}
+        aria-label={
+          byStatus
+            ? appCopy.workspace.workspaceSidebar.chatsByStatus
+            : view === 'date'
+              ? appCopy.workspace.workspaceSidebar.chatsByDate
+              : appCopy.workspace.workspaceSidebar.allChats
+        }
       >
         {view === 'date'
           ? sectionChatsByDate(stream, now).map(({ section, entries }) => {
@@ -3847,7 +3928,7 @@ function WorkspaceSidebar({
                   <div
                     id={dateSectionShelfId(section)}
                     role="group"
-                    aria-label={`Chats from ${label.toLowerCase()}`}
+                    aria-label={appCopy.workspace.workspaceSidebar.chatsFrom(label.toLowerCase())}
                     hidden={!expanded}
                   >
                     {expanded ? entries.map(renderStreamRow) : null}
@@ -3860,7 +3941,7 @@ function WorkspaceSidebar({
         {sleeping.length > 0 ? (
           <>
             <ShelfFoldRow
-              label="Snoozed"
+              label={appCopy.workspace.workspaceSidebar.snoozed2}
               count={sleeping.length}
               expanded={snoozeExpanded}
               flush
@@ -3872,7 +3953,12 @@ function WorkspaceSidebar({
                 }))
               }
             />
-            <div id={ALL_CHATS_SNOOZE_SHELF_ID} role="group" aria-label="Snoozed chats" hidden={!snoozeExpanded}>
+            <div
+              id={ALL_CHATS_SNOOZE_SHELF_ID}
+              role="group"
+              aria-label={appCopy.workspace.workspaceSidebar.snoozedChats}
+              hidden={!snoozeExpanded}
+            >
               {snoozeExpanded
                 ? sleeping.map((entry) =>
                     entry.kind === 'local'
@@ -3978,8 +4064,8 @@ function WorkspaceSidebar({
           <Tooltip
             content={
               group.remote
-                ? `${group.remote.machineName} · ${group.remote.workspaceRoot ?? 'remote workspace'}`
-                : (group.fullPath ?? 'Workspaces with no folder')
+                ? `${group.remote.machineName} · ${group.remote.workspaceRoot ?? appCopy.workspace.workspaceSidebar.remoteWorkspace}`
+                : (group.fullPath ?? appCopy.workspace.workspaceSidebar.workspacesWithNoFolder)
             }
             placement="bottom"
             wrapperClassName="flex h-full min-w-0 flex-1"
@@ -4059,11 +4145,11 @@ function WorkspaceSidebar({
           </Tooltip>
           {group.missing ? (
             <span className="inline-flex items-center gap-1.5 text-meta font-medium text-[color:var(--tone-warn)]">
-              <StatusDot tone="warn" label="Folder missing" />
-              Missing
+              <StatusDot tone="warn" label={appCopy.workspace.workspaceSidebar.folderMissing} />
+              {appCopy.workspace.workspaceSidebar.missing}
             </span>
           ) : null}
-          <Tooltip content="Folder actions">
+          <Tooltip content={appCopy.workspace.workspaceSidebar.folderActions}>
             <IconButton
               onClick={(event) => {
                 event.stopPropagation()
@@ -4076,7 +4162,7 @@ function WorkspaceSidebar({
               tone="quiet"
               // No width until it shows, so the project's name has the header.
               className="max-w-0 overflow-hidden opacity-0 transition-opacity group-hover/folder:ml-1 group-hover/folder:max-w-none group-hover/folder:opacity-100 focus-visible:ml-1 focus-visible:max-w-none focus-visible:opacity-100"
-              aria-label={`Folder actions: ${group.displayName}`}
+              aria-label={appCopy.workspace.workspaceSidebar.folderActions2(group.displayName)}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="icon-xs" aria-hidden="true">
                 <circle cx="3.5" cy="8" r="1.2" />
@@ -4094,7 +4180,7 @@ function WorkspaceSidebar({
   return (
     <aside
       ref={sidebarRef}
-      aria-label="Workspaces"
+      aria-label={appCopy.workspace.workspaceSidebar.workspaces}
       // The shell's LEADING list, so `primary` rather than `auto`
       // (assets/index.css, "Selection tiers"). `auto` rests on anything that is
       // not `:focus-within`, and the pane beside this one is a terminal or a
@@ -4157,7 +4243,7 @@ function WorkspaceSidebar({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize sidebar"
+          aria-label={appCopy.workspace.workspaceSidebar.resizeSidebar}
           aria-valuenow={Math.round(sidebarWidth)}
           aria-valuemin={SIDEBAR_MIN_WIDTH}
           aria-valuemax={SIDEBAR_MAX_WIDTH}
@@ -4248,7 +4334,11 @@ function WorkspaceSidebar({
             tree starts one row down. The row keeps the
             tab-extract drop target. */}
           <div className="flex items-stretch gap-px">
-            <Tooltip content="New chat" placement="right" wrapperClassName="flex min-w-0 flex-1">
+            <Tooltip
+              content={appCopy.workspace.workspaceSidebar.newChat}
+              placement="right"
+              wrapperClassName="flex min-w-0 flex-1"
+            >
               {/* The same nav row `SidebarNavButton` draws, and `selected` is the
                 drop highlight — a transient target, so `aria-current` is
                 explicitly withheld: this row is not somewhere you are. */}
@@ -4274,13 +4364,17 @@ function WorkspaceSidebar({
                 door of its own. */}
             {onNewScheduledAgent && scheduledAgentsEnabled ? (
               <Tooltip
-                content={scheduledPausedAll ? 'New scheduled agent (all paused)' : 'New scheduled agent'}
+                content={
+                  scheduledPausedAll
+                    ? appCopy.workspace.workspaceSidebar.newScheduledAgentAllPaused
+                    : appCopy.workspace.workspaceSidebar.newScheduledAgent
+                }
                 placement="right"
               >
                 <IconButton
                   size="md"
                   tone="quiet"
-                  aria-label="New scheduled agent"
+                  aria-label={appCopy.workspace.workspaceSidebar.newScheduledAgent}
                   onClick={onNewScheduledAgent}
                   className="shrink-0"
                 >
@@ -4344,7 +4438,11 @@ function WorkspaceSidebar({
           }}
         >
           {starredWorkspaces.length > 0 || starredRemote.length > 0 ? (
-            <section role="group" className="relative pt-1" aria-label="Starred workspaces">
+            <section
+              role="group"
+              className="relative pt-1"
+              aria-label={appCopy.workspace.workspaceSidebar.starredWorkspaces}
+            >
               {/* The kit's nav row. `group/folder` is the hover scope the icon
                 slot below reads, and the insets are the tree's own grid. */}
               <RowButton
@@ -4380,7 +4478,7 @@ function WorkspaceSidebar({
                   </svg>
                 </span>
                 <span className="min-w-0 flex-1 truncate text-heading font-semibold text-[color:var(--text-strong)]">
-                  Starred
+                  {appCopy.workspace.workspaceSidebar.starred}
                 </span>
               </RowButton>
               <div id="ws-starred-body" hidden={starredCollapsed}>
@@ -4559,7 +4657,11 @@ function WorkspaceSidebar({
               const before = workspace.name
               void regenerateStoreWorkspaceTitle(workspace.id).then((result) => {
                 if (!result.ok)
-                  showToast({ tone: 'error', title: `${before} was not renamed`, description: result.message })
+                  showToast({
+                    tone: 'error',
+                    title: appCopy.workspace.workspaceSidebar.wasNotRenamed2(before),
+                    description: result.message,
+                  })
               })
               return
             }
@@ -4886,12 +4988,17 @@ function WorkspaceSidebar({
                 <>
                   <ModalHeader
                     titleId="ws-forget-title"
-                    title={`Forget folder “${folderDisplayName(confirmForget)}”?`}
-                    subtitle={`Closes ${count} workspace${count === 1 ? '' : 's'} and removes it from recents. Files on disk are kept.`}
+                    title={appCopy.workspace.workspaceSidebar.forgetFolder(folderDisplayName(confirmForget))}
+                    subtitle={appCopy.workspace.workspaceSidebar.closesWorkspaceAndRemovesIt(
+                      count,
+                      count === 1 ? '' : 's',
+                    )}
                     onClose={() => setConfirmForget(null)}
                   />
                   <ModalFooter>
-                    <ModalButton onClick={() => setConfirmForget(null)}>Cancel</ModalButton>
+                    <ModalButton onClick={() => setConfirmForget(null)}>
+                      {appCopy.workspace.workspaceSidebar.cancel}
+                    </ModalButton>
                     <ModalButton
                       variant="danger"
                       onClick={() => {
@@ -4900,7 +5007,7 @@ function WorkspaceSidebar({
                         if (path) onForgetFolder(path)
                       }}
                     >
-                      Forget folder
+                      {appCopy.workspace.workspaceSidebar.forgetFolder2}
                     </ModalButton>
                   </ModalFooter>
                 </>
@@ -5360,7 +5467,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
           on an invisible control. The seat makes room for them only while
           they show (`ROW_SEAT_CLASS`). */}
       <span className="pointer-events-none absolute inset-y-0 right-0 inline-flex items-center gap-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-data-[settle-flourish]:pointer-events-auto group-data-[settle-flourish]:opacity-100">
-        <Tooltip content="More actions">
+        <Tooltip content={appCopy.workspace.workspaceSidebar.moreActions}>
           <IconButton
             onClick={(event) => {
               event.stopPropagation()
@@ -5371,7 +5478,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
               })
             }}
             tone="quiet"
-            aria-label="Workspace actions"
+            aria-label={appCopy.workspace.workspaceSidebar.workspaceActions}
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="icon-xs" aria-hidden="true">
               <circle cx="3.5" cy="8" r="1.2" />
@@ -5409,7 +5516,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
              above: that was about the resting AFFORDANCE on every row, and
              this is a state that one row — the one you are in — is in. The
              ring is what says it without colour; the label says it in words. */
-          <Tooltip content="Un-settle">
+          <Tooltip content={appCopy.workspace.workspaceSidebar.unSettle}>
             <IconButton
               onClick={(event) => {
                 event.stopPropagation()
@@ -5417,7 +5524,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
                 else setWorkspaceSettled(workspace.id, false)
               }}
               tone="quiet"
-              aria-label={`Un-settle ${workspace.name}`}
+              aria-label={appCopy.workspace.workspaceSidebar.unSettle2(workspace.name)}
             >
               <svg
                 viewBox="0 0 16 16"
@@ -5453,20 +5560,26 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
              this back" about a state the row is going to leave on its own
              anyway. The alarm-bell shape says the clock
              is what you are cancelling. */
-          <Tooltip content="Wake now">
+          <Tooltip content={appCopy.workspace.workspaceSidebar.wakeNow}>
             <IconButton
               onClick={(event) => {
                 event.stopPropagation()
                 setWorkspaceSnoozed(workspace.id, null)
               }}
               tone="quiet"
-              aria-label={`Wake ${workspace.name}`}
+              aria-label={appCopy.workspace.workspaceSidebar.wake2(workspace.name)}
             >
               {WAKE_ALARM_GLYPH}
             </IconButton>
           </Tooltip>
         ) : (
-          <Tooltip content={settleBlocked ? 'Settle once its agents finish' : 'Settle'}>
+          <Tooltip
+            content={
+              settleBlocked
+                ? appCopy.workspace.workspaceSidebar.settleOnceItsAgentsFinish
+                : appCopy.workspace.workspaceSidebar.settle
+            }
+          >
             {/* `aria-disabled`, not `disabled`: a disabled button takes no
                 hover and no focus, so the tooltip saying why it waits could
                 never open. `settleWorkspaceById` refuses a working chat too. */}
@@ -5477,7 +5590,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
               }}
               tone="quiet"
               aria-disabled={settleBlocked || undefined}
-              aria-label={`Settle ${workspace.name}`}
+              aria-label={appCopy.workspace.workspaceSidebar.settle3(workspace.name)}
             >
               {SETTLE_TICK_GLYPH}
             </IconButton>
@@ -5509,7 +5622,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
                 label={
                   activity === 'working' || !rowWatchedPullRequest
                     ? activityLabel(seatActivity)
-                    : `Watching pull request #${rowWatchedPullRequest.number}`
+                    : appCopy.workspace.workspaceSidebar.watchingPullRequest(rowWatchedPullRequest.number)
                 }
               />
               {/* How long the turn has been running. The workspace-level
@@ -5528,11 +5641,17 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
             clock it stands in for, because it is the same kind of reading. */}
         {asleepUntil !== null ? (
           <RowTooltip
-            content={`Wakes ${relativeFromNow(asleepUntil, now)} (${new Date(asleepUntil).toLocaleString()})`}
+            content={appCopy.workspace.workspaceSidebar.wakes(
+              relativeFromNow(asleepUntil, now),
+              new Date(asleepUntil).toLocaleString(),
+            )}
           >
             <span className="text-meta tabular-nums text-[color:var(--text-subtle)]">
               <span aria-hidden="true">{snoozeWakeLabel(asleepUntil, now)}</span>
-              <span className="sr-only">Wakes in {snoozeWakeLabel(asleepUntil, now)}</span>
+              <span className="sr-only">
+                {appCopy.workspace.workspaceSidebar.wakesIn}
+                {snoozeWakeLabel(asleepUntil, now)}
+              </span>
             </span>
           </RowTooltip>
         ) : null}
@@ -5542,13 +5661,22 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
             surface means "the agent is waiting on you", which a woken row is
             not necessarily doing. */}
         {wokeAt !== null ? (
-          <RowTooltip content={`Woke ${formatRelativeMsAgo(wokeAt, now) || 'just now'}`}>
-            <span className="text-meta text-[color:var(--text-subtle)]">Woke</span>
+          <RowTooltip
+            content={appCopy.workspace.workspaceSidebar.woke(
+              formatRelativeMsAgo(wokeAt, now) || appCopy.workspace.workspaceSidebar.justNow,
+            )}
+          >
+            <span className="text-meta text-[color:var(--text-subtle)]">
+              {appCopy.workspace.workspaceSidebar.woke2}
+            </span>
           </RowTooltip>
         ) : null}
         {showRecencyText ? (
           <RowTooltip
-            content={`Idle ${formatRelativeMsAgo(recency!.idleSince!, now)} (${new Date(recency!.idleSince!).toLocaleString()})`}
+            content={appCopy.workspace.workspaceSidebar.idle(
+              formatRelativeMsAgo(recency!.idleSince!, now),
+              new Date(recency!.idleSince!).toLocaleString(),
+            )}
           >
             <span
               className={`text-meta tabular-nums ${
@@ -5556,7 +5684,10 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
               }`}
             >
               <span aria-hidden="true">{idleRecencyText}</span>
-              <span className="sr-only">Idle {formatRelativeMsAgo(recency!.idleSince!, now)}</span>
+              <span className="sr-only">
+                {appCopy.workspace.workspaceSidebar.idle2}
+                {formatRelativeMsAgo(recency!.idleSince!, now)}
+              </span>
             </span>
           </RowTooltip>
         ) : null}
@@ -5648,7 +5779,13 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
       {/* A schedule started this chat. Beside the title in both shapes of the
           list: the project line says where a chat is, not how it began. */}
       {isScheduledRunChat(workspace) ? <ScheduledRunGlyph scheduledAgentId={workspace.scheduledAgentId} /> : null}
-      {starred ? <StarGlyph filled className="icon-xs shrink-0 text-[color:var(--tone-warn)]" label="Starred" /> : null}
+      {starred ? (
+        <StarGlyph
+          filled
+          className="icon-xs shrink-0 text-[color:var(--tone-warn)]"
+          label={appCopy.workspace.workspaceSidebar.starred}
+        />
+      ) : null}
       {(() => {
         const RowMark = resolveEnabledWorkspaceType(workspace.mode, moduleOverrides)?.RowMark
         return RowMark ? <RowMark /> : null
@@ -5658,14 +5795,18 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
       ) : (
         <TruncatedText as="span" text={rowTitle} className={titleClass} />
       )}
-      {resident ? <span className="sr-only"> (agents resident)</span> : null}
+      {resident ? <span className="sr-only">{appCopy.workspace.workspaceSidebar.agentsResident}</span> : null}
       {/* The gold surface is the visible mark; this is the same meaning
           in words, since no state may be carried by colour alone. */}
-      {needsAttention ? <span className="sr-only"> (needs your input)</span> : null}
-      {unseenDone ? <span className="sr-only"> (finished while you were away)</span> : null}
-      {revealPending ? <span className="sr-only"> (an agent opened something for you here)</span> : null}
-      {options?.snoozed ? <span className="sr-only"> (snoozed)</span> : null}
-      {settled ? <span className="sr-only"> (settled)</span> : null}
+      {needsAttention ? <span className="sr-only">{appCopy.workspace.workspaceSidebar.needsYourInput}</span> : null}
+      {unseenDone ? (
+        <span className="sr-only">{appCopy.workspace.workspaceSidebar.finishedWhileYouWereAway}</span>
+      ) : null}
+      {revealPending ? (
+        <span className="sr-only">{appCopy.workspace.workspaceSidebar.anAgentOpenedSomethingFor}</span>
+      ) : null}
+      {options?.snoozed ? <span className="sr-only">{appCopy.workspace.workspaceSidebar.snoozed}</span> : null}
+      {settled ? <span className="sr-only">{appCopy.workspace.workspaceSidebar.settled}</span> : null}
     </>
   )
   const titleCluster = hasPeek ? (
@@ -5866,7 +6007,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
             className="icon-xs shrink-0 text-[color:var(--tone-warn)]"
             viewBox="0 0 16 16"
             fill="none"
-            aria-label="Folder missing"
+            aria-label={appCopy.workspace.workspaceSidebar.folderMissing}
           >
             <path d="M8 1L15 14H1L8 1Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             <path d="M8 6V9M8 11.5V11.51" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -5906,7 +6047,9 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
               worktree
               cwd={workspace.folderPath ?? null}
               dim={emphasis === 'quiet'}
-              tooltip={worktreeReclaimed ? 'Worktree freed after merge · restored when you open the chat' : undefined}
+              tooltip={
+                worktreeReclaimed ? appCopy.workspace.workspaceSidebar.worktreeFreedAfterMergeRestored : undefined
+              }
             />
           ) : null}
           {/* After the branch, where a live line puts it, so the two rows
@@ -6070,9 +6213,10 @@ function ConversationLineSeat({
   const phase = conversationSummaryPhase(session)
   const finishedAt = conversationFinishedAt(session)
   let content: React.ReactNode = null
-  if (phase === 'running' || phase === 'starting') content = <WorkingMark label="Agent working" />
+  if (phase === 'running' || phase === 'starting')
+    content = <WorkingMark label={appCopy.workspace.workspaceSidebar.agentWorking} />
   else if (watching !== null && (phase === 'completed' || phase === 'idle'))
-    content = <WorkingMark label={`Watching pull request #${watching}`} />
+    content = <WorkingMark label={appCopy.workspace.workspaceSidebar.watchingPullRequest2(watching)} />
   else if (finishedAt !== null && formatRelativeMs(finishedAt, now)) {
     content = (
       <>

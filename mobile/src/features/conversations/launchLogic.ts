@@ -5,6 +5,7 @@
 import {
   type ConversationWirePermissionPreset as ConversationPermissionPreset,
 } from "../../../../packages/conversation-protocol/src/public";
+import { copy } from "../../../../src/shared/copy";
 
 export interface CliRuntimeModel {
   id: string;
@@ -157,7 +158,7 @@ export function readCliRuntimeCatalog(value: unknown): CliRuntimeCatalog | null 
       ...(label ? { label } : {}),
       family,
       familyDefault: model.familyDefault === true,
-      contextLabel: contextLabel || "Standard",
+      contextLabel: contextLabel || copy.phone.conversations.launchLogic.standard,
       ...(model.isNew === true ? { isNew: true } : {}),
     });
   }
@@ -203,10 +204,10 @@ export const PERMISSION_PRESET_OPTIONS: readonly {
   chip: string;
   hint: string;
 }[] = [
-  { id: "manual", label: "Manual", chip: "Manual", hint: "Asks before every edit and command." },
-  { id: "auto", label: "Auto", chip: "Auto", hint: "Edits go through; commands and the rest ask." },
-  { id: "bypass", label: "Bypass permissions", chip: "Bypass", hint: "Skips every prompt. Trusted repos only." },
-  { id: "none", label: "No flag", chip: "No flag", hint: "No flag; the CLI's own settings decide." },
+  { id: "manual", label: copy.phone.conversations.launchLogic.manual, chip: "Manual", hint: copy.phone.conversations.launchLogic.asksBeforeEveryEditAnd },
+  { id: "auto", label: copy.phone.conversations.launchLogic.auto, chip: "Auto", hint: copy.phone.conversations.launchLogic.editsGoThroughCommandsAnd },
+  { id: "bypass", label: copy.phone.conversations.launchLogic.bypassPermissions, chip: "Bypass", hint: copy.phone.conversations.launchLogic.skipsEveryPromptTrustedRepos },
+  { id: "none", label: copy.phone.conversations.launchLogic.noFlag, chip: "No flag", hint: copy.phone.conversations.launchLogic.noFlagTheCLIS },
 ];
 
 /**

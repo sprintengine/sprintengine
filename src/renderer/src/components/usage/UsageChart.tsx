@@ -4,6 +4,7 @@ import { usageAgentLabel, type UsageAgentId } from '../../../../shared/usage-rep
 import { OVERLAY_SURFACE_CLASS } from '../ui/tokens'
 import { monotonePath, niceScale, type UsageSeries, type UsageWindow } from './usageDashboardModel'
 import { usageAgentColor } from './usageAgents'
+import { copy } from '../../../../shared/copy'
 
 // One area per agent, each measured from zero and drawn over the others rather
 // than stacked: a stack makes every agent but the bottom one hard to read off
@@ -105,7 +106,7 @@ export function UsageChart({
           tabIndex={0}
           role="group"
           aria-roledescription="chart"
-          aria-label={`${title}. Arrow keys move by ${window.unit === 'hour' ? 'hour' : 'day'}.`}
+          aria-label={copy.usage.usageChart.arrowKeysMoveBy(title, window.unit === 'hour' ? 'hour' : 'day')}
           onPointerMove={pick}
           onPointerLeave={() => setActive(null)}
           onFocus={() => setActive((current) => current ?? count - 1)}
@@ -188,7 +189,7 @@ export function UsageChart({
                     ))}
                     {readout.rows.length > 1 ? (
                       <div className="mt-0.5 flex items-center gap-2 border-t border-[color:var(--border-subtle)] pt-1.5 text-meta">
-                        <span className="flex-1 text-[color:var(--text-muted)]">Total</span>
+                        <span className="flex-1 text-[color:var(--text-muted)]">{copy.usage.usageChart.total}</span>
                         <span className="tabular-nums font-medium text-[color:var(--text-strong)]">
                           {formatValue(readout.total)}
                         </span>
@@ -196,7 +197,7 @@ export function UsageChart({
                     ) : null}
                   </div>
                 ) : (
-                  <div className="text-meta text-[color:var(--text-muted)]">No usage</div>
+                  <div className="text-meta text-[color:var(--text-muted)]">{copy.usage.usageChart.noUsage}</div>
                 )}
               </div>
             </>

@@ -32,6 +32,7 @@ import { MachineMarkPicker, MachineRowMark } from './MachineMarkPicker'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import { AddSshMachine, SshMachineActions, SshMachineDetail, useSshMachines } from './SshMachinesSection'
 import { ContainerMachineDetail, NewContainerForm } from './ContainerMachinesSection'
+import { copy } from '../../../../shared/copy'
 
 const ROW_FIELD = 'w-60 max-w-full font-mono'
 
@@ -56,8 +57,8 @@ export function formatEnvLines(env: Record<string, string>): string {
 }
 
 const SERVER_TRANSPORT_ITEMS: Array<{ value: 'auto' | 'stdio'; label: string }> = [
-  { value: 'auto', label: 'Loopback, else the bridge' },
-  { value: 'stdio', label: 'Always the bridge' },
+  { value: 'auto', label: copy.settings.machinesSettingsTab.loopbackElseTheBridge },
+  { value: 'stdio', label: copy.settings.machinesSettingsTab.alwaysTheBridge },
 ]
 
 /** How a distribution's Studio server, which holds its chats, stands, in words (phase 7). */
@@ -132,7 +133,7 @@ export function MachinesSettingsTab({
   return (
     <div className="space-y-6">
       <SettingsPageHeader
-        title="Machines"
+        title={copy.settings.machinesSettingsTab.machines}
         actions={
           <GhostButton
             size="md"
@@ -148,12 +149,14 @@ export function MachinesSettingsTab({
       />
 
       {listing?.wsl && !listing.wsl.available ? (
-        <InlineNotice tone="warn" title="WSL did not answer." hint={listing.wsl.reason} />
+        <InlineNotice tone="warn" title={copy.settings.machinesSettingsTab.wSLDidNotAnswer} hint={listing.wsl.reason} />
       ) : null}
 
       <section className="space-y-2">
-        <SettingsSectionTitle count={environments.length || undefined}>Machines</SettingsSectionTitle>
-        <SettingCard as="ul" ariaLabel="Machines">
+        <SettingsSectionTitle count={environments.length || undefined}>
+          {copy.settings.machinesSettingsTab.machines}
+        </SettingsSectionTitle>
+        <SettingCard as="ul" ariaLabel={copy.settings.machinesSettingsTab.machines}>
           {environments.map((entry) => {
             const key = environmentKey(entry)
             const best = entry.routes[0]!
@@ -239,11 +242,11 @@ export function MachinesSettingsTab({
 
       {offDistros.length > 0 ? (
         <section className="space-y-2">
-          <SettingsSectionTitle count={offDistros.length}>WSL distributions not turned on</SettingsSectionTitle>
-          <p className={MUTED}>
-            Turn one on to offer it in New chat. Workspaces inside a distribution run there anyway.
-          </p>
-          <SettingCard as="ul" ariaLabel="WSL distributions not turned on">
+          <SettingsSectionTitle count={offDistros.length}>
+            {copy.settings.machinesSettingsTab.wSLDistributionsNotTurnedOn}
+          </SettingsSectionTitle>
+          <p className={MUTED}>{copy.settings.machinesSettingsTab.turnOneOnToOffer}</p>
+          <SettingCard as="ul" ariaLabel={copy.settings.machinesSettingsTab.wSLDistributionsNotTurnedOn}>
             {offDistros.map((host) => (
               <ProviderRow
                 key={host.id}
@@ -262,27 +265,23 @@ export function MachinesSettingsTab({
         </section>
       ) : listing?.wsl?.available && !(listing.hosts ?? []).some((host) => host.kind === 'wsl') ? (
         <p className={MUTED}>
-          No WSL distributions. Install one with <ProviderStateId>wsl --install</ProviderStateId>.
+          {copy.settings.machinesSettingsTab.noWSLDistributionsInstallOne}
+          <ProviderStateId>{copy.settings.machinesSettingsTab.wslInstall}</ProviderStateId>.
         </p>
       ) : null}
 
       {sshOn ? (
         <section className="space-y-2">
-          <SettingsSectionTitle>New container</SettingsSectionTitle>
-          <p className={MUTED}>
-            A Docker container on this computer or an SSH machine, used as a machine of its own: clone repositories in
-            it and run chats there. It is kept until you delete it.
-          </p>
+          <SettingsSectionTitle>{copy.settings.machinesSettingsTab.newContainer}</SettingsSectionTitle>
+          <p className={MUTED}>{copy.settings.machinesSettingsTab.aDockerContainerOnThis}</p>
           <NewContainerForm api={window.api} machines={sshMachines} />
         </section>
       ) : null}
 
       {sshOn ? (
         <section className="space-y-2">
-          <SettingsSectionTitle>Add an SSH machine</SettingsSectionTitle>
-          <p className={MUTED}>
-            Studio installs and runs its server on the machine. Uses your SSH config and keys; stores no passwords.
-          </p>
+          <SettingsSectionTitle>{copy.settings.machinesSettingsTab.addAnSSHMachine}</SettingsSectionTitle>
+          <p className={MUTED}>{copy.settings.machinesSettingsTab.studioInstallsAndRunsIts}</p>
           <AddSshMachine api={window.api} />
         </section>
       ) : null}
@@ -316,10 +315,10 @@ function RouteDetail({
   if (route.kind === 'tailnet')
     return (
       <div className="flex items-center gap-3">
-        <p className={`${MUTED} min-w-0 flex-1`}>Paired over the tailnet. Manage it in Remote.</p>
+        <p className={`${MUTED} min-w-0 flex-1`}>{copy.settings.machinesSettingsTab.pairedOverTheTailnetManage}</p>
         {onOpenRemoteSettings ? (
           <OutlineButton size="xs" onClick={onOpenRemoteSettings}>
-            Remote settings
+            {copy.settings.machinesSettingsTab.remoteSettings}
           </OutlineButton>
         ) : null}
       </div>
@@ -345,8 +344,12 @@ function AgentClisLink({
   // see reaches it by voice; the machine follows, so a list of these is not a
   // list of identical buttons.
   return (
-    <OutlineButton size="xs" aria-label={`Agent CLIs on this machine, ${label}`} onClick={() => onShow(hostId)}>
-      Agent CLIs on this machine
+    <OutlineButton
+      size="xs"
+      aria-label={copy.settings.machinesSettingsTab.agentCLIsOnThisMachine(label)}
+      onClick={() => onShow(hostId)}
+    >
+      {copy.settings.machinesSettingsTab.agentCLIsOnThisMachine2}
     </OutlineButton>
   )
 }
@@ -385,16 +388,16 @@ function MachineDetail({
     <div className="space-y-4">
       <div className="divide-y divide-[color:var(--border-subtle)]">
         <SettingsRow
-          label="Shell"
+          label={copy.settings.machinesSettingsTab.shell}
           help="The shell a plain terminal opens, and the one an agent's tab ends in."
           htmlFor={`machine-shell-${host.id}`}
         >
           <Input
             id={`machine-shell-${host.id}`}
-            aria-label={`${host.label} shell`}
+            aria-label={copy.settings.machinesSettingsTab.shell2(host.label)}
             value={settings.shell ?? ''}
             onChange={(event) => onChange({ shell: event.target.value.trim() ? event.target.value : undefined })}
-            placeholder="bash -li"
+            placeholder={copy.settings.machinesSettingsTab.bashLi}
             size="md"
             variant="well"
             fullWidth={false}
@@ -402,14 +405,14 @@ function MachineDetail({
           />
         </SettingsRow>
         <SettingsRow
-          label="Environment"
+          label={copy.settings.machinesSettingsTab.environment}
           help="Exported into every terminal and agent on this machine. One NAME=value per line."
           htmlFor={`machine-env-${host.id}`}
           stacked
         >
           <Textarea
             id={`machine-env-${host.id}`}
-            aria-label={`${host.label} environment`}
+            aria-label={copy.settings.machinesSettingsTab.environment2(host.label)}
             value={envText}
             onChange={(event) => {
               const text = event.target.value
@@ -419,7 +422,7 @@ function MachineDetail({
               envTimer.current = setTimeout(commitEnv, ENV_COMMIT_DELAY_MS)
             }}
             onBlur={commitEnv}
-            placeholder="NAME=value"
+            placeholder={copy.settings.machinesSettingsTab.nAMEValue}
             size="md"
             variant="well"
             rows={3}
@@ -444,9 +447,9 @@ function ServerRow({
   onChange: (patch: Partial<ExecutionHostSettings>) => void
 }): React.JSX.Element {
   return (
-    <SettingsRow label="Studio server" help={serverWords(server)}>
+    <SettingsRow label={copy.settings.machinesSettingsTab.studioServer} help={serverWords(server)}>
       <Select
-        ariaLabel={`Server connection, ${host.label}`}
+        ariaLabel={copy.settings.machinesSettingsTab.serverConnection(host.label)}
         items={SERVER_TRANSPORT_ITEMS}
         value={settings.serverTransport ?? 'auto'}
         onChange={(value) => onChange({ serverTransport: value })}

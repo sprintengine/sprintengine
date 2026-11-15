@@ -5,6 +5,7 @@ import { GhostButton, Input, PrimaryButton } from '../ui'
 import { shortMachineName } from './machineRowModel'
 import { usePairRequestAnswer } from './pairRequestAnswer'
 import { signInDefaultScopes } from './scopePickerModel'
+import { copy } from '../../../../shared/copy'
 
 // Answering a pair request from the toast it arrives in (owner ruling
 // 2026-09-05, recorded in design-system/components/toast/component.md): the
@@ -52,7 +53,7 @@ export function PairRequestToastAccept({ request }: { request: TailnetPairReques
           autoComplete="one-time-code"
           maxLength={6}
           placeholder="000000"
-          aria-label={`Code shown on ${codeSource}`}
+          aria-label={copy.remote.pairRequestToastAccept.codeShownOn(codeSource)}
           aria-describedby={helpId}
           aria-invalid={codeError ? true : undefined}
           disabled={disabled}

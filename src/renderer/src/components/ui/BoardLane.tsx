@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
 import { useFlipReorder } from '../../utils/flipReorder'
 import { TruncatedText } from './TruncatedText'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // BoardLane — canonical lane chrome for any
 // future board panel that needs a flexible-width column (260 px floor by
@@ -133,7 +134,7 @@ export function BoardLane({
     <section
       className={sectionClass}
       style={laneStyle}
-      aria-label={ariaLabel ?? `${label} lane`}
+      aria-label={ariaLabel ?? appCopy.ui.boardLane.lane(label)}
       onDragOver={
         dnd
           ? (event) => {

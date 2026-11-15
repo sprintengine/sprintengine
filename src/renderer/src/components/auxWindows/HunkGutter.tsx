@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { CheckboxBox } from '../ui/Checkbox'
 import { FOCUS_RING_CLASS } from '../ui/tokens'
 import type { HunkBox } from './hunkGutterModel'
+import { copy } from '../../../../shared/copy'
 
 // The per-hunk include boxes in Monaco's glyph margin — git-commit-window T7,
 // mockup 2522 panel 4.
@@ -158,7 +159,7 @@ function HunkIncludeBox({ box, onToggle }: { box: HunkBox; onToggle: (key: strin
       // locked: the box still toggles. The margin is one glyph wide, so the
       // owner's NAME is a tooltip and the accessible label, never a chip —
       // a chip here hung over the first characters of the code.
-      title={box.ownerLabel ? `Owned by ${box.ownerLabel}` : undefined}
+      title={box.ownerLabel ? copy.auxWindows.hunkGutter.ownedBy(box.ownerLabel) : undefined}
       className={`relative flex size-icon-xs cursor-pointer items-center justify-center ${FOCUS_RING_CLASS} aria-disabled:cursor-progress${
         box.ownerLabel ? ' opacity-50' : ''
       }`}

@@ -10,6 +10,7 @@ import {
 import { ProviderRow, ProviderStateId } from '../ui'
 import { SettingCard } from './SettingsAtoms'
 import { gitApi } from '../../studio/git'
+import { copy } from '../../../../shared/copy'
 
 // GitHub CLI on a WSL distribution or an SSH machine: listed beside that
 // machine's agent CLIs, installed or missing, and whether it is signed in.
@@ -67,11 +68,20 @@ function GhStateLine({
   machineLabel: string
 }): React.JSX.Element {
   const why = <span className="block">{GH_NEEDED_FOR}</span>
-  if (status === 'loading') return <>Checking {machineLabel}…</>
+  if (status === 'loading')
+    return (
+      <>
+        {copy.settings.machineGhRow.checking}
+        {machineLabel}…
+      </>
+    )
   if (status === null)
     return (
       <>
-        {machineLabel} did not say whether <ProviderStateId>gh</ProviderStateId> is installed.
+        {machineLabel}
+        {copy.settings.machineGhRow.didNotSayWhether}
+        <ProviderStateId>gh</ProviderStateId>
+        {copy.settings.machineGhRow.isInstalled}
         {why}
       </>
     )
@@ -79,14 +89,17 @@ function GhStateLine({
     const hint = ghInstallHint(machine)
     return (
       <>
-        Not installed — no <ProviderStateId>gh</ProviderStateId> on {machineLabel}.{' '}
+        {copy.settings.machineGhRow.notInstalledNo}
+        <ProviderStateId>gh</ProviderStateId> on {machineLabel}.{' '}
         {hint.command ? (
           <>
-            Install it there with <ProviderStateId>{hint.command}</ProviderStateId>.
+            {copy.settings.machineGhRow.installItThereWith}
+            <ProviderStateId>{hint.command}</ProviderStateId>.
           </>
         ) : (
           <>
-            Install it there as <ProviderStateId>{hint.url}</ProviderStateId> describes.
+            {copy.settings.machineGhRow.installItThereAs}
+            <ProviderStateId>{hint.url}</ProviderStateId> describes.
           </>
         )}
         {why}
@@ -97,10 +110,15 @@ function GhStateLine({
     const [login, reuse] = ghSignInCommands(machine)
     return (
       <>
-        Installed, not signed in. Run <ProviderStateId>{login}</ProviderStateId> in a terminal on {machineLabel}
+        {copy.settings.machineGhRow.installedNotSignedInRun}
+        <ProviderStateId>{login}</ProviderStateId>
+        {copy.settings.machineGhRow.inATerminalOn}
+        {machineLabel}
         {reuse ? (
           <>
-            , or reuse This PC&apos;s sign-in with <ProviderStateId>{reuse}</ProviderStateId> inside WSL
+            {copy.settings.machineGhRow.orReuseThisPCS}
+            <ProviderStateId>{reuse}</ProviderStateId>
+            {copy.settings.machineGhRow.insideWSL}
           </>
         ) : null}
         .{why}
@@ -152,7 +170,7 @@ export function WslGhSection({
 }): React.JSX.Element {
   const status = useWslGh(hostId, recheck)
   return (
-    <SettingCard as="ul" ariaLabel={`GitHub CLI on ${label}`}>
+    <SettingCard as="ul" ariaLabel={copy.settings.machineGhRow.gitHubCLIOn(label)}>
       <MachineGhRow status={status} machine={{ kind: 'wsl' }} machineLabel={label} />
     </SettingCard>
   )

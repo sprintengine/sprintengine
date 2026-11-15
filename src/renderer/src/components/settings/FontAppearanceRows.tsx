@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { MONO_FONT_STACK, UI_FONT_STACK } from '../../utils/fonts'
 import { SettingRow } from '../ui'
 import { FontFamilyPicker } from './FontFamilyPicker'
+import { copy } from '../../../../shared/copy'
 
 /**
  * Appearance → Fonts: the interface's face and code's. Each sets the value of
@@ -19,18 +20,24 @@ export function FontAppearanceRows(): JSX.Element {
   const setCodeFont = useWorkspaceStore((s) => s.setAppearanceCodeFont)
   return (
     <>
-      <SettingRow label="Interface font" help="Menus, the sidebar, conversations and everything else that isn’t code.">
+      <SettingRow
+        label={copy.settings.fontAppearanceRows.interfaceFont}
+        help="Menus, the sidebar, conversations and everything else that isn’t code."
+      >
         <FontFamilyPicker
-          label="Interface font"
+          label={copy.settings.fontAppearanceRows.interfaceFont}
           value={interfaceFont}
           onChange={setInterfaceFont}
           defaultFamily="Inter"
           defaultStack={UI_FONT_STACK}
         />
       </SettingRow>
-      <SettingRow label="Code font" help="Terminals, editors, diffs and code in conversations. Monospace fonts only.">
+      <SettingRow
+        label={copy.settings.fontAppearanceRows.codeFont}
+        help="Terminals, editors, diffs and code in conversations. Monospace fonts only."
+      >
         <FontFamilyPicker
-          label="Code font"
+          label={copy.settings.fontAppearanceRows.codeFont}
           value={codeFont}
           onChange={setCodeFont}
           defaultFamily="JetBrains Mono"

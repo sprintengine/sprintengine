@@ -9,6 +9,7 @@ import { IconButton } from '../ui/Buttons'
 import { type Tone } from '../ui/tokens'
 import { Tooltip } from '../ui/Tooltip'
 import { TITLE_BAR_HEIGHT } from './AppTitleBar'
+import { copy } from '../../../../shared/copy'
 
 // The app rail (app shell, 2026-09-05): the narrow column of glyphs at
 // the window's far left that decides what the sidebar column beside it shows,
@@ -250,7 +251,7 @@ export function AppRail({
 }: AppRailProps) {
   return (
     <nav
-      aria-label="App rail"
+      aria-label={copy.workspace.appRail.appRail}
       // With the card gap, the gap is added outside the rail's own width.
       style={{ width: cardGap ? `calc(${width}px + var(--shell-card-gap))` : width }}
       // The whole column is a drag region — it is window chrome — and each
@@ -284,7 +285,7 @@ export function AppRail({
           glass with cards floating on it rather than a set of ruled columns. */}
       <div className="flex flex-col items-center gap-1.5 px-2 pt-1">
         <RailGlyph
-          label="Home"
+          label={copy.workspace.appRail.home}
           current="section"
           active={section === 'home'}
           badge={badges?.home}
@@ -305,7 +306,7 @@ export function AppRail({
           </RailGlyph>
         ))}
         <RailGlyph
-          label="Extensions"
+          label={copy.workspace.appRail.extensions}
           current="section"
           active={section === 'extensions'}
           badge={badges?.extensions}

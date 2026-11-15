@@ -22,6 +22,7 @@ import { filesApi } from '../studio/files'
 import { gitApi } from '../studio/git'
 import { extensionsApi } from '../studio/extensions'
 import { watchWindowStudio, windowHasStudio, windowStudioState } from '../studio/windowStudioClient'
+import { copy } from '../../../shared/copy'
 
 // Bundled renderer capability modules. Features migrate onto the host one at a
 // time; this list grows as each renderer surface is extracted from the
@@ -366,11 +367,11 @@ if (typeof window !== 'undefined') {
         rendererHost.setWorkspaceGitInfoSource(async (workspaceId) => {
           const workspace = useWorkspaceStore.getState().workspaces.find((entry) => entry.id === workspaceId)
           if (!workspace)
-            return { ok: false, code: 'unknown_workspace', message: `No open workspace "${workspaceId}".` }
+            return { ok: false, code: 'unknown_workspace', message: copy.modules.index.noOpenWorkspace(workspaceId) }
           const root = workspaceWorktree.workspaceWorkingRoot(workspace)
-          if (!root) return { ok: false, code: 'no_folder', message: 'The workspace has no folder.' }
+          if (!root) return { ok: false, code: 'no_folder', message: copy.modules.index.theWorkspaceHasNoFolder }
           if (typeof gitApi.getModuleWorkspaceGitInfo !== 'function') {
-            return { ok: false, code: 'unavailable', message: 'Workspace git information is not available here.' }
+            return { ok: false, code: 'unavailable', message: copy.modules.index.workspaceGitInformationIsNot }
           }
           return gitApi.getModuleWorkspaceGitInfo(root)
         })

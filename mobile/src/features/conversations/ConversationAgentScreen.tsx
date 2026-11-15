@@ -30,6 +30,7 @@ import { ParentLink } from "./ParentLink";
 import { toolDetailChat } from "./toolOutput";
 import { chatThreadCli } from "./launchLogic";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * One agent's own thread: what it was sent to do, how it is doing, what it is
@@ -80,7 +81,7 @@ export function ConversationAgentScreen({
   );
   if (!live || !lane || !source)
     return (
-      <Screen title="Subagent" onBack={onBack} backLabel="Back">
+      <Screen title={copy.phone.conversations.conversationAgentScreen.subagent} onBack={onBack} backLabel={copy.phone.conversations.conversationAgentScreen.back}>
         <Text style={styles.meta}>
           {live ? "This subagent is in an earlier part of the chat." : "Open the chat to follow its subagents."}
         </Text>
@@ -124,7 +125,7 @@ export function ConversationAgentScreen({
     </View>
   );
   return (
-    <Screen title={laneLabel(lane)} onBack={onBack} backLabel="Back">
+    <Screen title={laneLabel(lane)} onBack={onBack} backLabel={copy.phone.conversations.conversationAgentScreen.back}>
       <ParentLink
         relation={parentRelation(parent)}
         name={parent.name}
@@ -171,9 +172,9 @@ export function ConversationAgentScreen({
       {description ? <Text style={styles.meta}>{description}</Text> : null}
       {running && current ? (
         <View style={styles.nowBox}>
-          <WorkingMark label="Agent working" />
+          <WorkingMark label={copy.phone.conversations.conversationAgentScreen.agentWorking} />
           <Text style={styles.nowText}>
-            <Text style={styles.nowLabel}>Now </Text>
+            <Text style={styles.nowLabel}>{copy.phone.conversations.conversationAgentScreen.now}</Text>
             {current}
           </Text>
         </View>
@@ -181,9 +182,7 @@ export function ConversationAgentScreen({
       {!running && lane.agent?.error ? (
         <Text style={[styles.meta, status.tone === "failed" ? styles.errorInk : null]}>{lane.agent.error}</Text>
       ) : null}
-      <Text accessibilityRole="header" style={styles.group}>
-        Steps
-      </Text>
+      <Text accessibilityRole="header" style={styles.group}>{copy.phone.conversations.conversationAgentScreen.steps}</Text>
       {lane.steps.length ? (
         <View>
           {lane.steps.map((step) => (
@@ -204,13 +203,12 @@ export function ConversationAgentScreen({
       {lane.sent?.map((message) => (
         <View key={message.at} style={styles.sent}>
           <Text style={styles.sentText}>{message.text}</Text>
-          <Text style={styles.meta}>Sent via the main chat. Read at its next step.</Text>
+          <Text style={styles.meta}>{copy.phone.conversations.conversationAgentScreen.sentViaTheMainChat}</Text>
         </View>
       ))}
       {children.length ? (
         <>
-          <Text accessibilityRole="header" style={styles.group}>
-            Subagents · {children.length}
+          <Text accessibilityRole="header" style={styles.group}>{copy.phone.conversations.conversationAgentScreen.subagents}{children.length}
           </Text>
           <View style={styles.children}>
             {children.map((child, index) => (
@@ -228,9 +226,7 @@ export function ConversationAgentScreen({
       ) : null}
       {!running ? (
         <>
-          <Text accessibilityRole="header" style={styles.group}>
-            Report
-          </Text>
+          <Text accessibilityRole="header" style={styles.group}>{copy.phone.conversations.conversationAgentScreen.report}</Text>
           <View style={styles.report}>
             {lane.report?.trim() ? (
               <MarkdownDocument body={lane.report} variant="chat" reply onLinkBlocked={onLinkBlocked} />
@@ -255,9 +251,9 @@ export function ConversationAgentScreen({
         />
       ) : (
         <View style={styles.blocked}>
-          <Text style={styles.sentText}>To reach this subagent, speak to the main chat.</Text>
+          <Text style={styles.sentText}>{copy.phone.conversations.conversationAgentScreen.toReachThisSubagentSpeak}</Text>
           <Text style={styles.meta}>{delivery.why}</Text>
-          <PrimaryButton label="Go to the main chat" onPress={onChat} />
+          <PrimaryButton label={copy.phone.conversations.conversationAgentScreen.goToTheMainChat} onPress={onChat} />
         </View>
       )}
     </Screen>
@@ -280,15 +276,15 @@ function AgentMessageBox({ live, onSend }: { live: boolean; onSend: (message: st
   return (
     <View style={styles.box}>
       <TextInput
-        accessibilityLabel="Message this subagent"
+        accessibilityLabel={copy.phone.conversations.conversationAgentScreen.messageThisSubagent}
         multiline
         value={draft}
         onChangeText={setDraft}
-        placeholder="Send a message"
+        placeholder={copy.phone.conversations.conversationAgentScreen.sendAMessage}
         placeholderTextColor={colors.textMuted}
         style={styles.input}
       />
-      <PrimaryButton label="Send" disabled={!live || !draft.trim() || sending} onPress={() => void send()} />
+      <PrimaryButton label={copy.phone.conversations.conversationAgentScreen.send} disabled={!live || !draft.trim() || sending} onPress={() => void send()} />
     </View>
   );
 }
@@ -299,8 +295,7 @@ function RunningFor({ since }: { since: number }) {
   const now = useSecondsClock(true);
   return (
     <Text style={styles.fact}>
-      <Text style={styles.factValue}>{formatElapsed(now - since)}</Text> so far
-    </Text>
+      <Text style={styles.factValue}>{formatElapsed(now - since)}</Text>{copy.phone.conversations.conversationAgentScreen.soFar}</Text>
   );
 }
 

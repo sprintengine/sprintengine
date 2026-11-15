@@ -7,6 +7,7 @@ import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../compo
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../theme/tokens";
 import { orderSessionsForFleet, sessionDisplayStatus, sessionStatusLabel } from "../fleet/fleetLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * The paired desktops, one tap under Settings.
@@ -38,11 +39,11 @@ export function DesktopsScreen({
   const ordered = orderSessionsForFleet(sessions);
 
   return (
-    <ScreenFrame backLabel="Back to settings" count={sessions.length} onBack={onBack} title="Paired desktops">
+    <ScreenFrame backLabel={copy.phone.settings.desktopsScreen.backToSettings} count={sessions.length} onBack={onBack} title={copy.phone.settings.desktopsScreen.pairedDesktops}>
       <ScrollView contentContainerStyle={contentStyle} refreshControl={refreshControl}>
         {ordered.length === 0 ? (
           <Card>
-            <Text style={styles.notice}>No desktops are paired with this phone.</Text>
+            <Text style={styles.notice}>{copy.phone.settings.desktopsScreen.noDesktopsArePairedWith}</Text>
           </Card>
         ) : (
           <Card variant="list">
@@ -66,7 +67,7 @@ export function DesktopsScreen({
         )}
         <View style={styles.action}>
           <PrimaryButton
-            label={sessions.length > 0 ? "Pair another desktop" : "Pair a desktop"}
+            label={sessions.length > 0 ? copy.phone.settings.desktopsScreen.pairAnotherDesktop : copy.phone.settings.desktopsScreen.pairADesktop}
             onPress={onStartPairing}
             variant="secondary"
           />

@@ -6,6 +6,7 @@ import { followStoredSettings } from './auxSettingsWrite'
 import { writeAuxWindowBounds } from './auxWindowPlacement'
 import { InlineNotice, Spinner } from '../ui'
 import { ToastRegion } from '../ui/ToastRegion'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Each window body is only ever needed by the one kind of aux window that shows
 // it, and the workspace window shares this bundle without showing any of them,
@@ -21,7 +22,7 @@ function AuxLoading() {
   return (
     <div className="flex h-screen w-screen items-center justify-center gap-2 bg-[color:var(--bg-app)] text-body text-[color:var(--text-muted)]">
       <Spinner />
-      Loading…
+      {appCopy.auxWindows.auxWindowApp.loading}
     </div>
   )
 }
@@ -109,14 +110,15 @@ export default function AuxWindowApp() {
   }, [descriptor])
 
   if (!descriptor) {
-    return <AuxFailure message="Unknown auxiliary window." />
+    return <AuxFailure message={appCopy.auxWindows.auxWindowApp.unknownAuxiliaryWindow} />
   }
 
   // A pane popped out of its workspace window. It names the pop-out and the
   // workspace and nothing else: what it shows comes from the window that owns
   // it, over IPC, and changes as that window's pane does.
   if (descriptor.kind === 'pane') {
-    if (!params.popOutId || !params.workspaceId) return <AuxFailure message="Missing pane for this window." />
+    if (!params.popOutId || !params.workspaceId)
+      return <AuxFailure message={appCopy.auxWindows.auxWindowApp.missingPaneForThisWindow} />
     return (
       <Suspense fallback={<AuxLoading />}>
         <PanePopOutWindow popOutId={params.popOutId} workspaceId={params.workspaceId} />
@@ -133,7 +135,7 @@ export default function AuxWindowApp() {
       )
     const focusKind = params.scope === 'staged' ? 'staged' : params.scope === 'unstaged' ? 'unstaged' : null
     if (!params.repoRoot) {
-      return <AuxFailure message="Missing repository for diff viewer." />
+      return <AuxFailure message={appCopy.auxWindows.auxWindowApp.missingRepositoryForDiffViewer} />
     }
     return (
       <Suspense fallback={<AuxLoading />}>

@@ -35,6 +35,7 @@ import {
   isPathWithinApprovalRoot,
 } from '../../../../../shared/conversation/approvalRules'
 import { useClientToolOrigin } from '../../../studio/clientTools'
+import { copy } from '../../../../../shared/copy'
 
 type ApprovalEntry = Extract<TranscriptEntry, { kind: 'approval' }>
 type ApprovalHandler = (
@@ -306,14 +307,17 @@ export const ConversationPendingDock = React.memo(function ConversationPendingDo
       }}
     >
       {entries.length > 1 ? (
-        <div className="flex items-center justify-end gap-2 px-1.5 pt-1" aria-label="Pending requests">
-          <IconButton aria-label="Previous request" onClick={() => navigate(-1)}>
+        <div
+          className="flex items-center justify-end gap-2 px-1.5 pt-1"
+          aria-label={copy.panels.agentChat.pendingDock.pendingRequests}
+        >
+          <IconButton aria-label={copy.panels.agentChat.pendingDock.previousRequest} onClick={() => navigate(-1)}>
             ←
           </IconButton>
           <span className="text-meta tabular-nums" role="status">
             {selectedIndex + 1}/{entries.length}
           </span>
-          <IconButton aria-label="Next request" onClick={() => navigate(1)}>
+          <IconButton aria-label={copy.panels.agentChat.pendingDock.nextRequest} onClick={() => navigate(1)}>
             →
           </IconButton>
         </div>
@@ -466,7 +470,7 @@ export function ConversationPermissionCard({
       eyebrow={`Permission · ${permissionActionLabel(entry.action)}${origin ? ` · from ${origin}` : ''}`}
       containerRef={containerRef}
       onKeyDown={handleKeyDown}
-      ariaLabel="Permission request"
+      ariaLabel={copy.panels.agentChat.pendingDock.permissionRequest}
       actions={
         <>
           <GhostButton
@@ -474,13 +478,17 @@ export function ConversationPermissionCard({
             onClick={() => onApprove(entry.requestId, false, undefined, 'deny')}
             disabled={busy}
           >
-            Deny
+            {copy.panels.agentChat.pendingDock.deny}
           </GhostButton>
           {allowItems.length > 0 ? (
             <SplitButton
-              label="Allow once"
-              primaryAriaLabel="Allow once"
-              menuAriaLabel={switchItems.length > 0 ? 'More ways to allow' : 'Remember permission'}
+              label={copy.panels.agentChat.pendingDock.allowOnce}
+              primaryAriaLabel={copy.panels.agentChat.pendingDock.allowOnce}
+              menuAriaLabel={
+                switchItems.length > 0
+                  ? copy.panels.agentChat.pendingDock.moreWaysToAllow
+                  : copy.panels.agentChat.pendingDock.rememberPermission
+              }
               menuKind="alternatives"
               onPrimary={() => onApprove(entry.requestId, true, undefined, 'once')}
               disabled={busy}
@@ -492,7 +500,7 @@ export function ConversationPermissionCard({
               onClick={() => onApprove(entry.requestId, true, undefined, 'once')}
               disabled={busy}
             >
-              Allow once
+              {copy.panels.agentChat.pendingDock.allowOnce}
             </OutlineButton>
           )}
         </>
@@ -500,12 +508,13 @@ export function ConversationPermissionCard({
     >
       {entry.originAgentId ? (
         <InlineNotice tone="warn" className="mx-3 mt-2">
-          Requested by subagent {entry.originAgentId}.
+          {copy.panels.agentChat.pendingDock.requestedBySubagent}
+          {entry.originAgentId}.
         </InlineNotice>
       ) : null}
       {approvalOutsideWorkspace(entry, workspaceRoot) ? (
         <InlineNotice tone="warn" className="mx-3 mt-2">
-          Touches a path outside this workspace.
+          {copy.panels.agentChat.pendingDock.touchesAPathOutsideThis}
         </InlineNotice>
       ) : null}
       <ArrivalAnnouncement text={announcement} />
@@ -520,7 +529,7 @@ export function ConversationPermissionCard({
           <pre className="m-0 min-w-0 flex-1 whitespace-pre-wrap break-words py-0.5 font-mono">{command}</pre>
           <CopyGlyphButton
             text={command}
-            label="Copy command"
+            label={copy.panels.agentChat.pendingDock.copyCommand}
             size="xs"
             className="opacity-0 group-hover/command:opacity-100 focus-within:opacity-100"
           />
@@ -581,17 +590,17 @@ export function ConversationPlanCard({
       eyebrow="Plan · Review & approve"
       containerRef={containerRef}
       onKeyDown={handleKeyDown}
-      ariaLabel="Plan approval"
+      ariaLabel={copy.panels.agentChat.pendingDock.planApproval}
       actions={
         <>
           {/* Read it as a document in the pane, decide here: the dock keeps
               the answer beside the composer while the plan gets the room. */}
           {plan && openPlan ? <OpenPlanButton onOpen={() => openPlan(plan, entry.planFilePath)} /> : null}
           <GhostButton onClick={() => onApprove(entry.requestId, false)} disabled={busy}>
-            Keep planning
+            {copy.panels.agentChat.pendingDock.keepPlanning}
           </GhostButton>
           <OutlineButton size="sm" onClick={() => onApprove(entry.requestId, true)} disabled={busy}>
-            Approve plan
+            {copy.panels.agentChat.pendingDock.approvePlan}
           </OutlineButton>
         </>
       }
@@ -601,7 +610,12 @@ export function ConversationPlanCard({
         <>
           <div className="group/plan relative mx-3 mt-2 rounded-sm border border-[color:var(--border-subtle)] bg-[color:var(--bg-app)]">
             <div className="absolute right-1 top-1 opacity-0 group-hover/plan:opacity-100 focus-within:opacity-100">
-              <CopyGlyphButton text={plan} html={() => markdownClipboardHtml(plan)} label="Copy plan" size="xs" />
+              <CopyGlyphButton
+                text={plan}
+                html={() => markdownClipboardHtml(plan)}
+                label={copy.panels.agentChat.pendingDock.copyPlan}
+                size="xs"
+              />
             </div>
             <div className={`overflow-y-auto px-3 py-2.5 ${expanded || !long ? '' : 'max-h-80'}`}>
               <ConversationMarkdown size="compact" text={plan} />
@@ -769,12 +783,12 @@ export function ConversationQuestionCard({
       eyebrow={eyebrow}
       containerRef={containerRef}
       onKeyDown={handleKeyDown}
-      ariaLabel="Question from the agent"
+      ariaLabel={copy.panels.agentChat.pendingDock.questionFromTheAgent}
       footnote={footnote}
       actions={
         <>
           <GhostButton onClick={() => onAnswer(requestId, false)} disabled={busy}>
-            Dismiss
+            {copy.panels.agentChat.pendingDock.dismiss}
           </GhostButton>
           <OutlineButton size="sm" onClick={advance} disabled={busy || !currentAnswered}>
             {isLast ? 'Answer' : 'Next'}
@@ -820,7 +834,7 @@ export function ConversationQuestionCard({
                 <InlineMarkdown text={parsed.text} />
                 {parsed.recommended ? (
                   <span className="ml-2 text-micro font-medium tracking-normal text-[color:var(--text-muted)]">
-                    Recommended
+                    {copy.panels.agentChat.pendingDock.recommended}
                   </span>
                 ) : null}
               </span>
@@ -846,9 +860,11 @@ export function ConversationQuestionCard({
             }
           >
             <span className="block text-body font-semibold leading-5 text-[color:var(--text-strong)]">
-              Something else
+              {copy.panels.agentChat.pendingDock.somethingElse}
             </span>
-            <span className="block text-meta leading-[1.45] text-[color:var(--text-muted)]">Type your own answer</span>
+            <span className="block text-meta leading-[1.45] text-[color:var(--text-muted)]">
+              {copy.panels.agentChat.pendingDock.typeYourOwnAnswer}
+            </span>
           </MenuOption>
         ) : null}
       </div>
@@ -873,9 +889,9 @@ export function ConversationQuestionCard({
                 onAnswer(requestId, false)
               }
             }}
-            placeholder="Your answer…"
+            placeholder={copy.panels.agentChat.pendingDock.yourAnswer}
             disabled={busy}
-            aria-label={`Other answer for: ${plainInlineText(question.question)}`}
+            aria-label={copy.panels.agentChat.pendingDock.otherAnswerFor(plainInlineText(question.question))}
           />
         </div>
       ) : null}

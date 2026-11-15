@@ -7,6 +7,7 @@ import { clientSupports } from '../../../clientCapabilities'
 import { useDiagramDrawing } from './conversationDiagram'
 import { useVisualDrawing } from './conversationVisual'
 import { onTerminalData, onTerminalReplay, openTerminal, writeTerminal } from '../../../studio/terminals'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // How long a new terminal's shell gets to show it takes a bracketed paste:
 // long enough for rc files that load a prompt framework, short enough that a
@@ -117,8 +118,8 @@ async function pasteInTerminal(context: ConversationLinkContext, command: string
     await window.api.clipboardWriteText(command)
     showToast({
       tone: 'warn',
-      title: 'Copied the command instead',
-      description: 'This shell would run a multi-line paste line by line. Paste it yourself.',
+      title: appCopy.panels.agentChat.conversationCodeBlock.copiedTheCommandInstead,
+      description: appCopy.panels.agentChat.conversationCodeBlock.thisShellWouldRunA,
     })
   } catch (error) {
     report("Couldn't start a terminal", error instanceof Error ? error.message : String(error))

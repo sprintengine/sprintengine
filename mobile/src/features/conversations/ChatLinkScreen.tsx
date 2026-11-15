@@ -11,6 +11,7 @@ import { space, typography, type Theme } from "../../theme/tokens";
 import { useChats } from "./ChatsContext";
 import { chatOpenedKey, chatRowTitle, resolveChatLink, type ChatListRow } from "./conversationListLogic";
 import type { ChatLink, ConversationTarget } from "./conversationLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * A chat link opened on the phone (`sprintengine://chat/<environmentId>/<id>`,
@@ -71,17 +72,17 @@ export function ChatLinkScreen({
   }, [target]);
 
   return (
-    <ScreenFrame onBack={onBack} title="Open chat">
+    <ScreenFrame onBack={onBack} title={copy.phone.conversations.chatLinkScreen.openChat}>
       <ScrollView contentContainerStyle={contentStyle}>
         {!target || target.kind === "one" ? (
-          <SkeletonRows count={2} label="Looking for the chat on your desktops" />
+          <SkeletonRows count={2} label={copy.phone.conversations.chatLinkScreen.lookingForTheChatOn} />
         ) : target.kind === "several" ? (
           <View style={styles.group}>
-            <Text style={styles.lead}>This chat is on several desktops. Open it on:</Text>
+            <Text style={styles.lead}>{copy.phone.conversations.chatLinkScreen.thisChatIsOnSeveral}</Text>
             <Card variant="list">
               {target.rows.map((row, index) => (
                 <CardRow
-                  accessibilityLabel={`${chatRowTitle(row).title} on ${row.desktopName}`}
+                  accessibilityLabel={copy.phone.conversations.chatLinkScreen.on(chatRowTitle(row).title, row.desktopName)}
                   chevron
                   first={index === 0}
                   key={row.deviceId}
@@ -106,7 +107,7 @@ export function ChatLinkScreen({
                     ? `${failures.join(", ")} didn't answer, so it may be there.`
                     : "It may have been settled, or it is on a desktop this phone has not paired with."}
               </Text>
-              <PrimaryButton label="Try again" onPress={() => setAttempt((value) => value + 1)} variant="secondary" />
+              <PrimaryButton label={copy.phone.conversations.chatLinkScreen.tryAgain} onPress={() => setAttempt((value) => value + 1)} variant="secondary" />
             </View>
           </Card>
         )}

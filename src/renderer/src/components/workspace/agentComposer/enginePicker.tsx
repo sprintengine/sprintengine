@@ -6,6 +6,7 @@ import type { CliRuntimeOption } from '../../ui/CliModelPicker'
 import type { AgentCli } from '../../../../../shared/workspace'
 import { ChipCaretGlyph } from './agentSpawnShared'
 import { engineNames } from './useAgentComposer'
+import { copy } from '../../../../../shared/copy'
 
 // The engine chip: the CLI's own mark and the model's name, opening the model
 // picker (a CLI rail, the CLI's named models, the effort control and the
@@ -78,7 +79,7 @@ export function EnginePickerChip({
     <Popover
       open={open}
       onOpenChange={onOpenChange}
-      ariaLabel={`Engine: ${names.cliLabel}`}
+      ariaLabel={copy.workspace.agentComposer.enginePicker.engine(names.cliLabel)}
       popupRole="menu"
       placement={placement}
       renderTrigger={({ ref, triggerProps, togglePopover }) => {
@@ -99,7 +100,11 @@ export function EnginePickerChip({
             // Named, not left to its contents: the chip is a mark plus a
             // truncated label, and it is the only way to the model, effort and
             // permissions the picker holds.
-            aria-label={warn ? `Engine: ${label} — ${warn}` : `Engine: ${label}`}
+            aria-label={
+              warn
+                ? copy.workspace.agentComposer.enginePicker.engine2(label, warn)
+                : copy.workspace.agentComposer.enginePicker.engine3(label)
+            }
             data-engine-warn={warn ? 'true' : undefined}
             {...triggerProps}
           >
@@ -126,7 +131,7 @@ export function EnginePickerChip({
           own picker rather than as a second control beside the chip, and the
           permission preset sits on the same trailing row (owner, 2026-09-05). */}
       <CliModelPopoverSurface
-        ariaLabel="Agent runtime"
+        ariaLabel={copy.workspace.agentComposer.enginePicker.agentRuntime}
         options={options}
         currentCli={cli}
         effectiveModelFor={(target) => (target === cli ? model : undefined)}
@@ -134,7 +139,7 @@ export function EnginePickerChip({
         onSelectReasoning={onSelectReasoning}
         showReasoning
         showReasoningLevels={effortOffered}
-        reasoningAriaLabel="Reasoning effort"
+        reasoningAriaLabel={copy.workspace.agentComposer.enginePicker.reasoningEffort}
         onSelectCli={onSelectCli}
         onSelectModel={onSelectModel}
         permissions={permissions}

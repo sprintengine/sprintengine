@@ -6,6 +6,7 @@
 import { describeCronSchedule, nextCronRuns, parseCronSchedule } from "../../shared/cron/cron";
 import { formatRunTimes, type ScheduleTime } from "./scheduleEditor";
 import { sendTimeWords } from "./sendTime";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * What the picker holds: a repeating schedule's cron, or one time to run at.
@@ -34,14 +35,14 @@ export function readSchedule(cron: string, timezone: string, now: number): Sched
   } catch {
     runs = [];
   }
-  if (runs.length === 0) return { ok: false, message: "No such date, so it never runs" };
+  if (runs.length === 0) return { ok: false, message: copy.phone.scheduled.schedulePick.noSuchDateSoIt };
   return { ok: true, words: describeCronSchedule(parsed.schedule), next: formatRunTimes(runs, timezone, now) };
 }
 
 /** What a picked schedule says and when it next runs, or why it cannot be read. */
 export function readPickedSchedule(schedule: PickedSchedule, timezone: string, now: number): ScheduleReading {
   if (schedule.once === null) return readSchedule(schedule.cron, timezone, now);
-  if (schedule.once <= now) return { ok: false, message: "That time has passed" };
+  if (schedule.once <= now) return { ok: false, message: copy.phone.scheduled.schedulePick.thatTimeHasPassed };
   const when = sendTimeWords(schedule.once, now);
   return { ok: true, words: `Once, ${when}`, next: [when] };
 }

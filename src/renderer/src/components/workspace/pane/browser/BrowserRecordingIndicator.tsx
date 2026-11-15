@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 import type { BrowserRecordingState } from '../../../../../../shared/browser'
 import { Badge, IconButton, Tooltip } from '../../../ui'
 import { recordingClock } from './browserRecording'
+import { copy } from '../../../../../../shared/copy'
 
 // What the person sees while an agent records this tab: the word and a running
 // clock in the toolbar, and a Stop that ends it the way the agent's own stop
@@ -35,11 +36,19 @@ export function BrowserRecordingIndicator({
   const limit = recordingClock(recording.maxDurationMs)
   return (
     <>
-      <Badge tone="warn" ariaLabel={`An agent is recording this tab: ${elapsed}`} className="tabular-nums">
-        Recording {elapsed}
+      <Badge
+        tone="warn"
+        ariaLabel={copy.workspace.pane.browser.browserRecordingIndicator.anAgentIsRecordingThis(elapsed)}
+        className="tabular-nums"
+      >
+        {copy.workspace.pane.browser.browserRecordingIndicator.recording}
+        {elapsed}
       </Badge>
-      <Tooltip content={`Stop recording (it stops by itself at ${limit})`} placement="bottom">
-        <IconButton onClick={onStop} aria-label="Stop recording">
+      <Tooltip
+        content={copy.workspace.pane.browser.browserRecordingIndicator.stopRecordingItStopsBy(limit)}
+        placement="bottom"
+      >
+        <IconButton onClick={onStop} aria-label={copy.workspace.pane.browser.browserRecordingIndicator.stopRecording}>
           <StopGlyph />
         </IconButton>
       </Tooltip>

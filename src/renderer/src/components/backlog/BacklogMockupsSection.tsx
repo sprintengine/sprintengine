@@ -23,6 +23,7 @@ import {
   type BacklogMockupEntry,
 } from '../../utils/backlogMockups'
 import { filesApi } from '../../studio/files'
+import { copy } from '../../../../shared/copy'
 
 // Detail-pane "Mockups" surface, the attachment analog of
 // BacklogDependenciesSection. It renders the item's mockups — attached
@@ -108,7 +109,7 @@ export function BacklogMockupsSection({
 
   return (
     <Section
-      title="Mockups"
+      title={copy.backlog.backlogMockupsSection.mockups}
       level={4}
       inset
       // No hairline: padding and the heading separate this section from the next
@@ -162,14 +163,14 @@ function MockupRow({
     return (
       <li className="flex min-w-0 items-center gap-2">
         <Tooltip
-          content={`${entry.path} not found — update or remove it`}
+          content={copy.backlog.backlogMockupsSection.notFoundUpdateOrRemove(entry.path)}
           placement="top"
           wrapperClassName="inline-flex min-w-0 flex-1"
         >
           <span
             tabIndex={0}
             role="note"
-            aria-label={`${entry.path}: missing, no file on disk`}
+            aria-label={copy.backlog.backlogMockupsSection.missingNoFileOnDisk(entry.path)}
             // Readable ink: the path is what a person reads to fix the row, so it
             // is never disabled ink — the "Missing" word beside it carries state.
             className="min-w-0 flex-1 truncate rounded-sm px-1.5 py-1 font-mono text-meta text-[color:var(--text-muted)] outline-none focus-visible:focus-ring"
@@ -177,8 +178,12 @@ function MockupRow({
             {entry.path}
           </span>
         </Tooltip>
-        <span className="shrink-0 text-micro tabular-nums text-[color:var(--text-subtle)]">Missing</span>
-        {onRemove ? <RemoveButton label={`Remove missing mockup ${entry.path}`} onClick={onRemove} /> : null}
+        <span className="shrink-0 text-micro tabular-nums text-[color:var(--text-subtle)]">
+          {copy.backlog.backlogMockupsSection.missing}
+        </span>
+        {onRemove ? (
+          <RemoveButton label={copy.backlog.backlogMockupsSection.removeMissingMockup(entry.path)} onClick={onRemove} />
+        ) : null}
       </li>
     )
   }
@@ -203,7 +208,9 @@ function MockupRow({
         }
       />
       {entry.source === 'detected' ? (
-        <span className="px-1 text-micro text-[color:var(--text-subtle)]">Found in this item</span>
+        <span className="px-1 text-micro text-[color:var(--text-subtle)]">
+          {copy.backlog.backlogMockupsSection.foundInThisItem}
+        </span>
       ) : null}
       {/* The raised ground sits on the wrapper, not the buttons: it keeps the
           glyphs legible over the preview while the kit buttons keep their own
@@ -214,7 +221,9 @@ function MockupRow({
         <span className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           <OpenInBrowserButton path={entry.path} absolutePath={optimistic.absolutePath} />
         </span>
-        {onRemove ? <RemoveButton label={`Remove mockup ${entry.path}`} onClick={onRemove} /> : null}
+        {onRemove ? (
+          <RemoveButton label={copy.backlog.backlogMockupsSection.removeMockup(entry.path)} onClick={onRemove} />
+        ) : null}
       </div>
     </li>
   )
@@ -225,9 +234,9 @@ function MockupRow({
 // uses, without going through the inline preview first.
 function OpenInBrowserButton({ path, absolutePath }: { path: string; absolutePath: string }): JSX.Element {
   return (
-    <Tooltip content="Open in browser" placement="top">
+    <Tooltip content={copy.backlog.backlogMockupsSection.openInBrowser} placement="top">
       <IconButton
-        aria-label={`Open ${path} in browser`}
+        aria-label={copy.backlog.backlogMockupsSection.openInBrowser2(path)}
         onClick={(event) => {
           event.stopPropagation()
           void window.api.openHtmlFileInBrowser(absolutePath)
@@ -252,7 +261,7 @@ function OpenInBrowserButton({ path, absolutePath }: { path: string; absolutePat
 // hand-rolled square under the 24px hit-target floor.
 function RemoveButton({ label, onClick }: { label: string; onClick: () => void }): JSX.Element {
   return (
-    <Tooltip content="Remove" placement="top">
+    <Tooltip content={copy.backlog.backlogMockupsSection.remove} placement="top">
       <IconButton aria-label={label} onClick={onClick} className="shrink-0">
         <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -391,7 +400,7 @@ function AttachMockupEditor({
         setOpen(next)
         if (!next) setQuery('')
       }}
-      ariaLabel="Attach a mockup"
+      ariaLabel={copy.backlog.backlogMockupsSection.attachAMockup}
       popupRole="dialog"
       placement="bottom-end"
       // No surface inset: the option rows are full-bleed (the menu list layer),
@@ -407,7 +416,7 @@ function AttachMockupEditor({
           onClick={togglePopover}
           className={opened ? 'bg-[color:var(--bg-hover)] text-[color:var(--text-strong)]' : ''}
         >
-          Attach mockup…
+          {copy.backlog.backlogMockupsSection.attachMockup}
         </GhostButton>
       )}
     >
@@ -419,14 +428,14 @@ function AttachMockupEditor({
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search mockups or type a path…"
-            aria-label="Search mockup files"
+            placeholder={copy.backlog.backlogMockupsSection.searchMockupsOrTypeA}
+            aria-label={copy.backlog.backlogMockupsSection.searchMockupFiles}
           />
         </div>
         <ul
           ref={listRef}
           role="listbox"
-          aria-label="Mockup files"
+          aria-label={copy.backlog.backlogMockupsSection.mockupFiles}
           className={`flex max-h-64 flex-col overflow-auto ${MENU_LIST_CLASS}`}
         >
           {filtered.map((choice) => (
@@ -457,7 +466,9 @@ function AttachMockupEditor({
                 onClick={() => commit(freeTextPath)}
               >
                 <span className="flex min-w-0 items-center gap-1 text-meta">
-                  <span className="shrink-0 text-[color:var(--text-muted)]">Attach path</span>
+                  <span className="shrink-0 text-[color:var(--text-muted)]">
+                    {copy.backlog.backlogMockupsSection.attachPath}
+                  </span>
                   <span className="truncate font-mono text-micro">{freeTextPath}</span>
                 </span>
               </MenuOption>

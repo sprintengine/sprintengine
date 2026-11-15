@@ -1,4 +1,5 @@
 import type * as AgentSkills from './agentSkills'
+import { copy } from '../../../shared/copy'
 
 // A stand-in for the window's skills, design systems and cards
 // (`agentSkills.ts`), for tests of what calls it. A test mocks the module with
@@ -15,7 +16,7 @@ import type * as AgentSkills from './agentSkills'
 type Api = AgentSkills.AgentSkillsApi
 
 function blank(): Api {
-  const none = { ok: false as const, message: 'Nothing here.' }
+  const none = { ok: false as const, message: copy.studio.agentSkillsDouble.nothingHere }
   const discovery = { results: [], rateLimit: null, degraded: null }
   const check = { checkedAt: '', sources: [], changed: [], newlyChanged: [], failures: [], skipped: [] }
   return {
@@ -44,18 +45,27 @@ function blank(): Api {
     agentSkillAttach: async () => none,
     ensureDefaultUserSkillsDir: async () => '/Users/dev/.agents/skills',
     seedDesignSystemBundle: async () =>
-      ({ ok: false, message: 'Nothing here.' }) as Awaited<ReturnType<Api['seedDesignSystemBundle']>>,
-    lintDesignSystemBundle: async () => ({ ok: false, kind: 'error', message: 'Nothing here.' }),
-    readDesignSystemBundle: async (bundleDir) =>
-      ({ ok: false, reason: 'missing', path: bundleDir, message: 'Nothing here.' }) as Awaited<
-        ReturnType<Api['readDesignSystemBundle']>
+      ({ ok: false, message: copy.studio.agentSkillsDouble.nothingHere }) as Awaited<
+        ReturnType<Api['seedDesignSystemBundle']>
       >,
+    lintDesignSystemBundle: async () => ({
+      ok: false,
+      kind: 'error',
+      message: copy.studio.agentSkillsDouble.nothingHere,
+    }),
+    readDesignSystemBundle: async (bundleDir) =>
+      ({
+        ok: false,
+        reason: 'missing',
+        path: bundleDir,
+        message: copy.studio.agentSkillsDouble.nothingHere,
+      }) as Awaited<ReturnType<Api['readDesignSystemBundle']>>,
     listDesignSystemLibrary: async () => ({ entries: [] }),
     listDesignSystemArrivals: async () => ({ bundles: [] }),
     registerDesignSystemFolder: async () => none,
     forgetDesignSystemFolder: async () => ({ ok: true, forgotten: false }),
     attachDesignSystemBundle: async () =>
-      ({ ok: false, stage: 'request', message: 'Nothing here.' }) as Awaited<
+      ({ ok: false, stage: 'request', message: copy.studio.agentSkillsDouble.nothingHere }) as Awaited<
         ReturnType<Api['attachDesignSystemBundle']>
       >,
     detachDesignSystemBundle: async () => none,
@@ -66,7 +76,7 @@ function blank(): Api {
       mcpServers: [],
       chat: null,
       surface: null,
-      message: 'Nothing here.',
+      message: copy.studio.agentSkillsDouble.nothingHere,
     }),
   }
 }

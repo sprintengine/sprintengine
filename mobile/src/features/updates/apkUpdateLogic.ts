@@ -37,6 +37,8 @@
 // useAppUpdate.tsx; apkUpdateLogic.regression.test.js covers this file. The
 // publishing side is .github/workflows/mobile-android.yml.
 
+import { copy as appCopy } from "../../../../src/shared/copy";
+
 export const APP_NAME = "Sprint Engine";
 export const PACKAGE_NAME = "ai.sprintengine.mobile";
 
@@ -251,33 +253,33 @@ export type UpdateProblem =
 export function updateProblemMessage(problem: UpdateProblem): { title: string; description: string } {
   switch (problem) {
     case "offline":
-      return { title: "Couldn't download the update", description: "The phone looks offline. Try again once connected." };
+      return { title: appCopy.phone.updates.apkUpdateLogic.couldnTDownloadTheUpdate, description: appCopy.phone.updates.apkUpdateLogic.thePhoneLooksOfflineTry };
     case "download":
-      return { title: "Couldn't download the update", description: "The download stopped early. Try again." };
+      return { title: appCopy.phone.updates.apkUpdateLogic.couldnTDownloadTheUpdate, description: appCopy.phone.updates.apkUpdateLogic.theDownloadStoppedEarlyTry };
     case "size":
     case "hash":
       return {
-        title: "The update didn't match its checksum",
-        description: "The download was damaged or altered, so it was deleted. Try again.",
+        title: appCopy.phone.updates.apkUpdateLogic.theUpdateDidnTMatch,
+        description: appCopy.phone.updates.apkUpdateLogic.theDownloadWasDamagedOr,
       };
     case "not_apk":
     case "package":
     case "version":
       return {
-        title: "The update wasn't the build it said it was",
-        description: "Deleted without opening it. Try again later.",
+        title: appCopy.phone.updates.apkUpdateLogic.theUpdateWasnTThe,
+        description: appCopy.phone.updates.apkUpdateLogic.deletedWithoutOpeningItTry,
       };
     case "signer":
       return {
-        title: "The update isn't signed by Sprint Engine",
-        description: "It was deleted without being opened.",
+        title: appCopy.phone.updates.apkUpdateLogic.theUpdateIsnTSigned,
+        description: appCopy.phone.updates.apkUpdateLogic.itWasDeletedWithoutBeing,
       };
     case "storage":
-      return { title: "Not enough space to install", description: "Free some storage on the phone, then try again." };
+      return { title: appCopy.phone.updates.apkUpdateLogic.notEnoughSpaceToInstall, description: appCopy.phone.updates.apkUpdateLogic.freeSomeStorageOnThe };
     case "downgrade":
-      return { title: "This phone already has a newer build", description: "Nothing was installed." };
+      return { title: appCopy.phone.updates.apkUpdateLogic.thisPhoneAlreadyHasA, description: appCopy.phone.updates.apkUpdateLogic.nothingWasInstalled };
     case "install":
-      return { title: "Android didn't install the update", description: "Try again from the update button." };
+      return { title: appCopy.phone.updates.apkUpdateLogic.androidDidnTInstallThe, description: appCopy.phone.updates.apkUpdateLogic.tryAgainFromTheUpdate };
   }
 }
 
@@ -323,19 +325,19 @@ export function appUpdateView(state: {
     case "none":
       return null;
     case "available":
-      return { phase: "available", pressable: true, percent: null, label: `Download ${name}` };
+      return { phase: "available", pressable: true, percent: null, label: appCopy.phone.updates.apkUpdateLogic.download(name) };
     case "downloading": {
       const percent = state.total > 0 ? Math.max(0, Math.min(100, Math.floor((state.received / state.total) * 100))) : 0;
-      return { phase: "downloading", pressable: false, percent, label: `Downloading the update (${percent}%)` };
+      return { phase: "downloading", pressable: false, percent, label: appCopy.phone.updates.apkUpdateLogic.downloadingTheUpdate(percent) };
     }
     case "verifying":
-      return { phase: "verifying", pressable: false, percent: 100, label: "Checking the update" };
+      return { phase: "verifying", pressable: false, percent: 100, label: appCopy.phone.updates.apkUpdateLogic.checkingTheUpdate };
     case "ready":
-      return { phase: "ready", pressable: true, percent: null, label: `Install ${name}` };
+      return { phase: "ready", pressable: true, percent: null, label: appCopy.phone.updates.apkUpdateLogic.install(name) };
     case "installing":
-      return { phase: "installing", pressable: false, percent: null, label: "Opening the installer" };
+      return { phase: "installing", pressable: false, percent: null, label: appCopy.phone.updates.apkUpdateLogic.openingTheInstaller };
     case "reinstall":
-      return { phase: "reinstall", pressable: true, percent: null, label: "One-time reinstall needed" };
+      return { phase: "reinstall", pressable: true, percent: null, label: appCopy.phone.updates.apkUpdateLogic.oneTimeReinstallNeeded };
   }
 }
 

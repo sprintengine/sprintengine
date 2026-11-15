@@ -1,4 +1,5 @@
 import type * as Terminals from './terminals'
+import { copy } from '../../../shared/copy'
 
 // A stand-in for the window's terminals (`terminals.ts`), for tests of what
 // calls them. A test mocks the module with this one:
@@ -23,8 +24,18 @@ function blank(): Double {
     onTerminalError: () => () => undefined,
     onTerminalSessionsDelta: () => () => undefined,
     onTerminalPromptUndelivered: () => () => undefined,
-    openTerminal: async (sessionId) => ({ ok: false, sessionId, message: 'No terminals here.', exitCode: 1 }),
-    resumeTerminal: async (sessionId) => ({ ok: false, sessionId, message: 'No terminals here.', exitCode: 1 }),
+    openTerminal: async (sessionId) => ({
+      ok: false,
+      sessionId,
+      message: copy.studio.terminalsDouble.noTerminalsHere,
+      exitCode: 1,
+    }),
+    resumeTerminal: async (sessionId) => ({
+      ok: false,
+      sessionId,
+      message: copy.studio.terminalsDouble.noTerminalsHere,
+      exitCode: 1,
+    }),
     setTerminalVisible: async () => undefined,
     resizeTerminal: async () => undefined,
     terminalStatus: async () => ({ processAlive: false, suspended: false }),

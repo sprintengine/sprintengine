@@ -19,6 +19,7 @@ import {
   pullRequestWatchSentence,
   pullRequestWatchWords,
 } from '../../../../shared/git/pull-request-watch'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The pull request mark a conversation wears, in the two places it is drawn:
 // the sidebar's agent line and the conversation peek's head line (epic
@@ -228,9 +229,9 @@ export function pullRequestMenuGroups(list: readonly BranchPullRequest[], now: n
   }
   return (
     [
-      { id: 'open', label: 'Open', rows: grouped.open },
-      { id: 'merged', label: 'Merged', rows: grouped.merged },
-      { id: 'closed', label: 'Closed', rows: grouped.closed },
+      { id: 'open', label: appCopy.workspace.pullRequestMark.open, rows: grouped.open },
+      { id: 'merged', label: appCopy.workspace.pullRequestMark.merged, rows: grouped.merged },
+      { id: 'closed', label: appCopy.workspace.pullRequestMark.closed, rows: grouped.closed },
     ] as const
   )
     .filter((group) => group.rows.length > 0)
@@ -630,7 +631,7 @@ export function PullRequestPeekMark({
           // mark's marker is on its button. One pull request or several, the
           // mark is found the same way and pressed in the same place.
           primaryData={{ name: 'data-pull-request-mark', value: primary.url }}
-          menuAriaLabel={`All pull requests in this chat, ${pullRequests.length}`}
+          menuAriaLabel={appCopy.workspace.pullRequestMark.allPullRequestsInThis(pullRequests.length)}
           // One target draws the primary half alone — the group's own chrome,
           // the 24px hit floor, the hover fill, and no chevron over a menu with
           // one row in it (`SplitButton`'s own rule). The solo arm used to be a
@@ -751,8 +752,8 @@ export function PullRequestPanelButton({
     items.push({
       id: 'stop-watching',
       group: 'Studio is watching',
-      label: `Stop watching #${watching.number}`,
-      ariaLabel: `Stop watching pull request ${watching.number}`,
+      label: appCopy.workspace.pullRequestMark.stopWatching(watching.number),
+      ariaLabel: appCopy.workspace.pullRequestMark.stopWatchingPullRequest(watching.number),
       onSelect: () => onStopWatching?.(watching.url),
     })
   return (
@@ -774,8 +775,8 @@ export function PullRequestPanelButton({
           primaryData={{ name: 'data-panel-pull-request', value: pr.url }}
           menuAriaLabel={
             watching
-              ? `All pull requests in this chat, ${pullRequests.length}, and Stop watching`
-              : `All pull requests in this chat, ${pullRequests.length}`
+              ? appCopy.workspace.pullRequestMark.allPullRequestsInThis2(pullRequests.length)
+              : appCopy.workspace.pullRequestMark.allPullRequestsInThis(pullRequests.length)
           }
           items={items}
           onPrimary={() => openPullRequest(pr.url)}

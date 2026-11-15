@@ -22,6 +22,7 @@ import {
 } from './canvasBoardSource'
 import { canvasPushMatchesBoard, shouldApplyCanvasPush } from './canvasSync'
 import { StudioSkillSuggestion } from '../../../studioSkills/StudioSkillSuggestion'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The Canvas tab: the board's lifecycle, the board actions, and the picker a
 // tab with no board yet shows.
@@ -184,7 +185,8 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
         if (cancelled) return
         setState(result.ok ? { kind: 'ready', board: result.value } : { kind: 'error', message: result.error.message })
       } catch {
-        if (!cancelled) setState({ kind: 'error', message: 'This board could not be opened.' })
+        if (!cancelled)
+          setState({ kind: 'error', message: appCopy.workspace.pane.canvas.canvasTab.thisBoardCouldNotBe })
       }
     })()
     return () => {
@@ -279,7 +281,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
     // be handed. The path is what is left where the service knows no store.
     const copied = (state.kind === 'ready' ? state.board.id : undefined) ?? path
     void window.api.clipboardWriteText(copied)
-    showToast({ tone: 'good', title: 'Board path copied', description: copied })
+    showToast({ tone: 'good', title: appCopy.workspace.pane.canvas.canvasTab.boardPathCopied, description: copied })
   }, [path, state])
 
   // Export: the editor hands up its half (flush, then render the pictures), the
@@ -350,22 +352,32 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
       modifiedAt: 0,
     }).then((started) => {
       if (!started.ok)
-        showToast({ tone: 'error', title: 'Could not start the chat', description: started.error.message })
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.pane.canvas.canvasTab.couldNotStartTheChat,
+          description: started.error.message,
+        })
     })
   }, [boardId, path, source, store, workspaceId])
 
   if (!known)
     return (
       <SuspenseFallback
-        label={`Asking ${source.kind === 'paired' ? source.machineName : 'this machine'} about its boards`}
+        label={appCopy.workspace.pane.canvas.canvasTab.askingAboutItsBoards(
+          source.kind === 'paired' ? source.machineName : appCopy.workspace.pane.canvas.canvasTab.thisMachine,
+        )}
       />
     )
   if (!known.ok) {
     return (
       <EmptyState
-        title="The boards could not be reached"
+        title={appCopy.workspace.pane.canvas.canvasTab.theBoardsCouldNotBe}
         body={known.message}
-        action={<PrimaryButton onClick={() => setAccessAttempt((n) => n + 1)}>Try again</PrimaryButton>}
+        action={
+          <PrimaryButton onClick={() => setAccessAttempt((n) => n + 1)}>
+            {appCopy.workspace.pane.canvas.canvasTab.tryAgain}
+          </PrimaryButton>
+        }
       />
     )
   }
@@ -451,19 +463,25 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
       >
         {state.kind === 'error' ? (
           <EmptyState
-            title="This board could not be opened"
+            title={appCopy.workspace.pane.canvas.canvasTab.thisBoardCouldNotBe2}
             body={state.message}
-            action={<PrimaryButton onClick={() => setAttempt((n) => n + 1)}>Try again</PrimaryButton>}
+            action={
+              <PrimaryButton onClick={() => setAttempt((n) => n + 1)}>
+                {appCopy.workspace.pane.canvas.canvasTab.tryAgain}
+              </PrimaryButton>
+            }
           />
         ) : state.kind === 'loading' || !sized ? (
-          <SuspenseFallback label="Opening the board" />
+          <SuspenseFallback label={appCopy.workspace.pane.canvas.canvasTab.openingTheBoard} />
         ) : (
           // `se-canvas` is the wrapper canvasTheme.css maps the editor's own
           // variables onto our tokens under. Keyed on the board so switching to
           // another one builds a new editor rather than re-pointing this one:
           // the scene, the undo stack and the viewport all belong to a board.
           <div className="se-canvas absolute inset-0">
-            <React.Suspense fallback={<SuspenseFallback label="Loading the canvas" />}>
+            <React.Suspense
+              fallback={<SuspenseFallback label={appCopy.workspace.pane.canvas.canvasTab.loadingTheCanvas} />}
+            >
               <CanvasEditor
                 key={`${store ?? ''}/${path}`}
                 workspaceId={workspaceId}

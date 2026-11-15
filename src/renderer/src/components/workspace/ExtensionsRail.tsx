@@ -11,6 +11,7 @@ import { ModuleContributionBoundary } from '../../modules/ModuleContributionBoun
 import { useExtensionsDrawerRows } from './extensionsDrawerRows'
 import { SidebarNavButton } from './SidebarNavButton'
 import { useExtensionsRowBadges } from './useExtensionsRowBadges'
+import { copy } from '../../../../shared/copy'
 
 // The Extensions drawer (app shell, 2026-09-05): the sidebar column
 // while the app rail's Extensions glyph is chosen. Everything a person can open
@@ -166,9 +167,20 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
               <FolderPlusIcon className="icon-sm pointer-events-none shrink-0" />
             )
           }
-          label={installing ? 'Adding extension…' : 'Add extension'}
-          ariaLabel={installing ? 'Adding extension from a folder' : 'Add extension'}
-          tooltip={installMessage?.text ?? (installing ? 'Adding extension from a folder' : 'Add extension')}
+          label={
+            installing ? copy.workspace.extensionsRail.addingExtension : copy.workspace.extensionsRail.addExtension
+          }
+          ariaLabel={
+            installing
+              ? copy.workspace.extensionsRail.addingExtensionFromAFolder
+              : copy.workspace.extensionsRail.addExtension
+          }
+          tooltip={
+            installMessage?.text ??
+            (installing
+              ? copy.workspace.extensionsRail.addingExtensionFromAFolder
+              : copy.workspace.extensionsRail.addExtension)
+          }
           disabled={installing}
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect()
@@ -178,14 +190,19 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
         {!collapsed ? <ActionResultMessage message={installMessage} className="mt-2" /> : null}
       </div>
       {addMenu ? (
-        <ContextMenu x={addMenu.x} y={addMenu.y} ariaLabel="Add extension" onClose={() => setAddMenu(null)}>
+        <ContextMenu
+          x={addMenu.x}
+          y={addMenu.y}
+          ariaLabel={copy.workspace.extensionsRail.addExtension}
+          onClose={() => setAddMenu(null)}
+        >
           <MenuItem
             onClick={() => {
               setAddMenu(null)
               void addExtensionFromFolder()
             }}
           >
-            From a folder…
+            {copy.workspace.extensionsRail.fromAFolder}
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -193,7 +210,7 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
               setInstallFromGitHub(true)
             }}
           >
-            From GitHub…
+            {copy.workspace.extensionsRail.fromGitHub}
           </MenuItem>
         </ContextMenu>
       ) : null}
@@ -205,7 +222,7 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
       />
       <div
         role="list"
-        aria-label="Extensions"
+        aria-label={copy.workspace.extensionsRail.extensions}
         className="mx-2 mt-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto"
       >
         {rows.map((row) => (

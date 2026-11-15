@@ -16,6 +16,7 @@ import { ScrollArea } from './ScrollArea'
 import { TruncatedText } from './TruncatedText'
 import { MODAL_SURFACE_SELECTOR } from './Modal'
 import { FOCUS_RING_INSET_CLASS } from './tokens'
+import { copy as appCopy } from '../../../../shared/copy'
 
 type DrawerLifecycle = 'closed' | 'entering' | 'open' | 'closing'
 
@@ -221,7 +222,7 @@ function DrawerRoot({ open, onClose, title, ariaLabel, closeLabel, width = 360, 
               text={title}
               className="text-[length:var(--text-size-md)] font-semibold tracking-tight text-[color:var(--text-strong)]"
             />
-            <CloseIconButton aria-label={closeLabel ?? `Close ${title}`} onClick={onClose} />
+            <CloseIconButton aria-label={closeLabel ?? appCopy.ui.drawer.close(title)} onClick={onClose} />
           </header>
 
           <OverlaySurfaceContext.Provider value={true}>{open ? children : retained}</OverlaySurfaceContext.Provider>

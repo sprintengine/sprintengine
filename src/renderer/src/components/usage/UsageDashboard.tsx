@@ -43,6 +43,7 @@ import {
 } from './usageDashboardModel'
 import { UsageLimitsView } from './UsageLimitsView'
 import { useUsageReport } from './useUsageReport'
+import { copy } from '../../../../shared/copy'
 
 // The usage dashboard (owner ruling 2026-10-10): what every agent CLI on this
 // machine has spent, in money and in tokens, and the subscription limits the
@@ -57,9 +58,9 @@ import { useUsageReport } from './useUsageReport'
 // worth, not what was charged. The view says so where the figure is.
 
 const VIEWS: Array<{ value: UsageView; label: string }> = [
-  { value: 'cost', label: 'Cost' },
-  { value: 'tokens', label: 'Tokens' },
-  { value: 'limits', label: 'Limits' },
+  { value: 'cost', label: copy.usage.usageDashboard.cost },
+  { value: 'tokens', label: copy.usage.usageDashboard.tokens },
+  { value: 'limits', label: copy.usage.usageDashboard.limits },
 ]
 
 // The choice of view and range outlives the dashboard for this session of
@@ -99,7 +100,7 @@ export default function UsageDashboard(): JSX.Element {
   const actions = (
     <>
       <SegmentedControl
-        ariaLabel="Usage view"
+        ariaLabel={copy.usage.usageDashboard.usageView}
         items={VIEWS}
         value={view}
         onChange={(next) => {
@@ -110,13 +111,13 @@ export default function UsageDashboard(): JSX.Element {
       {/* Only with another machine to count; Limits are this machine's. */}
       {report && usageHasPeers(report) ? (
         <Select
-          ariaLabel="Machine"
+          ariaLabel={copy.usage.usageDashboard.machine}
           size="md"
           items={[
-            { value: ALL_MACHINES, label: 'All machines' },
+            { value: ALL_MACHINES, label: copy.usage.usageDashboard.allMachines },
             ...report.machines.map((entry) => ({
               value: entry.id,
-              label: entry.status === 'local' ? `${entry.label} (this machine)` : entry.label,
+              label: entry.status === 'local' ? copy.usage.usageDashboard.thisMachine(entry.label) : entry.label,
             })),
           ]}
           disabled={view === 'limits'}
@@ -130,7 +131,7 @@ export default function UsageDashboard(): JSX.Element {
       ) : null}
       {/* Kept in place on Limits, so switching views never moves the bar. */}
       <SegmentedControl
-        ariaLabel="Period"
+        ariaLabel={copy.usage.usageDashboard.period}
         items={USAGE_RANGES.map((item) => ({ ...item, disabled: view === 'limits' }))}
         value={range}
         onChange={(next) => {
@@ -138,8 +139,13 @@ export default function UsageDashboard(): JSX.Element {
           setRange(next)
         }}
       />
-      <Tooltip content="Read the logs again" placement="bottom">
-        <IconButton size="md" aria-label="Refresh usage" busy={state.loading} onClick={state.refresh}>
+      <Tooltip content={copy.usage.usageDashboard.readTheLogsAgain} placement="bottom">
+        <IconButton
+          size="md"
+          aria-label={copy.usage.usageDashboard.refreshUsage}
+          busy={state.loading}
+          onClick={state.refresh}
+        >
           <RefreshIcon className="icon-md" />
         </IconButton>
       </Tooltip>
@@ -147,7 +153,10 @@ export default function UsageDashboard(): JSX.Element {
   )
 
   return (
-    <GlobalSurfaceShell ariaLabel="Usage" bar={{ title: 'Usage', actions }}>
+    <GlobalSurfaceShell
+      ariaLabel={copy.usage.usageDashboard.usage}
+      bar={{ title: copy.usage.usageDashboard.usage, actions }}
+    >
       <div className="h-full overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-8 px-8 py-6">
           {view === 'limits' ? (
@@ -189,13 +198,13 @@ function UsageSpend({
   const notice = error ? (
     <InlineNotice
       tone="error"
-      title="Usage could not be read"
+      title={copy.usage.usageDashboard.usageCouldNotBeRead}
       detail={error}
-      action={<OutlineButton onClick={onRetry}>Try again</OutlineButton>}
+      action={<OutlineButton onClick={onRetry}>{copy.usage.usageDashboard.tryAgain}</OutlineButton>}
     />
   ) : null
   if (!answer) {
-    return notice ?? <EmptyState title="Reading your agents' session logs…" />
+    return notice ?? <EmptyState title={copy.usage.usageDashboard.readingYourAgentsSessionLogs} />
   }
   const { report, window } = answer
   const machines = usageHasPeers(report) ? (
@@ -207,11 +216,13 @@ function UsageSpend({
       <>
         {notice}
         <EmptyState
-          title={anyLogs ? 'No usage in this period' : 'No agent sessions on this machine yet'}
+          title={
+            anyLogs ? copy.usage.usageDashboard.noUsageInThisPeriod : copy.usage.usageDashboard.noAgentSessionsOnThis
+          }
           body={
             anyLogs
-              ? 'Pick a longer period to see earlier sessions.'
-              : 'Usage appears once Claude Code, Codex, OpenCode, Gemini or Grok runs here.'
+              ? copy.usage.usageDashboard.pickALongerPeriodTo
+              : copy.usage.usageDashboard.usageAppearsOnceClaudeCode
           }
         />
         {machines}
@@ -258,7 +269,10 @@ function UsageOverview({
         ? 'Daily cost'
         : 'Daily processed tokens'
   return (
-    <section aria-label="Overview" className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
+    <section
+      aria-label={copy.usage.usageDashboard.overview}
+      className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]"
+    >
       <div className={`flex min-w-0 flex-col gap-6 ${muted ? 'opacity-50' : ''}`}>
         <div className="flex flex-col gap-1">
           <div className="text-display leading-tight font-semibold tracking-tight text-[color:var(--text-strong)]">
@@ -277,7 +291,7 @@ function UsageOverview({
           </div>
           {report.sharedSessions > 0 ? <SharedSessionsNote count={report.sharedSessions} /> : null}
         </div>
-        <ul className="m-0 flex list-none flex-col gap-4 p-0" aria-label="By agent">
+        <ul className="m-0 flex list-none flex-col gap-4 p-0" aria-label={copy.usage.usageDashboard.byAgent}>
           {agents.map((agent) => {
             const tokens = usageTokenTotal(agent.tokens)
             const value = metric === 'cost' ? agent.costUsd : tokens
@@ -347,7 +361,7 @@ function EstimateNote({ report }: { report: UsageReport }): JSX.Element {
         tabIndex={0}
         className="inline-flex items-center gap-1 rounded-sm underline decoration-dotted underline-offset-2 focus-visible:focus-ring"
       >
-        API estimate
+        {copy.usage.usageDashboard.aPIEstimate}
       </span>
     </Tooltip>
   )
@@ -356,12 +370,13 @@ function EstimateNote({ report }: { report: UsageReport }): JSX.Element {
 /** "3 sessions counted once across machines", with why on hover or focus. */
 function SharedSessionsNote({ count }: { count: number }): JSX.Element {
   return (
-    <Tooltip content="From a synced folder, restored backup or WSL share" multiline placement="bottom">
+    <Tooltip content={copy.usage.usageDashboard.fromASyncedFolderRestored} multiline placement="bottom">
       <span
         tabIndex={0}
         className="self-start rounded-sm text-meta tabular-nums text-[color:var(--text-muted)] underline decoration-dotted underline-offset-2 focus-visible:focus-ring"
       >
-        {count.toLocaleString()} {count === 1 ? 'session' : 'sessions'} counted once across machines
+        {count.toLocaleString()} {count === 1 ? 'session' : 'sessions'}
+        {copy.usage.usageDashboard.countedOnceAcrossMachines}
       </span>
     </Tooltip>
   )
@@ -402,25 +417,25 @@ function UsageMachines({
     <section aria-labelledby={headingId} className={`flex flex-col gap-3 ${muted ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2">
         <h3 id={headingId} className="m-0 text-heading font-medium text-[color:var(--text-strong)]">
-          Machines
+          {copy.usage.usageDashboard.machines}
         </h3>
-        {asking ? <Spinner size={14} label="Asking your other machines" /> : null}
+        {asking ? <Spinner size={14} label={copy.usage.usageDashboard.askingYourOtherMachines} /> : null}
       </div>
-      <Table ariaLabel="Usage by machine">
+      <Table ariaLabel={copy.usage.usageDashboard.usageByMachine}>
         <thead>
           <Table.Row>
-            <Table.Head sticky={false}>Machine</Table.Head>
+            <Table.Head sticky={false}>{copy.usage.usageDashboard.machine}</Table.Head>
             <Table.Head sticky={false} numeric>
-              Cost
+              {copy.usage.usageDashboard.cost}
             </Table.Head>
             <Table.Head sticky={false} numeric>
-              Share
+              {copy.usage.usageDashboard.share}
             </Table.Head>
             <Table.Head sticky={false} numeric>
-              Tokens
+              {copy.usage.usageDashboard.tokens}
             </Table.Head>
             <Table.Head sticky={false} numeric>
-              Sessions
+              {copy.usage.usageDashboard.sessions}
             </Table.Head>
           </Table.Row>
         </thead>
@@ -476,7 +491,7 @@ function UsageTotals({ report }: { report: UsageReport }): JSX.Element {
   const items = [
     ...usageTotalsRow(report.totals.tokens).map((item) => ({ ...item, text: formatUsageTokens(item.value) })),
     {
-      label: 'Cache savings',
+      label: copy.usage.usageDashboard.cacheSavings,
       value: report.totals.cacheSavingsUsd,
       text: formatUsageUsd(report.totals.cacheSavingsUsd),
     },
@@ -484,7 +499,7 @@ function UsageTotals({ report }: { report: UsageReport }): JSX.Element {
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4">
       <h3 id={headingId} className="m-0 text-heading font-medium text-[color:var(--text-strong)]">
-        Totals
+        {copy.usage.usageDashboard.totals}
       </h3>
       <dl className="m-0 grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-3 xl:grid-cols-6">
         {items.map((item) => (
@@ -516,13 +531,13 @@ function UsageBreakdown({
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4">
         <h3 id={headingId} className="m-0 text-heading font-medium text-[color:var(--text-strong)]">
-          Breakdown
+          {copy.usage.usageDashboard.breakdown}
         </h3>
         <SegmentedControl
-          ariaLabel="Break down by"
+          ariaLabel={copy.usage.usageDashboard.breakDownBy}
           size="sm"
           items={[
-            { value: 'model', label: 'Model' },
+            { value: 'model', label: copy.usage.usageDashboard.model },
             { value: 'period', label: periodLabel },
           ]}
           value={by}
@@ -550,18 +565,18 @@ function ModelTable({ report, metric }: { report: UsageReport; metric: UsageMetr
     return model.costUsd === null ? '—' : formatUsageShare(model.costUsd, report.totals.costUsd)
   }
   return (
-    <Table ariaLabel="Usage by model">
+    <Table ariaLabel={copy.usage.usageDashboard.usageByModel}>
       <thead>
         <Table.Row>
-          <Table.Head sticky={false}>Model</Table.Head>
+          <Table.Head sticky={false}>{copy.usage.usageDashboard.model}</Table.Head>
           <Table.Head sticky={false} numeric>
-            Cost
+            {copy.usage.usageDashboard.cost}
           </Table.Head>
           <Table.Head sticky={false} numeric>
-            Share
+            {copy.usage.usageDashboard.share}
           </Table.Head>
           <Table.Head sticky={false} numeric>
-            Tokens
+            {copy.usage.usageDashboard.tokens}
           </Table.Head>
         </Table.Row>
       </thead>
@@ -577,7 +592,7 @@ function ModelTable({ report, metric }: { report: UsageReport; metric: UsageMetr
             </Table.Cell>
             <Table.Cell numeric>
               {model.costUsd === null ? (
-                <span className="text-[color:var(--text-subtle)]">Unpriced</span>
+                <span className="text-[color:var(--text-subtle)]">{copy.usage.usageDashboard.unpriced}</span>
               ) : (
                 formatUsageUsd(model.costUsd)
               )}
@@ -604,16 +619,16 @@ function PeriodTable({
 }): JSX.Element {
   const rows = useMemo(() => usagePeriodRows(report, window), [report, window])
   return (
-    <Table ariaLabel={`Usage by ${periodLabel.toLowerCase()}`}>
+    <Table ariaLabel={copy.usage.usageDashboard.usageBy(periodLabel.toLowerCase())}>
       <thead>
         <Table.Row>
           <Table.Head sticky={false}>{periodLabel}</Table.Head>
-          <Table.Head sticky={false}>Agents</Table.Head>
+          <Table.Head sticky={false}>{copy.usage.usageDashboard.agents}</Table.Head>
           <Table.Head sticky={false} numeric>
-            Cost
+            {copy.usage.usageDashboard.cost}
           </Table.Head>
           <Table.Head sticky={false} numeric>
-            Tokens
+            {copy.usage.usageDashboard.tokens}
           </Table.Head>
         </Table.Row>
       </thead>
@@ -632,7 +647,11 @@ function PeriodTable({
                   .map((agent) => (
                     <Tooltip
                       key={agent.agent}
-                      content={`${usageAgentLabel(agent.agent)}: ${formatUsageUsd(agent.costUsd)} · ${formatUsageTokens(agent.tokens)} tokens`}
+                      content={copy.usage.usageDashboard.tokens2(
+                        usageAgentLabel(agent.agent),
+                        formatUsageUsd(agent.costUsd),
+                        formatUsageTokens(agent.tokens),
+                      )}
                     >
                       <span tabIndex={0} className="inline-flex rounded-sm focus-visible:focus-ring">
                         <UsageAgentKey agent={agent.agent} />

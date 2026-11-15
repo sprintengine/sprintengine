@@ -23,7 +23,7 @@ import { parseSync } from 'oxc-parser'
 const repoRoot = resolve(import.meta.dirname, '..')
 const CATALOG = 'src/shared/copy/en.ts'
 const ROOTS = ['src/renderer/src', 'mobile/src', 'mobile/App.tsx']
-const EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'out', '__fixtures__', '__mocks__'])
+const EXCLUDED_DIRS = new Set(['node_modules', 'dist', 'out', '__fixtures__', '__mocks__', '__verify__'])
 const LONG = 50
 
 // Attribute and property names whose value is shown to a person.
@@ -94,6 +94,9 @@ function literals(node, source) {
     case 'Literal':
       return typeof node.value === 'string' ? [{ text: node.value, start: node.start }] : []
     case 'TemplateLiteral':
+      // Formatting alone (`${a} · ${b}`) is not words; its branches may be.
+      if (!/[A-Za-z]{2}/.test(node.quasis.map((q) => q.value.cooked ?? q.value.raw).join(' ')))
+        return node.expressions.flatMap((expr) => literals(expr, source))
       return [{ text: templateText(node, source), start: node.start }]
     case 'JSXExpressionContainer':
     case 'ParenthesizedExpression':
@@ -143,7 +146,8 @@ function inlineCopy(file) {
     if (node.type === 'JSXAttribute' && node.name?.type === 'JSXIdentifier' && isCopyKey(node.name.name)) {
       for (const hit of literals(node.value, source)) add(node.name.name, hit)
     } else if (node.type === 'JSXText') {
-      add('text', { text: node.value, start: node.start })
+      // An entity's name is not a word: `&rdquo;.` is two marks.
+      add('text', { text: node.value.replace(/&[a-zA-Z]+;/g, '\u2026'), start: node.start })
     } else if (node.type === 'Property' && !node.computed) {
       const key = node.key?.type === 'Identifier' ? node.key.name : node.key?.value
       if (typeof key === 'string' && isCopyKey(key)) {

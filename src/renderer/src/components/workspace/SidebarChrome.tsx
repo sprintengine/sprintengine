@@ -27,6 +27,7 @@ import React from 'react'
 import { IconButton, MenuItem, Popover, Tooltip } from '../ui'
 import { MENU_LIST_CLASS } from '../ui/menuClasses'
 import { APP_RAIL_WIDTH, trafficLightOverhang } from './AppRail'
+import { copy } from '../../../../shared/copy'
 
 // The row's icon buttons are the kit's `IconButton` at its default `sm` step —
 // `size.control.xs`, the system's icon-button step (principles.md, "Space and
@@ -99,8 +100,13 @@ function CollapseButton({ onToggle, revealed }: { onToggle: () => void; revealed
 // there in the list anatomy.
 function SearchButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <Tooltip content="Search" placement="bottom">
-      <IconButton tone="subtle" onClick={onOpen} aria-label="Search" className="app-no-drag">
+    <Tooltip content={copy.workspace.sidebarChrome.search} placement="bottom">
+      <IconButton
+        tone="subtle"
+        onClick={onOpen}
+        aria-label={copy.workspace.sidebarChrome.search}
+        className="app-no-drag"
+      >
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
           <circle cx="7" cy="7" r="4.25" stroke="currentColor" strokeWidth="1.5" />
           <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -144,12 +150,12 @@ export function AppMenuButton<MenuItem extends string>({
     <Popover
       open={menuOpen}
       onOpenChange={setMenuOpen}
-      ariaLabel="Application menu"
+      ariaLabel={copy.workspace.sidebarChrome.applicationMenu}
       popupRole="menu"
       placement="bottom-start"
       surfaceClassName={`w-44 ${MENU_LIST_CLASS}`}
       renderTrigger={({ ref, triggerProps, togglePopover }) => (
-        <Tooltip content="Menu" placement="bottom">
+        <Tooltip content={copy.workspace.sidebarChrome.menu} placement="bottom">
           {/* The kit's icon button at `md` (size.control.sm): the neutral ghost
               tone IS this control's ink pair (--text-muted, lifting to
               --bg-hover + --text-strong), and rounded-sm and rounded-md are the
@@ -160,7 +166,7 @@ export function AppMenuButton<MenuItem extends string>({
             ref={ref}
             size="md"
             onClick={togglePopover}
-            aria-label="Application menu"
+            aria-label={copy.workspace.sidebarChrome.applicationMenu}
             className="app-no-drag"
             {...triggerProps}
           >

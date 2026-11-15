@@ -6,6 +6,7 @@ import {
   resumeAllScheduledAgents,
   scheduledAgentsPauseWords,
 } from '../../../utils/scheduledAgentsPause'
+import { copy } from '../../../../../shared/copy'
 
 /**
  * The Scheduled section's own control, beside its fold: pause every scheduled
@@ -16,10 +17,10 @@ import {
 export function PauseAllScheduledAgentsControl({ pause }: { pause: ScheduledAgentsPause | null }) {
   if (pause) {
     return (
-      <Tooltip content="Resume scheduled agents" placement="right">
+      <Tooltip content={copy.workspace.sidebar.scheduledPauseControls.resumeScheduledAgents} placement="right">
         <IconButton
           tone="quiet"
-          aria-label="Resume scheduled agents"
+          aria-label={copy.workspace.sidebar.scheduledPauseControls.resumeScheduledAgents}
           data-scheduled-pause-all="resume"
           onClick={() => void resumeAllScheduledAgents()}
         >
@@ -32,10 +33,14 @@ export function PauseAllScheduledAgentsControl({ pause }: { pause: ScheduledAgen
   const choices = pauseAllChoices(Date.now())
   return (
     <OverflowMenu
-      ariaLabel="Pause all scheduled agents"
+      ariaLabel={copy.workspace.sidebar.scheduledPauseControls.pauseAllScheduledAgents}
       trigger={() => <PauseGlyph className="icon-xs" />}
       items={[
-        { kind: 'heading', id: 'pause-all', label: 'Pause all scheduled agents' },
+        {
+          kind: 'heading',
+          id: 'pause-all',
+          label: copy.workspace.sidebar.scheduledPauseControls.pauseAllScheduledAgents,
+        },
         ...choices.map((choice) => ({
           id: `pause-all:${choice.id}`,
           label: choice.hint ? `${choice.label} — ${choice.hint}` : choice.label,
@@ -59,7 +64,7 @@ export function ScheduledAgentsPausedNotice({ pause, now }: { pause: ScheduledAg
       className="mx-1.5 my-1"
       action={
         <GhostButton size="xs" onClick={() => void resumeAllScheduledAgents()}>
-          Resume
+          {copy.workspace.sidebar.scheduledPauseControls.resume}
         </GhostButton>
       }
     >
@@ -78,7 +83,7 @@ export function ScheduledAgentsHeldNotice({ reason }: { reason: string }) {
   return (
     <InlineNotice tone="warn" className="mx-1.5 my-1">
       <span data-scheduled-held-notice="">
-        <strong>Scheduled agents and messages are paused.</strong> {reason}
+        <strong>{copy.workspace.sidebar.scheduledPauseControls.scheduledAgentsAndMessagesAre}</strong> {reason}
       </span>
     </InlineNotice>
   )

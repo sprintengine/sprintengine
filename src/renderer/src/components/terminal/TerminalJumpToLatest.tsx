@@ -3,6 +3,7 @@ import React from 'react'
 import { TERMINAL_CHROME_ATTRIBUTE } from '../../utils/keyboard'
 import { ChevronDownIcon } from '../AppIcons'
 import { FloatingButton } from '../ui'
+import { copy as appCopy } from '../../../../shared/copy'
 
 /**
  * "Jump to latest", floated over the bottom-right of a terminal while its
@@ -29,7 +30,7 @@ export function TerminalJumpToLatest({ visible, onJump }: { visible: boolean; on
     >
       <FloatingButton size="xs" onClick={onJump} className="whitespace-nowrap">
         <ChevronDownIcon className="icon-xs shrink-0" />
-        Jump to latest
+        {appCopy.terminal.terminalJumpToLatest.jumpToLatest}
       </FloatingButton>
     </div>
   )

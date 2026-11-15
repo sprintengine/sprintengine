@@ -4,6 +4,7 @@ import { composePreviewSrcDoc, type PreviewMode } from '../../../../../../shared
 import type { DesignSystemBundleView } from '../../../../../../shared/design-system/bundle-view'
 import { CardButton, GhostButton, InlineNotice } from '../../../ui'
 import { PreviewFrame } from './PreviewFrame'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The create path behind the rail's New affordance (item 2005). Owner
 // (2026-07-29): "when you click on New Design System, maybe you can start from
@@ -73,7 +74,7 @@ export function NewDesignSystemScreen({
             className="mb-4"
             action={
               <GhostButton onClick={onPointAtFolder} disabled={busy !== null}>
-                Choose another folder
+                {appCopy.workspace.globalSurface.design.newDesignSystemScreen.chooseAnotherFolder}
               </GhostButton>
             }
           >
@@ -129,13 +130,17 @@ function StartCard({
     <CardButton
       onClick={onSelect}
       disabled={disabled}
-      aria-label={source.path ? `Start from ${source.name}` : 'Start from an empty system'}
+      aria-label={
+        source.path
+          ? appCopy.workspace.globalSurface.design.newDesignSystemScreen.startFrom(source.name)
+          : appCopy.workspace.globalSurface.design.newDesignSystemScreen.startFromAnEmptySystem
+      }
       className="group p-1"
     >
       {srcDoc ? (
         <PreviewFrame
           height={CARD_PREVIEW_HEIGHT}
-          title={`${source.name} specimen`}
+          title={appCopy.workspace.globalSurface.design.newDesignSystemScreen.specimen(source.name)}
           className="pointer-events-none w-full overflow-hidden rounded-md"
           srcDoc={srcDoc}
         />
@@ -144,7 +149,7 @@ function StartCard({
       )}
       {busy ? (
         <span role="status" className="mt-2 text-meta text-[color:var(--text-muted)]">
-          Creating…
+          {appCopy.workspace.globalSurface.design.newDesignSystemScreen.creating}
         </span>
       ) : null}
     </CardButton>
@@ -164,7 +169,7 @@ function EmptySystemStage(): JSX.Element {
       style={{ height: CARD_PREVIEW_HEIGHT }}
       className="flex w-full items-center justify-center rounded-md border border-dashed border-[color:var(--border-default)] text-meta text-[color:var(--text-muted)]"
     >
-      Empty system
+      {appCopy.workspace.globalSurface.design.newDesignSystemScreen.emptySystem}
     </div>
   )
 }

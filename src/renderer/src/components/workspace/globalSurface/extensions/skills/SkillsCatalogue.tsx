@@ -67,6 +67,7 @@ import {
   type SkillListItem,
 } from './skillsSurfaceModel'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -399,17 +400,21 @@ export function SkillsCatalogue({
           onOpen={orphan ? undefined : () => setOpenSkill({ sourceId: row.sourceId, skillId: item.skillId })}
           actions={
             item.installed ? (
-              <span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">Installed</span>
+              <span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">
+                {appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.installed}
+              </span>
             ) : installing !== null && installing !== item.skillId ? (
               // A disabled Install says why rather than leaving a blocked cursor to guess at.
-              <Tooltip content="Wait for the other install to finish">
+              <Tooltip
+                content={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.waitForTheOtherInstall}
+              >
                 <GhostButton
                   size="sm"
                   disabled
                   className="border border-[color:var(--border-default)]"
-                  aria-label={`Install ${item.name}`}
+                  aria-label={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.install(item.name)}
                 >
-                  Install
+                  {appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.install2}
                 </GhostButton>
               </Tooltip>
             ) : (
@@ -418,7 +423,7 @@ export function SkillsCatalogue({
                 disabled={installing !== null}
                 onClick={() => rowSource && void installSkill(rowSource, item.skillId)}
                 className="border border-[color:var(--border-default)]"
-                aria-label={`Install ${item.name}`}
+                aria-label={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.install(item.name)}
               >
                 {installing === item.skillId ? 'Installing…' : 'Install'}
               </GhostButton>
@@ -480,11 +485,24 @@ export function SkillsCatalogue({
   const notices = (
     <>
       {landingNotice ? (
-        <InlineNotice tone="warn" action={<GhostButton onClick={() => setLandingNotice(null)}>Dismiss</GhostButton>}>
+        <InlineNotice
+          tone="warn"
+          action={
+            <GhostButton onClick={() => setLandingNotice(null)}>
+              {appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.dismiss}
+            </GhostButton>
+          }
+        >
           {landingNotice}
         </InlineNotice>
       ) : null}
-      {thisReport?.error ? <InlineNotice tone="error" title="That did not complete." hint={thisReport.error} /> : null}
+      {thisReport?.error ? (
+        <InlineNotice
+          tone="error"
+          title={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.thatDidNotComplete}
+          hint={thisReport.error}
+        />
+      ) : null}
       {/* What the last Sync or update check on this source reported, and
           whether this listing is the copy the build shipped rather than a
           read of the repository: each a fact about the listing, stated once
@@ -497,9 +515,13 @@ export function SkillsCatalogue({
       {addNotice ? (
         <InlineNotice
           tone="error"
-          title="That source was not added."
+          title={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.thatSourceWasNotAdded}
           hint={addNotice}
-          action={<GhostButton onClick={onDismissAddNotice}>Dismiss</GhostButton>}
+          action={
+            <GhostButton onClick={onDismissAddNotice}>
+              {appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.dismiss}
+            </GhostButton>
+          }
         />
       ) : null}
       {skillMessage ? <InlineNotice tone="warn">{skillMessage}</InlineNotice> : null}
@@ -511,17 +533,23 @@ export function SkillsCatalogue({
       return (
         <InlineNotice
           tone="error"
-          title="Couldn't read your skill sources."
-          hint="Nothing changed. Try again, or add a source."
+          title={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.couldnTReadYourSkill}
+          hint={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.nothingChangedTryAgainOr}
           detail={sources.sourcesLoad.message}
-          action={<GhostButton onClick={sources.refreshSources}>Try again</GhostButton>}
+          action={
+            <GhostButton onClick={sources.refreshSources}>
+              {appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.tryAgain}
+            </GhostButton>
+          }
         />
       )
     }
     // Under a search the sections ARE the body, whatever tab is selected; the
     // only state that is not a list is the source list itself still loading.
     if (searching) {
-      return sources.sourcesLoad.status === 'loading' ? <LoadingLine label="Loading skill sources…" /> : null
+      return sources.sourcesLoad.status === 'loading' ? (
+        <LoadingLine label={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.loadingSkillSources} />
+      ) : null
     }
     if (tabId === INSTALLED_TAB_ID) {
       return (
@@ -549,18 +577,33 @@ export function SkillsCatalogue({
         </div>
       )
     }
-    if (!activeSource) return <LoadingLine label="Loading skill sources…" />
+    if (!activeSource)
+      return (
+        <LoadingLine label={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.loadingSkillSources} />
+      )
     if (!activeScan || activeScan.status === 'loading') {
-      return <LoadingLine label={`Reading ${catalogueTabLabel(activeSource)}…`} />
+      return (
+        <LoadingLine
+          label={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.reading(
+            catalogueTabLabel(activeSource),
+          )}
+        />
+      )
     }
     if (activeScan.status === 'error') {
       return (
         <InlineNotice
           tone="error"
-          title={`Couldn't read ${catalogueTabLabel(activeSource)}.`}
-          hint="Its skills can't be shown right now."
+          title={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.couldnTRead(
+            catalogueTabLabel(activeSource),
+          )}
+          hint={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.itsSkillsCanTBe}
           detail={activeScan.message}
-          action={<GhostButton onClick={() => sources.refreshScan(activeSource.id)}>Try again</GhostButton>}
+          action={
+            <GhostButton onClick={() => sources.refreshScan(activeSource.id)}>
+              {appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.tryAgain}
+            </GhostButton>
+          }
         />
       )
     }
@@ -596,14 +639,19 @@ export function SkillsCatalogue({
 
   return (
     <CatalogueSurface<SkillRow>
-      title="Skills"
+      title={appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.skills}
       tabs={tabs}
       activeTabId={tabId}
       onSelectTab={(next) => {
         setOpenSkill(null)
         onSelectTab(next)
       }}
-      search={{ query, onQueryChange, placeholder: 'Search all sources', scope: 'sources' }}
+      search={{
+        query,
+        onQueryChange,
+        placeholder: appCopy.workspace.globalSurface.extensions.skills.skillsCatalogue.searchAllSources,
+        scope: 'sources',
+      }}
       add={add}
       head={head}
       notices={notices}

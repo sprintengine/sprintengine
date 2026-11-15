@@ -18,6 +18,7 @@ import {
 } from '../ui'
 import { addTypedModel, removeListedModel, restoreListedModel, type CliModelEdit } from './cliModelListEdit'
 import { modelDiscoveryLine, modelRefreshProblem, type CliModelRefreshOutcome } from './modelDiscoveryLine'
+import { copy } from '../../../../shared/copy'
 
 const EMPTY: string[] = []
 
@@ -85,11 +86,11 @@ export function CliModelList({
   }
 
   return (
-    <section aria-label={`Models for ${name}`} className="px-3 py-2.5 first:pt-0 last:pb-0">
+    <section aria-label={copy.settings.cliModelList.modelsFor(name)} className="px-3 py-2.5 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className="text-body font-medium text-[color:var(--text-strong)]">
-            Models
+            {copy.settings.cliModelList.models}
             {listed.length > 0 ? (
               <span className="ml-1.5 font-normal text-[color:var(--text-subtle)]">{listed.length}</span>
             ) : null}
@@ -114,7 +115,7 @@ export function CliModelList({
 
       {listed.length > 0 ? (
         <ul
-          aria-label={`${name} models`}
+          aria-label={copy.settings.cliModelList.models2(name)}
           className="mt-2 divide-y divide-[color:var(--border-subtle)] border-y border-[color:var(--border-subtle)]"
         >
           {listed.map((option) => {
@@ -134,12 +135,12 @@ export function CliModelList({
                   ) : null}
                 </div>
                 {option.isNew ? <NewChip /> : null}
-                {option.id === selectedModel ? <MicroChip>New chats</MicroChip> : null}
-                {option.origin === 'user' ? <MicroChip>Added by you</MicroChip> : null}
-                <Tooltip content="Remove from the list">
+                {option.id === selectedModel ? <MicroChip>{copy.settings.cliModelList.newChats}</MicroChip> : null}
+                {option.origin === 'user' ? <MicroChip>{copy.settings.cliModelList.addedByYou}</MicroChip> : null}
+                <Tooltip content={copy.settings.cliModelList.removeFromTheList}>
                   <CloseIconButton
                     size="sm"
-                    aria-label={`Remove ${option.id} from ${name} models`}
+                    aria-label={copy.settings.cliModelList.removeFromModels(option.id, name)}
                     onClick={() => remove(option.id)}
                   />
                 </Tooltip>
@@ -163,10 +164,10 @@ export function CliModelList({
             <Input
               id={fieldId}
               value={draft}
-              aria-label={`Add a model id for ${name}`}
+              aria-label={copy.settings.cliModelList.addAModelIdFor(name)}
               aria-invalid={fieldError ? true : undefined}
               aria-describedby={fieldError ? `${fieldId}-error` : undefined}
-              placeholder="Type a model id"
+              placeholder={copy.settings.cliModelList.typeAModelId}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => {
@@ -186,7 +187,7 @@ export function CliModelList({
               className="min-w-0 flex-1 font-mono"
             />
             <OutlineButton size="md" onClick={add} className="shrink-0">
-              Add
+              {copy.settings.cliModelList.add}
             </OutlineButton>
           </div>
           {fieldError ? (
@@ -208,7 +209,7 @@ export function CliModelList({
             {removedOpen ? 'Hide removed' : `Show removed (${removed.length})`}
           </GhostButton>
           {removedOpen ? (
-            <ul aria-label={`Models removed from ${name}`} className="mt-1">
+            <ul aria-label={copy.settings.cliModelList.modelsRemovedFrom(name)} className="mt-1">
               {removed.map((option) => (
                 <li key={option.id} className="flex min-h-control-md items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-body text-[color:var(--text-muted)]">
@@ -219,7 +220,7 @@ export function CliModelList({
                     onClick={() => onEdit(restoreListedModel(edit, option.id), [])}
                     className="-mr-2"
                   >
-                    Restore
+                    {copy.settings.cliModelList.restore}
                     <span className="sr-only">
                       {' '}
                       {option.id} to {name} models

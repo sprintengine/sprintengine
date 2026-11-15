@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { WarningIcon } from '../AppIcons'
 import { FOCUS_RING_CLASS } from './tokens'
 import { Tooltip } from './Tooltip'
+import { copy } from '../../../../shared/copy'
 
 // What a module asks to reach, said at three depths
 // (design-system/components/access-summary):
@@ -68,7 +69,7 @@ export function AccessGlyphs({
         // reader hears the list without opening anything.
         tabIndex={0}
         role="img"
-        aria-label={`${subject} needs care: ${names.join(', ')}`}
+        aria-label={copy.ui.accessSummary.needsCare(subject, names.join(', '))}
         className={[
           'relative inline-flex shrink-0 cursor-help items-center gap-0.5 rounded-xs px-1 py-0.5',
           'hover:bg-[color:var(--tone-warn-soft)]',

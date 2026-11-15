@@ -15,6 +15,7 @@ import {
 } from '../components/workspace/globalSurface/extensions/extensionsSurfaceTarget'
 import { McpGlyph, SkillsGlyph } from '../components/ui/CapabilityGlyphs'
 import { PluginsGlyph } from '../components/workspace/surfaceGlyphs'
+import { copy as appCopy } from '../../../shared/copy'
 
 // The Plugins surface (the Extensions door until doors→modals,
 // 2026-09-01): the connectors browse/install/launch experience, now mounted in
@@ -65,7 +66,7 @@ export const agentRuntimeRendererModule: RendererModule = {
         return [
           {
             id: 'update.open-settings',
-            label: 'Open',
+            label: appCopy.modules.agentRuntimeModule.open,
             run: async () => {
               const { useWorkspaceStore } = await import('../store/workspaceStore')
               useWorkspaceStore.getState().openSettingsOverlay({ initialTab: target.ref || 'general' })
@@ -88,7 +89,7 @@ export const agentRuntimeRendererModule: RendererModule = {
         return [
           {
             id: 'terminal.copy-returned-prompt',
-            label: 'Copy message',
+            label: appCopy.modules.agentRuntimeModule.copyMessage,
             run: async () => {
               // A failed copy leaves the row, and the message on it, where they were.
               await window.api.clipboardWriteText(text).catch(() => {})
@@ -98,7 +99,7 @@ export const agentRuntimeRendererModule: RendererModule = {
             ? [
                 {
                   id: 'terminal.reveal-workspace',
-                  label: 'Open',
+                  label: appCopy.modules.agentRuntimeModule.open,
                   run: (ctx: { revealWorkspace(workspaceId: string): void }) => ctx.revealWorkspace(workspaceId),
                 },
               ]
@@ -116,7 +117,7 @@ export const agentRuntimeRendererModule: RendererModule = {
       resolveActions: ({ notification }) => [
         {
           id: 'marketplace.open-catalogue',
-          label: 'Open',
+          label: appCopy.modules.agentRuntimeModule.open,
           run: async () => {
             const { useWorkspaceStore } = await import('../store/workspaceStore')
             dispatchExtensionsSurfaceTarget({
@@ -148,7 +149,7 @@ export const agentRuntimeRendererModule: RendererModule = {
     // the Extensions drawer the person arrived by.
     host.registerGlobalSurface({
       id: 'extensions',
-      label: 'Plugins',
+      label: appCopy.modules.agentRuntimeModule.plugins,
       Icon: PluginsGlyph,
       onOpen: () => {
         consumePendingExtensionsSurfaceTarget()
@@ -167,13 +168,13 @@ export const agentRuntimeRendererModule: RendererModule = {
       views: [
         {
           id: EXTENSIONS_DRAWER_VIEWS.plugins,
-          label: 'Plugins',
+          label: appCopy.modules.agentRuntimeModule.plugins,
           Icon: McpGlyph,
           open: () => dispatchExtensionsSurfaceTarget({ view: EXTENSIONS_DRAWER_VIEWS.plugins }),
         },
         {
           id: EXTENSIONS_DRAWER_VIEWS.skills,
-          label: 'Skills',
+          label: appCopy.modules.agentRuntimeModule.skills,
           Icon: SkillsGlyph,
           open: () => dispatchExtensionsSurfaceTarget({ view: EXTENSIONS_DRAWER_VIEWS.skills }),
         },

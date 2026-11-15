@@ -5,6 +5,7 @@ import { useToast } from "./Toast";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { monoFontFamily } from "../theme/fonts";
 import { space, typography, type Theme } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 /**
  * The chip: a glyph and a short name in a rounded 22pt slab.
@@ -67,7 +68,7 @@ export function Chip({
 
   return (
     <Pressable
-      accessibilityHint="Says the full name."
+      accessibilityHint={copy.phone.components.chip.saysTheFullName}
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
       // The phone's tooltip is the toast: it is the surface the app already

@@ -3,6 +3,7 @@ import React, { useEffect, useId, useState } from 'react'
 import { DescribedCheckRow, DescribedCheckRowList, InlineNotice } from '../../../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../../../ui/Modal'
 import { CANVAS_EXPORT_DEFAULT_FORMATS, canvasExportFileNames, type CanvasExportFormats } from './canvasExport'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The Export dialog: which files an export writes, before the folder picker
 // asks where.
@@ -44,36 +45,36 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
   return (
     <Modal open={open} onClose={pending ? () => {} : onCancel} labelledBy={titleId} size="standard">
       <ModalHeader
-        title={`Export ${boardName}`}
+        title={appCopy.workspace.pane.canvas.canvasExportDialog.export(boardName)}
         titleId={titleId}
-        subtitle="Save a copy to a folder, e.g. to add it to the repo. The original stays in the app."
+        subtitle={appCopy.workspace.pane.canvas.canvasExportDialog.saveACopyToA}
         onClose={pending ? undefined : onCancel}
       />
       <ModalBody className="flex flex-col gap-3">
-        <DescribedCheckRowList ariaLabel="Files to export">
+        <DescribedCheckRowList ariaLabel={appCopy.workspace.pane.canvas.canvasExportDialog.filesToExport}>
           <DescribedCheckRow
             id={`${rowId}-board`}
-            title="Board file"
+            title={appCopy.workspace.pane.canvas.canvasExportDialog.boardFile}
             code={files[0]}
-            description="The editable board, for the Canvas or any compatible editor."
+            description={appCopy.workspace.pane.canvas.canvasExportDialog.theEditableBoardForThe}
             checked
             disabled
             onChange={() => {}}
           />
           <DescribedCheckRow
             id={`${rowId}-png`}
-            title="PNG image"
+            title={appCopy.workspace.pane.canvas.canvasExportDialog.pNGImage}
             code={`${boardName}.png`}
-            description="A picture for a README or pull request."
+            description={appCopy.workspace.pane.canvas.canvasExportDialog.aPictureForAREADME}
             checked={formats.png}
             disabled={pending}
             onChange={(png) => setFormats((current) => ({ ...current, png }))}
           />
           <DescribedCheckRow
             id={`${rowId}-svg`}
-            title="SVG image"
+            title={appCopy.workspace.pane.canvas.canvasExportDialog.sVGImage}
             code={`${boardName}.svg`}
-            description="The same picture as a vector, sharp at any size."
+            description={appCopy.workspace.pane.canvas.canvasExportDialog.theSamePictureAsA}
             checked={formats.svg}
             disabled={pending}
             onChange={(svg) => setFormats((current) => ({ ...current, svg }))}
@@ -81,11 +82,17 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
         </DescribedCheckRowList>
         {/* The recovery is the Export button below it: the dialog stays open on
             the choice the person made, so trying again is one press. */}
-        {error ? <InlineNotice tone="error" title="The board was not exported" hint={error} /> : null}
+        {error ? (
+          <InlineNotice
+            tone="error"
+            title={appCopy.workspace.pane.canvas.canvasExportDialog.theBoardWasNotExported}
+            hint={error}
+          />
+        ) : null}
       </ModalBody>
       <ModalFooter>
         <ModalButton type="button" onClick={onCancel} disabled={pending}>
-          Cancel
+          {appCopy.workspace.pane.canvas.canvasExportDialog.cancel}
         </ModalButton>
         <ModalButton type="button" variant="primary" onClick={() => onExport(formats)} disabled={pending} autoFocus>
           {pending ? 'Exporting…' : 'Choose folder and export'}

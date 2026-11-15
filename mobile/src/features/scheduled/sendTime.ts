@@ -9,6 +9,7 @@
 // them, so every engine draws them alike.
 
 import { formatScheduleTime } from "./scheduleEditor";
+import { copy } from "../../../../src/shared/copy";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -52,10 +53,10 @@ export function quickSendTimes(now: number): SendTimeChoice[] {
   const tomorrowMorning = new Date(now + DAY_MS);
   tomorrowMorning.setHours(9, 0, 0, 0);
   return [
-    { label: "In 1 hour", at: upToFiveMinutes(now + HOUR_MS) },
-    { label: "In 3 hours", at: upToFiveMinutes(now + 3 * HOUR_MS) },
-    { label: "In 5 hours", at: upToFiveMinutes(now + 5 * HOUR_MS) },
-    { label: "Tomorrow 9 AM", at: tomorrowMorning.getTime() },
+    { label: copy.phone.scheduled.sendTime.in1Hour, at: upToFiveMinutes(now + HOUR_MS) },
+    { label: copy.phone.scheduled.sendTime.in3Hours, at: upToFiveMinutes(now + 3 * HOUR_MS) },
+    { label: copy.phone.scheduled.sendTime.in5Hours, at: upToFiveMinutes(now + 5 * HOUR_MS) },
+    { label: copy.phone.scheduled.sendTime.tomorrow9AM, at: tomorrowMorning.getTime() },
   ];
 }
 

@@ -4,6 +4,7 @@ import { extensionIdFromName } from '../../../../../shared/extension-scaffold'
 import { ExtensionsGlyph } from '../../AppIcons'
 import { ChipButton, CloseIconButton, Input, Tooltip } from '../../ui'
 import { FolderGlyph } from '../../ui/FileTypeGlyph'
+import { copy } from '../../../../../shared/copy'
 
 /**
  * The extension's name, on the launch row where the worktree chip sits in a
@@ -47,7 +48,14 @@ export function ExtensionNameChip({
       }`}
       onClick={() => inputRef.current?.focus()}
     >
-      <Tooltip content={fromFolder ? 'Named after its folder' : 'Extension id and folder name'} placement="top">
+      <Tooltip
+        content={
+          fromFolder
+            ? copy.workspace.agentComposer.extensionNameChip.namedAfterItsFolder
+            : copy.workspace.agentComposer.extensionNameChip.extensionIdAndFolderName
+        }
+        placement="top"
+      >
         <span className="inline-flex">
           <ExtensionsGlyph className="icon-xs text-[color:var(--extension-ink)]" />
         </span>
@@ -63,8 +71,8 @@ export function ExtensionNameChip({
         fullWidth={false}
         value={name}
         onChange={(event) => onChange(extensionIdFromName(event.currentTarget.value, { typing: true }))}
-        placeholder="Extension name"
-        aria-label="Extension name"
+        placeholder={copy.workspace.agentComposer.extensionNameChip.extensionName}
+        aria-label={copy.workspace.agentComposer.extensionNameChip.extensionName}
         aria-invalid={invalid || undefined}
         readOnly={fromFolder}
         spellCheck={false}
@@ -104,22 +112,32 @@ export function ExtensionFolderChip({
       <Tooltip
         content={
           picked
-            ? `Made in ${folder} · Choose another folder`
-            : `New folder ${folder ?? 'in Extensions'} · Choose your own`
+            ? copy.workspace.agentComposer.extensionNameChip.madeInChooseAnotherFolder(folder)
+            : copy.workspace.agentComposer.extensionNameChip.newFolderChooseYourOwn(
+                folder ?? copy.workspace.agentComposer.extensionNameChip.inExtensions,
+              )
         }
         placement="top"
       >
         <ChipButton
           variant="raised"
           onClick={onPick}
-          aria-label={`Extension folder: ${folder ?? 'not chosen'}`}
+          aria-label={copy.workspace.agentComposer.extensionNameChip.extensionFolder(
+            folder ?? copy.workspace.agentComposer.extensionNameChip.notChosen,
+          )}
           className="min-w-0"
         >
           <FolderGlyph className="icon-xs shrink-0 text-[color:var(--extension-ink)]" />
           <span className="min-w-0 truncate">{label ?? 'Choose a folder'}</span>
         </ChipButton>
       </Tooltip>
-      {picked ? <CloseIconButton size="xs" aria-label="Make it in a new folder instead" onClick={onReset} /> : null}
+      {picked ? (
+        <CloseIconButton
+          size="xs"
+          aria-label={copy.workspace.agentComposer.extensionNameChip.makeItInANew}
+          onClick={onReset}
+        />
+      ) : null}
     </span>
   )
 }

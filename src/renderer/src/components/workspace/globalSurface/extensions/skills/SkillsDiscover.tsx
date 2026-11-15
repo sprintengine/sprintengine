@@ -49,6 +49,7 @@ import {
   type SkillSearchScheduler,
 } from './discoverModel'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { copy } from '../../../../../../../shared/copy'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -154,15 +155,17 @@ export function SkillsDiscover({
 
   return (
     <div className="min-w-0">
-      <h3 className="text-title font-semibold text-[color:var(--text-strong)]">Discover skills</h3>
+      <h3 className="text-title font-semibold text-[color:var(--text-strong)]">
+        {copy.workspace.globalSurface.extensions.skills.skillsDiscover.discoverSkills}
+      </h3>
 
       <div className="mt-3 flex flex-wrap items-center gap-2.5">
         <SegmentedControl<DiscoverTab>
-          ariaLabel="What to search on GitHub"
+          ariaLabel={copy.workspace.globalSurface.extensions.skills.skillsDiscover.whatToSearchOnGitHub}
           size="sm"
           items={[
-            { value: 'starred', label: 'Most starred' },
-            { value: 'search', label: 'Search' },
+            { value: 'starred', label: copy.workspace.globalSurface.extensions.skills.skillsDiscover.mostStarred },
+            { value: 'search', label: copy.workspace.globalSurface.extensions.skills.skillsDiscover.search },
           ]}
           value={tab}
           onChange={changeTab}
@@ -173,8 +176,8 @@ export function SkillsDiscover({
               value={query}
               onChange={setQuery}
               autoFocus
-              ariaLabel="Search inside skill files on GitHub"
-              placeholder="What should the skill do?"
+              ariaLabel={copy.workspace.globalSurface.extensions.skills.skillsDiscover.searchInsideSkillFilesOn}
+              placeholder={copy.workspace.globalSurface.extensions.skills.skillsDiscover.whatShouldTheSkillDo}
             />
           </div>
         ) : null}
@@ -218,16 +221,21 @@ export function DiscoverRepoList({
   onRetry: () => void
   onConfigureToken: () => void
 }): JSX.Element {
-  if (load.status === 'idle' || load.status === 'loading') return <Loading label="Reading GitHub…" />
+  if (load.status === 'idle' || load.status === 'loading')
+    return <Loading label={copy.workspace.globalSurface.extensions.skills.skillsDiscover.readingGitHub} />
   if (load.status === 'error') {
     return (
       <div className="mt-4">
         <InlineNotice
           tone="error"
-          title="GitHub could not be reached."
-          hint="Nothing is listed — this is not an empty result."
+          title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.gitHubCouldNotBeReached}
+          hint={copy.workspace.globalSurface.extensions.skills.skillsDiscover.nothingIsListedThisIs}
           detail={load.message}
-          action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
+          action={
+            <GhostButton onClick={onRetry}>
+              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.tryAgain}
+            </GhostButton>
+          }
         />
       </div>
     )
@@ -242,7 +250,7 @@ export function DiscoverRepoList({
     <>
       {tokenOnlyGap ? (
         <p className="mt-3 text-meta text-[color:var(--text-subtle)]">
-          Stars only. Add a GitHub token to include plugin repos.
+          {copy.workspace.globalSurface.extensions.skills.skillsDiscover.starsOnlyAddAGitHub}
         </p>
       ) : (
         <Condition condition={degraded} onConfigureToken={onConfigureToken} onRetry={onRetry} />
@@ -252,7 +260,7 @@ export function DiscoverRepoList({
         // rows do not have.
         inset="flush"
         level={4}
-        title="Most starred"
+        title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.mostStarred}
         count={results.length}
         action={
           <span className="text-meta text-[color:var(--text-subtle)]">
@@ -261,7 +269,13 @@ export function DiscoverRepoList({
         }
       >
         {results.length === 0 ? (
-          <EmptyState title={degraded ? 'Nothing was returned for this list.' : POPULAR_REPOS_EMPTY_LINE} />
+          <EmptyState
+            title={
+              degraded
+                ? copy.workspace.globalSurface.extensions.skills.skillsDiscover.nothingWasReturnedForThis
+                : POPULAR_REPOS_EMPTY_LINE
+            }
+          />
         ) : (
           <div role="list" className="mt-1.5 flex flex-col gap-0.5">
             {results.map((hit) => (
@@ -295,23 +309,32 @@ export function DiscoverSearchResults({
   onConfigureToken: () => void
 }): JSX.Element {
   if (intent.kind === 'empty') {
-    return <EmptyState title="Search inside skill files, e.g. “extract text from PDFs”" />
+    return <EmptyState title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.searchInsideSkillFilesE} />
   }
   if (intent.kind === 'too_short') {
-    return <EmptyState title={`Type at least ${intent.minLength} characters.`} />
+    return (
+      <EmptyState
+        title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.typeAtLeastCharacters(intent.minLength)}
+      />
+    )
   }
   // Armed but not yet sent is still "about to search" from here; the request
   // follows within the quiet window, and a second state for it would flicker.
-  if (load.status === 'idle' || load.status === 'loading') return <Loading label="Searching GitHub…" />
+  if (load.status === 'idle' || load.status === 'loading')
+    return <Loading label={copy.workspace.globalSurface.extensions.skills.skillsDiscover.searchingGitHub} />
   if (load.status === 'error') {
     return (
       <div className="mt-4">
         <InlineNotice
           tone="error"
-          title="That search did not run."
-          hint="Not the same as no results"
+          title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.thatSearchDidNotRun}
+          hint={copy.workspace.globalSurface.extensions.skills.skillsDiscover.notTheSameAsNo}
           detail={load.message}
-          action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
+          action={
+            <GhostButton onClick={onRetry}>
+              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.tryAgain}
+            </GhostButton>
+          }
         />
       </div>
     )
@@ -327,12 +350,22 @@ export function DiscoverSearchResults({
         <Section
           inset="flush"
           level={4}
-          title={`Results for “${load.query}”`}
+          title={copy.workspace.globalSurface.extensions.skills.skillsDiscover.resultsFor(load.query)}
           count={results.length}
-          action={<span className="text-meta text-[color:var(--text-subtle)]">Skills, by GitHub relevance</span>}
+          action={
+            <span className="text-meta text-[color:var(--text-subtle)]">
+              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.skillsByGitHubRelevance}
+            </span>
+          }
         >
           {results.length === 0 ? (
-            <EmptyState title={degraded ? 'Nothing was returned for this search.' : skillSearchEmptyLine(load.query)} />
+            <EmptyState
+              title={
+                degraded
+                  ? copy.workspace.globalSurface.extensions.skills.skillsDiscover.nothingWasReturnedForThis2
+                  : skillSearchEmptyLine(load.query)
+              }
+            />
           ) : (
             <div role="list" className="mt-1.5 flex flex-col gap-0.5">
               {results.map((hit) => (
@@ -394,11 +427,16 @@ function HitRow({
       <div className="flex shrink-0 items-center pr-1.5">
         {added ? (
           <span className="px-2 text-meta text-[color:var(--text-muted)]">
-            Added<span className="sr-only">{` — ${repo} is already one of your sources`}</span>
+            {copy.workspace.globalSurface.extensions.skills.skillsDiscover.added}
+            <span className="sr-only">{` — ${repo} is already one of your sources`}</span>
           </span>
         ) : (
-          <OutlineButton size="xs" aria-label={`Scan ${repo}`} onClick={onScan}>
-            Scan
+          <OutlineButton
+            size="xs"
+            aria-label={copy.workspace.globalSurface.extensions.skills.skillsDiscover.scan(repo)}
+            onClick={onScan}
+          >
+            {copy.workspace.globalSurface.extensions.skills.skillsDiscover.scan2}
           </OutlineButton>
         )}
       </div>
@@ -410,7 +448,7 @@ function RepoHitRow({ hit, added, onScan }: { hit: SkillRepoHit; added: boolean;
   return (
     <HitRow
       href={hit.htmlUrl}
-      openLabel={`Open ${hit.repo} on GitHub`}
+      openLabel={copy.workspace.globalSurface.extensions.skills.skillsDiscover.openOnGitHub(hit.repo)}
       repo={hit.repo}
       added={added}
       onScan={onScan}
@@ -430,7 +468,7 @@ function RepoHitRow({ hit, added, onScan }: { hit: SkillRepoHit; added: boolean;
             // row's accessible name through `ariaLabel`, which made every
             // manifest row read its own footnote. The visible word is the name.
             <Badge tone="neutral" className="shrink-0">
-              Manifest
+              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.manifest}
             </Badge>
           ) : null}
           {/* Never a zero: a repository the search returned without a star
@@ -460,7 +498,7 @@ function SearchHitRow({
   return (
     <HitRow
       href={hit.htmlUrl}
-      openLabel={`Open ${hit.path} in ${hit.repo} on GitHub`}
+      openLabel={copy.workspace.globalSurface.extensions.skills.skillsDiscover.openInOnGitHub(hit.path, hit.repo)}
       repo={hit.repo}
       added={added}
       onScan={onScan}
@@ -496,12 +534,18 @@ function Condition({
       <InlineNotice
         tone={discoverNoticeTone(condition)}
         title={condition.message}
-        hint={needsToken ? 'Needs a GitHub token. Most starred works without one.' : undefined}
+        hint={
+          needsToken ? copy.workspace.globalSurface.extensions.skills.skillsDiscover.needsAGitHubTokenMost : undefined
+        }
         action={
           needsToken ? (
-            <GhostButton onClick={onConfigureToken}>Add a GitHub token</GhostButton>
+            <GhostButton onClick={onConfigureToken}>
+              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.addAGitHubToken}
+            </GhostButton>
           ) : (
-            <GhostButton onClick={onRetry}>Try again</GhostButton>
+            <GhostButton onClick={onRetry}>
+              {copy.workspace.globalSurface.extensions.skills.skillsDiscover.tryAgain}
+            </GhostButton>
           )
         }
       />

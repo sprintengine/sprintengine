@@ -97,6 +97,7 @@ import { Popover } from '../../../../ui/Popover'
 import { CardArt } from './cardArt'
 import { CardGoPicker, cardRunsAModel, useCardLaunchDefaults, type CardLaunchChoice } from './CardGoPicker'
 import { CardSplash, CardSplashScrim, CardSplashStamp, CardSplashTitle } from './cardSplash'
+import { copy } from '../../../../../../../shared/copy'
 
 /**
  * The card's shell, both shapes and both temperaments.
@@ -290,7 +291,7 @@ function CardGo({
     <Popover
       open={open}
       onOpenChange={onOpenChange}
-      ariaLabel={`Run ${card.title}`}
+      ariaLabel={copy.workspace.globalSurface.extensions.home.cardPoster.run(card.title)}
       popupRole="dialog"
       placement="bottom-end"
       surfaceClassName="overflow-hidden"

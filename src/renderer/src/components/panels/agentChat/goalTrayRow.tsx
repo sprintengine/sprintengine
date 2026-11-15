@@ -10,6 +10,7 @@ import type { ConversationGoal, ConversationGoalStatus } from '../../../../../sh
 import { CONVERSATION_GOAL_STATUS_WORDS } from '../../../../../shared/conversation/goal'
 import { LifecycleGlyph, TruncatedText, WorkingMark, type LifecycleState } from '../../ui'
 import { ComposerTrayRow } from './composerTray'
+import { copy } from '../../../../../shared/copy'
 
 // A goal not being worked on, by the lifecycle shape that says why: held by
 // the person or a limit, waiting on the person, or done.
@@ -29,10 +30,10 @@ export function GoalTrayRow({ goal }: { goal: ConversationGoal | null }): JSX.El
   const word = CONVERSATION_GOAL_STATUS_WORDS[goal.status]
   return (
     <ComposerTrayRow
-      ariaLabel={`Goal, ${word.toLowerCase()}: ${goal.objective}`}
+      ariaLabel={copy.panels.agentChat.goalTrayRow.goal(word.toLowerCase(), goal.objective)}
       glyph={
         goal.status === 'active' ? (
-          <WorkingMark label="Working toward the goal" />
+          <WorkingMark label={copy.panels.agentChat.goalTrayRow.workingTowardTheGoal} />
         ) : (
           <LifecycleGlyph state={GOAL_GLYPH[goal.status]} live={false} />
         )
@@ -40,7 +41,7 @@ export function GoalTrayRow({ goal }: { goal: ConversationGoal | null }): JSX.El
       onDismiss={goal.status === 'complete' ? () => setDismissed(key) : undefined}
     >
       <span className="flex min-w-0 items-baseline gap-2" data-goal-status={goal.status}>
-        <span className="shrink-0 text-[color:var(--text-muted)]">Goal</span>
+        <span className="shrink-0 text-[color:var(--text-muted)]">{copy.panels.agentChat.goalTrayRow.goal2}</span>
         <TruncatedText as="span" text={goal.objective} className="min-w-0" />
         <span className="ml-auto shrink-0 text-meta text-[color:var(--text-subtle)]">{word}</span>
       </span>

@@ -5,6 +5,7 @@ import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../compo
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../theme/tokens";
 import { shortMachineName, type WebTarget } from "./webTargetsLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * Web pages on the desktops this phone is paired with.
@@ -41,19 +42,17 @@ export function WebTargetsScreen({
   const refreshControl = useRefreshControl(onRefresh, isRefreshing);
 
   return (
-    <ScreenFrame backLabel="Back to settings" count={targets.length} onBack={onBack} title="Web">
+    <ScreenFrame backLabel={copy.phone.web.webTargetsScreen.backToSettings} count={targets.length} onBack={onBack} title={copy.phone.web.webTargetsScreen.web}>
       <ScrollView contentContainerStyle={contentStyle} refreshControl={refreshControl}>
         {targets.length === 0 ? (
           <Card>
-            <Text style={styles.notice}>
-              No web pages shared yet. Share a dev server from a desktop&apos;s browser tab and it shows here.
-            </Text>
+            <Text style={styles.notice}>{copy.phone.web.webTargetsScreen.noWebPagesSharedYet}</Text>
           </Card>
         ) : (
           <Card variant="list">
             {targets.map((target, index) => (
               <CardRow
-                accessibilityLabel={`Open ${target.label} on ${shortMachineName(target.machine)} in your browser`}
+                accessibilityLabel={copy.phone.web.webTargetsScreen.openOnInYourBrowser(target.label, shortMachineName(target.machine))}
                 chevron
                 first={index === 0}
                 key={target.id}
@@ -65,9 +64,7 @@ export function WebTargetsScreen({
           </Card>
         )}
         <View style={styles.footer}>
-          <Text style={styles.footnote}>
-            These open in your browser while this phone is on the desktop&apos;s tailnet.
-          </Text>
+          <Text style={styles.footnote}>{copy.phone.web.webTargetsScreen.theseOpenInYourBrowser}</Text>
         </View>
       </ScrollView>
     </ScreenFrame>

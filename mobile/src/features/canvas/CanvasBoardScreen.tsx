@@ -24,6 +24,7 @@ import {
   type CanvasBoardTarget,
 } from "./canvasLogic";
 import { useCanvasSource } from "./CanvasSourceContext";
+import { copy } from "../../../../src/shared/copy";
 
 type Picture = { kind: "loading" } | { kind: "ready"; picture: PhoneCanvasPicture } | { kind: "error"; message: string };
 
@@ -64,7 +65,7 @@ export function CanvasBoardScreen({
 
   useEffect(() => {
     if (!session) {
-      setPicture({ kind: "error", message: "This phone is no longer paired with that desktop." });
+      setPicture({ kind: "error", message: copy.phone.canvas.canvasBoardScreen.thisPhoneIsNoLonger });
       return;
     }
     let live = true;
@@ -83,7 +84,7 @@ export function CanvasBoardScreen({
           );
         },
         () => {
-          if (live) setPicture({ kind: "error", message: `${machine} could not be reached.` });
+          if (live) setPicture({ kind: "error", message: copy.phone.canvas.canvasBoardScreen.couldNotBeReached(machine) });
         },
       )
       .finally(() => {
@@ -129,7 +130,7 @@ export function CanvasBoardScreen({
 
   return (
     <ScreenFrame
-      backLabel="Back"
+      backLabel={copy.phone.canvas.canvasBoardScreen.back}
       onBack={onBack}
       // In a Text of its own: a bare string in the header's View is no Text, and
       // React Native refuses to draw one.
@@ -146,13 +147,13 @@ export function CanvasBoardScreen({
         <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={styles.stage}>
           {picture.kind === "error" ? (
             <View style={styles.problem}>
-              <Text style={styles.problemTitle}>This board could not be shown</Text>
+              <Text style={styles.problemTitle}>{copy.phone.canvas.canvasBoardScreen.thisBoardCouldNotBe}</Text>
               <Text style={styles.problemBody}>{picture.message}</Text>
             </View>
           ) : ready && size ? (
             <Pressable
-              accessibilityHint="Opens the picture full screen."
-              accessibilityLabel={`The board ${target.name}`}
+              accessibilityHint={copy.phone.canvas.canvasBoardScreen.opensThePictureFullScreen}
+              accessibilityLabel={copy.phone.canvas.canvasBoardScreen.theBoard(target.name)}
               accessibilityRole="imagebutton"
               onPress={() => setViewing(true)}
               style={({ pressed }) => [styles.frame, size, pressed ? styles.pressed : null]}
@@ -165,23 +166,21 @@ export function CanvasBoardScreen({
               />
             </Pressable>
           ) : (
-            <SkeletonBlock label={`Asking ${machine} for this board`} style={styles.placeholder} />
+            <SkeletonBlock label={copy.phone.canvas.canvasBoardScreen.askingForThisBoard(machine)} style={styles.placeholder} />
           )}
         </View>
-        <Text style={styles.note}>
-          A picture of this board on {machine}. To change it, continue in a new chat there.
-        </Text>
+        <Text style={styles.note}>{copy.phone.canvas.canvasBoardScreen.aPictureOfThisBoard}{machine}{copy.phone.canvas.canvasBoardScreen.toChangeItContinueIn}</Text>
         <View style={styles.actions}>
           {canContinue ? (
             <PrimaryButton
               disabled={starting}
-              label={starting ? "Starting…" : "Continue in a new chat"}
+              label={starting ? copy.phone.canvas.canvasBoardScreen.starting : copy.phone.canvas.canvasBoardScreen.continueInANewChat}
               onPress={() => void continueInNewChat()}
             />
           ) : null}
           <PrimaryButton
             disabled={fetching}
-            label={fetching && picture.kind === "ready" ? "Refreshing…" : picture.kind === "error" ? "Try again" : "Refresh"}
+            label={fetching && picture.kind === "ready" ? copy.phone.canvas.canvasBoardScreen.refreshing : picture.kind === "error" ? copy.phone.canvas.canvasBoardScreen.tryAgain : copy.phone.canvas.canvasBoardScreen.refresh}
             onPress={refresh}
             variant="secondary"
           />
@@ -190,7 +189,7 @@ export function CanvasBoardScreen({
       </ScrollView>
       {ready ? (
         <PictureViewer
-          label={`The board ${target.name}`}
+          label={copy.phone.canvas.canvasBoardScreen.theBoard(target.name)}
           onClose={() => setViewing(false)}
           source={{ uri: ready.uri }}
           visible={viewing}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { LiveConversation, LiveConversationKey } from "../conversations/liveConversation";
 import { readTurnDiff, type ChangedFile } from "./unifiedDiff";
+import { copy } from "../../../../src/shared/copy";
 
 // A checkpointed turn's diff is between the two refs the desktop wrote as the
 // turn began and ended, so it never changes once the turn has one: an answer
@@ -90,7 +91,7 @@ function useTurnAnswer<T>(
         if (current)
           setFailure({
             key,
-            message: error instanceof Error ? error.message : "The desktop could not read this turn's changes.",
+            message: error instanceof Error ? error.message : copy.phone.diff.useTurnDiff.theDesktopCouldNotRead,
           });
       });
     return () => {

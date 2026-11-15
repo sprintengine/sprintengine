@@ -42,6 +42,7 @@ import {
   type ExtensionUpdate,
 } from './extensionsModel'
 import { SettingsSectionTitle } from './SettingsAtoms'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Settings → Extensions: the two groups of extensions a person installed.
 // "Needs review" first — the decision they owe is the first thing on the page —
@@ -52,12 +53,12 @@ type TrustPresentation = { tone: Tone; label: string }
 
 // The trust state in words, for the Plugins door's installed inventory.
 export const TRUST_PRESENTATION: Record<ModuleTrustStatus, TrustPresentation> = {
-  trusted: { tone: 'good', label: 'Trusted' },
+  trusted: { tone: 'good', label: appCopy.settings.thirdPartyModuleList.trusted },
   // 'signed' is informational (valid signature, awaiting approval) — a neutral
   // status, not the accent (which is reserved for primary/selected chrome).
-  signed: { tone: 'neutral', label: 'Signed' },
-  unsigned: { tone: 'warn', label: 'Unsigned' },
-  invalid: { tone: 'error', label: 'Invalid signature' },
+  signed: { tone: 'neutral', label: appCopy.settings.thirdPartyModuleList.signed },
+  unsigned: { tone: 'warn', label: appCopy.settings.thirdPartyModuleList.unsigned },
+  invalid: { tone: 'error', label: appCopy.settings.thirdPartyModuleList.invalidSignature },
 }
 
 // Requested-access chips, in the full consent wording: the disclosure a trust
@@ -67,7 +68,11 @@ export const TRUST_PRESENTATION: Record<ModuleTrustStatus, TrustPresentation> = 
 // same thing, so the flag is never colour alone.
 export function PermissionChips({ permissions }: { permissions: string[] }) {
   if (permissions.length === 0) {
-    return <span className="text-meta text-[color:var(--text-subtle)]">No special access.</span>
+    return (
+      <span className="text-meta text-[color:var(--text-subtle)]">
+        {appCopy.settings.thirdPartyModuleList.noSpecialAccess}
+      </span>
+    )
   }
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -149,7 +154,8 @@ export function ExtensionListRow({
 
   const updateButton = update ? (
     <OutlineButton size="xs" disabled={pending} onClick={() => actions.onUpdate(module, update)}>
-      Update to v{update.latestVersion}
+      {appCopy.settings.thirdPartyModuleList.updateToV}
+      {update.latestVersion}
     </OutlineButton>
   ) : null
 
@@ -170,42 +176,65 @@ export function ExtensionListRow({
   )
 
   const menuItems: OverflowMenuItem[] = [
-    { id: 'details', label: 'Details', onSelect: () => onDetailsOpenChange(true) },
+    { id: 'details', label: appCopy.settings.thirdPartyModuleList.details, onSelect: () => onDetailsOpenChange(true) },
     ...(trusted
       ? [
           {
             id: 'toggle',
-            label: enabled ? 'Turn off' : 'Turn on',
+            label: enabled
+              ? appCopy.settings.thirdPartyModuleList.turnOff
+              : appCopy.settings.thirdPartyModuleList.turnOn,
             disabled: pending,
             onSelect: () => actions.onSetEnabled(id, !enabled),
           },
         ]
       : reviewable
-        ? [{ id: 'review', label: 'Review and trust', onSelect: () => actions.onReview(module) }]
+        ? [
+            {
+              id: 'review',
+              label: appCopy.settings.thirdPartyModuleList.reviewAndTrust,
+              onSelect: () => actions.onReview(module),
+            },
+          ]
         : []),
     ...(update
       ? [
           {
             id: 'update',
-            label: `Update to v${update.latestVersion}`,
+            label: appCopy.settings.thirdPartyModuleList.updateToV2(update.latestVersion),
             disabled: pending,
             onSelect: () => actions.onUpdate(module, update),
           },
         ]
       : []),
-    ...(actions.onReveal ? [{ id: 'files', label: 'Show files', onSelect: () => actions.onReveal?.(module) }] : []),
-    { id: 'copy', label: 'Copy id', onSelect: () => actions.onCopyId(module) },
+    ...(actions.onReveal
+      ? [
+          {
+            id: 'files',
+            label: appCopy.settings.thirdPartyModuleList.showFiles,
+            onSelect: () => actions.onReveal?.(module),
+          },
+        ]
+      : []),
+    { id: 'copy', label: appCopy.settings.thirdPartyModuleList.copyId, onSelect: () => actions.onCopyId(module) },
     ...((trusted && module.trustedVia !== 'publisher') || actions.onUninstall
       ? [{ kind: 'separator' as const, id: 'sep' }]
       : []),
     ...(trusted && module.trustedVia !== 'publisher'
-      ? [{ id: 'revoke', label: 'Revoke trust', disabled: pending, onSelect: () => actions.onRevokeTrust(module) }]
+      ? [
+          {
+            id: 'revoke',
+            label: appCopy.settings.thirdPartyModuleList.revokeTrust,
+            disabled: pending,
+            onSelect: () => actions.onRevokeTrust(module),
+          },
+        ]
       : []),
     ...(actions.onUninstall
       ? [
           {
             id: 'uninstall',
-            label: 'Uninstall',
+            label: appCopy.settings.thirdPartyModuleList.uninstall,
             destructive: true,
             disabled: pending,
             onSelect: () => actions.onUninstall?.(module),
@@ -262,7 +291,9 @@ export function ExtensionListRow({
             trusted ? (
               <ExtensionStateLabel state={state} />
             ) : (
-              <span className="whitespace-nowrap text-meta text-[color:var(--tone-warn)]">Not trusted</span>
+              <span className="whitespace-nowrap text-meta text-[color:var(--tone-warn)]">
+                {appCopy.settings.thirdPartyModuleList.notTrusted}
+              </span>
             )
           }
           adds={
@@ -280,23 +311,23 @@ export function ExtensionListRow({
             <>
               {trusted && module.trustedVia !== 'publisher' ? (
                 <GhostButton size="xs" disabled={pending} onClick={() => actions.onRevokeTrust(module)}>
-                  Revoke trust
+                  {appCopy.settings.thirdPartyModuleList.revokeTrust}
                 </GhostButton>
               ) : reviewable ? (
                 <OutlineButton size="xs" onClick={() => actions.onReview(module)}>
-                  Review and trust
+                  {appCopy.settings.thirdPartyModuleList.reviewAndTrust}
                 </OutlineButton>
               ) : null}
               <span className="flex-1" />
               {updateButton}
               {actions.onReveal ? (
                 <GhostButton size="xs" onClick={() => actions.onReveal?.(module)}>
-                  Show files
+                  {appCopy.settings.thirdPartyModuleList.showFiles}
                 </GhostButton>
               ) : null}
               {actions.onUninstall ? (
                 <GhostButton size="xs" tone="danger" disabled={pending} onClick={() => actions.onUninstall?.(module)}>
-                  Uninstall
+                  {appCopy.settings.thirdPartyModuleList.uninstall}
                 </GhostButton>
               ) : null}
             </>
@@ -340,7 +371,7 @@ export function ExtensionRows({ label, children }: { label: string; children: Re
 export function NoExtensionsInstalled(): JSX.Element {
   return (
     <SettingCard>
-      <EmptyState density="list" title="No extensions installed" />
+      <EmptyState density="list" title={appCopy.settings.thirdPartyModuleList.noExtensionsInstalled} />
     </SettingCard>
   )
 }

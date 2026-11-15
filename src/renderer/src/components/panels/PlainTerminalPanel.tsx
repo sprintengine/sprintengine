@@ -53,6 +53,7 @@ import {
   writeTerminal,
 } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
+import { copy as appCopy } from '../../../../shared/copy'
 
 interface Props {
   workspaceId: string
@@ -392,8 +393,8 @@ function PlainTerminalPanelOnThisComputer({
         publishDiagnosticSync({
           level: 'error',
           source: 'terminal',
-          title: 'Terminal exited',
-          message: `Terminal exited with code ${code}.`,
+          title: appCopy.panels.plainTerminalPanel.terminalExited,
+          message: appCopy.panels.plainTerminalPanel.terminalExitedWithCode(code),
           details: `Session: ${sessionId}`,
           workspaceId,
           workspaceName: workspaceNameRef.current,
@@ -408,7 +409,7 @@ function PlainTerminalPanelOnThisComputer({
       publishDiagnosticSync({
         level: 'error',
         source: 'terminal',
-        title: 'Terminal failed to start',
+        title: appCopy.panels.plainTerminalPanel.terminalFailedToStart,
         message,
         details: `Session: ${sessionId}`,
         workspaceId,
@@ -512,7 +513,7 @@ function PlainTerminalPanelOnThisComputer({
               publishDiagnosticSync({
                 level: 'error',
                 source: 'terminal',
-                title: 'Terminal was not started',
+                title: appCopy.panels.plainTerminalPanel.terminalWasNotStarted,
                 message: spawnResult.message,
                 details: [
                   `Session: ${sessionId}`,
@@ -533,8 +534,8 @@ function PlainTerminalPanelOnThisComputer({
             publishDiagnosticSync({
               level: 'error',
               source: 'terminal',
-              title: 'Terminal was not started',
-              message: error instanceof Error ? error.message : 'Failed to start terminal.',
+              title: appCopy.panels.plainTerminalPanel.terminalWasNotStarted,
+              message: error instanceof Error ? error.message : appCopy.panels.plainTerminalPanel.failedToStartTerminal,
               details: `Session: ${sessionId}`,
               workspaceId,
               workspaceName: workspaceNameRef.current,
@@ -650,7 +651,7 @@ function PlainTerminalPanelOnThisComputer({
         sessionId: sessionIdRef.current,
       }).catch((error): { ok: false; message: string } => ({
         ok: false,
-        message: error instanceof Error ? error.message : 'Could not drop the commit into the terminal.',
+        message: error instanceof Error ? error.message : appCopy.panels.plainTerminalPanel.couldNotDropTheCommit,
       }))
       if (!commitResult.ok) showDropError(commitResult.message)
       return
@@ -662,7 +663,7 @@ function PlainTerminalPanelOnThisComputer({
       workspaceId,
     }).catch((error): { ok: false; message: string } => ({
       ok: false,
-      message: error instanceof Error ? error.message : 'Could not drop the file into the terminal.',
+      message: error instanceof Error ? error.message : appCopy.panels.plainTerminalPanel.couldNotDropTheFile,
     }))
 
     if (!result.ok) showDropError(result.message)

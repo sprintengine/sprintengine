@@ -3,6 +3,7 @@ import React from 'react'
 import { ChipButton, PullRequestGlyph, TabsScroller, Tooltip } from '../ui'
 import { sameSelection, type StripEntry } from './branchSteps'
 import type { BranchStepSelection } from '../../../../shared/electron-api'
+import { copy } from '../../../../shared/copy'
 
 // The commit step strip (the-diff-an-agent-made / changed-files-and-commit-steps),
 // drawn from backlog/mockups/2026-09-04-changed-files-and-turn-steps.html.
@@ -66,7 +67,12 @@ export function BranchStepStrip({
         // Scrolls sideways with no scrollbar and a fade at each overflowing edge,
         // as every tab strip does: a branch with many commits runs past a pane.
         <TabsScroller className="px-2 py-2">
-          <div role="tablist" aria-label="Branch steps" onKeyDown={onKeyDown} className="flex items-center gap-1">
+          <div
+            role="tablist"
+            aria-label={copy.auxWindows.branchStepStrip.branchSteps}
+            onKeyDown={onKeyDown}
+            className="flex items-center gap-1"
+          >
             {entries.map((entry, index) => {
               const active = sameSelection(entry.selection, selection)
               return (

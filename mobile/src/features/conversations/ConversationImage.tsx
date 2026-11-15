@@ -15,6 +15,7 @@ import { useReducedMotion } from "../../components/motion";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, typography, type Theme } from "../../theme/tokens";
 import { fitPicture, type ToolPicture } from "./conversationImageLogic";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 // A chat's pictures as the transcript draws them: read once from the paired
 // desktop into a file in the phone's cache (`conversation.picture`), sized to
@@ -157,7 +158,7 @@ export function ConversationPicture({
   return (
     <View style={styles.figure} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       <Pressable
-        accessibilityHint="Opens the picture full screen."
+        accessibilityHint={appCopy.phone.conversations.conversationImage.opensThePictureFullScreen}
         accessibilityLabel={picture.label}
         accessibilityRole="imagebutton"
         accessibilityState={{ disabled: !natural, busy: !natural }}
@@ -182,7 +183,7 @@ export function ConversationPicture({
           style={[StyleSheet.absoluteFill, natural ? null : styles.hidden]}
         />
         ) : null}
-        {natural ? null : <SkeletonBlock label="Loading image" style={StyleSheet.absoluteFill} />}
+        {natural ? null : <SkeletonBlock label={appCopy.phone.conversations.conversationImage.loadingImage} style={StyleSheet.absoluteFill} />}
       </Pressable>
       {picture.caption ? (
         <Text numberOfLines={3} style={styles.caption}>
@@ -234,7 +235,7 @@ export function PictureViewer({
         ]}
       >
         <View style={styles.viewerBar}>
-          <IconButton icon={<CloseIcon size={iconSize.md} tone="textPrimary" />} label="Close picture" onPress={onClose} />
+          <IconButton icon={<CloseIcon size={iconSize.md} tone="textPrimary" />} label={appCopy.phone.conversations.conversationImage.closePicture} onPress={onClose} />
         </View>
         <Image
           accessibilityIgnoresInvertColors

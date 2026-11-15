@@ -28,6 +28,7 @@
 import type { AppUpdateState, CliVersionAdvisory, CliVersionHostAdvisories } from '../../../shared/electron-api'
 import { LOCAL_HOST_ID, type ExecutionHostId } from '../../../shared/execution-host'
 import type { Tone } from '../components/ui/tokens'
+import { copy } from '../../../shared/copy'
 
 export type SettingsUpdateBadge = {
   count: number
@@ -156,7 +157,14 @@ export function settingsUpdateBadges(input: {
   const cliDetailFor = (count: number): string => plural(count, 'CLI update available', 'CLI updates available')
   const cliDetail = cliDetailFor(cliCount)
   const agents: SettingsUpdateBadge | null =
-    cliCount > 0 ? { count: cliCount, tone: UPDATE_TONE, label: `Agents: ${cliDetail}`, detail: cliDetail } : null
+    cliCount > 0
+      ? {
+          count: cliCount,
+          tone: UPDATE_TONE,
+          label: copy.utils.settingsUpdateBadges.agents(cliDetail),
+          detail: cliDetail,
+        }
+      : null
   const byMachine = new Map<ExecutionHostId, CliVersionAdvisory[]>()
   for (const advisory of input.cliUpdates) {
     byMachine.set(advisory.hostId, [...(byMachine.get(advisory.hostId) ?? []), advisory])
@@ -165,14 +173,24 @@ export function settingsUpdateBadges(input: {
   const clis: Partial<Record<ExecutionHostId, ReadonlySet<string>>> = {}
   for (const [hostId, updates] of byMachine) {
     const detail = cliDetailFor(updates.length)
-    machines[hostId] = { count: updates.length, tone: UPDATE_TONE, label: `Agents: ${detail}`, detail }
+    machines[hostId] = {
+      count: updates.length,
+      tone: UPDATE_TONE,
+      label: copy.utils.settingsUpdateBadges.agents2(detail),
+      detail,
+    }
     clis[hostId] = new Set(updates.map((advisory) => advisory.cli))
   }
   // Once it is on disk the news is that it is ready, which is what General's
   // version row is then asking about (Restart to update).
   const appDetail = input.appUpdate?.stage === 'ready' ? 'Update ready to install' : 'Update available'
   const general: SettingsUpdateBadge | null = input.appUpdate
-    ? { count: 1, tone: UPDATE_TONE, label: `General: ${appDetail.toLowerCase()}`, detail: appDetail }
+    ? {
+        count: 1,
+        tone: UPDATE_TONE,
+        label: copy.utils.settingsUpdateBadges.general(appDetail.toLowerCase()),
+        detail: appDetail,
+      }
     : null
   // The gear counts the CLIs only: the app's own update lights the rail's
   // update glyph right beside it, and one release is not two pieces of news.

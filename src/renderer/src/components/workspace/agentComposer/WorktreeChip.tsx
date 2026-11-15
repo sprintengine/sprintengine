@@ -1,6 +1,7 @@
 import React from 'react'
 
 import { ChipButton, Input, Tooltip, WorktreeGlyph } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 /**
  * Worktree, in the New chat composer's context strip (owner ruling
@@ -25,14 +26,21 @@ export function WorktreeChip({
   const inputRef = React.useRef<HTMLInputElement>(null)
   return (
     <span data-worktree-chip={on ? 'on' : 'off'} className="inline-flex shrink-0 items-center gap-0.5">
-      <Tooltip content={on ? 'Runs in a worktree of its own' : 'Run in a worktree of its own'} placement="top">
+      <Tooltip
+        content={
+          on
+            ? copy.workspace.agentComposer.worktreeChip.runsInAWorktreeOf
+            : copy.workspace.agentComposer.worktreeChip.runInAWorktreeOf
+        }
+        placement="top"
+      >
         <ChipButton
           variant="raised"
           // One name for the switch in both states; `aria-pressed` says which.
           // A name that changed with the state would be read as a different
           // control each time it was pressed.
           pressed={on}
-          aria-label="Run in a worktree"
+          aria-label={copy.workspace.agentComposer.worktreeChip.runInAWorktree}
           onClick={() => {
             if (on) {
               onChange(null)
@@ -60,7 +68,7 @@ export function WorktreeChip({
           value={name ?? ''}
           onChange={(event) => onChange(event.currentTarget.value)}
           placeholder="auto-named"
-          aria-label="Worktree name — leave empty to have one made up"
+          aria-label={copy.workspace.agentComposer.worktreeChip.worktreeNameLeaveEmptyTo}
           className="field-sizing-content h-control-xs min-w-[8ch] max-w-[160px] px-1 font-mono text-meta"
         />
       ) : null}

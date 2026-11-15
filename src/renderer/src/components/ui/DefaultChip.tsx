@@ -9,6 +9,7 @@
 // Hookless and barrel-free on purpose: `agentSpawnShared` imports it directly
 // and must stay clear of the kit's whole component graph.
 import type { ReactNode } from 'react'
+import { copy } from '../../../../shared/copy'
 
 const MICRO_CHIP_TONES = {
   // A fact about the option: hairline, subtle ink.
@@ -37,5 +38,5 @@ export function MicroChip({
 }
 
 export function DefaultChip({ className }: { className?: string }) {
-  return <MicroChip className={className}>Default</MicroChip>
+  return <MicroChip className={className}>{copy.ui.defaultChip.default}</MicroChip>
 }

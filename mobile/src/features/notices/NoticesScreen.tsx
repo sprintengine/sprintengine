@@ -11,6 +11,7 @@ import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
 import { formatChatSettledAt, type ChatListRow } from "../conversations/conversationListLogic";
 import { buildNotices, splitNotices, type Notice, type NoticeLane } from "./noticesLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * The bell.
@@ -63,35 +64,31 @@ export function NoticesScreen({
   const unreadIds = new Set(lanes.unreadCanWait.map((notice) => notice.id));
 
   return (
-    <ScreenFrame backLabel="Back to chats" flush onBack={onBack}>
+    <ScreenFrame backLabel={copy.phone.notices.noticesScreen.backToChats} flush onBack={onBack}>
       <ScrollView contentContainerStyle={contentStyle}>
         <View style={styles.head}>
-          <Text accessibilityRole="header" style={styles.h1}>
-            Notices
-          </Text>
+          <Text accessibilityRole="header" style={styles.h1}>{copy.phone.notices.noticesScreen.notices}</Text>
           <Text style={styles.sub}>{desktopName ?? "No desktop paired"}</Text>
         </View>
 
         <SegmentedToggle
           onChange={setLane}
           options={[
-            { value: "needs-you", label: `Needs you ${lanes.needsYou.length}` },
-            { value: "can-wait", label: `Can wait ${lanes.canWait.length}` },
+            { value: "needs-you", label: copy.phone.notices.noticesScreen.needsYou(lanes.needsYou.length) },
+            { value: "can-wait", label: copy.phone.notices.noticesScreen.canWait(lanes.canWait.length) },
           ]}
           value={lane}
         />
 
         <View style={styles.sectionRow}>
-          <Text accessibilityRole="header" style={styles.section}>
-            Open
-          </Text>
+          <Text accessibilityRole="header" style={styles.section}>{copy.phone.notices.noticesScreen.open}</Text>
           {lane === "can-wait" && lanes.unreadCanWait.length > 0 ? (
             <Pressable
-              accessibilityLabel="Mark all read"
+              accessibilityLabel={copy.phone.notices.noticesScreen.markAllRead}
               accessibilityRole="button"
               onPress={() => onMarkAllRead(lanes.canWait.map((notice) => notice.id))}
             >
-              <Text style={styles.markRead}>Mark all read</Text>
+              <Text style={styles.markRead}>{copy.phone.notices.noticesScreen.markAllRead}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -139,7 +136,7 @@ function NoticeRow({
 
   return (
     <Pressable
-      accessibilityHint={waiting ? "Opens the chat that is waiting." : "Opens it."}
+      accessibilityHint={waiting ? copy.phone.notices.noticesScreen.opensTheChatThatIs : copy.phone.notices.noticesScreen.opensIt}
       accessibilityLabel={[notice.title, notice.message, notice.context].filter(Boolean).join(", ")}
       accessibilityRole="button"
       onPress={onOpen}

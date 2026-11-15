@@ -1,4 +1,5 @@
 import { MainOwnedSettingToggle } from './MainOwnedSettingToggle'
+import { copy } from '../../../../shared/copy'
 
 // Settings → General: "Keep the computer awake while agents work". Main owns
 // the value, because main holds the power-save blocker as agents start and
@@ -7,8 +8,8 @@ import { MainOwnedSettingToggle } from './MainOwnedSettingToggle'
 export function KeepAwakeSetting() {
   return (
     <MainOwnedSettingToggle
-      label="Keep the computer awake while agents work"
-      description="No sleep while an agent is mid-turn. The display can still lock."
+      label={copy.settings.keepAwakeSetting.keepTheComputerAwakeWhile}
+      description={copy.settings.keepAwakeSetting.noSleepWhileAnAgent}
       read={window.api?.getKeepAwake}
       write={(enabled) => window.api.setKeepAwake(enabled)}
     />

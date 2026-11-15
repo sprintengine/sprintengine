@@ -29,6 +29,7 @@ import { useWorkspaceStore } from '../../../../../store/workspaceStore'
 import { OutlineButton, OverflowMenu } from '../../../../ui'
 import { skillSourceCommitsUrl } from '../skills/skillsSurfaceModel'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { copy } from '../../../../../../../shared/copy'
 
 /**
  * Whether the overflow offers "Remove source" for this source.
@@ -174,19 +175,21 @@ export function SourceTabActions({
         {syncing ? 'Syncing…' : sourceHasUpdate(source) ? 'Sync — update available' : 'Sync'}
       </OutlineButton>
       <OverflowMenu
-        ariaLabel={`More actions for ${source.repo || source.name}`}
-        triggerTooltip="More actions"
+        ariaLabel={copy.workspace.globalSurface.extensions.catalogue.sourceTabActions.moreActionsFor(
+          source.repo || source.name,
+        )}
+        triggerTooltip={copy.workspace.globalSurface.extensions.catalogue.sourceTabActions.moreActions}
         items={[
           {
             id: 'check',
-            label: 'Check for updates',
+            label: copy.workspace.globalSurface.extensions.catalogue.sourceTabActions.checkForUpdates,
             onSelect: () => void checkForUpdates(),
           },
           ...(commitsUrl
             ? [
                 {
                   id: 'open',
-                  label: 'Open on GitHub',
+                  label: copy.workspace.globalSurface.extensions.catalogue.sourceTabActions.openOnGitHub,
                   onSelect: () => void window.api.openExternal(commitsUrl),
                 },
               ]
@@ -196,7 +199,7 @@ export function SourceTabActions({
                 { kind: 'separator' as const, id: 'sep' },
                 {
                   id: 'remove',
-                  label: 'Remove source',
+                  label: copy.workspace.globalSurface.extensions.catalogue.sourceTabActions.removeSource,
                   destructive: true,
                   onSelect: () => void remove(),
                 },

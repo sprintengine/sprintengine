@@ -20,6 +20,7 @@ import { WorkspacePaneAddMenu } from '../WorkspacePaneAddMenu'
 import { diffShowsInWindow, popOutAddKinds } from './panePopOutHost'
 import { redirectPaneWrites } from './panePopOutRedirect'
 import { setTerminalVisible } from '../../../../studio/terminals'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // A workspace pane, or one of its tabs, in a window of its own (`?aux=pane`).
 //
@@ -260,7 +261,7 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
   if (workspaceGone) {
     return (
       <div className="h-screen w-screen bg-[color:var(--bg-app)]">
-        <EmptyState title="This workspace is no longer open." />
+        <EmptyState title={appCopy.workspace.pane.popout.panePopOutWindow.thisWorkspaceIsNoLonger} />
       </div>
     )
   }
@@ -272,7 +273,11 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
 
   return (
     <section
-      aria-label={workspaceName ? `${workspaceName} pane` : 'Workspace pane'}
+      aria-label={
+        workspaceName
+          ? appCopy.workspace.pane.popout.panePopOutWindow.pane(workspaceName)
+          : appCopy.workspace.pane.popout.panePopOutWindow.workspacePane
+      }
       className="flex h-screen w-screen flex-col bg-[color:var(--bg-app)] text-[color:var(--text-default)]"
     >
       {/* The pane's strip, on the same 36px the pane draws it at: the tabs
@@ -284,7 +289,7 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
         <TabsScroller className="flex min-w-0 flex-initial items-center self-stretch">
           {ready ? (
             <Tabs
-              ariaLabel="Pane tabs"
+              ariaLabel={appCopy.workspace.pane.popout.panePopOutWindow.paneTabs}
               className="app-no-drag"
               idPrefix={`pane-${workspaceId}`}
               items={items}
@@ -312,7 +317,7 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
           <div className="app-no-drag flex h-full shrink-0 items-center pl-0.5">
             <WorkspacePaneAddMenu
               kinds={addKinds}
-              label="Open in this window"
+              label={appCopy.workspace.pane.popout.panePopOutWindow.openInThisWindow}
               onPick={(kind: PaneLaunchKind) => act({ type: 'add', kind: kind as WorkspacePaneTabKind })}
             />
           </div>
@@ -342,7 +347,7 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
         ) : (
           <div className="flex h-full items-center justify-center gap-2 text-body text-[color:var(--text-muted)]">
             <Spinner />
-            Loading…
+            {appCopy.workspace.pane.popout.panePopOutWindow.loading}
           </div>
         )}
       </div>
@@ -350,19 +355,21 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
         <ContextMenu
           x={tabMenu.x}
           y={tabMenu.y}
-          ariaLabel="Pane tab actions"
+          ariaLabel={appCopy.workspace.pane.popout.panePopOutWindow.paneTabActions}
           onClose={() => setTabMenu(null)}
           surfaceClassName="min-w-[180px]"
         >
-          <MenuItem onClick={() => closeTab(tabMenu.tabId)}>Close</MenuItem>
+          <MenuItem onClick={() => closeTab(tabMenu.tabId)}>
+            {appCopy.workspace.pane.popout.panePopOutWindow.close}
+          </MenuItem>
           <MenuItem disabled={tabs.length <= 1} onClick={() => closeTabsWhere((tab) => tab.id !== tabMenu.tabId)}>
-            Close others
+            {appCopy.workspace.pane.popout.panePopOutWindow.closeOthers}
           </MenuItem>
           <MenuItem
             disabled={menuTabIndex === -1 || menuTabIndex >= tabs.length - 1}
             onClick={() => closeTabsWhere((_tab, index) => index > menuTabIndex)}
           >
-            Close to the right
+            {appCopy.workspace.pane.popout.panePopOutWindow.closeToTheRight}
           </MenuItem>
           {/* The tab goes home and shows in the pane; the window keeps the
               rest, and closes itself when that was its last. A Diff tab is
@@ -370,7 +377,9 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
           {tabs[menuTabIndex]?.kind === 'diff' && diffShowsInWindow() ? null : (
             <>
               <MenuDivider />
-              <MenuItem onClick={() => act({ type: 'dock', tabIds: [tabMenu.tabId] })}>Move to main window</MenuItem>
+              <MenuItem onClick={() => act({ type: 'dock', tabIds: [tabMenu.tabId] })}>
+                {appCopy.workspace.pane.popout.panePopOutWindow.moveToMainWindow}
+              </MenuItem>
             </>
           )}
         </ContextMenu>

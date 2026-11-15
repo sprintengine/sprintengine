@@ -79,6 +79,7 @@ import { showToast } from '../../store/toastStore'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { isImeKey } from '../../utils/imeKey'
 import { filesApi } from '../../studio/files'
+import { copy as appCopy } from '../../../../shared/copy'
 
 const EMPTY_EXPANDED_PATHS: string[] = []
 const EMPTY_TREE_ROWS: TreeRow[] = []
@@ -776,7 +777,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     // announcing at once is exactly what the spec's one-region rule forbids.
     showToast({
       tone: 'error',
-      title: 'File action failed',
+      title: appCopy.panels.fileExplorer.fileActionFailed,
       description: error instanceof Error ? error.message : (fallback ?? String(error)),
     })
   }, [])
@@ -966,10 +967,10 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   const createEntry = async (targetDir: string, kind: 'file' | 'dir') => {
     const defaultName = kind === 'file' ? 'untitled.ts' : 'new-folder'
     const rawName = await dialog.prompt({
-      title: kind === 'file' ? 'New file' : 'New folder',
-      inputLabel: kind === 'file' ? 'File name' : 'Folder name',
+      title: kind === 'file' ? appCopy.panels.fileExplorer.newFile : appCopy.panels.fileExplorer.newFolder,
+      inputLabel: kind === 'file' ? appCopy.panels.fileExplorer.fileName : appCopy.panels.fileExplorer.folderName,
       initialValue: defaultName,
-      confirmLabel: 'Create',
+      confirmLabel: appCopy.panels.fileExplorer.create,
       required: true,
       selectFileStem: kind === 'file',
       typedExtensionReplaces: kind === 'file',
@@ -1120,9 +1121,9 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
           : `file "${topLevelEntries[0].name}"`
         : `${topLevelEntries.length} selected items`
     const confirmed = await dialog.confirm({
-      title: 'Move to Trash?',
-      body: `Moves ${targetLabel} to the Trash. You can restore it from there.`,
-      confirmLabel: 'Move to Trash',
+      title: appCopy.panels.fileExplorer.moveToTrash,
+      body: appCopy.panels.fileExplorer.movesToTheTrashYou(targetLabel),
+      confirmLabel: appCopy.panels.fileExplorer.moveToTrash2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -2140,7 +2141,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   if (!isPathsSource && tree.rootError && !tree.rootEntries) {
     return (
       <div className="px-2 py-2">
-        <InlineNotice tone="error">This folder could not be read.</InlineNotice>
+        <InlineNotice tone="error">{appCopy.panels.fileExplorer.thisFolderCouldNotBe}</InlineNotice>
       </div>
     )
   }
@@ -2153,13 +2154,13 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     return (
       <div className="flex items-center gap-2 px-4 py-2 text-micro text-[color:var(--text-muted)]">
         <Spinner size={12} />
-        <span role="status">Searching…</span>
+        <span role="status">{appCopy.panels.fileExplorer.searching}</span>
       </div>
     )
   }
 
   if (isSearching && activeRows.length === 0) {
-    return <EmptyState density="list" title="No matching files" />
+    return <EmptyState density="list" title={appCopy.panels.fileExplorer.noMatchingFiles} />
   }
 
   const banded = variant === 'banded'
@@ -2172,7 +2173,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         ref={containerRef}
         tabIndex={0}
         role="tree"
-        aria-label={ariaLabel ?? `Files in ${rootName}`}
+        aria-label={ariaLabel ?? appCopy.panels.fileExplorer.filesIn(rootName)}
         aria-activedescendant={cursorShown && selectedPath ? rowId(selectedPath) : undefined}
         // A selection pane: the tree's own selection drops to the resting tier
         // while the keyboard is driving another list on the surface
@@ -2214,7 +2215,11 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         {showEmpty ? (
           <EmptyState
             density="list"
-            title={source.kind === 'paths' ? (source.emptyTitle ?? 'No files') : 'This folder is empty'}
+            title={
+              source.kind === 'paths'
+                ? (source.emptyTitle ?? appCopy.panels.fileExplorer.noFiles)
+                : appCopy.panels.fileExplorer.thisFolderIsEmpty
+            }
           />
         ) : null}
         <FileTreeRows
@@ -2254,7 +2259,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
                     agentCharacters ? (
                       <AgentGlyph agentId={trailMark.here.agentId} state="working" />
                     ) : (
-                      <WorkingMark label="Agent working" />
+                      <WorkingMark label={appCopy.panels.fileExplorer.agentWorking} />
                     )
                   ) : undefined,
                 }
@@ -2285,7 +2290,10 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
                 nameClassName={gitAppearance.textClass}
                 badge={gitAppearance.badge}
                 meta={decoration?.meta}
-                title={decoration?.title ?? (entry.gitDeleted ? `${entry.name} was deleted` : undefined)}
+                title={
+                  decoration?.title ??
+                  (entry.gitDeleted ? appCopy.panels.fileExplorer.wasDeleted(entry.name) : undefined)
+                }
                 // A wash is a property of the file; selection is a state of the
                 // keyboard. Selection wins, so the class comes off entirely.
                 washClassName={isSelected || isDropTarget ? '' : rowWashClass(wash)}
@@ -2352,28 +2360,40 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          ariaLabel={contextMenu.entry ? `Actions for ${contextMenu.entry.name}` : 'File tree actions'}
+          ariaLabel={
+            contextMenu.entry
+              ? appCopy.panels.fileExplorer.actionsFor(contextMenu.entry.name)
+              : appCopy.panels.fileExplorer.fileTreeActions
+          }
           onClose={() => setContextMenu(null)}
           surfaceClassName="min-w-[214px]"
         >
           {contextMenu.canOpenPath ? (
-            <MenuItem onClick={() => void runContextMenuCommand('open', contextMenu)}>Open</MenuItem>
+            <MenuItem onClick={() => void runContextMenuCommand('open', contextMenu)}>
+              {appCopy.panels.fileExplorer.open}
+            </MenuItem>
           ) : null}
           {contextMenu.canOpenInBrowser ? (
             <MenuItem onClick={() => void runContextMenuCommand('open-in-browser', contextMenu)}>
-              Open in browser
+              {appCopy.panels.fileExplorer.openInBrowser}
             </MenuItem>
           ) : null}
           {contextMenu.canOpenPath ? (
             <MenuItem onClick={() => void runContextMenuCommand('reveal-in-file-manager', contextMenu)}>
-              Reveal in file manager
+              {appCopy.panels.fileExplorer.revealInFileManager}
             </MenuItem>
           ) : null}
           {contextMenu.canViewGitDiff ? (
-            <MenuItem onClick={() => void runContextMenuCommand('view-git-diff', contextMenu)}>View Git diff</MenuItem>
+            <MenuItem onClick={() => void runContextMenuCommand('view-git-diff', contextMenu)}>
+              {appCopy.panels.fileExplorer.viewGitDiff}
+            </MenuItem>
           ) : null}
           {contextMenu.folderRoleTarget ? (
-            <MenuFlyoutItem label="Mark directory as" ariaLabel="Mark directory as" surfaceClassName="min-w-[196px]">
+            <MenuFlyoutItem
+              label={appCopy.panels.fileExplorer.markDirectoryAs}
+              ariaLabel={appCopy.panels.fileExplorer.markDirectoryAs}
+              surfaceClassName="min-w-[196px]"
+            >
               {FOLDER_ROLE_ORDER.map((role) => (
                 <MenuItem
                   key={role}
@@ -2396,7 +2416,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
                       setContextMenu(null)
                     }}
                   >
-                    Unmark
+                    {appCopy.panels.fileExplorer.unmark}
                   </MenuItem>
                 </>
               ) : null}
@@ -2443,17 +2463,25 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
             </MenuItem>
           ) : null}
           {contextMenu.entry ? <MenuDivider /> : null}
-          <MenuItem onClick={() => void runContextMenuCommand('new-file', contextMenu)}>New file</MenuItem>
-          <MenuItem onClick={() => void runContextMenuCommand('new-folder', contextMenu)}>New folder</MenuItem>
+          <MenuItem onClick={() => void runContextMenuCommand('new-file', contextMenu)}>
+            {appCopy.panels.fileExplorer.newFile}
+          </MenuItem>
+          <MenuItem onClick={() => void runContextMenuCommand('new-folder', contextMenu)}>
+            {appCopy.panels.fileExplorer.newFolder}
+          </MenuItem>
           <MenuDivider />
           {contextMenu.canUseSinglePathCommands ? (
-            <MenuItem onClick={() => void runContextMenuCommand('copy', contextMenu)}>Copy</MenuItem>
+            <MenuItem onClick={() => void runContextMenuCommand('copy', contextMenu)}>
+              {appCopy.panels.fileExplorer.copy}
+            </MenuItem>
           ) : null}
           <MenuItem disabled={!contextMenu.canPaste} onClick={() => void runContextMenuCommand('paste', contextMenu)}>
-            Paste
+            {appCopy.panels.fileExplorer.paste}
           </MenuItem>
           {contextMenu.canUseSinglePathCommands ? (
-            <MenuItem onClick={() => void runContextMenuCommand('rename', contextMenu)}>Rename</MenuItem>
+            <MenuItem onClick={() => void runContextMenuCommand('rename', contextMenu)}>
+              {appCopy.panels.fileExplorer.rename}
+            </MenuItem>
           ) : null}
           {contextMenu.entry ? (
             <MenuItem
@@ -2465,7 +2493,9 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
             </MenuItem>
           ) : null}
           <MenuDivider />
-          <MenuItem onClick={() => void runContextMenuCommand('refresh', contextMenu)}>Refresh</MenuItem>
+          <MenuItem onClick={() => void runContextMenuCommand('refresh', contextMenu)}>
+            {appCopy.panels.fileExplorer.refresh}
+          </MenuItem>
         </ContextMenu>
       ) : null}
     </>
@@ -2490,7 +2520,7 @@ function FileExplorerSkeleton(): JSX.Element {
   return (
     <div className="py-1">
       <span role="status" className="sr-only">
-        Loading files…
+        {appCopy.panels.fileExplorer.loadingFiles}
       </span>
       <div aria-hidden="true">
         {FILE_EXPLORER_SKELETON_ROWS.map((row, index) => (
@@ -2630,30 +2660,43 @@ export default function FileExplorer({ workspaceId }: Props) {
         // the pane's own edge.
         <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-2 pr-1.5">
           <div className="flex min-w-0 flex-1">
-            <InboxSearchInput value={query} onChange={setQuery} ariaLabel="Search files" placeholder="Search files…" />
+            <InboxSearchInput
+              value={query}
+              onChange={setQuery}
+              ariaLabel={appCopy.panels.fileExplorer.searchFiles}
+              placeholder={appCopy.panels.fileExplorer.searchFiles2}
+            />
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            <Tooltip content="New file" placement="bottom">
-              <IconButton aria-label="New file" onClick={() => requestCreateEntry('file')}>
+            <Tooltip content={appCopy.panels.fileExplorer.newFile} placement="bottom">
+              <IconButton aria-label={appCopy.panels.fileExplorer.newFile} onClick={() => requestCreateEntry('file')}>
                 <NewFileIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip content="New folder" placement="bottom">
-              <IconButton aria-label="New folder" onClick={() => requestCreateEntry('dir')}>
+            <Tooltip content={appCopy.panels.fileExplorer.newFolder} placement="bottom">
+              <IconButton aria-label={appCopy.panels.fileExplorer.newFolder} onClick={() => requestCreateEntry('dir')}>
                 <NewFolderIcon />
               </IconButton>
             </Tooltip>
             <Tooltip
-              content={canRevealActiveFile ? 'Reveal active file' : 'No active file to reveal'}
+              content={
+                canRevealActiveFile
+                  ? appCopy.panels.fileExplorer.revealActiveFile
+                  : appCopy.panels.fileExplorer.noActiveFileToReveal
+              }
               placement="bottom"
             >
-              <IconButton aria-label="Reveal active file" onClick={revealActiveFile} disabled={!canRevealActiveFile}>
+              <IconButton
+                aria-label={appCopy.panels.fileExplorer.revealActiveFile}
+                onClick={revealActiveFile}
+                disabled={!canRevealActiveFile}
+              >
                 <RevealActiveFileIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip content="Refresh files" placement="bottom">
+            <Tooltip content={appCopy.panels.fileExplorer.refreshFiles} placement="bottom">
               <IconButton
-                aria-label="Refresh files"
+                aria-label={appCopy.panels.fileExplorer.refreshFiles}
                 onClick={() => {
                   setRefreshToken((current) => current + 1)
                   void refreshGitStatus()
@@ -2694,17 +2737,20 @@ export default function FileExplorer({ workspaceId }: Props) {
           // them an accent-tinted fourth variant and the other bordered in a
           // fill token (2026-09-02 audit).
           <EmptyState
-            title="Saved folder is missing"
+            title={appCopy.panels.fileExplorer.savedFolderIsMissing}
             body={<span className="block max-w-full truncate font-mono">{folderPath}</span>}
             action={
               <>
-                <OutlineButton onClick={() => void recheckFolder()}>Retry</OutlineButton>
-                <PrimaryButton onClick={handleOpen}>Relink</PrimaryButton>
+                <OutlineButton onClick={() => void recheckFolder()}>{appCopy.panels.fileExplorer.retry}</OutlineButton>
+                <PrimaryButton onClick={handleOpen}>{appCopy.panels.fileExplorer.relink}</PrimaryButton>
               </>
             }
           />
         ) : (
-          <EmptyState title="No folder open" action={<PrimaryButton onClick={handleOpen}>Open folder</PrimaryButton>} />
+          <EmptyState
+            title={appCopy.panels.fileExplorer.noFolderOpen}
+            action={<PrimaryButton onClick={handleOpen}>{appCopy.panels.fileExplorer.openFolder}</PrimaryButton>}
+          />
         )}
       </div>
     </div>

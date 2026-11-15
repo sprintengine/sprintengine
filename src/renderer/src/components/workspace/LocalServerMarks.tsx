@@ -4,6 +4,7 @@ import type { StudioLocalServer } from '../../../../../packages/studio-protocol/
 import { LocalServerGlyph } from '../AppIcons'
 import { GhostButton, Tooltip } from '../ui'
 import { LocalServersMenu, localServerExitLine, localServerStateWord } from './LocalServersMenu'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Where a person sees the local servers agents started, in the two places
 // they look: the open chat's composer strip (this conversation's servers,
@@ -36,7 +37,11 @@ export function localServersStripCopy(
     return {
       label: server.title,
       state,
-      ariaLabel: `Local server ${server.title}, ${state.toLowerCase()}${exit ? ` (${exit.toLowerCase()})` : ''}`,
+      ariaLabel: appCopy.workspace.localServerMarks.localServer(
+        server.title,
+        state.toLowerCase(),
+        exit ? ` (${exit.toLowerCase()})` : '',
+      ),
     }
   }
   const running = servers.filter((server) => server.state === 'running').length
@@ -46,7 +51,7 @@ export function localServersStripCopy(
   )
   const state = parts.length > 0 ? parts.join(', ') : 'all stopped'
   const label = `${servers.length} servers`
-  return { label, state, ariaLabel: `${servers.length} local servers, ${state}` }
+  return { label, state, ariaLabel: appCopy.workspace.localServerMarks.localServers(servers.length, state) }
 }
 
 /**
@@ -66,7 +71,7 @@ export function localServersRowMarkCopy(
   )
   const title = `${live.length === 1 ? 'Local server' : 'Local servers'}: ${words.join(', ')}`
   const lines = servers.map((server) => `${server.title} — ${localServerStateWord(server.state)}`)
-  return { count: live.length, title, lines, ariaLabel: `${title}. Show local servers` }
+  return { count: live.length, title, lines, ariaLabel: appCopy.workspace.localServerMarks.showLocalServers(title) }
 }
 
 /**
@@ -89,7 +94,7 @@ export function LocalServersRowMark({
     <LocalServersMenu
       workspaceId={workspaceId}
       servers={servers}
-      ariaLabel="Local servers in this chat"
+      ariaLabel={appCopy.workspace.localServerMarks.localServersInThisChat}
       placement="bottom-start"
       renderTrigger={({ ref, togglePopover, triggerProps }) => (
         <Tooltip

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { ContextMenu, MenuItem } from '../../ui'
 import { copyToClipboardWithToast } from '../../../utils/copyToClipboardWithToast'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 /** What a message's right-click menu copies. Built only when an item is picked. */
 export type MessageCopySource = {
@@ -55,7 +56,7 @@ export function useMessageCopyMenu(source: MessageCopySource | null): {
             void copyToClipboardWithToast(source.markdown)
           }}
         >
-          Copy as Markdown
+          {appCopy.panels.agentChat.messageCopyMenu.copyAsMarkdown}
         </MenuItem>
       </ContextMenu>
     ) : null

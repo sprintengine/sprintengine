@@ -13,6 +13,7 @@ import {
   useSubagentViews,
   type SubagentView,
 } from './subagentViewStack'
+import { copy } from '../../../../../shared/copy'
 
 // A chat's tab, with the subagents the person went into drawn in its place. The
 // chat itself and any sub-agent chat under the top of the stack stay mounted and
@@ -98,7 +99,11 @@ export function SubagentViewHeader({
     items.length ? (
       <span className={`shrink-0 items-center gap-2 ${className}`}>
         <OverflowMenu
-          ariaLabel={`${items.length === 1 ? 'One more step' : `${items.length} more steps`} back up`}
+          ariaLabel={copy.panels.agentChat.subagentChatHost.backUp(
+            items.length === 1
+              ? copy.panels.agentChat.subagentChatHost.oneMoreStep
+              : copy.panels.agentChat.subagentChatHost.moreSteps(items.length),
+          )}
           align="start"
           items={items.map((crumb, index) => ({
             id: crumb.key,
@@ -130,7 +135,10 @@ export function SubagentViewHeader({
       data-subagent-header=""
       className="@container flex h-control-lg shrink-0 items-center gap-2 border-b border-[color:var(--border-subtle)] bg-[color:var(--agent-surface)] px-3 text-meta text-[color:var(--text-muted)]"
     >
-      <nav aria-label="Back up to the chat" className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+      <nav
+        aria-label={copy.panels.agentChat.subagentChatHost.backUpToTheChat}
+        className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"
+      >
         {first ? (
           <>
             {/* Wide: the chat it started from, then what lies between folded. */}
@@ -164,7 +172,14 @@ export function SubagentViewHeader({
 /** Why a sub-agent ended, where it failed: said under its header, as its transcript may not. */
 export function SubagentEndNotice({ error }: { error: string | null }): JSX.Element | null {
   if (!error) return null
-  return <InlineNotice tone="error" title="Why it ended" detail={error} className="mx-3 mt-2 shrink-0" />
+  return (
+    <InlineNotice
+      tone="error"
+      title={copy.panels.agentChat.subagentChatHost.whyItEnded}
+      detail={error}
+      className="mx-3 mt-2 shrink-0"
+    />
+  )
 }
 
 /**
@@ -188,7 +203,8 @@ export function SubagentBlockedBar({
     >
       <p className="min-w-0 flex-1 basis-60 text-meta text-[color:var(--text-muted)]">
         <span className="font-medium text-[color:var(--text-default)]">
-          To reach this subagent, speak to {parentName}.
+          {copy.panels.agentChat.subagentChatHost.toReachThisSubagentSpeak}
+          {parentName}.
         </span>{' '}
         {why}
       </p>
@@ -286,7 +302,7 @@ export function SubagentGone({ words, onBack }: { words: string; onBack: () => v
     <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-meta text-[color:var(--text-muted)]">
       <p>{words}</p>
       <GhostButton size="inline" tone="subtle" onClick={onBack}>
-        Go back
+        {copy.panels.agentChat.subagentChatHost.goBack}
       </GhostButton>
     </div>
   )

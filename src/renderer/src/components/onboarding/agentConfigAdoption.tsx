@@ -1,5 +1,6 @@
 import type { AgentConfigAdoptionResult } from '../../../../shared/workspace'
 import { LifecycleGlyph, Spinner } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // Shared, store-free helpers for the first-run config adoption so the rule and
 // the read-out can be unit-tested without the renderer store.
@@ -64,7 +65,7 @@ export function AgentConfigAdoptionStatus({ adoption }: { adoption: AgentConfigA
     return (
       <div className="flex items-center gap-2 text-meta text-[color:var(--text-muted)]">
         <Spinner className="icon-sm shrink-0" />
-        Bringing over your existing setup…
+        {copy.onboarding.agentConfigAdoption.bringingOverYourExistingSetup}
       </div>
     )
   }
@@ -72,12 +73,19 @@ export function AgentConfigAdoptionStatus({ adoption }: { adoption: AgentConfigA
   if (adoption.status === 'failed') {
     return (
       <div className="flex items-start gap-2">
-        <LifecycleGlyph state="failed" label="Adoption failed" live={false} className="mt-0.5 shrink-0" />
+        <LifecycleGlyph
+          state="failed"
+          label={copy.onboarding.agentConfigAdoption.adoptionFailed}
+          live={false}
+          className="mt-0.5 shrink-0"
+        />
         <div className="min-w-0">
-          <p className="text-meta text-[color:var(--text-default)]">Couldn’t bring over your existing setup.</p>
+          <p className="text-meta text-[color:var(--text-default)]">
+            {copy.onboarding.agentConfigAdoption.couldnTBringOverYour}
+          </p>
           <p className="mt-0.5 text-micro leading-5 text-[color:var(--text-muted)]">{adoption.message}</p>
           <p className="mt-0.5 text-micro leading-5 text-[color:var(--text-subtle)]">
-            You can add it later from Settings.
+            {copy.onboarding.agentConfigAdoption.youCanAddItLater}
           </p>
         </div>
       </div>
@@ -87,7 +95,12 @@ export function AgentConfigAdoptionStatus({ adoption }: { adoption: AgentConfigA
   const nothingAdopted = adoption.mcpServerCount === 0 && adoption.skillCount === 0
   return (
     <div className="flex items-start gap-2">
-      <LifecycleGlyph state="done" label="Adopted existing setup" live={false} className="mt-0.5 shrink-0" />
+      <LifecycleGlyph
+        state="done"
+        label={copy.onboarding.agentConfigAdoption.adoptedExistingSetup}
+        live={false}
+        className="mt-0.5 shrink-0"
+      />
       <div className="min-w-0">
         <p className="text-meta text-[color:var(--text-default)]">
           {nothingAdopted

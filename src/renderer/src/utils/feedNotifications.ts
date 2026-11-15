@@ -3,6 +3,7 @@
 // this hands back titles and lines, and the tests hold the table.
 import type { CliVersionAdvisory, SkillSourceUpdateCheck } from '../../../shared/electron-api'
 import type { DiscoveredCliModel, DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
+import { copy as appCopy } from '../../../shared/copy'
 
 export type Notice = {
   title: string
@@ -62,8 +63,11 @@ export function newModelsNotice(input: {
   const rest = models.length - named.length
   const list = rest > 0 ? `${named.join(', ')}, and ${rest} more` : joinNames(named)
   return {
-    title: models.length === 1 ? `New model for ${clis}` : `New models for ${clis}`,
-    description: `${list} ${models.length === 1 ? 'is' : 'are'} in the picker.`,
+    title:
+      models.length === 1
+        ? appCopy.utils.feedNotifications.newModelFor(clis)
+        : appCopy.utils.feedNotifications.newModelsFor(clis),
+    description: appCopy.utils.feedNotifications.inThePicker(list, models.length === 1 ? 'is' : 'are'),
   }
 }
 
@@ -90,7 +94,10 @@ export function sourceUpdatesNotice(check: Pick<SkillSourceUpdateCheck, 'sources
   const rest = fresh.length - named.length
   const list = rest > 0 ? `${named.join(', ')}, and ${rest} more` : joinNames(named)
   return {
-    title: fresh.length === 1 ? 'A plugin source has updates' : `${fresh.length} plugin sources have updates`,
-    description: `${list} ${fresh.length === 1 ? 'has' : 'have'} changed since your last scan. Press Sync in Plugins to update.`,
+    title:
+      fresh.length === 1
+        ? appCopy.utils.feedNotifications.aPluginSourceHasUpdates
+        : appCopy.utils.feedNotifications.pluginSourcesHaveUpdates(fresh.length),
+    description: appCopy.utils.feedNotifications.changedSinceYourLastScan(list, fresh.length === 1 ? 'has' : 'have'),
   }
 }

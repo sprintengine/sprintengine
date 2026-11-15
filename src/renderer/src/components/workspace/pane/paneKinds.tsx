@@ -1,5 +1,6 @@
 import type { RegisteredModalSurfaceLauncher, SurfaceIconComponent } from '../../../modules/renderer-host'
 import type { WorkspacePaneTabKind } from '../../../../../shared/workspace'
+import { copy } from '../../../../../shared/copy'
 
 // The kinds the workspace pane can open, in the order the "+" menu and the
 // empty-state launcher list them. A kind whose module is disabled is absent
@@ -182,23 +183,29 @@ function DocumentGlyph({ className }: { className?: string }) {
 // the same rule: it is a workspace surface of ours, not one of the shared
 // five, so it appends rather than pushing a chord number along.
 export const STATIC_PANE_KINDS: readonly PaneKindDefinition[] = [
-  { kind: 'browser', label: 'Browser', letter: 'B', Glyph: BrowserGlyph },
-  { kind: 'terminal', label: 'Terminal', letter: 'T', Glyph: TerminalGlyph },
-  { kind: 'files', label: 'Files', letter: 'F', moduleId: 'dev-tools', Glyph: FilesGlyph },
-  { kind: 'diff', label: 'Diff', letter: 'D', moduleId: 'git', Glyph: DiffGlyph },
-  { kind: 'git', label: 'Git', letter: 'G', moduleId: 'git', Glyph: GitGlyph },
-  { kind: 'backlog', label: 'Backlog', letter: 'L', moduleId: 'backlog', Glyph: BacklogGlyph },
-  { kind: 'canvas', label: 'Canvas', letter: 'C', moduleId: 'canvas', Glyph: CanvasGlyph },
+  { kind: 'browser', label: copy.workspace.pane.paneKinds.browser, letter: 'B', Glyph: BrowserGlyph },
+  { kind: 'terminal', label: copy.workspace.pane.paneKinds.terminal, letter: 'T', Glyph: TerminalGlyph },
+  { kind: 'files', label: copy.workspace.pane.paneKinds.files, letter: 'F', moduleId: 'dev-tools', Glyph: FilesGlyph },
+  { kind: 'diff', label: copy.workspace.pane.paneKinds.diff, letter: 'D', moduleId: 'git', Glyph: DiffGlyph },
+  { kind: 'git', label: copy.workspace.pane.paneKinds.git, letter: 'G', moduleId: 'git', Glyph: GitGlyph },
+  {
+    kind: 'backlog',
+    label: copy.workspace.pane.paneKinds.backlog,
+    letter: 'L',
+    moduleId: 'backlog',
+    Glyph: BacklogGlyph,
+  },
+  { kind: 'canvas', label: copy.workspace.pane.paneKinds.canvas, letter: 'C', moduleId: 'canvas', Glyph: CanvasGlyph },
   // Every picture in the focused chat: what the person attached and what the
   // agent's steps returned.
-  { kind: 'library', label: 'Library', letter: 'I', Glyph: LibraryGlyph },
+  { kind: 'library', label: copy.workspace.pane.paneKinds.library, letter: 'I', Glyph: LibraryGlyph },
 ]
 
 // Kinds that are tabs but never offered by the "+" menu or the launcher: a
 // Document tab is always opened ON a file someone handed it (a plan an agent
 // proposed), and an empty one would have nothing to pick from.
 const TAB_ONLY_PANE_KINDS: readonly PaneKindDefinition[] = [
-  { kind: 'document', label: 'Document', letter: '', Glyph: DocumentGlyph },
+  { kind: 'document', label: copy.workspace.pane.paneKinds.document, letter: '', Glyph: DocumentGlyph },
 ]
 
 // The list one pane offers: the shell's own kinds, then the rows modules

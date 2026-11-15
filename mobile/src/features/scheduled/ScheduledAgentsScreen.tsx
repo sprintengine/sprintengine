@@ -26,6 +26,7 @@ import {
 } from "../../api/scheduledAgents";
 import { canReadWorkspaces } from "../conversations/conversationListLogic";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { copy } from "../../../../src/shared/copy";
 
 type DesktopSchedules = {
   session: MobileSession;
@@ -130,24 +131,22 @@ export function ScheduledAgentsScreen({
 
   return (
     <ScreenFrame
-      backLabel="Back to settings"
+      backLabel={copy.phone.scheduled.scheduledAgentsScreen.backToSettings}
       count={count}
       onBack={onBack}
-      title="Scheduled"
+      title={copy.phone.scheduled.scheduledAgentsScreen.scheduled}
       trailing={
         readable.some(canOperateSchedules) ? (
-          <CircleButton icon={<PlusIcon size={iconSize.md} />} label="New scheduled agent" onPress={onNew} />
+          <CircleButton icon={<PlusIcon size={iconSize.md} />} label={copy.phone.scheduled.scheduledAgentsScreen.newScheduledAgent} onPress={onNew} />
         ) : undefined
       }
     >
       <ScrollView contentContainerStyle={contentStyle} refreshControl={refreshControl}>
         {loading ? (
-          <SkeletonRows label="Reading the desktops' scheduled agents" />
+          <SkeletonRows label={copy.phone.scheduled.scheduledAgentsScreen.readingTheDesktopsScheduledAgents} />
         ) : withAgents.length === 0 ? (
           <Card>
-            <Text style={styles.notice}>
-              No scheduled agents yet. Each starts a chat on the desktop on schedule, even while this phone sleeps.
-            </Text>
+            <Text style={styles.notice}>{copy.phone.scheduled.scheduledAgentsScreen.noScheduledAgentsYetEach}</Text>
           </Card>
         ) : (
           withAgents.map((desktop) => (
@@ -167,8 +166,8 @@ export function ScheduledAgentsScreen({
                   const operable = canOperateSchedules(desktop.session);
                   return (
                     <CardRow
-                      accessibilityHint={operable ? "Run now, pause, resume or close it." : undefined}
-                      accessibilityLabel={`${agent.title}, in ${agent.projectName}. ${scheduleStatusLine(agent, pausedAll)}.`}
+                      accessibilityHint={operable ? copy.phone.scheduled.scheduledAgentsScreen.runNowPauseResumeOr : undefined}
+                      accessibilityLabel={copy.phone.scheduled.scheduledAgentsScreen.in(agent.title, agent.projectName, scheduleStatusLine(agent, pausedAll))}
                       first={index === 0}
                       key={agent.id}
                       meta={`${agent.projectName} · ${scheduleStatusLine(agent, pausedAll)}`}
@@ -188,16 +187,16 @@ export function ScheduledAgentsScreen({
           </Text>
         ))}
       </ScrollView>
-      <BottomSheet onClose={() => setPicked(null)} title={picked?.agent.title ?? "Scheduled agent"} visible={picked !== null}>
+      <BottomSheet onClose={() => setPicked(null)} title={picked?.agent.title ?? copy.phone.scheduled.scheduledAgentsScreen.scheduledAgent} visible={picked !== null}>
         {picked ? (
           <View style={styles.sheet}>
-            <SheetOption label="Run now" onPress={() => act("run")} sub="Starts its chat now, paused or not." />
+            <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.runNow} onPress={() => act("run")} sub="Starts its chat now, paused or not." />
             {picked.agent.paused ? (
-              <SheetOption label="Resume schedule" onPress={() => act("resume")} sub="It runs again at its next time." />
+              <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.resumeSchedule} onPress={() => act("resume")} sub="It runs again at its next time." />
             ) : (
-              <SheetOption label="Pause schedule" onPress={() => act("pause")} sub="No runs at its times until resumed." />
+              <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.pauseSchedule} onPress={() => act("pause")} sub="No runs at its times until resumed." />
             )}
-            <SheetOption label="Close schedule" onPress={() => act("delete")} sub="Stops it for good. Its chats stay." />
+            <SheetOption label={copy.phone.scheduled.scheduledAgentsScreen.closeSchedule} onPress={() => act("delete")} sub="Stops it for good. Its chats stay." />
           </View>
         ) : null}
       </BottomSheet>

@@ -22,6 +22,7 @@ import {
 } from '../components/workspace/remoteBand/remoteSessionsModel'
 import { deletionConfirmation, deletionToast } from '../utils/settledChatDeletion'
 import { worktreesApi } from '../studio/worktrees'
+import { copy as appCopy } from '../../../shared/copy'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
@@ -115,7 +116,10 @@ export function useDeleteSettledChats(): {
       const failed = (description: string) =>
         showToast({
           tone: 'error',
-          title: workspaceIds.length === 1 ? 'The chat was not deleted' : 'The chats were not deleted',
+          title:
+            workspaceIds.length === 1
+              ? appCopy.hooks.useDeleteSettledChats.theChatWasNotDeleted
+              : appCopy.hooks.useDeleteSettledChats.theChatsWereNotDeleted,
           description,
         })
       let plans
@@ -173,7 +177,7 @@ export function useDeleteSettledChats(): {
         .workspaces.find((workspace) => workspace.id === workspaceId)?.remoteOrigin
       const title = titleOf(workspaceId)
       const failed = (description: string) =>
-        showToast({ tone: 'error', title: 'The chat was not deleted', description })
+        showToast({ tone: 'error', title: appCopy.hooks.useDeleteSettledChats.theChatWasNotDeleted, description })
       if (!origin || !environmentStudioAvailable()) {
         failed('Deleting chats on another machine is not available here.')
         return false
@@ -201,7 +205,7 @@ export function useDeleteSettledChats(): {
             () => title,
           )
           const confirmed = await dialog.confirm({
-            title: `Delete “${title}” on ${origin.machineName}?`,
+            title: appCopy.hooks.useDeleteSettledChats.deleteOn(title, origin.machineName),
             body: (
               <div className="space-y-2">
                 {[
@@ -212,7 +216,7 @@ export function useDeleteSettledChats(): {
                 ))}
               </div>
             ),
-            confirmLabel: 'Delete',
+            confirmLabel: appCopy.hooks.useDeleteSettledChats.delete,
             tone: 'danger',
           })
           if (!confirmed) return false
@@ -227,7 +231,7 @@ export function useDeleteSettledChats(): {
           failed(`It was deleted on ${origin.machineName}, but not removed here: ${removed.message}`)
           return false
         }
-        showToast({ tone: 'good', title: `Deleted “${title}” on ${origin.machineName}` })
+        showToast({ tone: 'good', title: appCopy.hooks.useDeleteSettledChats.deletedOn(title, origin.machineName) })
         return true
       } catch (error) {
         failed(errorText(error))

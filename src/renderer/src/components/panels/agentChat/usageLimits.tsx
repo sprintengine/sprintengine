@@ -19,6 +19,7 @@ import { GhostButton, Popover, Tooltip } from '../../ui'
 import { Meter } from '../../ui/Meter'
 import { Modal, ModalBody, ModalHeader } from '../../ui/Modal'
 import { formatTimeOfDay } from '../../../utils/clockFormat'
+import { copy } from '../../../../../shared/copy'
 
 // The subscription's usage limits — the five-hour session window and the
 // weekly ones — where a person checks a budget before they send: the open
@@ -111,7 +112,7 @@ function UsageWindowRow({ window, now }: { window: UsageLimitWindow; now: number
       {/* Said only when it changes what to do: running out before the reset. */}
       {pace?.pace === 'ahead' ? (
         <span className="text-micro text-[color:var(--text-subtle)]">
-          Ahead of pace: at this rate it runs out first
+          {copy.panels.agentChat.usageLimits.aheadOfPaceAtThis}
         </span>
       ) : null}
     </div>
@@ -156,7 +157,7 @@ export function UsageLimitsPanel({
   if (snapshots.length === 0) {
     return (
       <p className="text-meta text-[color:var(--text-subtle)]" data-usage-empty="">
-        No usage limits yet. They appear after a Claude or Codex subscription turn.
+        {copy.panels.agentChat.usageLimits.noUsageLimitsYetThey}
       </p>
     )
   }
@@ -212,7 +213,7 @@ export function UsageLimitsComposerButton({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Usage limits"
+      ariaLabel={copy.panels.agentChat.usageLimits.usageLimits}
       popupRole="dialog"
       placement="top-end"
       surfaceClassName="w-[300px] p-3"
@@ -252,8 +253,8 @@ export function UsageLimitsDialog({ onClose }: { onClose: () => void }): JSX.Ele
   return (
     <Modal open onClose={onClose} labelledBy={titleId} size="confirm">
       <ModalHeader
-        title="Usage limits"
-        subtitle="Claude and Codex subscriptions, as last reported"
+        title={copy.panels.agentChat.usageLimits.usageLimits}
+        subtitle={copy.panels.agentChat.usageLimits.claudeAndCodexSubscriptionsAs}
         titleId={titleId}
         onClose={onClose}
       />

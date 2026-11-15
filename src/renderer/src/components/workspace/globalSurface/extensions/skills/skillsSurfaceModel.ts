@@ -19,6 +19,7 @@ import {
   isGithubDotComRepo,
   skillRepoLabel,
 } from '../../../../../../../shared/skills'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 /**
  * What a source is called on screen. A repository source is named by its
@@ -168,7 +169,13 @@ export function deriveSkillCatalogueGroups(input: {
   if (matched.length === 0) return []
   const groups = input.scan.groups.filter((name) => matched.some((item) => item.group === name))
   if (groups.length === 0) {
-    return [{ key: '(all)', label: 'Skills', items: matched }]
+    return [
+      {
+        key: '(all)',
+        label: appCopy.workspace.globalSurface.extensions.skills.skillsSurfaceModel.skills,
+        items: matched,
+      },
+    ]
   }
   const grouped = groups.map((name) => ({
     key: name,

@@ -1,4 +1,5 @@
 import type * as ChatStores from './chatStores'
+import { copy } from '../../../shared/copy'
 
 // A stand-in for what the window's Studio keeps beside its chats
 // (`chatStores.ts`), for tests of what calls it. A test mocks the module with
@@ -20,7 +21,7 @@ function blank(): Api {
     usageLimitResumes: async () => ({ autoResume: false, notices: [] }),
     updateUsageLimitResume: async () => ({ autoResume: false, notices: [] }),
     onUsageLimitResumesChanged: () => () => undefined,
-    usageReport: async () => ({ ok: false, message: 'No usage here.' }),
+    usageReport: async () => ({ ok: false, message: copy.studio.chatStoresDouble.noUsageHere }),
     scanImportableConversations: async () => ({ ok: true, folders: [], sources: [] }),
     importConversations: async () => ({ ok: true, imported: [], skipped: 0, failed: [] }),
   }

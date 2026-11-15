@@ -121,6 +121,7 @@ import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { gitApi } from '../../studio/git'
+import { copy as appCopy } from '../../../../shared/copy'
 
 interface Props {
   onClose: () => void
@@ -178,34 +179,34 @@ type SettingsTabIcon = React.ComponentType<{ className?: string }>
 // self-titles via its own section headings; only module-contributed sections
 // take a host-supplied page header (see `bodyContent`).
 const settingsTabs: Array<{ id: SettingsTabId; label: string; icon: SettingsTabIcon }> = [
-  { id: 'general', label: 'General', icon: GeneralSettingsIcon },
-  { id: 'profile', label: 'Profile', icon: ProfileSettingsIcon },
-  { id: 'appearance', label: 'Appearance', icon: AppearanceSettingsIcon },
-  { id: 'shortcuts', label: 'Shortcuts', icon: ShortcutsSettingsIcon },
+  { id: 'general', label: appCopy.settings.settingsPanel.general, icon: GeneralSettingsIcon },
+  { id: 'profile', label: appCopy.settings.settingsPanel.profile, icon: ProfileSettingsIcon },
+  { id: 'appearance', label: appCopy.settings.settingsPanel.appearance, icon: AppearanceSettingsIcon },
+  { id: 'shortcuts', label: appCopy.settings.settingsPanel.shortcuts, icon: ShortcutsSettingsIcon },
   // The chats the sidebar no longer draws once they come to rest (owner,
   // 2026-09-28): the Settled shelf moved here.
-  { id: 'settled-chats', label: 'Settled chats', icon: SettledChatsSettingsIcon },
-  { id: 'agents', label: 'Agents', icon: AgentsSettingsIcon },
-  { id: 'providers', label: 'Providers', icon: ProvidersSettingsIcon },
+  { id: 'settled-chats', label: appCopy.settings.settingsPanel.settledChats, icon: SettledChatsSettingsIcon },
+  { id: 'agents', label: appCopy.settings.settingsPanel.agents, icon: AgentsSettingsIcon },
+  { id: 'providers', label: appCopy.settings.settingsPanel.providers, icon: ProvidersSettingsIcon },
   // Windows only: this PC and its WSL distributions, each a machine a
   // workspace can run on (shared/execution-host.ts). Elsewhere there is one.
-  { id: 'machines', label: 'Machines', icon: MachinesSettingsIcon },
+  { id: 'machines', label: appCopy.settings.settingsPanel.machines, icon: MachinesSettingsIcon },
   // Every worktree the agents work in and the pool they come from (owner,
   // 2026-10-05): where each is, who has it, what it costs on disk.
-  { id: 'worktrees', label: 'Worktrees', icon: WorktreesSettingsIcon },
+  { id: 'worktrees', label: appCopy.settings.settingsPanel.worktrees, icon: WorktreesSettingsIcon },
   // Where agents publish the pages they make, to open from any device.
-  { id: 'artifacts', label: 'Artifacts', icon: ArtifactsSettingsIcon },
+  { id: 'artifacts', label: appCopy.settings.settingsPanel.artifacts, icon: ArtifactsSettingsIcon },
   // Covers both groups on the page (the VCS itself, then the hosting provider),
   // so the label is the subject rather than one of the two rows. The tab *id*
   // stays 'github' — it is a persisted deep-link target (menus, module routes).
-  { id: 'github', label: 'Version control', icon: GithubSettingsIcon },
-  { id: 'trackers', label: 'Ticket trackers', icon: TrackersSettingsIcon },
-  { id: 'knowledge-graph', label: 'Knowledge graph', icon: KnowledgeGraphSettingsIcon },
-  { id: 'design-system', label: 'Design system', icon: DesignSystemSettingsIcon },
+  { id: 'github', label: appCopy.settings.settingsPanel.versionControl, icon: GithubSettingsIcon },
+  { id: 'trackers', label: appCopy.settings.settingsPanel.ticketTrackers, icon: TrackersSettingsIcon },
+  { id: 'knowledge-graph', label: appCopy.settings.settingsPanel.knowledgeGraph, icon: KnowledgeGraphSettingsIcon },
+  { id: 'design-system', label: appCopy.settings.settingsPanel.designSystem, icon: DesignSystemSettingsIcon },
   // Titled for what a person installs; the id stays `modules`, a persisted
   // deep-link target (the Extensions drawer, a disabled door's explainer).
-  { id: 'modules', label: 'Extensions', icon: ModulesSettingsIcon },
-  { id: 'remote', label: 'Remote', icon: RemoteSettingsIcon },
+  { id: 'modules', label: appCopy.settings.settingsPanel.extensions, icon: ModulesSettingsIcon },
+  { id: 'remote', label: appCopy.settings.settingsPanel.remote, icon: RemoteSettingsIcon },
 ]
 
 // Rail groups. Labels are internal keys only — the rail separates groups by
@@ -416,13 +417,17 @@ function AgentCliBand({
   const meta = freshness ? `checked ${freshness}` : undefined
   return (
     <SettingsPageHeader
-      title="Agents"
+      title={appCopy.settings.settingsPanel.agents}
       meta={meta}
       actions={
         <>
-          <Tooltip content="Re-check every CLI and its models now">
+          <Tooltip content={appCopy.settings.settingsPanel.reCheckEveryCLIAnd}>
             <IconButton
-              aria-label={rechecking ? 'Re-checking every CLI' : 'Re-check every CLI now'}
+              aria-label={
+                rechecking
+                  ? appCopy.settings.settingsPanel.reCheckingEveryCLI
+                  : appCopy.settings.settingsPanel.reCheckEveryCLINow
+              }
               disabled={rechecking}
               onClick={onRecheck}
             >
@@ -463,9 +468,9 @@ function VersionControlMark({ monogram }: { monogram: string }) {
 function VersionControlStateLine({ view }: { view: VersionControlRowView }) {
   switch (view.kind) {
     case 'checking':
-      return <>Checking…</>
+      return <>{appCopy.settings.settingsPanel.checking}</>
     case 'available':
-      return <>Available</>
+      return <>{appCopy.settings.settingsPanel.available}</>
     case 'authenticated':
       return (
         <>
@@ -495,7 +500,7 @@ function VersionControlStateLine({ view }: { view: VersionControlRowView }) {
         </>
       )
     case 'probe-failed':
-      return <>Availability unknown — the check did not complete</>
+      return <>{appCopy.settings.settingsPanel.availabilityUnknownTheCheckDid}</>
   }
 }
 
@@ -573,10 +578,14 @@ export function VersionControlSections({ githubToken }: { githubToken: React.Rea
           round-trip, so the control that refreshes it sits in the header. */}
       <SettingsPageHeader
         id="version-control-page"
-        title="Version control"
+        title={appCopy.settings.settingsPanel.versionControl}
         actions={
-          <Tooltip content="Re-check now">
-            <IconButton aria-label="Re-check now" disabled={checking} onClick={() => void runProbe()}>
+          <Tooltip content={appCopy.settings.settingsPanel.reCheckNow}>
+            <IconButton
+              aria-label={appCopy.settings.settingsPanel.reCheckNow}
+              disabled={checking}
+              onClick={() => void runProbe()}
+            >
               {checking ? <Spinner className="icon-sm" /> : <RefreshIcon />}
             </IconButton>
           </Tooltip>
@@ -600,7 +609,7 @@ export function VersionControlSections({ githubToken }: { githubToken: React.Rea
             {index === 0 && probeStatus === 'error' ? (
               <InlineNotice
                 tone="warn"
-                title="Version control could not be checked."
+                title={appCopy.settings.settingsPanel.versionControlCouldNotBe}
                 detail={probeError ?? undefined}
               />
             ) : null}
@@ -726,7 +735,7 @@ export default function SettingsPanel({
       ...moduleSections.map((section) => ({
         id: moduleSectionTabId(section.id),
         label: section.label,
-        description: section.description ?? `From the ${section.moduleId} module`,
+        description: section.description ?? appCopy.settings.settingsPanel.fromTheModule(section.moduleId),
         moduleSection: section,
       })),
     ],
@@ -919,21 +928,21 @@ export default function SettingsPanel({
       }
       if (next) {
         const confirmed = await dialog.confirm({
-          title: 'Enable activity tracking?',
+          title: appCopy.settings.settingsPanel.enableActivityTracking,
           body: (
             <>
-              <div>What happens:</div>
+              <div>{appCopy.settings.settingsPanel.whatHappens}</div>
               <ul className="mt-1 list-disc pl-5">
-                <li>Claude Code agents note each knowledge file they read or edit</li>
+                <li>{appCopy.settings.settingsPanel.claudeCodeAgentsNoteEach}</li>
                 <li>
-                  The notes are kept in this project’s folder under{' '}
-                  <span className="font-mono">~/.sprintengine/workspaces/</span>
+                  {appCopy.settings.settingsPanel.theNotesAreKeptIn}{' '}
+                  <span className="font-mono">{appCopy.settings.settingsPanel.sprintengineWorkspaces}</span>
                 </li>
               </ul>
-              <div className="mt-2">Only knowledge files are recorded. Nothing is written to the project folder.</div>
+              <div className="mt-2">{appCopy.settings.settingsPanel.onlyKnowledgeFilesAreRecorded}</div>
             </>
           ),
-          confirmLabel: 'Enable tracking',
+          confirmLabel: appCopy.settings.settingsPanel.enableTracking,
         })
         if (!confirmed) return
       }
@@ -1205,7 +1214,7 @@ export default function SettingsPanel({
   const sidebarNode = (
     <div
       role="tablist"
-      aria-label="Settings categories"
+      aria-label={appCopy.settings.settingsPanel.settingsCategories}
       aria-orientation="vertical"
       className="min-h-0 flex-1 overflow-y-auto px-1 py-2"
     >
@@ -1257,7 +1266,7 @@ export default function SettingsPanel({
           aria-labelledby="settings-tab-appearance"
           className="space-y-5"
         >
-          <SettingsPageHeader title="Appearance" />
+          <SettingsPageHeader title={appCopy.settings.settingsPanel.appearance} />
           <AppThemePicker value={appearanceTheme} onChange={setAppearanceTheme} />
           <SystemThemeRows />
           {/* How the chat rail lists conversations by default (all-chats-view).
@@ -1272,19 +1281,19 @@ export default function SettingsPanel({
               groups divided by top borders, which spent two rules to say what
               one card's edge says. */}
           <section className="space-y-3">
-            <SettingsSectionTitle>Interface</SettingsSectionTitle>
+            <SettingsSectionTitle>{appCopy.settings.settingsPanel.interface}</SettingsSectionTitle>
             <SettingCard>
               <SettingsRow
-                label="Chat list"
+                label={appCopy.settings.settingsPanel.chatList}
                 help="How each window groups its chats: under their project, by status with working chats folded away at the foot of the list, by date under Today, Yesterday and earlier, or all together, most recently messaged first. The filter beside New chat changes it for one window."
               >
                 <SegmentedControl<ChatListView>
-                  ariaLabel="Chat list"
+                  ariaLabel={appCopy.settings.settingsPanel.chatList}
                   items={[
-                    { value: 'projects', label: 'By project' },
-                    { value: 'status', label: 'By status' },
-                    { value: 'date', label: 'By date' },
-                    { value: 'all', label: 'All chats' },
+                    { value: 'projects', label: appCopy.settings.settingsPanel.byProject },
+                    { value: 'status', label: appCopy.settings.settingsPanel.byStatus },
+                    { value: 'date', label: appCopy.settings.settingsPanel.byDate },
+                    { value: 'all', label: appCopy.settings.settingsPanel.allChats },
                   ]}
                   value={chatListView}
                   onChange={setChatListView}
@@ -1293,16 +1302,16 @@ export default function SettingsPanel({
               {/* The one way a row moves on its own (owner ruling 2026-09-09
                   keeps them still), so it is the person's to turn on. */}
               <SettingToggle
-                label="Working section"
-                description="Move working chats into a section at the top until they finish or need you."
+                label={appCopy.settings.settingsPanel.workingSection}
+                description={appCopy.settings.settingsPanel.moveWorkingChatsIntoA}
                 enabled={sidebarWorkingSection}
                 onChange={setSidebarWorkingSection}
               />
               {/* Beside the list it shows: the other way of getting at the
                   sidebar, for someone who keeps it collapsed. */}
               <SettingToggle
-                label="Show sidebar at the edge"
-                description="When collapsed, point at the window’s left edge to show the sidebar."
+                label={appCopy.settings.settingsPanel.showSidebarAtTheEdge}
+                description={appCopy.settings.settingsPanel.whenCollapsedPointAtThe}
                 enabled={sidebarHoverReveal}
                 onChange={setSidebarHoverReveal}
               />
@@ -1312,21 +1321,21 @@ export default function SettingsPanel({
                   beside it that says where it lives. The in-app tab stays a
                   choice, and this row is the only thing that changes it. */}
               <SettingsRow
-                label="Open files in"
+                label={appCopy.settings.settingsPanel.openFilesIn}
                 help="The editor window shows the file on its own, beside a file tree. In the app opens it as a tab next to your terminals."
               >
                 <SegmentedControl<'window' | 'app'>
-                  ariaLabel="Open files in"
+                  ariaLabel={appCopy.settings.settingsPanel.openFilesIn}
                   items={[
-                    { value: 'window', label: 'Editor window' },
-                    { value: 'app', label: 'In the app' },
+                    { value: 'window', label: appCopy.settings.settingsPanel.editorWindow },
+                    { value: 'app', label: appCopy.settings.settingsPanel.inTheApp },
                   ]}
                   value={openFilesInExternalWindow ? 'window' : 'app'}
                   onChange={(value) => setOpenFilesInExternalWindow(value === 'window')}
                 />
               </SettingsRow>
               <SettingsRow
-                label="Window material"
+                label={appCopy.settings.settingsPanel.windowMaterial}
                 help={
                   isMac
                     ? 'Glass frosts the sidebar and title bar. Tinted gives them a faint wash of colour.'
@@ -1340,38 +1349,38 @@ export default function SettingsPanel({
                     shown is the material the window actually wears (a stored
                     glass reads as tinted elsewhere). */}
                 <SegmentedControl<WindowMaterial>
-                  ariaLabel="Window material"
+                  ariaLabel={appCopy.settings.settingsPanel.windowMaterial}
                   items={[
-                    ...(isMac ? [{ value: 'glass' as const, label: 'Glass' }] : []),
-                    { value: 'tinted', label: 'Tinted' },
-                    { value: 'solid', label: 'Solid' },
+                    ...(isMac ? [{ value: 'glass' as const, label: appCopy.settings.settingsPanel.glass }] : []),
+                    { value: 'tinted', label: appCopy.settings.settingsPanel.tinted },
+                    { value: 'solid', label: appCopy.settings.settingsPanel.solid },
                   ]}
                   value={effectiveWindowMaterial(appearanceWindowMaterial, window.api.platform)}
                   onChange={setAppearanceWindowMaterial}
                 />
               </SettingsRow>
               <SettingToggle
-                label="Agent characters"
-                description="Show working agents as little characters in the Files tree."
+                label={appCopy.settings.settingsPanel.agentCharacters}
+                description={appCopy.settings.settingsPanel.showWorkingAgentsAsLittle}
                 enabled={agentCharacters}
                 onChange={setAppearanceAgentCharacters}
               />
               <SettingToggle
-                label="Show subscription usage limits"
-                description="Show how much of your plan’s 5-hour and weekly limits Claude or Codex has used."
+                label={appCopy.settings.settingsPanel.showSubscriptionUsageLimits}
+                description={appCopy.settings.settingsPanel.showHowMuchOfYour}
                 enabled={usageLimits}
                 onChange={setAppearanceUsageLimits}
               />
               <SettingToggle
-                label="Quiet project icons"
-                description="Gray project icons, coloured only on the chat you point at or open."
+                label={appCopy.settings.settingsPanel.quietProjectIcons}
+                description={appCopy.settings.settingsPanel.grayProjectIconsColouredOnly}
                 enabled={quietProjectIcons}
                 onChange={setAppearanceQuietProjectIcons}
               />
             </SettingCard>
           </section>
           <section className="space-y-3">
-            <SettingsSectionTitle>Fonts</SettingsSectionTitle>
+            <SettingsSectionTitle>{appCopy.settings.settingsPanel.fonts}</SettingsSectionTitle>
             <SettingCard>
               <FontAppearanceRows />
             </SettingCard>
@@ -1381,7 +1390,7 @@ export default function SettingsPanel({
 
       {activeSettingsTab === 'profile' ? (
         <div role="tabpanel" id="settings-panel-profile" aria-labelledby="settings-tab-profile">
-          <SettingsPageHeader title="Profile" />
+          <SettingsPageHeader title={appCopy.settings.settingsPanel.profile} />
           <ProfileSection
             authState={authState}
             message={profileMessage}
@@ -1395,7 +1404,7 @@ export default function SettingsPanel({
 
       {activeSettingsTab === 'general' ? (
         <div role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general">
-          <SettingsPageHeader title="General" />
+          <SettingsPageHeader title={appCopy.settings.settingsPanel.general} />
           {/* The version row: identity on the left, the one state-driven action
               on the right — check, then Download, then Restart to update —
               with the download's progress under it (AppVersionRow). */}
@@ -1412,8 +1421,8 @@ export default function SettingsPanel({
             <UpdateChannelSettings onResult={onUpdateChannelResult} />
             {updateState ? (
               <SettingToggle
-                label="Download updates automatically"
-                description="Off: you’re told about updates and download them yourself."
+                label={appCopy.settings.settingsPanel.downloadUpdatesAutomatically}
+                description={appCopy.settings.settingsPanel.offYouReToldAbout}
                 enabled={updateState.autoDownload}
                 onChange={(enabled) => void setAutoDownload(enabled)}
               />
@@ -1445,7 +1454,7 @@ export default function SettingsPanel({
             githubToken={
               <div className="space-y-2">
                 <SettingsRow
-                  label="Access token"
+                  label={appCopy.settings.settingsPanel.accessToken}
                   // No caption: the row above already names the provider and its
                   // state, and what a GitHub token is needs no explaining. The
                   // one line that survives is a consequence the screen cannot
@@ -1465,7 +1474,7 @@ export default function SettingsPanel({
                         type="password"
                         value={githubTokenDraft}
                         onChange={(event) => setGithubTokenDraft(event.target.value)}
-                        placeholder="Fine-grained GitHub token"
+                        placeholder={appCopy.settings.settingsPanel.fineGrainedGitHubToken}
                         autoComplete="off"
                         size="md"
                         variant="well"
@@ -1486,7 +1495,7 @@ export default function SettingsPanel({
                             setGithubTokenDraft('')
                           }}
                         >
-                          Cancel
+                          {appCopy.settings.settingsPanel.cancel}
                         </GhostButton>
                       ) : null}
                       <PrimaryButton
@@ -1494,7 +1503,7 @@ export default function SettingsPanel({
                         onClick={() => void saveGitHubToken()}
                         disabled={githubTokenPending || !githubTokenDraft.trim()}
                       >
-                        Save
+                        {appCopy.settings.settingsPanel.save}
                       </PrimaryButton>
                     </>
                   ) : (
@@ -1507,14 +1516,14 @@ export default function SettingsPanel({
                         onClick={() => setGithubTokenEditing(true)}
                         disabled={githubTokenStatus === null}
                       >
-                        Replace
+                        {appCopy.settings.settingsPanel.replace}
                       </OutlineButton>
                       <OutlineButton
                         size="md"
                         onClick={() => void clearGitHubToken()}
                         disabled={githubTokenPending || githubTokenStatus?.source !== 'settings'}
                       >
-                        Clear
+                        {appCopy.settings.settingsPanel.clear}
                       </OutlineButton>
                     </>
                   )}
@@ -1569,8 +1578,8 @@ export default function SettingsPanel({
               how chats behave. */}
           <SettingCard>
             <SettingToggle
-              label="Check for CLI updates"
-              description="Offers Update when a newer version is published."
+              label={appCopy.settings.settingsPanel.checkForCLIUpdates}
+              description={appCopy.settings.settingsPanel.offersUpdateWhenANewer}
               enabled={checkCliVersions}
               onChange={setCheckCliVersions}
             />
@@ -1611,7 +1620,7 @@ export default function SettingsPanel({
             // No top rule on the section: the card draws its own edge, and a
             // section rule above it doubled the boundary.
             <section className="space-y-3 pt-2">
-              <SettingsSectionTitle>Memory</SettingsSectionTitle>
+              <SettingsSectionTitle>{appCopy.settings.settingsPanel.memory}</SettingsSectionTitle>
               <SettingCard>
                 <IdleSuspendField descriptor={idleSuspendDescriptor} />
                 {keepRecentAliveDescriptor ? <KeepRecentAliveField descriptor={keepRecentAliveDescriptor} /> : null}
@@ -1658,7 +1667,7 @@ export default function SettingsPanel({
           className="space-y-4"
         >
           <SettingsPageHeader
-            title="Knowledge graph"
+            title={appCopy.settings.settingsPanel.knowledgeGraph}
             meta={
               activeProjectRoot ? (
                 <span className="inline-block max-w-[260px] truncate align-bottom font-mono" title={activeProjectRoot}>
@@ -1674,8 +1683,8 @@ export default function SettingsPanel({
           <div className="pt-2">
             <SettingCard>
               <SettingToggle
-                label="Activity tracking"
-                description="Record which knowledge files Claude Code reads."
+                label={appCopy.settings.settingsPanel.activityTracking}
+                description={appCopy.settings.settingsPanel.recordWhichKnowledgeFilesClaude}
                 enabled={activityInstalled}
                 disabled={activityPending || !activeProjectRoot || !activeKnowledgeConfig?.relativeRoot}
                 onChange={(next) => void toggleActivityTracking(next)}
@@ -1698,7 +1707,7 @@ export default function SettingsPanel({
           className="space-y-4"
         >
           <SettingsPageHeader
-            title="Design system"
+            title={appCopy.settings.settingsPanel.designSystem}
             meta={
               activeDesignSystemRoot ? (
                 <span
@@ -1749,7 +1758,7 @@ export default function SettingsPanel({
       {chrome === 'panel' ? (
         <div className="mt-6 flex justify-end">
           <GhostButton size="md" onClick={onClose}>
-            Done
+            {appCopy.settings.settingsPanel.done}
           </GhostButton>
         </div>
       ) : null}
@@ -1761,7 +1770,7 @@ export default function SettingsPanel({
   // reader and moves its meta and actions into this slot). The slot is
   // `contents`, so an empty one adds no gap beside the close.
   const barFor = (crumb: string) => ({
-    title: 'Settings',
+    title: appCopy.settings.settingsPanel.settings,
     crumb,
     actions: <span ref={setBarSlotEl} className="contents" />,
   })
@@ -1773,7 +1782,7 @@ export default function SettingsPanel({
     // any other door — the one way out every door already has.
     return (
       <GlobalSurfaceShell
-        ariaLabel="Settings"
+        ariaLabel={appCopy.settings.settingsPanel.settings}
         bar={barFor(activeTab.label)}
         rail={sidebarNode}
         onBack={doorBack.onBack}
@@ -1794,7 +1803,11 @@ export default function SettingsPanel({
     // ModalSurfaceChromeContext puts the closing X in the bar; the shell
     // suppresses the chevron there, so no onBack is passed.
     return (
-      <GlobalSurfaceShell ariaLabel="Settings" bar={barFor(activeTab.label)} rail={sidebarNode}>
+      <GlobalSurfaceShell
+        ariaLabel={appCopy.settings.settingsPanel.settings}
+        bar={barFor(activeTab.label)}
+        rail={sidebarNode}
+      >
         <SettingsBarSlotContext.Provider value={barSlot}>
           <ScrollArea className="h-full px-5 py-4 [scrollbar-gutter:stable]">{bodyContent}</ScrollArea>
         </SettingsBarSlotContext.Provider>
@@ -1804,10 +1817,10 @@ export default function SettingsPanel({
 
   return (
     <WorkspacePanel
-      title="Settings"
+      title={appCopy.settings.settingsPanel.settings}
       titleId="settings-panel-title"
       onClose={onClose}
-      closeLabel="Close settings"
+      closeLabel={appCopy.settings.settingsPanel.closeSettings}
       sidebar={sidebarNode}
     >
       {bodyContent}
@@ -1836,9 +1849,12 @@ function ProfileSection({
   if (!authState.authenticated) {
     return (
       <div className="space-y-2">
-        <SettingsRow label="Not signed in" help="Signing in is optional. Every feature works without an account.">
+        <SettingsRow
+          label={appCopy.settings.settingsPanel.notSignedIn}
+          help="Signing in is optional. Every feature works without an account."
+        >
           <PrimaryButton size="md" onClick={onSignIn} disabled={pending || authState.status === 'checking'}>
-            Sign in
+            {appCopy.settings.settingsPanel.signIn}
           </PrimaryButton>
         </SettingsRow>
         {message ? <p className="text-body leading-5 text-[color:var(--text-muted)]">{message}</p> : null}
@@ -1866,7 +1882,7 @@ function ProfileSection({
 
       {orgName ? (
         <div className="grid gap-x-6 gap-y-3 text-body sm:grid-cols-2">
-          <MetaCell label="Organization" value={orgName} />
+          <MetaCell label={appCopy.settings.settingsPanel.organization} value={orgName} />
         </div>
       ) : null}
 
@@ -1877,10 +1893,10 @@ function ProfileSection({
           "Hairlines carry the structure"). */}
       <div className="flex flex-wrap items-center gap-3 pt-1">
         <OutlineButton size="md" onClick={onRefresh} disabled={pending}>
-          Refresh account
+          {appCopy.settings.settingsPanel.refreshAccount}
         </OutlineButton>
         <GhostButton size="md" onClick={onSignOut} disabled={pending} className="ml-auto">
-          Sign out
+          {appCopy.settings.settingsPanel.signOut}
         </GhostButton>
       </div>
     </div>

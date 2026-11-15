@@ -3,6 +3,7 @@ import type {
   SettledChatDeletionPlan,
   SettledChatWorktreePlan,
 } from '../../../shared/ipc/settled-chats'
+import { copy } from '../../../shared/copy'
 
 // What the confirmation and the toast after a delete say, from main's plan
 // and outcome (src/main/settled-chat-deletion.ts). Pure, so the words are
@@ -83,22 +84,22 @@ export function deletionConfirmation(
     const title = titleOf(plan.workspaceId)
     if (plan.remoteMachine) {
       return {
-        title: `Remove “${title}” from this computer?`,
+        title: copy.utils.settledChatDeletion.removeFromThisComputer(title),
         paragraphs: [
           `It runs on ${plan.remoteMachine}. This removes it from this computer only: the chat, its history and its worktree stay on ${plan.remoteMachine}, where it can be deleted.`,
           ...left,
         ],
-        confirmLabel: 'Remove',
+        confirmLabel: copy.utils.settledChatDeletion.remove,
       }
     }
     return {
-      title: `Delete “${title}”?`,
+      title: copy.utils.settledChatDeletion.delete(title),
       paragraphs: [
         "Its history is deleted for good. A deleted chat can't be brought back.",
         ...plan.worktrees.map(worktreeSentence),
         ...left,
       ],
-      confirmLabel: 'Delete',
+      confirmLabel: copy.utils.settledChatDeletion.delete2,
     }
   }
 
@@ -125,7 +126,11 @@ export function deletionConfirmation(
     )
   }
   paragraphs.push(...left)
-  return { title: `Delete ${plans.length} settled chats?`, paragraphs, confirmLabel: `Delete ${plans.length} chats` }
+  return {
+    title: copy.utils.settledChatDeletion.deleteSettledChats(plans.length),
+    paragraphs,
+    confirmLabel: copy.utils.settledChatDeletion.deleteChats(plans.length),
+  }
 }
 
 export type DeletionToast = { tone: 'good' | 'warn' | 'error'; title: string; description?: string }
@@ -151,8 +156,8 @@ export function deletionToast(
       tone: 'error',
       title:
         failed.length === 1
-          ? `“${titleOf(first.workspaceId)}” was not deleted`
-          : `${failed.length} chats were not deleted`,
+          ? copy.utils.settledChatDeletion.wasNotDeleted(titleOf(first.workspaceId))
+          : copy.utils.settledChatDeletion.chatsWereNotDeleted(failed.length),
       description: [
         why,
         done.length > 0 ? `${plural(done.length, 'other chat')} ${done.length === 1 ? 'was' : 'were'} deleted.` : '',
@@ -164,7 +169,10 @@ export function deletionToast(
   }
   return {
     tone: keptNotes.length > 0 ? 'warn' : 'good',
-    title: done.length === 1 ? `Deleted “${titleOf(done[0].workspaceId)}”` : `Deleted ${done.length} chats`,
+    title:
+      done.length === 1
+        ? copy.utils.settledChatDeletion.deleted(titleOf(done[0].workspaceId))
+        : copy.utils.settledChatDeletion.deletedChats(done.length),
     ...(keptNotes.length > 0 ? { description: keptNotes.join(' ') } : {}),
   }
 }

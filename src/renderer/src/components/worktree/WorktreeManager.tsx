@@ -38,6 +38,7 @@ import { openTerminal } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
 import { worktreesApi } from '../../studio/worktrees'
+import { copy as appCopy } from '../../../../shared/copy'
 
 type WorktreeMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -92,9 +93,9 @@ function branchLabel(row: WorktreeRow): string {
 // A clean worktree (and the default checkout) shows no mark — the absence reads
 // as "fine", which keeps the list from turning into dot-soup.
 function worktreeGlyph(row: WorktreeRow): { state: LifecycleState; label: string } | null {
-  if (row.missing) return { state: 'failed', label: 'Missing on disk' }
-  if (row.prunable) return { state: 'archived', label: 'Prunable' }
-  if (row.locked) return { state: 'paused', label: 'Locked' }
+  if (row.missing) return { state: 'failed', label: appCopy.worktree.worktreeManager.missingOnDisk }
+  if (row.prunable) return { state: 'archived', label: appCopy.worktree.worktreeManager.prunable }
+  if (row.locked) return { state: 'paused', label: appCopy.worktree.worktreeManager.locked }
   return null
 }
 
@@ -480,17 +481,20 @@ export default function WorktreeManager({
     const force = Boolean(row.dirtyCount && row.dirtyCount > 0)
     if (force) {
       const confirmation = await dialog.prompt({
-        title: 'Force remove worktree?',
+        title: appCopy.worktree.worktreeManager.forceRemoveWorktree,
         body: (
           <>
-            Worktree <span className="font-mono">{branchLabel(row)}</span> has uncommitted changes that will be lost.
-            Type <span className="font-mono">remove</span> to confirm.
+            {appCopy.worktree.worktreeManager.worktree}
+            <span className="font-mono">{branchLabel(row)}</span>
+            {appCopy.worktree.worktreeManager.hasUncommittedChangesThatWill}
+            <span className="font-mono">remove</span>
+            {appCopy.worktree.worktreeManager.toConfirm}
           </>
         ),
-        inputLabel: 'Type "remove" to confirm',
+        inputLabel: appCopy.worktree.worktreeManager.typeRemoveToConfirm,
         placeholder: 'remove',
         required: true,
-        confirmLabel: 'Force remove',
+        confirmLabel: appCopy.worktree.worktreeManager.forceRemove,
         tone: 'danger',
         validate: (value) => (value.trim() === 'remove' ? null : 'Type "remove" exactly to confirm'),
       })
@@ -516,14 +520,15 @@ export default function WorktreeManager({
   const handlePoolHeldAction = async (row: WorktreeRow, slot: WorktreePoolSlotView, action: WorktreePoolHeldAction) => {
     if (action === 'discard') {
       const confirmed = await dialog.confirm({
-        title: 'Discard the changes?',
+        title: appCopy.worktree.worktreeManager.discardTheChanges,
         body: (
           <>
-            Uncommitted changes in <span className="font-mono">{slot.held?.branch ?? branchLabel(row)}</span> are
-            deleted; commits stay. The worktree returns to the pool.
+            {appCopy.worktree.worktreeManager.uncommittedChangesIn}
+            <span className="font-mono">{slot.held?.branch ?? branchLabel(row)}</span>
+            {appCopy.worktree.worktreeManager.areDeletedCommitsStayThe}
           </>
         ),
-        confirmLabel: 'Discard changes',
+        confirmLabel: appCopy.worktree.worktreeManager.discardChanges,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -546,11 +551,9 @@ export default function WorktreeManager({
   // Asked first, in the words Settings ▸ Worktrees uses for the same removal.
   const handlePoolEvict = async (slot: WorktreePoolSlotView) => {
     const confirmed = await dialog.confirm({
-      title: `Remove ${slot.id}?`,
-      body: (
-        <p>Deletes the folder; nothing uncommitted is lost. The next chat's worktree starts without dependencies.</p>
-      ),
-      confirmLabel: 'Remove',
+      title: appCopy.worktree.worktreeManager.remove(slot.id),
+      body: <p>{appCopy.worktree.worktreeManager.deletesTheFolderNothingUncommitted}</p>,
+      confirmLabel: appCopy.worktree.worktreeManager.remove2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -568,14 +571,15 @@ export default function WorktreeManager({
   // profile may be running an agent in it right now, or may be long gone.
   const handleUnlockAgentLock = async (row: WorktreeRow) => {
     const confirmed = await dialog.confirm({
-      title: 'Release the agent lock?',
+      title: appCopy.worktree.worktreeManager.releaseTheAgentLock,
       body: (
         <>
-          Worktree <span className="font-mono">{branchLabel(row)}</span> is locked by an agent in another Studio
-          profile. Release it only if that profile no longer uses it.
+          {appCopy.worktree.worktreeManager.worktree}
+          <span className="font-mono">{branchLabel(row)}</span>
+          {appCopy.worktree.worktreeManager.isLockedByAnAgent}
         </>
       ),
-      confirmLabel: 'Release lock',
+      confirmLabel: appCopy.worktree.worktreeManager.releaseLock,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -642,7 +646,9 @@ export default function WorktreeManager({
       <div className="mb-2 flex h-7 items-center justify-between gap-2">
         {mode === 'tab' ? (
           <div className="flex min-w-0 items-center gap-2">
-            <span className="text-meta font-semibold text-[color:var(--text-strong)]">Worktrees</span>
+            <span className="text-meta font-semibold text-[color:var(--text-strong)]">
+              {appCopy.worktree.worktreeManager.worktrees}
+            </span>
             <span className="text-micro tabular-nums text-[color:var(--text-subtle)]">{rows.length}</span>
           </div>
         ) : (
@@ -670,7 +676,9 @@ export default function WorktreeManager({
                 strokeLinejoin="round"
               />
             </svg>
-            <span className="text-meta font-semibold text-[color:var(--text-strong)]">Worktrees</span>
+            <span className="text-meta font-semibold text-[color:var(--text-strong)]">
+              {appCopy.worktree.worktreeManager.worktrees}
+            </span>
             <span className="text-micro tabular-nums text-[color:var(--text-subtle)]">{rows.length}</span>
           </GhostButton>
         )}
@@ -685,18 +693,23 @@ export default function WorktreeManager({
               {creating ? 'Cancel' : '+ New worktree'}
             </GhostButton>
             <OverflowMenu
-              ariaLabel="Worktree list actions"
+              ariaLabel={appCopy.worktree.worktreeManager.worktreeListActions}
               items={[
-                { id: 'refresh', label: 'Refresh', onSelect: () => void refreshWorktrees(), disabled: formDisabled },
+                {
+                  id: 'refresh',
+                  label: appCopy.worktree.worktreeManager.refresh,
+                  onSelect: () => void refreshWorktrees(),
+                  disabled: formDisabled,
+                },
                 {
                   id: 'prune',
-                  label: 'Prune stale metadata',
+                  label: appCopy.worktree.worktreeManager.pruneStaleMetadata,
                   onSelect: () => void handlePrune(),
                   disabled: formDisabled,
                 },
                 {
                   id: 'cleanup',
-                  label: 'Clean up merged agent worktrees',
+                  label: appCopy.worktree.worktreeManager.cleanUpMergedAgentWorktrees,
                   onSelect: () => void handleCleanup(),
                   disabled: formDisabled,
                 },
@@ -710,7 +723,11 @@ export default function WorktreeManager({
         <>
           {creating ? (
             <div className="mb-3 space-y-3 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] p-3">
-              <Field label="Name" htmlFor="worktree-name" help="Folder name under the worktree container.">
+              <Field
+                label={appCopy.worktree.worktreeManager.name}
+                htmlFor="worktree-name"
+                help="Folder name under the worktree container."
+              >
                 <Input
                   variant="well"
                   value={worktreeName}
@@ -720,7 +737,7 @@ export default function WorktreeManager({
                   className="min-w-0"
                 />
               </Field>
-              <Field label="Branch" htmlFor="worktree-branch">
+              <Field label={appCopy.worktree.worktreeManager.branch} htmlFor="worktree-branch">
                 <Input
                   variant="well"
                   value={branchName}
@@ -731,11 +748,11 @@ export default function WorktreeManager({
                 />
               </Field>
               <div className="flex flex-col gap-1.5">
-                <Field.Label>Base ref</Field.Label>
+                <Field.Label>{appCopy.worktree.worktreeManager.baseRef}</Field.Label>
                 <Select<string>
-                  ariaLabel="Worktree base ref"
+                  ariaLabel={appCopy.worktree.worktreeManager.worktreeBaseRef}
                   items={[
-                    { value: 'HEAD', label: 'HEAD' },
+                    { value: 'HEAD', label: appCopy.worktree.worktreeManager.hEAD },
                     ...branchOptions.map((branch): SelectItem<string> => ({ value: branch, label: branch })),
                   ]}
                   value={baseRef}
@@ -748,15 +765,15 @@ export default function WorktreeManager({
                 checked={copyIncludedFiles}
                 onChange={setCopyIncludedFiles}
                 disabled={formDisabled}
-                label="Copy .worktreeinclude files"
+                label={appCopy.worktree.worktreeManager.copyWorktreeincludeFiles}
                 className="w-fit"
               />
               <div className="flex items-center justify-end gap-1.5 pt-0.5">
                 <GhostButton onClick={() => setCreating(false)} disabled={formDisabled}>
-                  Cancel
+                  {appCopy.worktree.worktreeManager.cancel}
                 </GhostButton>
                 <PrimaryButton onClick={() => void handleCreate()} disabled={!canCreate}>
-                  Create worktree
+                  {appCopy.worktree.worktreeManager.createWorktree}
                 </PrimaryButton>
               </div>
             </div>
@@ -764,11 +781,11 @@ export default function WorktreeManager({
 
           {loading ? (
             <div className="flex items-center gap-2 px-1 py-3 text-micro text-[color:var(--text-subtle)]">
-              <Spinner size={14} label="Loading worktrees" />
-              Loading worktrees…
+              <Spinner size={14} label={appCopy.worktree.worktreeManager.loadingWorktrees} />
+              {appCopy.worktree.worktreeManager.loadingWorktrees2}
             </div>
           ) : rows.length === 0 ? (
-            <EmptyState density="list" title="No worktrees reported by Git." />
+            <EmptyState density="list" title={appCopy.worktree.worktreeManager.noWorktreesReportedByGit} />
           ) : (
             <ul role="list" className="-mx-1 space-y-0.5">
               {rows.map((row) => {
@@ -813,7 +830,7 @@ export default function WorktreeManager({
                           { kind: 'separator' as const, id: 'pool-sep' },
                           {
                             id: 'pool-evict',
-                            label: 'Remove from the worktree pool…',
+                            label: appCopy.worktree.worktreeManager.removeFromTheWorktreePool,
                             destructive: true,
                             onSelect: () => void handlePoolEvict(poolSlot),
                             disabled: formDisabled,
@@ -850,23 +867,23 @@ export default function WorktreeManager({
                     </div>
                     <span className="shrink-0 opacity-60 transition-opacity group-hover/wt:opacity-100 focus-within:opacity-100">
                       <OverflowMenu
-                        ariaLabel={`Actions for worktree ${branchLabel(row)}`}
+                        ariaLabel={appCopy.worktree.worktreeManager.actionsForWorktree(branchLabel(row))}
                         items={[
                           {
                             id: 'reveal',
-                            label: 'Reveal in file manager',
+                            label: appCopy.worktree.worktreeManager.revealInFileManager,
                             onSelect: () => void handleReveal(row),
                             disabled: formDisabled || !canUsePath,
                           },
                           {
                             id: 'terminal',
-                            label: 'Open terminal here',
+                            label: appCopy.worktree.worktreeManager.openTerminalHere,
                             onSelect: () => void handleOpenTerminal(row),
                             disabled: formDisabled || !canUsePath,
                           },
                           {
                             id: 'workspace',
-                            label: 'Open as workspace',
+                            label: appCopy.worktree.worktreeManager.openAsWorkspace,
                             onSelect: () => handleOpenWorkspace(row),
                             disabled: formDisabled || !canUsePath,
                           },
@@ -875,7 +892,7 @@ export default function WorktreeManager({
                             ? [
                                 {
                                   id: 'unlock',
-                                  label: 'Release agent lock…',
+                                  label: appCopy.worktree.worktreeManager.releaseAgentLock,
                                   onSelect: () => void handleUnlockAgentLock(row),
                                   disabled: formDisabled,
                                 },
@@ -883,7 +900,7 @@ export default function WorktreeManager({
                             : []),
                           {
                             id: 'remove',
-                            label: 'Remove worktree',
+                            label: appCopy.worktree.worktreeManager.removeWorktree,
                             destructive: true,
                             onSelect: () => void handleRemove(row),
                             disabled: formDisabled || !canRemove,
@@ -900,7 +917,7 @@ export default function WorktreeManager({
 
           {!loading && onlyMain ? (
             <p className="mt-1 px-1 text-micro text-[color:var(--text-subtle)]">
-              Only the default checkout. Add a worktree to run agents in parallel.
+              {appCopy.worktree.worktreeManager.onlyTheDefaultCheckoutAdd}
             </p>
           ) : null}
 

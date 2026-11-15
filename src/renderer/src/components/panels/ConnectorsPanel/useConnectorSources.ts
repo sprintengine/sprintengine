@@ -17,6 +17,7 @@ import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { SourceLoad } from './connectorsFacets'
 import { agentSetupApi } from '../../../studio/agentSetup'
 import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
+import { copy } from '../../../../../shared/copy'
 
 const EMPTY_MCP_SETTINGS: McpSettings = { syncEnabled: true, servers: {} }
 
@@ -60,12 +61,18 @@ export function useConnectorSources(activeWorkspaceRoot: string | null): Connect
         // Offline-with-no-cache, fetch-error, invalid-schema: the marketplace
         // source is down. This degrades to a notice on the surface, never a
         // silent empty grid.
-        setRegistryLoad({ status: 'error', message: result.message || 'Couldn’t reach the marketplace registry.' })
+        setRegistryLoad({
+          status: 'error',
+          message: result.message || copy.panels.connectorsPanel.useConnectorSources.couldnTReachTheMarketplace,
+        })
       }
     } catch (error) {
       setRegistryLoad({
         status: 'error',
-        message: error instanceof Error ? error.message : 'Could not read the marketplace registry.',
+        message:
+          error instanceof Error
+            ? error.message
+            : copy.panels.connectorsPanel.useConnectorSources.couldNotReadTheMarketplace,
       })
     }
   }, [])

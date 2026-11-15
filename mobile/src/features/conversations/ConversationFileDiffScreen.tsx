@@ -19,6 +19,7 @@ import {
 import { recallTurnFiles, useTurnFile } from "../diff/useTurnDiff";
 import { LineCounts } from "./ConversationChangesScreen";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";
+import { copy } from "../../../../src/shared/copy";
 
 // Long lines scroll sideways rather than wrap. A wrapped line of code puts its
 // continuation under the gutter's next number, which reads as a line the file
@@ -93,14 +94,14 @@ export function ConversationFileDiffScreen({
         ) : undefined
       }
       onBack={onBack}
-      backLabel="Changed files"
+      backLabel={copy.phone.conversations.conversationFileDiffScreen.changedFiles}
     >
       <View style={styles.body}>
         {view.status === "loading" ? (
           <View style={styles.state} accessibilityLiveRegion="polite">
             <View style={styles.loading}>
-              <WorkingMark label="Loading diff" />
-              <Text style={styles.meta}>Loading diff…</Text>
+              <WorkingMark label={copy.phone.conversations.conversationFileDiffScreen.loadingDiff} />
+              <Text style={styles.meta}>{copy.phone.conversations.conversationFileDiffScreen.loadingDiff2}</Text>
             </View>
           </View>
         ) : view.status === "offline" ? (
@@ -116,7 +117,7 @@ export function ConversationFileDiffScreen({
             <Text accessibilityRole="alert" style={styles.message}>
               {view.message}
             </Text>
-            <PrimaryButton label="Try again" variant="secondary" onPress={retry} />
+            <PrimaryButton label={copy.phone.conversations.conversationFileDiffScreen.tryAgain} variant="secondary" onPress={retry} />
           </View>
         ) : view.value.patch === null ? (
           <View style={styles.state}>
@@ -130,7 +131,7 @@ export function ConversationFileDiffScreen({
         <View style={[styles.pager, { paddingBottom: Math.max(inset, space.md) }]}>
           <PrimaryButton
             variant="ghost"
-            label="Previous file"
+            label={copy.phone.conversations.conversationFileDiffScreen.previousFile}
             disabled={index === 0}
             onPress={() => onOpenFile(files[index - 1].path)}
           />
@@ -139,7 +140,7 @@ export function ConversationFileDiffScreen({
           </Text>
           <PrimaryButton
             variant="ghost"
-            label="Next file"
+            label={copy.phone.conversations.conversationFileDiffScreen.nextFile}
             disabled={index >= files.length - 1}
             onPress={() => onOpenFile(files[index + 1].path)}
           />
@@ -190,7 +191,7 @@ export function UnifiedDiff({ patch, bottomInset }: { patch: string; bottomInset
   if (!rows.length)
     return (
       <View style={styles.state}>
-        <Text style={styles.message}>No line changes: the file is empty or only its mode changed.</Text>
+        <Text style={styles.message}>{copy.phone.conversations.conversationFileDiffScreen.noLineChangesTheFile}</Text>
       </View>
     );
   return (
@@ -239,7 +240,7 @@ const DiffLine = memo(function DiffLine({ row, widths }: { row: DiffDisplayRow; 
     return (
       <View
         accessible
-        accessibilityLabel={`Changes from line ${row.newStart || row.oldStart}${row.context ? `, in ${row.context}` : ""}`}
+        accessibilityLabel={copy.phone.conversations.conversationFileDiffScreen.changesFromLine(row.newStart || row.oldStart, row.context ? copy.phone.conversations.conversationFileDiffScreen.in(row.context) : "")}
         style={[styles.hunk, { width: widths.content }]}
       >
         <Text style={[styles.code, styles.hunkText]}>
@@ -254,7 +255,7 @@ const DiffLine = memo(function DiffLine({ row, widths }: { row: DiffDisplayRow; 
     <View
       accessible
       accessibilityLabel={
-        row.kind === "note" ? text : `${SPOKEN[row.kind]} line ${row.newNo ?? row.oldNo}: ${text.trim() || "blank"}`
+        row.kind === "note" ? text : copy.phone.conversations.conversationFileDiffScreen.line(SPOKEN[row.kind], row.newNo ?? row.oldNo, text.trim() || "blank")
       }
       style={[styles.line, tint, { width: widths.content }]}
     >

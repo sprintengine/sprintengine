@@ -19,6 +19,7 @@ import {
 } from "../features/projects/projectContext";
 import { useToast, type ToastApi } from "../components/Toast";
 import { shouldShowSignedInNavigation } from "./sessionFlow";
+import { copy as appCopy } from "../../../src/shared/copy";
 
 export type SnapshotState = "idle" | "loading" | "ready" | "error";
 
@@ -320,7 +321,7 @@ export function SessionDataProvider({
           [candidate.deviceId]:
             result.ok && result.data
               ? { kind: "ready", summary: summarizeSnapshotForFleet(result.data) }
-              : { kind: "error", message: result.message ?? "The desktop did not answer." },
+              : { kind: "error", message: result.message ?? appCopy.phone.navigation.sessionDataProvider.theDesktopDidNotAnswer },
         }));
       }),
     ).then(() => setIsFleetRefreshing(false));
@@ -377,7 +378,7 @@ export function SessionDataProvider({
       if (!activeSession) throw new Error("Reconnect to a desktop session before submitting commands.");
       if (!canUpdateBacklog) throw new Error(REPAIR_REQUIRED_MESSAGE);
 
-      await withCommandHaptics({ toast, label: "Backlog update", successMessage: "Backlog item updated on desktop." }, async () => {
+      await withCommandHaptics({ toast, label: appCopy.phone.navigation.sessionDataProvider.backlogUpdate, successMessage: appCopy.phone.navigation.sessionDataProvider.backlogItemUpdatedOnDesktop }, async () => {
         const result = await updateDesktopBacklogItem(activeSession, {
           // The rows carry the project's token; the desktop names the project by it, prefixed.
           workspaceId: `backlog:${input.workspacePath}`,

@@ -17,6 +17,7 @@ import {
   type TerminalLinkTarget,
 } from '../../utils/terminalLinkActions'
 import { filesApi } from '../../studio/files'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The chooser a terminal link click opens. Clicking a link used to fire
 // one hard-wired action; now it asks. `terminalLinkActions` decides WHAT is on
@@ -156,7 +157,7 @@ export function TerminalLinkMenu({
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={`Open ${targetLabel(target)}`}
+      ariaLabel={appCopy.terminal.terminalLinkMenu.open(targetLabel(target))}
       onClose={onClose}
       surfaceClassName="min-w-[204px]"
     >

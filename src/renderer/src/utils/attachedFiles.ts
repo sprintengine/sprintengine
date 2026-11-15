@@ -1,6 +1,7 @@
 import { fileTypeKind, type FileTypeKind } from '../components/ui/FileTypeGlyph'
 import type { ConversationAttachedFile } from '../../../shared/conversation/attachedFiles'
 import { LOCAL_HOST_ID } from '../../../shared/execution-host'
+import { copy } from '../../../shared/copy'
 
 export { attachedFileName } from '../../../shared/conversation/attachedFiles'
 
@@ -73,7 +74,7 @@ export function attachedFileType(name: string, mediaType = ''): { kind: FileType
   const named = extensionOf(base)
   const extension = named || MEDIA_TYPE_EXTENSIONS[mediaType.toLowerCase()] || ''
   const kind = fileTypeKind(named ? base : extension ? `file.${extension}` : base)
-  return { kind, label: /^[a-z0-9]{1,5}$/.test(extension) ? extension.toUpperCase() : 'File' }
+  return { kind, label: /^[a-z0-9]{1,5}$/.test(extension) ? extension.toUpperCase() : copy.utils.attachedFiles.file }
 }
 
 /**

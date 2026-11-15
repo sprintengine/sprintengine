@@ -36,6 +36,7 @@ import { ConnectorRow, ConnectorSectionHeading } from '../../../../panels/Connec
 import { SourceMonogram } from '../skills/SourceMonogram'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
 import { extensionsApi, windowHasStudio } from '../../../../../studio/extensions'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 /** What a recommendation's `kind` is called on the row. */
 const KIND_LABEL: Record<HostedSource['kind'], string> = {
@@ -135,16 +136,32 @@ export function RecommendedSources({
   if (offered.length === 0) return null
 
   return (
-    <section className="space-y-2" aria-label="Recommended sources">
-      <ConnectorSectionHeading label="Recommended sources" count={offered.length} />
+    <section
+      className="space-y-2"
+      aria-label={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.recommendedSources}
+    >
+      <ConnectorSectionHeading
+        label={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.recommendedSources}
+        count={offered.length}
+      />
       <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-        Places to get skills and plugins. Recommended, not published, by Studio.
+        {appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.placesToGetSkillsAnd}
       </p>
-      {failure ? <InlineNotice tone="error" title="That source was not added." hint={failure.message} /> : null}
+      {failure ? (
+        <InlineNotice
+          tone="error"
+          title={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.thatSourceWasNotAdded}
+          hint={failure.message}
+        />
+      ) : null}
       {/* The same list card the catalogue groups above it sit in (list-card
           ruling 2026-09-15): this list is offered under them and must not
           look like a different kind of list. */}
-      <SettingCard as="ul" ariaLabel="Recommended sources" columns={2}>
+      <SettingCard
+        as="ul"
+        ariaLabel={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.recommendedSources}
+        columns={2}
+      >
         {offered.map((source) => (
           <li key={source.id}>
             <ConnectorRow
@@ -161,9 +178,18 @@ export function RecommendedSources({
                   onClick={() => void add(source)}
                   disabled={busyRepo !== null}
                   className="border border-[color:var(--border-default)]"
-                  aria-label={`Add ${source.repo} as a source`}
+                  aria-label={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.addAsASource(
+                    source.repo,
+                  )}
                 >
-                  {busyRepo === source.repo ? <Spinner size={12} label="Adding" /> : 'Add'}
+                  {busyRepo === source.repo ? (
+                    <Spinner
+                      size={12}
+                      label={appCopy.workspace.globalSurface.extensions.catalogue.recommendedSources.adding}
+                    />
+                  ) : (
+                    'Add'
+                  )}
                 </GhostButton>
               }
             />

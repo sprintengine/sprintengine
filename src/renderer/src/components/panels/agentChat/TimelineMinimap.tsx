@@ -9,6 +9,7 @@ import {
   type TurnMark,
   type TurnNavigation,
 } from './turnNavigation'
+import { copy } from '../../../../../shared/copy'
 
 // One tick per prompt, spaced evenly rather than by where the turn sits in the
 // scroll height: a virtualized list only knows the heights it has rendered, and
@@ -116,7 +117,9 @@ function MinimapPreview({
       }}
     >
       {mark.sideQuestion ? (
-        <span className="block text-micro leading-4 text-[color:var(--text-muted)]">Side question</span>
+        <span className="block text-micro leading-4 text-[color:var(--text-muted)]">
+          {copy.panels.agentChat.timelineMinimap.sideQuestion}
+        </span>
       ) : null}
       <span className="block truncate text-meta font-medium leading-5 text-[color:var(--text-strong)]">{prompt}</span>
       {reply ? (
@@ -248,14 +251,14 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
     // strip's own padding is the space the gap used to make.
     <nav
       ref={navRef}
-      aria-label="Conversation turns"
+      aria-label={copy.panels.agentChat.timelineMinimap.conversationTurns}
       data-testid="timeline-minimap"
       data-open={open || undefined}
       className="group/minimap pointer-events-none absolute inset-y-0 right-3 z-[var(--z-float)] flex flex-col items-end justify-center"
       onMouseLeave={scheduleCollapse}
     >
       <IconButton
-        aria-label="Previous turn"
+        aria-label={copy.panels.agentChat.timelineMinimap.previousTurn}
         size="3xs"
         tone="ink"
         className={stepClass}
@@ -310,7 +313,7 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
         </div>
       </div>
       <IconButton
-        aria-label="Next turn"
+        aria-label={copy.panels.agentChat.timelineMinimap.nextTurn}
         size="3xs"
         tone="ink"
         className={stepClass}

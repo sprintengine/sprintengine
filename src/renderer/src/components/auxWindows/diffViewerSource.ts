@@ -10,6 +10,7 @@ import type { StudioClient } from '../../../../../packages/client-runtime/src/pu
 import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../../../packages/studio-protocol/src/public'
 import { environmentRefusal, pairedTarget, withEnvironmentStudio } from '../../studio/environmentStudio'
 import { environmentConversationTransport } from '../panels/agentChat/environmentChat'
+import { copy } from '../../../../shared/copy'
 
 // Where a diff viewer reads a checkout that is not on this computer: a chat on
 // a paired machine, whose machine reads its checkout as its own Diff tab does
@@ -69,7 +70,7 @@ export function createPairedDiffSource(input: { key: MeshConversationKey; machin
   const start = (): (() => void) => {
     const follow = services.followPush
     if (!follow) {
-      tell({ state: 'error', message: `${machineName} cannot be reached from this window.` })
+      tell({ state: 'error', message: copy.auxWindows.diffViewerSource.cannotBeReachedFromThis(machineName) })
       return () => undefined
     }
     return follow({

@@ -5,6 +5,7 @@ import type {
   TailnetRemoteStatus,
 } from '../../../../shared/tailnet'
 import type { Tone } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // The Remote (tailnet) settings panel's view model, kept DOM-free so the rules
 // that matter can be tested without mounting anything.
@@ -40,9 +41,9 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
   if (!status) {
     return {
       state: 'loading',
-      label: 'Loading',
+      label: copy.settings.tailnetPanelModel.loading,
       tone: 'neutral',
-      detail: 'Reading tailnet remote control.',
+      detail: copy.settings.tailnetPanelModel.readingTailnetRemoteControl,
       canTurnOn: false,
       canPair: false,
     }
@@ -53,11 +54,11 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
     // in: they have not set Tailscale up, or it stopped underneath them.
     return {
       state: 'no-tailnet',
-      label: 'Tailscale not detected',
+      label: copy.settings.tailnetPanelModel.tailscaleNotDetected,
       tone: status.enabled ? 'error' : 'neutral',
       detail: status.enabled
-        ? 'Tailscale isn’t running, so nothing is listening. Start Tailscale and sign in.'
-        : 'Not on a Tailscale network. Install Tailscale and sign in to turn this on.',
+        ? copy.settings.tailnetPanelModel.tailscaleIsnTRunningSo
+        : copy.settings.tailnetPanelModel.notOnATailscaleNetwork,
       canTurnOn: false,
       canPair: false,
     }
@@ -66,9 +67,9 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
   if (!status.enabled) {
     return {
       state: 'off',
-      label: 'Off',
+      label: copy.settings.tailnetPanelModel.off,
       tone: 'neutral',
-      detail: 'Unreachable from your tailnet. Turn it on to pair a device.',
+      detail: copy.settings.tailnetPanelModel.unreachableFromYourTailnetTurn,
       canTurnOn: true,
       canPair: false,
     }
@@ -77,9 +78,9 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
   if (!status.running || !status.endpoint) {
     return {
       state: 'not-listening',
-      label: 'Not listening',
+      label: copy.settings.tailnetPanelModel.notListening,
       tone: 'error',
-      detail: status.lastError ?? 'On, but the listener didn’t start.',
+      detail: status.lastError ?? copy.settings.tailnetPanelModel.onButTheListenerDidn,
       canTurnOn: true,
       canPair: false,
     }
@@ -87,9 +88,9 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
 
   return {
     state: 'listening',
-    label: 'Listening',
+    label: copy.settings.tailnetPanelModel.listening,
     tone: 'good',
-    detail: `Paired devices reach Studio at ${status.endpoint}.`,
+    detail: copy.settings.tailnetPanelModel.pairedDevicesReachStudioAt(status.endpoint),
     canTurnOn: true,
     canPair: true,
   }

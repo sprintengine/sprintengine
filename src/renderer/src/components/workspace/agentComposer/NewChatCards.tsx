@@ -13,6 +13,7 @@ import {
 import { CardButton } from '../../ui'
 import type { ExtensionIdea } from './extensionIdeas'
 import type { SuggestionCategory, SuggestionEntry } from './suggestionBank'
+import { copy } from '../../../../../shared/copy'
 
 // The tiles under New chat's box: a suggested task that starts at a press, and
 // an idea that fills the box in extension mode.
@@ -60,7 +61,7 @@ export function SuggestionCard({
       <p className="mt-1 text-meta leading-5 text-[color:var(--text-muted)]">{entry.description}</p>
       <span className="mt-auto pt-2 text-micro text-[color:var(--text-subtle)]">{entry.outcome}</span>
       <span className="absolute right-3 top-3 inline-flex h-control-xs items-center rounded-full border border-[color:var(--border-default)] px-2.5 text-meta text-[color:var(--text-default)]">
-        Try
+        {copy.workspace.agentComposer.newChatCards.try}
       </span>
     </CardButton>
   )

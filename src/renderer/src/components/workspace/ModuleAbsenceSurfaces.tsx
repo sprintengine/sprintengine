@@ -11,6 +11,7 @@ import {
 } from '../settings/installFlow'
 import { EmptyState, GhostButton, InlineNotice, PrimaryButton, Spinner, StatusDot } from '../ui'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Explicit absence surfaces for module-owned UI. A workspace whose
 // mode's module is not installed — fresh machine, uninstalled, marketplace
@@ -105,13 +106,21 @@ export function ModuleNotInstalledSurface({
   // them painting `bg-app` while the other painted nothing. The wrapper keeps
   // the `role="note"` labelling, which is this surface's own contract.
   return (
-    <div role="note" aria-label="Module not installed" className="h-full bg-[color:var(--bg-app)]">
+    <div
+      role="note"
+      aria-label={appCopy.workspace.moduleAbsenceSurfaces.moduleNotInstalled}
+      className="h-full bg-[color:var(--bg-app)]"
+    >
       <EmptyState
-        title={installed ? `${label} is turned off` : `${label} isn’t installed`}
+        title={
+          installed
+            ? appCopy.workspace.moduleAbsenceSurfaces.isTurnedOff(label)
+            : appCopy.workspace.moduleAbsenceSurfaces.isnTInstalled(label)
+        }
         body={
           installed
-            ? `This workspace needs the ${label} module. Your work is safe on disk; turn the module back on to continue.`
-            : `This workspace needs the ${label} module. Your work is safe on disk; install the module to continue.`
+            ? appCopy.workspace.moduleAbsenceSurfaces.thisWorkspaceNeedsTheModule(label)
+            : appCopy.workspace.moduleAbsenceSurfaces.thisWorkspaceNeedsTheModule2(label)
         }
         action={
           <PrimaryButton size="sm" onClick={onOpenMarketplace}>
@@ -150,16 +159,20 @@ export function DoorModuleNotInstalledSurface({
   // would be a button that reinstalls what is already there.
   const entry = useMarketplaceModuleEntry(installed ? undefined : moduleId)
   return (
-    <div role="note" aria-label="Door module not installed" className="h-full">
+    <div role="note" aria-label={appCopy.workspace.moduleAbsenceSurfaces.doorModuleNotInstalled} className="h-full">
       <EmptyState
         title={label}
-        body={installed ? `The ${label} module is turned off.` : `The ${label} module isn’t installed.`}
+        body={
+          installed
+            ? appCopy.workspace.moduleAbsenceSurfaces.theModuleIsTurnedOff(label)
+            : appCopy.workspace.moduleAbsenceSurfaces.theModuleIsnTInstalled(label)
+        }
         action={
           entry ? (
             <DoorModuleInstallControls entry={entry} onOpenExtensions={onOpenExtensions} />
           ) : (
             <PrimaryButton size="sm" onClick={onOpenExtensions}>
-              Find it in Plugins
+              {appCopy.workspace.moduleAbsenceSurfaces.findItInPlugins}
             </PrimaryButton>
           )
         }
@@ -224,7 +237,7 @@ function DoorModuleInstallControls({
 
   const install = useCallback(async () => {
     if (!windowHasStudio() || !windowHasStudio()) {
-      setFlow({ status: 'error', message: 'Update Studio to install extensions.' })
+      setFlow({ status: 'error', message: appCopy.workspace.moduleAbsenceSurfaces.updateStudioToInstallExtensions })
       return
     }
     setFlow({ status: 'verifying' })
@@ -232,7 +245,11 @@ function DoorModuleInstallControls({
     try {
       verify = await extensionsApi.verifyMarketplacePlugin({ id: entry.id })
     } catch (error) {
-      setFlow({ status: 'error', message: error instanceof Error ? error.message : 'Could not verify this extension.' })
+      setFlow({
+        status: 'error',
+        message:
+          error instanceof Error ? error.message : appCopy.workspace.moduleAbsenceSurfaces.couldNotVerifyThisExtension,
+      })
       return
     }
     const outcome = classifyVerification(verify, entry.provides)
@@ -248,7 +265,7 @@ function DoorModuleInstallControls({
     if (outcome.kind === 'needs-trust') {
       setFlow({
         status: 'error',
-        message: `${entry.name} needs your trust first. Review it in Plugins.`,
+        message: appCopy.workspace.moduleAbsenceSurfaces.needsYourTrustFirstReview(entry.name),
       })
       return
     }
@@ -265,7 +282,7 @@ function DoorModuleInstallControls({
     } catch (error) {
       setFlow({
         status: 'error',
-        message: error instanceof Error ? error.message : 'The install could not be completed.',
+        message: error instanceof Error ? error.message : appCopy.workspace.moduleAbsenceSurfaces.theInstallCouldNotBe,
       })
     }
   }, [entry])
@@ -296,7 +313,7 @@ function DoorModuleInstallControls({
           </PrimaryButton>
         ) : null}
         <GhostButton size="sm" onClick={onOpenExtensions}>
-          Find it in Plugins
+          {appCopy.workspace.moduleAbsenceSurfaces.findItInPlugins}
         </GhostButton>
       </div>
     </div>

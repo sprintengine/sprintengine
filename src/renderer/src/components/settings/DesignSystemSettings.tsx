@@ -14,6 +14,7 @@ import {
   type DesignSystemBundleOrigin,
 } from './designSystemSettingsModel'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { copy } from '../../../../shared/copy'
 
 // The Settings design-system section (item 1950): the after-creation half of
 // what newWorkspace/DesignSystemAttachStep starts. State derives from disk —
@@ -133,20 +134,20 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
   const onDetach = useCallback(async () => {
     const authored = bundle.kind === 'attached' && bundle.origin === 'authored'
     const removed = await detach({
-      title: 'Detach this design system?',
+      title: copy.settings.designSystemSettings.detachThisDesignSystem,
       body: authored
-        ? 'Deletes design-system/, the only source of this bundle. Agents here stop following it.'
-        : 'Deletes design-system/ and any local edits. Agents here stop following it.',
-      confirmLabel: 'Detach',
+        ? copy.settings.designSystemSettings.deletesDesignSystemTheOnly
+        : copy.settings.designSystemSettings.deletesDesignSystemAndAny,
+      confirmLabel: copy.settings.designSystemSettings.detach,
     })
     if (removed) reload()
   }, [bundle, detach, reload])
 
   const onReplace = useCallback(async () => {
     const removed = await detach({
-      title: 'Replace the attached design system?',
-      body: 'Deletes design-system/ and any local edits, then you pick a replacement.',
-      confirmLabel: 'Remove and choose',
+      title: copy.settings.designSystemSettings.replaceTheAttachedDesignSystem,
+      body: copy.settings.designSystemSettings.deletesDesignSystemAndAny2,
+      confirmLabel: copy.settings.designSystemSettings.removeAndChoose,
     })
     if (removed) {
       setPickerSelection(null)
@@ -183,9 +184,9 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
   const onUpdate = useCallback(
     async (entry: DesignSystemLibraryEntry) => {
       const confirmed = await dialog.confirm({
-        title: `Update to v${entry.version}?`,
-        body: 'Replaces design-system/ with the library release. Local edits are lost.',
-        confirmLabel: 'Update',
+        title: copy.settings.designSystemSettings.updateToV(entry.version),
+        body: copy.settings.designSystemSettings.replacesDesignSystemWithThe,
+        confirmLabel: copy.settings.designSystemSettings.update,
         tone: 'danger',
       })
       if (!confirmed || !workspaceRoot) return
@@ -211,7 +212,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
   if (!workspaceRoot) {
     // The kit's empty state at list density, as every other Settings page
     // says it has nothing to show — not a bare line in a dialect of its own.
-    return <EmptyState density="list" title="Open a workspace first." />
+    return <EmptyState density="list" title={copy.settings.designSystemSettings.openAWorkspaceFirst} />
   }
   if (bundle.kind === 'probing') return null
 
@@ -234,7 +235,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
                 aria-hidden="true"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[color:var(--bg-active)] font-mono text-micro text-[color:var(--text-muted)]"
               >
-                DS
+                {copy.settings.designSystemSettings.dS}
               </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-body font-medium text-[color:var(--text-strong)]">
@@ -247,7 +248,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <OutlineButton size="xs" onClick={() => void onReplace()} disabled={busy}>
-                  Replace
+                  {copy.settings.designSystemSettings.replace}
                 </OutlineButton>
                 <OutlineButton size="xs" onClick={() => void onDetach()} disabled={busy}>
                   {pending === 'detach' ? 'Detaching…' : 'Detach'}
@@ -274,7 +275,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
       {bundle.kind === 'broken' ? (
         <InlineNotice
           tone="warn"
-          title="design-system/ isn't a readable bundle"
+          title={copy.settings.designSystemSettings.designSystemIsnTA}
           detail={bundle.message}
           action={
             <OutlineButton size="xs" onClick={() => void onDetach()} disabled={busy}>
@@ -286,7 +287,9 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
 
       {bundle.kind === 'none' && !pickerOpen ? (
         <div className="rounded-md border border-dashed border-[color:var(--border-default)] px-4 py-5 text-center">
-          <p className="text-body leading-5 text-[color:var(--text-muted)]">No design system attached.</p>
+          <p className="text-body leading-5 text-[color:var(--text-muted)]">
+            {copy.settings.designSystemSettings.noDesignSystemAttached}
+          </p>
           <PrimaryButton
             size="sm"
             className="mt-3"
@@ -296,7 +299,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
               setPickerOpen(true)
             }}
           >
-            Attach
+            {copy.settings.designSystemSettings.attach}
           </PrimaryButton>
         </div>
       ) : null}
@@ -318,7 +321,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
               {pending === 'attach' ? 'Attaching…' : 'Attach'}
             </PrimaryButton>
             <GhostButton size="sm" onClick={() => setPickerOpen(false)} disabled={busy}>
-              Cancel
+              {copy.settings.designSystemSettings.cancel}
             </GhostButton>
           </div>
         </div>

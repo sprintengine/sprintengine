@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { CloseIconButton } from './Buttons'
 import { CopyGlyphButton } from './CopyGlyphButton'
 import { LifecycleGlyph } from './LifecycleGlyph'
+import { copy as appCopy } from '../../../../shared/copy'
 
 /** Viewport coordinates of the click/cursor the error belongs to. */
 export type CursorAnchor = { x: number; y: number }
@@ -170,7 +171,7 @@ export function CursorErrorPopover({ message, anchor, onDismiss, autoDismissMs =
         ].join(' ')}
       >
         <div className="flex items-start gap-1.5 px-2.5 py-1.5">
-          <LifecycleGlyph state="failed" label="Failed" live={false} className="mt-px" />
+          <LifecycleGlyph state="failed" label={appCopy.ui.cursorErrorPopover.failed} live={false} className="mt-px" />
           <div
             className={[
               'min-w-0 flex-1 text-micro leading-snug text-[color:var(--text-strong)]',
@@ -188,7 +189,7 @@ export function CursorErrorPopover({ message, anchor, onDismiss, autoDismissMs =
                 does not also toggle the box. */}
             <CopyGlyphButton
               text={message}
-              label="Copy error"
+              label={appCopy.ui.cursorErrorPopover.copyError}
               className={[
                 '-my-1',
                 // Copy stays hidden until the box is hovered or expanded so the
@@ -203,7 +204,7 @@ export function CursorErrorPopover({ message, anchor, onDismiss, autoDismissMs =
                   event.stopPropagation()
                   onDismiss()
                 }}
-                aria-label="Dismiss"
+                aria-label={appCopy.ui.cursorErrorPopover.dismiss}
                 className="-my-1"
               />
             ) : null}

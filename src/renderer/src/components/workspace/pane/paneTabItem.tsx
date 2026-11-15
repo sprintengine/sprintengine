@@ -4,6 +4,7 @@ import { browserTabLabel } from '../../../../../shared/browser'
 import type { WorkspacePaneTab } from '../../../../../shared/workspace'
 import { OpenInWindowGlyph, TourGlyph, type TabItem } from '../../ui'
 import { paneKindDefinition } from './paneKinds'
+import { copy } from '../../../../../shared/copy'
 
 // One pane tab as a strip draws it. Two strips draw pane tabs — the pane's own,
 // and a pop-out window's — and a tab has to read the same in both, so the
@@ -33,7 +34,7 @@ export function paneTabItem(
   return {
     id: tab.id,
     label,
-    closeLabel: `Close ${label}`,
+    closeLabel: copy.workspace.pane.paneTabItem.close(label),
     ...(tab.kind === 'diff' && options.diffCount !== null && !poppedOut
       ? { count: options.diffCount, tooltip: `${label} · ${options.diffCount}` }
       : {}),
@@ -44,11 +45,11 @@ export function paneTabItem(
     // the owner looks.
     ...(agent ? { agent: true } : {}),
     ...(poppedOut
-      ? { ariaLabel: `${label}: shown in a separate window` }
+      ? { ariaLabel: copy.workspace.pane.paneTabItem.shownInASeparateWindow(label) }
       : agent
-        ? { ariaLabel: `${label}: an agent is using this` }
+        ? { ariaLabel: copy.workspace.pane.paneTabItem.anAgentIsUsingThis(label) }
         : tourOffered
-          ? { ariaLabel: `${label}: a tour is ready` }
+          ? { ariaLabel: copy.workspace.pane.paneTabItem.aTourIsReady(label) }
           : {}),
     icon: poppedOut ? (
       <OpenInWindowGlyph className="size-icon-xs shrink-0" />

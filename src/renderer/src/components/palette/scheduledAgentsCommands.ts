@@ -14,6 +14,7 @@ import {
 } from '../../../../shared/scheduled-agents'
 import { pauseAllChoices, scheduledAgentsPauseWords, type PauseAllChoice } from '../../utils/scheduledAgentsPause'
 import type { PaletteCommand } from './paletteProvider'
+import { copy } from '../../../../shared/copy'
 
 export type ScheduledAgentsPaletteActions = {
   pauseAll: (choice: PauseAllChoice) => void
@@ -34,7 +35,7 @@ export function scheduledAgentPaletteCommands(
     ? [
         {
           id: 'scheduled-agents.resume-all',
-          label: 'Resume scheduled agents',
+          label: copy.palette.scheduledAgentsCommands.resumeScheduledAgents,
           description: scheduledAgentsPauseWords(pause, now),
           keywords: `${KEYWORDS} unpause resume all`,
           run: actions.resumeAll,
@@ -43,11 +44,14 @@ export function scheduledAgentPaletteCommands(
     : pauseAllChoices(now).map((choice) => ({
         id: `scheduled-agents.pause-all.${choice.id}`,
         // "… for 1 hour", "… until tomorrow morning", "… until I resume them".
-        label: `Pause all scheduled agents ${choice.label.charAt(0).toLowerCase()}${choice.label.slice(1)}`,
-        searchLabel: 'Pause all scheduled agents',
+        label: copy.palette.scheduledAgentsCommands.pauseAllScheduledAgents(
+          choice.label.charAt(0).toLowerCase(),
+          choice.label.slice(1),
+        ),
+        searchLabel: copy.palette.scheduledAgentsCommands.pauseAllScheduledAgents2,
         description: choice.hint
-          ? `Until ${choice.hint}. Runs already going carry on.`
-          : 'Runs already going carry on.',
+          ? copy.palette.scheduledAgentsCommands.untilRunsAlreadyGoingCarry(choice.hint)
+          : copy.palette.scheduledAgentsCommands.runsAlreadyGoingCarryOn,
         keywords: `${KEYWORDS} pause all`,
         run: () => actions.pauseAll(choice),
       }))
@@ -56,9 +60,14 @@ export function scheduledAgentPaletteCommands(
     const paused = agent.pausedAt !== undefined
     return {
       id: `scheduled-agents.${paused ? 'resume' : 'pause'}.${agent.id}`,
-      label: `${paused ? 'Resume' : 'Pause'} schedule: ${title}`,
+      label: copy.palette.scheduledAgentsCommands.schedule(
+        paused ? copy.palette.scheduledAgentsCommands.resume : copy.palette.scheduledAgentsCommands.pause,
+        title,
+      ),
       searchLabel: title,
-      description: paused ? 'Runs next at its next time' : 'No runs at its times until resumed',
+      description: paused
+        ? copy.palette.scheduledAgentsCommands.runsNextAtItsNext
+        : copy.palette.scheduledAgentsCommands.noRunsAtItsTimes,
       keywords: `${KEYWORDS} ${paused ? 'resume unpause' : 'pause'}`,
       run: () => actions.setPaused(agent, !paused),
     }

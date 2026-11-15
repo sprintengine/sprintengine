@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react'
 import { RowButton } from '../ui'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { buildAgentCliCatalog, installableCliSummary } from './newWorkspace/cliRuntimeOptions'
+import { copy } from '../../../../shared/copy'
 
 // The app's one CLI install surface: Settings → Agents, the same ProviderRow
 // install rows the first-run card shows. Every "there is no agent CLI here"
@@ -75,7 +76,9 @@ export function CliInstallCta() {
     <RowButton density="row" onClick={openInstall} className="mt-5">
       <CliInstallIcon className="size-icon-md shrink-0 text-[color:var(--accent-primary)]" />
       <span className="min-w-0">
-        <span className="block text-body font-semibold text-[color:var(--text-strong)]">Install an agent CLI</span>
+        <span className="block text-body font-semibold text-[color:var(--text-strong)]">
+          {copy.workspace.cliInstallRoute.installAnAgentCLI}
+        </span>
         {summary ? (
           <span className="mt-0.5 block truncate text-meta text-[color:var(--text-muted)]">{summary}</span>
         ) : null}
@@ -101,7 +104,7 @@ export function CliInstallRosterRow({ onNavigate }: { onNavigate?: () => void })
       className="pl-2.5 text-body"
     >
       <CliInstallIcon className="icon-sm shrink-0 text-[color:var(--accent-primary)]" />
-      Install an agent CLI
+      {copy.workspace.cliInstallRoute.installAnAgentCLI}
       <ChevronRightIcon className="ml-auto h-3.5 w-3.5 shrink-0 text-[color:var(--text-subtle)]" />
     </RowButton>
   )

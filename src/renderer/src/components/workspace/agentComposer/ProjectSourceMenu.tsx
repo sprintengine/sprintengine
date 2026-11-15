@@ -23,6 +23,7 @@ import { NewProjectStep, type NewProjectRequest } from '../newWorkspace/NewProje
 import type { NewProjectResult } from '../../../../../shared/electron-api'
 import { basename } from '../../../utils/paths'
 import { gitApi } from '../../../studio/git'
+import { copy } from '../../../../../shared/copy'
 
 // The New-chat project selector's body (remote-sessions-ux /
 // project-selector-sources): one surface that searches the projects, browses
@@ -169,7 +170,7 @@ export function ProjectSourceMenu({
     if (!source || cloning || !onClone) return
     if (!parentDir) {
       // Only a true cold start with no default parent from the app lands here.
-      setCloneError({ message: 'Choose where to clone it with Change… first.' })
+      setCloneError({ message: copy.workspace.agentComposer.projectSourceMenu.chooseWhereToCloneIt })
       return
     }
     const id = nextCloneId()
@@ -241,11 +242,16 @@ export function ProjectSourceMenu({
         }}
       >
         <div className="flex items-center gap-1">
-          <IconButton size="xs" tone="subtle" aria-label="Back to projects" onClick={() => setStep('projects')}>
+          <IconButton
+            size="xs"
+            tone="subtle"
+            aria-label={copy.workspace.agentComposer.projectSourceMenu.backToProjects}
+            onClick={() => setStep('projects')}
+          >
             <ChevronDownIcon className="icon-xs rotate-90" />
           </IconButton>
           <h3 id={`${fieldId}-title`} className="text-body font-medium text-[color:var(--text-strong)]">
-            Import from Git
+            {copy.workspace.agentComposer.projectSourceMenu.importFromGit}
           </h3>
         </div>
 
@@ -254,12 +260,12 @@ export function ProjectSourceMenu({
             once it parses, and nothing is said before. */}
         <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
           <label htmlFor={`${fieldId}-url`} className="text-meta text-[color:var(--text-muted)]">
-            Repository
+            {copy.workspace.agentComposer.projectSourceMenu.repository}
           </label>
           <Input
             id={`${fieldId}-url`}
             size="sm"
-            aria-label="Repository URL"
+            aria-label={copy.workspace.agentComposer.projectSourceMenu.repositoryURL}
             autoFocus
             value={urlDraft}
             onChange={(event) => {
@@ -268,7 +274,7 @@ export function ProjectSourceMenu({
               setFolderDraft(null)
               setCloneError(null)
             }}
-            placeholder="https://… or owner/repo"
+            placeholder={copy.workspace.agentComposer.projectSourceMenu.httpsOrOwnerRepo}
             spellCheck={false}
             autoComplete="off"
             aria-invalid={resolution.error ? true : undefined}
@@ -283,38 +289,46 @@ export function ProjectSourceMenu({
           ) : null}
           {source?.insecure ? (
             <p className="col-start-2 -mt-1 px-0.5 text-micro leading-4 text-[color:var(--tone-warn)]">
-              Not encrypted: code and any sign-in are sent in the clear.
+              {copy.workspace.agentComposer.projectSourceMenu.notEncryptedCodeAndAny}
             </p>
           ) : null}
           <label htmlFor={`${fieldId}-branch`} className="text-meta text-[color:var(--text-muted)]">
-            Branch
+            {copy.workspace.agentComposer.projectSourceMenu.branch}
           </label>
           <Input
             id={`${fieldId}-branch`}
             size="sm"
             value={branchDraft ?? source?.branch ?? ''}
             onChange={(event) => setBranchDraft(event.target.value)}
-            placeholder="Default branch"
+            placeholder={copy.workspace.agentComposer.projectSourceMenu.defaultBranch}
             spellCheck={false}
             autoComplete="off"
             disabled={Boolean(cloning)}
             className="font-mono"
           />
           <label htmlFor={`${fieldId}-folder`} className="text-meta text-[color:var(--text-muted)]">
-            Clone into
+            {copy.workspace.agentComposer.projectSourceMenu.cloneInto}
           </label>
           <div className="flex min-w-0 items-center gap-1.5">
             {/* The parent is shown by its last name only; the whole path is
                 one hover away, and Change… opens the folder dialog on it. */}
             <Tooltip
-              content={parentDir ? `${parentDir} — change where it is cloned` : 'Choose where to clone it'}
+              content={
+                parentDir
+                  ? copy.workspace.agentComposer.projectSourceMenu.changeWhereItIsCloned(parentDir)
+                  : copy.workspace.agentComposer.projectSourceMenu.chooseWhereToCloneIt2
+              }
               wrapperClassName="min-w-0 max-w-[45%] shrink"
             >
               <OutlineButton
                 size="sm"
                 onClick={() => void chooseParent()}
                 disabled={Boolean(cloning)}
-                aria-label={parentDir ? `Change where it is cloned, now ${parentDir}` : 'Choose where to clone it'}
+                aria-label={
+                  parentDir
+                    ? copy.workspace.agentComposer.projectSourceMenu.changeWhereItIsCloned2(parentDir)
+                    : copy.workspace.agentComposer.projectSourceMenu.chooseWhereToCloneIt2
+                }
                 className="w-full min-w-0"
               >
                 <span className="min-w-0 truncate">{parentLabel}</span>
@@ -355,7 +369,7 @@ export function ProjectSourceMenu({
                   onClose()
                 }}
               >
-                Open it
+                {copy.workspace.agentComposer.projectSourceMenu.openIt}
               </GhostButton>
             ) : null}
           </div>
@@ -374,7 +388,7 @@ export function ProjectSourceMenu({
         <div className="flex items-center justify-end gap-1.5">
           {cloning ? (
             <GhostButton size="sm" onClick={() => void gitApi.cancelRepositoryClone?.(cloning.id)}>
-              Cancel
+              {copy.workspace.agentComposer.projectSourceMenu.cancel}
             </GhostButton>
           ) : null}
           <PrimaryButton type="submit" size="sm" disabled={!canClone}>
@@ -428,8 +442,8 @@ export function ProjectSourceMenu({
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search projects…"
-          aria-label="Search projects"
+          placeholder={copy.workspace.agentComposer.projectSourceMenu.searchProjects}
+          aria-label={copy.workspace.agentComposer.projectSourceMenu.searchProjects2}
         />
       </div>
       {/* The sources lead (owner, 2026-09-04): Browse… and Import from Git are
@@ -460,8 +474,10 @@ export function ProjectSourceMenu({
             </svg>
           }
         >
-          <span className="block text-body font-medium">Browse…</span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">Pick a folder on disk.</span>
+          <span className="block text-body font-medium">{copy.workspace.agentComposer.projectSourceMenu.browse}</span>
+          <span className="block text-meta text-[color:var(--text-subtle)]">
+            {copy.workspace.agentComposer.projectSourceMenu.pickAFolderOnDisk}
+          </span>
         </MenuItem>
       ) : null}
       {onClone ? (
@@ -495,8 +511,12 @@ export function ProjectSourceMenu({
             </span>
           }
         >
-          <span className="block text-body font-medium">Import from Git</span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">Clone a repository and open it here.</span>
+          <span className="block text-body font-medium">
+            {copy.workspace.agentComposer.projectSourceMenu.importFromGit}
+          </span>
+          <span className="block text-meta text-[color:var(--text-subtle)]">
+            {copy.workspace.agentComposer.projectSourceMenu.cloneARepositoryAndOpen}
+          </span>
         </MenuItem>
       ) : null}
       {onCreateProject ? (
@@ -519,9 +539,11 @@ export function ProjectSourceMenu({
             </span>
           }
         >
-          <span className="block text-body font-medium">New project</span>
+          <span className="block text-body font-medium">
+            {copy.workspace.agentComposer.projectSourceMenu.newProject}
+          </span>
           <span className="block text-meta text-[color:var(--text-subtle)]">
-            Start one here, and put it on GitHub if you like.
+            {copy.workspace.agentComposer.projectSourceMenu.startOneHereAndPut}
           </span>
         </MenuItem>
       ) : null}
@@ -540,7 +562,9 @@ export function ProjectSourceMenu({
           icon={<NoProjectGlyph className="mt-0.5 icon-xs shrink-0" />}
         >
           <span className="block text-body font-medium">{PROJECTLESS_CHATS_LABEL}</span>
-          <span className="block text-meta text-[color:var(--text-subtle)]">Chat in a folder of its own.</span>
+          <span className="block text-meta text-[color:var(--text-subtle)]">
+            {copy.workspace.agentComposer.projectSourceMenu.chatInAFolderOf}
+          </span>
         </MenuOption>
       ) : null}
       <div className={MENU_DIVIDER_CLASS} role="separator" />

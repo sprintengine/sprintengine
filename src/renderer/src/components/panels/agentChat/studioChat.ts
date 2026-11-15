@@ -29,6 +29,7 @@ import type {
 import type { ChatServices } from './chatServices'
 import type { AttachedFileBytes } from '../../../../../shared/attached-files'
 import type { ConversationTransport } from './conversationTransport'
+import { copy } from '../../../../../shared/copy'
 
 // The chat view over the Studio protocol: the same calls the window's IPC
 // answers, carried by this window's Studio client instead. Every answer has
@@ -353,7 +354,7 @@ export function createStudioChatServices(
         outcome(async () => {
           // Only a Studio that opens terminals offers it.
           if (!(await client()).supports(STUDIO_TERMINAL_HANDOFF_CAPABILITY))
-            return { ok: false as const, message: "This Studio can't open a terminal to resume in." }
+            return { ok: false as const, message: copy.panels.agentChat.studioChat.thisStudioCanTOpen }
           return await ask(client, 'session.terminalHandoff', {
             ...('sessionId' in input
               ? { sessionId: input.sessionId }
@@ -762,7 +763,7 @@ export function createStudioConversationParts(
         if (!isChatAddress(forked.address) || forked.address.agentId !== input.newAgentId || !forked.name)
           return {
             ok: false as const,
-            message: "Forked, but couldn't find it. Reload the window.",
+            message: copy.panels.agentChat.studioChat.forkedButCouldnTFind,
           }
         return { ok: true as const, address: forked.address, name: forked.name }
       }),

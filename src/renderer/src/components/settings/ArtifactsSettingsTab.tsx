@@ -22,6 +22,7 @@ import {
 } from '../ui'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import { artifactsApi } from '../../studio/artifacts'
+import { copy } from '../../../../shared/copy'
 
 // Settings ▸ Artifacts: where agents publish the HTML pages they make, so the
 // person can open them from any device. Each host asks for one thing:
@@ -43,9 +44,9 @@ const ROW_FIELD = 'w-72 max-w-full font-mono'
 const MUTED = 'text-body leading-5 text-[color:var(--text-muted)]'
 
 const HOST_ITEMS: Array<{ value: HostChoice; label: string }> = [
-  { value: 'off', label: 'Off' },
-  { value: 'github-pages', label: 'GitHub Pages' },
-  { value: 'cloudflare-pages', label: 'Cloudflare Pages' },
+  { value: 'off', label: copy.settings.artifactsSettingsTab.off },
+  { value: 'github-pages', label: copy.settings.artifactsSettingsTab.gitHubPages },
+  { value: 'cloudflare-pages', label: copy.settings.artifactsSettingsTab.cloudflarePages },
 ]
 
 /** The words a step's outcome is said in: no dots, no colour alone. */
@@ -149,23 +150,25 @@ export function ArtifactsSettingsTab(): JSX.Element {
 
   return (
     <div role="tabpanel" id="settings-panel-artifacts" aria-labelledby="settings-tab-artifacts" className="space-y-6">
-      <SettingsPageHeader title="Artifacts" />
-      <p className={MUTED}>
-        Agents publish mockups, prototypes and reports to a site you can open on any device. Earlier versions are kept.
-      </p>
+      <SettingsPageHeader title={copy.settings.artifactsSettingsTab.artifacts} />
+      <p className={MUTED}>{copy.settings.artifactsSettingsTab.agentsPublishMockupsPrototypesAnd}</p>
       {view === undefined ? null : view === null || !draft ? (
-        <p className={MUTED}>Set up artifacts in the desktop app on the publishing machine.</p>
+        <p className={MUTED}>{copy.settings.artifactsSettingsTab.setUpArtifactsInThe}</p>
       ) : (
         <>
           <section className="space-y-3" aria-labelledby="artifacts-host-title">
-            <SettingsSectionTitle id="artifacts-host-title">Host</SettingsSectionTitle>
+            <SettingsSectionTitle id="artifacts-host-title">
+              {copy.settings.artifactsSettingsTab.host}
+            </SettingsSectionTitle>
             <SegmentedControl
-              ariaLabel="Where artifacts are hosted"
+              ariaLabel={copy.settings.artifactsSettingsTab.whereArtifactsAreHosted}
               items={HOST_ITEMS}
               value={draft.host}
               onChange={(host) => update({ host })}
             />
-            {draft.host === 'off' ? <p className={MUTED}>Off: agents can’t publish artifacts.</p> : null}
+            {draft.host === 'off' ? (
+              <p className={MUTED}>{copy.settings.artifactsSettingsTab.offAgentsCanTPublish}</p>
+            ) : null}
           </section>
           {draft.host === 'github-pages' ? (
             <GitHubSection view={view} draft={draft} update={update} invalid={failedField} />
@@ -187,7 +190,7 @@ export function ArtifactsSettingsTab(): JSX.Element {
             <div className="flex flex-wrap items-center justify-end gap-2">
               {result?.ok && result.saved ? (
                 <span role="status" className={`mr-auto ${MUTED}`}>
-                  Saved.
+                  {copy.settings.artifactsSettingsTab.saved}
                 </span>
               ) : null}
               <OutlineButton size="md" disabled={busy !== null || draft.host === 'off'} onClick={() => void run(false)}>
@@ -212,7 +215,7 @@ export function ArtifactsSettingsTab(): JSX.Element {
 function SiteLine({ url }: { url: string }): JSX.Element {
   return (
     <p className={MUTED}>
-      The gallery is at{' '}
+      {copy.settings.artifactsSettingsTab.theGalleryIsAt}{' '}
       <LinkButton size="inherit" onClick={() => void window.api.openExternal(url)}>
         {url}
       </LinkButton>
@@ -235,10 +238,10 @@ function GitHubSection({
   const id = useId()
   const saved = view.provider === 'github-pages' && view.github.repositoryUrl === draft.repositoryUrl.trim()
   return (
-    <section className="space-y-3" aria-label="GitHub Pages">
+    <section className="space-y-3" aria-label={copy.settings.artifactsSettingsTab.gitHubPages}>
       <SettingCard>
         <SettingsRow
-          label="Repository"
+          label={copy.settings.artifactsSettingsTab.repository}
           htmlFor={id}
           help="On github.com or your company’s GitHub. Studio pushes with the sign-in this machine already has for that host, turns Pages on if it is off, and uses the address GitHub gives the site."
         >
@@ -258,10 +261,7 @@ function GitHubSection({
           />
         </SettingsRow>
       </SettingCard>
-      <p className={MUTED}>
-        The site is public even if the repository is private (unless GitHub Enterprise Cloud limits it). Private
-        repositories need a paid plan.
-      </p>
+      <p className={MUTED}>{copy.settings.artifactsSettingsTab.theSiteIsPublicEven}</p>
       {saved && view.siteUrl ? <SiteLine url={view.siteUrl} /> : null}
     </section>
   )
@@ -294,17 +294,17 @@ function CloudflareSection({
   const field = (name: ArtifactsSetupField) => (invalid === name ? true : undefined)
   const project = draft.projectName.trim() || DEFAULT_CLOUDFLARE_PROJECT
   return (
-    <section className="space-y-3" aria-label="Cloudflare Pages">
+    <section className="space-y-3" aria-label={copy.settings.artifactsSettingsTab.cloudflarePages}>
       <SettingCard>
         <SettingsRow
-          label="API token"
+          label={copy.settings.artifactsSettingsTab.aPIToken}
           htmlFor={tokenInputVisible ? ids.token : undefined}
           help={
             <>
-              Needs Cloudflare Pages Edit permission. Kept in secure storage
+              {copy.settings.artifactsSettingsTab.needsCloudflarePagesEditPermission}
               {view.cloudflareToken.encryptionAvailable ? '' : ' (unavailable now: kept for this session only)'}.{' '}
               <LinkButton size="inherit" onClick={() => void window.api.openExternal(CLOUDFLARE_TOKEN_URL)}>
-                Create a token
+                {copy.settings.artifactsSettingsTab.createAToken}
               </LinkButton>
             </>
           }
@@ -316,7 +316,7 @@ function CloudflareSection({
                 type="password"
                 value={draft.token}
                 onChange={(event) => update({ token: event.target.value })}
-                placeholder="Pages Edit token"
+                placeholder={copy.settings.artifactsSettingsTab.pagesEditToken}
                 autoComplete="off"
                 aria-invalid={field('cloudflare.token')}
                 size="md"
@@ -332,37 +332,39 @@ function CloudflareSection({
                     update({ token: '' })
                   }}
                 >
-                  Cancel
+                  {copy.settings.artifactsSettingsTab.cancel}
                 </GhostButton>
               ) : null}
             </span>
           ) : (
             <span className="flex items-center gap-2">
-              <span className="text-body font-medium text-[color:var(--text-default)]">Saved</span>
+              <span className="text-body font-medium text-[color:var(--text-default)]">
+                {copy.settings.artifactsSettingsTab.saved2}
+              </span>
               <OutlineButton size="md" onClick={() => setReplacingToken(true)}>
-                Replace
+                {copy.settings.artifactsSettingsTab.replace}
               </OutlineButton>
             </span>
           )}
         </SettingsRow>
         {accounts.length > 1 ? (
           <SettingsRow
-            label="Account"
+            label={copy.settings.artifactsSettingsTab.account}
             htmlFor={ids.account}
             help="The token can see several accounts. Pick the one to publish to."
           >
             <Select
               id={ids.account}
-              ariaLabel="Cloudflare account"
+              ariaLabel={copy.settings.artifactsSettingsTab.cloudflareAccount}
               items={accounts.map((account) => ({ value: account.id, label: account.name }))}
               value={accounts.some((account) => account.id === draft.accountId) ? draft.accountId : null}
-              placeholder="Choose an account"
+              placeholder={copy.settings.artifactsSettingsTab.chooseAnAccount}
               onChange={(accountId) => update({ accountId })}
               size="md"
             />
           </SettingsRow>
         ) : savedHere && view.cloudflare.accountName ? (
-          <SettingsRow label="Account" help="The account the token publishes to.">
+          <SettingsRow label={copy.settings.artifactsSettingsTab.account} help="The account the token publishes to.">
             <span className="text-body text-[color:var(--text-default)]">{view.cloudflare.accountName}</span>
           </SettingsRow>
         ) : null}
@@ -381,7 +383,7 @@ function CloudflareSection({
         <div id={ids.advanced}>
           <SettingCard>
             <SettingsRow
-              label="Project"
+              label={copy.settings.artifactsSettingsTab.project}
               htmlFor={ids.project}
               help={`The Pages project to publish to, made if there is none. ${DEFAULT_CLOUDFLARE_PROJECT} when left empty.`}
             >
@@ -401,7 +403,7 @@ function CloudflareSection({
               />
             </SettingsRow>
             <SettingsRow
-              label="Source repository"
+              label={copy.settings.artifactsSettingsTab.sourceRepository}
               htmlFor={ids.repository}
               help="A git repository to keep the site’s source and history in. Without one, the source is kept on this computer and read back from the live site on another, which cannot be done through a Cloudflare Access sign-in."
             >
@@ -409,7 +411,7 @@ function CloudflareSection({
                 id={ids.repository}
                 value={draft.sourceRepositoryUrl}
                 onChange={(event) => update({ sourceRepositoryUrl: event.target.value })}
-                placeholder="git@github.com:acme/artifacts.git"
+                placeholder={copy.settings.artifactsSettingsTab.gitGithubComAcmeArtifacts}
                 spellCheck={false}
                 autoCapitalize="none"
                 autoCorrect="off"
@@ -424,8 +426,12 @@ function CloudflareSection({
         </div>
       ) : null}
       <p className={MUTED}>
-        The site is public. To require sign-in, add a self-hosted app in Zero Trust ▸ Access ▸ Applications for{' '}
-        <ProviderStateId>{project}.pages.dev</ProviderStateId> (and any custom domain) that allows your email.
+        {copy.settings.artifactsSettingsTab.theSiteIsPublicTo}{' '}
+        <ProviderStateId>
+          {project}
+          {copy.settings.artifactsSettingsTab.pagesDev}
+        </ProviderStateId>
+        {copy.settings.artifactsSettingsTab.andAnyCustomDomainThat}
       </p>
       {savedHere && view.siteUrl ? <SiteLine url={view.siteUrl} /> : null}
     </section>
@@ -443,7 +449,7 @@ function SetupResult({ result }: { result: ArtifactsSetupResult }): JSX.Element 
         : 'Ready to publish. The setting is not saved until you Save.'
     : null
   return (
-    <section aria-label="What the set-up found" className="space-y-2">
+    <section aria-label={copy.settings.artifactsSettingsTab.whatTheSetUpFound} className="space-y-2">
       {summary ? (
         <p role="status" className="text-body font-medium text-[color:var(--text-default)]">
           {summary}
@@ -451,7 +457,7 @@ function SetupResult({ result }: { result: ArtifactsSetupResult }): JSX.Element 
       ) : null}
       {!result.ok ? <InlineNotice tone="error" title={result.message} /> : null}
       {result.steps.length ? (
-        <SettingCard as="ul" ariaLabel="Steps">
+        <SettingCard as="ul" ariaLabel={copy.settings.artifactsSettingsTab.steps}>
           {result.steps.map((step, index) => (
             <li key={`${step.label}-${index}`} className="flex items-start gap-3 px-4 py-2.5">
               <span className={`w-14 shrink-0 text-body font-semibold ${STEP_WORD[step.status].tone}`}>

@@ -7,6 +7,7 @@ import type { Workspace, WorkspaceId } from '../../../shared/workspace'
 import { isSettledWorkspace } from './workspaceSettle'
 import { filesApi } from '../studio/files'
 import { worktreesApi } from '../studio/worktrees'
+import { copy } from '../../../shared/copy'
 
 /**
  * The way back into a chat whose worktree was given back.
@@ -110,7 +111,11 @@ async function restore(workspace: RestoreCandidate): Promise<boolean> {
           ok: false as const,
           message: error instanceof Error ? error.message : String(error),
         }))
-    : { ok: false as const, definitive: true as const, message: `No project is recorded for ${folderPath}.` }
+    : {
+        ok: false as const,
+        definitive: true as const,
+        message: copy.utils.chatWorktreeRestore.noProjectIsRecordedFor(folderPath),
+      }
 
   const after = useWorkspaceStore.getState()
   after.setFolderMissing(id, !result.ok)
@@ -128,7 +133,7 @@ async function restore(workspace: RestoreCandidate): Promise<boolean> {
     reasonShown.set(id, result.message)
     showToast({
       tone: 'error',
-      title: 'Could not bring back this chat’s worktree',
+      title: copy.utils.chatWorktreeRestore.couldNotBringBackThis,
       description: result.message,
     })
   }

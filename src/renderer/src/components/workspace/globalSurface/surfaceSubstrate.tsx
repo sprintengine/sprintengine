@@ -36,6 +36,7 @@ import { FOCUS_RING_CLASS } from '../../ui/tokens'
 import { Tooltip } from '../../ui/Tooltip'
 import { TruncatedText } from '../../ui/TruncatedText'
 import { SELECTION_EDGE_CLASS, attentionRowSurfaceClass, doneRowSurfaceClass } from '../rowStatusParts'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // ── SurfaceCanvasState ───────────────────────────────────────────────────────
 // The three shared canvas states. Same anatomy on every door; only the copy
@@ -608,7 +609,7 @@ export function SurfaceRail({
     ...(scope
       ? [
           {
-            label: 'Project',
+            label: appCopy.workspace.globalSurface.surfaceSubstrate.project,
             items: scope.items,
             value: scope.value,
             defaultValue: scope.items[0]?.value ?? scope.value,
@@ -768,7 +769,9 @@ export function SurfaceRail({
         filterControl={
           menuGroups.length > 0 ? (
             <FilterMenu
-              ariaLabel={filter?.ariaLabel ?? scope?.ariaLabel ?? 'Filter'}
+              ariaLabel={
+                filter?.ariaLabel ?? scope?.ariaLabel ?? appCopy.workspace.globalSurface.surfaceSubstrate.filter
+              }
               groups={menuGroups}
               className="shrink-0"
             />

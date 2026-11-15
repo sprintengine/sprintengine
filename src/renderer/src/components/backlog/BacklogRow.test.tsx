@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -15,6 +14,7 @@ import { createBacklogItem, type BacklogHighlight, type BacklogItem } from '../.
 import { compareBacklogItems, type BacklogSort } from '../../utils/backlogTriage'
 import { deriveBacklogDependencies } from '../../utils/backlogDependencies'
 import { test } from 'vitest'
+import { readSourceWithCopy } from '../../../../../tests/source-with-copy'
 
 test('BacklogRow', async () => {
   let failures = 0
@@ -440,21 +440,21 @@ test('BacklogRow', async () => {
 
   // Source contracts, in the spirit of backlog.test.ts: the panel-side wiring the
   // static render above cannot reach (store-bound list + detail surfaces).
-  const backlogPanelSource = readFileSync(
+  const backlogPanelSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/panels/BacklogPanel.tsx'),
     'utf8',
   )
   // The Backlog door retired 2026-09-05 (the workspace pane's Backlog tab is the
   // one Backlog surface now), so the panel is the only list these contracts read.
-  const contextMenuSource = readFileSync(
+  const contextMenuSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/backlog/BacklogItemContextMenu.tsx'),
     'utf8',
   )
-  const dependenciesSectionSource = readFileSync(
+  const dependenciesSectionSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/backlog/BacklogDependenciesSection.tsx'),
     'utf8',
   )
-  const itemSearchPickerSource = readFileSync(
+  const itemSearchPickerSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/backlog/BacklogItemSearchPicker.tsx'),
     'utf8',
   )
@@ -749,7 +749,7 @@ test('BacklogRow', async () => {
     // Detail overflow: same epic-aware swap.
     assert.match(
       backlogPanelSource,
-      /selected\.isEpic\s*\n?\s*\?\s*\[\{ id: 'archive-epic', label: 'Archive epic'/,
+      /selected\.isEpic\s*\?\s*\[\s*\{\s*id: 'archive-epic',\s*label: 'Archive epic'/,
       'detail overflow offers Archive epic for an epic',
     )
   })
@@ -803,7 +803,7 @@ test('BacklogRow', async () => {
   run('detail overflow menu carries Star/Unstar through the persisted highlight handler', () => {
     assert.match(
       backlogPanelSource,
-      /selected\.highlight\?\.starred \? 'Unstar' : 'Star'/,
+      /selected\.highlight\?\.starred\s*\?\s*'Unstar'\s*:\s*'Star'/,
       'menu label flips with the persisted starred state',
     )
     assert.match(

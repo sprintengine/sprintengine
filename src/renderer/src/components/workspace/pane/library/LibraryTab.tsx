@@ -13,6 +13,7 @@ import { useRemoteChat } from '../../../panels/agentChat/remoteChatRegistry'
 import { StoredAttachmentThumbnail } from '../../../panels/agentChat/storedAttachments'
 import { useToolImage } from '../../../panels/agentChat/useLocalImage'
 import { BrowserGlyph, CanvasGlyph } from '../paneKinds'
+import { copy } from '../../../../../../shared/copy'
 
 // The Library tab: every picture in the focused chat, newest first — what the
 // person attached to their messages and what the agent's steps returned (its
@@ -27,9 +28,9 @@ import { BrowserGlyph, CanvasGlyph } from '../paneKinds'
 type Filter = 'all' | 'you' | 'agent'
 
 const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'you', label: 'From you' },
-  { value: 'agent', label: 'From the agent' },
+  { value: 'all', label: copy.workspace.pane.library.libraryTab.all },
+  { value: 'you', label: copy.workspace.pane.library.libraryTab.fromYou },
+  { value: 'agent', label: copy.workspace.pane.library.libraryTab.fromTheAgent },
 ]
 
 export function LibraryTab({ workspaceId, active }: { workspaceId: string; active: boolean }) {
@@ -46,8 +47,11 @@ export function LibraryTab({ workspaceId, active }: { workspaceId: string; activ
   if (!agentId || !binding || !root) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-[color:var(--bg-app)]">
-        <PanelHeader title="Library" />
-        <EmptyState title="No chat in focus" body="Open a chat to see its pictures here." />
+        <PanelHeader title={copy.workspace.pane.library.libraryTab.library} />
+        <EmptyState
+          title={copy.workspace.pane.library.libraryTab.noChatInFocus}
+          body={copy.workspace.pane.library.libraryTab.openAChatToSee}
+        />
       </div>
     )
   }
@@ -93,38 +97,53 @@ function ChatLibrary({
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col bg-[color:var(--bg-app)]">
-      <PanelHeader title="Library" subtitle={chatName} count={images.length || undefined} />
+      <PanelHeader
+        title={copy.workspace.pane.library.libraryTab.library}
+        subtitle={chatName}
+        count={images.length || undefined}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-2">
         {!session.hydrated && !session.error ? (
           <div className="flex items-center gap-2 px-1 py-3 text-meta text-[color:var(--text-muted)]">
             <Spinner />
-            <span role="status">Reading the chat…</span>
+            <span role="status">{copy.workspace.pane.library.libraryTab.readingTheChat}</span>
           </div>
         ) : null}
-        {session.error ? <InlineNotice tone="error" title="Couldn't read this chat." detail={session.error} /> : null}
+        {session.error ? (
+          <InlineNotice
+            tone="error"
+            title={copy.workspace.pane.library.libraryTab.couldnTReadThisChat}
+            detail={session.error}
+          />
+        ) : null}
         {session.hydrated && images.length === 0 ? (
           <EmptyState
-            title="No pictures yet"
-            body="Pictures you attach and screenshots the agent takes show up here."
+            title={copy.workspace.pane.library.libraryTab.noPicturesYet}
+            body={copy.workspace.pane.library.libraryTab.picturesYouAttachAndScreenshots}
           />
         ) : null}
         {images.length > 0 ? (
           <>
             <SegmentedControl<Filter>
-              ariaLabel="Whose pictures"
+              ariaLabel={copy.workspace.pane.library.libraryTab.whosePictures}
               size="sm"
               value={filter}
               onChange={setFilter}
               items={FILTERS}
             />
             {shown.length ? (
-              <ul className="mt-3 grid grid-cols-2 gap-2.5" aria-label="Pictures">
+              <ul
+                className="mt-3 grid grid-cols-2 gap-2.5"
+                aria-label={copy.workspace.pane.library.libraryTab.pictures}
+              >
                 {shown.map((image) => (
                   <LibraryTile key={image.key} image={image} workspaceId={workspaceId} agentId={agentId} />
                 ))}
               </ul>
             ) : (
-              <p className="mt-6 text-center text-meta text-[color:var(--text-subtle)]">No pictures from here yet.</p>
+              <p className="mt-6 text-center text-meta text-[color:var(--text-subtle)]">
+                {copy.workspace.pane.library.libraryTab.noPicturesFromHereYet}
+              </p>
             )}
           </>
         ) : null}
@@ -151,14 +170,14 @@ function LibraryTile({ image, workspaceId, agentId }: { image: ChatImage; worksp
         density="flush"
         onClick={jump}
         disabled={!jump}
-        aria-label={`${image.caption}${jump ? ', jump to its message' : ''}`}
+        aria-label={`${image.caption}${jump ? copy.workspace.pane.library.libraryTab.jumpToItsMessage : ''}`}
         className="group block min-w-0 p-0"
       >
         <span className="relative block aspect-[16/10] overflow-hidden rounded-lg border border-[color:var(--border-default)] bg-[color:var(--bg-well)]">
           <LibraryPicture image={image} />
           {jump ? (
             <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5 text-micro text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-              Jump to message
+              {copy.workspace.pane.library.libraryTab.jumpToMessage}
             </span>
           ) : null}
         </span>
@@ -200,7 +219,7 @@ function ToolPicture({ toolUseId, path }: { toolUseId: string; path: string }) {
       ) : picture.failed ? (
         'No longer available'
       ) : (
-        <Spinner label="Loading picture" />
+        <Spinner label={copy.workspace.pane.library.libraryTab.loadingPicture} />
       )}
     </span>
   )

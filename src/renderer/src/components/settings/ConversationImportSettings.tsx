@@ -5,6 +5,7 @@ import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/M
 import { ConversationImportPicker, useConversationImportSelection } from '../onboarding/ConversationImportPicker'
 import { useConversationImportScan, type ConversationImportScan } from '../onboarding/useConversationImportScan'
 import { SettingsRow } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Agents' way into the import the first-run card offers once: the
 // sessions run in Claude Code or Codex, brought in as chats at any time. Each
@@ -16,13 +17,13 @@ export function ConversationImportSettings() {
   return (
     <>
       <SettingsRow
-        label="Import conversations"
+        label={copy.settings.conversationImportSettings.importConversations}
         help="Bring in sessions you ran in Claude Code or Codex. Each becomes a chat that carries on the same session."
       >
         {/* The row's action as the outline button every Settings row action
             is, so it does not read as a stray label beside the next card's. */}
         <OutlineButton size="sm" onClick={() => setOpen(true)}>
-          Choose sessions…
+          {copy.settings.conversationImportSettings.chooseSessions}
         </OutlineButton>
       </SettingsRow>
       {open ? <ConversationImportDialog onClose={() => setOpen(false)} /> : null}
@@ -37,8 +38,8 @@ function ConversationImportDialog({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} labelledBy={titleId} size="standard">
       <ModalHeader
         titleId={titleId}
-        title="Import conversations"
-        subtitle="Picks sessions from the last 30 days. Ones already imported are left as is."
+        title={copy.settings.conversationImportSettings.importConversations}
+        subtitle={copy.settings.conversationImportSettings.picksSessionsFromTheLast}
         onClose={onClose}
       />
       {scan.status === 'ready' ? (
@@ -49,7 +50,7 @@ function ConversationImportDialog({ onClose }: { onClose: () => void }) {
             <ConversationImportPicker scan={scan} selected={new Set()} onSelectedChange={() => undefined} />
           </ModalBody>
           <ModalFooter>
-            <ModalButton onClick={onClose}>Close</ModalButton>
+            <ModalButton onClick={onClose}>{copy.settings.conversationImportSettings.close}</ModalButton>
           </ModalFooter>
         </>
       )}
@@ -72,7 +73,7 @@ function ConversationImportReady({
       </ModalBody>
       <ModalFooter>
         <ModalButton disabled={importing} onClick={onClose}>
-          Cancel
+          {copy.settings.conversationImportSettings.cancel}
         </ModalButton>
         <ModalButton
           variant="primary"

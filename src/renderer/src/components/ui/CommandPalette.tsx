@@ -109,6 +109,7 @@ import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { filesApi } from '../../studio/files'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The four canonical source groups the global-search palette organizes results
 // into (T6), plus the two disk-backed groups: Files (name matches, plus the
@@ -127,7 +128,7 @@ const PALETTE_GROUP_LABELS: Record<CommandGroup, string> = {
   commands: 'Commands',
   actions: 'Actions',
   files: 'Files',
-  content: 'Text in files',
+  content: appCopy.ui.commandPalette.textInFiles,
 }
 
 /**
@@ -403,7 +404,7 @@ export default function CommandPalette({
   useEffect(
     () =>
       acquireTerminalRepaintPause({
-        label: 'CommandPalette',
+        label: appCopy.ui.commandPalette.commandPalette,
         isAlive: () => dialogRef.current?.isConnected === true,
       }),
     [],
@@ -487,37 +488,37 @@ export default function CommandPalette({
     const gitCommands: UngroupedCommand[] = [
       {
         id: 'git.refresh',
-        label: 'Git: Refresh status',
+        label: appCopy.ui.commandPalette.gitRefreshStatus,
         shortcut: shortcutFor('git.refresh'),
         run: runGitPanel('git.refresh'),
       },
       {
         id: 'git.fetch',
-        label: 'Git: Fetch remotes',
+        label: appCopy.ui.commandPalette.gitFetchRemotes,
         shortcut: shortcutFor('git.fetch'),
         run: runGitPanel('git.fetch'),
       },
       {
         id: 'git.commit',
-        label: 'Git: Commit staged changes',
+        label: appCopy.ui.commandPalette.gitCommitStagedChanges,
         shortcut: shortcutFor('git.commit'),
         run: runGitPanel('git.commit'),
       },
       {
         id: 'git.changes.showDiff',
-        label: 'Git: Show diff for the selected file',
+        label: appCopy.ui.commandPalette.gitShowDiffForThe,
         shortcut: shortcutFor('git.changes.showDiff'),
         run: runGitPanel('git.changes.showDiff'),
       },
       {
         id: 'git.changes.discard',
-        label: 'Git: Discard changes in the selected files',
+        label: appCopy.ui.commandPalette.gitDiscardChangesInThe,
         shortcut: shortcutFor('git.changes.discard'),
         run: runGitPanel('git.changes.discard'),
       },
       {
         id: 'git.changes.moveToChangelist',
-        label: 'Git: Move the selected files to another changelist',
+        label: appCopy.ui.commandPalette.gitMoveTheSelectedFiles,
         shortcut: shortcutFor('git.changes.moveToChangelist'),
         run: runGitPanel('git.changes.moveToChangelist'),
       },
@@ -526,8 +527,8 @@ export default function CommandPalette({
       ? [
           {
             id: 'panel.files.toggle',
-            label: 'Toggle file explorer',
-            searchLabel: 'File Explorer',
+            label: appCopy.ui.commandPalette.toggleFileExplorer,
+            searchLabel: appCopy.ui.commandPalette.fileExplorer,
             shortcut: shortcutFor('panel.files.toggle'),
             run: () => {
               // Files is a workspace-pane tab (browser-pane epic).
@@ -537,8 +538,8 @@ export default function CommandPalette({
           },
           {
             id: 'panel.editor.toggle',
-            label: 'Toggle code editor',
-            searchLabel: 'Code Editor',
+            label: appCopy.ui.commandPalette.toggleCodeEditor,
+            searchLabel: appCopy.ui.commandPalette.codeEditor,
             shortcut: shortcutFor('panel.editor.toggle'),
             run: () => {
               togglePanelRailComponent(activeWorkspace.id, 'editor', 'Editor')
@@ -547,8 +548,8 @@ export default function CommandPalette({
           },
           {
             id: 'panel.git.toggle',
-            label: 'Toggle Git panel',
-            searchLabel: 'Git Panel',
+            label: appCopy.ui.commandPalette.toggleGitPanel,
+            searchLabel: appCopy.ui.commandPalette.gitPanel,
             shortcut: shortcutFor('panel.git.toggle'),
             run: () => {
               useWorkspaceStore.getState().togglePaneKind(activeWorkspace.id, 'git')
@@ -561,8 +562,8 @@ export default function CommandPalette({
             ? [
                 {
                   id: 'panel.backlog.toggle',
-                  label: 'Toggle backlog',
-                  searchLabel: 'Backlog',
+                  label: appCopy.ui.commandPalette.toggleBacklog,
+                  searchLabel: appCopy.ui.commandPalette.backlog,
                   shortcut: shortcutFor('panel.backlog.toggle'),
                   run: () => {
                     onRunCommand('panel.backlog.toggle')
@@ -576,8 +577,8 @@ export default function CommandPalette({
             ? [
                 {
                   id: 'panel.subagents.show',
-                  label: 'Show subagents',
-                  searchLabel: 'Subagents',
+                  label: appCopy.ui.commandPalette.showSubagents,
+                  searchLabel: appCopy.ui.commandPalette.subagents,
                   shortcut: shortcutFor('panel.subagents.show'),
                   run: () => {
                     onRunCommand('panel.subagents.show')
@@ -597,8 +598,8 @@ export default function CommandPalette({
             ? [
                 {
                   id: 'panel.canvas.toggle',
-                  label: 'Toggle canvas',
-                  searchLabel: 'Canvas',
+                  label: appCopy.ui.commandPalette.toggleCanvas,
+                  searchLabel: appCopy.ui.commandPalette.canvas,
                   shortcut: shortcutFor('panel.canvas.toggle'),
                   run: () => {
                     onRunCommand('panel.canvas.toggle')
@@ -614,8 +615,8 @@ export default function CommandPalette({
             ? [
                 {
                   id: 'panel.knowledge-graph.toggle',
-                  label: 'Toggle knowledge graph',
-                  searchLabel: 'Knowledge Graph',
+                  label: appCopy.ui.commandPalette.toggleKnowledgeGraph,
+                  searchLabel: appCopy.ui.commandPalette.knowledgeGraph,
                   shortcut: shortcutFor('panel.knowledge-graph.toggle'),
                   run: () => {
                     togglePanelRailComponent(activeWorkspace.id, 'memory-graph', 'Knowledge Graph')
@@ -655,7 +656,7 @@ export default function CommandPalette({
     const usageCommands: UngroupedCommand[] = [
       {
         id: 'usage.show',
-        label: 'Show usage',
+        label: appCopy.ui.commandPalette.showUsage,
         keywords: 'cost tokens spend dashboard metrics statistics claude codex opencode gemini grok cursor',
         shortcut: shortcutFor('usage.show'),
         run: () => {
@@ -667,7 +668,7 @@ export default function CommandPalette({
         ? [
             {
               id: 'usage.limits.show',
-              label: 'Show usage limits',
+              label: appCopy.ui.commandPalette.showUsageLimits,
               keywords: 'subscription plan limit five-hour weekly claude codex',
               shortcut: shortcutFor('usage.limits.show'),
               run: () => {
@@ -757,8 +758,10 @@ export default function CommandPalette({
       // never a workspace on the spot.
       {
         id: 'chat.new',
-        label: activeFolderPath ? `New chat in ${folderDisplayName(activeFolderPath)}` : 'New chat',
-        searchLabel: 'New chat',
+        label: activeFolderPath
+          ? appCopy.ui.commandPalette.newChatIn(folderDisplayName(activeFolderPath))
+          : appCopy.ui.commandPalette.newChat,
+        searchLabel: appCopy.ui.commandPalette.newChat,
         shortcut: shortcutFor('chat.new'),
         mark: { kind: 'new-chat' as const },
         group: 'actions' as const,
@@ -774,7 +777,7 @@ export default function CommandPalette({
             // query is about to be typed.
             {
               id: 'go-to-file',
-              label: 'Go to file',
+              label: appCopy.ui.commandPalette.goToFile,
               shortcut: shortcutFor('search.goToFile'),
               mark: { kind: 'go-to-file' as const },
               group: 'actions' as const,
@@ -782,7 +785,7 @@ export default function CommandPalette({
             },
             {
               id: 'search.files.open',
-              label: 'Search project contents',
+              label: appCopy.ui.commandPalette.searchProjectContents,
               shortcut: shortcutFor('search.files.open'),
               mark: { kind: 'search' as const },
               group: 'actions' as const,
@@ -792,7 +795,7 @@ export default function CommandPalette({
         : []),
       {
         id: 'app.settings.open',
-        label: 'Open settings',
+        label: appCopy.ui.commandPalette.openSettings,
         shortcut: shortcutFor('app.settings.open'),
         mark: { kind: 'settings' as const },
         group: 'actions' as const,
@@ -803,7 +806,7 @@ export default function CommandPalette({
       },
       {
         id: 'app.settings.remote',
-        label: 'Open remote connections',
+        label: appCopy.ui.commandPalette.openRemoteConnections,
         mark: { kind: 'remote' as const },
         group: 'actions' as const,
         run: () => {
@@ -815,8 +818,8 @@ export default function CommandPalette({
         ? [
             {
               id: 'git.worktrees.open',
-              label: 'Git: Manage Worktrees',
-              description: activeWorkspace.folderPath ?? 'Open the Git panel',
+              label: appCopy.ui.commandPalette.gitManageWorktrees,
+              description: activeWorkspace.folderPath ?? appCopy.ui.commandPalette.openTheGitPanel,
               shortcut: shortcutFor('git.worktrees.open'),
               group: 'commands' as const,
               run: () => {
@@ -957,8 +960,8 @@ export default function CommandPalette({
     if (host) {
       options.push({
         id: 'palette-agent-new',
-        label: 'New agent…',
-        description: `Start an agent with ${skillName} attached`,
+        label: appCopy.ui.commandPalette.newAgent,
+        description: appCopy.ui.commandPalette.startAnAgentWithAttached(skillName),
         group: 'agents',
         run: () => {
           void (async () => {
@@ -984,7 +987,7 @@ export default function CommandPalette({
       return
     }
     setActionError(decision.notice)
-    setAgentChoice({ title: `Use ${skillName} in…`, options })
+    setAgentChoice({ title: appCopy.ui.commandPalette.useIn(skillName), options })
     setSelected(0)
   }
   agentChoiceOpenRef.current = agentChoice !== null
@@ -1391,8 +1394,12 @@ export default function CommandPalette({
     if (restingPage) {
       const { actions, recent } = composeRestingPage(commands, liveWorkspaces)
       return [
-        ...(actions.length > 0 ? [{ key: 'actions' as const, label: 'Actions', items: actions }] : []),
-        ...(recent.length > 0 ? [{ key: 'agents' as const, label: 'Recent conversations', items: recent }] : []),
+        ...(actions.length > 0
+          ? [{ key: 'actions' as const, label: appCopy.ui.commandPalette.actions, items: actions }]
+          : []),
+        ...(recent.length > 0
+          ? [{ key: 'agents' as const, label: appCopy.ui.commandPalette.recentConversations, items: recent }]
+          : []),
       ]
     }
     const order: CommandGroup[] = []
@@ -1577,7 +1584,7 @@ export default function CommandPalette({
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
-          aria-label="Command palette"
+          aria-label={appCopy.ui.commandPalette.commandPalette2}
           tabIndex={-1}
           style={overlayWidthStyle('palette')}
           // The palette keeps its own scrim — it sits at 15vh rather than
@@ -1600,7 +1607,7 @@ export default function CommandPalette({
               underline is the only mark between the two lines. */}
           <div>
             <Tabs
-              ariaLabel="Search in"
+              ariaLabel={appCopy.ui.commandPalette.searchIn}
               idPrefix="command-palette"
               items={PALETTE_SCOPE_TABS}
               value={scope}
@@ -1664,7 +1671,12 @@ export default function CommandPalette({
             // A ScrollArea, so the list's top edge fades only while results are
             // scrolled beneath the field — the field's band no longer draws a
             // rule to say where the list starts.
-            <ScrollArea id={resultsId} role="listbox" aria-label="Search results" className="max-h-[360px] py-1">
+            <ScrollArea
+              id={resultsId}
+              role="listbox"
+              aria-label={appCopy.ui.commandPalette.searchResults}
+              className="max-h-[360px] py-1"
+            >
               {/* An action that failed says so where the person is looking, and
                 the list stays up: a skill whose install was refused must not
                 also make the palette vanish. */}
@@ -1680,8 +1692,8 @@ export default function CommandPalette({
                 on the field's own line read as part of what was typed. */}
               {actionBusy && (
                 <p role="status" className="flex items-center gap-2 px-4 py-2 text-meta text-[color:var(--text-muted)]">
-                  Working
-                  <WorkingMark label="Working" />
+                  {appCopy.ui.commandPalette.working}
+                  <WorkingMark label={appCopy.ui.commandPalette.working} />
                 </p>
               )}
               {visible.length === 0 ? (
@@ -1697,8 +1709,8 @@ export default function CommandPalette({
                     provided.error
                   ) : provided.loading ? (
                     <>
-                      Searching
-                      <WorkingMark label="Searching" />
+                      {appCopy.ui.commandPalette.searching}
+                      <WorkingMark label={appCopy.ui.commandPalette.searching} />
                     </>
                   ) : (
                     'No results'

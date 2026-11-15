@@ -1,4 +1,5 @@
 import { basename, trimPath } from './paths'
+import { copy as appCopy } from '../../../shared/copy'
 
 // What a clicked terminal link offers, as pure data.
 //
@@ -113,15 +114,15 @@ export function terminalLinkActions(
 ): TerminalLinkAction[] {
   if (target.kind === 'url') {
     return [
-      { id: 'open-url', label: 'Open in browser' },
-      { id: 'copy-url', label: 'Copy link' },
+      { id: 'open-url', label: appCopy.utils.terminalLinkActions.openInBrowser },
+      { id: 'copy-url', label: appCopy.utils.terminalLinkActions.copyLink },
     ]
   }
 
   const locate: TerminalLinkAction[] = [
-    { id: 'reveal-files', label: 'Reveal in Files', startsGroup: true },
+    { id: 'reveal-files', label: appCopy.utils.terminalLinkActions.revealInFiles, startsGroup: true },
     ...(options.revealInSystemLabel ? [{ id: 'reveal-system' as const, label: options.revealInSystemLabel }] : []),
-    { id: 'copy-path', label: 'Copy path' },
+    { id: 'copy-path', label: appCopy.utils.terminalLinkActions.copyPath },
   ]
 
   // A directory has no content to render — reveal and copy are all it can do.
@@ -130,15 +131,15 @@ export function terminalLinkActions(
   }
 
   const open: TerminalLinkAction[] = [
-    { id: 'open-editor', label: 'Open in editor' },
-    { id: 'open-popout', label: 'Open in pop-out window' },
+    { id: 'open-editor', label: appCopy.utils.terminalLinkActions.openInEditor },
+    { id: 'open-popout', label: appCopy.utils.terminalLinkActions.openInPopOutWindow },
   ]
 
   if (backlogRelativePath(target.resolvedPath, target.workspaceRoot)) {
-    return [{ id: 'open-backlog', label: 'Open in Backlog' }, ...open, ...locate]
+    return [{ id: 'open-backlog', label: appCopy.utils.terminalLinkActions.openInBacklog }, ...open, ...locate]
   }
   if (isHtmlPath(target.resolvedPath)) {
-    return [{ id: 'open-browser', label: 'Open in browser' }, ...open, ...locate]
+    return [{ id: 'open-browser', label: appCopy.utils.terminalLinkActions.openInBrowser }, ...open, ...locate]
   }
   return [...open, ...locate]
 }

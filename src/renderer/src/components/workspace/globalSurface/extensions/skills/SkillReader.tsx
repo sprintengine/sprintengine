@@ -32,6 +32,7 @@ import {
   stripSkillFrontmatter,
 } from './skillsSurfaceModel'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { copy } from '../../../../../../../shared/copy'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -83,7 +84,9 @@ export function SkillReader({
       <ScrollArea ref={documentPane} className="min-w-0 px-8 py-5">
         <div className="max-w-[74ch] min-w-0">
           {!active ? (
-            <p className="text-body text-[color:var(--text-subtle)]">This skill lists no files.</p>
+            <p className="text-body text-[color:var(--text-subtle)]">
+              {copy.workspace.globalSurface.extensions.skills.skillReader.thisSkillListsNoFiles}
+            </p>
           ) : (
             <SkillDocument file={active} read={read} files={files} onOpenFile={setActivePath} onRetry={retry} />
           )}
@@ -103,7 +106,7 @@ function SkillFileList({
   onOpen: (path: string) => void
 }): JSX.Element {
   return (
-    <nav aria-label="Files in this skill" className="min-w-0">
+    <nav aria-label={copy.workspace.globalSurface.extensions.skills.skillReader.filesInThisSkill} className="min-w-0">
       <p className="px-2 pb-2 text-meta font-medium text-[color:var(--text-muted)]">
         {`${files.length} file${files.length === 1 ? '' : 's'}`}
       </p>
@@ -128,7 +131,9 @@ function SkillFileList({
                     {file.path}
                   </span>
                   {file.isEntry ? (
-                    <span className="shrink-0 text-meta text-[color:var(--text-subtle)]">Entry</span>
+                    <span className="shrink-0 text-meta text-[color:var(--text-subtle)]">
+                      {copy.workspace.globalSurface.extensions.skills.skillReader.entry}
+                    </span>
                   ) : null}
                   {/* A size is drawn only when one is known. A repository read
                       over git lists its files without their sizes — a size is
@@ -194,9 +199,13 @@ export function SkillDocument({
     return (
       <InlineNotice
         tone="warn"
-        title={`${file.path} could not be read.`}
+        title={copy.workspace.globalSurface.extensions.skills.skillReader.couldNotBeRead(file.path)}
         detail={read.message}
-        action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
+        action={
+          <GhostButton onClick={onRetry}>
+            {copy.workspace.globalSurface.extensions.skills.skillReader.tryAgain}
+          </GhostButton>
+        }
       />
     )
   }

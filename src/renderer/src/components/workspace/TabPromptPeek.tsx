@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Popover } from '../ui/Popover'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
+import { copy } from '../../../../shared/copy'
 
 // The last prompt a person sent to a terminal, revealed by hovering its tab.
 //
@@ -131,7 +132,7 @@ export function TabPromptPeek({ prompt, children, tabLabel }: TabPromptPeekProps
         onOpenChange={(next) => {
           if (!next) close()
         }}
-        ariaLabel={`Last message in ${tabLabel}`}
+        ariaLabel={copy.workspace.tabPromptPeek.lastMessageIn(tabLabel)}
         popupRole="dialog"
         placement="bottom-start"
         className="min-w-0"

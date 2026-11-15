@@ -21,6 +21,7 @@ import {
   type ToolDetail,
   type ToolSummary,
 } from "./toolOutput";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 // An opened tool step, drawn the way its kind reads (`toolOutput.ts` decides
 // what each shows): a command on the terminal's ground, the inset a command's
@@ -70,11 +71,11 @@ export const ToolOutputPanel = memo(function ToolOutputPanel({
             <Text selectable numberOfLines={8} style={[styles.mono, styles.command]}>
               {view.command || "command"}
             </Text>
-            {view.command ? <CopyButton label="Copy command" text={view.command} /> : null}
+            {view.command ? <CopyButton label={appCopy.phone.conversations.toolOutputPanel.copyCommand} text={view.command} /> : null}
           </View>
           {view.output ? (
             <View style={styles.terminalOutput}>
-              <OutputBlock output={view.output} mode="tail" ansi copyLabel="Copy output" />
+              <OutputBlock output={view.output} mode="tail" ansi copyLabel={appCopy.phone.conversations.toolOutputPanel.copyOutput} />
             </View>
           ) : null}
           <Text style={[styles.status, view.failed ? styles.errorInk : view.running ? styles.liveInk : null]}>
@@ -100,7 +101,7 @@ export const ToolOutputPanel = memo(function ToolOutputPanel({
         </Panel>
       ) : (
         <Panel heading={view.path} copy={view.output}>
-          {view.output ? <ReadBlock output={view.output} /> : <Text style={styles.empty}>The file is empty.</Text>}
+          {view.output ? <ReadBlock output={view.output} /> : <Text style={styles.empty}>{appCopy.phone.conversations.toolOutputPanel.theFileIsEmpty}</Text>}
         </Panel>
       );
       break;
@@ -121,7 +122,7 @@ export const ToolOutputPanel = memo(function ToolOutputPanel({
           {view.output ? (
             <OutputBlock output={view.output} mode="head" />
           ) : (
-            <Text style={styles.empty}>The step recorded no change to show.</Text>
+            <Text style={styles.empty}>{appCopy.phone.conversations.toolOutputPanel.theStepRecordedNoChange}</Text>
           )}
         </Panel>
       );
@@ -136,7 +137,7 @@ export const ToolOutputPanel = memo(function ToolOutputPanel({
     case "web":
       body = (
         <Panel heading={view.heading} copy={view.output}>
-          {view.output.trim() ? <OutputBlock output={view.output} mode="head" prose /> : <Text style={styles.empty}>Nothing came back.</Text>}
+          {view.output.trim() ? <OutputBlock output={view.output} mode="head" prose /> : <Text style={styles.empty}>{appCopy.phone.conversations.toolOutputPanel.nothingCameBack}</Text>}
         </Panel>
       );
       break;
@@ -166,7 +167,7 @@ export const ToolOutputPanel = memo(function ToolOutputPanel({
             </Text>
           ) : null}
           {view.output ? <OutputBlock output={view.output} mode="head" /> : null}
-          {!view.call && !view.output ? <Text style={styles.empty}>Nothing to show.</Text> : null}
+          {!view.call && !view.output ? <Text style={styles.empty}>{appCopy.phone.conversations.toolOutputPanel.nothingToShow}</Text> : null}
         </Panel>
       );
   }
@@ -193,7 +194,7 @@ function Panel({ heading, copy, children }: { heading?: string; copy?: string; c
           <Text numberOfLines={2} selectable style={[styles.mono, styles.heading]}>
             {heading}
           </Text>
-          {copyable ? <CopyButton label="Copy output" text={() => copyable} /> : null}
+          {copyable ? <CopyButton label={appCopy.phone.conversations.toolOutputPanel.copyOutput} text={() => copyable} /> : null}
         </View>
       ) : null}
       {children}

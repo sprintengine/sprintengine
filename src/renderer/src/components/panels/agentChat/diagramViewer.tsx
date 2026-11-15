@@ -14,6 +14,7 @@ import {
   zoomDiagramOut,
   type DiagramSize,
 } from './diagramViewerModel'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // A diagram drawn in a reply is held to the chat's column, and a large one —
 // a sequence across eight services, a flowchart with thirty boxes — shrinks
@@ -38,8 +39,13 @@ export function OpenDiagramButton({ svg }: { svg: string }) {
   const close = useCallback(() => setOpen(false), [])
   return (
     <>
-      <Tooltip content="Open diagram">
-        <IconButton size="xs" tone="subtle" aria-label="Open diagram" onClick={() => setOpen(true)}>
+      <Tooltip content={appCopy.panels.agentChat.diagramViewer.openDiagram}>
+        <IconButton
+          size="xs"
+          tone="subtle"
+          aria-label={appCopy.panels.agentChat.diagramViewer.openDiagram}
+          onClick={() => setOpen(true)}
+        >
           <EnlargeGlyph className="size-icon-xs" />
         </IconButton>
       </Tooltip>
@@ -133,37 +139,41 @@ export function DiagramViewer({ svg, onClose }: { svg: string; onClose: () => vo
   return createPortal(
     <Modal open onClose={onClose} labelledBy={titleId} size="workbench" layout="panel">
       <div className="flex min-h-0 flex-1 flex-col">
-        <ModalHeader titleId={titleId} title="Diagram" onClose={onClose} />
-        <div className="flex items-center justify-end gap-1 px-6 pb-2 pt-3" role="toolbar" aria-label="Zoom">
-          <Tooltip content="Zoom out (-)">
+        <ModalHeader titleId={titleId} title={appCopy.panels.agentChat.diagramViewer.diagram} onClose={onClose} />
+        <div
+          className="flex items-center justify-end gap-1 px-6 pb-2 pt-3"
+          role="toolbar"
+          aria-label={appCopy.panels.agentChat.diagramViewer.zoom}
+        >
+          <Tooltip content={appCopy.panels.agentChat.diagramViewer.zoomOut}>
             <IconButton
               size="sm"
               tone="subtle"
-              aria-label="Zoom out"
+              aria-label={appCopy.panels.agentChat.diagramViewer.zoomOut2}
               disabled={!size || atLeast}
               onClick={() => step('out')}
             >
               <ZoomOutGlyph className="size-icon-sm" />
             </IconButton>
           </Tooltip>
-          <Tooltip content="Fit to window (0)">
+          <Tooltip content={appCopy.panels.agentChat.diagramViewer.fitToWindow0}>
             <GhostButton
               size="sm"
               tone="subtle"
               pressed={zoom === 'fit'}
               disabled={!size}
-              aria-label={`Zoom ${diagramZoomLabel(scale)}, fit to window`}
+              aria-label={appCopy.panels.agentChat.diagramViewer.zoomFitToWindow(diagramZoomLabel(scale))}
               className="min-w-14 justify-center tabular-nums"
               onClick={() => step('fit')}
             >
               {diagramZoomLabel(scale)}
             </GhostButton>
           </Tooltip>
-          <Tooltip content="Zoom in (+)">
+          <Tooltip content={appCopy.panels.agentChat.diagramViewer.zoomIn}>
             <IconButton
               size="sm"
               tone="subtle"
-              aria-label="Zoom in"
+              aria-label={appCopy.panels.agentChat.diagramViewer.zoomIn2}
               disabled={!size || atMost}
               onClick={() => step('in')}
             >

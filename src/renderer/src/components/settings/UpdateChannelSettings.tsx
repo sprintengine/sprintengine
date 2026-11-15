@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import type { AppUpdateCheckResult, AppUpdateTrack } from '../../../../shared/electron-api'
 import { SegmentedControl } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // One sentence per channel, shown for the selected one. Main owns the choice
 // (it configures the updater before any window exists), so this row reads it
@@ -49,13 +50,17 @@ export function UpdateChannelSettings({ onResult }: { onResult: (result: AppUpda
 
   if (!channel) return null
   return (
-    <SettingsRow label="Update channel" help={UPDATE_CHANNEL_HELP[channel]} helpId={HELP_ID}>
+    <SettingsRow
+      label={copy.settings.updateChannelSettings.updateChannel}
+      help={UPDATE_CHANNEL_HELP[channel]}
+      helpId={HELP_ID}
+    >
       <SegmentedControl<AppUpdateTrack>
-        ariaLabel="Update channel"
+        ariaLabel={copy.settings.updateChannelSettings.updateChannel}
         ariaDescribedBy={HELP_ID}
         items={[
-          { value: 'stable', label: 'Stable', disabled: pending },
-          { value: 'nightly', label: 'Nightly', disabled: pending },
+          { value: 'stable', label: copy.settings.updateChannelSettings.stable, disabled: pending },
+          { value: 'nightly', label: copy.settings.updateChannelSettings.nightly, disabled: pending },
         ]}
         value={channel}
         onChange={(next) => void choose(next)}

@@ -1,4 +1,5 @@
 import { TAILNET_SCOPES, type TailnetScope } from '../../../../shared/tailnet'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The permission vocabulary a person actually chooses from, DOM-free
 // (remote-settings-rebuild).
@@ -37,34 +38,39 @@ export type ScopeRow = {
 export const SCOPE_ROWS: readonly ScopeRow[] = [
   {
     scope: 'workspace:read',
-    title: 'View workspaces',
+    title: appCopy.remote.scopePickerModel.viewWorkspaces,
     code: 'workspace:read',
-    description: 'Workspaces, agents, branches and files.',
+    description: appCopy.remote.scopePickerModel.workspacesAgentsBranchesAndFiles,
   },
   {
     scope: 'workspace:operate',
-    title: 'Operate workspaces',
+    title: appCopy.remote.scopePickerModel.operateWorkspaces,
     code: 'workspace:operate',
-    description: 'Launch agents and open workspaces.',
+    description: appCopy.remote.scopePickerModel.launchAgentsAndOpenWorkspaces,
   },
-  { scope: 'backlog:read', title: 'View backlog', code: 'backlog:read', description: 'Items, epics and triage.' },
+  {
+    scope: 'backlog:read',
+    title: appCopy.remote.scopePickerModel.viewBacklog,
+    code: 'backlog:read',
+    description: appCopy.remote.scopePickerModel.itemsEpicsAndTriage,
+  },
   {
     scope: 'backlog:operate',
-    title: 'Operate backlog',
+    title: appCopy.remote.scopePickerModel.operateBacklog,
     code: 'backlog:operate',
-    description: 'Edit, assign and set status.',
+    description: appCopy.remote.scopePickerModel.editAssignAndSetStatus,
   },
   {
     scope: 'conversation:read',
-    title: 'View conversations',
+    title: appCopy.remote.scopePickerModel.viewConversations,
     code: 'conversation:read',
-    description: 'Read chat transcripts, tool details and diffs.',
+    description: appCopy.remote.scopePickerModel.readChatTranscriptsToolDetails,
   },
   {
     scope: 'conversation:operate',
-    title: 'Operate conversations',
+    title: appCopy.remote.scopePickerModel.operateConversations,
     code: 'conversation:operate',
-    description: 'Send messages, stop turns, answer approvals and questions.',
+    description: appCopy.remote.scopePickerModel.sendMessagesStopTurnsAnswer,
   },
 ]
 

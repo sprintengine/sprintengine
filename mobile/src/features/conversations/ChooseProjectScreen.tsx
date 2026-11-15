@@ -11,6 +11,7 @@ import type { DesktopWorkspace } from "../../api/tailnetWorkspaces";
 import { loadProjectPicks, rememberProjectPick } from "../../storage/projectPicks";
 import { useChats } from "./ChatsContext";
 import { pickableProjects, type ProjectPicks } from "./conversationListLogic";
+import { copy } from "../../../../src/shared/copy";
 
 export interface ProjectChoice {
   deviceId: string;
@@ -83,15 +84,13 @@ export function ChooseProjectScreen({ onBack, onChoose }: { onBack: () => void; 
   const oneDesktop = groups.length <= 1;
 
   return (
-    <ScreenFrame backLabel="Cancel" onBack={onBack} title="Choose project">
+    <ScreenFrame backLabel={copy.phone.conversations.chooseProjectScreen.cancel} onBack={onBack} title={copy.phone.conversations.chooseProjectScreen.chooseProject}>
       <ScrollView contentContainerStyle={contentStyle}>
         {state === "loading" ? (
-          <SkeletonRows label="Reading the desktops' projects" />
+          <SkeletonRows label={copy.phone.conversations.chooseProjectScreen.readingTheDesktopsProjects} />
         ) : groups.length === 0 ? (
           <Card>
-            <Text style={styles.notice}>
-              No projects open on a paired desktop. Open one in Studio to see it here.
-            </Text>
+            <Text style={styles.notice}>{copy.phone.conversations.chooseProjectScreen.noProjectsOpenOnA}</Text>
           </Card>
         ) : (
           groups.map((group) => (
@@ -107,7 +106,7 @@ export function ChooseProjectScreen({ onBack, onChoose }: { onBack: () => void; 
               <Card variant="list">
                 {group.projects.map((project, index) => (
                   <CardRow
-                    accessibilityLabel={`${project.projectName} on ${group.desktop.name}`}
+                    accessibilityLabel={copy.phone.conversations.chooseProjectScreen.on(project.projectName, group.desktop.name)}
                     chevron
                     first={index === 0}
                     key={project.key}

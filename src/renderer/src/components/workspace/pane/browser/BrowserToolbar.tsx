@@ -4,6 +4,7 @@ import type { BrowserTabState } from '../../../../../../shared/browser'
 import { normalizeBrowserUrlInput } from '../../../../../../shared/browser'
 import { IconButton, Input, Tooltip } from '../../../ui'
 import { isImeKey } from '../../../../utils/imeKey'
+import { copy } from '../../../../../../shared/copy'
 
 // The browser tab's one band of chrome (panel-header geometry, 34px): back ·
 // forward · reload/stop · the address field · the right cluster. Loading is a
@@ -80,25 +81,37 @@ export const BrowserToolbar = forwardRef<BrowserToolbarHandle, BrowserToolbarPro
 
   return (
     <div className="relative flex h-control-md shrink-0 items-center gap-0.5 border-b border-[color:var(--border-default)] bg-[color:var(--bg-surface)] px-1.5">
-      <Tooltip content="Back" placement="bottom">
-        <IconButton onClick={onBack} aria-label="Back" disabled={!state?.canGoBack}>
+      <Tooltip content={copy.workspace.pane.browser.browserToolbar.back} placement="bottom">
+        <IconButton
+          onClick={onBack}
+          aria-label={copy.workspace.pane.browser.browserToolbar.back}
+          disabled={!state?.canGoBack}
+        >
           <Glyph d={BACK} />
         </IconButton>
       </Tooltip>
-      <Tooltip content="Forward" placement="bottom">
-        <IconButton onClick={onForward} aria-label="Forward" disabled={!state?.canGoForward}>
+      <Tooltip content={copy.workspace.pane.browser.browserToolbar.forward} placement="bottom">
+        <IconButton
+          onClick={onForward}
+          aria-label={copy.workspace.pane.browser.browserToolbar.forward}
+          disabled={!state?.canGoForward}
+        >
           <Glyph d={FORWARD} />
         </IconButton>
       </Tooltip>
       {loading ? (
-        <Tooltip content="Stop" placement="bottom">
-          <IconButton onClick={onStop} aria-label="Stop loading">
+        <Tooltip content={copy.workspace.pane.browser.browserToolbar.stop} placement="bottom">
+          <IconButton onClick={onStop} aria-label={copy.workspace.pane.browser.browserToolbar.stopLoading}>
             <Glyph d={STOP} />
           </IconButton>
         </Tooltip>
       ) : (
-        <Tooltip content="Reload" placement="bottom">
-          <IconButton onClick={onReload} aria-label="Reload" disabled={!hasPage}>
+        <Tooltip content={copy.workspace.pane.browser.browserToolbar.reload} placement="bottom">
+          <IconButton
+            onClick={onReload}
+            aria-label={copy.workspace.pane.browser.browserToolbar.reload}
+            disabled={!hasPage}
+          >
             <Glyph d={RELOAD} />
           </IconButton>
         </Tooltip>
@@ -126,15 +139,19 @@ export const BrowserToolbar = forwardRef<BrowserToolbarHandle, BrowserToolbarPro
             else inputRef.current?.blur()
           }
         }}
-        placeholder="Enter a URL"
-        aria-label="Address"
+        placeholder={copy.workspace.pane.browser.browserToolbar.enterAURL}
+        aria-label={copy.workspace.pane.browser.browserToolbar.address}
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
         className="mx-1 min-w-0 flex-1 font-mono"
       />
-      <Tooltip content="Open in system browser" placement="bottom">
-        <IconButton onClick={onOpenExternal} aria-label="Open in system browser" disabled={!hasPage}>
+      <Tooltip content={copy.workspace.pane.browser.browserToolbar.openInSystemBrowser} placement="bottom">
+        <IconButton
+          onClick={onOpenExternal}
+          aria-label={copy.workspace.pane.browser.browserToolbar.openInSystemBrowser}
+          disabled={!hasPage}
+        >
           <Glyph d={EXTERNAL} />
         </IconButton>
       </Tooltip>
@@ -144,7 +161,7 @@ export const BrowserToolbar = forwardRef<BrowserToolbarHandle, BrowserToolbarPro
         // to report, so the hairline breathes rather than pretending to fill.
         <span
           role="progressbar"
-          aria-label="Loading page"
+          aria-label={copy.workspace.pane.browser.browserToolbar.loadingPage}
           className="absolute inset-x-0 bottom-0 h-0.5 w-3/5 animate-pulse bg-[color:var(--accent-primary)] motion-reduce:animate-none"
         />
       ) : null}

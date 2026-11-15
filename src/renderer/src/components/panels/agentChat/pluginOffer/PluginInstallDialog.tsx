@@ -11,6 +11,7 @@ import { summarizePluginInstall } from '../../../workspace/globalSurface/extensi
 import { describeServer, initialSelection, PRESELECT_SKILLS_UP_TO, pluginReadWhole } from './pluginOfferModel'
 import { agentSetupApi } from '../../../../studio/agentSetup'
 import { agentSkillsApi } from '../../../../studio/agentSkills'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The one step between an agent's offer and anything landing on disk: what
 // the plugin is, where it comes from, and the servers and skills it would
@@ -114,7 +115,7 @@ export function PluginInstallDialog({
       // (a skill that failed to copy, a server whose runtime is missing).
       showToast({
         tone: result.warnings.length > 0 ? 'warn' : 'good',
-        title: `${plugin.name} installed`,
+        title: appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.installed(plugin.name),
         description: summarizePluginInstall(result),
       })
       onInstalled()
@@ -137,8 +138,8 @@ export function PluginInstallDialog({
   return (
     <Modal open onClose={onClose} labelledBy={titleId}>
       <ModalHeader
-        title={`Install ${offered.name}?`}
-        subtitle={`From ${source.name}`}
+        title={appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.install(offered.name)}
+        subtitle={appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.from(source.name)}
         titleId={titleId}
         onClose={onClose}
         leading={
@@ -154,18 +155,25 @@ export function PluginInstallDialog({
           <p className="text-body leading-relaxed text-[color:var(--text-default)]">{offered.description}</p>
         ) : null}
         {readError ? (
-          <InlineNotice tone="error" title={`${offered.name} could not be read.`} detail={readError} />
+          <InlineNotice
+            tone="error"
+            title={appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.couldNotBeRead(offered.name)}
+            detail={readError}
+          />
         ) : !plugin || !selection ? (
           <div className="flex items-center gap-2 text-body text-[color:var(--text-muted)]">
             <Spinner size={14} />
-            Reading {offered.name}…
+            {appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.reading}
+            {offered.name}…
           </div>
         ) : (
           <>
             {servers.length > 0 ? (
               <section className="flex flex-col gap-1.5">
-                <h3 className="text-meta font-semibold text-[color:var(--text-muted)]">Connects to</h3>
-                <DescribedCheckRowList ariaLabel="Servers">
+                <h3 className="text-meta font-semibold text-[color:var(--text-muted)]">
+                  {appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.connectsTo}
+                </h3>
+                <DescribedCheckRowList ariaLabel={appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.servers}>
                   {servers.map((server) => {
                     const shown = describeServer(server)
                     return (
@@ -208,7 +216,7 @@ export function PluginInstallDialog({
                     </GhostButton>
                   ) : null}
                 </div>
-                <DescribedCheckRowList ariaLabel="Skills">
+                <DescribedCheckRowList ariaLabel={appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.skills}>
                   {shownSkills.map((skill) => (
                     <DescribedCheckRow
                       key={skill.id}
@@ -232,15 +240,22 @@ export function PluginInstallDialog({
             ) : null}
             {servers.length === 0 && skills.length === 0 ? (
               <p className="text-body text-[color:var(--text-muted)]">
-                {offered.name} has no skills or servers to install here. Open it in Extensions.
+                {offered.name}
+                {appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.hasNoSkillsOrServers}
               </p>
             ) : null}
           </>
         )}
-        {error ? <InlineNotice tone="error" title="It was not installed." detail={error} /> : null}
+        {error ? (
+          <InlineNotice
+            tone="error"
+            title={appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.itWasNotInstalled}
+            detail={error}
+          />
+        ) : null}
       </ModalBody>
       <ModalFooter>
-        <ModalButton onClick={onClose}>Cancel</ModalButton>
+        <ModalButton onClick={onClose}>{appCopy.panels.agentChat.pluginOffer.pluginInstallDialog.cancel}</ModalButton>
         <ModalButton variant="primary" disabled={!plugin || chosen === 0 || busy} onClick={() => void install()}>
           {busy ? 'Installing…' : 'Trust & install'}
         </ModalButton>

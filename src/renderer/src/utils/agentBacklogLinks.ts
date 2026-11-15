@@ -23,6 +23,7 @@ import {
   agentNameFromLink,
   parseAgentLinkTargetId,
 } from '../../../shared/backlog/agent-links'
+import { copy } from '../../../shared/copy'
 
 export function agentLinkForItem(item: Pick<BacklogItem, 'links'>): BacklogItemLink | null {
   return (
@@ -141,8 +142,8 @@ export async function openAgentBacklogLink(
     await input.ports.publishDiagnostic?.({
       level: 'warning',
       source: 'workspace',
-      title: 'Agent unavailable',
-      message: 'This Backlog link does not point at a valid agent.',
+      title: copy.utils.agentBacklogLinks.agentUnavailable,
+      message: copy.utils.agentBacklogLinks.thisBacklogLinkDoesNot,
       workspaceId: input.workspaceId,
     })
     return false
@@ -157,8 +158,8 @@ export async function openAgentBacklogLink(
     await input.ports.publishDiagnostic?.({
       level: 'warning',
       source: 'workspace',
-      title: 'Agent unavailable',
-      message: "Couldn't open this item's agent terminal. It may be closed.",
+      title: copy.utils.agentBacklogLinks.agentUnavailable,
+      message: copy.utils.agentBacklogLinks.couldnTOpenThisItem,
       details: parsed.agentId,
       workspaceId: input.workspaceId,
     })

@@ -4,6 +4,7 @@ import { ComposerPlusGlyph, IconButton, Popover, type PopoverPlacement } from '.
 import { MENU_LIST_CLASS } from '../../ui/menuClasses'
 import { ComposerOptions, type ComposerOptionsProps, type StartAs } from './ComposerOptionsMenu'
 import { SkillsAndMcpsPicker, type SkillsAndMcpsPickerProps } from './SkillsAndMcpsPicker'
+import { copy } from '../../../../../shared/copy'
 
 // The composer's "+" (owner ruling 2026-10-04): the round button at the start
 // of the row under the prompt, the menu it opens, and the skills picker one of
@@ -72,7 +73,7 @@ export const ComposerPlusMenu = React.memo(function ComposerPlusMenu({
         if (next) setSkillsOpen(false)
         setOptionsOpen(next)
       }}
-      ariaLabel="Options"
+      ariaLabel={copy.workspace.agentComposer.composerPlusMenu.options}
       popupRole="menu"
       placement={placement}
       surfaceClassName={`w-[304px] ${MENU_LIST_CLASS}`}
@@ -82,7 +83,7 @@ export const ComposerPlusMenu = React.memo(function ComposerPlusMenu({
           <IconButton
             ref={anchor}
             size="md"
-            aria-label="Options"
+            aria-label={copy.workspace.agentComposer.composerPlusMenu.options}
             onClick={togglePopover}
             data-composer-options="true"
             className="shrink-0"

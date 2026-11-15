@@ -3,6 +3,7 @@ import { GhostButton } from '../../ui'
 import { formatTokenCount } from '../../../utils/tokenFormat'
 import { ComposerTrayRow } from './composerTray'
 import { CompactGlyph } from './toolRows/ToolKindGlyph'
+import { copy } from '../../../../../shared/copy'
 
 // Where the context window counts as nearly full: the composer tray says so in
 // words. (The strip's ring turns amber earlier, at its own threshold — a
@@ -39,17 +40,19 @@ export function ContextWindowNotice({
           {onCompact ? (
             <GhostButton size="xs" disabled={compactDisabled} onClick={onCompact}>
               <CompactGlyph className="icon-xs" />
-              Compact
+              {copy.panels.agentChat.contextWindowNotice.compact}
             </GhostButton>
           ) : null}
           <GhostButton size="xs" onClick={() => setDismissed(true)}>
-            Not now
+            {copy.panels.agentChat.contextWindowNotice.notNow}
           </GhostButton>
         </>
       }
     >
-      Context {Math.min(100, Math.round(fraction * 100))}% full · {formatTokenCount(used)} of {formatTokenCount(total)}{' '}
-      tokens
+      {copy.panels.agentChat.contextWindowNotice.context}
+      {Math.min(100, Math.round(fraction * 100))}
+      {copy.panels.agentChat.contextWindowNotice.full}
+      {formatTokenCount(used)} of {formatTokenCount(total)} tokens
     </ComposerTrayRow>
   )
 }

@@ -33,6 +33,7 @@ import {
   type EnvironmentStudios,
   type PairedMachine,
 } from './environmentStudio'
+import { copy as appCopy } from '../../../shared/copy'
 
 // This desktop's half of a paired chat's Canvas pane: the boards of the
 // machine the chat runs on, edited with the same editor and the same calls the
@@ -699,7 +700,8 @@ export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
 
   async function access(connectionId: unknown): Promise<CanvasRemoteAccess> {
     const target = typeof connectionId === 'string' ? deps.target(connectionId) : null
-    if (typeof connectionId !== 'string' || !target) return { ok: false, message: 'That machine is not paired here.' }
+    if (typeof connectionId !== 'string' || !target)
+      return { ok: false, message: appCopy.studio.pairedCanvas.thatMachineIsNotPaired }
     try {
       const known = await deps.studios.ask(pairedTarget(target), async (client) => ({
         live: client.supports(STUDIO_CANVAS_BOARDS_CAPABILITY),
@@ -994,9 +996,9 @@ function boardsRefused(machine: PairedMachine, error: unknown): { ok: false; cod
     code: refused.code,
     message:
       refused.kind === 'outdated'
-        ? `${machine.machineName} can't share its boards here yet. Update Studio there.`
+        ? appCopy.studio.pairedCanvas.canTShareItsBoards(machine.machineName)
         : refused.code === 'unavailable' && /does not serve canvas/u.test(refused.message)
-          ? `${machine.machineName} isn't offering its boards. Open Studio there and try again.`
+          ? appCopy.studio.pairedCanvas.isnTOfferingItsBoards(machine.machineName)
           : refused.message,
   }
 }
@@ -1007,7 +1009,8 @@ export async function listPairedBoards(
   workspaceId: string,
   scope: 'workspace' | 'machine',
 ): Promise<MeshCanvasBoardsResult> {
-  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose boards to list.' }
+  if (!workspaceId)
+    return { ok: false, code: 'invalid_arguments', message: appCopy.studio.pairedCanvas.nameTheWorkspaceWhoseBoards }
   const allBoards = scope === 'machine'
   try {
     const listed = await withEnvironmentStudio(pairedTarget(machine), (client) =>
@@ -1037,7 +1040,7 @@ export async function pairedBoardPicture(
   input: { workspaceId: string; board: string; dark: boolean },
 ): Promise<MeshCanvasScreenshotResult> {
   if (!input.workspaceId || !input.board)
-    return { ok: false, code: 'invalid_arguments', message: 'Name the board to show.' }
+    return { ok: false, code: 'invalid_arguments', message: appCopy.studio.pairedCanvas.nameTheBoardToShow }
   try {
     const picture = await withEnvironmentStudio(
       pairedTarget(machine),

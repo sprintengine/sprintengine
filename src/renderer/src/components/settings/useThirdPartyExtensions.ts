@@ -14,6 +14,7 @@ import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
 import type { ExtensionUpdate } from './extensionsModel'
 import { classifyVerification, summarizeInstallResult } from './installFlow'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Extensions, the third-party half. It lists (the shell's view of
 // what is on disk) and updates (the marketplace's); it installs, trusts,
@@ -149,11 +150,11 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         .workspaces.filter((workspace) => kernel.getWorkspaceTypeModule(workspace.mode) === id)
       if (affected.length > 0) {
         const confirmed = await confirmDialog({
-          title: `Revoke trust in ${module.manifest.displayName}?`,
-          body: `These workspaces stop working until you trust it again. Files stay on disk: ${affected
-            .map((workspace) => workspace.name)
-            .join(', ')}.`,
-          confirmLabel: 'Revoke trust',
+          title: copy.settings.useThirdPartyExtensions.revokeTrustIn(module.manifest.displayName),
+          body: copy.settings.useThirdPartyExtensions.theseWorkspacesStopWorkingUntil(
+            affected.map((workspace) => workspace.name).join(', '),
+          ),
+          confirmLabel: copy.settings.useThirdPartyExtensions.revokeTrust,
           tone: 'danger',
         })
         if (!confirmed) return
@@ -182,7 +183,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // window keeps for it is dropped.
   const removeThroughPlugin = useCallback(
     async (pluginId: string): Promise<{ ok: true; removedModuleIds: string[] } | { ok: false; message: string }> => {
-      if (!windowHasStudio()) return { ok: false, message: 'Uninstalling plugins needs a newer build.' }
+      if (!windowHasStudio())
+        return { ok: false, message: copy.settings.useThirdPartyExtensions.uninstallingPluginsNeedsANewer }
       const result = await extensionsApi.uninstallMarketplacePlugin({
         pluginId,
         ...(workspaceRoot ? { workspaceRoot } : {}),
@@ -210,7 +212,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       if (!lifecycle) return
       const name = module.manifest.displayName
       const confirmed = await confirmDialog({
-        title: `Uninstall ${name}?`,
+        title: copy.settings.useThirdPartyExtensions.uninstall(name),
         // What leaves and what stays. What the app kept for it outside any
         // project is deleted, so a module installed under the same id later
         // starts empty; work it saved inside a project is the person's and is
@@ -219,7 +221,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           'Its files and anything else its plugin installed are removed, with its settings, the data it stored ' +
           'outside your projects and the keys you gave it. Work it saved in your projects stays. Code already ' +
           'running stops at the next restart.',
-        confirmLabel: 'Uninstall',
+        confirmLabel: copy.settings.useThirdPartyExtensions.uninstall2,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -236,7 +238,11 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
         if (result.ok) {
           forgetModules(result.removedModuleIds)
           if (module.launch.mainLoaded) {
-            showToast({ tone: 'neutral', title: `Uninstalled ${name}`, description: 'It stops at the next restart.' })
+            showToast({
+              tone: 'neutral',
+              title: copy.settings.useThirdPartyExtensions.uninstalled(name),
+              description: copy.settings.useThirdPartyExtensions.itStopsAtTheNext,
+            })
           }
         } else {
           setMessage({ tone: 'error', text: result.message || `Couldn’t uninstall ${name}.` })

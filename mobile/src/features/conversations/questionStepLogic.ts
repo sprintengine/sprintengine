@@ -4,6 +4,8 @@
 // `answerQuestion`, keyed by each part's whole question text.
 
 /** One part's answer: its picks in the order picked, then the typed words. */
+import { copy } from "../../../../src/shared/copy";
+
 export function questionAnswer(picks: readonly string[] | undefined, freeText: string | undefined): string {
   const typed = freeText?.trim();
   return [...(picks ?? []), ...(typed ? [typed] : [])].join(", ");
@@ -26,7 +28,7 @@ export type QuestionStep = {
   back: boolean;
   /** The last part submits; any before it moves on. */
   primary: "next" | "submit";
-  label: "Next" | "Submit answers";
+  label: string;
   /** Next once this part is answered; Submit once every part is. */
   primaryEnabled: boolean;
 };
@@ -50,7 +52,7 @@ export function questionStep(input: {
     meta: count > 1 ? `${header ? `${header} · ` : ""}${index + 1} of ${count}` : null,
     back: index > 0,
     primary: last ? "submit" : "next",
-    label: last ? "Submit answers" : "Next",
+    label: last ? copy.phone.conversations.questionStepLogic.submitAnswers : copy.phone.conversations.questionStepLogic.next,
     primaryEnabled: count > 0 && (last ? input.answers.every(answered) : answered(input.answers[index])),
   };
 }

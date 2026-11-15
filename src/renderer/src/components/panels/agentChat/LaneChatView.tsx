@@ -33,6 +33,7 @@ import { StopAgentButton, TimelineRow, type TimelineChrome } from './timelineRow
 import { useConversationSession } from './useConversationSession'
 import { useThrottledValue } from './useThrottledValue'
 import type { SubagentView } from './subagentViewStack'
+import { copy } from '../../../../../shared/copy'
 
 // An agent a chat's CLI spawned, read as a chat of its own: what it was asked,
 // its steps and words, and what it reported, drawn by the chat's own timeline
@@ -176,10 +177,14 @@ function LaneBody({
                 {!session.hydrated && !session.error ? (
                   <span className="flex items-center gap-2" role="status">
                     <Spinner />
-                    Reading the chat…
+                    {copy.panels.agentChat.laneChatView.readingTheChat}
                   </span>
                 ) : session.error ? (
-                  <InlineNotice tone="error" title="Couldn't read this chat." detail={session.error} />
+                  <InlineNotice
+                    tone="error"
+                    title={copy.panels.agentChat.laneChatView.couldnTReadThisChat}
+                    detail={session.error}
+                  />
                 ) : session.hasMore ? (
                   <GhostButton
                     size="inline"
@@ -274,7 +279,7 @@ function LaneConversation({
         onScroll={scroller.onScroll}
         tabIndex={-1}
         role="log"
-        aria-label={`${name} conversation`}
+        aria-label={copy.panels.agentChat.laneChatView.conversation(name)}
         className={`chat-column-gutter min-h-0 flex-1 overflow-y-auto pb-6 pt-[calc(var(--band-clearance,0px)+1rem)] focus:outline-none ${FOCUS_RING_INSET_CLASS}`}
       >
         {rows.map((row) => (
@@ -294,7 +299,12 @@ function LaneConversation({
           busy={responding || !transport.capabilities.operate}
         />
         {refusal ? (
-          <InlineNotice tone="error" title="The answer did not go." detail={refusal} className="mb-2" />
+          <InlineNotice
+            tone="error"
+            title={copy.panels.agentChat.laneChatView.theAnswerDidNotGo}
+            detail={refusal}
+            className="mb-2"
+          />
         ) : null}
         {question ? (
           <div className={`relative overflow-hidden ${COMPOSER_SURFACE_CLASS} border-[color:var(--border-default)]`}>
@@ -332,10 +342,17 @@ function SentNote({
   if (row.kind !== 'user' || !row.entry.id.includes(':sent:')) return null
   const outcome = row.entry.createdAt === undefined ? undefined : outcomes.get(row.entry.createdAt)
   if (outcome?.state === 'refused')
-    return <InlineNotice tone="error" title="It did not reach the agent." detail={outcome.why} className="mb-4" />
+    return (
+      <InlineNotice
+        tone="error"
+        title={copy.panels.agentChat.laneChatView.itDidNotReachThe}
+        detail={outcome.why}
+        className="mb-4"
+      />
+    )
   return (
     <p data-lane-sent-note="" className="-mt-4 mb-4 text-right text-micro text-[color:var(--text-subtle)]">
-      Sent via the main chat. Read at its next step.
+      {copy.panels.agentChat.laneChatView.sentViaTheMainChat}
     </p>
   )
 }
@@ -404,7 +421,14 @@ function LaneComposer({
   }
   return (
     <>
-      {refusal ? <InlineNotice tone="error" title="The message did not go." detail={refusal} className="mb-2" /> : null}
+      {refusal ? (
+        <InlineNotice
+          tone="error"
+          title={copy.panels.agentChat.laneChatView.theMessageDidNotGo}
+          detail={refusal}
+          className="mb-2"
+        />
+      ) : null}
       <div
         data-chat-composer=""
         data-lane-composer=""
@@ -413,7 +437,7 @@ function LaneComposer({
         <div className="px-5 pb-1 pt-4">
           <ComposerField
             ref={fieldRef}
-            contentAttributes={{ 'aria-label': `Message ${name}` }}
+            contentAttributes={{ 'aria-label': copy.panels.agentChat.laneChatView.message(name) }}
             value={draft}
             historyScope={key}
             onChange={(value) => setDraft(value)}
@@ -422,14 +446,14 @@ function LaneComposer({
               event.preventDefault()
               void send()
             }}
-            placeholder={`Send a message to ${name}`}
+            placeholder={copy.panels.agentChat.laneChatView.sendAMessageTo(name)}
             className="max-h-[280px] min-h-[40px] w-full"
           />
         </div>
         <div className="flex items-center justify-end gap-2 px-3 pb-3">
           <SendButton
             size="sm"
-            aria-label="Send"
+            aria-label={copy.panels.agentChat.laneChatView.send}
             disabled={!draft.trim() || sending}
             onClick={() => void send()}
             className="w-control-sm shrink-0"

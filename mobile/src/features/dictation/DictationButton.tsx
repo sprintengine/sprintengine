@@ -4,6 +4,7 @@ import Svg, { Path, Rect } from "react-native-svg";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, type Theme } from "../../theme/tokens";
 import type { DictationState } from "./useDictation";
+import { copy } from "../../../../src/shared/copy";
 
 /** A microphone on the 16 grid, in the app's line weight. */
 function MicGlyph({ color, size }: { color: string; size: number }) {
@@ -40,8 +41,8 @@ export function DictationButton({
   const live = state !== "idle";
   return (
     <Pressable
-      accessibilityHint={live ? "Stops listening and keeps what was heard." : "Dictate instead of typing."}
-      accessibilityLabel={live ? "Stop dictating" : "Dictate"}
+      accessibilityHint={live ? copy.phone.dictation.dictationButton.stopsListeningAndKeepsWhat : copy.phone.dictation.dictationButton.dictateInsteadOfTyping}
+      accessibilityLabel={live ? copy.phone.dictation.dictationButton.stopDictating : copy.phone.dictation.dictationButton.dictate}
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled, busy: state === "starting" }}
       disabled={disabled}

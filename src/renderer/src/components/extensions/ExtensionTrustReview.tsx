@@ -4,6 +4,7 @@ import type { MarketplaceMcpServerDisclosure } from '../../../../shared/electron
 import type { CapabilityPermission } from '../../../../shared/modules/permissions'
 import { Badge, Checkbox, InlineNotice, TruncatedText } from '../ui'
 import { PermissionChips } from '../settings/ThirdPartyModuleList'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // What installing an extension would put on this machine, read out before the
 // person trusts it. Every surface that asks for that trust — the storefront's
@@ -63,38 +64,38 @@ const CLASSIFICATION_LABEL: Record<ExtensionTrustReviewData['classification'], s
 function reviewCopy(review: ExtensionTrustReviewData): { heading: string; body: string } {
   if (trustCodeRequired(review)) {
     return {
-      heading: 'Unsigned code — review before trusting',
-      body: 'Unsigned code that runs with the app’s full access, not in a sandbox. Trust it only if you trust its source.',
+      heading: appCopy.extensions.extensionTrustReview.unsignedCodeReviewBeforeTrusting,
+      body: appCopy.extensions.extensionTrustReview.unsignedCodeThatRunsWith,
     }
   }
   const inlineMcp = !review.sourceUrl && (review.mcpServers?.length ?? 0) > 0
   if (inlineMcp) {
     return {
-      heading: 'Inline MCP server — review it before trusting',
-      body: 'Runs a local command or connects to a remote endpoint. Trusting it adds and starts the server below.',
+      heading: appCopy.extensions.extensionTrustReview.inlineMCPServerReviewIt,
+      body: appCopy.extensions.extensionTrustReview.runsALocalCommandOr,
     }
   }
   if (review.files?.length) {
     return {
-      heading: 'Unsigned plugin skills — review before trusting',
-      body: 'Skills are instructions your agents follow. This plugin is unsigned; trusting it adds the skills below to this workspace.',
+      heading: appCopy.extensions.extensionTrustReview.unsignedPluginSkillsReviewBefore,
+      body: appCopy.extensions.extensionTrustReview.skillsAreInstructionsYourAgents,
     }
   }
   if (review.classification === 'unsigned') {
     return {
-      heading: 'Unsigned extension — review before trusting',
-      body: 'Unsigned, so its publisher and contents can’t be verified. It installs with the app’s access, not in a sandbox.',
+      heading: appCopy.extensions.extensionTrustReview.unsignedExtensionReviewBeforeTrustin,
+      body: appCopy.extensions.extensionTrustReview.unsignedSoItsPublisherAnd,
     }
   }
   if (review.classification === 'verified') {
     return {
-      heading: 'Verified extension — review what it adds',
-      body: 'Signed by a trusted publisher. It installs with the access below.',
+      heading: appCopy.extensions.extensionTrustReview.verifiedExtensionReviewWhatIt,
+      body: appCopy.extensions.extensionTrustReview.signedByATrustedPublisher,
     }
   }
   return {
-    heading: 'Community extension — review its access',
-    body: 'Unverified publisher. Its code runs with the app’s access, not in a sandbox.',
+    heading: appCopy.extensions.extensionTrustReview.communityExtensionReviewItsAccess,
+    body: appCopy.extensions.extensionTrustReview.unverifiedPublisherItsCodeRuns,
   }
 }
 
@@ -122,15 +123,19 @@ export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Elem
       </div>
 
       {props.keyFingerprint ? (
-        <ReviewFact label="Signing key" value={props.keyFingerprint} mono />
+        <ReviewFact label={appCopy.extensions.extensionTrustReview.signingKey} value={props.keyFingerprint} mono />
       ) : props.classification === 'unsigned' ? (
-        <ReviewFact label="Signing key" value="None — not signed" />
+        <ReviewFact label={appCopy.extensions.extensionTrustReview.signingKey} value="None — not signed" />
       ) : null}
-      {props.commitSha ? <ReviewFact label="Pinned to commit" value={props.commitSha} mono /> : null}
+      {props.commitSha ? (
+        <ReviewFact label={appCopy.extensions.extensionTrustReview.pinnedToCommit} value={props.commitSha} mono />
+      ) : null}
 
       {inlineMcp || props.files?.length ? null : (
         <div>
-          <div className="text-meta font-semibold text-[color:var(--text-subtle)]">Access it requests</div>
+          <div className="text-meta font-semibold text-[color:var(--text-subtle)]">
+            {appCopy.extensions.extensionTrustReview.accessItRequests}
+          </div>
           <div className="mt-1">
             <PermissionChips permissions={props.permissions} />
           </div>
@@ -142,14 +147,12 @@ export function ExtensionTrustReview(props: ExtensionTrustReviewProps): JSX.Elem
 
       {trustCodeRequired(props) ? (
         <>
-          <InlineNotice tone="warn">
-            Unsigned code can read and change anything Studio can, including your projects and agent credentials.
-          </InlineNotice>
+          <InlineNotice tone="warn">{appCopy.extensions.extensionTrustReview.unsignedCodeCanReadAnd}</InlineNotice>
           <Checkbox
             checked={props.trustCode === true}
             onChange={(next) => props.onTrustCodeChange?.(next)}
             disabled={!props.onTrustCodeChange}
-            label="I trust this code and where it came from"
+            label={appCopy.extensions.extensionTrustReview.iTrustThisCodeAnd}
           />
         </>
       ) : null}
@@ -176,7 +179,10 @@ function McpServerListing({ servers }: { servers: MarketplaceMcpServerDisclosure
   return (
     <div>
       <div className="text-meta font-semibold text-[color:var(--text-subtle)]">
-        Adds {servers.length} MCP server{servers.length === 1 ? '' : 's'}
+        {appCopy.extensions.extensionTrustReview.adds}
+        {servers.length}
+        {appCopy.extensions.extensionTrustReview.mCPServer}
+        {servers.length === 1 ? '' : 's'}
       </div>
       <ul className="mt-1 space-y-1.5">
         {servers.map((server) => (
@@ -191,12 +197,14 @@ function McpServerListing({ servers }: { servers: MarketplaceMcpServerDisclosure
             </div>
             {server.envKeys.length > 0 ? (
               <div className="mt-0.5 text-meta leading-4 text-[color:var(--text-subtle)]">
-                Sets <span className="font-mono">{server.envKeys.join(', ')}</span>
+                {appCopy.extensions.extensionTrustReview.sets}
+                <span className="font-mono">{server.envKeys.join(', ')}</span>
               </div>
             ) : null}
             {server.headerKeys.length > 0 ? (
               <div className="mt-0.5 text-meta leading-4 text-[color:var(--text-subtle)]">
-                Sends headers <span className="font-mono">{server.headerKeys.join(', ')}</span>
+                {appCopy.extensions.extensionTrustReview.sendsHeaders}
+                <span className="font-mono">{server.headerKeys.join(', ')}</span>
               </div>
             ) : null}
           </li>
@@ -225,7 +233,9 @@ function TrustFileListing({ files }: { files: string[] }) {
   return (
     <div>
       <div className="text-meta font-semibold text-[color:var(--text-subtle)]">
-        Adds {files.length} skill{files.length === 1 ? '' : 's'} to the workspace
+        {appCopy.extensions.extensionTrustReview.adds}
+        {files.length} skill{files.length === 1 ? '' : 's'}
+        {appCopy.extensions.extensionTrustReview.toTheWorkspace}
       </div>
       <ul className="mt-1 space-y-0.5">
         {visible.map((file) => (

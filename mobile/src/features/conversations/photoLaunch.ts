@@ -16,6 +16,7 @@
 
 import type { CreateConversationResult, LaunchedConversation } from "../../api/conversationLaunch";
 import type { PickedImage } from "./composerOptions";
+import { copy } from "../../../../src/shared/copy";
 
 /** How far a launch with pictures got: kept by New between tries. */
 export interface PhotoLaunchProgress {
@@ -92,7 +93,7 @@ export async function launchWithPhotos<Picked extends PickedImage>(
     return {
       ok: false,
       started: true,
-      message: `Chat started on ${machine}, but the pictures couldn't be sent. Find it under Chats.`,
+      message: copy.phone.conversations.photoLaunch.chatStartedOnButThe(machine),
       progress: progress(),
     };
   }
@@ -106,7 +107,7 @@ export async function launchWithPhotos<Picked extends PickedImage>(
       return {
         ok: false,
         started: true,
-        message: `Chat started on ${machine}, but ${image.name} didn't upload: ${reason} Send again to retry in the same chat.`,
+        message: copy.phone.conversations.photoLaunch.chatStartedOnButDidn(machine, image.name, reason),
         progress: progress(),
       };
     }

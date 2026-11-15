@@ -7,6 +7,7 @@ import type { TranscriptToolEntry } from './conversationProjection'
 import { harnessName, SubagentIcon, useLaneParentCli } from './subagentIcon'
 import { openSubagentList, useOpenSubagent } from './subagentViewStack'
 import { ToolKindGlyph } from './toolRows/ToolKindGlyph'
+import { copy } from '../../../../../shared/copy'
 
 // `subagent.start` in the parent's transcript: one row that says who was
 // started and opens it as a chat, in place of a tool call and its JSON.
@@ -62,7 +63,7 @@ export function SubagentStartRow({ tool }: { tool: TranscriptToolEntry }): JSX.E
           if (subagentId) open?.({ kind: 'chat', agentId: subagentId })
           else if (context?.workspaceId) openSubagentList(context.workspaceId)
         }}
-        aria-label={`${words}. Open it`}
+        aria-label={copy.panels.agentChat.subagentStartRow.openIt(words)}
       >
         <span className="flex min-w-0 flex-1 items-center gap-2 text-meta text-[color:var(--text-muted)]">
           {harness ? <SubagentIcon cli={harness} /> : <ToolKindGlyph kind="subagent" />}

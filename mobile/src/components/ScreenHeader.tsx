@@ -7,6 +7,7 @@ import { space, typography, type Theme, fontWeight } from "../theme/tokens";
 import { ChevronIcon, iconSize } from "./glyphs";
 import { IconButton } from "./IconButton";
 import { SprintEngineMonogram } from "./SprintEngineMonogram";
+import { copy as appCopy } from "../../../src/shared/copy";
 
 interface ScreenHeaderProps {
   title?: string;
@@ -87,7 +88,7 @@ export function ScreenHeader({
             <View style={styles.back}>
               <IconButton
                 icon={<ChevronIcon direction="left" size={iconSize.md} tone="textPrimary" />}
-                label={backLabel ?? "Go back"}
+                label={backLabel ?? appCopy.phone.components.screenHeader.goBack}
                 onPress={onBack}
               />
             </View>

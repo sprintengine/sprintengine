@@ -72,6 +72,7 @@ import { worktreesApi } from '../../studio/worktrees'
 import { windowStudioIsAnotherMachine } from '../../studio/windowStudioClient'
 import { machineRouteOfPath } from '../../../../shared/machine-spelling'
 import { isMachinePath } from '../../../../shared/machine-paths'
+import { copy as appCopy } from '../../../../shared/copy'
 
 /**
  * Whether this computer's file manager can show a worktree: a folder on an
@@ -93,14 +94,17 @@ const revealable = (path: string): boolean => !isMachinePath(path)
 
 const KEEP_IDLE_ITEMS = Array.from({ length: WORKTREE_POOL_KEEP_IDLE_MAX + 1 }, (_, n) => ({
   value: String(n),
-  label: n === 0 ? 'None' : String(n),
+  label: n === 0 ? appCopy.settings.worktreesSettingsTab.none : String(n),
 }))
 const MAX_SLOT_ITEMS = [2, 4, 6, 8, 12, 16, 24, WORKTREE_POOL_MAX_SLOTS_CEILING]
   .filter((n) => n >= WORKTREE_POOL_MAX_SLOTS_MIN)
   .map((n) => ({ value: String(n), label: String(n) }))
 const DISK_LIMIT_ITEMS = [
-  { value: 'none', label: 'No limit' },
-  ...WORKTREE_POOL_DISK_LIMIT_CHOICES_GB.map((gb) => ({ value: String(gb), label: `${gb} GB` })),
+  { value: 'none', label: appCopy.settings.worktreesSettingsTab.noLimit },
+  ...WORKTREE_POOL_DISK_LIMIT_CHOICES_GB.map((gb) => ({
+    value: String(gb),
+    label: appCopy.settings.worktreesSettingsTab.gB(gb),
+  })),
 ]
 
 /** `30 minutes`, `2 hours`, `1 day`: an idle period as the setting's menu says it. */
@@ -125,10 +129,10 @@ const STATE_TONE = {
 } as const
 
 const USAGE_SEGMENTS = [
-  { key: 'inUse', label: 'In use', color: 'var(--tone-accent)' },
-  { key: 'ready', label: 'Ready to reuse', color: 'var(--tone-neutral)' },
-  { key: 'held', label: 'Holding work', color: 'var(--tone-warn)' },
-  { key: 'other', label: 'Not in the pool', color: 'var(--tone-merged)' },
+  { key: 'inUse', label: appCopy.settings.worktreesSettingsTab.inUse, color: 'var(--tone-accent)' },
+  { key: 'ready', label: appCopy.settings.worktreesSettingsTab.readyToReuse, color: 'var(--tone-neutral)' },
+  { key: 'held', label: appCopy.settings.worktreesSettingsTab.holdingWork, color: 'var(--tone-warn)' },
+  { key: 'other', label: appCopy.settings.worktreesSettingsTab.notInThePool, color: 'var(--tone-merged)' },
 ] as const
 
 /**
@@ -322,15 +326,19 @@ export function WorktreesSettingsTab({
   const setPoolEnabled = async (enabled: boolean) => {
     if (!enabled && totals.ready > 0) {
       const confirmed = await dialog.confirm({
-        title: 'Stop reusing worktrees?',
+        title: appCopy.settings.worktreesSettingsTab.stopReusingWorktrees,
         body: (
           <p>
-            The {totals.ready} ready worktree{totals.ready === 1 ? ' is' : 's are'} removed now
-            {totals.bytes.ready ? `, freeing up to ${formatBytes(totals.bytes.ready)}` : ''}. Ones in use, holding
-            changes or holding a chat&apos;s history stay.
+            {appCopy.settings.worktreesSettingsTab.the}
+            {totals.ready}
+            {appCopy.settings.worktreesSettingsTab.readyWorktree}
+            {totals.ready === 1 ? ' is' : 's are'}
+            {appCopy.settings.worktreesSettingsTab.removedNow}
+            {totals.bytes.ready ? `, freeing up to ${formatBytes(totals.bytes.ready)}` : ''}
+            {appCopy.settings.worktreesSettingsTab.onesInUseHoldingChanges}
           </p>
         ),
-        confirmLabel: 'Turn off and remove',
+        confirmLabel: appCopy.settings.worktreesSettingsTab.turnOffAndRemove,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -411,10 +419,12 @@ export function WorktreesSettingsTab({
   const confirmRemove = async (row: WorktreeRow) => {
     const unmerged = row.entry?.merged === false && row.branch
     const confirmed = await dialog.confirm({
-      title: `Remove ${row.name}?`,
+      title: appCopy.settings.worktreesSettingsTab.remove(row.name),
       body: (
         <p>
-          Deletes the folder{row.bytes ? ` and frees ${formatBytes(row.bytes)}` : ''}. It has no uncommitted changes.{' '}
+          {appCopy.settings.worktreesSettingsTab.deletesTheFolder}
+          {row.bytes ? ` and frees ${formatBytes(row.bytes)}` : ''}
+          {appCopy.settings.worktreesSettingsTab.itHasNoUncommittedChanges}{' '}
           {unmerged
             ? `The branch ${row.branch} and its ${row.entry?.uniqueCommits ?? ''} commits not on the default branch are kept.`
             : row.slot
@@ -424,7 +434,7 @@ export function WorktreesSettingsTab({
                 : ''}
         </p>
       ),
-      confirmLabel: 'Remove',
+      confirmLabel: appCopy.settings.worktreesSettingsTab.remove2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -436,14 +446,15 @@ export function WorktreesSettingsTab({
     if (rows.length === 0) return
     const bytes = rows.reduce((sum, row) => sum + (row.bytes ?? 0), 0)
     const confirmed = await dialog.confirm({
-      title: `Remove ${rows.length} worktree${rows.length === 1 ? '' : 's'}?`,
+      title: appCopy.settings.worktreesSettingsTab.removeWorktree(rows.length, rows.length === 1 ? '' : 's'),
       body: (
         <p>
-          Deletes their folders{bytes ? ` and frees ${formatBytes(bytes)}` : ''}. None has uncommitted changes; branches
-          are kept.
+          {appCopy.settings.worktreesSettingsTab.deletesTheirFolders}
+          {bytes ? ` and frees ${formatBytes(bytes)}` : ''}
+          {appCopy.settings.worktreesSettingsTab.noneHasUncommittedChangesBranches}
         </p>
       ),
-      confirmLabel: 'Remove',
+      confirmLabel: appCopy.settings.worktreesSettingsTab.remove2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -460,7 +471,10 @@ export function WorktreesSettingsTab({
           if (!outcome.ok) failures.push(`${row.name}: ${outcome.message ?? 'not removed'}`)
         }
         return failures.length
-          ? { ok: false, message: `Removed ${rows.length - failures.length}. ${failures.join(' ')}` }
+          ? {
+              ok: false,
+              message: appCopy.settings.worktreesSettingsTab.removed(rows.length - failures.length, failures.join(' ')),
+            }
           : { ok: true }
       },
       `Removed ${rows.length} worktree${rows.length === 1 ? '' : 's'}.`,
@@ -471,9 +485,9 @@ export function WorktreesSettingsTab({
     if (!row.slot) return
     if (ask) {
       const confirmed = await dialog.confirm({
-        title: `Clear ignored files in ${row.name}?`,
-        body: <p>Deletes its dependencies and build output. The next agent here reinstalls from scratch.</p>,
-        confirmLabel: 'Clear',
+        title: appCopy.settings.worktreesSettingsTab.clearIgnoredFilesIn(row.name),
+        body: <p>{appCopy.settings.worktreesSettingsTab.deletesItsDependenciesAndBuild}</p>,
+        confirmLabel: appCopy.settings.worktreesSettingsTab.clear,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -486,21 +500,27 @@ export function WorktreesSettingsTab({
     let message: string | undefined
     if (action === 'commit') {
       const value = await dialog.prompt({
-        title: `Commit the changes in ${row.name}`,
-        body: <p>Commits everything in it on {row.branch ?? 'its branch'}, then the worktree goes back to the pool.</p>,
-        inputLabel: 'Commit message',
+        title: appCopy.settings.worktreesSettingsTab.commitTheChangesIn(row.name),
+        body: (
+          <p>
+            {appCopy.settings.worktreesSettingsTab.commitsEverythingInItOn}
+            {row.branch ?? 'its branch'}
+            {appCopy.settings.worktreesSettingsTab.thenTheWorktreeGoesBack}
+          </p>
+        ),
+        inputLabel: appCopy.settings.worktreesSettingsTab.commitMessage,
         initialValue: 'Work left in a pooled worktree',
         required: true,
-        confirmLabel: 'Commit',
+        confirmLabel: appCopy.settings.worktreesSettingsTab.commit,
       })
       if (value === null) return
       message = value
     }
     if (action === 'discard') {
       const confirmed = await dialog.confirm({
-        title: `Discard the changes in ${row.name}?`,
-        body: <p>Deletes uncommitted changes and untracked files. Commits are kept. Can&apos;t be undone.</p>,
-        confirmLabel: 'Discard',
+        title: appCopy.settings.worktreesSettingsTab.discardTheChangesIn(row.name),
+        body: <p>{appCopy.settings.worktreesSettingsTab.deletesUncommittedChangesAndUntracke}</p>,
+        confirmLabel: appCopy.settings.worktreesSettingsTab.discard,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -528,15 +548,18 @@ export function WorktreesSettingsTab({
         if (!listed.ok)
           return {
             ok: true,
-            message: `Git pruned missing worktrees but couldn't confirm ${row.name}.`,
+            message: appCopy.settings.worktreesSettingsTab.gitPrunedMissingWorktreesBut(row.name),
           }
         const still = listed.data.worktrees.find((worktree) => samePath(worktree.path, row.path))
         if (still) {
           return {
             ok: false,
             message: still.locked
-              ? `Git kept ${row.name}: it is locked${still.lockedReason ? ` (${still.lockedReason})` : ''}. Unlock it in the Worktree manager.`
-              : `Git still lists ${row.name}.`,
+              ? appCopy.settings.worktreesSettingsTab.gitKeptItIsLocked(
+                  row.name,
+                  still.lockedReason ? ` (${still.lockedReason})` : '',
+                )
+              : appCopy.settings.worktreesSettingsTab.gitStillLists(row.name),
           }
         }
         const others = projects
@@ -551,8 +574,8 @@ export function WorktreesSettingsTab({
         return {
           ok: true,
           message: others
-            ? `Git forgot ${row.name} and ${others} other missing worktree${others === 1 ? '' : 's'}.`
-            : `Git forgot ${row.name}.`,
+            ? appCopy.settings.worktreesSettingsTab.gitForgotAndOtherMissing(row.name, others, others === 1 ? '' : 's')
+            : appCopy.settings.worktreesSettingsTab.gitForgot(row.name),
         }
       },
       'Git forgot the missing worktree.',
@@ -569,8 +592,8 @@ export function WorktreesSettingsTab({
   if (!hasApi()) {
     return (
       <div role="tabpanel" id="settings-panel-worktrees" aria-labelledby="settings-tab-worktrees">
-        <SettingsPageHeader title="Worktrees" />
-        <EmptyState density="list" title="Worktrees are managed from the desktop app." />
+        <SettingsPageHeader title={appCopy.settings.worktreesSettingsTab.worktrees} />
+        <EmptyState density="list" title={appCopy.settings.worktreesSettingsTab.worktreesAreManagedFromThe} />
       </div>
     )
   }
@@ -596,7 +619,7 @@ export function WorktreesSettingsTab({
   return (
     <div role="tabpanel" id="settings-panel-worktrees" aria-labelledby="settings-tab-worktrees">
       <SettingsPageHeader
-        title="Worktrees"
+        title={appCopy.settings.worktreesSettingsTab.worktrees}
         meta={
           measuring
             ? 'Measuring…'
@@ -606,9 +629,13 @@ export function WorktreesSettingsTab({
         }
         actions={
           <>
-            <Tooltip content="Measure every worktree again">
+            <Tooltip content={appCopy.settings.worktreesSettingsTab.measureEveryWorktreeAgain}>
               <IconButton
-                aria-label={measuring ? 'Measuring every worktree' : 'Measure every worktree again'}
+                aria-label={
+                  measuring
+                    ? appCopy.settings.worktreesSettingsTab.measuringEveryWorktree
+                    : appCopy.settings.worktreesSettingsTab.measureEveryWorktreeAgain
+                }
                 disabled={measuring}
                 onClick={() => void read(true)}
               >
@@ -616,14 +643,19 @@ export function WorktreesSettingsTab({
               </IconButton>
             </Tooltip>
             <OutlineButton size="sm" disabled={!inventory} onClick={() => setFreeOpen(true)}>
-              Free up space…
+              {appCopy.settings.worktreesSettingsTab.freeUpSpace}
             </OutlineButton>
           </>
         }
       />
 
       {loadError ? (
-        <InlineNotice tone="error" title="Could not read the worktrees." detail={loadError} className="mb-4" />
+        <InlineNotice
+          tone="error"
+          title={appCopy.settings.worktreesSettingsTab.couldNotReadTheWorktrees}
+          detail={loadError}
+          className="mb-4"
+        />
       ) : null}
       <ActionResultMessage message={result} className="mb-4" />
 
@@ -631,14 +663,17 @@ export function WorktreesSettingsTab({
         {/* Reflows with the page's own width, not the window's: five across only where
             every label fits on its line. */}
         <div className="@container">
-          <div className="grid grid-cols-2 gap-4 @[480px]:grid-cols-3 @[720px]:grid-cols-5" aria-label="Overview">
+          <div
+            className="grid grid-cols-2 gap-4 @[480px]:grid-cols-3 @[720px]:grid-cols-5"
+            aria-label={appCopy.settings.worktreesSettingsTab.overview}
+          >
             <Stat
-              label="Worktrees"
+              label={appCopy.settings.worktreesSettingsTab.worktrees}
               value={String(totals.count)}
               sub={`in ${projects.length} project${projects.length === 1 ? '' : 's'}`}
             />
             <Stat
-              label="In use"
+              label={appCopy.settings.worktreesSettingsTab.inUse}
               swatch={USAGE_SEGMENTS[0].color}
               value={String(totals.inUse)}
               sub={
@@ -650,19 +685,19 @@ export function WorktreesSettingsTab({
               }
             />
             <Stat
-              label="Ready to reuse"
+              label={appCopy.settings.worktreesSettingsTab.readyToReuse}
               swatch={USAGE_SEGMENTS[1].color}
               value={String(totals.ready)}
               sub="kept for reuse"
             />
             <Stat
-              label="Holding work"
+              label={appCopy.settings.worktreesSettingsTab.holdingWork}
               swatch={USAGE_SEGMENTS[2].color}
               value={String(totals.held)}
               sub={totals.held ? 'needs you' : 'nothing waiting'}
             />
             <Stat
-              label="On disk"
+              label={appCopy.settings.worktreesSettingsTab.onDisk}
               value={totals.bytes.all ? formatBytes(totals.bytes.all) : '—'}
               sub={settings.diskLimitGb !== null ? `pool limit ${settings.diskLimitGb} GB` : 'no pool limit'}
             />
@@ -702,21 +737,21 @@ export function WorktreesSettingsTab({
         </div>
       </SettingCard>
 
-      <SettingsSectionTitle className="mb-2">Pool</SettingsSectionTitle>
+      <SettingsSectionTitle className="mb-2">{appCopy.settings.worktreesSettingsTab.pool}</SettingsSectionTitle>
       <SettingCard className="mb-6">
         <SettingToggle
-          label="Reuse worktrees for new chats"
-          description="New chats and agents reuse a pooled worktree, reset to the default branch, with installs kept. Turning it off removes the ready ones."
+          label={appCopy.settings.worktreesSettingsTab.reuseWorktreesForNewChats}
+          description={appCopy.settings.worktreesSettingsTab.newChatsAndAgentsReuse}
           enabled={settings.enabled}
           onChange={(enabled) => void setPoolEnabled(enabled)}
         />
         <SettingRow
-          label="Ready worktrees to keep"
+          label={appCopy.settings.worktreesSettingsTab.readyWorktreesToKeep}
           help="Per project. When a chat is done and its worktree comes back, any beyond this are removed, longest unused first."
           disabled={!settings.enabled}
         >
           <Select
-            ariaLabel="Ready worktrees to keep"
+            ariaLabel={appCopy.settings.worktreesSettingsTab.readyWorktreesToKeep}
             items={KEEP_IDLE_ITEMS}
             value={String(settings.keepIdle)}
             disabled={!settings.enabled}
@@ -724,12 +759,12 @@ export function WorktreesSettingsTab({
           />
         </SettingRow>
         <SettingRow
-          label="Most worktrees per project"
+          label={appCopy.settings.worktreesSettingsTab.mostWorktreesPerProject}
           help="Counting the ones in use. Past this a new chat still gets a worktree, but a fresh one that is removed when the chat is done, not kept for reuse."
           disabled={!settings.enabled}
         >
           <Select
-            ariaLabel="Most worktrees per project"
+            ariaLabel={appCopy.settings.worktreesSettingsTab.mostWorktreesPerProject}
             items={MAX_SLOT_ITEMS}
             value={String(settings.maxSlots)}
             disabled={!settings.enabled}
@@ -737,12 +772,12 @@ export function WorktreesSettingsTab({
           />
         </SettingRow>
         <SettingRow
-          label="Give back idle worktrees after"
+          label={appCopy.settings.worktreesSettingsTab.giveBackIdleWorktreesAfter}
           help="A chat's worktree goes back to the pool once it has sat this long clean, with every commit pushed and nothing running in it. Its branch is kept, and opening the chat checks it out again in the same place. A new chat that finds the pool full takes back one that is not in use rather than waiting."
           disabled={!settings.enabled}
         >
           <Select
-            ariaLabel="Give back idle worktrees after"
+            ariaLabel={appCopy.settings.worktreesSettingsTab.giveBackIdleWorktreesAfter}
             items={
               IDLE_RETURN_ITEMS.some((item) => item.value === String(settings.idleReturnMinutes))
                 ? IDLE_RETURN_ITEMS
@@ -757,16 +792,22 @@ export function WorktreesSettingsTab({
           />
         </SettingRow>
         <SettingRow
-          label="Disk limit"
+          label={appCopy.settings.worktreesSettingsTab.diskLimit}
           help="For all of the pool's worktrees together. Past it, the longest-unused ready ones are removed. Nothing in use or holding work is ever removed, and worktrees outside the pool don't count."
           disabled={!settings.enabled}
         >
           <Select
-            ariaLabel="Disk limit"
+            ariaLabel={appCopy.settings.worktreesSettingsTab.diskLimit}
             items={
               settings.diskLimitGb !== null &&
               !DISK_LIMIT_ITEMS.some((item) => item.value === String(settings.diskLimitGb))
-                ? [...DISK_LIMIT_ITEMS, { value: String(settings.diskLimitGb), label: `${settings.diskLimitGb} GB` }]
+                ? [
+                    ...DISK_LIMIT_ITEMS,
+                    {
+                      value: String(settings.diskLimitGb),
+                      label: appCopy.settings.worktreesSettingsTab.gB2(settings.diskLimitGb),
+                    },
+                  ]
                 : DISK_LIMIT_ITEMS
             }
             value={settings.diskLimitGb === null ? 'none' : String(settings.diskLimitGb)}
@@ -774,39 +815,42 @@ export function WorktreesSettingsTab({
             onChange={(value) => void updateSettings({ diskLimitGb: value === 'none' ? null : Number(value) })}
           />
         </SettingRow>
-        <SettingRow label="Location" help="Next to each project, in a folder of its own.">
+        <SettingRow
+          label={appCopy.settings.worktreesSettingsTab.location}
+          help="Next to each project, in a folder of its own."
+        >
           <code className="rounded-[var(--radius-chip)] bg-[color:var(--bg-well)] px-2 py-1 font-mono text-meta text-[color:var(--text-default)]">
             {'<project>/../.sprintengine-worktrees/<project>/'}
           </code>
         </SettingRow>
       </SettingCard>
 
-      <SettingsSectionTitle className="mb-2">Branches</SettingsSectionTitle>
+      <SettingsSectionTitle className="mb-2">{appCopy.settings.worktreesSettingsTab.branches}</SettingsSectionTitle>
       <SettingCard className="mb-6">
         <BranchPrefixSetting />
       </SettingCard>
 
       <SettingsSectionTitle className="mb-2" count={totals.count}>
-        Worktrees
+        {appCopy.settings.worktreesSettingsTab.worktrees}
       </SettingsSectionTitle>
       {/* The field takes what the filter leaves, and drops under it when that is too little. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <SegmentedControl<WorktreeFilter>
-          ariaLabel="Show"
+          ariaLabel={appCopy.settings.worktreesSettingsTab.show}
           value={filter}
           onChange={setFilter}
           items={[
-            { value: 'all', label: `All ${counts.all}` },
-            { value: 'in-use', label: `In use ${counts['in-use']}` },
-            { value: 'ready', label: `Ready ${counts.ready}` },
-            { value: 'held', label: `Holding work ${counts.held}` },
-            { value: 'other', label: `Not in the pool ${counts.other}` },
+            { value: 'all', label: appCopy.settings.worktreesSettingsTab.all(counts.all) },
+            { value: 'in-use', label: appCopy.settings.worktreesSettingsTab.inUse2(counts['in-use']) },
+            { value: 'ready', label: appCopy.settings.worktreesSettingsTab.ready(counts.ready) },
+            { value: 'held', label: appCopy.settings.worktreesSettingsTab.holdingWork2(counts.held) },
+            { value: 'other', label: appCopy.settings.worktreesSettingsTab.notInThePool2(counts.other) },
           ]}
         />
         <Input
           size="sm"
-          aria-label="Filter worktrees"
-          placeholder="Filter by branch, chat or path"
+          aria-label={appCopy.settings.worktreesSettingsTab.filterWorktrees}
+          placeholder={appCopy.settings.worktreesSettingsTab.filterByBranchChatOr}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           fullWidth={false}
@@ -816,13 +860,18 @@ export function WorktreesSettingsTab({
 
       {!inventory && !loadError ? (
         <div className="flex items-center gap-2 py-6 text-meta text-[color:var(--text-muted)]">
-          <Spinner className="icon-sm" /> Reading every worktree…
+          <Spinner className="icon-sm" />
+          {appCopy.settings.worktreesSettingsTab.readingEveryWorktree}
         </div>
       ) : visibleProjects.length === 0 ? (
         <EmptyState
           density="list"
-          title={projects.length === 0 ? 'No worktrees yet.' : 'Nothing matches.'}
-          body={projects.length === 0 ? 'Each new chat gets its own worktree, listed here.' : undefined}
+          title={
+            projects.length === 0
+              ? appCopy.settings.worktreesSettingsTab.noWorktreesYet
+              : appCopy.settings.worktreesSettingsTab.nothingMatches
+          }
+          body={projects.length === 0 ? appCopy.settings.worktreesSettingsTab.eachNewChatGetsIts : undefined}
         />
       ) : (
         visibleProjects.map(({ project, poolRows, otherRows }) => (
@@ -859,10 +908,13 @@ export function WorktreesSettingsTab({
           <span className="text-meta text-[color:var(--text-muted)]">{formatBytes(selectedBytes)}</span>
           <span className="flex-1" />
           <GhostButton size="xs" onClick={() => setSelected(new Set())}>
-            Clear selection
+            {appCopy.settings.worktreesSettingsTab.clearSelection}
           </GhostButton>
           <DangerButton size="xs" onClick={() => void removeSelected()}>
-            Remove {selectedRows.length} · free {formatBytes(selectedBytes)}
+            {appCopy.settings.worktreesSettingsTab.remove3}
+            {selectedRows.length}
+            {appCopy.settings.worktreesSettingsTab.free}
+            {formatBytes(selectedBytes)}
           </DangerButton>
         </div>
       ) : null}
@@ -984,7 +1036,7 @@ function ProjectCard({
               className="shrink-0 whitespace-nowrap"
               onClick={() => void window.api.showItemInFolder(project.containerPath ?? project.repoRoot)}
             >
-              Show folder
+              {appCopy.settings.worktreesSettingsTab.showFolder}
             </GhostButton>
           ) : (
             <GhostButton
@@ -992,7 +1044,7 @@ function ProjectCard({
               className="shrink-0 whitespace-nowrap"
               onClick={() => void navigator.clipboard?.writeText(project.containerPath ?? project.repoRoot)}
             >
-              Copy path
+              {appCopy.settings.worktreesSettingsTab.copyPath}
             </GhostButton>
           )}
         </div>
@@ -1005,8 +1057,8 @@ function ProjectCard({
         <InlineNotice
           tone="warn"
           className="m-3"
-          title="Another copy of Studio manages this pool"
-          hint="Change its worktrees from that copy"
+          title={appCopy.settings.worktreesSettingsTab.anotherCopyOfStudioManages}
+          hint={appCopy.settings.worktreesSettingsTab.changeItsWorktreesFromThat}
         />
       ) : null}
       {project.error ? <InlineNotice tone="error" className="m-3" title={project.error} /> : null}
@@ -1021,7 +1073,7 @@ function ProjectCard({
       {open ? (
         <Table
           fixed
-          ariaLabel={`Worktrees of ${project.name}`}
+          ariaLabel={appCopy.settings.worktreesSettingsTab.worktreesOf(project.name)}
           className="w-full"
           colgroup={
             <colgroup>
@@ -1043,16 +1095,16 @@ function ProjectCard({
           <thead>
             <tr>
               <Table.Head sticky={false}>
-                <span className="sr-only">Select</span>
+                <span className="sr-only">{appCopy.settings.worktreesSettingsTab.select}</span>
               </Table.Head>
-              <Table.Head sticky={false}>Worktree</Table.Head>
-              <Table.Head sticky={false}>Status</Table.Head>
-              <Table.Head sticky={false}>Last used</Table.Head>
+              <Table.Head sticky={false}>{appCopy.settings.worktreesSettingsTab.worktree}</Table.Head>
+              <Table.Head sticky={false}>{appCopy.settings.worktreesSettingsTab.status}</Table.Head>
+              <Table.Head sticky={false}>{appCopy.settings.worktreesSettingsTab.lastUsed}</Table.Head>
               <Table.Head sticky={false} numeric>
-                Size
+                {appCopy.settings.worktreesSettingsTab.size}
               </Table.Head>
               <Table.Head sticky={false}>
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">{appCopy.settings.worktreesSettingsTab.actions}</span>
               </Table.Head>
             </tr>
           </thead>
@@ -1066,7 +1118,7 @@ function ProjectCard({
                   colSpan={6}
                   className="bg-[color:var(--bg-surface)] px-2 py-1.5 pl-8 text-meta text-[color:var(--text-subtle)]"
                 >
-                  Not in the pool: other worktrees of this project
+                  {appCopy.settings.worktreesSettingsTab.notInThePoolOther}
                 </td>
               </tr>
             ) : null}
@@ -1110,33 +1162,53 @@ function WorktreeTableRow({
       ? [
           {
             id: 'reveal',
-            label: 'Show in Finder',
+            label: appCopy.settings.worktreesSettingsTab.showInFinder,
             onSelect: () => void window.api.showItemInFolder(row.path),
             disabled: row.state === 'missing',
           },
         ]
       : []),
-    { id: 'copy', label: 'Copy path', onSelect: () => void navigator.clipboard?.writeText(clipboardPath(row.path)) },
+    {
+      id: 'copy',
+      label: appCopy.settings.worktreesSettingsTab.copyPath,
+      onSelect: () => void navigator.clipboard?.writeText(clipboardPath(row.path)),
+    },
   ]
   if (row.state === 'ready') {
     menu.push(
       { kind: 'separator', id: 'sep' },
-      { id: 'clear', label: 'Clear ignored files…', onSelect: () => actions.clearIgnored(row), disabled: isBusy },
-      { id: 'remove', label: 'Remove…', destructive: true, onSelect: () => actions.remove(row), disabled: isBusy },
+      {
+        id: 'clear',
+        label: appCopy.settings.worktreesSettingsTab.clearIgnoredFiles,
+        onSelect: () => actions.clearIgnored(row),
+        disabled: isBusy,
+      },
+      {
+        id: 'remove',
+        label: appCopy.settings.worktreesSettingsTab.remove4,
+        destructive: true,
+        onSelect: () => actions.remove(row),
+        disabled: isBusy,
+      },
     )
   } else if (row.state === 'held') {
     menu.push(
       { kind: 'separator', id: 'sep' },
-      { id: 'stash', label: 'Stash changes and reuse', onSelect: () => actions.held(row, 'stash'), disabled: isBusy },
+      {
+        id: 'stash',
+        label: appCopy.settings.worktreesSettingsTab.stashChangesAndReuse,
+        onSelect: () => actions.held(row, 'stash'),
+        disabled: isBusy,
+      },
       {
         id: 'keep',
-        label: 'Keep it out of the pool',
+        label: appCopy.settings.worktreesSettingsTab.keepItOutOfThe,
         onSelect: () => actions.held(row, 'keep'),
         disabled: isBusy,
       },
       {
         id: 'discard',
-        label: 'Discard changes…',
+        label: appCopy.settings.worktreesSettingsTab.discardChanges,
         destructive: true,
         onSelect: () => actions.held(row, 'discard'),
         disabled: isBusy,
@@ -1145,7 +1217,13 @@ function WorktreeTableRow({
   } else if (row.removal === 'remove') {
     menu.push(
       { kind: 'separator', id: 'sep' },
-      { id: 'remove', label: 'Remove…', destructive: true, onSelect: () => actions.remove(row), disabled: isBusy },
+      {
+        id: 'remove',
+        label: appCopy.settings.worktreesSettingsTab.remove4,
+        destructive: true,
+        onSelect: () => actions.remove(row),
+        disabled: isBusy,
+      },
     )
   }
   const foreign = row.keptBecause?.startsWith('Another SprintEngine Studio') === true
@@ -1164,7 +1242,7 @@ function WorktreeTableRow({
             <Checkbox
               checked={selected.has(row.key)}
               onChange={() => onToggleSelected(row.key)}
-              ariaLabel={`Select ${row.name}`}
+              ariaLabel={appCopy.settings.worktreesSettingsTab.select2(row.name)}
               disabled={isBusy}
             />
           ) : null}
@@ -1186,7 +1264,7 @@ function WorktreeTableRow({
             <Badge tone={STATE_TONE[row.state]} className="shrink-0">
               {row.stateLabel}
             </Badge>
-            {isBusy ? <Spinner size={12} label="Working" /> : null}
+            {isBusy ? <Spinner size={12} label={appCopy.settings.worktreesSettingsTab.working} /> : null}
             <span className="truncate text-body text-[color:var(--text-default)]" title={row.usedBy}>
               {row.usedBy}
             </span>
@@ -1213,26 +1291,26 @@ function WorktreeTableRow({
           <div className="flex items-center justify-end gap-1 whitespace-nowrap">
             {install ? (
               <OutlineButton size="xs" onClick={() => actions.cancelInstall(install)}>
-                Cancel install
+                {appCopy.settings.worktreesSettingsTab.cancelInstall}
               </OutlineButton>
             ) : row.state === 'held' ? (
               <PrimaryButton size="xs" disabled={isBusy} onClick={() => actions.held(row, 'commit')}>
-                Commit…
+                {appCopy.settings.worktreesSettingsTab.commit2}
               </PrimaryButton>
             ) : row.chat && (row.state === 'in-use' || row.state === 'busy') ? (
               <OutlineButton size="xs" onClick={() => actions.openChat(row.chat!.workspaceId)}>
-                Open chat
+                {appCopy.settings.worktreesSettingsTab.openChat}
               </OutlineButton>
             ) : row.state === 'missing' ? (
               <OutlineButton size="xs" disabled={isBusy} onClick={() => actions.prune(row)}>
-                Prune
+                {appCopy.settings.worktreesSettingsTab.prune}
               </OutlineButton>
             ) : selectable && !foreign ? (
               <OutlineButton size="xs" disabled={isBusy} onClick={() => actions.remove(row)}>
-                Remove
+                {appCopy.settings.worktreesSettingsTab.remove2}
               </OutlineButton>
             ) : null}
-            <OverflowMenu ariaLabel={`More for ${row.name}`} items={menu} />
+            <OverflowMenu ariaLabel={appCopy.settings.worktreesSettingsTab.moreFor(row.name)} items={menu} />
           </div>
         </Table.Cell>
       </Table.Row>
@@ -1275,22 +1353,22 @@ function DependencyInstallSettings({
   return (
     <div className="border-b border-[color:var(--border-subtle)]">
       <SettingToggle
-        label="Install dependencies when the lockfile changes"
-        description="Reinstalls before an agent starts if the lockfile changed. Runs the project's install scripts as you, so only turn on for code you trust."
+        label={appCopy.settings.worktreesSettingsTab.installDependenciesWhenTheLockfile}
+        description={appCopy.settings.worktreesSettingsTab.reinstallsBeforeAnAgentStarts}
         enabled={enabled}
         disabled={disabled}
         onChange={(next) => onChange({ enabled: next, command: install?.command ?? null })}
       />
       {enabled ? (
         <SettingRow
-          label="Install command"
+          label={appCopy.settings.worktreesSettingsTab.installCommand}
           help="Empty uses the lockfile's own: npm ci, pnpm install --frozen-lockfile, yarn install with --frozen-lockfile or --immutable, or bun install --frozen-lockfile. A command of your own runs again whenever any lockfile changes."
           disabled={disabled}
         >
           <Input
             size="sm"
-            aria-label={`Install command for ${projectName}`}
-            placeholder="From the lockfile"
+            aria-label={appCopy.settings.worktreesSettingsTab.installCommandFor(projectName)}
+            placeholder={appCopy.settings.worktreesSettingsTab.fromTheLockfile}
             value={draft}
             maxLength={WORKTREE_INSTALL_COMMAND_MAX}
             disabled={disabled}
@@ -1334,7 +1412,7 @@ function BranchPrefixSetting() {
   const warning = worktreeBranchPrefixWarning(draft)
   return (
     <SettingRow
-      label="Branch prefix"
+      label={appCopy.settings.worktreesSettingsTab.branchPrefix}
       htmlFor={inputId}
       help="What each new worktree’s branch starts with, or nothing when empty. Your own branches can share it: Studio only ever deletes a branch it made, once its work is merged and no chat uses it."
     >
@@ -1342,7 +1420,7 @@ function BranchPrefixSetting() {
         <Input
           id={inputId}
           size="sm"
-          placeholder="No prefix"
+          placeholder={appCopy.settings.worktreesSettingsTab.noPrefix}
           value={draft}
           spellCheck={false}
           autoCapitalize="none"
@@ -1357,7 +1435,8 @@ function BranchPrefixSetting() {
           className="w-48 font-mono"
         />
         <span id={exampleId} aria-live="polite" className="text-meta text-[color:var(--text-muted)]">
-          New worktrees are named <span className="font-mono">{worktreeBranchExample(prefix)}</span>
+          {appCopy.settings.worktreesSettingsTab.newWorktreesAreNamed}
+          <span className="font-mono">{worktreeBranchExample(prefix)}</span>
           {prefix ? '' : ', with no prefix'}
         </span>
         {warning ? (
@@ -1402,11 +1481,19 @@ function RowDetail({ row, now, actions, busy }: { row: WorktreeRow; now: number;
             ),
           }
         : null,
-      row.chat ? { term: 'Chat', description: `${row.chat.title}${row.chat.settled ? ' (settled)' : ''}` } : null,
+      row.chat
+        ? {
+            term: 'Chat',
+            description: `${row.chat.title}${row.chat.settled ? appCopy.settings.worktreesSettingsTab.settled : ''}`,
+          }
+        : null,
       slot?.lease
         ? {
             term: 'Leased',
-            description: `${formatRelativeMsAgo(slot.lease.leasedAt, now)}${slot.lease.agentId ? ', by the agent (worktree.lease)' : ''}. Returns to the pool when its chat is done, or once idle, clean and pushed.`,
+            description: appCopy.settings.worktreesSettingsTab.returnsToThePoolWhen(
+              formatRelativeMsAgo(slot.lease.leasedAt, now),
+              slot.lease.agentId ? appCopy.settings.worktreesSettingsTab.byTheAgentWorktreeLease : '',
+            ),
           }
         : null,
       slot ? { term: 'Leases served', description: String(slot.uses) } : null,
@@ -1416,7 +1503,10 @@ function RowDetail({ row, now, actions, busy }: { row: WorktreeRow; now: number;
       slot?.kept && row.state === 'ready'
         ? {
             term: 'Kept',
-            description: `${slot.kept.charAt(0).toUpperCase()}${slot.kept.slice(1)}. Stays on disk until its ignored files are cleared.`,
+            description: appCopy.settings.worktreesSettingsTab.staysOnDiskUntilIts(
+              slot.kept.charAt(0).toUpperCase(),
+              slot.kept.slice(1),
+            ),
           }
         : null,
     ] as Array<DefinitionItem | null>
@@ -1446,40 +1536,45 @@ function RowDetail({ row, now, actions, busy }: { row: WorktreeRow; now: number;
           {row.state === 'held' ? (
             <>
               <PrimaryButton size="xs" disabled={busy} onClick={() => actions.held(row, 'commit')}>
-                Commit to {row.branch ?? 'a branch'}…
+                {appCopy.settings.worktreesSettingsTab.commitTo}
+                {row.branch ?? 'a branch'}…
               </PrimaryButton>
               <OutlineButton size="xs" disabled={busy} onClick={() => actions.held(row, 'stash')}>
-                Stash and reuse
+                {appCopy.settings.worktreesSettingsTab.stashAndReuse}
               </OutlineButton>
               <OutlineButton size="xs" disabled={busy} onClick={() => actions.held(row, 'keep')}>
-                Keep it out of the pool
+                {appCopy.settings.worktreesSettingsTab.keepItOutOfThe}
               </OutlineButton>
               <GhostButton size="xs" tone="danger" disabled={busy} onClick={() => actions.held(row, 'discard')}>
-                Discard changes…
+                {appCopy.settings.worktreesSettingsTab.discardChanges}
               </GhostButton>
             </>
           ) : null}
           {row.state === 'ready' ? (
             <>
               <OutlineButton size="xs" disabled={busy} onClick={() => actions.clearIgnored(row)}>
-                Clear ignored files…
+                {appCopy.settings.worktreesSettingsTab.clearIgnoredFiles}
               </OutlineButton>
               <GhostButton size="xs" tone="danger" disabled={busy} onClick={() => actions.remove(row)}>
-                Remove from the pool…
+                {appCopy.settings.worktreesSettingsTab.removeFromThePool}
               </GhostButton>
             </>
           ) : null}
           {row.state !== 'missing' && revealable(row.path) ? (
             <GhostButton size="xs" onClick={() => void window.api.showItemInFolder(row.path)}>
-              Show in Finder
+              {appCopy.settings.worktreesSettingsTab.showInFinder}
             </GhostButton>
           ) : null}
         </div>
       </div>
       <div className="min-w-0">
-        <div className="mb-2 text-meta font-medium text-[color:var(--text-muted)]">On disk</div>
+        <div className="mb-2 text-meta font-medium text-[color:var(--text-muted)]">
+          {appCopy.settings.worktreesSettingsTab.onDisk}
+        </div>
         {parts.length === 0 ? (
-          <p className="text-meta text-[color:var(--text-subtle)]">Not measured yet.</p>
+          <p className="text-meta text-[color:var(--text-subtle)]">
+            {appCopy.settings.worktreesSettingsTab.notMeasuredYet}
+          </p>
         ) : (
           <ul className="space-y-1.5">
             {parts.map((part) => (

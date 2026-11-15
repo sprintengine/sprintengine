@@ -29,6 +29,7 @@ import {
   type BacklogRowItem,
 } from "./backlogLogic";
 import { capitalizeToken, OptionRow } from "./triageChips";
+import { copy } from "../../../../src/shared/copy";
 
 /** The three axes `backlog.update` can set beyond `status`. */
 type TriageOverride = Pick<BacklogUpdateInput, "type" | "difficulty" | "criticality">;
@@ -134,9 +135,9 @@ export function BacklogItemDetailScreen({
 
   if (!item) {
     return (
-      <Screen backLabel="Backlog" onBack={onBack} title="Item">
+      <Screen backLabel={copy.phone.backlog.backlogItemDetailScreen.backlog} onBack={onBack} title={copy.phone.backlog.backlogItemDetailScreen.item}>
         <View style={styles.missing}>
-          <Text style={styles.missingText}>Not in the latest sync. Pull to refresh.</Text>
+          <Text style={styles.missingText}>{copy.phone.backlog.backlogItemDetailScreen.notInTheLatestSync}</Text>
         </View>
       </Screen>
     );
@@ -202,7 +203,7 @@ export function BacklogItemDetailScreen({
   };
 
   return (
-    <Screen backLabel="Backlog" onBack={onBack} title={isEpic ? "Epic" : "Item"}>
+    <Screen backLabel={copy.phone.backlog.backlogItemDetailScreen.backlog} onBack={onBack} title={isEpic ? copy.phone.backlog.backlogItemDetailScreen.epic : copy.phone.backlog.backlogItemDetailScreen.item}>
       <View style={styles.header}>
         <View style={styles.headerGlyph}>
           {isEpic ? (
@@ -222,7 +223,7 @@ export function BacklogItemDetailScreen({
         {!isEpic ? <DifficultyLabel difficulty={shownDifficulty} /> : null}
         {!isEpic && shownCriticality ? <CriticalityBars level={shownCriticality} /> : null}
         {item.epic ? <EpicChip slug={item.epic} meta={epicMeta} /> : null}
-        {item.updatedAt ? <Text style={styles.age}>Updated {formatTimestamp(item.updatedAt)}</Text> : null}
+        {item.updatedAt ? <Text style={styles.age}>{copy.phone.backlog.backlogItemDetailScreen.updated}{formatTimestamp(item.updatedAt)}</Text> : null}
       </View>
 
       <Text numberOfLines={1} style={styles.path}>
@@ -230,7 +231,7 @@ export function BacklogItemDetailScreen({
       </Text>
 
       <View style={styles.bodyBlock}>
-        <Text style={styles.bodyLabel}>Excerpt</Text>
+        <Text style={styles.bodyLabel}>{copy.phone.backlog.backlogItemDetailScreen.excerpt}</Text>
         {item.excerpt ? (
           // The excerpt is the only body the snapshot carries (280-char cap, no
           // item-read command yet — gap on the mobile-control-parity epic). It is
@@ -238,9 +239,9 @@ export function BacklogItemDetailScreen({
           // correctly, and always labeled as an excerpt, never the full document.
           <DocumentView body={item.excerpt} kind="markdown" title={item.title} />
         ) : (
-          <Text style={styles.excerptEmpty}>No excerpt. Open it on the desktop.</Text>
+          <Text style={styles.excerptEmpty}>{copy.phone.backlog.backlogItemDetailScreen.noExcerptOpenItOn}</Text>
         )}
-        <Text style={styles.excerptNote}>Excerpt only. The full document is on the desktop.</Text>
+        <Text style={styles.excerptNote}>{copy.phone.backlog.backlogItemDetailScreen.excerptOnlyTheFullDocument}</Text>
       </View>
 
       {/* The triage header above renders these three axes read-only; this is
@@ -249,13 +250,13 @@ export function BacklogItemDetailScreen({
           UI was missing, so an item could be shown but not fully triaged. */}
       {triageEligible ? (
         <View style={styles.bodyBlock}>
-          <Text style={styles.bodyLabel}>Triage</Text>
+          <Text style={styles.bodyLabel}>{copy.phone.backlog.backlogItemDetailScreen.triage}</Text>
           {/* Each edit carries the wire value it was made against (`base`), which
               is what lets it retire once the desktop moves — see TriageEdit. */}
           <OptionRow
             disabled={pending}
             format={capitalizeToken}
-            label="Type"
+            label={copy.phone.backlog.backlogItemDetailScreen.type}
             onSelect={(next) => void commitTriage("type", { type: { value: next, base: item.type } }, { type: next })}
             options={backlogTypeOptions}
             selected={shownType}
@@ -263,7 +264,7 @@ export function BacklogItemDetailScreen({
           <OptionRow
             disabled={pending}
             format={(value) => value.toUpperCase()}
-            label="Difficulty"
+            label={copy.phone.backlog.backlogItemDetailScreen.difficulty}
             onSelect={(next) =>
               void commitTriage("difficulty", { difficulty: { value: next, base: item.difficulty } }, { difficulty: next })
             }
@@ -273,7 +274,7 @@ export function BacklogItemDetailScreen({
           <OptionRow
             disabled={pending}
             format={capitalizeToken}
-            label="Criticality"
+            label={copy.phone.backlog.backlogItemDetailScreen.criticality}
             onSelect={(next) =>
               void commitTriage("criticality", { criticality: { value: next, base: item.criticality } }, { criticality: next })
             }
@@ -282,7 +283,7 @@ export function BacklogItemDetailScreen({
           />
           {/* Said once, not implied by a chip that quietly does nothing: the wire
               has no way to express "clear this axis". */}
-          <Text style={styles.excerptNote}>Each change is sent on tap.</Text>
+          <Text style={styles.excerptNote}>{copy.phone.backlog.backlogItemDetailScreen.eachChangeIsSentOn}</Text>
         </View>
       ) : null}
 
@@ -292,19 +293,17 @@ export function BacklogItemDetailScreen({
             disabled={pending}
             label={
               pending && commandState.action === "update"
-                ? "Updating…"
+                ? copy.phone.backlog.backlogItemDetailScreen.updating
                 : item.status === "idea"
-                  ? "Mark ready"
-                  : "Move back to idea"
+                  ? copy.phone.backlog.backlogItemDetailScreen.markReady
+                  : copy.phone.backlog.backlogItemDetailScreen.moveBackToIdea
             }
             onPress={handleStatusToggle}
             variant="secondary"
           />
         ) : null}
         {!updateEligible ? (
-          <Text style={styles.unavailableText}>
-            Backlog actions aren’t available in this session.
-          </Text>
+          <Text style={styles.unavailableText}>{copy.phone.backlog.backlogItemDetailScreen.backlogActionsArenTAvailable}</Text>
         ) : null}
       </View>
     </Screen>

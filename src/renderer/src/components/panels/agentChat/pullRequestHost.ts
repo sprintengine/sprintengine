@@ -8,6 +8,7 @@ import type { StudioClient } from '../../../../../../packages/client-runtime/src
 import { STUDIO_PULL_REQUEST_CREATE_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
 import { randomId } from '../../../../../shared/random-id'
 import { windowStudioClient } from '../../../studio/windowStudioClient'
+import { copy } from '../../../../../shared/copy'
 
 // Where the chat's "Create PR" does its work. The button, its dialog and the
 // sentences on the strip are the same for every chat (owner ruling
@@ -108,7 +109,9 @@ export function studioPullRequestHost(
       if (!created.ok || created.kind !== 'created') return created
       recorded.set(
         created.url,
-        created.recorded ? { ok: true } : { ok: false, message: created.recordMessage ?? 'It was not recorded.' },
+        created.recorded
+          ? { ok: true }
+          : { ok: false, message: created.recordMessage ?? copy.panels.agentChat.pullRequestHost.itWasNotRecorded },
       )
       return { ok: true, kind: 'created', url: created.url }
     },

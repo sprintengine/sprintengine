@@ -2,6 +2,7 @@ import type { LifecycleState } from '../../../../shared/lifecycle-state'
 import { LifecycleGlyph } from './LifecycleGlyph'
 import { STATUS_TONE_COLOR_VAR, type StatusTone } from './tokens'
 import { WorkingMark } from './WorkingMark'
+import { copy } from '../../../../shared/copy'
 
 /**
  * The status mark. The app draws no status dots (owner ruling 2026-09-28): a
@@ -42,7 +43,7 @@ type StatusDotProps = {
 
 export function StatusDot({ tone, pulse = false, label, size, className }: StatusDotProps) {
   if (pulse && (tone === 'good' || tone === 'accent'))
-    return <WorkingMark label={label ?? 'Working'} className={className} />
+    return <WorkingMark label={label ?? copy.ui.statusDot.working} className={className} />
   const side = size ?? 'var(--icon-xs)'
   return (
     <LifecycleGlyph

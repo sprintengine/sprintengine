@@ -9,6 +9,7 @@ import { RootErrorBoundary } from '../../components/workspace/RootErrorBoundary'
 import { connectEmbed, EmbedUnavailable } from './embedClient'
 import { EmbeddedConversation } from './EmbeddedConversation'
 import { postToHost, readHostMessage, type EmbedToHost } from './embedProtocol'
+import { copy } from '../../../../shared/copy'
 
 // The embed page's boot (phase 9 spec, 5.4). It reads the embed from its
 // address, takes its token from the fragment (and removes it from the address
@@ -104,8 +105,8 @@ function EmbedApp(): React.JSX.Element {
   )
 
   if (error) return <EmptyState title={error} />
-  if (!token) return <EmptyState title="Waiting for this conversation’s link." />
-  if (!connected) return <EmptyState title="Opening the conversation…" />
+  if (!token) return <EmptyState title={copy.web.embed.embedMain.waitingForThisConversationS} />
+  if (!connected) return <EmptyState title={copy.web.embed.embedMain.openingTheConversation} />
   return <EmbeddedConversation client={connected.client} conversation={connected.conversation} onState={onState} />
 }
 

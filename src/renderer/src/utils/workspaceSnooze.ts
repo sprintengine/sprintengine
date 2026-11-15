@@ -1,4 +1,5 @@
 import { formatTimeOfDay } from './clockFormat'
+import { copy } from '../../../shared/copy'
 
 // Snooze: "not now, ask me again at <time>" (owner ruling, 2026-09-10).
 //
@@ -102,13 +103,13 @@ export function resolveSnoozePresets(now: number): ReadonlyArray<SnoozePreset> {
   const presets: SnoozePreset[] = [
     {
       id: 'hour',
-      label: 'In 1 hour',
+      label: copy.utils.workspaceSnooze.in1Hour,
       whenLabel: timeOfDayLabel(now + HOUR_MS),
       wakeAt: now + HOUR_MS,
     },
     {
       id: 'three-hours',
-      label: 'In 3 hours',
+      label: copy.utils.workspaceSnooze.in3Hours,
       whenLabel: timeOfDayLabel(now + 3 * HOUR_MS),
       wakeAt: now + 3 * HOUR_MS,
     },
@@ -118,7 +119,7 @@ export function resolveSnoozePresets(now: number): ReadonlyArray<SnoozePreset> {
   if (evening - now > HOUR_MS) {
     presets.push({
       id: 'evening',
-      label: 'This evening',
+      label: copy.utils.workspaceSnooze.thisEvening,
       whenLabel: timeOfDayLabel(evening),
       wakeAt: evening,
     })
@@ -127,7 +128,7 @@ export function resolveSnoozePresets(now: number): ReadonlyArray<SnoozePreset> {
   const tomorrow = atHour(addDays(now, 1), MORNING_HOUR)
   presets.push({
     id: 'tomorrow',
-    label: 'Tomorrow',
+    label: copy.utils.workspaceSnooze.tomorrow,
     whenLabel: timeOfDayLabel(tomorrow),
     wakeAt: tomorrow,
   })
@@ -139,7 +140,7 @@ export function resolveSnoozePresets(now: number): ReadonlyArray<SnoozePreset> {
   if (nextWeek !== tomorrow) {
     presets.push({
       id: 'next-week',
-      label: 'Next week',
+      label: copy.utils.workspaceSnooze.nextWeek,
       whenLabel: `${weekdayLabel(nextWeek)} ${timeOfDayLabel(nextWeek)}`,
       wakeAt: nextWeek,
     })

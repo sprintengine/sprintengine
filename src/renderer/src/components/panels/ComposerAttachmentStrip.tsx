@@ -13,6 +13,7 @@ import { showToast } from '../../store/toastStore'
 // whole kit.
 import { IconButton, MediaButton } from '../ui/Buttons'
 import { ComposerFileChip } from './agentChat/ComposerFileChip'
+import { copy } from '../../../../shared/copy'
 
 // A `data:` URL for rendering an attachment thumbnail. The base64 is already in
 // memory, so this avoids an object-URL lifecycle with nothing to revoke.
@@ -57,7 +58,7 @@ export async function openAttachmentImage(attachment: ConversationImageAttachmen
   } catch (error) {
     showToast({
       tone: 'error',
-      title: 'Could not open that image',
+      title: copy.panels.composerAttachmentStrip.couldNotOpenThatImage,
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -78,7 +79,7 @@ export const AttachmentThumbnail = memo(function AttachmentThumbnail({
   return (
     <MediaButton
       onClick={() => void openAttachmentImage(attachment)}
-      aria-label={`Open ${label}`}
+      aria-label={copy.panels.composerAttachmentStrip.open(label)}
       className={className}
     >
       <img src={attachmentPreviewUrl(attachment)} alt={label} className="h-full w-full object-cover" />
@@ -125,7 +126,9 @@ export function ComposerAttachmentStrip({
           <span className="absolute right-1 top-1">
             <IconButton
               size="3xs"
-              aria-label={`Remove ${attachment.name ?? 'attached image'}`}
+              aria-label={copy.panels.composerAttachmentStrip.remove(
+                attachment.name ?? copy.panels.composerAttachmentStrip.attachedImage,
+              )}
               onClick={() => onRemove(attachment.id)}
               className="bg-[color:var(--bg-surface-raised)]/85"
             >
@@ -142,7 +145,10 @@ export function ComposerAttachmentStrip({
         </li>
       ))}
       {reading > 0 ? (
-        <li className="text-meta leading-5 text-[color:var(--text-muted)]">Reading {attachmentCountLabel(reading)}…</li>
+        <li className="text-meta leading-5 text-[color:var(--text-muted)]">
+          {copy.panels.composerAttachmentStrip.reading}
+          {attachmentCountLabel(reading)}…
+        </li>
       ) : null}
     </ul>
   )

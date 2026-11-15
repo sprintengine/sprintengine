@@ -4,6 +4,7 @@ import { Badge, type MarkBadge } from './Badge'
 import { StatusDot } from './StatusDot'
 import { Switch } from './Switch'
 import { FOCUS_RING_CLASS, type StatusTone } from './tokens'
+import { copy } from '../../../../shared/copy'
 
 // ProviderRow — the one two-line anatomy for a *provider*: something the app
 // talks to that can be present-or-absent, healthy-or-not, and configured
@@ -325,7 +326,7 @@ export function ProviderRow({
             type="button"
             onClick={onSelect}
             aria-pressed={selected}
-            aria-label={`Show details for ${name}`}
+            aria-label={copy.ui.providerRow.showDetailsFor(name)}
             className={`flex min-w-0 flex-1 items-start gap-3 rounded-[var(--radius-xs)] text-left ${FOCUS_RING_CLASS}`}
           >
             {face}
@@ -352,7 +353,7 @@ export function ProviderRow({
                 // aria-controls pointing at an id that is not in the document
                 // is a broken reference rather than a harmless one.
                 aria-controls={open ? detailId : undefined}
-                aria-label={`${name} details`}
+                aria-label={copy.ui.providerRow.details(name)}
                 // The glyph stays 13px and the button pads out to the
                 // hit-target floor around it, per foundations/principles.md
                 // ("a small glyph pads out to it with a transparent hit area
@@ -367,7 +368,7 @@ export function ProviderRow({
               <Switch
                 checked={enabled as boolean}
                 onChange={onEnabledChange as (next: boolean) => void}
-                ariaLabel={`${name} enabled`}
+                ariaLabel={copy.ui.providerRow.enabled(name)}
               />
             ) : null}
           </span>

@@ -7,6 +7,8 @@
 // then on, so each one reads as a person would put it, first person, with the
 // surface named.
 
+import { copy } from '../../../../../shared/copy'
+
 export type ExtensionIdea = {
   id: string
   /** What the idea adds to Studio, in the words the SDK's surface table uses. */
@@ -22,78 +24,78 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
   {
     id: 'top-bar-item',
     surface: 'Top bar',
-    title: 'PR review badge',
-    description: 'A count of the PRs waiting on you, in the top bar.',
+    title: copy.workspace.agentComposer.extensionIdeas.pRReviewBadge,
+    description: copy.workspace.agentComposer.extensionIdeas.aCountOfThePRs,
     prompt:
       'A top-bar badge counting the pull requests waiting on my review; clicking it lists them and opens one in the browser.',
   },
   {
     id: 'mcp-tools',
     surface: 'MCP tools',
-    title: 'Tools for my issue tracker',
-    description: 'Let any agent search and update your tracker.',
+    title: copy.workspace.agentComposer.extensionIdeas.toolsForMyIssueTracker,
+    description: copy.workspace.agentComposer.extensionIdeas.letAnyAgentSearchAnd,
     prompt: "MCP tools any agent can call to search my team's issue tracker and add a comment to an issue.",
   },
   {
     id: 'global-surface',
     surface: 'Page + sidebar row',
-    title: 'Release dashboard',
-    description: 'Open PRs and CI status across projects.',
+    title: copy.workspace.agentComposer.extensionIdeas.releaseDashboard,
+    description: copy.workspace.agentComposer.extensionIdeas.openPRsAndCIStatus,
     prompt:
       'A full page with its own sidebar row that shows open pull requests and CI status for every project I have open.',
   },
   {
     id: 'backlog-action',
     surface: 'Backlog action',
-    title: 'Break it down',
-    description: 'Split a Backlog item into smaller ones.',
+    title: copy.workspace.agentComposer.extensionIdeas.breakItDown,
+    description: copy.workspace.agentComposer.extensionIdeas.splitABacklogItemInto,
     prompt:
       'A Backlog item action that starts a chat to split the item into smaller items, each one a day of work or less.',
   },
   {
     id: 'panel',
     surface: 'Panel',
-    title: 'Project scratchpad',
-    description: 'Per-project notes that persist.',
+    title: copy.workspace.agentComposer.extensionIdeas.projectScratchpad,
+    description: copy.workspace.agentComposer.extensionIdeas.perProjectNotesThatPersist,
     prompt:
       'A scratchpad panel for each project that keeps my notes between sessions and lets me paste a note into a chat.',
   },
   {
     id: 'file-action',
     surface: 'Files action',
-    title: 'Explain this file',
-    description: 'A chat that walks through any file.',
+    title: copy.workspace.agentComposer.extensionIdeas.explainThisFile,
+    description: copy.workspace.agentComposer.extensionIdeas.aChatThatWalksThrough,
     prompt:
       'A Files action that opens a chat explaining the selected file: what it does, who calls it and what to watch out for.',
   },
   {
     id: 'chat-companion',
     surface: 'Chats',
-    title: 'Second-opinion reviewer',
-    description: 'Reviews what another chat changed.',
+    title: copy.workspace.agentComposer.extensionIdeas.secondOpinionReviewer,
+    description: copy.workspace.agentComposer.extensionIdeas.reviewsWhatAnotherChatChanged,
     prompt: 'When a chat finishes, start a second chat that reviews the changes it made and reports anything risky.',
   },
   {
     id: 'settings-section',
     surface: 'Settings',
-    title: 'Commit conventions',
-    description: 'A Settings section for your commit-message rules.',
+    title: copy.workspace.agentComposer.extensionIdeas.commitConventions,
+    description: copy.workspace.agentComposer.extensionIdeas.aSettingsSectionForYour,
     prompt:
       'A Settings section where I set our commit-message rules, and a command that checks the staged message against them.',
   },
   {
     id: 'workspace-type',
     surface: 'Workspace type',
-    title: 'Standup workspace',
-    description: "Opens on yesterday's commits and today's Backlog.",
+    title: copy.workspace.agentComposer.extensionIdeas.standupWorkspace,
+    description: copy.workspace.agentComposer.extensionIdeas.opensOnYesterdaySCommits,
     prompt:
       "A standup workspace type that opens with yesterday's commits across my projects and today's Backlog items.",
   },
   {
     id: 'blank',
     surface: 'Command',
-    title: 'Copy branch link',
-    description: 'A palette command that copies the branch URL.',
+    title: copy.workspace.agentComposer.extensionIdeas.copyBranchLink,
+    description: copy.workspace.agentComposer.extensionIdeas.aPaletteCommandThatCopies,
     prompt: 'A command in the palette that copies a link to the current branch on GitHub.',
   },
 ]

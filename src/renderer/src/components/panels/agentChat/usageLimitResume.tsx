@@ -14,6 +14,7 @@ import { formatUsageResetIn, usageProviderLabel } from '../../../../../shared/us
 import { GhostButton, LinkButton } from '../../ui'
 import { ComposerTrayRow } from './composerTray'
 import { formatTimeOfDay } from '../../../utils/clockFormat'
+import { copy } from '../../../../../shared/copy'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -77,10 +78,10 @@ export function UsageLimitNoticeRow({
           act ? (
             <>
               <GhostButton size="xs" onClick={() => act('retry')}>
-                Retry
+                {copy.panels.agentChat.usageLimitResume.retry}
               </GhostButton>
               <GhostButton size="xs" onClick={() => act('dismiss')}>
-                Dismiss
+                {copy.panels.agentChat.usageLimitResume.dismiss}
               </GhostButton>
             </>
           ) : null
@@ -101,7 +102,7 @@ export function UsageLimitNoticeRow({
         actions={
           act ? (
             <GhostButton size="xs" onClick={() => act('cancel')}>
-              Cancel
+              {copy.panels.agentChat.usageLimitResume.cancel}
             </GhostButton>
           ) : null
         }
@@ -120,11 +121,11 @@ export function UsageLimitNoticeRow({
           <>
             {canSchedule ? (
               <GhostButton size="xs" onClick={() => act('schedule')}>
-                Resume at reset
+                {copy.panels.agentChat.usageLimitResume.resumeAtReset}
               </GhostButton>
             ) : null}
             <GhostButton size="xs" onClick={() => act('dismiss')}>
-              Dismiss
+              {copy.panels.agentChat.usageLimitResume.dismiss}
             </GhostButton>
           </>
         ) : null
@@ -134,7 +135,9 @@ export function UsageLimitNoticeRow({
       {act && canSchedule && !autoResume ? (
         <>
           {' '}
-          <LinkButton onClick={() => act('schedule', true)}>Always resume at reset</LinkButton>
+          <LinkButton onClick={() => act('schedule', true)}>
+            {copy.panels.agentChat.usageLimitResume.alwaysResumeAtReset}
+          </LinkButton>
         </>
       ) : null}
     </ComposerTrayRow>

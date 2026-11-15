@@ -72,6 +72,7 @@ import {
   type HandingSend,
 } from "./queuedSends";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 /**
  * How long a streamed delta may wait to be drawn with the ones behind it. A
@@ -741,12 +742,12 @@ export function usePhoneConversation(
                 // As may a message taken back: the list the desktop sends
                 // after the redial says whether it still holds it.
                 for (const settle of takingBack.values())
-                  settle({ ok: false, message: "The desktop disconnected. Check the queue once it's back." });
+                  settle({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.theDesktopDisconnectedCheckThe });
                 takingBack.clear();
                 // The list the desktop sends after the redial says whether a
                 // schedule, a send-now or a take-back landed.
                 for (const settle of scheduling.values())
-                  settle({ ok: false, message: "The desktop disconnected. Check scheduled messages once it's back." });
+                  settle({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.theDesktopDisconnectedCheckScheduled });
                 scheduling.clear();
                 // A Stop sent before the drop may still have landed; the
                 // agent's lane says so once the transcript catches up.
@@ -1021,7 +1022,7 @@ export function usePhoneConversation(
                 settle({
                   ok: false,
                   message: conversationSessionWasLost(frame)
-                    ? "The chat's server restarted and its agents stopped."
+                    ? appCopy.phone.conversations.usePhoneConversation.theChatSServerRestarted
                     : (frame.message ?? refusalText(frame.code, "The desktop could not stop this agent.")),
                 });
               }
@@ -1045,7 +1046,7 @@ export function usePhoneConversation(
                 pending.settle({
                   ok: false,
                   message: conversationSessionWasLost(frame)
-                    ? "The chat's server restarted before the change landed. Try again."
+                    ? appCopy.phone.conversations.usePhoneConversation.theChatSServerRestarted2
                     : (frame.message ?? refusalText(frame.code, pending.refused)),
                 });
             } else if (frame.type === "commandResult") {
@@ -1147,9 +1148,9 @@ export function usePhoneConversation(
         });
       actionRequests.current.clear();
       abandonThreadChanges(switches, "Conversation closed.");
-      for (const settle of takingBack.values()) settle({ ok: false, message: "Conversation closed." });
+      for (const settle of takingBack.values()) settle({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationClosed });
       takingBack.clear();
-      for (const settle of scheduling.values()) settle({ ok: false, message: "Conversation closed." });
+      for (const settle of scheduling.values()) settle({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationClosed });
       scheduling.clear();
       abandonAgentStops("Conversation closed.");
     };
@@ -1194,7 +1195,7 @@ export function usePhoneConversation(
     ): Promise<ModelSwitchResult> =>
       new Promise<ModelSwitchResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: "Conversation is not connected yet." });
+          resolve({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationIsNotConnectedYet });
           return;
         }
         let commandId: string;
@@ -1345,7 +1346,7 @@ export function usePhoneConversation(
     (queuedId: string): Promise<CancelHeldResult> =>
       new Promise<CancelHeldResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: "Conversation is not connected yet." });
+          resolve({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationIsNotConnectedYet });
           return;
         }
         let commandId: string;
@@ -1354,7 +1355,7 @@ export function usePhoneConversation(
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+            message: error instanceof Error ? error.message : appCopy.phone.conversations.usePhoneConversation.reconnectBeforeUsingThisAction,
           });
           return;
         }
@@ -1371,7 +1372,7 @@ export function usePhoneConversation(
     ): Promise<CancelHeldResult> =>
       new Promise<CancelHeldResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: "Conversation is not connected yet." });
+          resolve({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationIsNotConnectedYet });
           return;
         }
         let commandId: string;
@@ -1380,7 +1381,7 @@ export function usePhoneConversation(
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+            message: error instanceof Error ? error.message : appCopy.phone.conversations.usePhoneConversation.reconnectBeforeUsingThisAction,
           });
           return;
         }
@@ -1418,7 +1419,7 @@ export function usePhoneConversation(
     (laneId: string): Promise<StopAgentResult> =>
       new Promise<StopAgentResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: "Conversation is not connected yet." });
+          resolve({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationIsNotConnectedYet });
           return;
         }
         let commandId: string;
@@ -1427,7 +1428,7 @@ export function usePhoneConversation(
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+            message: error instanceof Error ? error.message : appCopy.phone.conversations.usePhoneConversation.reconnectBeforeUsingThisAction,
           });
           return;
         }
@@ -1442,7 +1443,7 @@ export function usePhoneConversation(
     (laneId: string, message: string): Promise<StopAgentResult> =>
       new Promise<StopAgentResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: "Conversation is not connected yet." });
+          resolve({ ok: false, message: appCopy.phone.conversations.usePhoneConversation.conversationIsNotConnectedYet });
           return;
         }
         try {
@@ -1451,7 +1452,7 @@ export function usePhoneConversation(
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+            message: error instanceof Error ? error.message : appCopy.phone.conversations.usePhoneConversation.reconnectBeforeUsingThisAction,
           });
         }
       }),

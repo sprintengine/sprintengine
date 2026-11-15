@@ -14,6 +14,7 @@
 // whose desktop went quiet still goes cold on time.
 
 import type { PromptCacheReading, PromptCacheTtl } from "../../../../packages/conversation-protocol/src/public";
+import { copy } from "../../../../src/shared/copy";
 
 export type PromptCacheState =
   | { kind: "warm"; remainingMs: number; recacheTokens: number | null }
@@ -82,15 +83,15 @@ export function promptCacheCopy(
       : "the whole conversation";
   if (state.kind === "expiring")
     return {
-      label: `Cache expires in ${minutes(state.remainingMs)}`,
-      detail: `Then the next message re-sends ${tokens} uncached. Compacting now is cheap.`,
+      label: copy.phone.conversations.promptCache.cacheExpiresIn(minutes(state.remainingMs)),
+      detail: copy.phone.conversations.promptCache.thenTheNextMessageRe(tokens),
     };
   const ago = state.expiredAt !== null && now - state.expiredAt >= 60_000 ? minutes(now - state.expiredAt) : "";
   return {
-    label: ago ? `Cache expired ${ago} ago` : "Cache cold",
+    label: ago ? copy.phone.conversations.promptCache.cacheExpiredAgo(ago) : copy.phone.conversations.promptCache.cacheCold,
     // Compacting a cold cache re-reads the conversation uncached too; what it
     // buys is every message after it.
-    detail: `The next message re-sends ${tokens} uncached, a compaction included. Compacting shrinks later messages.`,
+    detail: copy.phone.conversations.promptCache.theNextMessageReSends(tokens),
   };
 }
 

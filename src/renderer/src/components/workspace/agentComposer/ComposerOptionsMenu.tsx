@@ -15,6 +15,7 @@ import { MENU_GROUP_LABEL_CLASS } from '../../ui/menuClasses'
 import { TerminalPromptGlyph } from '../../ui/CodeBlockGlyphs'
 import { roveMenuFocus } from '../../ui/ContextMenu'
 import type { AgentComposerSelection } from './useAgentComposer'
+import { copy } from '../../../../../shared/copy'
 
 // What the New chat composer's "+" opens (owner ruling 2026-10-04): how the
 // launch starts, then what it starts with. It replaces the ⋯ menu that chose
@@ -32,9 +33,21 @@ import type { AgentComposerSelection } from './useAgentComposer'
 export type StartAs = AgentComposerSelection['kind']
 
 const START_AS: ReadonlyArray<{ kind: StartAs; label: string; glyph: (className: string) => React.ReactNode }> = [
-  { kind: 'conversation', label: 'Conversation', glyph: (className) => <ConversationGlyph className={className} /> },
-  { kind: 'general', label: 'Terminal agent', glyph: (className) => <TerminalAgentGlyph className={className} /> },
-  { kind: 'terminal', label: 'Terminal', glyph: (className) => <TerminalPromptGlyph className={className} /> },
+  {
+    kind: 'conversation',
+    label: copy.workspace.agentComposer.composerOptionsMenu.conversation,
+    glyph: (className) => <ConversationGlyph className={className} />,
+  },
+  {
+    kind: 'general',
+    label: copy.workspace.agentComposer.composerOptionsMenu.terminalAgent,
+    glyph: (className) => <TerminalAgentGlyph className={className} />,
+  },
+  {
+    kind: 'terminal',
+    label: copy.workspace.agentComposer.composerOptionsMenu.terminal,
+    glyph: (className) => <TerminalPromptGlyph className={className} />,
+  },
 ]
 
 /** What a "Start as" choice is called, for the tag it raises beside the "+". */
@@ -90,8 +103,10 @@ export function ComposerOptions({
     // answer them; Tab leaves.
     <div onKeyDown={(event) => roveMenuFocus(event, event.currentTarget.closest('[role="menu"]'))}>
       {choices.length > 1 ? (
-        <div role="group" aria-label="Start as">
-          <div className={`${MENU_GROUP_LABEL_CLASS} pb-1 pt-1.5`}>Start as</div>
+        <div role="group" aria-label={copy.workspace.agentComposer.composerOptionsMenu.startAs}>
+          <div className={`${MENU_GROUP_LABEL_CLASS} pb-1 pt-1.5`}>
+            {copy.workspace.agentComposer.composerOptionsMenu.startAs}
+          </div>
           <div className="grid grid-cols-3 gap-0.5 px-1 pb-0.5">
             {choices.map((entry) => {
               const checked = entry.kind === startAs
@@ -131,7 +146,7 @@ export function ComposerOptions({
             onAttach()
           }}
         >
-          Attach files
+          {copy.workspace.agentComposer.composerOptionsMenu.attachFiles}
         </MenuItem>
       ) : null}
       {onSkills ? (
@@ -144,7 +159,7 @@ export function ComposerOptions({
             onSkills()
           }}
         >
-          Skills, plugins &amp; MCPs
+          {copy.workspace.agentComposer.composerOptionsMenu.skillsPluginsMCPs}
         </MenuItem>
       ) : null}
       {sideQuestion ? (
@@ -159,7 +174,7 @@ export function ComposerOptions({
             sideQuestion.onAsk()
           }}
         >
-          Side question
+          {copy.workspace.agentComposer.composerOptionsMenu.sideQuestion}
         </MenuItem>
       ) : null}
       {schedule ? (
@@ -190,7 +205,9 @@ export function ComposerOptions({
               close()
             }}
           >
-            <span className="block text-body font-medium">Schedule</span>
+            <span className="block text-body font-medium">
+              {copy.workspace.agentComposer.composerOptionsMenu.schedule}
+            </span>
             {/* Only why it cannot be picked now: what it does is the row's word. */}
             {schedule.disabled !== null ? (
               <span className="block text-meta leading-snug text-[color:var(--text-subtle)]">{schedule.disabled}</span>
@@ -200,7 +217,7 @@ export function ComposerOptions({
       ) : null}
       {plainShell ? (
         <p className="px-2.5 pb-1.5 pt-1 text-micro text-[color:var(--text-muted)]">
-          A plain shell takes no attachments or options.
+          {copy.workspace.agentComposer.composerOptionsMenu.aPlainShellTakesNo}
         </p>
       ) : null}
     </div>

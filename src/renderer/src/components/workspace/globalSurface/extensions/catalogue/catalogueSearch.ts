@@ -21,6 +21,7 @@
 import type { ScanResult, SkillSource } from '../../../../../../../shared/skills'
 import type { SkillScanLoad } from '../skills/skillsSurfaceModel'
 import { catalogueTabLabel, INSTALLED_TAB_ID, orderCatalogueSources } from './catalogueTabs'
+import { copy } from '../../../../../../../shared/copy'
 
 /** A source's share of the results: its rows, under its own name. */
 export type SourceSearchSection<T> = {
@@ -99,7 +100,12 @@ export function searchAcrossSources<T>(input: {
   // Installed leads, as its tab does: what you already have is the first
   // answer to "do I have a thing called this".
   if (installed.length > 0) {
-    sections.unshift({ key: INSTALLED_TAB_ID, label: 'Installed', source: null, items: [...installed] })
+    sections.unshift({
+      key: INSTALLED_TAB_ID,
+      label: copy.workspace.globalSurface.extensions.catalogue.catalogueSearch.installed,
+      source: null,
+      items: [...installed],
+    })
   }
   return {
     query,

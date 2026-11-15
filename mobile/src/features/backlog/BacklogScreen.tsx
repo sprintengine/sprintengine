@@ -27,6 +27,7 @@ import {
   type BacklogEpicMeta,
   type BacklogRowItem,
 } from "./backlogLogic";
+import { copy } from "../../../../src/shared/copy";
 
 export interface BacklogUpdateInput {
   workspacePath: string;
@@ -122,12 +123,12 @@ export function BacklogScreen({
         <View style={styles.searchField}>
           <SearchIcon size={iconSize.sm} tone="textMuted" />
           <TextInput
-            accessibilityLabel="Search backlog"
+            accessibilityLabel={copy.phone.backlog.backlogScreen.searchBacklog}
             autoCapitalize="none"
             autoCorrect={false}
             clearButtonMode="while-editing"
             onChangeText={setSearch}
-            placeholder="Search title, id, excerpt"
+            placeholder={copy.phone.backlog.backlogScreen.searchTitleIdExcerpt}
             placeholderTextColor={styles.placeholder.color}
             returnKeyType="search"
             style={styles.searchInput}
@@ -137,7 +138,7 @@ export function BacklogScreen({
         <View>
           <IconButton
             icon={<FilterIcon size={iconSize.md} tone="textMuted" />}
-            label={filterActive ? "Filters, active" : "Filters"}
+            label={filterActive ? copy.phone.backlog.backlogScreen.filtersActive : copy.phone.backlog.backlogScreen.filters}
             onPress={() => setFilterOpen(true)}
             variant="outlined"
           />
@@ -152,7 +153,7 @@ export function BacklogScreen({
     <ScreenFrame
       count={totalInWorkspace}
       staleMessage={totalInWorkspace > 0 ? errorMessage : null}
-      title="Backlog"
+      title={copy.phone.backlog.backlogScreen.backlog}
       trailing={<ProjectControl />}
     >
       <FlatList
@@ -239,8 +240,8 @@ function EpicGroupHeader({ group, onOpenEpic }: { group: BacklogEpicGroup; onOpe
   if (group.epicItem && onOpenEpic) {
     return (
       <Pressable
-        accessibilityHint="Opens the epic"
-        accessibilityLabel={`Epic ${group.epicItem.title}${rollup ? `, ${rollup}` : ""}`}
+        accessibilityHint={copy.phone.backlog.backlogScreen.opensTheEpic}
+        accessibilityLabel={copy.phone.backlog.backlogScreen.epic(group.epicItem.title, rollup ? `, ${rollup}` : "")}
         accessibilityRole="button"
         onPress={onOpenEpic}
         style={({ pressed }) => [
@@ -294,14 +295,14 @@ function BacklogEmptyState({
   const styles = useThemedStyles(createStyles);
 
   if (isLoading) {
-    return <SkeletonRows label="Loading backlog" />;
+    return <SkeletonRows label={copy.phone.backlog.backlogScreen.loadingBacklog} />;
   }
 
   if (!errorMessage && hasSearch) {
     return (
       <View style={styles.emptyPanel}>
-        <Text style={styles.emptyTitle}>No matches</Text>
-        <Text style={styles.emptyText}>No items match. Clear the search or filters.</Text>
+        <Text style={styles.emptyTitle}>{copy.phone.backlog.backlogScreen.noMatches}</Text>
+        <Text style={styles.emptyText}>{copy.phone.backlog.backlogScreen.noItemsMatchClearThe}</Text>
       </View>
     );
   }
@@ -312,7 +313,7 @@ function BacklogEmptyState({
     <View accessibilityRole={errorMessage ? "alert" : "text"} style={styles.emptyPanel}>
       <Text style={styles.emptyTitle}>{emptyState.title}</Text>
       <Text style={styles.emptyText}>{emptyState.body}</Text>
-      {errorMessage && onRefresh ? <PrimaryButton label="Try again" onPress={onRefresh} variant="secondary" /> : null}
+      {errorMessage && onRefresh ? <PrimaryButton label={copy.phone.backlog.backlogScreen.tryAgain} onPress={onRefresh} variant="secondary" /> : null}
     </View>
   );
 }

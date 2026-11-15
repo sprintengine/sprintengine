@@ -16,6 +16,7 @@ import { revealLabel } from '../../../utils/revealLabel'
 import { AttachmentFileCard } from '../../ui/AttachmentChip'
 import { ContextMenu, MenuItem } from '../../ui/ContextMenu'
 import { FileTypeGlyph, FolderGlyph } from '../../ui/FileTypeGlyph'
+import { copy } from '../../../../../shared/copy'
 
 // What main said about each path, kept for the window's life so a card that
 // re-mounts (every chat switch, the transcript's virtual list) draws at once
@@ -89,7 +90,7 @@ async function revealAttachedFile(path: string): Promise<void> {
   } catch (error) {
     showToast({
       tone: 'error',
-      title: `Could not show ${attachedFileName(path)}`,
+      title: copy.panels.agentChat.composerFileChip.couldNotShow(attachedFileName(path)),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -104,7 +105,7 @@ async function openAttachedFile(path: string): Promise<void> {
     const message = error instanceof Error ? error.message : String(error)
     showToast({
       tone: 'error',
-      title: `Could not open ${attachedFileName(path)}`,
+      title: copy.panels.agentChat.composerFileChip.couldNotOpen(attachedFileName(path)),
       description: message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''),
     })
   }
@@ -143,15 +144,15 @@ export const ComposerFileChip = memo(function ComposerFileChip({
         }
         name={middleTruncateFileName(name, NAME_CHARS)}
         fullName={name}
-        typeLabel={folder ? 'Folder' : type.label}
-        actionLabel={revealOnly ? `${reveal}: ${name}` : `Open ${name}`}
+        typeLabel={folder ? copy.panels.agentChat.composerFileChip.folder : type.label}
+        actionLabel={revealOnly ? `${reveal}: ${name}` : copy.panels.agentChat.composerFileChip.open(name)}
         onOpen={() => void (revealOnly ? revealAttachedFile(path) : openAttachedFile(path))}
         onContextMenu={(event) => {
           if (revealOnly && !canReveal && !onRemove) return
           event.preventDefault()
           setMenu({ x: event.clientX, y: event.clientY })
         }}
-        removeLabel={`Remove ${name}`}
+        removeLabel={copy.panels.agentChat.composerFileChip.remove(name)}
         onRemove={onRemove ? () => onRemove(path) : undefined}
       />
       {menu ? (
@@ -163,7 +164,7 @@ export const ComposerFileChip = memo(function ComposerFileChip({
                 void openAttachedFile(path)
               }}
             >
-              Open
+              {copy.panels.agentChat.composerFileChip.open2}
             </MenuItem>
           )}
           {canReveal ? (
@@ -183,7 +184,7 @@ export const ComposerFileChip = memo(function ComposerFileChip({
                 onRemove(path)
               }}
             >
-              Remove
+              {copy.panels.agentChat.composerFileChip.remove2}
             </MenuItem>
           ) : null}
         </ContextMenu>

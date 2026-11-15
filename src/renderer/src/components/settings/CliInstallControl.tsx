@@ -5,6 +5,7 @@ import { LOCAL_HOST_ID, type ExecutionHostId } from '../../../../shared/executio
 import { useAnsiPlainText } from '../../hooks/useAnsiPlainText'
 import { GhostButton, InlineNotice, LifecycleGlyph, PrimaryButton, Select, Spinner, type SelectItem } from '../ui'
 import { agentSettingsApi } from '../../studio/agentSettings'
+import { copy } from '../../../../shared/copy'
 
 export type CliInstallControlProps = {
   cli: string
@@ -324,7 +325,11 @@ export function CliInstallControl({
               // names the state, so the glyph never carries meaning by colour alone.
               <LifecycleGlyph
                 state={installed ? 'done' : 'needs_input'}
-                label={installed ? `${displayName} detected` : `${displayName} not found`}
+                label={
+                  installed
+                    ? copy.settings.cliInstallControl.detected(displayName)
+                    : copy.settings.cliInstallControl.notFound(displayName)
+                }
               />
             )}
             <span className="truncate text-body text-[color:var(--text-default)]">{statusText}</span>
@@ -340,11 +345,11 @@ export function CliInstallControl({
               onClick={() => void runDetect()}
               className="h-control-sm border border-[color:var(--border-default)] text-[color:var(--text-default)]"
             >
-              Re-check
+              {copy.settings.cliInstallControl.reCheck}
             </GhostButton>
             {!installed && !expanded && (
               <PrimaryButton size="sm" onClick={() => void openInstall()} className="h-control-sm">
-                Install
+                {copy.settings.cliInstallControl.install}
               </PrimaryButton>
             )}
           </div>
@@ -368,19 +373,20 @@ export function CliInstallControl({
         >
           {methods === null ? (
             <div className="flex items-center gap-2 text-body text-[color:var(--text-muted)]">
-              <Spinner className="icon-sm" /> Loading…
+              <Spinner className="icon-sm" />
+              {copy.settings.cliInstallControl.loading}
             </div>
           ) : methods.length === 0 ? (
             <p className="text-body leading-5 text-[color:var(--text-muted)]">
-              No installer for this platform. Install{' '}
-              <span className="font-mono text-[color:var(--text-default)]">{binary}</span> yourself, then set its path{' '}
-              {hostDriven ? 'in Settings → Agents.' : 'above.'}
+              {copy.settings.cliInstallControl.noInstallerForThisPlatform}{' '}
+              <span className="font-mono text-[color:var(--text-default)]">{binary}</span>
+              {copy.settings.cliInstallControl.yourselfThenSetItsPath} {hostDriven ? 'in Settings → Agents.' : 'above.'}
             </p>
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Select
-                  ariaLabel={`${displayName} install method`}
+                  ariaLabel={copy.settings.cliInstallControl.installMethod(displayName)}
                   items={methodItems}
                   value={selectedMethodId || null}
                   onChange={setSelectedMethodId}
@@ -406,7 +412,7 @@ export function CliInstallControl({
                         onClick={() => setExpanded(false)}
                         className="h-control-md text-[color:var(--text-muted)]"
                       >
-                        Cancel
+                        {copy.settings.cliInstallControl.cancel}
                       </GhostButton>
                     )}
                   </>
@@ -415,7 +421,9 @@ export function CliInstallControl({
 
               {selectedMethod && !hostDriven && (
                 <div className="mt-2">
-                  <div className="mb-1 text-meta text-[color:var(--text-subtle)]">Will run:</div>
+                  <div className="mb-1 text-meta text-[color:var(--text-subtle)]">
+                    {copy.settings.cliInstallControl.willRun}
+                  </div>
                   <pre className="overflow-x-auto rounded-[var(--radius-sm)] bg-[color:var(--bg-app)] px-2.5 py-1.5 font-mono text-meta text-[color:var(--text-default)]">
                     {selectedMethod.commandPreview}
                   </pre>

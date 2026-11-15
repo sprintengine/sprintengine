@@ -6,6 +6,7 @@ import { useStudioServerStatus } from '../studioServer/useStudioServerStatus'
 import { uptimeWords } from '../studioServer/studioServerWords'
 import { GhostButton, InlineNotice, Switch } from '../ui'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Agents → Studio server: the Advanced toggle that runs the server
 // in a process of its own (phase 6, off by default), and, while it does, what
@@ -39,7 +40,7 @@ export function SshMachinesPreviewSwitch() {
   return (
     <>
       <SettingsRow
-        label="SSH machines (preview)"
+        label={copy.settings.studioServerSettings.sSHMachinesPreview}
         helpId={SSH_TOGGLE_HELP_ID}
         help={
           status.fromEnvironment
@@ -59,14 +60,18 @@ export function SshMachinesPreviewSwitch() {
               .finally(() => setPending(false))
           }}
           disabled={pending || status.fromEnvironment}
-          ariaLabel="SSH machines (preview)"
+          ariaLabel={copy.settings.studioServerSettings.sSHMachinesPreview}
           ariaDescribedBy={SSH_TOGGLE_HELP_ID}
         />
       </SettingsRow>
       {restartNeeded ? (
         <InlineNotice
           tone="warn"
-          action={<GhostButton onClick={() => void window.api.studioServerRelaunch()}>Restart now</GhostButton>}
+          action={
+            <GhostButton onClick={() => void window.api.studioServerRelaunch()}>
+              {copy.settings.studioServerSettings.restartNow}
+            </GhostButton>
+          }
         >
           {status.saved ? 'SSH machines appear after a restart.' : 'SSH machines go away after a restart.'}
         </InlineNotice>
@@ -128,10 +133,10 @@ export function StudioServerSettings() {
   const outOfProcess = status.mode === 'out-of-process'
   return (
     <section className="space-y-3 pt-2">
-      <SettingsSectionTitle>Studio server</SettingsSectionTitle>
+      <SettingsSectionTitle>{copy.settings.studioServerSettings.studioServer}</SettingsSectionTitle>
       <SettingCard>
         <SettingsRow
-          label="Run Studio server in its own process"
+          label={copy.settings.studioServerSettings.runStudioServerInIts}
           helpId={TOGGLE_HELP_ID}
           help={
             status.fromEnvironment
@@ -144,7 +149,7 @@ export function StudioServerSettings() {
             checked={status.savedMode === 'out-of-process'}
             onChange={(next) => void setOwnProcess(next)}
             disabled={pending || status.fromEnvironment}
-            ariaLabel="Run Studio server in its own process"
+            ariaLabel={copy.settings.studioServerSettings.runStudioServerInIts}
             ariaDescribedBy={TOGGLE_HELP_ID}
           />
         </SettingsRow>
@@ -159,9 +164,11 @@ export function StudioServerSettings() {
             }
           >
             <span className="flex items-center gap-2">
-              <GhostButton onClick={() => void window.api.studioServerOpenLog()}>Open log</GhostButton>
+              <GhostButton onClick={() => void window.api.studioServerOpenLog()}>
+                {copy.settings.studioServerSettings.openLog}
+              </GhostButton>
               <GhostButton onClick={() => void window.api.studioServerRestart()} disabled={!running}>
-                Restart server
+                {copy.settings.studioServerSettings.restartServer}
               </GhostButton>
             </span>
           </SettingsRow>
@@ -171,7 +178,11 @@ export function StudioServerSettings() {
       {restartNeeded ? (
         <InlineNotice
           tone="warn"
-          action={<GhostButton onClick={() => void window.api.studioServerRelaunch()}>Restart now</GhostButton>}
+          action={
+            <GhostButton onClick={() => void window.api.studioServerRelaunch()}>
+              {copy.settings.studioServerSettings.restartNow}
+            </GhostButton>
+          }
         >
           {status.savedMode === 'out-of-process'
             ? 'Studio server moves to its own process after a restart.'
@@ -180,7 +191,8 @@ export function StudioServerSettings() {
       ) : null}
       {status.fellBack ? (
         <InlineNotice tone="warn">
-          Studio server couldn't start on its own, so it runs inside the app. {status.fellBack}
+          {copy.settings.studioServerSettings.studioServerCouldnTStart}
+          {status.fellBack}
         </InlineNotice>
       ) : null}
     </section>

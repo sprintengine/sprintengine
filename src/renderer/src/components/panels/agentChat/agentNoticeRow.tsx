@@ -19,6 +19,7 @@ import { formatMessageDateTime, formatMessageTime } from './liveElapsed'
 import { SubagentIcon } from './subagentIcon'
 import { ChevronRightGlyph, ToolKindGlyph } from './toolRows/ToolKindGlyph'
 import { forwardRowGroundClick, ToolPanel } from './toolRows/ToolRow'
+import { copy } from '../../../../../shared/copy'
 
 export function AgentNoticeRows({
   id,
@@ -112,7 +113,7 @@ function AgentNoticeRow({ id, notice, at }: { id: string; notice: ConversationAg
           <ToolPanel copyText={reply} copyHtml={() => markdownClipboardHtml(reply)} mono={false}>
             {notice.replyTruncated ? (
               <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-                Its start was cut to fit; the agent's own chat has the whole reply.
+                {copy.panels.agentChat.agentNoticeRow.itsStartWasCutTo}
               </p>
             ) : null}
             <ConversationMarkdown text={reply} />

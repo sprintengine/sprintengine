@@ -9,6 +9,7 @@ import {
 } from '../../../lib/diagram/mermaidDiagram'
 import type { CodeBlockNoteAction } from '../../ui/CodeBlock'
 import { OpenDiagramButton } from './diagramViewer'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 const DIAGRAM_LANGUAGES = new Set(['mermaid', 'mmd'])
 
@@ -69,7 +70,15 @@ export function useDiagramDrawing(
   if (!wanted || !result) return {}
   if ('error' in result) {
     const note = diagramNote(result.error)
-    return result.retry ? { note, noteAction: { label: 'Retry', onClick: () => setAttempt((n) => n + 1) } } : { note }
+    return result.retry
+      ? {
+          note,
+          noteAction: {
+            label: appCopy.panels.agentChat.conversationDiagram.retry,
+            onClick: () => setAttempt((n) => n + 1),
+          },
+        }
+      : { note }
   }
   return { drawing: <DiagramSvg svg={result.svg} />, actions: <OpenDiagramButton svg={result.svg} /> }
 }

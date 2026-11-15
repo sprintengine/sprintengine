@@ -172,6 +172,7 @@ import { chatThreadCli, type CliRuntime } from "./launchLogic";
 import { ModelPickerSheet } from "./ModelPickerSheet";
 import type { ConversationRequestDecision } from "../../../../packages/conversation-protocol/src/public";
 import { chatProvider, MODEL_SET_ONCE_NOTE, readOnlyProvider } from "./modelPickerLogic";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 /** No turn to open: one list, so what is worked out from it is not worked out again. */
 const NO_TURNS: (ChangedTurn & { turnSeq: number })[] = [];
@@ -1039,7 +1040,7 @@ export function ConversationScreen({
       ? chatProvider(activeThread.models, catalogRuntime, activeThread.modelId && activeThread.modelId !== DEFAULT_MODEL_ID ? activeThread.modelId : null)
       : readOnlyProvider({
           cli: chatCli ?? activeThread.providerId,
-          label: activeThread.models?.cliLabel || chatCli || "Chat",
+          label: activeThread.models?.cliLabel || chatCli || appCopy.phone.conversations.conversationScreen.chat,
           modelName: shortModelLabel(activeThread),
         });
   const pickerLabel = changing === "model" ? "Switching…" : (model?.label ?? shortModelLabel(activeThread));
@@ -1060,7 +1061,7 @@ export function ConversationScreen({
     () =>
       openable.map((turn) => ({
         turn,
-        label: turn.changes ? turnChangesLabel(turn.changes) : "View changed files",
+        label: turn.changes ? turnChangesLabel(turn.changes) : appCopy.phone.conversations.conversationScreen.viewChangedFiles,
         time: new Date(turn.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       })),
     [openable],
@@ -1092,7 +1093,7 @@ export function ConversationScreen({
       ? [
           {
             key: "branch",
-            label: "Branch",
+            label: appCopy.phone.conversations.conversationScreen.branch,
             meta: branch,
             ...(worktree ? { sub: `In worktree ${worktree}` } : {}),
             ...(openChanges ? { onPress: openChanges } : {}),
@@ -1103,7 +1104,7 @@ export function ConversationScreen({
       ? [
           {
             key: "pr",
-            label: "Pull request",
+            label: appCopy.phone.conversations.conversationScreen.pullRequest,
             meta: pr.text,
             ...((title) => (title ? { sub: title } : {}))(
               (activeThread.pullRequests ?? listedThread.pullRequests)?.find((entry) => entry.number === pr.mark.number)?.title,
@@ -1113,13 +1114,13 @@ export function ConversationScreen({
         ]
       : []),
     ...(servers
-      ? [{ key: "server", label: (activeThread.localServers ?? listedThread.localServers ?? []).length > 1 ? "Servers" : "Server", meta: servers.meta, sub: `${servers.sub} · on ${session?.desktopName ?? "the desktop"}` }]
+      ? [{ key: "server", label: (activeThread.localServers ?? listedThread.localServers ?? []).length > 1 ? appCopy.phone.conversations.conversationScreen.servers : appCopy.phone.conversations.conversationScreen.server, meta: servers.meta, sub: `${servers.sub} · on ${session?.desktopName ?? "the desktop"}` }]
       : []),
     ...(modelSheetOffered
       ? [
           {
             key: "model",
-            label: "Model",
+            label: appCopy.phone.conversations.conversationScreen.model,
             meta: pickerLabel,
             ...(model && !model.editable ? { sub: "Set when the chat started" } : {}),
             ...(openModelSheet ? { onPress: openModelSheet } : {}),
@@ -1130,20 +1131,20 @@ export function ConversationScreen({
       ? [
           {
             key: "permissions",
-            label: "Permissions",
+            label: appCopy.phone.conversations.conversationScreen.permissions,
             meta: permissionLabel(preset),
             ...(accessOffered && canAct ? { onPress: () => sheetHandoff.after(() => setSheet("permission")) } : {}),
           },
         ]
       : []),
     ...(ring && ringLabel
-      ? [{ key: "context", label: "Context", meta: `${ring.percentage}%`, sub: ringLabel, ...(ring.high ? { tone: "warn" as const } : {}) }]
+      ? [{ key: "context", label: appCopy.phone.conversations.conversationScreen.context, meta: `${ring.percentage}%`, sub: ringLabel, ...(ring.high ? { tone: "warn" as const } : {}) }]
       : []),
     ...(usageNow
       ? [
           {
             key: "usage",
-            label: "Usage",
+            label: appCopy.phone.conversations.conversationScreen.usage,
             meta: usageMeta(usageNow.window),
             sub: usageSub(usageNow.window, clock),
             tone: usageTone(usageNow.window),
@@ -1295,13 +1296,13 @@ export function ConversationScreen({
         <View pointerEvents="box-none" style={styles.float}>
           <CircleButton
             icon={<ChevronIcon direction="left" size={iconSize.md} tone="textPrimary" />}
-            label="Go back"
+            label={appCopy.phone.conversations.conversationScreen.goBack}
             onPress={onBack}
           />
           <View pointerEvents="box-none" style={styles.floatTitle}>
             <Pressable
-              accessibilityHint="Chat details and what its agent touched"
-              accessibilityLabel={`${chatTitle}, chat details`}
+              accessibilityHint={appCopy.phone.conversations.conversationScreen.chatDetailsAndWhatIts}
+              accessibilityLabel={appCopy.phone.conversations.conversationScreen.chatDetails(chatTitle)}
               accessibilityRole="button"
               onPress={() => setPageOpen(true)}
               style={({ pressed }) => [styles.titlePill, pressed ? styles.titlePillPressed : null]}
@@ -1319,14 +1320,13 @@ export function ConversationScreen({
               // A subagent's way up, under its name, as the desktop's band
               // over a subagent's chat leads back to its parent.
               <Pressable
-                accessibilityHint="Goes to the chat that started this subagent."
-                accessibilityLabel={`Subagent of ${parent.name}`}
+                accessibilityHint={appCopy.phone.conversations.conversationScreen.goesToTheChatThat}
+                accessibilityLabel={appCopy.phone.conversations.conversationScreen.subagentOf(parent.name)}
                 accessibilityRole="link"
                 hitSlop={space.sm}
                 onPress={onOpenParent}
               >
-                <Text numberOfLines={1} style={styles.floatStatus}>
-                  Subagent of <Text style={styles.link}>{parent.name}</Text>
+                <Text numberOfLines={1} style={styles.floatStatus}>{appCopy.phone.conversations.conversationScreen.subagentOf2}<Text style={styles.link}>{parent.name}</Text>
                 </Text>
               </Pressable>
             ) : null}
@@ -1416,7 +1416,7 @@ export function ConversationScreen({
           ListHeaderComponent={
             chat.page.hasMore ? (
               <PrimaryButton
-                label="Load earlier messages"
+                label={appCopy.phone.conversations.conversationScreen.loadEarlierMessages}
                 variant="ghost"
                 onPress={() => {
                   follow(false);
@@ -1437,8 +1437,8 @@ export function ConversationScreen({
             <>
               {chat.clippedCount > 0 ? (
                 <View>
-                  <Text style={styles.meta}>Part of this chat was too long to send, so it&apos;s cut short.</Text>
-                  <PrimaryButton label="Show in full" variant="ghost" onPress={() => void chat.restoreClipped()} />
+                  <Text style={styles.meta}>{appCopy.phone.conversations.conversationScreen.partOfThisChatWas}</Text>
+                  <PrimaryButton label={appCopy.phone.conversations.conversationScreen.showInFull} variant="ghost" onPress={() => void chat.restoreClipped()} />
                 </View>
               ) : null}
               {chat.optimistic
@@ -1470,7 +1470,7 @@ export function ConversationScreen({
                       </Text>
                       {item.failed !== undefined ? (
                         <PrimaryButton
-                          label="Remove"
+                          label={appCopy.phone.conversations.conversationScreen.remove}
                           variant="ghost"
                           onPress={() => chat.dismissFailed(item.commandId)}
                         />
@@ -1479,7 +1479,7 @@ export function ConversationScreen({
                         // without asking (`queuedSends.ts`): the person says.
                         <View style={styles.metaLine}>
                           <PrimaryButton
-                            label="Send now"
+                            label={appCopy.phone.conversations.conversationScreen.sendNow}
                             variant="ghost"
                             disabled={!canAct}
                             onPress={() =>
@@ -1487,7 +1487,7 @@ export function ConversationScreen({
                             }
                           />
                           <PrimaryButton
-                            label="Discard"
+                            label={appCopy.phone.conversations.conversationScreen.discard}
                             variant="ghost"
                             onPress={() =>
                               void chat.cancelQueued(item.commandId).catch((error: Error) => chat.setNotice(error.message))
@@ -1500,7 +1500,7 @@ export function ConversationScreen({
                 })}
               {chat.busy ? (
                 <View style={styles.working} accessibilityLiveRegion="polite">
-                  <WorkingMark label="Working" />
+                  <WorkingMark label={appCopy.phone.conversations.conversationScreen.working} />
                   <Text style={styles.workingText}>
                     {chat.retrying
                       ? retryLabel(chat.retrying)
@@ -1518,7 +1518,7 @@ export function ConversationScreen({
                       onPress={onOpenAgents}
                       style={styles.workingLink}
                     >
-                      <Text style={styles.link}>See subagents</Text>
+                      <Text style={styles.link}>{appCopy.phone.conversations.conversationScreen.seeSubagents}</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -1528,8 +1528,8 @@ export function ConversationScreen({
         />
         {!landed && chat.rows.length ? (
           <View pointerEvents="none" style={styles.landingNote}>
-            <WorkingMark label="Loading" />
-            <Text style={styles.meta}>Loading…</Text>
+            <WorkingMark label={appCopy.phone.conversations.conversationScreen.loading} />
+            <Text style={styles.meta}>{appCopy.phone.conversations.conversationScreen.loading2}</Text>
           </View>
         ) : null}
         {queuedShown ? (
@@ -1575,7 +1575,7 @@ export function ConversationScreen({
                   : "This phone no longer has access to this conversation. Pair again with conversation access to read it."}
             </Text>
             {onPairAgain ? (
-              <PrimaryButton label="Pair again" onPress={onPairAgain} />
+              <PrimaryButton label={appCopy.phone.conversations.conversationScreen.pairAgain} onPress={onPairAgain} />
             ) : null}
           </>
         ) : chat.state === "unavailable" ? (
@@ -1583,7 +1583,7 @@ export function ConversationScreen({
             <Text accessibilityRole="alert" style={styles.meta}>
               {chat.notice || "The desktop could not open this conversation."}
             </Text>
-            <PrimaryButton label="Try again" onPress={chat.retry} />
+            <PrimaryButton label={appCopy.phone.conversations.conversationScreen.tryAgain} onPress={chat.retry} />
           </>
         ) : pending ? (
           <>
@@ -1591,7 +1591,7 @@ export function ConversationScreen({
               <View style={styles.actions}>
                 <PrimaryButton
                   variant="ghost"
-                  label="Previous request"
+                  label={appCopy.phone.conversations.conversationScreen.previousRequest}
                   disabled={requestIndex === 0}
                   onPress={() =>
                     setRequestId(chat.pending[Math.max(0, requestIndex - 1)].id)
@@ -1602,7 +1602,7 @@ export function ConversationScreen({
                 </Text>
                 <PrimaryButton
                   variant="ghost"
-                  label="Next request"
+                  label={appCopy.phone.conversations.conversationScreen.nextRequest}
                   disabled={requestIndex >= chat.pending.length - 1}
                   onPress={() =>
                     setRequestId(chat.pending[requestIndex + 1].id)
@@ -1673,24 +1673,24 @@ export function ConversationScreen({
                           <>
                             <ComposerTrayAction
                               disabled={!canAct}
-                              label={failed ? "Retry" : "Send now"}
+                              label={failed ? appCopy.phone.conversations.conversationScreen.retry : appCopy.phone.conversations.conversationScreen.sendNow}
                               onPress={() => actOnScheduled(chat.sendScheduledNow(message.id))}
                             />
                             <ComposerTrayAction
                               disabled={!canAct}
-                              label="Edit"
+                              label={appCopy.phone.conversations.conversationScreen.edit}
                               onPress={() => editScheduled(message.id, message.text, message.sendAt)}
                             />
                             <ComposerTrayAction
                               disabled={!canAct}
-                              label="Delete"
+                              label={appCopy.phone.conversations.conversationScreen.delete}
                               onPress={() => actOnScheduled(chat.cancelScheduled(message.id))}
                             />
                           </>
                         )
                       }
                     >
-                      <Text accessibilityLabel={`Scheduled message. ${scheduledMessageStatus(message, now)}: ${messageInline(message.text)}`} numberOfLines={3} style={styles.scheduledRow}>
+                      <Text accessibilityLabel={appCopy.phone.conversations.conversationScreen.scheduledMessage(scheduledMessageStatus(message, now), messageInline(message.text))} numberOfLines={3} style={styles.scheduledRow}>
                         <Text style={styles.scheduledWhen}>{scheduledMessageStatus(message, now)}</Text>
                         {`  ${messageInline(message.text)}`}
                       </Text>
@@ -1701,7 +1701,7 @@ export function ConversationScreen({
                   <ComposerTrayRow
                     key="cache"
                     tone="warn"
-                    actions={<ComposerTrayAction label="Compact" onPress={compact} />}
+                    actions={<ComposerTrayAction label={appCopy.phone.conversations.conversationScreen.compact} onPress={compact} />}
                     onDismiss={() => setCacheDismissed(cacheRow.key)}
                   >
                     {cacheRow.line}
@@ -1717,20 +1717,20 @@ export function ConversationScreen({
                     sending,
                     justSent,
                   }) === "stop"
-                    ? { kind: "stop", label: "Stop", disabled: !canAct, onPress: () => void command({ kind: "interrupt" }) }
+                    ? { kind: "stop", label: appCopy.phone.conversations.conversationScreen.stop, disabled: !canAct, onPress: () => void command({ kind: "interrupt" }) }
                     : {
                         kind: "send",
                         label: finishingDictation
-                          ? "Finishing dictation"
+                          ? appCopy.phone.conversations.conversationScreen.finishingDictation
                           : sending
-                          ? "Saving"
+                          ? appCopy.phone.conversations.conversationScreen.saving
                           : sendAt !== null
-                            ? "Schedule"
+                            ? appCopy.phone.conversations.conversationScreen.schedule
                             : followUp !== "send"
                             ? followUpLabel.label
                             : chat.state === "offline"
-                              ? "Send when online"
-                              : "Send",
+                              ? appCopy.phone.conversations.conversationScreen.sendWhenOnline
+                              : appCopy.phone.conversations.conversationScreen.send,
                         // A scheduled message is its words alone.
                         disabled: uploading || sending || !hasText || (sendAt !== null && uploads.length > 0),
                         onPress: () => void send(),
@@ -1747,7 +1747,7 @@ export function ConversationScreen({
                 // took its place, and emptying the box to find it lost them.
                 stop={
                   stoppable && hasText
-                    ? { label: "Stop", disabled: !canAct, onPress: () => void command({ kind: "interrupt" }) }
+                    ? { label: appCopy.phone.conversations.conversationScreen.stop, disabled: !canAct, onPress: () => void command({ kind: "interrupt" }) }
                     : null
                 }
                 attachments={uploads.map((upload) => ({
@@ -1761,12 +1761,12 @@ export function ConversationScreen({
                 input={{
                   // Dictation types into the box as it hears; the box holds
                   // still while the microphone does the typing.
-                  accessibilityLabel: "Message",
+                  accessibilityLabel: appCopy.phone.conversations.conversationScreen.message,
                   editable: !sending && dictation.state === "idle",
                   // The box holds the words; the quotes ride in front of them
                   // as chips.
                   onChangeText: (words) => setText(joinQuoteDraft(draftQuotes.quotes.map((quote) => quote.token), words)),
-                  placeholder: dictationPlaceholder(dictation.state, dictation.source) ?? "Reply…",
+                  placeholder: dictationPlaceholder(dictation.state, dictation.source) ?? appCopy.phone.conversations.conversationScreen.reply,
                   value: dictatedDraft(draftQuotes.words, dictation.interim),
                 }}
                 quotes={
@@ -1793,16 +1793,14 @@ export function ConversationScreen({
         ) : parent ? (
           // No box where a message would not go: the way to the parent instead.
           <View style={styles.blockedBar}>
-            <Text style={styles.blockedText}>To reach this subagent, speak to {parent.name}.</Text>
-            <Text style={styles.meta}>This pairing may follow the chat but not drive it.</Text>
+            <Text style={styles.blockedText}>{appCopy.phone.conversations.conversationScreen.toReachThisSubagentSpeak}{parent.name}.</Text>
+            <Text style={styles.meta}>{appCopy.phone.conversations.conversationScreen.thisPairingMayFollowThe}</Text>
             {onOpenParent ? (
-              <PrimaryButton label={`Go to ${parent.main ? "the main chat" : "the parent agent"}`} onPress={onOpenParent} />
+              <PrimaryButton label={appCopy.phone.conversations.conversationScreen.goTo(parent.main ? appCopy.phone.conversations.conversationScreen.theMainChat : appCopy.phone.conversations.conversationScreen.theParentAgent)} onPress={onOpenParent} />
             ) : null}
           </View>
         ) : (
-          <Text style={styles.meta}>
-            Read-only. Pair with conversation control to send or respond.
-          </Text>
+          <Text style={styles.meta}>{appCopy.phone.conversations.conversationScreen.readOnlyPairWithConversation}</Text>
         )}
       </View>
       {modelSheetOffered ? (
@@ -1834,7 +1832,7 @@ export function ConversationScreen({
             cli: pickerProvider.cli,
             model: model && activeThread.modelId && activeThread.modelId !== DEFAULT_MODEL_ID ? activeThread.modelId : null,
           }}
-          title="Model"
+          title={appCopy.phone.conversations.conversationScreen.model}
           visible={sheet === "model"}
         />
       ) : null}
@@ -1842,7 +1840,7 @@ export function ConversationScreen({
         <SendTimeSheet at={sendAt} onChange={setSendAt} onClose={() => setSheet(null)} visible={sheet === "sendAt"} />
       ) : null}
       {preset ? (
-        <BottomSheet onClose={closeAccess} onDismiss={sheetHandoff.onDismiss} title="Access" visible={sheet === "permission"}>
+        <BottomSheet onClose={closeAccess} onDismiss={sheetHandoff.onDismiss} title={appCopy.phone.conversations.conversationScreen.access} visible={sheet === "permission"}>
           {presetChoices.map((choice) => (
             <SheetOption
               key={choice.id}
@@ -1965,7 +1963,7 @@ export function ConversationScreen({
           ...(markUnread
             ? [
                 {
-                  label: "Mark unread",
+                  label: appCopy.phone.conversations.conversationScreen.markUnread,
                   sub: `Shows its latest reply as new again, here and on ${session?.desktopName ?? "the desktop"}.`,
                   onPress: markUnread,
                 },
@@ -1974,7 +1972,7 @@ export function ConversationScreen({
           ...(settle
             ? [
                 {
-                  label: "Settle",
+                  label: appCopy.phone.conversations.conversationScreen.settle,
                   sub: `Moves it to Settled on ${session?.desktopName ?? "the desktop"}, and off the list.`,
                   onPress: settle,
                 },
@@ -1985,7 +1983,7 @@ export function ConversationScreen({
         images={images}
       />
       {/* More than one turn changed files: which one to open. */}
-      <BottomSheet onClose={() => setSheet(null)} title="Changed files" visible={sheet === "changes"}>
+      <BottomSheet onClose={() => setSheet(null)} title={appCopy.phone.conversations.conversationScreen.changedFiles} visible={sheet === "changes"}>
         <ScrollView>
           {openableRows.map(({ turn, label, time }) => (
             <SheetOption
@@ -2071,7 +2069,7 @@ const ConversationItem = memo(function ConversationItem({
       const images = row.images ?? [];
       const bubble = (words: string) => (
         <View style={styles.userLine}>
-          {messageCopyText(row.text) ? <CopyButton label="Copy message" text={messageCopyText(row.text)} /> : null}
+          {messageCopyText(row.text) ? <CopyButton label={appCopy.phone.conversations.conversationScreen.copyMessage} text={messageCopyText(row.text)} /> : null}
           <View style={styles.user}>
             {images.length ? <SentPhotoSquares images={images} sent={source.sentImages ?? null} /> : null}
             {words ? <QuotedWords text={words} style={styles.userText} onOpenQuote={onOpenQuote} /> : null}
@@ -2108,7 +2106,7 @@ const ConversationItem = memo(function ConversationItem({
   // the disclosure, as the desktop draws it.
   if (row.kind === "studio" && row.notices?.length)
     return (
-      <View accessibilityLabel={`${STUDIO_NAME} said`}>
+      <View accessibilityLabel={appCopy.phone.conversations.conversationScreen.said(STUDIO_NAME)}>
         {row.notices.map((notice, index) => (
           <AgentNoticeRow key={`${notice.agentId ?? notice.name}:${index}`} notice={notice} at={row.at} onNotice={onNotice} />
         ))}
@@ -2116,7 +2114,7 @@ const ConversationItem = memo(function ConversationItem({
     );
   if (row.kind === "studio")
     return (
-      <Text accessibilityLabel={`${STUDIO_NAME} said: ${row.text}`} selectable style={styles.meta}>
+      <Text accessibilityLabel={appCopy.phone.conversations.conversationScreen.said2(STUDIO_NAME, row.text)} selectable style={styles.meta}>
         <Text style={styles.studioName}>{STUDIO_NAME}</Text>
         {` · ${row.text}`}
       </Text>
@@ -2211,7 +2209,7 @@ const ConversationItem = memo(function ConversationItem({
       <View style={styles.metaLine}>
         {line}
         {onQuoteReply ? <QuoteReplyButton onPress={() => onQuoteReply(turn)} /> : null}
-        <CopyButton label="Copy reply" text={() => replyText(turn)} />
+        <CopyButton label={appCopy.phone.conversations.conversationScreen.copyReply} text={() => replyText(turn)} />
       </View>
     ) : (
       line
@@ -2232,7 +2230,7 @@ const ConversationItem = memo(function ConversationItem({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled: !live }}
-      accessibilityHint="Opens the files this turn changed."
+      accessibilityHint={appCopy.phone.conversations.conversationScreen.opensTheFilesThisTurn}
       disabled={!live}
       hitSlop={space.xs}
       onPress={() => onOpenChanges(turnSeq)}
@@ -2253,9 +2251,9 @@ const ConversationItem = memo(function ConversationItem({
 function UnreadDivider() {
   const styles = useThemedStyles(createStyles);
   return (
-    <View accessibilityRole="text" accessibilityLabel="New since you last looked" style={styles.divider}>
+    <View accessibilityRole="text" accessibilityLabel={appCopy.phone.conversations.conversationScreen.newSinceYouLastLooked} style={styles.divider}>
       <View style={styles.rule} />
-      <Text style={styles.dividerText}>New</Text>
+      <Text style={styles.dividerText}>{appCopy.phone.conversations.conversationScreen.new}</Text>
       <View style={styles.rule} />
     </View>
   );
@@ -2318,23 +2316,23 @@ function QueuedEntry({
         {stoppable && !failed && bubble.where !== "handing" ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityHint="Stops the reply; the queued message then sends"
+            accessibilityHint={appCopy.phone.conversations.conversationScreen.stopsTheReplyTheQueued}
             disabled={!canAct}
             hitSlop={space.md}
             onPress={onStop}
           >
-            <Text style={styles.queuedAction}>Stop and send</Text>
+            <Text style={styles.queuedAction}>{appCopy.phone.conversations.conversationScreen.stopAndSend}</Text>
           </Pressable>
         ) : null}
         {failed && onRemove ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityHint="Takes it back from the desktop without sending it."
+            accessibilityHint={appCopy.phone.conversations.conversationScreen.takesItBackFromThe}
             disabled={!canAct}
             hitSlop={space.md}
             onPress={onRemove}
           >
-            <Text style={styles.queuedAction}>Remove</Text>
+            <Text style={styles.queuedAction}>{appCopy.phone.conversations.conversationScreen.remove}</Text>
           </Pressable>
         ) : null}
         {bubble.where !== "handing" ? (
@@ -2342,14 +2340,14 @@ function QueuedEntry({
             accessibilityRole="button"
             accessibilityHint={
               bubble.where === "desktop"
-                ? "Takes it back from the desktop into the composer."
-                : "Takes it back into the composer."
+                ? appCopy.phone.conversations.conversationScreen.takesItBackFromThe2
+                : appCopy.phone.conversations.conversationScreen.takesItBackIntoThe
             }
             disabled={bubble.where === "desktop" && !canAct}
             hitSlop={space.md}
             onPress={onEdit}
           >
-            <Text style={styles.queuedAction}>Edit</Text>
+            <Text style={styles.queuedAction}>{appCopy.phone.conversations.conversationScreen.edit}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -2382,7 +2380,7 @@ const JumpToLatest = memo(function JumpToLatest({
   return (
     <View pointerEvents="box-none" style={[styles.jumpRow, { bottom: space.sm + lift }]}>
       <Pressable
-        accessibilityHint="Scrolls to the end of the chat."
+        accessibilityHint={appCopy.phone.conversations.conversationScreen.scrollsToTheEndOf}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         hitSlop={touchSlop(JUMP_HEIGHT)}
@@ -2421,7 +2419,7 @@ function PlanCard({
   return (
     <View style={styles.plan}>
       <View style={styles.planHead}>
-        <Text style={styles.badge}>PLAN</Text>
+        <Text style={styles.badge}>{appCopy.phone.conversations.conversationScreen.pLAN}</Text>
         <Text numberOfLines={2} style={styles.planTitle}>
           {planTitle(row.plan) ?? "Proposed plan"}
         </Text>
@@ -2438,7 +2436,7 @@ function PlanCard({
         </View>
       ) : null}
       <View style={styles.planFoot}>
-        {onOpen ? <PrimaryButton label="Open plan" variant="secondary" onPress={onOpen} /> : null}
+        {onOpen ? <PrimaryButton label={appCopy.phone.conversations.conversationScreen.openPlan} variant="secondary" onPress={onOpen} /> : null}
         {row.status !== "pending" ? <Text style={styles.meta}>{PLAN_STATUS[row.status]}</Text> : null}
       </View>
     </View>
@@ -2503,14 +2501,11 @@ function PendingCard({
   if (p.requestKind === "plan")
     return (
       <View style={styles.planDock}>
-        <Text accessibilityRole="header" style={styles.planDockTitle}>
-          Review the plan
-        </Text>
+        <Text accessibilityRole="header" style={styles.planDockTitle}>{appCopy.phone.conversations.conversationScreen.reviewThePlan}</Text>
         <Text style={styles.noticeText}>
-          {agentName} will start on it once you approve.
-        </Text>
+          {agentName}{appCopy.phone.conversations.conversationScreen.willStartOnItOnce}</Text>
         {p.originAgentId ? (
-          <Text style={styles.meta}>Requested by a subagent</Text>
+          <Text style={styles.meta}>{appCopy.phone.conversations.conversationScreen.requestedByASubagent}</Text>
         ) : null}
         {onOpenPlan ? null : (
           <View style={styles.planInline}>
@@ -2521,12 +2516,12 @@ function PendingCard({
         )}
         <View style={styles.actions}>
           <View style={styles.grow}>
-            <PrimaryButton label="Approve plan" disabled={!enabled} onPress={() => answerPlan(true)} />
+            <PrimaryButton label={appCopy.phone.conversations.conversationScreen.approvePlan} disabled={!enabled} onPress={() => answerPlan(true)} />
           </View>
           {onOpenPlan ? (
-            <PrimaryButton label="Open plan" variant="secondary" onPress={onOpenPlan} />
+            <PrimaryButton label={appCopy.phone.conversations.conversationScreen.openPlan} variant="secondary" onPress={onOpenPlan} />
           ) : null}
-          <PrimaryButton label="Deny" variant="secondary" disabled={!enabled} onPress={() => answerPlan(false)} />
+          <PrimaryButton label={appCopy.phone.conversations.conversationScreen.deny} variant="secondary" disabled={!enabled} onPress={() => answerPlan(false)} />
         </View>
       </View>
     );
@@ -2543,7 +2538,7 @@ function PendingCard({
         </Text>
       )}
       {p.originAgentId ? (
-        <Text style={styles.meta}>Requested by a subagent</Text>
+        <Text style={styles.meta}>{appCopy.phone.conversations.conversationScreen.requestedByASubagent}</Text>
       ) : null}
       {p.requestKind !== "question" && typeof recordValue(p.input).command === "string" ? (
         // A command is read as the command, wrapped: as JSON its one long
@@ -2614,7 +2609,7 @@ function PendingCard({
                 })}
                 {question.allowFreeText !== false ? (
                   <TextInput
-                    accessibilityLabel={`Answer: ${label}`}
+                    accessibilityLabel={appCopy.phone.conversations.conversationScreen.answer(label)}
                     editable={enabled}
                     value={freeText[label] ?? ""}
                     onChangeText={(value) =>
@@ -2623,7 +2618,7 @@ function PendingCard({
                         [label]: value,
                       }))
                     }
-                    placeholder="Your answer"
+                    placeholder={appCopy.phone.conversations.conversationScreen.yourAnswer}
                     placeholderTextColor={colors.textSubtle}
                     style={styles.answer}
                   />
@@ -2634,7 +2629,7 @@ function PendingCard({
           <View style={styles.actions}>
             {step.back ? (
               <PrimaryButton
-                label="Back"
+                label={appCopy.phone.conversations.conversationScreen.back}
                 variant="secondary"
                 disabled={!enabled}
                 onPress={() => goToPart(step.index - 1)}
@@ -2660,7 +2655,7 @@ function PendingCard({
       ) : (
         <View style={styles.actions}>
           <PrimaryButton
-            label="Allow once"
+            label={appCopy.phone.conversations.conversationScreen.allowOnce}
             disabled={!enabled}
             onPress={() => resolve("once")}
           />
@@ -2671,7 +2666,7 @@ function PendingCard({
               way, and keeps the old rule. */}
           {p.rememberable !== false && p.suppressAlwaysAllowRule !== true && p.defaultToNo !== true ? (
             <PrimaryButton
-              label={stringValue(p.rememberLabel) || "Allow for this conversation"}
+              label={stringValue(p.rememberLabel) || appCopy.phone.conversations.conversationScreen.allowForThisConversation}
               variant="secondary"
               disabled={!enabled}
               onPress={() => resolve("conversation")}
@@ -2679,15 +2674,15 @@ function PendingCard({
           ) : null}
           {onBypass ? (
             <PrimaryButton
-              label="Bypass permissions"
-              accessibilityLabel="Allow, then bypass permissions for this chat"
+              label={appCopy.phone.conversations.conversationScreen.bypassPermissions}
+              accessibilityLabel={appCopy.phone.conversations.conversationScreen.allowThenBypassPermissionsFor}
               variant="secondary"
               disabled={!enabled}
               onPress={onBypass}
             />
           ) : null}
           <PrimaryButton
-            label="Deny"
+            label={appCopy.phone.conversations.conversationScreen.deny}
             variant="danger"
             disabled={!enabled}
             onPress={() => resolve("deny")}
@@ -3044,12 +3039,12 @@ function placeFacts(input: {
     // The phone reaches every chat through the desktop it paired with. A chat
     // that desktop runs in WSL or on an SSH machine says so, from a desktop
     // that lists its host; the paired one is then how it is reached.
-    input.runsOn ? { label: "Runs on", value: input.runsOn } : null,
+    input.runsOn ? { label: appCopy.phone.conversations.conversationScreen.runsOn, value: input.runsOn } : null,
     input.machine
-      ? { label: input.runsOn ? "Reached through" : "Machine", value: `${input.machine} · paired over Tailscale` }
+      ? { label: input.runsOn ? appCopy.phone.conversations.conversationScreen.reachedThrough : appCopy.phone.conversations.conversationScreen.machine, value: `${input.machine} · paired over Tailscale` }
       : null,
-    host ? { label: "Address", value: host } : null,
-    input.agent ? { label: "Agent", value: input.agent } : null,
-    input.cliModel ? { label: "Runs", value: input.cliModel } : null,
+    host ? { label: appCopy.phone.conversations.conversationScreen.address, value: host } : null,
+    input.agent ? { label: appCopy.phone.conversations.conversationScreen.agent, value: input.agent } : null,
+    input.cliModel ? { label: appCopy.phone.conversations.conversationScreen.runs, value: input.cliModel } : null,
   ].filter((fact): fact is { label: string; value: string } => fact !== null);
 }

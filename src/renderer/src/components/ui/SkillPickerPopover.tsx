@@ -27,6 +27,7 @@ import { isImeKey } from '../../utils/imeKey'
 import { ScrollArea } from './ScrollArea'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { copy } from '../../../../shared/copy'
 
 // One inventory, every door: the searchable skill list behind the composer
 // Skills chip, the `/` and `$` type-aheads, the terminal panel-header action
@@ -321,7 +322,9 @@ function SkillRow({
       {installing ? (
         <Spinner className="shrink-0" />
       ) : notInstalled ? (
-        <span className="shrink-0 text-micro font-medium text-[color:var(--accent-primary)]">Install</span>
+        <span className="shrink-0 text-micro font-medium text-[color:var(--accent-primary)]">
+          {copy.ui.skillPickerPopover.install}
+        </span>
       ) : (
         // The source is the only thing on the row that says where the skill
         // comes from, so the chip is named by its own text rather than marked
@@ -369,7 +372,7 @@ function SkillList({
     return (
       <div className="flex items-center gap-2 px-2.5 py-3 text-meta text-[color:var(--text-muted)]" role="status">
         <Spinner />
-        Loading skills…
+        {copy.ui.skillPickerPopover.loadingSkills}
       </div>
     )
   }
@@ -458,7 +461,10 @@ async function installFromSource(from: {
     })
     return result.ok ? { ok: true } : { ok: false, message: result.message }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : 'Unable to install the skill.' }
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : copy.ui.skillPickerPopover.unableToInstallTheSkill,
+    }
   }
 }
 
@@ -545,7 +551,7 @@ export function SkillPickerPopover({
         }
         onOpenChange(next)
       }}
-      ariaLabel="Use a skill"
+      ariaLabel={copy.ui.skillPickerPopover.useASkill}
       popupRole="menu"
       placement={placement}
       renderTrigger={
@@ -559,7 +565,7 @@ export function SkillPickerPopover({
             {...triggerProps}
           >
             <StarGlyph filled={false} stroked className="icon-sm" />
-            Skills
+            {copy.ui.skillPickerPopover.skills}
           </button>
         ))
       }
@@ -583,8 +589,8 @@ export function SkillPickerPopover({
               setActiveIndex(0)
             }}
             onKeyDown={onSearchKeyDown}
-            placeholder="Search skills…"
-            aria-label="Search skills"
+            placeholder={copy.ui.skillPickerPopover.searchSkills}
+            aria-label={copy.ui.skillPickerPopover.searchSkills2}
             className={`min-w-0 flex-1 bg-transparent px-1 py-1 text-body text-[color:var(--text-strong)] placeholder:text-[color:var(--text-disabled)] ${FOCUS_RING_CLASS}`}
           />
         </div>
@@ -608,7 +614,7 @@ export function SkillPickerPopover({
               }}
               className={`text-micro font-medium text-[color:var(--text-muted)] transition-colors hover:text-[color:var(--text-default)] ${FOCUS_RING_CLASS}`}
             >
-              Manage skills →
+              {copy.ui.skillPickerPopover.manageSkills}
             </button>
           </div>
         ) : null}
@@ -772,7 +778,7 @@ export const InlineSkillPicker = forwardRef<
       <Popover
         open
         onOpenChange={onOpenChange}
-        ariaLabel="Use a skill"
+        ariaLabel={copy.ui.skillPickerPopover.useASkill}
         popupRole="menu"
         placement={fit.side === 'top' ? 'top-start' : 'bottom-start'}
         // Glass, because this is drawn over the transcript the person is

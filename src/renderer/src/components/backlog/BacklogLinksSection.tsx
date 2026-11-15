@@ -5,6 +5,7 @@ import type { BacklogItem, BacklogItemLink, BacklogItemStatus, BacklogResolvedLi
 import { backlogLinkControlModel, openBacklogLink, syncBacklogItemLinks } from '../../utils/backlogLinks'
 import type { BacklogLinkProvider } from '../../modules/renderer-host'
 import { backlogApi } from '../../studio/backlog'
+import { copy } from '../../../../shared/copy'
 
 // Provider-backed Backlog link surface for the detail pane, kept out of the
 // already-large Backlog panel so the link resolution/opening state machine and
@@ -126,7 +127,7 @@ export function BacklogLinksSection({
   return (
     // No hairline: padding and the heading separate this section from the next
     // ("space groups, rules do not").
-    <Section title="Links" level={4} inset className="shrink-0 pb-2">
+    <Section title={copy.backlog.backlogLinksSection.links} level={4} inset className="shrink-0 pb-2">
       {linkError ? (
         <div className="px-3 pb-1.5">
           <InlineNotice tone="warn">{linkError}</InlineNotice>
@@ -182,8 +183,12 @@ function BacklogLinkControl({
         </Tooltip>
       )}
       <span className="shrink-0 text-micro tabular-nums text-[color:var(--text-subtle)]">{model.statusText}</span>
-      <Tooltip content={`Unlink ${model.label}`} placement="top">
-        <IconButton aria-label={`Unlink ${model.label}`} onClick={() => onRemove(link)} className="shrink-0">
+      <Tooltip content={copy.backlog.backlogLinksSection.unlink(model.label)} placement="top">
+        <IconButton
+          aria-label={copy.backlog.backlogLinksSection.unlink(model.label)}
+          onClick={() => onRemove(link)}
+          className="shrink-0"
+        >
           <UnlinkGlyph />
         </IconButton>
       </Tooltip>

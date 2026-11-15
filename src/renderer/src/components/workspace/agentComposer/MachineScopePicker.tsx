@@ -10,6 +10,7 @@ import { ChipButton, MachineGlyph, MENU_LIST_CLASS, MenuOption, Popover } from '
 import { MENU_GROUP_LABEL_CLASS } from '../../ui/menuClasses'
 import { ChipCaretGlyph, menuRadioRowKeyDown } from './agentSpawnShared'
 import type { MachineAvailability } from './newChatMachines'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 /**
  * A machine's mark in a menu row's leading slot, or the empty slot the width of
@@ -141,7 +142,7 @@ export function MachineScopePicker({
         setOpen(next)
         if (next) onOpen?.()
       }}
-      ariaLabel="Machine this chat runs on"
+      ariaLabel={appCopy.workspace.agentComposer.machineScopePicker.machineThisChatRunsOn}
       popupRole="menu"
       placement="bottom-start"
       surfaceClassName={`w-[280px] ${MENU_LIST_CLASS}`}
@@ -231,7 +232,7 @@ export function MachineScopePicker({
       {sshMachines.length > 0 || machines.length > 0 ? (
         <div className={`${MENU_GROUP_LABEL_CLASS} flex items-center gap-1.5 pb-1 pt-2`}>
           <RemoteMachineGlyph className="icon-xs shrink-0" />
-          Other machines
+          {appCopy.workspace.agentComposer.machineScopePicker.otherMachines}
         </div>
       ) : null}
       {sshMachines.map((machine) => {

@@ -17,6 +17,7 @@ import { Field, Input, OutlineButton, SegmentedControl } from '../../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../../ui/Modal'
 import { ProjectMonogram } from '../ProjectMonogram'
 import { filesApi } from '../../../studio/files'
+import { copy } from '../../../../../shared/copy'
 
 // Choose a project's icon: the one detected in its repo (the default), an image
 // file of the person's, or a monogram generated from its name on one of the
@@ -30,9 +31,9 @@ import { filesApi } from '../../../studio/files'
 type Mode = 'detected' | 'file' | 'monogram'
 
 const MODE_ITEMS: Array<{ value: Mode; label: string }> = [
-  { value: 'detected', label: 'Detected' },
-  { value: 'file', label: 'Image file' },
-  { value: 'monogram', label: 'Monogram' },
+  { value: 'detected', label: copy.workspace.sidebar.projectIconDialog.detected },
+  { value: 'file', label: copy.workspace.sidebar.projectIconDialog.imageFile },
+  { value: 'monogram', label: copy.workspace.sidebar.projectIconDialog.monogram },
 ]
 
 const REFUSED_FILE =
@@ -159,12 +160,17 @@ function ProjectIconDialogBody({
     <>
       <ModalHeader
         titleId="project-icon-title"
-        title={`Icon for ${name}`}
-        subtitle="Shown in the sidebar and project picker on this machine"
+        title={copy.workspace.sidebar.projectIconDialog.iconFor(name)}
+        subtitle={copy.workspace.sidebar.projectIconDialog.shownInTheSidebarAnd}
         onClose={onClose}
       />
       <ModalBody className="flex flex-col gap-4">
-        <SegmentedControl ariaLabel="Icon source" items={MODE_ITEMS} value={mode} onChange={setMode} />
+        <SegmentedControl
+          ariaLabel={copy.workspace.sidebar.projectIconDialog.iconSource}
+          items={MODE_ITEMS}
+          value={mode}
+          onChange={setMode}
+        />
 
         <div className="flex items-start gap-4">
           <div
@@ -204,7 +210,7 @@ function ProjectIconDialogBody({
                   </p>
                 ) : (
                   <p className="text-micro text-[color:var(--text-subtle)]">
-                    SVG, PNG, JPEG, GIF, WebP, ICO or ICNS, up to 1 MB.
+                    {copy.workspace.sidebar.projectIconDialog.sVGPNGJPEGGIFWebP}
                   </p>
                 )}
               </>
@@ -212,7 +218,7 @@ function ProjectIconDialogBody({
 
             {mode === 'monogram' ? (
               <>
-                <Field label="Letters" htmlFor={`${fieldId}-letters`}>
+                <Field label={copy.workspace.sidebar.projectIconDialog.letters} htmlFor={`${fieldId}-letters`}>
                   <Input
                     id={`${fieldId}-letters`}
                     size="sm"
@@ -225,7 +231,7 @@ function ProjectIconDialogBody({
                   />
                 </Field>
                 <SegmentedControl
-                  ariaLabel="Monogram color"
+                  ariaLabel={copy.workspace.sidebar.projectIconDialog.monogramColor}
                   iconOnly
                   items={PROJECT_COLOR_PRESETS.map((preset) => ({
                     value: String(preset.hue),
@@ -247,9 +253,9 @@ function ProjectIconDialogBody({
         </div>
       </ModalBody>
       <ModalFooter>
-        <ModalButton onClick={onClose}>Cancel</ModalButton>
+        <ModalButton onClick={onClose}>{copy.workspace.sidebar.projectIconDialog.cancel}</ModalButton>
         <ModalButton variant="primary" disabled={next === undefined} onClick={save}>
-          Save
+          {copy.workspace.sidebar.projectIconDialog.save}
         </ModalButton>
       </ModalFooter>
     </>

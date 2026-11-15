@@ -16,6 +16,7 @@ import {
 } from '../../utils/agentBacklogLinks'
 import type { AgentCli } from '../../../../shared/workspace'
 import type { BacklogItem } from '../../utils/backlog'
+import { copy } from '../../../../shared/copy'
 
 // ── "Hand to agent" on a Backlog item ────────────────────────────────────────
 //
@@ -64,12 +65,12 @@ export function BacklogHandToAgentButton({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel={`Hand ${item.title} to an agent`}
+      ariaLabel={copy.backlog.backlogHandToAgentButton.handToAnAgent(item.title)}
       popupRole="menu"
       placement="bottom-start"
       renderTrigger={({ ref, triggerProps, togglePopover }) => (
         <PrimaryButton ref={ref} onClick={togglePopover} {...triggerProps}>
-          Hand to agent
+          {copy.backlog.backlogHandToAgentButton.handToAgent}
         </PrimaryButton>
       )}
     >
@@ -126,7 +127,7 @@ function HandToAgentPicker({
     return (
       <div className="w-[380px] max-w-[calc(100vw-2rem)] py-1">
         <div className="px-3 py-1.5 text-micro text-[color:var(--text-muted)]" role="status">
-          No agent CLI is installed.
+          {copy.backlog.backlogHandToAgentButton.noAgentCLIIsInstalled}
         </div>
         <CliInstallRosterRow onNavigate={onClose} />
       </div>
@@ -150,7 +151,7 @@ function HandToAgentPicker({
 
   return (
     <CliModelPopoverSurface
-      ariaLabel="Hand to agent"
+      ariaLabel={copy.backlog.backlogHandToAgentButton.handToAgent}
       options={composer.agentCliOptions}
       currentCli={footerCli}
       effectiveModelFor={(cli) => composer.modelForSelection(HANDOFF_SELECTION, cli)}
@@ -159,7 +160,7 @@ function HandToAgentPicker({
       effectiveReasoningFor={(cli) => composer.reasoningForSelection(HANDOFF_SELECTION, cli)}
       onSelectReasoning={(cli, next) => composer.setEngineReasoning(HANDOFF_SELECTION, cli, next)}
       showReasoning
-      reasoningAriaLabel="Reasoning effort"
+      reasoningAriaLabel={copy.backlog.backlogHandToAgentButton.reasoningEffort}
       onSelectCli={(cli) => hand(cli, null)}
       onSelectModel={(cli, model) => hand(cli, model)}
       // Permissions sit with the model, remembered per CLI — the same control
@@ -199,5 +200,5 @@ export function BacklogOpenAgentButton({
     })()
   }
 
-  return <GhostButton onClick={open}>Open agent</GhostButton>
+  return <GhostButton onClick={open}>{copy.backlog.backlogHandToAgentButton.openAgent}</GhostButton>
 }

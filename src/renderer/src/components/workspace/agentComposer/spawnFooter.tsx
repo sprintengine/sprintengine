@@ -26,6 +26,7 @@ import {
   conversationPermissionModes,
   conversationPermissionPresetRefusals,
 } from '../../../../../shared/conversation-harness'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // The model picker's footer controls — the row of trailing settings a spawn
 // surface hands `CliModelPopoverSurface` through its `footer` slot.
@@ -273,7 +274,7 @@ export function PermissionFooter({
   return (
     <FooterMenu
       ariaLabel={permissionAccessibleName(options, preset, mode)}
-      heading="Permissions"
+      heading={appCopy.workspace.agentComposer.spawnFooter.permissions}
       label={
         <>
           <PresetGlyph preset={preset} mode={selectedPermissionOption(options, preset, mode)?.mode} />

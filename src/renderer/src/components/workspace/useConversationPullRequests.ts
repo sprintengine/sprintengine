@@ -10,6 +10,7 @@ import {
 } from '../../../../../packages/studio-protocol/src/public'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { watchWindowStudio, windowStudioClient, windowStudioState } from '../../studio/windowStudioClient'
+import { copy } from '../../../../shared/copy'
 
 // The pull requests a CONVERSATION holds, for the sidebar rows that have
 // nothing running in them (owner, 2026-09-10).
@@ -259,7 +260,7 @@ export async function linkPullRequestToConversation(
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const client = await pullRequestClient()
   if (!client?.supports(STUDIO_PULL_REQUEST_LINK_CAPABILITY)) {
-    return { ok: false, message: `Pull request opened (${url}), but this Studio can't record it.` }
+    return { ok: false, message: copy.workspace.useConversationPullRequests.pullRequestOpenedButThis(url) }
   }
   try {
     await client.request('pullRequests.link', { conversation, url, title })
@@ -267,7 +268,10 @@ export async function linkPullRequestToConversation(
   } catch (error) {
     return {
       ok: false,
-      message: `Pull request opened (${url}), but couldn't record it: ${error instanceof Error ? error.message : String(error)}`,
+      message: copy.workspace.useConversationPullRequests.pullRequestOpenedButCouldn(
+        url,
+        error instanceof Error ? error.message : String(error),
+      ),
     }
   }
 }
@@ -284,7 +288,7 @@ export async function unwatchPullRequest(
 ): Promise<{ ok: true; watched: boolean } | { ok: false; message: string }> {
   const client = await pullRequestClient()
   if (!client?.supports(STUDIO_PULL_REQUEST_WATCH_CAPABILITY)) {
-    return { ok: false, message: 'This Studio cannot stop the watch.' }
+    return { ok: false, message: copy.workspace.useConversationPullRequests.thisStudioCannotStopThe }
   }
   try {
     const answer = await client.request('pullRequests.unwatch', { conversation, url })

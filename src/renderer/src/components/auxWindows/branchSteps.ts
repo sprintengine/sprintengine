@@ -1,6 +1,7 @@
 import type { DiffFileItem } from './diffFileList'
 import { joinFilePath } from '../../utils/paths'
 import type { BranchStepDiff, BranchStepSelection, BranchStepsSnapshot } from '../../../../shared/electron-api'
+import { copy } from '../../../../shared/copy'
 
 // The step strip's model (the-diff-an-agent-made / changed-files-and-commit-steps).
 //
@@ -57,13 +58,19 @@ export function stripEntriesFrom(snapshot: BranchStepsSnapshot | null): StripEnt
   // the uncommitted step".
   if (steps.length === 0) {
     return snapshot?.hasUncommitted
-      ? [{ key: 'uncommitted', label: 'Uncommitted', selection: { kind: 'uncommitted' } }]
-      : [{ key: 'span', label: 'All changes', selection: { kind: 'span' } }]
+      ? [{ key: 'uncommitted', label: copy.auxWindows.branchSteps.uncommitted, selection: { kind: 'uncommitted' } }]
+      : [{ key: 'span', label: copy.auxWindows.branchSteps.allChanges, selection: { kind: 'span' } }]
   }
 
-  const entries: StripEntry[] = [{ key: 'span', label: `All commits ${steps.length}`, selection: { kind: 'span' } }]
+  const entries: StripEntry[] = [
+    { key: 'span', label: copy.auxWindows.branchSteps.allCommits(steps.length), selection: { kind: 'span' } },
+  ]
   if (snapshot?.hasUncommitted) {
-    entries.push({ key: 'uncommitted', label: 'Uncommitted', selection: { kind: 'uncommitted' } })
+    entries.push({
+      key: 'uncommitted',
+      label: copy.auxWindows.branchSteps.uncommitted,
+      selection: { kind: 'uncommitted' },
+    })
   }
   for (const step of steps) {
     entries.push({

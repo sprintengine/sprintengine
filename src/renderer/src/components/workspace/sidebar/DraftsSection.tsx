@@ -5,6 +5,7 @@ import { NewChatIcon } from '../../AppIcons'
 import { listNewChatDrafts, newChatDraftTitle, subscribeNewChatDrafts } from '../agentComposer/newChatDraft'
 import { ProjectLine, ShelfFoldRow, type FlatProjectLine } from './rowParts'
 import { SELECTED_ROW_ACCENT, SELECTION_EDGE_CLASS } from './rowStyle'
+import { copy } from '../../../../../shared/copy'
 
 // The sidebar's Drafts: the New chat drafts kept with something in them
 // (`newChatDraft.ts`), newest begun first, and nothing when there are none.
@@ -34,16 +35,21 @@ export function DraftsSection({
   const drafts = useSyncExternalStore(subscribeNewChatDrafts, listNewChatDrafts, listNewChatDrafts)
   if (drafts.length === 0) return null
   return (
-    <section role="group" className="relative pt-1" aria-label="Drafts">
+    <section role="group" className="relative pt-1" aria-label={copy.workspace.sidebar.draftsSection.drafts}>
       <ShelfFoldRow
-        label="Drafts"
+        label={copy.workspace.sidebar.draftsSection.drafts}
         count={drafts.length}
         expanded={expanded}
         flush
         controlsId={DRAFTS_SHELF_ID}
         onToggle={onToggle}
       />
-      <div id={DRAFTS_SHELF_ID} role="group" aria-label="Drafts" hidden={!expanded}>
+      <div
+        id={DRAFTS_SHELF_ID}
+        role="group"
+        aria-label={copy.workspace.sidebar.draftsSection.drafts}
+        hidden={!expanded}
+      >
         {expanded
           ? drafts.map((entry) => (
               <DraftRow
@@ -88,7 +94,7 @@ function DraftRow({
       role="treeitem"
       tabIndex={-1}
       aria-current={selected ? 'true' : undefined}
-      aria-label={`Draft: ${title}, in ${project.name}`}
+      aria-label={copy.workspace.sidebar.draftsSection.draftIn(title, project.name)}
       data-new-chat-draft={id}
       onClick={onOpen}
       onKeyDown={(event) => {
@@ -110,10 +116,10 @@ function DraftRow({
         <span className="relative ml-auto flex h-5 shrink-0 items-center justify-end pl-2">
           {/* Revealed on hover and on focus, so the keyboard reaches it too. */}
           <span className="pointer-events-none inline-flex items-center opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-            <Tooltip content="Delete draft">
+            <Tooltip content={copy.workspace.sidebar.draftsSection.deleteDraft}>
               <IconButton
                 tone="quiet"
-                aria-label={`Delete draft: ${title}`}
+                aria-label={copy.workspace.sidebar.draftsSection.deleteDraft2(title)}
                 data-new-chat-draft-delete={id}
                 onClick={(event) => {
                   event.stopPropagation()

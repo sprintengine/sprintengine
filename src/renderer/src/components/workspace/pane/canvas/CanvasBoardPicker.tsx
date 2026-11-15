@@ -40,6 +40,7 @@ import {
 } from './canvasBoardSource'
 import { hostPlatform } from '../../../../clientCapabilities'
 import { isImeKey } from '../../../../utils/imeKey'
+import { copy } from '../../../../../../shared/copy'
 
 // What a Canvas tab shows before it has a board: this project's boards, every
 // board on the machine a toggle away, and one affordance that makes another.
@@ -96,8 +97,8 @@ const NO_BOARDS: readonly CanvasPickerBoard[] = []
 const HERE: CanvasBoardSource = { kind: 'here' }
 
 const SCOPE_ITEMS: { value: CanvasBoardScope; label: string }[] = [
-  { value: 'project', label: 'This project' },
-  { value: 'all', label: 'All boards' },
+  { value: 'project', label: copy.workspace.pane.canvas.canvasBoardPicker.thisProject },
+  { value: 'all', label: copy.workspace.pane.canvas.canvasBoardPicker.allBoards },
 ]
 
 /** The mark on the primary action and on the row that is not a board yet. */
@@ -166,7 +167,7 @@ export function CanvasBoardPicker({
         if (scope === 'project') setProjectPaths(result.value.boards.map((board) => board.path))
       } catch {
         if (!cancelled) {
-          setState({ kind: 'error', message: 'The list of boards could not be read.' })
+          setState({ kind: 'error', message: copy.workspace.pane.canvas.canvasBoardPicker.theListOfBoardsCould })
         }
       }
     })()
@@ -306,7 +307,11 @@ export function CanvasBoardPicker({
       void continueBoardInNewChat(source, workspaceId, board).then((started) => {
         setContinuing((current) => (current === key ? null : current))
         if (!started.ok) {
-          showToast({ tone: 'error', title: 'Could not start the chat', description: started.error.message })
+          showToast({
+            tone: 'error',
+            title: copy.workspace.pane.canvas.canvasBoardPicker.couldNotStartTheChat,
+            description: started.error.message,
+          })
         }
       })
     },
@@ -321,7 +326,7 @@ export function CanvasBoardPicker({
   // from a project whose own list could not be read.
   const scopeControl = (
     <SegmentedControl
-      ariaLabel="Which boards to list"
+      ariaLabel={copy.workspace.pane.canvas.canvasBoardPicker.whichBoardsToList}
       size="sm"
       items={SCOPE_ITEMS}
       value={scope}
@@ -334,9 +339,13 @@ export function CanvasBoardPicker({
       <div className="flex h-full flex-col items-center gap-3 bg-[color:var(--bg-surface)] p-6">
         {scopeControl}
         <EmptyState
-          title="The boards could not be listed"
+          title={copy.workspace.pane.canvas.canvasBoardPicker.theBoardsCouldNotBe}
           body={state.message}
-          action={<PrimaryButton onClick={() => setAttempt((n) => n + 1)}>Try again</PrimaryButton>}
+          action={
+            <PrimaryButton onClick={() => setAttempt((n) => n + 1)}>
+              {copy.workspace.pane.canvas.canvasBoardPicker.tryAgain}
+            </PrimaryButton>
+          }
         />
       </div>
     )
@@ -356,7 +365,7 @@ export function CanvasBoardPicker({
           <Input
             ref={nameFieldRef}
             value={draft}
-            aria-label="New board name"
+            aria-label={copy.workspace.pane.canvas.canvasBoardPicker.newBoardName}
             aria-invalid={nameError ? true : undefined}
             aria-describedby={nameError ? nameErrorId : undefined}
             spellCheck={false}
@@ -382,8 +391,8 @@ export function CanvasBoardPicker({
           />
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <PrimaryButton onClick={create}>Create</PrimaryButton>
-          <GhostButton onClick={cancelNaming}>Cancel</GhostButton>
+          <PrimaryButton onClick={create}>{copy.workspace.pane.canvas.canvasBoardPicker.create}</PrimaryButton>
+          <GhostButton onClick={cancelNaming}>{copy.workspace.pane.canvas.canvasBoardPicker.cancel}</GhostButton>
         </div>
       </div>
       {nameError ? (
@@ -448,7 +457,7 @@ export function CanvasBoardPicker({
                   // another tab, and a badge that repeated it would be read
                   // twice.
                   <Badge decorative tone="accent" className="shrink-0">
-                    Open
+                    {copy.workspace.pane.canvas.canvasBoardPicker.open}
                   </Badge>
                 ) : null}
               </span>
@@ -475,12 +484,12 @@ export function CanvasBoardPicker({
               twenty buttons. The whole row already opens the board; "Open here"
               says what that does on a row that offers something else too. */}
           <span className="ml-auto hidden shrink-0 items-center gap-1 group-focus-within/board:flex group-hover/board:flex">
-            <GhostButton onClick={pick}>Open here</GhostButton>
+            <GhostButton onClick={pick}>{copy.workspace.pane.canvas.canvasBoardPicker.openHere}</GhostButton>
             <GhostButton
               onClick={() => continueBoard(board)}
               disabled={continuing === key || (!board.id && source.kind === 'here')}
             >
-              Continue in a new chat
+              {copy.workspace.pane.canvas.canvasBoardPicker.continueInANewChat}
             </GhostButton>
           </span>
         </div>
@@ -534,7 +543,7 @@ export function CanvasBoardPicker({
               className="ml-auto"
             >
               <PlusGlyph className="icon-xs" />
-              <span>New board</span>
+              <span>{copy.workspace.pane.canvas.canvasBoardPicker.newBoard}</span>
             </PrimaryButton>
           ) : null}
         </div>
@@ -545,23 +554,27 @@ export function CanvasBoardPicker({
         ) : null}
 
         {state.kind === 'loading' ? (
-          <SettingCard as="ul" ariaLabel="Boards">
+          <SettingCard as="ul" ariaLabel={copy.workspace.pane.canvas.canvasBoardPicker.boards}>
             {skeletonRows}
           </SettingCard>
         ) : empty && !naming ? (
           <EmptyState
             density="list"
-            title={scope === 'all' ? 'No boards on this machine yet.' : 'No boards yet.'}
+            title={
+              scope === 'all'
+                ? copy.workspace.pane.canvas.canvasBoardPicker.noBoardsOnThisMachine
+                : copy.workspace.pane.canvas.canvasBoardPicker.noBoardsYet
+            }
             body={
               source.kind === 'paired'
                 ? canCreate
-                  ? `Boards on ${source.machineName} show up here. You and its agents can both draw on them.`
-                  : `Boards drawn by agents on ${source.machineName} show up here.`
-                : 'Boards live outside your repository; you and your agents can both draw on them. Export one to a folder to add it.'
+                  ? copy.workspace.pane.canvas.canvasBoardPicker.boardsOnShowUpHere(source.machineName)
+                  : copy.workspace.pane.canvas.canvasBoardPicker.boardsDrawnByAgentsOn(source.machineName)
+                : copy.workspace.pane.canvas.canvasBoardPicker.boardsLiveOutsideYourRepository
             }
           />
         ) : (
-          <SettingCard as="ul" ariaLabel="Boards">
+          <SettingCard as="ul" ariaLabel={copy.workspace.pane.canvas.canvasBoardPicker.boards}>
             {naming ? namingRow : null}
             {rows}
           </SettingCard>
@@ -575,7 +588,11 @@ export function CanvasBoardPicker({
             pageCount={view.pageCount}
             rangeLabel={view.rangeLabel}
             onPageChange={setPage}
-            ariaLabel={scope === 'all' ? 'All boards' : 'Boards in this project'}
+            ariaLabel={
+              scope === 'all'
+                ? copy.workspace.pane.canvas.canvasBoardPicker.allBoards
+                : copy.workspace.pane.canvas.canvasBoardPicker.boardsInThisProject
+            }
           />
         ) : null}
       </div>

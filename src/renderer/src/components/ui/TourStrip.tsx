@@ -6,6 +6,7 @@ import { Pager } from './Pager'
 import { Switch } from './Switch'
 import { Tooltip } from './Tooltip'
 import { PauseGlyph, PlayGlyph, StepListGlyph, TourGlyph } from './TourGlyphs'
+import { copy } from '../../../../shared/copy'
 
 // The diff tour's band (design-system/components/tour-strip): the tour's name,
 // where you are in it, and the few controls that act on the tour and nothing
@@ -66,36 +67,44 @@ export function TourStrip({
         inlineNoun={count === 1 ? 'step' : 'steps'}
         page={count === 0 ? 0 : index + 1}
         pageCount={count}
-        rangeLabel={`Step ${index + 1} of ${count}`}
+        rangeLabel={copy.ui.tourStrip.stepOf(index + 1, count)}
         stepHint={stepHint}
-        ariaLabel="Tour steps"
+        ariaLabel={copy.ui.tourStrip.tourSteps}
         onPageChange={(page) => onStep(page - 1)}
       />
       <span className="flex-1" />
       {pointer ? (
         <ChipButton className="shrink-0" onClick={pointer.onGo}>
-          Agent points to step {pointer.index + 1} →
+          {copy.ui.tourStrip.agentPointsToStep}
+          {pointer.index + 1} →
         </ChipButton>
       ) : null}
-      <Tooltip content={playing ? 'Pause' : 'Play — advance at reading pace'} placement="bottom">
-        <IconButton aria-label={playing ? 'Pause tour' : 'Play tour'} pressed={playing} onClick={onTogglePlay}>
+      <Tooltip
+        content={playing ? copy.ui.tourStrip.pause : copy.ui.tourStrip.playAdvanceAtReadingPace}
+        placement="bottom"
+      >
+        <IconButton
+          aria-label={playing ? copy.ui.tourStrip.pauseTour : copy.ui.tourStrip.playTour}
+          pressed={playing}
+          onClick={onTogglePlay}
+        >
           {playing ? <PauseGlyph /> : <PlayGlyph />}
         </IconButton>
       </Tooltip>
       <span className="flex shrink-0 items-center gap-1.5">
         <Switch checked={follow} onChange={onFollowChange} ariaLabelledBy={followId} />
         <span id={followId} className="whitespace-nowrap text-meta text-[color:var(--text-muted)]">
-          Follow agent
+          {copy.ui.tourStrip.followAgent}
         </span>
       </span>
       <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-[color:var(--border-subtle)]" />
-      <Tooltip content={listOpen ? 'Hide steps' : 'Show steps'} placement="bottom">
-        <IconButton aria-label="Steps" pressed={listOpen} onClick={onToggleList}>
+      <Tooltip content={listOpen ? copy.ui.tourStrip.hideSteps : copy.ui.tourStrip.showSteps} placement="bottom">
+        <IconButton aria-label={copy.ui.tourStrip.steps} pressed={listOpen} onClick={onToggleList}>
           <StepListGlyph />
         </IconButton>
       </Tooltip>
-      <Tooltip content="Leave the tour" placement="bottom">
-        <CloseIconButton aria-label="Leave the tour" onClick={onClose} />
+      <Tooltip content={copy.ui.tourStrip.leaveTheTour} placement="bottom">
+        <CloseIconButton aria-label={copy.ui.tourStrip.leaveTheTour} onClick={onClose} />
       </Tooltip>
       <TourProgress marks={progress} />
     </div>

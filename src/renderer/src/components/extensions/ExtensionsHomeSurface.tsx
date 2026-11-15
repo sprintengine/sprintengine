@@ -25,6 +25,7 @@ import {
 import { homeCardCount, homeCardGrid, newHomeCardSlugs } from './homeCards'
 import { openBuildExtension } from './buildExtensionHost'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The Extensions home (the app rail's Extensions glyph, 2026-09-05): the page
 // the glyph opens, in the card region, with the Extensions drawer standing
@@ -437,7 +438,7 @@ export default function ExtensionsHomeSurface(): JSX.Element {
 
   return (
     <GlobalSurfaceShell
-      ariaLabel="Extensions"
+      ariaLabel={appCopy.extensions.extensionsHomeSurface.extensions}
       controlTabContext="extensions"
       // The door's name rides the app's one top strip, where the workspace name
       // would be — a surface owns its whole region including its top row.
@@ -448,15 +449,15 @@ export default function ExtensionsHomeSurface(): JSX.Element {
       // control. It is absent when there is nothing to search: a page that has
       // fallen back to its tiles offers no filter over cards it is not showing.
       bar={{
-        title: 'Extensions',
+        title: appCopy.extensions.extensionsHomeSurface.extensions,
         actions:
           drawable > 0 ? (
             <div className="w-[260px]">
               <InboxSearchInput
                 value={query}
                 onChange={setQuery}
-                ariaLabel="Search the Extensions home"
-                placeholder="Search"
+                ariaLabel={appCopy.extensions.extensionsHomeSurface.searchTheExtensionsHome}
+                placeholder={appCopy.extensions.extensionsHomeSurface.search}
                 controlsId={CARD_GRID_ID}
               />
             </div>
@@ -485,7 +486,9 @@ export default function ExtensionsHomeSurface(): JSX.Element {
                  at; as a sibling after it, it was a sentence no reader following
                  that pointer would ever be sent to. */
               matched === 0 ? (
-                <p className="m-0 pt-1 text-meta text-[color:var(--text-muted)]">No cards match this search.</p>
+                <p className="m-0 pt-1 text-meta text-[color:var(--text-muted)]">
+                  {appCopy.extensions.extensionsHomeSurface.noCardsMatchThisSearch}
+                </p>
               ) : null
             }
           >
@@ -532,7 +535,7 @@ export default function ExtensionsHomeSurface(): JSX.Element {
                   quietly all the same — the level is the outline, not the
                   type. */}
               <h2 id={PARTS_HEADING_ID} className="m-0 text-meta font-semibold text-[color:var(--text-strong)]">
-                Or go straight to the parts
+                {appCopy.extensions.extensionsHomeSurface.orGoStraightToThe}
               </h2>
               <p className="m-0 text-meta text-[color:var(--text-muted)]">
                 {/* Counted, never typed. It said "five" from 2026-09-05 until
@@ -541,7 +544,9 @@ export default function ExtensionsHomeSurface(): JSX.Element {
                     miscounting them. A module being off makes it four or five
                     again, so the only number that can stay true is the one the
                     rows themselves give. */}
-                The {tileCountWord(tiles.length)} things the studio is made of.
+                {appCopy.extensions.extensionsHomeSurface.the}
+                {tileCountWord(tiles.length)}
+                {appCopy.extensions.extensionsHomeSurface.thingsTheStudioIsMade}
               </p>
             </div>
           ) : null}
@@ -593,9 +598,11 @@ export default function ExtensionsHomeSurface(): JSX.Element {
 function BuildExtensionPlate({ onOpen }: { onOpen: () => void }): JSX.Element {
   return (
     <CardButton variant="bordered" onClick={onOpen} className="px-4 py-3">
-      <span className="text-body font-semibold text-[color:var(--text-strong)]">Build your own extension</span>
+      <span className="text-body font-semibold text-[color:var(--text-strong)]">
+        {appCopy.extensions.extensionsHomeSurface.buildYourOwnExtension}
+      </span>
       <span className="mt-0.5 text-meta text-[color:var(--text-muted)]">
-        Describe it and an agent builds it with you, using the SDK.
+        {appCopy.extensions.extensionsHomeSurface.describeItAndAnAgent}
       </span>
     </CardButton>
   )

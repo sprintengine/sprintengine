@@ -1,6 +1,7 @@
 import type { InstalledPluginRecord } from '../../../../../../shared/ipc/skills'
 import type { AgentMcpServer, ScannedMcpServer, ScannedPlugin } from '../../../../../../shared/skills'
 import { normalizeMcpId } from '../../../../store/slices/settingsSlice'
+import { copy } from '../../../../../../shared/copy'
 
 // The decisions behind the plugin card an agent's `plugin.offer` draws in a
 // chat, kept apart from the drawing so each can be tested on its own.
@@ -94,10 +95,13 @@ export function describeServer(server: ScannedMcpServer): { code: string; descri
   if (server.transport === 'stdio') {
     return {
       code: [server.command, ...server.args].filter(Boolean).join(' '),
-      description: server.description || 'Runs on this computer',
+      description: server.description || copy.panels.agentChat.pluginOffer.pluginOfferModel.runsOnThisComputer,
     }
   }
-  return { code: server.url, description: server.description || 'Connects over the internet' }
+  return {
+    code: server.url,
+    description: server.description || copy.panels.agentChat.pluginOffer.pluginOfferModel.connectsOverTheInternet,
+  }
 }
 
 /** True once the plugin has been read whole, so its skills and servers can be listed. */

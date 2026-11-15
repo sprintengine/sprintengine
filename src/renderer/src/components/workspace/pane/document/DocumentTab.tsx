@@ -5,6 +5,7 @@ import { maskMarkdownFrontmatter } from '../../../../utils/markdownFrontmatter'
 import { basename } from '../../../../utils/paths'
 import { CopyGlyphButton, InlineNotice, PanelHeader, Spinner } from '../../../ui'
 import { filesApi } from '../../../../studio/files'
+import { copy } from '../../../../../../shared/copy'
 
 // A markdown file read in the workspace pane: a plan an agent proposed, opened
 // from its card in the conversation. Read-only, and rendered the way the
@@ -53,18 +54,22 @@ export function DocumentTab({ tab, active }: DocumentTabProps) {
       <PanelHeader
         title={title}
         subtitle={path}
-        primaryAction={content !== null ? <CopyGlyphButton size="xs" label="Copy markdown" text={content} /> : null}
+        primaryAction={
+          content !== null ? (
+            <CopyGlyphButton size="xs" label={copy.workspace.pane.document.documentTab.copyMarkdown} text={content} />
+          ) : null
+        }
       />
       {current === null ? (
         <div className="flex flex-1 items-center justify-center gap-2 text-meta text-[color:var(--text-muted)]">
           <Spinner />
-          <span role="status">Loading document…</span>
+          <span role="status">{copy.workspace.pane.document.documentTab.loadingDocument}</span>
         </div>
       ) : 'error' in current ? (
         <div className="flex flex-1 items-center justify-center px-4">
           <InlineNotice
             tone="error"
-            title="Couldn't open this document."
+            title={copy.workspace.pane.document.documentTab.couldnTOpenThisDocument}
             hint={<span className="break-all font-mono">{path}</span>}
             detail={current.error}
             className="w-full max-w-[46rem]"

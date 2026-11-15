@@ -6,6 +6,7 @@ import { maskMarkdownFrontmatter } from '../../utils/markdownFrontmatter'
 import { bucketForNode, colorForBucket } from './MemoryGraphCanvas'
 import { Tooltip } from '../ui/Tooltip'
 import { ChipButton, CloseIconButton, GhostButton, InlineNotice, PanelHeader } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 type Props = {
   workspaceId: string
@@ -91,7 +92,7 @@ export default function MemoryPreviewPane({ workspaceId, node, preview, nodes, e
     <aside
       ref={paneRef}
       role="complementary"
-      aria-label="Knowledge node preview"
+      aria-label={copy.memory.memoryPreviewPane.knowledgeNodePreview}
       className="absolute inset-y-0 right-0 z-[var(--z-pane)] flex w-[min(560px,90%)] flex-col border-l border-[color:var(--border-default)] bg-[color:var(--bg-surface)] text-[color:var(--text-strong)] shadow-[var(--shadow-drawer)]"
     >
       {/* The identity row is `ui/PanelHeader` (2112). It was a three-line band
@@ -106,13 +107,13 @@ export default function MemoryPreviewPane({ workspaceId, node, preview, nodes, e
         primaryAction={
           canOpen ? (
             <GhostButton size="xs" onClick={onOpenInEditor}>
-              Open in editor
+              {copy.memory.memoryPreviewPane.openInEditor}
             </GhostButton>
           ) : undefined
         }
         overflow={
-          <Tooltip content="Close">
-            <CloseIconButton size="md" aria-label="Close preview" onClick={onClose} />
+          <Tooltip content={copy.memory.memoryPreviewPane.close}>
+            <CloseIconButton size="md" aria-label={copy.memory.memoryPreviewPane.closePreview} onClick={onClose} />
           </Tooltip>
         }
       />
@@ -137,7 +138,7 @@ export default function MemoryPreviewPane({ workspaceId, node, preview, nodes, e
           ))}
         </div>
         {!preview ? (
-          <PaneNotice message="Loading preview…" />
+          <PaneNotice message={copy.memory.memoryPreviewPane.loadingPreview} />
         ) : !preview.ok ? (
           <InlineNotice tone="error" className="px-4 py-3">
             {preview.message}
@@ -164,7 +165,9 @@ export default function MemoryPreviewPane({ workspaceId, node, preview, nodes, e
 
       {related.length > 0 ? (
         <footer className="shrink-0 border-t border-[color:var(--border-default)] px-5 py-4">
-          <div className="mb-2 text-micro font-semibold text-[color:var(--text-muted)]">Related</div>
+          <div className="mb-2 text-micro font-semibold text-[color:var(--text-muted)]">
+            {copy.memory.memoryPreviewPane.related}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {related.map((target) => {
               const targetBucket = bucketForNode(target)

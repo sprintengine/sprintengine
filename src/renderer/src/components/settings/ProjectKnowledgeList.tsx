@@ -7,6 +7,7 @@ import { listOpenProjectKnowledge, relativePathBetween, type ProjectKnowledgeEnt
 import { isAbsolutePath } from '../../store/slices/memorySlice'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
+import { copy } from '../../../../shared/copy'
 
 type RowStatus = MemoryRootStatus | null
 
@@ -64,7 +65,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
           ok: false,
           status: 'invalid-relative-path',
           relativeRoot: null,
-          message: 'Use a path relative to the project folder.',
+          message: copy.settings.projectKnowledgeList.useAPathRelativeTo,
         },
       }))
       return
@@ -80,7 +81,8 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
           ok: false,
           status: 'inaccessible',
           relativeRoot,
-          message: error instanceof Error ? error.message : 'Unable to check knowledge path.',
+          message:
+            error instanceof Error ? error.message : copy.settings.projectKnowledgeList.unableToCheckKnowledgePath,
         },
       }))
     } finally {
@@ -133,7 +135,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
             ok: false,
             status: 'invalid-relative-path',
             relativeRoot: null,
-            message: "Can't make that folder relative to the project. Choose another.",
+            message: copy.settings.projectKnowledgeList.canTMakeThatFolder,
           },
         }))
         return
@@ -173,7 +175,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
             ok: false,
             status: 'invalid-relative-path',
             relativeRoot: null,
-            message: `Can't make ${dir} relative to this project.`,
+            message: copy.settings.projectKnowledgeList.canTMakeRelativeTo(dir),
           },
         }))
         continue
@@ -197,7 +199,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
   }, [selectedEntries, setProjectKnowledgeRoot, validate])
 
   if (projects.length === 0) {
-    return <EmptyState density="list" title="Open a workspace first." />
+    return <EmptyState density="list" title={copy.settings.projectKnowledgeList.openAWorkspaceFirst} />
   }
 
   // The list card (setting-row → The list card, 2026-09-15): the band above
@@ -221,10 +223,10 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
                 <>
                   <span className="tabular-nums">{selectedEntries.length} selected</span>
                   <GhostButton size="sm" onClick={() => void chooseSharedFolder()}>
-                    Point at shared folder…
+                    {copy.settings.projectKnowledgeList.pointAtSharedFolder}
                   </GhostButton>
                   <GhostButton size="sm" onClick={() => setSelected({})}>
-                    Clear
+                    {copy.settings.projectKnowledgeList.clear}
                   </GhostButton>
                 </>
               ) : null}
@@ -232,7 +234,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
                 checked={allSelected}
                 indeterminate={someSelected && !allSelected}
                 onChange={toggleAll}
-                label="Select all"
+                label={copy.settings.projectKnowledgeList.selectAll}
                 size="body"
                 className="w-fit"
               />
@@ -240,10 +242,10 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
           ) : undefined
         }
       >
-        Projects
+        {copy.settings.projectKnowledgeList.projects}
       </SettingsSectionTitle>
 
-      <SettingCard as="ul" ariaLabel="Projects">
+      <SettingCard as="ul" ariaLabel={copy.settings.projectKnowledgeList.projects}>
         {projects.map((entry) => {
           const status = statuses[entry.key] ?? null
           const isChecking = Boolean(checking[entry.key])
@@ -255,7 +257,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
               <div className="flex items-center gap-3">
                 <Checkbox
                   checked={isSelected}
-                  ariaLabel={`Select ${entry.name}`}
+                  ariaLabel={copy.settings.projectKnowledgeList.select(entry.name)}
                   onChange={() => setSelected((prev) => ({ ...prev, [entry.key]: !prev[entry.key] }))}
                   className="shrink-0"
                 />
@@ -266,7 +268,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
                     {/* The project the open workspace belongs to. A chip, as the
                         Remote tab marks "This device" — not a selection fill,
                         which would say "picked" about a row nobody picked. */}
-                    {isActive ? <MicroChip>Current</MicroChip> : null}
+                    {isActive ? <MicroChip>{copy.settings.projectKnowledgeList.current}</MicroChip> : null}
                     {entry.workspaceCount > 1 ? (
                       <span className="shrink-0 tabular-nums text-meta text-[color:var(--text-muted)]">
                         {entry.workspaceCount} workspaces
@@ -285,14 +287,14 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
                      */}
                   <Input
                     value={drafts[entry.key] ?? ''}
-                    aria-label={`Knowledge folder for ${entry.name}`}
+                    aria-label={copy.settings.projectKnowledgeList.knowledgeFolderFor(entry.name)}
                     onChange={(event) => setDrafts((d) => ({ ...d, [entry.key]: event.target.value }))}
                     onBlur={(event) => commit(entry, event.target.value)}
                     onKeyDown={(event) => {
                       if (isImeKey(event)) return
                       if (event.key === 'Enter') event.currentTarget.blur()
                     }}
-                    placeholder="../ecosystem-knowledge"
+                    placeholder={copy.settings.projectKnowledgeList.ecosystemKnowledge}
                     size="md"
                     fullWidth={false}
                     className="min-w-0 flex-1 font-mono"
@@ -302,7 +304,7 @@ export function ProjectKnowledgeList({ activeProjectRoot }: ProjectKnowledgeList
                     onClick={() => void chooseFolder(entry)}
                     className="h-control-md border border-[color:var(--border-default)] bg-[color:var(--bg-surface)] text-[color:var(--text-default)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-strong)]"
                   >
-                    Choose
+                    {copy.settings.projectKnowledgeList.choose}
                   </GhostButton>
                 </div>
               </div>

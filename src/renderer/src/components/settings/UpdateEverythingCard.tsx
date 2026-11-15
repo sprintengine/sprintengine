@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import { InlineNotice, OutlineButton } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
 import { agentSettingsApi } from '../../studio/agentSettings'
+import { copy } from '../../../../shared/copy'
 
 // Settings ▸ Agents: Update everything. One press updates every agent CLI
 // with a newer version published, on this machine and on each WSL
@@ -99,13 +100,16 @@ export function UpdateEverythingCard() {
   // "Check for CLI updates", the switch they follow from.
   return (
     <>
-      <SettingsRow label="Update everything" help={summary}>
+      <SettingsRow label={copy.settings.updateEverythingCard.updateEverything} help={summary}>
         <OutlineButton disabled={running || outdated.count === 0} onClick={() => void run()}>
           {running ? 'Updating…' : 'Update everything'}
         </OutlineButton>
       </SettingsRow>
       {items && items.length === 0 ? (
-        <SettingsRow label="Nothing to update" help="Every CLI with an updater was already current.">
+        <SettingsRow
+          label={copy.settings.updateEverythingCard.nothingToUpdate}
+          help="Every CLI with an updater was already current."
+        >
           {null}
         </SettingsRow>
       ) : null}
@@ -114,7 +118,9 @@ export function UpdateEverythingCard() {
             <SettingsRow key={hostId} label={executionHostLabel(hostId as ExecutionHostId, hostPlatform())} stacked>
               <ul
                 className="space-y-1"
-                aria-label={`Updates on ${executionHostLabel(hostId as ExecutionHostId, hostPlatform())}`}
+                aria-label={copy.settings.updateEverythingCard.updatesOn(
+                  executionHostLabel(hostId as ExecutionHostId, hostPlatform()),
+                )}
               >
                 {machineItems.map((item) => (
                   <li key={item.cli} className="flex min-w-0 items-baseline gap-2 text-body">

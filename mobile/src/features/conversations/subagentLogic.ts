@@ -12,6 +12,7 @@ import {
 } from "../../../../packages/conversation-protocol/src/public";
 import type { AgentLane } from "../../../../packages/conversation-timeline/src/public";
 import { formatTokenCount } from "./promptCache";
+import { copy } from "../../../../src/shared/copy";
 
 export type SubagentTone = "working" | "waiting" | "failed" | "quiet";
 
@@ -448,8 +449,8 @@ export function agentStopOffer(
   chat: { stopsAgents: boolean; chatCanStop: boolean; live: boolean; stopping: boolean },
 ): { label: string; disabled: boolean } | null {
   if (lane.status !== 'running' || !chat.stopsAgents || !chat.chatCanStop) return null
-  if (chat.stopping) return { label: 'Stopping…', disabled: true }
-  return { label: 'Stop this subagent', disabled: !chat.live }
+  if (chat.stopping) return { label: copy.phone.conversations.subagentLogic.stopping, disabled: true }
+  return { label: copy.phone.conversations.subagentLogic.stopThisSubagent, disabled: !chat.live }
 }
 
 /**

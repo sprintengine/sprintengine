@@ -7,6 +7,7 @@ import { SettingsSectionTitle } from './SettingsAtoms'
 import { pairedApprovalRules, revokePairedApprovalRule } from '../../studio/pairedChats'
 import { environmentStudioAvailable } from '../../studio/environmentStudio'
 import { tailnetApi } from '../../studio/tailnet'
+import { copy } from '../../../../shared/copy'
 
 export function ConversationApprovalSettings() {
   const [rules, setRules] = useState<ConversationApprovalRule[]>()
@@ -40,31 +41,31 @@ export function ConversationApprovalSettings() {
   return (
     <section className="space-y-3 pt-2" aria-labelledby="conversation-permissions-title">
       <SettingsSectionTitle id="conversation-permissions-title" count={rules?.length}>
-        Remembered chat permissions
+        {copy.settings.conversationApprovalSettings.rememberedChatPermissions}
       </SettingsSectionTitle>
       <p className="text-body text-[color:var(--sem-color-text-muted)]">
-        Each grant covers one tool and matcher. Revoked ones ask again. Chat-only grants end with the chat session.
+        {copy.settings.conversationApprovalSettings.eachGrantCoversOneTool}
       </p>
       {error ? (
         <InlineNotice
           tone="error"
           action={
             <GhostButton size="inline" onClick={() => void load()}>
-              Retry
+              {copy.settings.conversationApprovalSettings.retry}
             </GhostButton>
           }
         >
           {error}
         </InlineNotice>
       ) : !rules ? (
-        <Spinner label="Loading chat permissions" />
+        <Spinner label={copy.settings.conversationApprovalSettings.loadingChatPermissions} />
       ) : rules.length ? (
         <SettingCard>
           {rules.map((rule) => (
             <SettingRow key={rule.id} label={rule.label} help={rule.workspaceRoot}>
               <GhostButton
                 size="sm"
-                aria-label={`Revoke ${rule.label}`}
+                aria-label={copy.settings.conversationApprovalSettings.revoke(rule.label)}
                 disabled={Boolean(busy)}
                 onClick={() => void revoke(rule)}
               >
@@ -74,7 +75,9 @@ export function ConversationApprovalSettings() {
           ))}
         </SettingCard>
       ) : (
-        <p className="text-body text-[color:var(--sem-color-text-muted)]">No remembered permissions.</p>
+        <p className="text-body text-[color:var(--sem-color-text-muted)]">
+          {copy.settings.conversationApprovalSettings.noRememberedPermissions}
+        </p>
       )}
       <PairedMachineApprovalRules />
     </section>
@@ -138,7 +141,10 @@ function PairedMachineApprovalRules() {
         const rules = answer.ok ? answer.rules : null
         return (
           <div key={machine.connectionId} className="space-y-2">
-            <SettingsSectionTitle count={rules?.length}>On {machine.machineName}</SettingsSectionTitle>
+            <SettingsSectionTitle count={rules?.length}>
+              {copy.settings.conversationApprovalSettings.on}
+              {machine.machineName}
+            </SettingsSectionTitle>
             {!answer.ok ? (
               <p className="text-body text-[color:var(--sem-color-text-muted)]">{answer.message}</p>
             ) : answer.rules.length ? (
@@ -147,7 +153,7 @@ function PairedMachineApprovalRules() {
                   <SettingRow key={rule.id} label={rule.label} help={rule.project}>
                     <GhostButton
                       size="sm"
-                      aria-label={`Revoke ${rule.label} on ${machine.machineName}`}
+                      aria-label={copy.settings.conversationApprovalSettings.revokeOn(rule.label, machine.machineName)}
                       disabled={Boolean(busy)}
                       onClick={() => void revoke(machine, rule.id)}
                     >
@@ -157,7 +163,9 @@ function PairedMachineApprovalRules() {
                 ))}
               </SettingCard>
             ) : (
-              <p className="text-body text-[color:var(--sem-color-text-muted)]">No remembered permissions.</p>
+              <p className="text-body text-[color:var(--sem-color-text-muted)]">
+                {copy.settings.conversationApprovalSettings.noRememberedPermissions}
+              </p>
             )}
           </div>
         )

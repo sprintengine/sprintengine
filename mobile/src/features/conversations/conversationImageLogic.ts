@@ -1,6 +1,7 @@
 import { presentToolItem } from "../../../../packages/conversation-protocol/src/public";
 import type { RowTool } from "../../../../packages/conversation-timeline/src/public";
 import { recordValue, stringValue } from "./conversationLogic";
+import { copy } from "../../../../src/shared/copy";
 
 // Which steps in a chat carry a picture, and how big it is drawn. The picture
 // itself lives on the desktop, read by `conversation.picture` (api/desktopConversations.ts).
@@ -41,12 +42,12 @@ export function toolPicture(tool: RowTool): ToolPicture | null {
   if (tool.name === "GenerateImage") {
     if (!stringValue(input.path).trim()) return null;
     const prompt = stringValue(input.prompt).trim();
-    return prompt ? { placement: "inline", label: prompt, caption: prompt } : { placement: "inline", label: "Generated image" };
+    return prompt ? { placement: "inline", label: prompt, caption: prompt } : { placement: "inline", label: copy.phone.conversations.conversationImageLogic.generatedImage };
   }
   if (presentToolItem(tool).icon !== "file_read") return null;
   const path = [input.path, input.file_path, input.filePath].map(stringValue).find(Boolean) ?? "";
   if (!isConversationImagePath(path)) return null;
-  return { placement: "expanded", label: path.trim().split(/[\\/]/u).at(-1) || "Image" };
+  return { placement: "expanded", label: path.trim().split(/[\\/]/u).at(-1) || copy.phone.conversations.conversationImageLogic.image };
 }
 
 /**

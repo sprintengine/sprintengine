@@ -5,6 +5,7 @@ import { CloseIconButton, IconButton } from '../../ui'
 import { SIDEBAR_DEFAULT_WIDTH } from '../sidebarWidth'
 import { useContextRailSlot } from './contextRail'
 import { useGlobalSurfaceBarSlot } from './surfaceBarSlot'
+import { copy } from '../../../../../shared/copy'
 
 // The shared frame for door-routed full-page surfaces (global-surfaces epic
 // 1704, mockup §1/§2 anatomy): a surface bar (title · status chip · context sub
@@ -117,7 +118,11 @@ function ModalSurfaceBar({
       <BarTitle title={title} crumb={crumb} className="text-title font-semibold tracking-tight" />
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {actions}
-        <CloseIconButton size="md" aria-label="Close" onClick={onClose} />
+        <CloseIconButton
+          size="md"
+          aria-label={copy.workspace.globalSurface.globalSurfaceShell.close}
+          onClick={onClose}
+        />
       </div>
     </div>
   )
@@ -298,7 +303,7 @@ export function GlobalSurfaceShell({
       <div className="flex min-h-0 flex-1">
         {rail && !liftRail ? (
           <aside
-            aria-label={`${ariaLabel} list`}
+            aria-label={copy.workspace.globalSurface.globalSurfaceShell.list(ariaLabel)}
             // The sidebar's DEFAULT width, deliberately — not the person's
             // current one. When the host lifts a surface's rail into the app
             // sidebar (item 1993) the rail IS that column and wears whatever
@@ -360,7 +365,11 @@ export function GlobalSurfaceShell({
 // own size, radius and hover recipe.
 function BarBackChevron({ onBack, inGutter = false }: { onBack: () => void; inGutter?: boolean }): JSX.Element {
   return (
-    <IconButton onClick={onBack} aria-label="Back" className={`shrink-0 ${inGutter ? '-ml-2' : ''}`}>
+    <IconButton
+      onClick={onBack}
+      aria-label={copy.workspace.globalSurface.globalSurfaceShell.back}
+      className={`shrink-0 ${inGutter ? '-ml-2' : ''}`}
+    >
       <svg viewBox="0 0 16 16" fill="none" className="icon-md" aria-hidden="true">
         <path
           d="M10 3.5 5.5 8l4.5 4.5"

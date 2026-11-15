@@ -69,6 +69,7 @@ import { cliOnlyRegistryIds, deriveManageUpdateBanner } from './extensionUpdates
 import { errorMessage } from '../../../../../shared/errors'
 import { agentSkillsApi } from '../../../studio/agentSkills'
 import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Per-row actions, all optional: the host wires only the handlers that exist
 // today (no new IPC), and rows without a matching handler carry no affordance.
@@ -164,7 +165,10 @@ export function InstalledExtensionsInventory({
       setModules(
         result && Array.isArray(result.modules) && Array.isArray(result.rejected)
           ? { status: 'ok', value: result }
-          : { status: 'error', message: 'Could not list installed modules.' },
+          : {
+              status: 'error',
+              message: appCopy.panels.connectorsPanel.installedExtensionsInventory.couldNotListInstalledModules,
+            },
       )
     } catch (error) {
       setModules({ status: 'error', message: errorMessage(error, 'Could not list installed modules.') })
@@ -251,8 +255,8 @@ export function InstalledExtensionsInventory({
           setUpdateNotice({
             tone: 'error',
             message: entry
-              ? 'Update the app and restart to update extensions.'
-              : "This update isn't in the marketplace right now.",
+              ? appCopy.panels.connectorsPanel.installedExtensionsInventory.updateTheAppAndRestart
+              : appCopy.panels.connectorsPanel.installedExtensionsInventory.thisUpdateIsnTIn,
           })
           if (updated) await settleAfterUpdate()
           return
@@ -263,7 +267,10 @@ export function InstalledExtensionsInventory({
           trustToken = grant.trustToken
           grant = undefined
         } else {
-          setUpdateRun({ status: 'busy', label: `Checking ${entry.name}…` })
+          setUpdateRun({
+            status: 'busy',
+            label: appCopy.panels.connectorsPanel.installedExtensionsInventory.checking(entry.name),
+          })
           let verify
           try {
             verify = await extensionsApi.verifyMarketplacePlugin({ id: entry.id })
@@ -297,7 +304,10 @@ export function InstalledExtensionsInventory({
           trustToken = outcome.trustToken
         }
 
-        setUpdateRun({ status: 'busy', label: `Updating ${entry.name}…` })
+        setUpdateRun({
+          status: 'busy',
+          label: appCopy.panels.connectorsPanel.installedExtensionsInventory.updating(entry.name),
+        })
         try {
           const result = await extensionsApi.updateMarketplacePluginFromRegistry({
             id: entry.id,
@@ -313,7 +323,7 @@ export function InstalledExtensionsInventory({
               message:
                 summary.status === 'blocked' || summary.status === 'error'
                   ? summary.message
-                  : 'The update could not be completed.',
+                  : appCopy.panels.connectorsPanel.installedExtensionsInventory.theUpdateCouldNotBe,
             })
             await settleAfterUpdate()
             return
@@ -322,7 +332,10 @@ export function InstalledExtensionsInventory({
           if (result.mcpSettings && actions.onUpsertMcpServer) {
             for (const server of Object.values(result.mcpSettings.servers)) actions.onUpsertMcpServer(server)
           }
-          setUpdateNotice({ tone: 'good', message: `${entry.name} updated to v${result.version}.` })
+          setUpdateNotice({
+            tone: 'good',
+            message: appCopy.panels.connectorsPanel.installedExtensionsInventory.updatedToV(entry.name, result.version),
+          })
         } catch (error) {
           setUpdateRun({ status: 'idle' })
           setUpdateNotice({ tone: 'error', message: errorMessage(error, 'The update could not be completed.') })
@@ -440,13 +453,17 @@ function InstalledView({
     return (
       <div className="flex items-center gap-2 py-6 text-body text-[color:var(--text-muted)]">
         <Spinner size={14} />
-        Loading installed extensions…
+        {appCopy.panels.connectorsPanel.installedExtensionsInventory.loadingInstalledExtensions}
       </div>
     )
   }
 
   if (view.status === 'unsupported') {
-    return <InlineNotice tone="warn">Update the app and restart to see installed extensions.</InlineNotice>
+    return (
+      <InlineNotice tone="warn">
+        {appCopy.panels.connectorsPanel.installedExtensionsInventory.updateTheAppAndRestart2}
+      </InlineNotice>
+    )
   }
 
   // Degraded: zero rows but a source failed/was unavailable. Show only the
@@ -484,12 +501,17 @@ function InstalledView({
 
   if (groups.length === 0) {
     return needle ? (
-      <EmptyState density="list" title={`Nothing installed matches “${paging?.query?.trim() ?? ''}”.`} />
+      <EmptyState
+        density="list"
+        title={appCopy.panels.connectorsPanel.installedExtensionsInventory.nothingInstalledMatches(
+          paging?.query?.trim() ?? '',
+        )}
+      />
     ) : (
       <EmptyState
         density="list"
-        title="Nothing installed yet."
-        body="MCP servers, skills and plugins you add appear here."
+        title={appCopy.panels.connectorsPanel.installedExtensionsInventory.nothingInstalledYet}
+        body={appCopy.panels.connectorsPanel.installedExtensionsInventory.mCPServersSkillsAndPlugins}
       />
     )
   }
@@ -508,7 +530,9 @@ function InstalledView({
         const group = groups.find((candidate) => candidate.key === slice.key)
         return {
           key: slice.key,
-          label: slice.continued ? `${slice.label} (continued)` : slice.label,
+          label: slice.continued
+            ? appCopy.panels.connectorsPanel.installedExtensionsInventory.continued(slice.label)
+            : slice.label,
           count: slice.total,
           kind: group?.items[0]?.kind,
           items: (group?.items ?? []).slice(slice.start, slice.end),
@@ -553,7 +577,7 @@ function InstalledView({
           pageCount={page.pageCount}
           rangeLabel={page.rangeLabel}
           onPageChange={(next) => setPosition({ key: paging?.query ?? '', page: next })}
-          ariaLabel={`Installed ${paging?.noun ?? 'item'}s`}
+          ariaLabel={appCopy.panels.connectorsPanel.installedExtensionsInventory.installedS(paging?.noun ?? 'item')}
         />
       ) : null}
     </div>
@@ -587,15 +611,18 @@ function InstalledRow({
           size="sm"
           onClick={() => actions.onLaunchConnector!({ id: item.id, name: item.name })}
         >
-          New chat
+          {appCopy.panels.connectorsPanel.installedExtensionsInventory.newChat}
         </PrimaryButton>,
       )
     }
     if (actions.onRemoveMcpServer) {
       rowActions.push(
         <RevealedAction key="remove">
-          <Tooltip content="Remove" placement="top">
-            <CloseIconButton onClick={() => actions.onRemoveMcpServer!(item.id)} aria-label={`Remove ${item.name}`} />
+          <Tooltip content={appCopy.panels.connectorsPanel.installedExtensionsInventory.remove} placement="top">
+            <CloseIconButton
+              onClick={() => actions.onRemoveMcpServer!(item.id)}
+              aria-label={appCopy.panels.connectorsPanel.installedExtensionsInventory.remove2(item.name)}
+            />
           </Tooltip>
         </RevealedAction>,
       )
@@ -615,8 +642,11 @@ function InstalledRow({
     if (actions.onRemoveSkill) {
       rowActions.push(
         <RevealedAction key="remove">
-          <Tooltip content="Remove" placement="top">
-            <CloseIconButton onClick={() => actions.onRemoveSkill!(item.id)} aria-label={`Remove ${item.name}`} />
+          <Tooltip content={appCopy.panels.connectorsPanel.installedExtensionsInventory.remove} placement="top">
+            <CloseIconButton
+              onClick={() => actions.onRemoveSkill!(item.id)}
+              aria-label={appCopy.panels.connectorsPanel.installedExtensionsInventory.remove2(item.name)}
+            />
           </Tooltip>
         </RevealedAction>,
       )

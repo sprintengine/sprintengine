@@ -15,6 +15,7 @@ import CliIcon from '../CliIcon'
 import { usageReadingAge, useUsageLimitsState } from '../panels/agentChat/usageLimits'
 import { EmptyState } from '../ui'
 import { Meter } from '../ui/Meter'
+import { copy } from '../../../../shared/copy'
 
 // The dashboard's Limits view: each subscription window the agents reported,
 // one per row, with how much of it is spent, the share of its time gone by as
@@ -35,8 +36,8 @@ export function UsageLimitsView(): JSX.Element {
   if (snapshots.length === 0) {
     return (
       <EmptyState
-        title="No usage limits reported yet"
-        body="They appear after a subscription chat runs a turn, or a Claude terminal shows its status line."
+        title={copy.usage.usageLimitsView.noUsageLimitsReportedYet}
+        body={copy.usage.usageLimitsView.theyAppearAfterASubscription}
       />
     )
   }

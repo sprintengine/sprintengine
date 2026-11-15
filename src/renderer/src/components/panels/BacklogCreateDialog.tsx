@@ -3,6 +3,7 @@ import { useState, type JSX } from 'react'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { Field, Input, Select, Textarea, type SelectItem } from '../ui'
 import type { BacklogCriticality, BacklogDifficulty } from '../../utils/backlog'
+import { copy } from '../../../../shared/copy'
 
 // The structured capture dialog for a new backlog item. A backlog item is
 // lightweight intent — a title plus the what/why — and its triage (size,
@@ -60,42 +61,46 @@ export function BacklogCreateDialog({
           submit()
         }}
       >
-        <ModalHeader title="New backlog item" titleId={titleId} onClose={busy ? undefined : onClose} />
+        <ModalHeader
+          title={copy.panels.backlogCreateDialog.newBacklogItem}
+          titleId={titleId}
+          onClose={busy ? undefined : onClose}
+        />
         <ModalBody className="space-y-3">
-          <Field label="Title" htmlFor="backlog-create-item-title">
+          <Field label={copy.panels.backlogCreateDialog.title} htmlFor="backlog-create-item-title">
             <Input
               value={draft.title}
               autoFocus
-              placeholder="e.g. Realtime presence indicators"
+              placeholder={copy.panels.backlogCreateDialog.eGRealtimePresenceIndicators}
               onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
               size="md"
             />
           </Field>
           <Field
-            label="Description"
+            label={copy.panels.backlogCreateDialog.description}
             htmlFor="backlog-create-item-description"
             help="Capture the intent — the what and why. Leave implementation to the plan."
           >
             <Textarea
               value={draft.description}
               rows={4}
-              placeholder="What outcome does this enable, or what is broken?"
+              placeholder={copy.panels.backlogCreateDialog.whatOutcomeDoesThisEnable}
               onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
               size="md"
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Size" htmlFor="backlog-create-item-size">
+            <Field label={copy.panels.backlogCreateDialog.size} htmlFor="backlog-create-item-size">
               <Select
-                ariaLabel="Item size"
+                ariaLabel={copy.panels.backlogCreateDialog.itemSize}
                 items={difficultyItems}
                 value={draft.difficulty}
                 onChange={(value) => setDraft((current) => ({ ...current, difficulty: value }))}
               />
             </Field>
-            <Field label="Priority" htmlFor="backlog-create-item-priority">
+            <Field label={copy.panels.backlogCreateDialog.priority} htmlFor="backlog-create-item-priority">
               <Select
-                ariaLabel="Item priority"
+                ariaLabel={copy.panels.backlogCreateDialog.itemPriority}
                 items={criticalityItems}
                 value={draft.criticality}
                 onChange={(value) => setDraft((current) => ({ ...current, criticality: value }))}
@@ -104,13 +109,14 @@ export function BacklogCreateDialog({
           </div>
           {error ? (
             <p role="alert" className="text-meta leading-5 text-[color:var(--tone-error)]">
-              Couldn’t create the item: {error}
+              {copy.panels.backlogCreateDialog.couldnTCreateTheItem}
+              {error}
             </p>
           ) : null}
         </ModalBody>
         <ModalFooter>
           <ModalButton type="button" onClick={onClose} disabled={busy}>
-            Cancel
+            {copy.panels.backlogCreateDialog.cancel}
           </ModalButton>
           <ModalButton type="submit" variant="primary" disabled={!canSubmit}>
             {busy ? 'Creating…' : 'Create item'}

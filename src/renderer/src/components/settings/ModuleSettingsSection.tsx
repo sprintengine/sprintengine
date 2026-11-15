@@ -9,6 +9,7 @@ import { moduleSettingsNamespace } from '../../store/slices/settingsSlice'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { SuspenseFallback } from '../ui/SuspenseFallback'
 import { GhostButton, InlineNotice } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 const EMPTY_SECTION_VALUES: Readonly<Record<string, unknown>> = Object.freeze({})
 
@@ -27,9 +28,9 @@ export function ModuleSectionErrorFallback({
   return (
     <InlineNotice
       tone="error"
-      title={`${section.label} couldn't load. Other settings still work.`}
-      hint={`From ${section.moduleId}`}
-      action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
+      title={copy.settings.moduleSettingsSection.couldnTLoadOtherSettings(section.label)}
+      hint={copy.settings.moduleSettingsSection.from(section.moduleId)}
+      action={<GhostButton onClick={onRetry}>{copy.settings.moduleSettingsSection.tryAgain}</GhostButton>}
     />
   )
 }
@@ -74,7 +75,7 @@ export function ModuleSettingsSectionHost({ section }: { section: RegisteredSett
   const SectionComponent = section.Component
   return (
     <ModuleSectionErrorBoundary section={section}>
-      <Suspense fallback={<SuspenseFallback label={`Loading ${section.label}`} />}>
+      <Suspense fallback={<SuspenseFallback label={copy.settings.moduleSettingsSection.loading(section.label)} />}>
         <SectionComponent values={values} setValue={setValue} />
       </Suspense>
     </ModuleSectionErrorBoundary>

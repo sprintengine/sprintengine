@@ -4,6 +4,7 @@ import { STUDIO_AREA_SKILLS, type StudioAreaSkillId } from '../../../../shared/s
 import { setStudioAreaSkillEnabled, useStudioAreaSkillChoices } from '../../store/studioAreaSkillsStore'
 import { InlineNotice, SettingCard, Spinner } from '../ui'
 import { SettingsSectionTitle, SettingToggle } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 /**
  * The built-in plugin's area skills, one switch each (shared/studio-area-skills.ts).
@@ -30,16 +31,21 @@ export function StudioSkillsSettings(): JSX.Element {
   return (
     <section className="space-y-3 pt-2" aria-labelledby="studio-skills-title">
       <SettingsSectionTitle id="studio-skills-title" count={choices?.enabled.length}>
-        Studio skills
+        {copy.settings.studioSkillsSettings.studioSkills}
       </SettingsSectionTitle>
       <p className="text-body text-[color:var(--text-muted)]">
-        Skills that teach agents to use this app. Changes apply when an agent next launches.
+        {copy.settings.studioSkillsSettings.skillsThatTeachAgentsTo}
       </p>
       {error ? (
-        <InlineNotice tone="error" title="That change was not saved." hint="Switch it again to retry." detail={error} />
+        <InlineNotice
+          tone="error"
+          title={copy.settings.studioSkillsSettings.thatChangeWasNotSaved}
+          hint={copy.settings.studioSkillsSettings.switchItAgainToRetry}
+          detail={error}
+        />
       ) : null}
       {!choices ? (
-        <Spinner label="Loading Studio skills" />
+        <Spinner label={copy.settings.studioSkillsSettings.loadingStudioSkills} />
       ) : (
         <SettingCard>
           {STUDIO_AREA_SKILLS.map((skill) => (

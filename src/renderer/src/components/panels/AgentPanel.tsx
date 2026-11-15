@@ -24,6 +24,7 @@ import { ChatViewErrorBoundary } from './agentChat/ChatViewErrorBoundary'
 import { EnvironmentChatScope } from './agentChat/EnvironmentChatScope'
 import { AgentChatView } from './agentPanelChunks'
 import { setTerminalReapExempt, suspendTerminal } from '../../studio/terminals'
+import { copy } from '../../../../shared/copy'
 
 const TerminalView = React.lazy(() => import('./TerminalView'))
 
@@ -233,13 +234,13 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
           // not a button.
           <div className="absolute right-2 top-2 z-[var(--z-float)] flex items-center gap-1.5">
             {canUseSkill ? (
-              <Tooltip content="Find a skill or plugin — Shift Shift" placement="bottom">
+              <Tooltip content={copy.panels.agentPanel.findASkillOrPlugin} placement="bottom">
                 {/* Kit icon button on the raised ground so it stays legible
                     over terminal output; hover-revealed, and focus-revealed
                     for the keyboard. */}
                 <IconButton
                   onClick={openSkillSearch}
-                  aria-label="Find a skill or plugin for this agent"
+                  aria-label={copy.panels.agentPanel.findASkillOrPlugin2}
                   className="bg-[color:var(--bg-surface-raised)] opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
                 >
                   <StarGlyph filled={false} stroked className="size-icon-sm" />
@@ -251,10 +252,10 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
               // pause glyph as the suspended state (context disambiguates: a
               // button while live, a status indicator once suspended). Hidden
               // while locked — the lock's whole promise is "never paused".
-              <Tooltip content="Suspend agent to free memory" placement="bottom">
+              <Tooltip content={copy.panels.agentPanel.suspendAgentToFreeMemory} placement="bottom">
                 <IconButton
                   onClick={suspendThisTerminal}
-                  aria-label="Suspend agent to free memory"
+                  aria-label={copy.panels.agentPanel.suspendAgentToFreeMemory}
                   className="bg-[color:var(--bg-surface-raised)] opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
                 >
                   <svg viewBox="0 0 16 16" fill="none" className="size-icon-sm" aria-hidden="true">
@@ -269,15 +270,19 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
               // pausing. Locked state stays visible as a standing status mark;
               // unlocked is hover-revealed like its neighbors.
               <Tooltip
-                content={isTerminalLocked ? 'Unlock — allow auto-pause' : 'Lock — never auto-pause'}
+                content={
+                  isTerminalLocked
+                    ? copy.panels.agentPanel.unlockAllowAutoPause
+                    : copy.panels.agentPanel.lockNeverAutoPause
+                }
                 placement="bottom"
               >
                 <IconButton
                   onClick={toggleTerminalLock}
                   aria-label={
                     isTerminalLocked
-                      ? 'Unlock terminal — allow automatic pausing'
-                      : 'Lock terminal — never pause automatically'
+                      ? copy.panels.agentPanel.unlockTerminalAllowAutomaticPausing
+                      : copy.panels.agentPanel.lockTerminalNeverPauseAutomatically
                   }
                   aria-pressed={isTerminalLocked}
                   // The fill and the ink of the pressed state belong to the
@@ -318,10 +323,10 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
               </Tooltip>
             ) : null}
             {backlogItemRef ? (
-              <Tooltip content={`Open Backlog item: ${backlogItemRef.title}`} placement="bottom">
+              <Tooltip content={copy.panels.agentPanel.openBacklogItem(backlogItemRef.title)} placement="bottom">
                 <IconButton
                   onClick={openLinkedBacklogItem}
-                  aria-label={`Open Backlog item: ${backlogItemRef.title}`}
+                  aria-label={copy.panels.agentPanel.openBacklogItem(backlogItemRef.title)}
                   className="bg-[color:var(--bg-surface-raised)]"
                 >
                   {/* The same glyph as the header's Backlog switch and the pane's
@@ -355,7 +360,9 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-5 text-center">
               <div className="max-w-sm text-meta leading-5 text-[color:var(--text-muted)]">
-                Agent CLI "{cli}" isn't installed.
+                {copy.panels.agentPanel.agentCLI}
+                {cli}
+                {copy.panels.agentPanel.isnTInstalled}
               </div>
               <CliInstallCta />
             </div>
@@ -385,7 +392,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
                 density="bleed"
                 onClick={resumeTerminal}
                 tabIndex={showPausedStrip ? 0 : -1}
-                aria-label="Resume paused agent — click or type to resume"
+                aria-label={copy.panels.agentPanel.resumePausedAgentClickOr}
                 className="group text-micro"
               >
                 {/* Pause glyph, low-opacity — a status mark, not a call to action. */}
@@ -393,7 +400,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
                   <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor" />
                   <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor" />
                 </svg>
-                <span>Paused</span>
+                <span>{copy.panels.agentPanel.paused}</span>
                 {/* Hint stays hidden until pane hover (kept low-key), but reveals
                     at full muted contrast — a reduced opacity here fell under the
                     WCAG AA text threshold against --bg-app.
@@ -402,7 +409,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
                     holds the terminal, so focus-within there would pin the hint
                     open for the whole session instead of disclosing it. */}
                 <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
-                  click or type to resume
+                  {copy.panels.agentPanel.clickOrTypeToResume}
                 </span>
               </RowButton>
             </div>

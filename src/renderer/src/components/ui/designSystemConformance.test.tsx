@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import { JSDOM } from 'jsdom'
 import { test } from 'vitest'
+import { readSourceWithCopy } from '../../../../../tests/source-with-copy'
 
 test('designSystemConformance', async () => {
   // Seam test for the design-system conformance epic (T15).
@@ -775,7 +776,7 @@ test('designSystemConformance', async () => {
       // 2026-09-02 audit they ride the door bar (`DesignGlobalSurface`'s
       // `bar.actions`), not a second chrome band inside the canvas.
       assert.ok(!text.includes('reveal') && !text.includes('reload'), 'the canvas draws no chrome band of its own')
-      const surfaceSource = readFileSync(
+      const surfaceSource = readSourceWithCopy(
         join(process.cwd(), 'src/renderer/src/components/workspace/globalSurface/design/DesignGlobalSurface.tsx'),
         'utf8',
       )
@@ -849,7 +850,7 @@ test('designSystemConformance', async () => {
       // The one accent-filled control rides the door bar (`DesignGlobalSurface`'s
       // `bar.actions`, audit 2026-09-02); the screen itself paints none.
       assert.equal(primaries.length, 0, 'the create screen paints no accent-filled control of its own')
-      const surfaceSource = readFileSync(
+      const surfaceSource = readSourceWithCopy(
         join(process.cwd(), 'src/renderer/src/components/workspace/globalSurface/design/DesignGlobalSurface.tsx'),
         'utf8',
       )
@@ -1075,7 +1076,7 @@ test('designSystemConformance', async () => {
       for (const path of sources) {
         // Comments first: `Modal.tsx` documents the retired ladder in prose, and
         // prose is not a class string.
-        const code = readFileSync(path, 'utf8')
+        const code = readSourceWithCopy(path, 'utf8')
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/(^|[^:])\/\/.*$/gm, '$1')
         for (const match of code.matchAll(STRINGS)) {
@@ -1173,7 +1174,7 @@ test('designSystemConformance', async () => {
       for (const path of sources) {
         // Comments first: this file's own prose names both tokens, and so does
         // the note above `backlogRowPaintClass`. Prose is not a class string.
-        const code = readFileSync(path, 'utf8')
+        const code = readSourceWithCopy(path, 'utf8')
           .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
           .replace(/(^|[^:])\/\/.*$/gm, '$1')
         const lines = code.split('\n')
@@ -1230,7 +1231,7 @@ test('designSystemConformance', async () => {
 
     const STRING_LITERALS = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g
     const withoutComments = (path: string): string =>
-      readFileSync(path, 'utf8')
+      readSourceWithCopy(path, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
@@ -1333,7 +1334,7 @@ test('designSystemConformance', async () => {
         'components/workspace/WorkspaceManager.tsx': /<Modal\b/,
       }
       for (const [file, pattern] of Object.entries(shells)) {
-        const source = readFileSync(join(process.cwd(), 'src/renderer/src', file), 'utf8')
+        const source = readSourceWithCopy(join(process.cwd(), 'src/renderer/src', file), 'utf8')
         assert.match(source, pattern, `${file} draws the shared shell chrome rather than a copy of it`)
       }
 
@@ -1342,7 +1343,10 @@ test('designSystemConformance', async () => {
       // it is computed once rather than on every PTY chunk. A palette that kept
       // the glass and dropped the hold would be the ~10fps scrim measurement
       // again, on a smaller area — so the two travel together, or neither.
-      const palette = readFileSync(join(process.cwd(), 'src/renderer/src/components/ui/CommandPalette.tsx'), 'utf8')
+      const palette = readSourceWithCopy(
+        join(process.cwd(), 'src/renderer/src/components/ui/CommandPalette.tsx'),
+        'utf8',
+      )
       assert.ok(
         !/surface-glass/.test(palette) || /acquireTerminalRepaintPause\(/.test(palette),
         'a glass palette holds the terminal repaint pause for its lifetime',
@@ -1352,7 +1356,7 @@ test('designSystemConformance', async () => {
       // a `size` step, not a pixel count: a `width` prop is a TypeScript error
       // today, and a silent off-scale dialog the moment someone adds it back for
       // one caller.
-      const modal = readFileSync(join(process.cwd(), 'src/renderer/src/components/ui/Modal.tsx'), 'utf8')
+      const modal = readSourceWithCopy(join(process.cwd(), 'src/renderer/src/components/ui/Modal.tsx'), 'utf8')
       assert.ok(!/\bwidth\?:/.test(modal), 'Modal takes a step on the width scale (`size`), never a raw width')
     })
 
@@ -1590,7 +1594,7 @@ test('designSystemConformance', async () => {
       // still measures what it did. This is the anatomy the whole item is phrased
       // against, asserted on the primitive's own source so a change to it has to
       // be deliberate rather than a silent re-scatter of every panel.
-      const header = readFileSync(join(process.cwd(), 'src/renderer/src/components/ui/PanelHeader.tsx'), 'utf8')
+      const header = readSourceWithCopy(join(process.cwd(), 'src/renderer/src/components/ui/PanelHeader.tsx'), 'utf8')
       assert.match(header, /px-3 py-2/, 'the identity row is `px-3 py-2` — that inset IS the shared height')
       assert.match(
         header,
@@ -1696,14 +1700,14 @@ test('designSystemConformance', async () => {
     // from this string still addresses the same line of the file — which is what
     // the marker scan below reads.
     const withoutCommentsKeepingLines = (path: string): string =>
-      readFileSync(path, 'utf8')
+      readSourceWithCopy(path, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
         .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
     const menuRows = (
       path: string,
     ): Array<{ line: number; tag: string; name: string; allowed: boolean; canon: boolean }> => {
-      const raw = readFileSync(path, 'utf8').split('\n')
+      const raw = readSourceWithCopy(path, 'utf8').split('\n')
       const source = withoutCommentsKeepingLines(path)
       const canon = canonAliases(source)
       const found: Array<{ line: number; tag: string; name: string; allowed: boolean; canon: boolean }> = []
@@ -1898,7 +1902,7 @@ test('designSystemConformance', async () => {
     })
 
     await run('exactly one Field is exported from the kit, and nobody imports a second', () => {
-      const barrel = readFileSync(join(process.cwd(), 'src/renderer/src/components/ui/index.ts'), 'utf8')
+      const barrel = readSourceWithCopy(join(process.cwd(), 'src/renderer/src/components/ui/index.ts'), 'utf8')
       const exportsField = barrel
         .split('\n')
         .filter((line) => /^export\b/.test(line) && /(?:^|[{,\s])Field(?=[},\s])/.test(line))

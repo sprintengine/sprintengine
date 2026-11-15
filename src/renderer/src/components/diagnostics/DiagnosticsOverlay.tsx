@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import DiagnosticsContent from './DiagnosticsContent'
 import { GhostButton } from '../ui'
 import { Modal } from '../ui/Modal'
+import { copy } from '../../../../shared/copy'
 
 type Props = {
   onClose: () => void
@@ -39,7 +40,13 @@ export default function DiagnosticsOverlay({ onClose }: Props) {
   }, [onClose])
 
   return (
-    <Modal open onClose={onClose} label="Performance diagnostics" size="workbench" layout="panel">
+    <Modal
+      open
+      onClose={onClose}
+      label={copy.diagnostics.diagnosticsOverlay.performanceDiagnostics}
+      size="workbench"
+      layout="panel"
+    >
       <DiagnosticsContent
         headerActions={
           <>
@@ -47,12 +54,17 @@ export default function DiagnosticsOverlay({ onClose }: Props) {
               size="xs"
               onClick={handlePopOut}
               className="font-mono"
-              aria-label="Open diagnostics in a separate window"
+              aria-label={copy.diagnostics.diagnosticsOverlay.openDiagnosticsInASeparate}
             >
-              Pop out ⧉
+              {copy.diagnostics.diagnosticsOverlay.popOut}
             </GhostButton>
-            <GhostButton size="xs" onClick={onClose} className="font-mono" aria-label="Close diagnostics">
-              Close
+            <GhostButton
+              size="xs"
+              onClick={onClose}
+              className="font-mono"
+              aria-label={copy.diagnostics.diagnosticsOverlay.closeDiagnostics}
+            >
+              {copy.diagnostics.diagnosticsOverlay.close}
             </GhostButton>
           </>
         }

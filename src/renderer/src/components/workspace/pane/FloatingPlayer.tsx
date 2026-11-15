@@ -5,6 +5,7 @@ import { FLOAT_DEFAULT_HEIGHT, FLOAT_DEFAULT_WIDTH } from '../../../store/slices
 import type { WorkspaceId, WorkspacePaneTab } from '../../../../../shared/workspace'
 import { CloseIconButton, FloatingButton, Tooltip } from '../../ui'
 import { agentBrowserTracker } from './browser/agentBrowserFloat'
+import { copy } from '../../../../../shared/copy'
 
 // The floating browser player (browser-pane epic, `floating-preview`): a
 // miniature of the pane's browser tab kept in view over the workspace while
@@ -268,13 +269,17 @@ export function FloatingPlayerChrome({ workspaceId, tab, rect }: ChromeProps) {
               strokeLinejoin="round"
             />
           </svg>
-          Open
+          {copy.workspace.pane.floatingPlayer.open}
         </FloatingButton>
         <span className="pointer-events-auto absolute right-1.5 top-1.5 rounded-[var(--radius-sm)] bg-[color:var(--composer-surface)]">
-          <Tooltip content="Close" placement="bottom">
+          <Tooltip content={copy.workspace.pane.floatingPlayer.close} placement="bottom">
             <CloseIconButton
               size="3xs"
-              aria-label={tab.kind === 'canvas' ? 'Close the floating board' : 'Close the floating browser'}
+              aria-label={
+                tab.kind === 'canvas'
+                  ? copy.workspace.pane.floatingPlayer.closeTheFloatingBoard
+                  : copy.workspace.pane.floatingPlayer.closeTheFloatingBrowser
+              }
               onPointerDown={stopDrag}
               onDoubleClick={stopDrag}
               onClick={close}

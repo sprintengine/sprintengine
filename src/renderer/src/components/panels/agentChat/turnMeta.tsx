@@ -10,6 +10,7 @@ import { CONVERSATION_DEFAULT_MODEL_ID } from '../../../../../shared/conversatio
 import { CompactGlyph } from './toolRows/ToolKindGlyph'
 import { formatTokenCount } from '../../../utils/tokenFormat'
 import { GhostButton } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 type AssistantEntry = Extract<TranscriptEntry, { kind: 'assistant' }>
 type CompactionEntry = Extract<TranscriptEntry, { kind: 'compaction' }>
@@ -163,7 +164,7 @@ export function HandoffDivider({ entry, onOpenFile }: { entry: HandoffEntry; onO
       action={
         onOpenFile ? (
           <GhostButton size="xs" className="-my-1 ml-1" onClick={() => onOpenFile(entry.path)}>
-            Open file
+            {copy.panels.agentChat.turnMeta.openFile}
           </GhostButton>
         ) : undefined
       }
@@ -186,5 +187,10 @@ export function HandoffGlyph({ className }: { className?: string }) {
 // furniture rather than a banner; the word is short because the place says
 // the rest.
 export function UnreadDivider() {
-  return <TimelineSeam label="New" ariaLabel="New since you last looked" />
+  return (
+    <TimelineSeam
+      label={copy.panels.agentChat.turnMeta.new}
+      ariaLabel={copy.panels.agentChat.turnMeta.newSinceYouLastLooked}
+    />
+  )
 }

@@ -25,6 +25,7 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
+import { copy } from '../../../shared/copy'
 
 // The window's way to what its Studio's agents are set up with beyond their
 // CLIs: the Studio protocol's `memory.*`, `memoryActivity.*`, `mcp.sync`,
@@ -100,11 +101,11 @@ export const agentSetupApi: AgentSetupApi = {
   memoryReadPreview: (input) => call('memory.readPreview', { ...memoryRoot(input), relativePath: input.relativePath }),
   memoryActivityInstall: async ({ workspaceRoot, memoryRelativeRoot }) => {
     if (!workspaceRoot || !memoryRelativeRoot)
-      return { ok: false, message: 'Workspace and knowledge root are required.' }
+      return { ok: false, message: copy.studio.agentSetup.workspaceAndKnowledgeRootAre }
     return call('memoryActivity.install', { commandId: randomId(), workspaceFolder: workspaceRoot, memoryRelativeRoot })
   },
   memoryActivityUninstall: async ({ workspaceRoot }) => {
-    if (!workspaceRoot) return { ok: false, message: 'Workspace root is required.' }
+    if (!workspaceRoot) return { ok: false, message: copy.studio.agentSetup.workspaceRootIsRequired }
     return call('memoryActivity.uninstall', { commandId: randomId(), workspaceFolder: workspaceRoot })
   },
   memoryActivityStartWatching: async ({ workspaceRoot, memoryRelativeRoot }) => {

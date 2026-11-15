@@ -12,6 +12,7 @@ import { ReplyContext, ReplyFence, ReplyMathBlock } from "./rich/ReplyBlocks";
 import { installReplyMarkup, type ReplyMarkdownIt } from "./rich/replyMarkup";
 import { SourceBlock } from "./SourceBlock";
 import { computeColumnWidths } from "./tableLayout";
+import { copy } from "../../../../src/shared/copy";
 
 interface MarkdownDocumentProps {
   body: string;
@@ -159,7 +160,7 @@ function MarkedText({ content, style }: { content: string; style: StyleProp<Text
     pieces.push(
       <Text
         key={`${mark.n}:${range.start}:n`}
-        accessibilityLabel={`Quote ${mark.n}`}
+        accessibilityLabel={copy.phone.components.document.markdownDocument.quote(mark.n)}
         style={{ color: colors.quoteOnBadge, backgroundColor: mark.sent ? colors.quoteBadgeSent : colors.quoteBadge }}
       >
         {`\u2009${mark.n}\u2009`}
@@ -419,8 +420,7 @@ const createMarkdown = (theme: Theme) => {
     image: (node) => {
       const source = readAttribute(node, "alt") || readAttribute(node, "src") || "unnamed";
       return (
-        <Text key={node.key} style={markdownStyles.imageNotice}>
-          Image not loaded — {source}
+        <Text key={node.key} style={markdownStyles.imageNotice}>{copy.phone.components.document.markdownDocument.imageNotLoaded}{source}
         </Text>
       );
     },

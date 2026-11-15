@@ -1,6 +1,7 @@
 import React from 'react'
 import { CloseIconButton, MediaButton } from './Buttons'
 import { TruncatedText } from './TruncatedText'
+import { copy } from '../../../../shared/copy'
 
 /** Shared staged-context shape for the launcher and conversation composer. */
 export function AttachmentChip({
@@ -78,7 +79,11 @@ export function AttachmentFileCard({
       </MediaButton>
       {onRemove ? (
         <span className="absolute right-1 top-1">
-          <CloseIconButton size="2xs" aria-label={removeLabel ?? `Remove ${fullName}`} onClick={onRemove} />
+          <CloseIconButton
+            size="2xs"
+            aria-label={removeLabel ?? copy.ui.attachmentChip.remove(fullName)}
+            onClick={onRemove}
+          />
         </span>
       ) : null}
     </span>

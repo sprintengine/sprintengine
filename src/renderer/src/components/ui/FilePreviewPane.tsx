@@ -4,6 +4,7 @@ import { CloseIconButton, GhostButton, IconButton } from './Buttons'
 import { PanelHeader } from './PanelHeader'
 import { renderMarkdown } from '../../utils/markdown'
 import { maskMarkdownFrontmatter } from '../../utils/markdownFrontmatter'
+import { copy } from '../../../../shared/copy'
 
 // FilePreviewPane — canonical inline file/artifact preview surface.
 // Renders a Back affordance, the filename, an optional "Open in editor"
@@ -59,8 +60,8 @@ export function FilePreviewPane({ title, path, content, onBack, onPopOut, onClos
         title={title}
         subtitle={path}
         leading={
-          <Tooltip content="Back">
-            <IconButton onClick={onBack} aria-label="Back">
+          <Tooltip content={copy.ui.filePreviewPane.back}>
+            <IconButton onClick={onBack} aria-label={copy.ui.filePreviewPane.back}>
               <svg viewBox="0 0 16 16" fill="none" className="icon-xs">
                 <path
                   d="M10 4L6 8L10 12"
@@ -75,8 +76,8 @@ export function FilePreviewPane({ title, path, content, onBack, onPopOut, onClos
         }
         primaryAction={
           onPopOut ? (
-            <Tooltip content="Open in editor tab">
-              <GhostButton size="xs" onClick={onPopOut} aria-label="Open in editor tab">
+            <Tooltip content={copy.ui.filePreviewPane.openInEditorTab}>
+              <GhostButton size="xs" onClick={onPopOut} aria-label={copy.ui.filePreviewPane.openInEditorTab}>
                 <svg viewBox="0 0 16 16" fill="none" className="icon-xs">
                   <path
                     d="M9 3H13V7M13 3L7.5 8.5M6 4H4C3.45 4 3 4.45 3 5V12C3 12.55 3.45 13 4 13H11C11.55 13 12 12.55 12 12V10"
@@ -86,7 +87,7 @@ export function FilePreviewPane({ title, path, content, onBack, onPopOut, onClos
                     strokeLinejoin="round"
                   />
                 </svg>
-                Open in editor
+                {copy.ui.filePreviewPane.openInEditor}
               </GhostButton>
             </Tooltip>
           ) : undefined
@@ -94,7 +95,9 @@ export function FilePreviewPane({ title, path, content, onBack, onPopOut, onClos
         // Close is the SECOND control in the cluster — `primaryAction` is one
         // action, and jumping the file out to a real tab is the one this row
         // offers. Dismissal follows it.
-        overflow={onClose ? <CloseIconButton aria-label="Close preview" onClick={onClose} /> : undefined}
+        overflow={
+          onClose ? <CloseIconButton aria-label={copy.ui.filePreviewPane.closePreview} onClick={onClose} /> : undefined
+        }
       />
       {body ? (
         <div className="flex min-h-0 flex-1 flex-col p-3">{body}</div>

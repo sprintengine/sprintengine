@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import { openWorkspaceIds } from '../utils/agentWorktreeCleanup'
 import { ensureChatWorktree } from '../utils/chatWorktreeRestore'
 import { filesApi } from '../studio/files'
+import { copy } from '../../../shared/copy'
 
 type FolderCheckState = {
   path: string | null
@@ -40,7 +41,7 @@ async function checkAfterRestore(
       status: 'missing',
       path: folderPath,
       checkedPath: folderPath,
-      message: 'Couldn’t restore this chat’s worktree.',
+      message: copy.hooks.useWorkspaceFolderStatus.couldnTRestoreThisChat,
     }
   }
   return filesApi.checkWorkspaceFolder(folderPath)
@@ -101,7 +102,8 @@ export function useWorkspaceFolderStatus(workspaceId: string): WorkspaceFolderSt
         status: 'inaccessible',
         path: folderPath,
         checkedPath: folderPath,
-        message: error instanceof Error ? error.message : 'Failed to check workspace folder.',
+        message:
+          error instanceof Error ? error.message : copy.hooks.useWorkspaceFolderStatus.failedToCheckWorkspaceFolder,
       })
       return false
     }
@@ -131,7 +133,8 @@ export function useWorkspaceFolderStatus(workspaceId: string): WorkspaceFolderSt
             status: 'inaccessible',
             path: folderPath,
             checkedPath: folderPath,
-            message: error instanceof Error ? error.message : 'Failed to check workspace folder.',
+            message:
+              error instanceof Error ? error.message : copy.hooks.useWorkspaceFolderStatus.failedToCheckWorkspaceFolder,
           })
         }
       })

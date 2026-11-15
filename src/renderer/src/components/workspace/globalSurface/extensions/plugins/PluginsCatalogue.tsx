@@ -106,6 +106,7 @@ import {
 } from './pluginsSurfaceModel'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
 import { extensionsApi, windowHasStudio } from '../../../../../studio/extensions'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 const MISSING_API_MESSAGE = 'Plugins need an app restart before they are available.'
 
@@ -234,7 +235,10 @@ export function PluginsCatalogue({
       return { status: 'loading' }
     }
     if (connectors.registryLoad.status === 'error') {
-      return { status: 'error', message: 'The marketplace is unavailable.' }
+      return {
+        status: 'error',
+        message: appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.theMarketplaceIsUnavailable,
+      }
     }
     return { status: 'ready', count: appEntries.length }
   }, [appEntries.length, connectors.registryLoad])
@@ -662,7 +666,13 @@ export function PluginsCatalogue({
     if (!activeSource) return []
     const builtin = isApp ? builtinRow(query) : null
     const builtinSection: CatalogueSection<PluginItem>[] = builtin
-      ? [{ key: 'built-in', label: 'Built in', items: [builtin] }]
+      ? [
+          {
+            key: 'built-in',
+            label: appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.builtIn,
+            items: [builtin],
+          },
+        ]
       : []
     // What the source's REPOSITORY holds. Our own tab reads its marketplace
     // exactly like Anthropic's now, rather than being a registry view with a
@@ -681,8 +691,24 @@ export function PluginsCatalogue({
       : []
     return [
       ...builtinSection,
-      ...(plugins.length > 0 ? [{ key: 'plugins', label: 'Plugins', items: plugins }] : []),
-      ...(servers.length > 0 ? [{ key: 'mcp', label: 'MCP servers', items: servers }] : []),
+      ...(plugins.length > 0
+        ? [
+            {
+              key: 'plugins',
+              label: appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.plugins,
+              items: plugins,
+            },
+          ]
+        : []),
+      ...(servers.length > 0
+        ? [
+            {
+              key: 'mcp',
+              label: appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.mCPServers,
+              items: servers,
+            },
+          ]
+        : []),
       ...registrySections,
     ]
   }, [activeSource, appEntries, builtinRow, crossSearch, isApp, query, scan, sourceRows])
@@ -767,7 +793,14 @@ export function PluginsCatalogue({
             // page of thirty rows for the one the notification meant (owner,
             // 2026-09-10).
             badge={
-              row.install.kind === 'update-available' ? { count: 1, label: `${row.name} — update available` } : null
+              row.install.kind === 'update-available'
+                ? {
+                    count: 1,
+                    label: appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.updateAvailable(
+                      row.name,
+                    ),
+                  }
+                : null
             }
             name={row.name}
             summary={row.description || row.components}
@@ -801,9 +834,9 @@ export function PluginsCatalogue({
                 size="sm"
                 onClick={() => openPluginRow(item.sourceId, row.pluginId)}
                 className="border border-[color:var(--border-default)]"
-                aria-label={`Details for ${row.name}`}
+                aria-label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.detailsFor(row.name)}
               >
-                Details
+                {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.details}
               </GhostButton>
             }
           />
@@ -822,7 +855,11 @@ export function PluginsCatalogue({
             name={server.name}
             summary={server.description || server.command || server.url || server.id}
             chips={['MCP server', 'Installed']}
-            actions={<span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">Added</span>}
+            actions={
+              <span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">
+                {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.added}
+              </span>
+            }
           />
         )
       }
@@ -861,16 +898,20 @@ export function PluginsCatalogue({
           chips={needsPlugin ? ['MCP server', 'Part of a plugin'] : ['MCP server']}
           actions={
             installed ? (
-              <span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">Added</span>
+              <span className="pr-1 text-meta font-medium text-[color:var(--accent-primary)]">
+                {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.added}
+              </span>
             ) : needsPlugin ? (
               server.declaredBy ? (
                 <GhostButton
                   size="sm"
                   onClick={() => openPluginRow(item.sourceId, server.declaredBy)}
                   className="border border-[color:var(--border-default)]"
-                  aria-label={`Open ${server.declaredBy}`}
+                  aria-label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.open(
+                    server.declaredBy,
+                  )}
                 >
-                  Open plugin
+                  {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.openPlugin}
                 </GhostButton>
               ) : null
             ) : (
@@ -878,9 +919,9 @@ export function PluginsCatalogue({
                 size="sm"
                 onClick={() => rowSource && rowScan && addScannedServer(rowSource, rowScan, server)}
                 className="border border-[color:var(--border-default)]"
-                aria-label={`Add ${server.name}`}
+                aria-label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.add(server.name)}
               >
-                Add
+                {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.add2}
               </GhostButton>
             )
           }
@@ -941,11 +982,24 @@ export function PluginsCatalogue({
   const notices = (
     <>
       {landingNotice ? (
-        <InlineNotice tone="warn" action={<GhostButton onClick={() => setLandingNotice(null)}>Dismiss</GhostButton>}>
+        <InlineNotice
+          tone="warn"
+          action={
+            <GhostButton onClick={() => setLandingNotice(null)}>
+              {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.dismiss}
+            </GhostButton>
+          }
+        >
           {landingNotice}
         </InlineNotice>
       ) : null}
-      {thisReport?.error ? <InlineNotice tone="error" title="That did not complete." hint={thisReport.error} /> : null}
+      {thisReport?.error ? (
+        <InlineNotice
+          tone="error"
+          title={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.thatDidNotComplete}
+          hint={thisReport.error}
+        />
+      ) : null}
       {thisReport?.outcome ? <InlineNotice tone="warn">{thisReport.outcome}</InlineNotice> : null}
       {/* A search that did not cover every source says which it left out and
           why, rather than reading as a complete answer. */}
@@ -956,9 +1010,13 @@ export function PluginsCatalogue({
       {addNotice ? (
         <InlineNotice
           tone="error"
-          title="That source was not added."
+          title={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.thatSourceWasNotAdded}
           hint={addNotice}
-          action={<GhostButton onClick={onDismissAddNotice}>Dismiss</GhostButton>}
+          action={
+            <GhostButton onClick={onDismissAddNotice}>
+              {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.dismiss}
+            </GhostButton>
+          }
         />
       ) : null}
       {sources.installedPluginsRead.status === 'error' ? (
@@ -974,17 +1032,23 @@ export function PluginsCatalogue({
       return (
         <InlineNotice
           tone="error"
-          title="Couldn't read your sources"
-          hint="Nothing changed. Try again or add a source."
+          title={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.couldnTReadYourSources}
+          hint={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.nothingChangedTryAgainOr}
           detail={sources.sourcesLoad.message}
-          action={<GhostButton onClick={sources.refreshSources}>Try again</GhostButton>}
+          action={
+            <GhostButton onClick={sources.refreshSources}>
+              {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.tryAgain}
+            </GhostButton>
+          }
         />
       )
     }
     // Under a search the sections ARE the body, whatever tab is selected; the
     // only state that is not a list is the source list itself still loading.
     if (searching) {
-      return sources.sourcesLoad.status === 'loading' ? <LoadingLine label="Loading sources…" /> : null
+      return sources.sourcesLoad.status === 'loading' ? (
+        <LoadingLine label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.loadingSources} />
+      ) : null
     }
     if (tabId === INSTALLED_TAB_ID) {
       return (
@@ -1015,32 +1079,54 @@ export function PluginsCatalogue({
         </div>
       )
     }
-    if (!activeSource) return <LoadingLine label="Loading sources…" />
+    if (!activeSource)
+      return <LoadingLine label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.loadingSources} />
     if (isApp) {
-      if (appCount.status === 'loading') return <LoadingLine label="Reading the marketplace…" />
+      if (appCount.status === 'loading')
+        return (
+          <LoadingLine
+            label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.readingTheMarketplace}
+          />
+        )
       if (appCount.status === 'error') {
         return (
           <InlineNotice
             tone="error"
-            title="The marketplace is unavailable."
-            hint="Its plugins and MCP servers can't be listed"
-            action={<GhostButton onClick={() => void connectors.loadRegistry(true)}>Try again</GhostButton>}
+            title={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.theMarketplaceIsUnavailable}
+            hint={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.itsPluginsAndMCPServers}
+            action={
+              <GhostButton onClick={() => void connectors.loadRegistry(true)}>
+                {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.tryAgain}
+              </GhostButton>
+            }
           />
         )
       }
       return null
     }
     if (!activeScan || activeScan.status === 'loading') {
-      return <LoadingLine label={`Reading ${catalogueTabLabel(activeSource)}…`} />
+      return (
+        <LoadingLine
+          label={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.reading(
+            catalogueTabLabel(activeSource),
+          )}
+        />
+      )
     }
     if (activeScan.status === 'error') {
       return (
         <InlineNotice
           tone="error"
-          title={`Couldn't read ${catalogueTabLabel(activeSource)}`}
-          hint="Its plugins can't be listed"
+          title={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.couldnTRead(
+            catalogueTabLabel(activeSource),
+          )}
+          hint={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.itsPluginsCanTBe}
           detail={activeScan.message}
-          action={<GhostButton onClick={() => sources.refreshScan(activeSource.id)}>Try again</GhostButton>}
+          action={
+            <GhostButton onClick={() => sources.refreshScan(activeSource.id)}>
+              {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.tryAgain}
+            </GhostButton>
+          }
         />
       )
     }
@@ -1122,14 +1208,19 @@ export function PluginsCatalogue({
 
   return (
     <CatalogueSurface<PluginItem>
-      title="Plugins"
+      title={appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.plugins}
       tabs={tabs}
       activeTabId={tabId}
       onSelectTab={(next) => {
         setOpenRow(null)
         onSelectTab(next)
       }}
-      search={{ query, onQueryChange, placeholder: 'Search all sources', scope: 'sources' }}
+      search={{
+        query,
+        onQueryChange,
+        placeholder: appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.searchAllSources,
+        scope: 'sources',
+      }}
       add={add}
       head={head}
       notices={notices}
@@ -1210,7 +1301,9 @@ function ScanNotices({
           tone="warn"
           action={
             part.action === 'github-settings' ? (
-              <GhostButton onClick={openGitHubSettings}>Add a GitHub token</GhostButton>
+              <GhostButton onClick={openGitHubSettings}>
+                {appCopy.workspace.globalSurface.extensions.plugins.pluginsCatalogue.addAGitHubToken}
+              </GhostButton>
             ) : undefined
           }
         >

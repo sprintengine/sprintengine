@@ -11,6 +11,7 @@ import {
   type DesignRailEntry,
   type DesignRailStatusFilter,
 } from './designRailState'
+import { copy } from '../../../../../../shared/copy'
 
 // The Design door's rail (item 2002, mockup backlog/mockups/2026-07-30-design-door-shell.html).
 // A thin adapter over the shared SurfaceRail, exactly like
@@ -107,7 +108,10 @@ export function DesignRail({
       // carries the full path the state line had to shorten. The count joins it
       // rather than replacing anything: the chip is small and the tooltip is
       // where the row says its whole self.
-      tooltip: newCount > 0 ? `${title} — ${stateLine} · ${newCount} new` : `${title} — ${stateLine}`,
+      tooltip:
+        newCount > 0
+          ? copy.workspace.globalSurface.design.designRail.new(title, stateLine, newCount)
+          : `${title} — ${stateLine}`,
       icon: <DesignSystemChip accent={entry.identity?.accent[accentMode] ?? null} />,
       // The roll-up, in the kit's own New mark — the same drawing the model
       // picker wears, so one word has one look across the app. Reading it out
@@ -132,7 +136,7 @@ export function DesignRail({
   const anyBroken = entries.some((entry) => entry.failure !== null)
   const filterGroups: FilterMenuGroup[] = [
     {
-      label: 'Status',
+      label: copy.workspace.globalSurface.design.designRail.status,
       items: DESIGN_RAIL_STATUS_ITEMS.map((item) => ({ value: item.value, label: item.label })),
       value: status,
       defaultValue: 'all',
@@ -142,7 +146,7 @@ export function DesignRail({
 
   return (
     <SurfaceRail
-      label="Design systems"
+      label={copy.workspace.globalSurface.design.designRail.designSystems}
       intro={projectScope}
       rows={rows}
       groups={groups}
@@ -151,17 +155,21 @@ export function DesignRail({
       selectedId={newSelected ? null : selectedId}
       onSelect={onSelect}
       newAffordance={{
-        label: 'New design system',
+        label: copy.workspace.globalSurface.design.designRail.newDesignSystem,
         onActivate: onCreate,
         selected: newSelected,
       }}
       search={{
         value: search,
         onChange: onSearch,
-        placeholder: 'Search design systems…',
-        ariaLabel: 'Search your design systems',
+        placeholder: copy.workspace.globalSurface.design.designRail.searchDesignSystems,
+        ariaLabel: copy.workspace.globalSurface.design.designRail.searchYourDesignSystems,
       }}
-      filter={anyBroken || status !== 'all' ? { ariaLabel: 'Filter design systems', groups: filterGroups } : undefined}
+      filter={
+        anyBroken || status !== 'all'
+          ? { ariaLabel: copy.workspace.globalSurface.design.designRail.filterDesignSystems, groups: filterGroups }
+          : undefined
+      }
       // The lens is narrower than the systems behind it. Say so, rather than
       // letting a filtered-empty rail read as "you have no design systems".
       emptyNotice={entries.length > 0 ? 'No design systems match.' : undefined}

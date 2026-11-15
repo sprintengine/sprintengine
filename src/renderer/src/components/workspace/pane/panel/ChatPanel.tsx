@@ -25,6 +25,7 @@ import { useChatPanelTarget } from './chatPanelTarget'
 import { PanelCard, PanelRow } from './PanelRow'
 import { useCanvasBoardCount } from './useCanvasBoardCount'
 import { useWorkspaceCheckoutFacts } from './useWorkspaceCheckoutFacts'
+import { copy } from '../../../../../../shared/copy'
 
 // The right-hand panel: the pane column's menu (owner ruling 2026-11-07). A
 // head that says what the agent in view is and where it runs, a card up to its
@@ -199,12 +200,12 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
       {family.parent ? <ChatPanelParentLink parent={family.parent} /> : null}
       <ChatPanelSubagents family={family} />
       <ChatPanelOpenNow {...openNow} activity={activity} />
-      <Section title="This chat" inset="flush">
+      <Section title={copy.workspace.pane.panel.chatPanel.thisChat} inset="flush">
         <PanelCard>
           {shownChanges || changesOpen ? (
             <PanelRow
               glyph={<DiffGlyph className={`icon-sm ${activityTone(changesRow)}`} />}
-              label="Changes"
+              label={copy.workspace.pane.panel.chatPanel.changes}
               meta={
                 shownChanges ? (
                   <DiffStatPill
@@ -215,34 +216,42 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
                 ) : null
               }
               onClick={changesOpen ? openChanges : null}
-              ariaLabel={shownChanges ? `Changes, ${shownChanges.phrase}` : 'Changes'}
+              ariaLabel={
+                shownChanges
+                  ? copy.workspace.pane.panel.chatPanel.changes2(shownChanges.phrase)
+                  : copy.workspace.pane.panel.chatPanel.changes
+              }
             />
           ) : null}
           {filesEnabled || farMachine ? (
             <PanelRow
               glyph={<FilesGlyph className={`icon-sm ${activityTone(filesRow)}`} />}
-              label="Files"
+              label={copy.workspace.pane.panel.chatPanel.files}
               meta={onFarMachine ?? filesRow?.meta ?? null}
               onClick={farMachine ? null : openFiles}
             />
           ) : null}
           <PanelRow
             glyph={<TerminalGlyph className="icon-sm" />}
-            label="Terminal"
+            label={copy.workspace.pane.panel.chatPanel.terminal}
             meta={onFarMachine ?? (terminalTabs.length > 0 ? `${terminalTabs.length} running` : null)}
             onClick={farMachine ? null : openTerminal}
           />
           {branchName ? (
             <PanelRow
               glyph={worktree ? <WorktreeGlyph className="icon-sm" /> : <GitBranchGlyph className="icon-sm" />}
-              label="Branch"
+              label={copy.workspace.pane.panel.chatPanel.branch}
               meta={<FrontTruncatedText text={branchName} className="min-w-0 font-mono" />}
               onClick={
                 farMachine || !gitEnabled
                   ? (facts?.branch?.onOpen ?? null)
                   : () => openPaneTab(workspaceId, { kind: 'git' })
               }
-              ariaLabel={worktree ? `Branch ${branchName}, in a worktree` : `Branch ${branchName}`}
+              ariaLabel={
+                worktree
+                  ? copy.workspace.pane.panel.chatPanel.branchInAWorktree(branchName)
+                  : copy.workspace.pane.panel.chatPanel.branch2(branchName)
+              }
               dataBranch={branchName}
             />
           ) : null}
@@ -251,25 +260,25 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
         </PanelCard>
       </Section>
       {facts && (facts.permissions || facts.permissionLabel || facts.tokens) ? (
-        <Section title="Session" inset="flush">
+        <Section title={copy.workspace.pane.panel.chatPanel.session} inset="flush">
           <PanelCard>
             <PermissionsRow facts={facts} />
             <TokensRow facts={facts} />
           </PanelCard>
         </Section>
       ) : null}
-      <Section title="Project" inset="flush">
+      <Section title={copy.workspace.pane.panel.chatPanel.project} inset="flush">
         <PanelCard>
           <PanelRow
             glyph={<LibraryGlyph className="icon-sm" />}
-            label="Library"
+            label={copy.workspace.pane.panel.chatPanel.library}
             meta={activityRow('library')?.meta ?? null}
             onClick={() => openPaneTab(workspaceId, { kind: 'library' })}
           />
           {canvasEnabled ? (
             <PanelRow
               glyph={<CanvasGlyph className="icon-sm" />}
-              label="Canvases"
+              label={copy.workspace.pane.panel.chatPanel.canvases}
               meta={boardCount ? <span className="tabular-nums">{boardCount}</span> : null}
               onClick={() => openPaneTab(workspaceId, { kind: 'canvas' })}
             />

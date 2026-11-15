@@ -3,6 +3,7 @@ import { LinkButton, MediaButton } from '../../ui'
 import { showToast } from '../../../store/toastStore'
 import { isHomePath, isPreviewableImagePath, useLocalImage } from './useLocalImage'
 import { namesNetworkLocation } from '../../../../../shared/network-paths'
+import { copy } from '../../../../../shared/copy'
 
 type ImageSource = { kind: 'web'; url: string } | { kind: 'data'; url: string } | { kind: 'path'; path: string }
 
@@ -51,7 +52,7 @@ async function openImage(source: ImageSource, dataUrl: string | undefined, name:
   } catch (error) {
     showToast({
       tone: 'error',
-      title: 'Could not open that image',
+      title: copy.panels.agentChat.conversationImage.couldNotOpenThatImage,
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -129,7 +130,7 @@ export function ConversationImage({
   const resolved = local.resolved
   return (
     <MediaButton
-      aria-label={`Open ${name}`}
+      aria-label={copy.panels.agentChat.conversationImage.open(name)}
       className="my-2 w-fit max-w-full"
       onClick={() =>
         void openImage(

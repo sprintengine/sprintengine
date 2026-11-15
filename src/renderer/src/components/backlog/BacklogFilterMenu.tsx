@@ -3,6 +3,7 @@ import React, { useCallback, useRef, useState, type JSX } from 'react'
 import { IconButton, MenuOption, Popover, type SelectItem } from '../ui'
 import { MENU_GROUP_LABEL_CLASS, MENU_LIST_CLASS } from '../ui/menuClasses'
 import type { BacklogGroup, BacklogSort, BacklogView } from '../../utils/backlogTriage'
+import { copy } from '../../../../shared/copy'
 
 // The Backlog toolbar's filter/sort affordance. The lens + sort controls used to
 // sit in the toolbar as two always-visible dropdowns; they now collapse behind a
@@ -93,7 +94,7 @@ export function BacklogFilterMenu({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Filter and sort backlog"
+      ariaLabel={copy.backlog.backlogFilterMenu.filterAndSortBacklog}
       popupRole="menu"
       placement="bottom-end"
       className={className}
@@ -110,16 +111,26 @@ export function BacklogFilterMenu({
           aria-haspopup="menu"
           aria-expanded={triggerProps['aria-expanded']}
           aria-controls={triggerProps['aria-controls']}
-          aria-label={active ? 'Filter and sort — filters active' : 'Filter and sort'}
+          aria-label={
+            active
+              ? copy.backlog.backlogFilterMenu.filterAndSortFiltersActive
+              : copy.backlog.backlogFilterMenu.filterAndSort
+          }
           onClick={togglePopover}
         >
           <FilterGlyph />
         </IconButton>
       )}
     >
-      <FilterGroup label="View" items={viewItems} current={view} onSelect={onViewChange} onOptionKey={onOptionKey} />
       <FilterGroup
-        label="Sort by"
+        label={copy.backlog.backlogFilterMenu.view}
+        items={viewItems}
+        current={view}
+        onSelect={onViewChange}
+        onOptionKey={onOptionKey}
+      />
+      <FilterGroup
+        label={copy.backlog.backlogFilterMenu.sortBy}
         items={sortItems}
         current={sort}
         onSelect={onSortChange}
@@ -127,7 +138,7 @@ export function BacklogFilterMenu({
         divider
       />
       <FilterGroup
-        label="Group"
+        label={copy.backlog.backlogFilterMenu.group}
         items={groupItems}
         current={group}
         onSelect={onGroupChange}

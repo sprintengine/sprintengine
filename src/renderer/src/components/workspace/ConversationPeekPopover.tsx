@@ -4,6 +4,7 @@ import { PointerPopover } from '../ui'
 import type { ConversationPeekIdentity } from './ConversationPeekCard'
 import { useConversationPeek } from './useConversationPeek'
 import { useRelativeNow } from '../../hooks/useRelativeNow'
+import { copy } from '../../../../shared/copy'
 
 // The peek card itself behind a `React.lazy` boundary at this call site. It is only ever rendered inside an
 // OPEN popover, so the
@@ -223,7 +224,7 @@ export function ConversationPeekPopover({
         <PointerPopover
           x={point.x}
           y={point.y}
-          ariaLabel={`${identity.name} — conversation`}
+          ariaLabel={copy.workspace.conversationPeekPopover.conversation(identity.name)}
           popupRole="dialog"
           onClose={closeNow}
           material="glass"

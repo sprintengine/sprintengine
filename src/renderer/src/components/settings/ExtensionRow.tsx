@@ -20,6 +20,7 @@ import {
 } from '../ui'
 import type { ExtensionContribution } from './extensionContributions'
 import { RUN_STATE_LABEL, publisherName, type ExtensionRunState } from './extensionsModel'
+import { copy } from '../../../../shared/copy'
 
 // One installed extension, as Settings → Extensions draws it: its mark, its
 // name with publisher · source · signature, one warning glyph per scope that
@@ -117,8 +118,8 @@ export function ExtensionDetails({
           <p className="text-body leading-5 text-[color:var(--text-muted)]">{manifest.summary}</p>
         ) : null}
         {adds ? (
-          <section aria-label="Adds">
-            <DetailsHeading>Adds</DetailsHeading>
+          <section aria-label={copy.settings.extensionRow.adds}>
+            <DetailsHeading>{copy.settings.extensionRow.adds}</DetailsHeading>
             <ul className="grid grid-cols-2 gap-1">
               {adds.map((add, index) => (
                 <li
@@ -132,16 +133,19 @@ export function ExtensionDetails({
           </section>
         ) : null}
         {care.length > 0 || standard.length > 0 ? (
-          <section aria-label="Access">
-            <DetailsHeading>Access</DetailsHeading>
+          <section aria-label={copy.settings.extensionRow.access}>
+            <DetailsHeading>{copy.settings.extensionRow.access}</DetailsHeading>
             <div className="space-y-2.5">
-              <AccessCareList items={care} showIds ariaLabel="Needs care" />
-              <AccessChips items={standard} ariaLabel={care.length > 0 ? 'Also' : 'Access'} />
+              <AccessCareList items={care} showIds ariaLabel={copy.settings.extensionRow.needsCare} />
+              <AccessChips
+                items={standard}
+                ariaLabel={care.length > 0 ? copy.settings.extensionRow.also : copy.settings.extensionRow.access}
+              />
             </div>
           </section>
         ) : null}
-        <section aria-label="About">
-          <DetailsHeading>About</DetailsHeading>
+        <section aria-label={copy.settings.extensionRow.about}>
+          <DetailsHeading>{copy.settings.extensionRow.about}</DetailsHeading>
           <DefinitionList items={facts} className="text-meta text-[color:var(--text-default)]" />
         </section>
       </div>
@@ -241,7 +245,7 @@ export function ExtensionRow({
           <Popover
             open={open}
             onOpenChange={setOpen}
-            ariaLabel={`${name} details`}
+            ariaLabel={copy.settings.extensionRow.details(name)}
             popupRole="dialog"
             placement="bottom-start"
             surfaceClassName="w-[380px] max-w-[calc(100vw-16px)]"
@@ -275,7 +279,11 @@ export function ExtensionRow({
       </div>
       <div className="flex min-h-9 items-center gap-2.5 self-start">
         {trailing}
-        <OverflowMenu ariaLabel={`More for ${name}`} triggerTooltip="More" items={menuItems} />
+        <OverflowMenu
+          ariaLabel={copy.settings.extensionRow.moreFor(name)}
+          triggerTooltip={copy.settings.extensionRow.more}
+          items={menuItems}
+        />
       </div>
       {notice ? (
         <InlineNotice tone="error" action={notice.action} className="col-span-2 col-start-2 mt-2.5">
@@ -290,8 +298,8 @@ export function ExtensionRow({
 
 export function ReviewTrailing({ name, onReview }: { name: string; onReview: () => void }): JSX.Element {
   return (
-    <OutlineButton size="xs" aria-label={`Review ${name}`} onClick={onReview}>
-      Review
+    <OutlineButton size="xs" aria-label={copy.settings.extensionRow.review(name)} onClick={onReview}>
+      {copy.settings.extensionRow.review2}
     </OutlineButton>
   )
 }
@@ -312,13 +320,22 @@ export function InstalledTrailing({
   return (
     <>
       <ExtensionStateLabel state={state} />
-      <Switch checked={enabled} disabled={pending} ariaLabel={`Enable ${name}`} onChange={onToggle} />
+      <Switch
+        checked={enabled}
+        disabled={pending}
+        ariaLabel={copy.settings.extensionRow.enable(name)}
+        onChange={onToggle}
+      />
     </>
   )
 }
 
 export function CannotTrustTrailing(): JSX.Element {
-  return <span className="whitespace-nowrap text-meta text-[color:var(--tone-error)]">Can’t be trusted</span>
+  return (
+    <span className="whitespace-nowrap text-meta text-[color:var(--tone-error)]">
+      {copy.settings.extensionRow.canTBeTrusted}
+    </span>
+  )
 }
 
 /** Built for another host API: trusting it would not let it run, so it is not offered. */

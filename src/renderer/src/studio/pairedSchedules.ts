@@ -20,6 +20,7 @@ import {
   type EnvironmentTarget,
   type PairedMachine,
 } from './environmentStudio'
+import { copy } from '../../../shared/copy'
 
 // A paired machine's scheduled agents, asked by this window of that machine's
 // Studio itself (`schedules.*`): listed on `workspaces:read`, made, changed,
@@ -37,7 +38,7 @@ function askSchedules<T>(
     STUDIO_SCHEDULES_CAPABILITY,
     (machineName) => ({
       code: 'scheduled_agents_unsupported',
-      message: `${machineName} can't take schedules from here yet. Update Studio there.`,
+      message: copy.studio.pairedSchedules.canTTakeSchedulesFrom(machineName),
     }),
     work,
     {
@@ -61,11 +62,11 @@ function changeRefusal<T>(answer: EnvironmentAnswer<T>, machineName: string, don
   return /did not answer in time/u.test(answer.message)
     ? {
         ...answer,
-        message: `${machineName} didn't answer in time. It may still be ${done}; retrying won't do it twice.`,
+        message: copy.studio.pairedSchedules.didnTAnswerInTime(machineName, done),
       }
     : {
         ...answer,
-        message: `${machineName} isn't connected; nothing was ${done}. Try again once it's back.`,
+        message: copy.studio.pairedSchedules.isnTConnectedNothingWas(machineName, done),
       }
 }
 
@@ -90,9 +91,9 @@ export async function pairedScheduledAgentAction(
   id: string,
   action: MeshScheduledAgentAction,
 ): Promise<MeshScheduledAgentActionResult> {
-  if (!id) return { ok: false, code: 'invalid_arguments', message: 'Name the scheduled agent.' }
+  if (!id) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedSchedules.nameTheScheduledAgent }
   if (!SCHEDULED_AGENT_ACTIONS.has(action))
-    return { ok: false, code: 'invalid_arguments', message: 'Run, pause, resume or delete it.' }
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedSchedules.runPauseResumeOrDelete }
   const commandId = environmentCommandId()
   const answer = changeRefusal(
     await askSchedules<unknown>(
@@ -167,7 +168,7 @@ export async function createPairedScheduledAgent(
   const cron = text(input.cron)
   const cli = text(input.cli)
   if ((!workspaceId && !workspaceRoot) || !prompt || !cron || !cli) {
-    return { ok: false, code: 'invalid_arguments', message: 'A schedule needs a project, a prompt, a time and a CLI.' }
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedSchedules.aScheduleNeedsAProject }
   }
   const draft = {
     ...(workspaceId ? { workspaceId } : { workspaceRoot: workspaceRoot! }),
@@ -187,7 +188,7 @@ export async function createPairedScheduledAgent(
     : {
         ok: false,
         code: 'unreadable_result',
-        message: "That machine scheduled it, but this build can't read the reply.",
+        message: copy.studio.pairedSchedules.thatMachineScheduledItBut,
       }
 }
 
@@ -203,7 +204,7 @@ export async function updatePairedScheduledAgent(
   const cron = text(input.cron)
   const cli = text(input.cli)
   if (!id || !prompt || !cron || !cli) {
-    return { ok: false, code: 'invalid_arguments', message: 'A schedule needs a prompt, a time and a CLI.' }
+    return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedSchedules.aScheduleNeedsAPrompt }
   }
   const workspaceId = text(input.workspaceId)
   const change = {
@@ -227,7 +228,7 @@ export async function updatePairedScheduledAgent(
   const agent = scheduledAgentViewOf(answer.value.schedule)
   return agent
     ? { ok: true, agent }
-    : { ok: false, code: 'unreadable_result', message: "That machine saved it, but this build can't read the reply." }
+    : { ok: false, code: 'unreadable_result', message: copy.studio.pairedSchedules.thatMachineSavedItBut }
 }
 
 const SCHEDULED_AGENT_ACTIONS: ReadonlySet<MeshScheduledAgentAction> = new Set(['run', 'pause', 'resume', 'delete'])
@@ -315,7 +316,10 @@ export function scheduledAgentViewOf(value: unknown): ScheduledAgentView | null 
       lastRun = {
         at: lastRunAt,
         ok: false,
-        message: typeof lastRunRecord.message === 'string' ? lastRunRecord.message : 'The run did not start.',
+        message:
+          typeof lastRunRecord.message === 'string'
+            ? lastRunRecord.message
+            : copy.studio.pairedSchedules.theRunDidNotStart,
       }
     }
   }

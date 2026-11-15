@@ -15,6 +15,7 @@ import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { executionHostLabel, isWslHostId, LOCAL_HOST_ID } from '../../../../shared/execution-host'
 import { cliForConversationProvider } from '../../../../shared/conversation-harness'
 import type { RemoteSessionRow } from './remoteBand/remoteSessionsModel'
+import { copy } from '../../../../shared/copy'
 
 // What a SIDEBAR ROW knows about the conversations behind it.
 //
@@ -54,16 +55,20 @@ export function activityAt(session: TerminalSessionSnapshot): number {
  * session snapshot alone does not — so that is what a single-agent row uses.
  */
 function agentStatusOf(session: TerminalSessionSnapshot | null, now: number): ConversationPeekStatus {
-  if (!session) return { kind: 'attention', label: 'Parked' }
+  if (!session) return { kind: 'attention', label: copy.workspace.conversationPeekRow.parked }
   // Working needs a process to do it in (`isSessionWorking`). A session paused
   // mid-turn keeps its working stamp, and unguarded that stamp outranked the
   // `Paused` branch below — the card said "Working" about a dead pty.
-  if (isSessionWorking(session)) return { kind: 'working', label: 'Working' }
-  if (session.activity?.kind === 'failed') return { kind: 'attention', label: 'Failed' }
-  if (session.exitedAt !== null) return { kind: 'idle', label: 'Exited' }
-  if (session.suspended) return { kind: 'attention', label: 'Paused' }
+  if (isSessionWorking(session)) return { kind: 'working', label: copy.workspace.conversationPeekRow.working }
+  if (session.activity?.kind === 'failed')
+    return { kind: 'attention', label: copy.workspace.conversationPeekRow.failed }
+  if (session.exitedAt !== null) return { kind: 'idle', label: copy.workspace.conversationPeekRow.exited }
+  if (session.suspended) return { kind: 'attention', label: copy.workspace.conversationPeekRow.paused }
   const idleFor = formatRelativeMs(activityAt(session), now)
-  return { kind: 'idle', label: idleFor ? `Idle · ${idleFor}` : 'Idle' }
+  return {
+    kind: 'idle',
+    label: idleFor ? copy.workspace.conversationPeekRow.idle(idleFor) : copy.workspace.conversationPeekRow.idle2,
+  }
 }
 
 /**
@@ -74,11 +79,11 @@ function agentStatusOf(session: TerminalSessionSnapshot | null, now: number): Co
  * March says nothing.
  */
 export function peekStatusOf(activity: ConversationPeekRowActivity, idleFor: string): ConversationPeekStatus {
-  if (activity === 'needs-input') return { kind: 'attention', label: 'Waiting' }
-  if (activity === 'working') return { kind: 'working', label: 'Working' }
-  if (activity === 'failed') return { kind: 'attention', label: 'Failed' }
-  if (idleFor) return { kind: 'idle', label: `Idle · ${idleFor}` }
-  return { kind: 'idle', label: 'Idle' }
+  if (activity === 'needs-input') return { kind: 'attention', label: copy.workspace.conversationPeekRow.waiting }
+  if (activity === 'working') return { kind: 'working', label: copy.workspace.conversationPeekRow.working }
+  if (activity === 'failed') return { kind: 'attention', label: copy.workspace.conversationPeekRow.failed }
+  if (idleFor) return { kind: 'idle', label: copy.workspace.conversationPeekRow.idle(idleFor) }
+  return { kind: 'idle', label: copy.workspace.conversationPeekRow.idle2 }
 }
 
 type PlaceWorkspace = Partial<Pick<Workspace, 'hostId' | 'environment' | 'worktree' | 'remoteOrigin'>>
@@ -236,14 +241,14 @@ export function rowConversationPeekIdentities(input: {
         ...held,
         status:
           phase === 'running' || phase === 'starting'
-            ? { kind: 'working', label: 'Working' }
+            ? { kind: 'working', label: copy.workspace.conversationPeekRow.working }
             : phase === 'waiting_for_approval'
-              ? { kind: 'attention', label: 'Needs approval' }
+              ? { kind: 'attention', label: copy.workspace.conversationPeekRow.needsApproval }
               : phase === 'waiting_for_input'
-                ? { kind: 'attention', label: 'Asked a question' }
+                ? { kind: 'attention', label: copy.workspace.conversationPeekRow.askedAQuestion }
                 : phase === 'failed'
-                  ? { kind: 'attention', label: 'Failed' }
-                  : { kind: 'idle', label: 'Idle' },
+                  ? { kind: 'attention', label: copy.workspace.conversationPeekRow.failed }
+                  : { kind: 'idle', label: copy.workspace.conversationPeekRow.idle2 },
         agent: {
           sessionId: session.sessionId,
           name: agentName,
@@ -337,14 +342,24 @@ export type RemotePeekAgent = Pick<
 
 /** A listed agent's state, in the corner's words: the phase its machine listed, as a local chat's card says it. */
 function remoteStatusOf(row: RemotePeekAgent): ConversationPeekStatus {
-  if (row.activity === 'working') return { kind: 'working', label: 'Working' }
+  if (row.activity === 'working') return { kind: 'working', label: copy.workspace.conversationPeekRow.working }
   if (row.activity === 'needs-input')
-    return { kind: 'attention', label: row.phase === 'waiting_for_input' ? 'Asked a question' : 'Needs approval' }
-  if (row.phase === 'failed') return { kind: 'attention', label: 'Failed' }
+    return {
+      kind: 'attention',
+      label:
+        row.phase === 'waiting_for_input'
+          ? copy.workspace.conversationPeekRow.askedAQuestion
+          : copy.workspace.conversationPeekRow.needsApproval,
+    }
+  if (row.phase === 'failed') return { kind: 'attention', label: copy.workspace.conversationPeekRow.failed }
   const since = row.lastTurnEndedAt ?? row.since
   return since !== null
-    ? { kind: 'idle', label: 'Idle', aged: { label: 'Idle', since } }
-    : { kind: 'idle', label: 'Idle' }
+    ? {
+        kind: 'idle',
+        label: copy.workspace.conversationPeekRow.idle2,
+        aged: { label: copy.workspace.conversationPeekRow.idle2, since },
+      }
+    : { kind: 'idle', label: copy.workspace.conversationPeekRow.idle2 }
 }
 
 /**

@@ -3,6 +3,7 @@ import React from 'react'
 import type { BrowserLoadError } from '../../../../../../shared/browser'
 import { OutlineButton } from '../../../ui'
 import { describeBrowserError } from './browserErrors'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // Our own page for a failed load, on the pane's ground, not Chromium's: the
 // empty-state anatomy with a warning glyph, one heading, one line, the raw
@@ -31,7 +32,7 @@ export function BrowserErrorPage({ error, onReload }: { error: BrowserLoadError;
       <p className="text-body text-[color:var(--text-muted)]">{copy.line}</p>
       <p className="font-mono text-micro tracking-wide text-[color:var(--text-subtle)]">{copy.code}</p>
       <div className="mt-2">
-        <OutlineButton onClick={onReload}>Reload</OutlineButton>
+        <OutlineButton onClick={onReload}>{appCopy.workspace.pane.browser.browserErrorPage.reload}</OutlineButton>
       </div>
     </div>
   )

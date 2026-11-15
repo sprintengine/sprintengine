@@ -11,6 +11,7 @@ import type { GitHunkView, HunkInclusionSummary } from '../../../../shared/git/h
 import { hunkGutterLine, hunkKey } from '../../../../shared/git/hunks'
 import type { DiffFileItem } from './diffFileList'
 import { isIncludable } from './diffToolbarModel'
+import { copy } from '../../../../shared/copy'
 
 /** One drawn box: where it goes, what it shows, and what it is called. */
 export type HunkBox = {
@@ -147,9 +148,12 @@ export function hunkBoxes(input: {
       // The owner is part of the NAME, not only of the picture: a box a screen
       // reader reaches must say whose lines it is about, or the chip beside it
       // is information only a sighted reader gets.
-      label: `${checked ? 'Exclude' : 'Include'} the change at line ${hunkGutterLine(hunk)} of ${input.relativePath}${
-        ownerLabel ? ` — owned by ${ownerLabel}` : ''
-      }`,
+      label: copy.auxWindows.hunkGutterModel.theChangeAtLineOf(
+        checked ? copy.auxWindows.hunkGutterModel.exclude : copy.auxWindows.hunkGutterModel.include,
+        hunkGutterLine(hunk),
+        input.relativePath,
+        ownerLabel ? copy.auxWindows.hunkGutterModel.ownedBy(ownerLabel) : '',
+      ),
       ...(ownerLabel ? { ownerLabel } : {}),
     }
   })

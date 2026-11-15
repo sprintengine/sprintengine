@@ -5,6 +5,7 @@ import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { type Theme } from "../../theme/tokens";
 import { GlyphFrame, iconSize, type GlyphProps } from "./Glyph";
+import { copy } from "../../../../src/shared/copy";
 
 // The two triage indicators from the desktop Backlog row
 // (../multicode/src/renderer/src/components/backlog/BacklogRow.tsx): difficulty
@@ -49,7 +50,7 @@ export function DifficultyLabel({ difficulty }: { difficulty?: BacklogDifficulty
   return (
     <Text
       accessibilityRole="image"
-      accessibilityLabel={difficulty ? `Size ${DIFFICULTY_WORD[difficulty]}` : "Size unestimated"}
+      accessibilityLabel={difficulty ? copy.phone.components.glyphs.triage.size(DIFFICULTY_WORD[difficulty]) : copy.phone.components.glyphs.triage.sizeUnestimated}
       style={[styles.difficulty, difficulty ? styles.difficultySet : styles.unset]}
     >
       {difficulty ? DIFFICULTY_LABEL[difficulty] : UNSET_DASH}
@@ -70,7 +71,7 @@ export function CriticalityBars({ level, size = iconSize.xs }: CriticalityBarsPr
 
   if (!level) {
     return (
-      <Text accessibilityRole="image" accessibilityLabel="No priority set" style={[styles.unsetBox, styles.unset]}>
+      <Text accessibilityRole="image" accessibilityLabel={copy.phone.components.glyphs.triage.noPrioritySet} style={[styles.unsetBox, styles.unset]}>
         {UNSET_DASH}
       </Text>
     );

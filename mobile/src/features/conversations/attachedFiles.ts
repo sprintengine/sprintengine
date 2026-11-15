@@ -16,6 +16,8 @@
 // the message its other cards, each path once, and no more than the desktop's
 // limit of cards.
 
+import { copy } from "../../../../src/shared/copy";
+
 export type AttachedFile = { path: string };
 
 /** The most files one message may attach: the desktop's limit, and the most cards drawn. */
@@ -94,7 +96,7 @@ export function attachedFileType(name: string): { kind: AttachedFileKind; label:
               : TEXT_EXTENSIONS.has(extension)
                 ? "text"
                 : "generic";
-  return { kind, label: /^[a-z0-9]{1,5}$/u.test(extension) ? extension.toUpperCase() : "File" };
+  return { kind, label: /^[a-z0-9]{1,5}$/u.test(extension) ? extension.toUpperCase() : copy.phone.conversations.attachedFiles.file };
 }
 
 /** How many characters of a name a card shows, as on the desktop's card. */

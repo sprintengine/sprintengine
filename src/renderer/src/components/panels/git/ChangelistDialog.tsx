@@ -18,6 +18,7 @@ import { Checkbox, Field, Input, Textarea } from '../../ui'
 // a single caller.
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../../ui/Modal'
 import { isImeKey } from '../../../utils/imeKey'
+import { copy } from '../../../../../shared/copy'
 
 export type ChangelistDialogValue = {
   name: string
@@ -77,22 +78,30 @@ export function ChangelistDialog({
   return (
     <Modal open onClose={busy ? () => {} : onCancel} labelledBy={titleId} size="confirm">
       <ModalHeader
-        title={mode === 'new' ? 'New changelist' : 'Edit changelist'}
+        title={
+          mode === 'new'
+            ? copy.panels.git.changelistDialog.newChangelist
+            : copy.panels.git.changelistDialog.editChangelist
+        }
         subtitle={
           mode === 'new' && fileCount > 0
-            ? `${fileCount === 1 ? 'One file moves' : `${fileCount} files move`} into it.`
+            ? copy.panels.git.changelistDialog.intoIt(
+                fileCount === 1
+                  ? copy.panels.git.changelistDialog.oneFileMoves
+                  : copy.panels.git.changelistDialog.filesMove(fileCount),
+              )
             : undefined
         }
         titleId={titleId}
         onClose={busy ? undefined : onCancel}
       />
       <ModalBody className="flex flex-col gap-3">
-        <Field label="Name" htmlFor={nameId} required>
+        <Field label={copy.panels.git.changelistDialog.name} htmlFor={nameId} required>
           <Input
             id={nameId}
             value={name}
             autoFocus
-            placeholder="Feature name"
+            placeholder={copy.panels.git.changelistDialog.featureName}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
               // Enter submits from the one-line field, the way it does in every
@@ -107,7 +116,7 @@ export function ChangelistDialog({
           />
         </Field>
         <Field
-          label="Comment"
+          label={copy.panels.git.changelistDialog.comment}
           htmlFor={commentId}
           help="Offered as the commit message when this list is the active one."
         >
@@ -115,7 +124,7 @@ export function ChangelistDialog({
             id={commentId}
             value={comment}
             rows={3}
-            placeholder="What this set of changes is"
+            placeholder={copy.panels.git.changelistDialog.whatThisSetOfChanges}
             onChange={(event) => setComment(event.target.value)}
           />
         </Field>
@@ -124,12 +133,16 @@ export function ChangelistDialog({
           // in a second one nested two labels, gave the control two accessible
           // names (the `aria-label` and the outer label's text), and made a
           // click on the words land on the wrong element in some browsers.
-          <Checkbox checked={activate} onChange={setActivate} label="Make this the active changelist" />
+          <Checkbox
+            checked={activate}
+            onChange={setActivate}
+            label={copy.panels.git.changelistDialog.makeThisTheActiveChangelist}
+          />
         ) : null}
       </ModalBody>
       <ModalFooter>
         <ModalButton type="button" onClick={onCancel} disabled={busy}>
-          Cancel
+          {copy.panels.git.changelistDialog.cancel}
         </ModalButton>
         <ModalButton type="button" variant="primary" onClick={submit} disabled={!canSubmit}>
           {mode === 'new' ? 'Create' : 'Save'}

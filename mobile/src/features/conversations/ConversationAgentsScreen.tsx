@@ -20,6 +20,7 @@ import {
   type SubagentChatParent,
   type SubagentEntry,
 } from "./subagentLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * A chat's subagents: the chats it started (`subagent.start`, where the
@@ -88,35 +89,29 @@ export function ConversationAgentsScreen({
     ) : null;
   return (
     <Screen
-      title="Subagents"
+      title={copy.phone.conversations.conversationAgentsScreen.subagents}
       subtitle={live ? <Text numberOfLines={1} style={styles.meta}>{live.effectiveThread.title}</Text> : undefined}
       onBack={onBack}
     >
       {!live ? (
-        <Text style={styles.meta}>Open the chat to follow its subagents.</Text>
+        <Text style={styles.meta}>{copy.phone.conversations.conversationAgentsScreen.openTheChatToFollow}</Text>
       ) : !working.length && !finished.length ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No subagents yet</Text>
-          <Text style={styles.meta}>
-            Subagents this chat sends off to work show up here.
-          </Text>
+          <Text style={styles.emptyTitle}>{copy.phone.conversations.conversationAgentsScreen.noSubagentsYet}</Text>
+          <Text style={styles.meta}>{copy.phone.conversations.conversationAgentsScreen.subagentsThisChatSendsOff}</Text>
         </View>
       ) : (
         <>
           {section("Working", working)}
           {section("Finished", finished)}
           {live.page.hasMore ? (
-            <Text style={styles.meta}>
-              Older subagents are in earlier turns. Load them in the chat.
-            </Text>
+            <Text style={styles.meta}>{copy.phone.conversations.conversationAgentsScreen.olderSubagentsAreInEarlier}</Text>
           ) : null}
           {footer ? <Text style={styles.footer}>{footer}</Text> : null}
         </>
       )}
       {live && !live.watchesSubagents ? (
-        <Text style={styles.meta}>
-          Update the desktop to see subagents started with Studio.
-        </Text>
+        <Text style={styles.meta}>{copy.phone.conversations.conversationAgentsScreen.updateTheDesktopToSee}</Text>
       ) : null}
     </Screen>
   );

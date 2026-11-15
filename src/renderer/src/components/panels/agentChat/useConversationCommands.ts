@@ -6,6 +6,7 @@ import {
 } from '../../../../../shared/conversation/commands'
 import type { ChatCommandSource } from './chatServices'
 import { windowChatServices } from './windowChat'
+import { copy } from '../../../../../shared/copy'
 
 // The command list a chat's `/` menu offers: what its CLI reported for the
 // chat's folder, with the few commands Studio answers itself put first.
@@ -129,19 +130,37 @@ export function studioAppCommands(input: {
 }): ConversationCommand[] {
   return [
     ...(input.model
-      ? [{ name: 'model', description: 'Choose the model, effort and permissions', source: 'app' as const }]
+      ? [
+          {
+            name: 'model',
+            description: copy.panels.agentChat.useConversationCommands.chooseTheModelEffortAnd,
+            source: 'app' as const,
+          },
+        ]
       : []),
     ...(input.effort
-      ? [{ name: 'effort', description: 'Step to the next reasoning effort', source: 'app' as const }]
+      ? [
+          {
+            name: 'effort',
+            description: copy.panels.agentChat.useConversationCommands.stepToTheNextReasoning,
+            source: 'app' as const,
+          },
+        ]
       : []),
     ...(input.terminal
-      ? [{ name: 'terminal', description: 'Continue this conversation in a terminal', source: 'app' as const }]
+      ? [
+          {
+            name: 'terminal',
+            description: copy.panels.agentChat.useConversationCommands.continueThisConversationInA,
+            source: 'app' as const,
+          },
+        ]
       : []),
     ...(input.sideQuestion
       ? [
           {
             name: 'btw',
-            description: 'Ask a side question outside the main chat',
+            description: copy.panels.agentChat.useConversationCommands.askASideQuestionOutside,
             source: 'app' as const,
           },
         ]

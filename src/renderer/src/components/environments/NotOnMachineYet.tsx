@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { EmptyState } from '../ui/EmptyState'
+import { copy } from '../../../../shared/copy'
 
 // What a pane says in a workspace on an SSH machine when it cannot run there
 // yet (phase 8): a terminal, for one. Never this computer's files or shell in
@@ -30,8 +31,8 @@ export function useWorkspaceEnvironmentLabel(workspaceId: string): string | null
 export function FilesOnMachineLater({ machine }: { machine: string }): JSX.Element {
   return (
     <EmptyState
-      title={`Files on ${machine} open in a later version`}
-      body={`This chat's folder is on ${machine}. Browsing it from here comes in a later version.`}
+      title={copy.environments.notOnMachineYet.filesOnOpenInA(machine)}
+      body={copy.environments.notOnMachineYet.thisChatSFolderIs(machine)}
     />
   )
 }
@@ -39,8 +40,8 @@ export function FilesOnMachineLater({ machine }: { machine: string }): JSX.Eleme
 export function NotOnMachineYet({ what, machine }: { what: string; machine: string }): JSX.Element {
   return (
     <EmptyState
-      title={`${what} are not available for SSH machines yet`}
-      body={`Chats, files and git run on ${machine}; ${what.toLowerCase()} don't yet.`}
+      title={copy.environments.notOnMachineYet.areNotAvailableForSSH(what)}
+      body={copy.environments.notOnMachineYet.chatsFilesAndGitRun(machine, what.toLowerCase())}
     />
   )
 }

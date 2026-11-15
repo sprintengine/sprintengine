@@ -15,6 +15,7 @@ const ConversationPeekCard = React.lazy(() =>
 )
 
 import { useRelativeNow } from '../../hooks/useRelativeNow'
+import { copy } from '../../../../shared/copy'
 
 // Identity shown for an agent terminal tab. Assembled by the caller from the
 // agent record + runtime state so this component stays presentational.
@@ -157,7 +158,7 @@ export function AgentTabIdentityPopover({
         <PointerPopover
           x={point.x}
           y={point.y}
-          ariaLabel={`${identity.name} — conversation`}
+          ariaLabel={copy.workspace.agentTabIdentityPopover.conversation(identity.name)}
           popupRole="dialog"
           onClose={closeNow}
           material="glass"

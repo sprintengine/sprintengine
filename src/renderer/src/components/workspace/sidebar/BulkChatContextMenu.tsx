@@ -1,5 +1,6 @@
 import { resolveSnoozePresets, type SnoozePresetId } from '../../../utils/workspaceSnooze'
 import { ContextMenu, DescribedMenuItem, MenuDivider, MenuFlyoutItem, StarGlyph } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 // The menu a right-click on a selection of several chats opens
 // (sidebarBulkSelection.ts): the marks and rest a chat's own menu offers that
@@ -50,12 +51,12 @@ export function BulkChatContextMenu({
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={`Actions for ${chats(selected)}`}
+      ariaLabel={copy.workspace.sidebar.bulkChatContextMenu.actionsFor(chats(selected))}
       onClose={onClose}
       surfaceClassName="min-w-[240px]"
     >
       <DescribedMenuItem
-        tooltip={`${allStarred ? 'Unstar' : 'Star'} ${chats(selected)}`}
+        tooltip={`${allStarred ? copy.workspace.sidebar.bulkChatContextMenu.unstar : copy.workspace.sidebar.bulkChatContextMenu.star} ${chats(selected)}`}
         onClick={() => onSelect(allStarred ? 'unstar' : 'star')}
         icon={
           <StarGlyph
@@ -70,40 +71,43 @@ export function BulkChatContextMenu({
       <DescribedMenuItem
         disabled={reach.markUnread === 0}
         hint={reachHint(reach.markUnread, selected)}
-        tooltip="Mark finished chats unread on every device"
+        tooltip={copy.workspace.sidebar.bulkChatContextMenu.markFinishedChatsUnreadOn}
         onClick={() => onSelect('mark-unread')}
       >
-        Mark unread
+        {copy.workspace.sidebar.bulkChatContextMenu.markUnread}
       </DescribedMenuItem>
       <DescribedMenuItem
         disabled={reach.regenerateTitle === 0}
         hint={reachHint(reach.regenerateTitle, selected)}
-        tooltip="Retitle each chat from its messages"
+        tooltip={copy.workspace.sidebar.bulkChatContextMenu.retitleEachChatFromIts}
         onClick={() => onSelect('regenerate-titles')}
       >
-        Regenerate titles
+        {copy.workspace.sidebar.bulkChatContextMenu.regenerateTitles}
       </DescribedMenuItem>
       <MenuDivider />
       <DescribedMenuItem
         disabled={reach.settle === 0}
         hint={reachHint(reach.settle, selected)}
-        tooltip="Put away and stop agents; skips busy chats"
+        tooltip={copy.workspace.sidebar.bulkChatContextMenu.putAwayAndStopAgents}
         onClick={() => onSelect('settle')}
       >
-        Settle
+        {copy.workspace.sidebar.bulkChatContextMenu.settle}
       </DescribedMenuItem>
       <MenuFlyoutItem
-        label="Snooze"
-        ariaLabel={`Snooze ${chats(selected)}`}
+        label={copy.workspace.sidebar.bulkChatContextMenu.snooze}
+        ariaLabel={copy.workspace.sidebar.bulkChatContextMenu.snooze2(chats(selected))}
         disabled={reach.snooze === 0}
         hint={reachHint(reach.snooze, selected)}
-        tooltip="Hide until a set time; skips busy chats"
+        tooltip={copy.workspace.sidebar.bulkChatContextMenu.hideUntilASetTime}
       >
         {resolveSnoozePresets(Date.now()).map((preset) => (
           <DescribedMenuItem
             key={preset.id}
             hint={preset.whenLabel}
-            tooltip={`Snooze until ${preset.label.toLowerCase()}, ${preset.whenLabel}`}
+            tooltip={copy.workspace.sidebar.bulkChatContextMenu.snoozeUntil(
+              preset.label.toLowerCase(),
+              preset.whenLabel,
+            )}
             onClick={() => onSelect(`snooze:${preset.id}`)}
           >
             {preset.label}

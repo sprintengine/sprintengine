@@ -1,3 +1,5 @@
+import { copy } from '../../../shared/copy'
+
 export type GitConflictBlock = {
   index: number
   startOffset: number
@@ -50,8 +52,8 @@ export function parseGitConflictBlocks(content: string): GitConflictBlock[] {
       index: blocks.length,
       startOffset: start.start,
       endOffset: end.end,
-      oursLabel: start.label || 'Pulled version',
-      theirsLabel: end.label || 'Your stashed changes',
+      oursLabel: start.label || copy.utils.gitConflictMarkers.pulledVersion,
+      theirsLabel: end.label || copy.utils.gitConflictMarkers.yourStashedChanges,
       ours: content
         .slice(start.end, separator.start)
         .replace(/^\r?\n/, '')

@@ -31,6 +31,7 @@ import { GhostButton, IconButton, InboxSearchInput, KbdChord, StatusDot, Tooltip
 import { ResetIcon } from '../AppIcons'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { defaultKeybindingsHere } from '../../commands/browserKeymap'
+import { copy } from '../../../../shared/copy'
 
 // --- View model (pure, exported for tests) ---------------------------------
 
@@ -301,9 +302,9 @@ export function KeyboardShortcutsTab() {
 
   const handleResetAll = useCallback(async () => {
     const confirmed = await dialog.confirm({
-      title: 'Reset all shortcuts?',
-      body: 'All shortcuts return to their defaults. This can’t be undone.',
-      confirmLabel: 'Reset all',
+      title: copy.settings.keyboardShortcutsTab.resetAllShortcuts,
+      body: copy.settings.keyboardShortcutsTab.allShortcutsReturnToTheir,
+      confirmLabel: copy.settings.keyboardShortcutsTab.resetAll,
       tone: 'danger',
     })
     if (confirmed) resetAllKeybindings()
@@ -315,7 +316,7 @@ export function KeyboardShortcutsTab() {
           the search field, and the reset as a glyph that names how many it
           would undo. */}
       <SettingsPageHeader
-        title="Shortcuts"
+        title={copy.settings.keyboardShortcutsTab.shortcuts}
         meta={`${rows.length} bindings`}
         actions={
           <>
@@ -323,15 +324,21 @@ export function KeyboardShortcutsTab() {
               <InboxSearchInput
                 value={query}
                 onChange={setQuery}
-                ariaLabel="Search shortcuts by command, category, or key"
-                placeholder="Search"
+                ariaLabel={copy.settings.keyboardShortcutsTab.searchShortcutsByCommandCategory}
+                placeholder={copy.settings.keyboardShortcutsTab.search}
               />
             </div>
-            <Tooltip content={customizedCount > 0 ? `Reset all (${customizedCount} changed)` : 'Nothing to reset'}>
+            <Tooltip
+              content={
+                customizedCount > 0
+                  ? copy.settings.keyboardShortcutsTab.resetAllChanged(customizedCount)
+                  : copy.settings.keyboardShortcutsTab.nothingToReset
+              }
+            >
               <IconButton
                 onClick={handleResetAll}
                 disabled={customizedCount === 0}
-                aria-label="Reset all keyboard shortcuts to defaults"
+                aria-label={copy.settings.keyboardShortcutsTab.resetAllKeyboardShortcutsTo}
               >
                 <ResetIcon className="icon-sm" />
               </IconButton>
@@ -342,7 +349,8 @@ export function KeyboardShortcutsTab() {
 
       {groups.length === 0 ? (
         <p className="px-1 py-6 text-center text-body text-[color:var(--text-muted)]">
-          No commands match “{query.trim()}”.
+          {copy.settings.keyboardShortcutsTab.noCommandsMatch}
+          {query.trim()}”.
         </p>
       ) : (
         <div className="flex flex-col">
@@ -439,15 +447,27 @@ function ShortcutRowView({
         />
         <span className="flex w-[52px] items-center justify-end gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {row.customized ? (
-            <Tooltip content={defaultRendered ? `Reset to ${defaultRendered}` : 'Reset to default'}>
-              <IconButton onClick={onReset} aria-label={`Reset the ${row.title} shortcut to default`}>
+            <Tooltip
+              content={
+                defaultRendered
+                  ? copy.settings.keyboardShortcutsTab.resetTo(defaultRendered)
+                  : copy.settings.keyboardShortcutsTab.resetToDefault
+              }
+            >
+              <IconButton
+                onClick={onReset}
+                aria-label={copy.settings.keyboardShortcutsTab.resetTheShortcutToDefault(row.title)}
+              >
                 <ResetIcon className="icon-sm" />
               </IconButton>
             </Tooltip>
           ) : null}
           {hasBinding ? (
-            <Tooltip content="Remove shortcut">
-              <IconButton onClick={onRemove} aria-label={`Remove the ${row.title} shortcut`}>
+            <Tooltip content={copy.settings.keyboardShortcutsTab.removeShortcut}>
+              <IconButton
+                onClick={onRemove}
+                aria-label={copy.settings.keyboardShortcutsTab.removeTheShortcut(row.title)}
+              >
                 <RemoveIcon />
               </IconButton>
             </Tooltip>
@@ -527,10 +547,10 @@ function KeybindingCell({
         aria-describedby={recording ? liveId : undefined}
         aria-label={
           recording
-            ? `Recording ${row.title} shortcut. Escape to cancel`
+            ? copy.settings.keyboardShortcutsTab.recordingShortcutEscapeToCancel(row.title)
             : hasBinding
-              ? `Change the ${row.title} shortcut`
-              : `Add a shortcut for ${row.title}`
+              ? copy.settings.keyboardShortcutsTab.changeTheShortcut(row.title)
+              : copy.settings.keyboardShortcutsTab.addAShortcutFor(row.title)
         }
         onClick={() => (recording ? onCancelRecording() : onStartRecording())}
         onKeyDown={handleKeyDown}
@@ -538,12 +558,14 @@ function KeybindingCell({
         className="min-w-[72px]"
       >
         {recording ? (
-          <span className="text-body font-medium text-[color:var(--accent-primary)]">Press keys…</span>
+          <span className="text-body font-medium text-[color:var(--accent-primary)]">
+            {copy.settings.keyboardShortcutsTab.pressKeys}
+          </span>
         ) : hasBinding ? (
           <ChordList chords={row.effective} platform={platform} />
         ) : (
           <span className="text-body text-[color:var(--text-subtle)] group-hover:text-[color:var(--text-muted)]">
-            Add shortcut
+            {copy.settings.keyboardShortcutsTab.addShortcut}
           </span>
         )}
       </GhostButton>

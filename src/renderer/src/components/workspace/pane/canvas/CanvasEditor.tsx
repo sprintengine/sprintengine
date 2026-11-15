@@ -49,6 +49,7 @@ import {
 import type { CanvasBoardExporter } from './canvasExport'
 import { onCanvasScene, type CanvasBoardClient } from './canvasBoardSource'
 import { canvasLinkAction } from './canvasLinks'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The live editor, and the ONE file in the tree that imports
 // `@excalidraw/excalidraw`. It is reached only through the `React.lazy` in
@@ -674,12 +675,22 @@ export default function CanvasEditor({
     () => (
       <MainMenu>
         <MainMenu.Group title={name}>
-          <MainMenu.Item onSelect={onSwitchBoard}>Switch board…</MainMenu.Item>
-          {onRevealFile ? <MainMenu.Item onSelect={onRevealFile}>Reveal file</MainMenu.Item> : null}
-          <MainMenu.Item onSelect={onCopyPath}>Copy path</MainMenu.Item>
-          <MainMenu.Item onSelect={() => onExport(exportBoard)}>Export to folder…</MainMenu.Item>
+          <MainMenu.Item onSelect={onSwitchBoard}>
+            {appCopy.workspace.pane.canvas.canvasEditor.switchBoard}
+          </MainMenu.Item>
+          {onRevealFile ? (
+            <MainMenu.Item onSelect={onRevealFile}>
+              {appCopy.workspace.pane.canvas.canvasEditor.revealFile}
+            </MainMenu.Item>
+          ) : null}
+          <MainMenu.Item onSelect={onCopyPath}>{appCopy.workspace.pane.canvas.canvasEditor.copyPath}</MainMenu.Item>
+          <MainMenu.Item onSelect={() => onExport(exportBoard)}>
+            {appCopy.workspace.pane.canvas.canvasEditor.exportToFolder}
+          </MainMenu.Item>
           {onContinueInNewChat ? (
-            <MainMenu.Item onSelect={onContinueInNewChat}>Continue in a new chat</MainMenu.Item>
+            <MainMenu.Item onSelect={onContinueInNewChat}>
+              {appCopy.workspace.pane.canvas.canvasEditor.continueInANewChat}
+            </MainMenu.Item>
           ) : null}
         </MainMenu.Group>
         <MainMenu.Separator />
@@ -709,7 +720,7 @@ export default function CanvasEditor({
         // with its own label hanging out of it.
         // The agent violet, as on the tab and round the surface (ui/AgentPresence.tsx).
         <span className="inline-flex shrink-0 whitespace-nowrap">
-          <span className="sr-only">An agent is drawing on this board</span>
+          <span className="sr-only">{appCopy.workspace.pane.canvas.canvasEditor.anAgentIsDrawingOn}</span>
           <AgentPill />
         </span>
       ) : null,

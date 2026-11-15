@@ -17,6 +17,7 @@ import {
   subscribeSentPhotos,
   type SentImage,
 } from "./sentPhotos";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 // The pictures a person sent with a message, in their bubble above the words:
 // a small rounded square of each, the size the desktop's sent bubble draws
@@ -37,7 +38,7 @@ export const SentPhotoSquares = memo(function SentPhotoSquares({
   const styles = useThemedStyles(createStyles);
   if (!images.length) return null;
   return (
-    <View accessibilityLabel={images.length > 1 ? "Sent pictures" : "Sent picture"} style={styles.squares}>
+    <View accessibilityLabel={images.length > 1 ? appCopy.phone.conversations.sentPhotoSquares.sentPictures : appCopy.phone.conversations.sentPhotoSquares.sentPicture} style={styles.squares}>
       {images.map((image, index) => (
         <SentPhotoSquare key={image.id} image={image} label={sentImageLabel(image, index, images.length)} sent={sent} />
       ))}
@@ -68,11 +69,11 @@ function SentPhotoSquare({ image, label, sent }: { image: SentImage; label: stri
     [showKey, desktopUri],
   );
   if (show.kind === "desktop" && !source && !fromDesktop.problem)
-    return <View accessibilityLabel={label} style={styles.square}><SkeletonBlock label="Loading image" style={StyleSheet.absoluteFill} /></View>;
+    return <View accessibilityLabel={label} style={styles.square}><SkeletonBlock label={appCopy.phone.conversations.sentPhotoSquares.loadingImage} style={StyleSheet.absoluteFill} /></View>;
   if (!source) return <NamedPhoto label={label} />;
   return (
     <Pressable
-      accessibilityHint="Opens the picture full screen."
+      accessibilityHint={appCopy.phone.conversations.sentPhotoSquares.opensThePictureFullScreen}
       accessibilityLabel={label}
       accessibilityRole="imagebutton"
       accessibilityState={{ disabled: !loaded, busy: !loaded }}
@@ -97,7 +98,7 @@ function SentPhotoSquare({ image, label, sent }: { image: SentImage; label: stri
         source={source}
         style={[StyleSheet.absoluteFill, loaded ? null : styles.hidden]}
       />
-      {loaded ? null : <SkeletonBlock label="Loading image" style={StyleSheet.absoluteFill} />}
+      {loaded ? null : <SkeletonBlock label={appCopy.phone.conversations.sentPhotoSquares.loadingImage} style={StyleSheet.absoluteFill} />}
       <PictureViewer label={label} onClose={() => setViewing(false)} source={source} visible={viewing} />
     </Pressable>
   );
@@ -115,8 +116,8 @@ function NamedPhoto({ label }: { label: string }) {
   const showName = () => toast.show(`${label} is on the desktop.`);
   return (
     <Pressable
-      accessibilityActions={[{ name: "longpress", label: "Show its name" }]}
-      accessibilityLabel={`${label}, on the desktop`}
+      accessibilityActions={[{ name: "longpress", label: appCopy.phone.conversations.sentPhotoSquares.showItsName }]}
+      accessibilityLabel={appCopy.phone.conversations.sentPhotoSquares.onTheDesktop(label)}
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === "longpress") showName();
       }}

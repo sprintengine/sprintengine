@@ -31,6 +31,7 @@ import { useConversationTransport } from './conversationTransport'
 import { useRemoteExtensions } from '../../workspace/agentComposer/SkillsAndMcpsPicker'
 import { type ComposerKeyEvent } from './ComposerField'
 import { isImeKey } from '../../../utils/imeKey'
+import { copy } from '../../../../../shared/copy'
 
 type TriggerRange = ComposerTrigger['range']
 
@@ -224,7 +225,7 @@ const InlineMentionPicker = forwardRef<
         onOpenChange={(open) => {
           if (!open) onDismiss()
         }}
-        ariaLabel="Mention a workspace file"
+        ariaLabel={copy.panels.agentChat.composerContextPicker.mentionAWorkspaceFile}
         popupRole="listbox"
         placement="top-start"
         material="glass"
@@ -255,7 +256,7 @@ const InlineMentionPicker = forwardRef<
           ))}
         </ScrollArea>
         <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
-          ↑↓ choose · enter or tab attach · esc dismiss
+          {copy.panels.agentChat.composerContextPicker.chooseEnterOrTabAttach}
         </div>
       </Popover>
     </div>
@@ -443,7 +444,11 @@ export function SkillContextChip({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <AttachmentChip label={skill.name} removeLabel={`Remove ${skill.name}`} onRemove={onRemove}>
+    <AttachmentChip
+      label={skill.name}
+      removeLabel={copy.panels.agentChat.composerContextPicker.remove(skill.name)}
+      onRemove={onRemove}
+    >
       <Popover
         open={open}
         onOpenChange={setOpen}
@@ -475,7 +480,7 @@ export function SkillContextChip({
               onOpen()
             }}
           >
-            Open skill
+            {copy.panels.agentChat.composerContextPicker.openSkill}
           </LinkButton>
         </div>
       </Popover>
@@ -497,12 +502,15 @@ export function ComposerContextChips({
 }) {
   if (mentions.length === 0) return null
   return (
-    <div className="flex flex-wrap items-center gap-2 px-5 pt-3" aria-label="Attached context">
+    <div
+      className="flex flex-wrap items-center gap-2 px-5 pt-3"
+      aria-label={copy.panels.agentChat.composerContextPicker.attachedContext}
+    >
       {mentions.map((mention) => (
         <AttachmentChip
           key={`${mention.kind}:${mention.path}`}
           label={mention.path + (mention.kind === 'folder' ? '/' : '')}
-          removeLabel={`Remove ${mention.path}`}
+          removeLabel={copy.panels.agentChat.composerContextPicker.remove2(mention.path)}
           onRemove={() => onRemoveMention(mention)}
         />
       ))}

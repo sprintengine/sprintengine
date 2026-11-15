@@ -29,6 +29,7 @@ import type {
 } from '../../../../shared/electron-api'
 import type { MarketplaceProvidesKind } from '../../../../shared/marketplace/manifest'
 import type { ExtensionTrustReviewData } from '../extensions/ExtensionTrustReview'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // A module executes arbitrary code once loaded, so an UNSIGNED registry bundle
 // carrying one is never trust-grantable in the UI — it hard-blocks. mcp/skills are
@@ -138,7 +139,7 @@ export function classifyVerification(
         return {
           kind: 'blocked',
           classification: 'invalid',
-          message: verify.message || 'Can’t approve this extension right now.',
+          message: verify.message || appCopy.settings.installFlow.canTApproveThisExtension,
           issues: verify.issues?.map((issue) => issue.message),
         }
       }
@@ -186,7 +187,7 @@ export function summarizeInstallResult(result: MarketplacePluginRegistryInstallR
   }
   return {
     status: 'error',
-    message: result.message || 'The install could not be completed.',
+    message: result.message || appCopy.settings.installFlow.theInstallCouldNotBe,
     issues: result.issues?.map((issue) => issue.message),
   }
 }
@@ -220,7 +221,7 @@ export function deriveInstallView(state: InstallFlowState): InstallFlowView {
   switch (state.status) {
     case 'idle':
       return {
-        action: { kind: 'install', label: 'Install' },
+        action: { kind: 'install', label: appCopy.settings.installFlow.install },
         busy: false,
         trustPrompt: false,
         review: null,
@@ -231,7 +232,7 @@ export function deriveInstallView(state: InstallFlowState): InstallFlowView {
       return {
         action: null,
         busy: true,
-        busyLabel: 'Verifying…',
+        busyLabel: appCopy.settings.installFlow.verifying,
         trustPrompt: false,
         review: null,
         trustToken: null,
@@ -239,7 +240,7 @@ export function deriveInstallView(state: InstallFlowState): InstallFlowView {
       }
     case 'needs-trust':
       return {
-        action: { kind: 'trust-install', label: 'Trust and install' },
+        action: { kind: 'trust-install', label: appCopy.settings.installFlow.trustAndInstall },
         busy: false,
         trustPrompt: true,
         review: state.review,
@@ -250,7 +251,7 @@ export function deriveInstallView(state: InstallFlowState): InstallFlowView {
       return {
         action: null,
         busy: true,
-        busyLabel: 'Installing…',
+        busyLabel: appCopy.settings.installFlow.installing,
         trustPrompt: false,
         review: null,
         trustToken: null,
@@ -292,7 +293,7 @@ export function deriveInstallView(state: InstallFlowState): InstallFlowView {
       }
     case 'error':
       return {
-        action: { kind: 'retry', label: 'Try again' },
+        action: { kind: 'retry', label: appCopy.settings.installFlow.tryAgain },
         busy: false,
         trustPrompt: false,
         review: null,

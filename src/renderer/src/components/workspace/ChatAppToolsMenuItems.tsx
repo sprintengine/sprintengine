@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { conversationToolGrants, setConversationToolGrant, useAppToolsets } from '../../studio/clientTools'
 import { MenuDivider, MenuItem } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // A chat tab's menu rows for the tools apps offer: an app's tools reach the
 // chats it started, and the person may open any other chat to them, or close
@@ -42,13 +43,18 @@ export function ChatAppToolsMenuItems({
             key={toolset.name}
             checked={granted}
             disabled={grants === null}
-            hint={granted ? 'This chat may use them' : 'Only the chats it starts'}
+            hint={
+              granted
+                ? copy.workspace.chatAppToolsMenuItems.thisChatMayUseThem
+                : copy.workspace.chatAppToolsMenuItems.onlyTheChatsItStarts
+            }
             onClick={() => {
               onDone()
               void setConversationToolGrant({ workspaceId, agentId }, toolset.name, !granted).catch(() => undefined)
             }}
           >
-            Tools from {toolset.title}
+            {copy.workspace.chatAppToolsMenuItems.toolsFrom}
+            {toolset.title}
           </MenuItem>
         )
       })}

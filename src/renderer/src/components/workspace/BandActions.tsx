@@ -24,6 +24,7 @@ import { hasComponentTab, toggleComponentTab } from '../../utils/modelRegistry'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { getRendererHost, selectModuleEnabled } from '../../modules'
 import { ModuleContributionBoundary } from '../../modules/ModuleContributionBoundary'
+import { copy } from '../../../../shared/copy'
 
 export type BandActionsProps = {
   activeWorkspace: Workspace | null
@@ -100,13 +101,20 @@ export function BandActions({
                 onViewMenuOpened()
               }
             }}
-            ariaLabel={`${activeWorkspaceViews?.label ?? 'View'} panels`}
+            ariaLabel={copy.workspace.bandActions.panels(
+              activeWorkspaceViews?.label ?? copy.workspace.bandActions.view,
+            )}
             popupRole="menu"
             placement="bottom-end"
             surfaceClassName={`w-60 ${MENU_LIST_CLASS}`}
             onOpenAutoFocus={focusFirstViewMenuItem}
             renderTrigger={({ ref, triggerProps, togglePopover }) => (
-              <Tooltip content={`${activeWorkspaceViews?.label ?? 'View'} panels`} placement="bottom">
+              <Tooltip
+                content={copy.workspace.bandActions.panels(
+                  activeWorkspaceViews?.label ?? copy.workspace.bandActions.view,
+                )}
+                placement="bottom"
+              >
                 {/* The kit's popover trigger, ghost: it sits in the workspace
                       bar among ghost icon buttons, so it is a control inside a
                       surface and takes no edge or ground until the pointer
@@ -118,7 +126,7 @@ export function BandActions({
                   variant="ghost"
                   open={viewMenuOpen}
                   onClick={togglePopover}
-                  aria-label="Toggle workspace panels"
+                  aria-label={copy.workspace.bandActions.toggleWorkspacePanels}
                   {...triggerProps}
                 >
                   <svg className="size-icon-xs shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">

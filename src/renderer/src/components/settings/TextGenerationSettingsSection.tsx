@@ -31,11 +31,12 @@ import type { AgentCli } from '../../../../shared/workspace'
 import { CliModelPickerButton, Select, Textarea, type SelectItem } from '../ui'
 import { selectAgentCliCatalog } from '../workspace/newWorkspace/cliRuntimeOptions'
 import { SettingCard, SettingsRow, SettingsSectionTitle, SettingToggle } from './SettingsAtoms'
+import { copy as appCopy } from '../../../../shared/copy'
 
 const WRITING_STYLE_ITEMS: SelectItem<WritingStyleMode>[] = [
-  { value: 'repository', label: 'Match the repository' },
-  { value: 'conventional', label: 'Conventional Commits' },
-  { value: 'custom', label: 'My own instructions' },
+  { value: 'repository', label: appCopy.settings.textGenerationSettingsSection.matchTheRepository },
+  { value: 'conventional', label: appCopy.settings.textGenerationSettingsSection.conventionalCommits },
+  { value: 'custom', label: appCopy.settings.textGenerationSettingsSection.myOwnInstructions },
 ]
 
 /** How long typing rests before the style guide is stored: the store, and main's copy of it, see words, not keys. */
@@ -93,24 +94,26 @@ export function TextGenerationSettingsSection(): JSX.Element {
   return (
     // No top rule on the section: the card draws its own edge.
     <section className="space-y-3 pt-2">
-      <SettingsSectionTitle>Text generation</SettingsSectionTitle>
+      <SettingsSectionTitle>{appCopy.settings.textGenerationSettingsSection.textGeneration}</SettingsSectionTitle>
       <SettingCard>
         <SettingToggle
-          label="Name chats with your agent"
-          description="Your agent CLI titles each chat, using its subscription. Off: your prompt's first words name it."
+          label={appCopy.settings.textGenerationSettingsSection.nameChatsWithYourAgent}
+          description={appCopy.settings.textGenerationSettingsSection.yourAgentCLITitlesEach}
           enabled={textGeneration.enabled}
           onChange={setTextGenerationEnabled}
           requirement={noRuntime ? 'Needs Claude Code or Codex' : undefined}
         />
         <SettingsRow
-          label="Text generation model"
+          label={appCopy.settings.textGenerationSettingsSection.textGenerationModel}
           help="Used for chat titles, commit messages and pull requests. A small model at low effort is plenty, and costs a fraction of a turn."
         >
           {noRuntime || !effective ? (
-            <span className="text-body text-[color:var(--text-muted)]">No supported CLI installed</span>
+            <span className="text-body text-[color:var(--text-muted)]">
+              {appCopy.settings.textGenerationSettingsSection.noSupportedCLIInstalled}
+            </span>
           ) : (
             <CliModelPickerButton
-              ariaLabel="Text generation model"
+              ariaLabel={appCopy.settings.textGenerationSettingsSection.textGenerationModel}
               options={options}
               cli={effective.cli}
               disabled={!textGeneration.enabled}
@@ -166,13 +169,13 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
   return (
     <>
       <SettingsRow
-        label="Commit and pull request style"
+        label={appCopy.settings.textGenerationSettingsSection.commitAndPullRequestStyle}
         help="How drafted commit messages and pull request titles read. Matching follows the repository's recent commits."
         htmlFor={styleId}
       >
         <Select
           id={styleId}
-          ariaLabel="Commit and pull request style"
+          ariaLabel={appCopy.settings.textGenerationSettingsSection.commitAndPullRequestStyle}
           items={WRITING_STYLE_ITEMS}
           value={writingStyle.mode}
           onChange={(mode) => setWritingStyle({ mode })}
@@ -181,7 +184,7 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
       </SettingsRow>
       {writingStyle.mode === 'custom' ? (
         <SettingsRow
-          label="Your style guide"
+          label={appCopy.settings.textGenerationSettingsSection.yourStyleGuide}
           help={`Given to your agent after the app's own rules, which it cannot change. Up to ${MAX_WRITING_STYLE_INSTRUCTIONS_LENGTH.toLocaleString('en-US')} characters. Left empty, drafts match the repository.`}
           htmlFor={guideId}
           stacked
@@ -199,7 +202,7 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
               pending.current.timer = setTimeout(commitGuide, STYLE_GUIDE_COMMIT_DELAY_MS)
             }}
             onBlur={commitGuide}
-            placeholder="E.g. past-tense subject, area first, a body only when needed"
+            placeholder={appCopy.settings.textGenerationSettingsSection.eGPastTenseSubject}
             size="md"
             variant="well"
             rows={4}

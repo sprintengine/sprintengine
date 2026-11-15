@@ -13,6 +13,7 @@ import type { AgentCli } from '../../../../../shared/workspace'
 import { useConversationTransport } from './conversationTransport'
 import { LiveElapsed } from './liveElapsed'
 import { formatStepDuration } from './stepDuration'
+import { copy } from '../../../../../shared/copy'
 
 // The sub-agents Studio started for a chat, as anything beside that chat reads
 // them. A sub-agent is a chat of its own that belongs to this one
@@ -101,14 +102,16 @@ export function studioSubagentsOf(named: readonly MeshSubagent[]): StudioSubagen
 /** How it is doing, in words: working and for how long, waiting on the person, or how it ended. */
 export function SubagentStatusWords({ subagent }: { subagent: StudioSubagent }): JSX.Element {
   const { status, startedAt, endedAt, workingSince } = subagent
-  if (status === 'needs_input') return <span className="text-[color:var(--tone-warn)]">Waiting on you</span>
+  if (status === 'needs_input')
+    return <span className="text-[color:var(--tone-warn)]">{copy.panels.agentChat.chatSubagents.waitingOnYou}</span>
   if (!subagentEnded(status)) {
     // A task that ended and is working again has no clock of its task's to
     // count; its follow-up has one where its session here says so.
     const since = endedAt === null ? startedAt : workingSince
     return (
       <span className="text-[color:var(--accent-primary)]">
-        Working{since !== undefined ? ' · ' : ''}
+        {copy.panels.agentChat.chatSubagents.working}
+        {since !== undefined ? ' · ' : ''}
         {since !== undefined ? <LiveElapsed startedAt={since} /> : null}
       </span>
     )

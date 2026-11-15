@@ -54,6 +54,7 @@ import type { ChatBinding, ChatAgentFields } from './chatBinding'
 import type { ChatReadiness } from './chatStates'
 import { ConversationTransportProvider, type ConversationTransport } from './conversationTransport'
 import { createPairedChatTransport, pairedCommandsKey } from './pairedChat'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // A conversation on a paired machine, in the regular chat view.
 //
@@ -123,14 +124,22 @@ function remoteConversationReadiness(
   )
     return {
       kind: 'error',
-      message: refusal.kind === 'outdated' ? `Update Studio on ${machineName} to drive its chats.` : refusal.message,
+      message:
+        refusal.kind === 'outdated'
+          ? appCopy.panels.agentChat.remoteConversationPanel.updateStudioOnToDrive(machineName)
+          : refusal.message,
     }
-  if (link === 'connecting') return { kind: 'error', message: `Connecting to ${machineName}.` }
-  if (link === 'away') return { kind: 'error', message: `${machineName} isn't answering. Showing what it last said.` }
+  if (link === 'connecting')
+    return { kind: 'error', message: appCopy.panels.agentChat.remoteConversationPanel.connectingTo(machineName) }
+  if (link === 'away')
+    return {
+      kind: 'error',
+      message: appCopy.panels.agentChat.remoteConversationPanel.isnTAnsweringShowingWhat(machineName),
+    }
   if (access !== 'operate')
     return {
       kind: 'error',
-      message: `View only: this pairing can't drive chats on ${machineName}.`,
+      message: appCopy.panels.agentChat.remoteConversationPanel.viewOnlyThisPairingCan(machineName),
     }
   return { kind: 'ready' }
 }

@@ -10,6 +10,7 @@ import {
   type WorktreeProjectView,
   type WorktreeRow,
 } from './worktreesSettingsModel'
+import { copy } from '../../../../shared/copy'
 
 function names(rows: readonly WorktreeRow[]): string {
   const shown = rows.slice(0, 4).map((row) => `${row.name} (${formatBytes(row.bytes)})`)
@@ -62,20 +63,22 @@ export function FreeSpaceDialog({
   return (
     <Modal open onClose={onClose} labelledBy={titleId} size="standard">
       <ModalHeader
-        title="Free up space"
-        subtitle="Skips anything in use or with uncommitted work. Branches are kept."
+        title={copy.settings.worktreesFreeSpaceDialog.freeUpSpace}
+        subtitle={copy.settings.worktreesFreeSpaceDialog.skipsAnythingInUseOr}
         titleId={titleId}
         onClose={onClose}
       />
       <ModalBody>
-        <DescribedCheckRowList ariaLabel="What to remove">
+        <DescribedCheckRowList ariaLabel={copy.settings.worktreesFreeSpaceDialog.whatToRemove}>
           <DescribedCheckRow
             id={`${titleId}-extra`}
-            title={`Remove extra ready worktrees · ${formatBytes(bytesOf(plan.extraReady))}`}
+            title={copy.settings.worktreesFreeSpaceDialog.removeExtraReadyWorktrees(
+              formatBytes(bytesOf(plan.extraReady)),
+            )}
             description={
               plan.extraReady.length
-                ? `${names(plan.extraReady)}. The most recent one per project stays.`
-                : 'No project has more than one ready worktree.'
+                ? copy.settings.worktreesFreeSpaceDialog.theMostRecentOnePer(names(plan.extraReady))
+                : copy.settings.worktreesFreeSpaceDialog.noProjectHasMoreThan
             }
             checked={extra && plan.extraReady.length > 0}
             disabled={plan.extraReady.length === 0}
@@ -83,11 +86,11 @@ export function FreeSpaceDialog({
           />
           <DescribedCheckRow
             id={`${titleId}-merged`}
-            title={`Remove merged worktrees · ${formatBytes(bytesOf(plan.merged))}`}
+            title={copy.settings.worktreesFreeSpaceDialog.removeMergedWorktrees(formatBytes(bytesOf(plan.merged)))}
             description={
               plan.merged.length
-                ? `${names(plan.merged)}. Clean, outside the pool, already on the default branch.`
-                : 'No clean, merged worktrees outside the pool.'
+                ? copy.settings.worktreesFreeSpaceDialog.cleanOutsideThePoolAlready(names(plan.merged))
+                : copy.settings.worktreesFreeSpaceDialog.noCleanMergedWorktreesOutside
             }
             checked={merged && plan.merged.length > 0}
             disabled={plan.merged.length === 0}
@@ -95,11 +98,11 @@ export function FreeSpaceDialog({
           />
           <DescribedCheckRow
             id={`${titleId}-clear`}
-            title="Clear ignored files in the ready worktrees kept"
+            title={copy.settings.worktreesFreeSpaceDialog.clearIgnoredFilesInThe}
             description={
               plan.keptReady.length
-                ? `${names(plan.keptReady)}: dependencies and build output. The next agent reinstalls.`
-                : 'No ready worktree is kept.'
+                ? copy.settings.worktreesFreeSpaceDialog.dependenciesAndBuildOutputThe(names(plan.keptReady))
+                : copy.settings.worktreesFreeSpaceDialog.noReadyWorktreeIsKept
             }
             checked={clear && plan.keptReady.length > 0}
             disabled={plan.keptReady.length === 0}
@@ -108,8 +111,8 @@ export function FreeSpaceDialog({
           {plan.unmerged.length > 0 ? (
             <DescribedCheckRow
               id={`${titleId}-unmerged`}
-              title={`Not merged, not offered · ${formatBytes(bytesOf(plan.unmerged))}`}
-              description={`${names(plan.unmerged)} have unmerged commits. Remove one from its own row; its branch is kept.`}
+              title={copy.settings.worktreesFreeSpaceDialog.notMergedNotOffered(formatBytes(bytesOf(plan.unmerged)))}
+              description={copy.settings.worktreesFreeSpaceDialog.haveUnmergedCommitsRemoveOne(names(plan.unmerged))}
               checked={false}
               disabled
               onChange={() => {}}
@@ -123,7 +126,7 @@ export function FreeSpaceDialog({
           {clear && plan.keptReady.length ? `${bytes ? ', ' : 'Frees '}what installs took` : ''}
         </span>
         <GhostButton size="sm" onClick={onClose}>
-          Cancel
+          {copy.settings.worktreesFreeSpaceDialog.cancel}
         </GhostButton>
         <DangerButton
           size="sm"

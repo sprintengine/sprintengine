@@ -16,6 +16,7 @@ import {
   type BacklogSort,
   type BacklogView,
 } from "./backlogLogic";
+import { copy } from "../../../../src/shared/copy";
 
 export interface BacklogFilterState {
   view: BacklogView;
@@ -40,8 +41,8 @@ export function BacklogFilterSheet({ visible, value, onChange, onClose }: Backlo
   const styles = useThemedStyles(createStyles);
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="View, sort and group">
-      <Section title="View">
+    <BottomSheet visible={visible} onClose={onClose} title={copy.phone.backlog.backlogFilterSheet.viewSortAndGroup}>
+      <Section title={copy.phone.backlog.backlogFilterSheet.view}>
         {backlogViewOptions.map((view) => (
           <OptionCell
             key={view}
@@ -52,7 +53,7 @@ export function BacklogFilterSheet({ visible, value, onChange, onClose }: Backlo
         ))}
       </Section>
       <View style={styles.divider} />
-      <Section title="Sort by">
+      <Section title={copy.phone.backlog.backlogFilterSheet.sortBy}>
         {backlogSortOptions.map((sort) => (
           <OptionCell
             key={sort}
@@ -63,7 +64,7 @@ export function BacklogFilterSheet({ visible, value, onChange, onClose }: Backlo
         ))}
       </Section>
       <View style={styles.divider} />
-      <Section title="Group">
+      <Section title={copy.phone.backlog.backlogFilterSheet.group}>
         {backlogGroupOptions.map((group) => (
           <OptionCell
             key={group}

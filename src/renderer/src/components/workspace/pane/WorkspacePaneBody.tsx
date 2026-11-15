@@ -18,6 +18,7 @@ import { paneTabLabel } from './paneTabItem'
 import { useRecordingTabIds } from './browser/recordingTabs'
 import { useAgentPresentTabIds } from './agentPresence'
 import { createPairedDiffSource } from '../../auxWindows/diffViewerSource'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // The pane's content region: one layer per tab that needs to stay mounted
 // (terminal, browser, canvas) plus the active tab. Inactive retained layers are
@@ -81,12 +82,14 @@ function PaneUnavailable() {
   return (
     <div
       role="note"
-      aria-label="Panel unavailable"
+      aria-label={appCopy.workspace.pane.workspacePaneBody.panelUnavailable}
       className="flex h-full flex-col items-center justify-center gap-1 bg-[color:var(--bg-app)] px-6 text-center"
     >
-      <p className="text-meta font-medium text-[color:var(--text-strong)]">Panel unavailable</p>
+      <p className="text-meta font-medium text-[color:var(--text-strong)]">
+        {appCopy.workspace.pane.workspacePaneBody.panelUnavailable}
+      </p>
       <p className="max-w-xs text-micro leading-5 text-[color:var(--text-muted)]">
-        Its feature may be off, or the tab is out of date.
+        {appCopy.workspace.pane.workspacePaneBody.itsFeatureMayBeOff}
       </p>
     </div>
   )
@@ -105,24 +108,24 @@ function PanePoppedOutPlaceholder({ workspaceId, tab }: { workspaceId: string; t
     <div role="note" className="h-full bg-[color:var(--bg-surface)]">
       <EmptyState
         glyph={<OpenInWindowGlyph className="icon-lg" />}
-        title="Shown in a separate window"
+        title={appCopy.workspace.pane.workspacePaneBody.shownInASeparateWindow}
         body={
           // A diff is only ever shown in its window (diffShowsInWindow), so
           // there is nothing to bring back.
           tab.kind === 'diff'
-            ? `${paneTabLabel(tab)} is open in its own window.`
-            : `${paneTabLabel(tab)} is open in its own window. Bring it back to show it here.`
+            ? appCopy.workspace.pane.workspacePaneBody.isOpenInItsOwn(paneTabLabel(tab))
+            : appCopy.workspace.pane.workspacePaneBody.isOpenInItsOwn2(paneTabLabel(tab))
         }
         action={
           <>
             {popOutId ? (
               <OutlineButton size="sm" onClick={() => showPanePopOut(popOutId)}>
-                Show window
+                {appCopy.workspace.pane.workspacePaneBody.showWindow}
               </OutlineButton>
             ) : null}
             {tab.kind === 'diff' ? null : (
               <PrimaryButton size="sm" onClick={() => bringBackPaneTab(workspaceId, tab)}>
-                Bring back
+                {appCopy.workspace.pane.workspacePaneBody.bringBack}
               </PrimaryButton>
             )}
           </>
@@ -546,7 +549,9 @@ export function WorkspacePaneBody({
             {poppedOut ? (
               <PanePoppedOutPlaceholder workspaceId={workspaceId} tab={tab} />
             ) : (
-              <React.Suspense fallback={<SuspenseFallback label="Loading pane" />}>
+              <React.Suspense
+                fallback={<SuspenseFallback label={appCopy.workspace.pane.workspacePaneBody.loadingPane} />}
+              >
                 <PaneTabPanel
                   workspaceId={workspaceId}
                   tab={tab}

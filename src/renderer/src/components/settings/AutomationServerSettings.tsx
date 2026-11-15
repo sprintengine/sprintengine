@@ -7,6 +7,7 @@ import { IconButton, InlineNotice, Tooltip } from '../ui'
 import { CopyIcon } from '../AppIcons'
 import { McpHttpSettings } from './McpHttpSettings'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Settings → MCPs: read-only diagnostics for the always-on SprintEngine Studio
 // MCP gateway. Studio agents receive it automatically; the bridge command is
@@ -40,7 +41,7 @@ export function AutomationServerSettings() {
     // No top rule on the section: the card draws its own edge, and a section
     // rule above it doubled the boundary.
     <section className="space-y-3 pt-2">
-      <SettingsSectionTitle>Automation</SettingsSectionTitle>
+      <SettingsSectionTitle>{appCopy.settings.automationServerSettings.automation}</SettingsSectionTitle>
       <SettingCard>
         <SettingsRow
           label={STUDIO_MCP_SERVER_NAME}
@@ -55,10 +56,13 @@ export function AutomationServerSettings() {
           <span className="text-body text-[color:var(--text-muted)]">{status.running ? 'Always on' : 'Off'}</span>
         </SettingsRow>
         {bridgeCommand ? (
-          <SettingsRow label="Bridge command" help="For an MCP client outside Studio.">
-            <Tooltip content="Copy the bridge command">
+          <SettingsRow
+            label={appCopy.settings.automationServerSettings.bridgeCommand}
+            help="For an MCP client outside Studio."
+          >
+            <Tooltip content={appCopy.settings.automationServerSettings.copyTheBridgeCommand}>
               <IconButton
-                aria-label="Copy the bridge command"
+                aria-label={appCopy.settings.automationServerSettings.copyTheBridgeCommand}
                 onClick={() => void window.api.clipboardWriteText(bridgeCommand)}
               >
                 <CopyIcon className="icon-sm" />

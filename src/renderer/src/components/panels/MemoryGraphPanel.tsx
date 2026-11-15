@@ -18,6 +18,7 @@ import {
 import { Tooltip } from '../ui/Tooltip'
 import { KnowledgeGraphSettingsIcon } from '../AppIcons'
 import { agentSetupApi } from '../../studio/agentSetup'
+import { copy } from '../../../../shared/copy'
 
 type CursorPoint = { x: number; y: number }
 
@@ -219,11 +220,14 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
           the search band that carries the panel's one rule; the canvas starts
           below it, full-bleed as before. */}
       <PanelHeader
-        title="Knowledge Graph"
+        title={copy.panels.memoryGraphPanel.knowledgeGraph}
         count={allNodes.length}
         primaryAction={
-          <Tooltip content="Refresh index" placement="bottom">
-            <IconButton aria-label="Refresh knowledge index" onClick={() => void loadGraph()}>
+          <Tooltip content={copy.panels.memoryGraphPanel.refreshIndex} placement="bottom">
+            <IconButton
+              aria-label={copy.panels.memoryGraphPanel.refreshKnowledgeIndex}
+              onClick={() => void loadGraph()}
+            >
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -235,35 +239,42 @@ export default function MemoryGraphPanel({ workspaceId }: { workspaceId: string 
             `<input outline-none>` with a `⌕` character for a glyph and a hand
             `<kbd>`. The wrapper carries the ref the `/` shortcut focuses. */}
         <div ref={searchInputRef} className="flex min-w-0 flex-1">
-          <InboxSearchInput value={query} onChange={setQuery} ariaLabel="Search notes" placeholder="Search notes…" />
+          <InboxSearchInput
+            value={query}
+            onChange={setQuery}
+            ariaLabel={copy.panels.memoryGraphPanel.searchNotes}
+            placeholder={copy.panels.memoryGraphPanel.searchNotes2}
+          />
         </div>
-        <KbdChord keys={['/']} ariaLabel="Slash focuses search" className="shrink-0" />
+        <KbdChord keys={['/']} ariaLabel={copy.panels.memoryGraphPanel.slashFocusesSearch} className="shrink-0" />
       </div>
 
       <div className="relative flex min-h-0 flex-1">
         {!knowledgeConfig?.relativeRoot ? (
           <MemoryNotice
             tone="info"
-            title="Knowledge Graph is not configured"
-            message="Set a knowledge path in Settings → Knowledge to see the graph."
+            title={copy.panels.memoryGraphPanel.knowledgeGraphIsNotConfigured}
+            message={copy.panels.memoryGraphPanel.setAKnowledgePathIn}
           />
         ) : loading ? (
-          <LoadingOverlay label="Indexing knowledge…" />
+          <LoadingOverlay label={copy.panels.memoryGraphPanel.indexingKnowledge} />
         ) : indexResult && !indexResult.ok ? (
           <MemoryNotice
             tone="error"
-            title="Knowledge folder unavailable"
+            title={copy.panels.memoryGraphPanel.knowledgeFolderUnavailable}
             message={indexResult.message}
-            hint="Check Settings, or create the configured folder"
+            hint={copy.panels.memoryGraphPanel.checkSettingsOrCreateThe}
           />
         ) : allNodes.length === 0 ? (
           <MemoryNotice
             tone="info"
-            title={query.trim() ? 'No matches' : 'No knowledge files found'}
+            title={
+              query.trim() ? copy.panels.memoryGraphPanel.noMatches : copy.panels.memoryGraphPanel.noKnowledgeFilesFound
+            }
             message={
               query.trim()
-                ? `No notes match "${query.trim()}".`
-                : 'The knowledge folder is empty. Add a Markdown file to start.'
+                ? copy.panels.memoryGraphPanel.noNotesMatch(query.trim())
+                : copy.panels.memoryGraphPanel.theKnowledgeFolderIsEmpty
             }
           />
         ) : (
@@ -356,7 +367,7 @@ function MemoryActivityStatusBadge({ status }: { status: MemoryActivityStatus })
       <div className="flex items-center gap-2 rounded-sm bg-[color:var(--bg-surface)] px-2 py-1 text-micro">
         <StatusDot tone={dotTone} pulse={isLive} />
         {!status.isInstalled ? (
-          <span className={labelTone}>Activity tracking off</span>
+          <span className={labelTone}>{copy.panels.memoryGraphPanel.activityTrackingOff}</span>
         ) : (
           <span className={labelTone}>
             <span className="font-semibold text-[color:var(--text-strong)]">{status.sessionsRecorded}</span> session

@@ -106,6 +106,7 @@ import {
 } from './editorTreePrefs'
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The diff viewer: the changed-file list, a read-only Monaco DiffEditor, and
 // hunk navigation that flows across files. Two hosts render it — the
@@ -330,7 +331,7 @@ async function loadDiffContent(
   // at the revisions it works out from the step, which is all it lets be read.
   if (source) {
     const selection = item.kind === 'branch' ? (item as BranchDiffItem).selection : undefined
-    if (!selection) return { state: 'error', message: 'This file cannot be read from here.' }
+    if (!selection) return { state: 'error', message: appCopy.auxWindows.diffViewer.thisFileCannotBeRead }
     try {
       const sides = await source.file(selection, item.relativePath)
       const original = farSide(sides.original)
@@ -416,8 +417,8 @@ async function probeDiffItem(repoRoot: string, item: DiffFileItem): Promise<stri
 // because "close" and "put it back" are different intentions.
 function ShowInAppButton({ onClick }: { onClick: () => void }) {
   return (
-    <Tooltip content="Show in the app (Esc just closes this window)" placement="bottom">
-      <ToolbarButton ariaLabel="Show in the app" onClick={onClick}>
+    <Tooltip content={appCopy.auxWindows.diffViewer.showInTheAppEsc} placement="bottom">
+      <ToolbarButton ariaLabel={appCopy.auxWindows.diffViewer.showInTheApp} onClick={onClick}>
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
           <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
           <path d="M10 3v10" stroke="currentColor" strokeWidth="1.5" />
@@ -447,7 +448,7 @@ function DiffSettingsMenu({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Diff settings"
+      ariaLabel={appCopy.auxWindows.diffViewer.diffSettings}
       popupRole="menu"
       placement="bottom-end"
       onOpenAutoFocus={(surface) => {
@@ -456,8 +457,14 @@ function DiffSettingsMenu({
       }}
       surfaceClassName={`min-w-[11rem] ${MENU_LIST_CLASS}`}
       renderTrigger={({ ref, togglePopover }) => (
-        <Tooltip content="Diff settings" placement="bottom">
-          <ToolbarButton ref={ref} ariaLabel="Diff settings" menu expanded={open} onClick={togglePopover}>
+        <Tooltip content={appCopy.auxWindows.diffViewer.diffSettings} placement="bottom">
+          <ToolbarButton
+            ref={ref}
+            ariaLabel={appCopy.auxWindows.diffViewer.diffSettings}
+            menu
+            expanded={open}
+            onClick={togglePopover}
+          >
             <GearGlyph />
           </ToolbarButton>
         </Tooltip>
@@ -468,14 +475,14 @@ function DiffSettingsMenu({
         onClick={() => onChange({ wordWrap: !prefs.wordWrap })}
         onKeyDown={(event) => roveMenuFocus(event, surfaceRef.current)}
       >
-        Word wrap
+        {appCopy.auxWindows.diffViewer.wordWrap}
       </MenuItem>
       <MenuItem
         checked={prefs.ignoreTrimWhitespace}
         onClick={() => onChange({ ignoreTrimWhitespace: !prefs.ignoreTrimWhitespace })}
         onKeyDown={(event) => roveMenuFocus(event, surfaceRef.current)}
       >
-        Ignore whitespace
+        {appCopy.auxWindows.diffViewer.ignoreWhitespace}
       </MenuItem>
     </Popover>
   )
@@ -544,19 +551,23 @@ export function DiffBody({
   /** A branch step's file list is still being read. */
   stepLoading?: boolean
 }) {
-  if (repoState === 'not-git') return <CenteredMessage>Not a Git repository.</CenteredMessage>
+  if (repoState === 'not-git')
+    return <CenteredMessage>{appCopy.auxWindows.diffViewer.notAGitRepository}</CenteredMessage>
   if (!currentItem) {
-    if (repoState === 'loading' || repoState === 'idle') return <CenteredMessage>Loading changes…</CenteredMessage>
+    if (repoState === 'loading' || repoState === 'idle')
+      return <CenteredMessage>{appCopy.auxWindows.diffViewer.loadingChanges}</CenteredMessage>
     // `repoState` goes ready as soon as `git status` returns, which is well
     // before a step's own diff resolves. Without this the pane asserts "No
     // changed files." — confidently, and wrongly — for the whole of that read.
-    if (stepLoading) return <CenteredMessage>Loading changes…</CenteredMessage>
-    return <CenteredMessage>No changed files.</CenteredMessage>
+    if (stepLoading) return <CenteredMessage>{appCopy.auxWindows.diffViewer.loadingChanges}</CenteredMessage>
+    return <CenteredMessage>{appCopy.auxWindows.diffViewer.noChangedFiles}</CenteredMessage>
   }
-  if (content.state === 'loading') return <CenteredMessage>Loading diff…</CenteredMessage>
+  if (content.state === 'loading') return <CenteredMessage>{appCopy.auxWindows.diffViewer.loadingDiff}</CenteredMessage>
   if (content.state === 'error') return <CenteredError message={content.message} />
-  if (content.state === 'binary') return <CenteredMessage>Binary file — diff not shown.</CenteredMessage>
-  if (content.state === 'too-large') return <CenteredMessage>File is too large to diff.</CenteredMessage>
+  if (content.state === 'binary')
+    return <CenteredMessage>{appCopy.auxWindows.diffViewer.binaryFileDiffNotShown}</CenteredMessage>
+  if (content.state === 'too-large')
+    return <CenteredMessage>{appCopy.auxWindows.diffViewer.fileIsTooLargeTo}</CenteredMessage>
 
   return (
     <DiffEditor
@@ -1110,7 +1121,7 @@ export function DiffViewer({
       for (const side of [editor.getModifiedEditor(), original]) {
         side.addAction({
           id: 'sprintengine.diff.addSelectionToChat',
-          label: 'Add selection to chat',
+          label: appCopy.auxWindows.diffViewer.addSelectionToChat,
           keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA],
           run: () => askChatRef.current(),
         })
@@ -1680,7 +1691,7 @@ export function DiffViewer({
   // the left one.
   const filterOptions = useMemo(
     () => [
-      { value: ALL_CHANGES, label: 'All changes' },
+      { value: ALL_CHANGES, label: appCopy.auxWindows.diffViewer.allChanges },
       ...changelists.map((list) => ({ value: list.id, label: list.name })),
     ],
     [changelists],
@@ -1761,29 +1772,51 @@ export function DiffViewer({
           No rule under it: the glyphs are the top of the region, and the
           region's one rule is under the file row below, directly over the
           code, whose gutter runs edge to edge and needs a line to stop at. */}
-      <Toolbar ariaLabel="Diff">
+      <Toolbar ariaLabel={appCopy.auxWindows.diffViewer.diff}>
         {/* An agent's new tour, waiting: at the front of the band, where a narrow
             pane cannot clip it off. */}
         {tour.offerChip}
         {/* The files column's switch, first in the band over the column it
             opens — where the editor window's strip puts its own. The name says
             the state, as the collapse toggle's does. */}
-        <Tooltip content={treePrefs.visible ? 'Hide changed files' : 'Show changed files'} placement="bottom">
+        <Tooltip
+          content={
+            treePrefs.visible
+              ? appCopy.auxWindows.diffViewer.hideChangedFiles
+              : appCopy.auxWindows.diffViewer.showChangedFiles
+          }
+          placement="bottom"
+        >
           <ToolbarButton
-            ariaLabel={treePrefs.visible ? 'Hide changed files' : 'Show changed files'}
+            ariaLabel={
+              treePrefs.visible
+                ? appCopy.auxWindows.diffViewer.hideChangedFiles
+                : appCopy.auxWindows.diffViewer.showChangedFiles
+            }
             onClick={() => updateTreePrefs({ ...treePrefs, visible: !treePrefs.visible })}
           >
             <FilesColumnGlyph />
           </ToolbarButton>
         </Tooltip>
         <ToolbarDivider />
-        <Tooltip content={`Previous change (${isMac ? '⇧F7' : 'Shift+F7'})`} placement="bottom">
-          <ToolbarButton ariaLabel="Previous change" disabled={noFiles} onClick={() => navigate('prev')}>
+        <Tooltip
+          content={appCopy.auxWindows.diffViewer.previousChange(isMac ? '⇧F7' : appCopy.auxWindows.diffViewer.shiftF7)}
+          placement="bottom"
+        >
+          <ToolbarButton
+            ariaLabel={appCopy.auxWindows.diffViewer.previousChange2}
+            disabled={noFiles}
+            onClick={() => navigate('prev')}
+          >
             <PreviousDifferenceGlyph />
           </ToolbarButton>
         </Tooltip>
-        <Tooltip content="Next change (F7)" placement="bottom">
-          <ToolbarButton ariaLabel="Next change" disabled={noFiles} onClick={() => navigate('next')}>
+        <Tooltip content={appCopy.auxWindows.diffViewer.nextChangeF7} placement="bottom">
+          <ToolbarButton
+            ariaLabel={appCopy.auxWindows.diffViewer.nextChange}
+            disabled={noFiles}
+            onClick={() => navigate('next')}
+          >
             <NextDifferenceGlyph />
           </ToolbarButton>
         </Tooltip>
@@ -1793,9 +1826,9 @@ export function DiffViewer({
           <>
             <ToolbarDivider />
 
-            <Tooltip content="Open in editor" placement="bottom">
+            <Tooltip content={appCopy.auxWindows.diffViewer.openInEditor} placement="bottom">
               <ToolbarButton
-                ariaLabel="Open in editor"
+                ariaLabel={appCopy.auxWindows.diffViewer.openInEditor}
                 disabled={!currentItem || (variant === 'pane' && !workspaceId)}
                 onClick={openInEditor}
               >
@@ -1822,8 +1855,8 @@ export function DiffViewer({
           rangeLabel={positionLabel}
           // The shortcut goes on the CHEVRONS. `rangeLabel` is a live region,
           // so a hint folded into it was read out again on every step.
-          stepHint={isMac ? '⌘↑ / ⌘↓' : 'Ctrl+↑ / Ctrl+↓'}
-          ariaLabel="Changed files in this diff"
+          stepHint={isMac ? '⌘↑ / ⌘↓' : appCopy.auxWindows.diffViewer.ctrlCtrl}
+          ariaLabel={appCopy.auxWindows.diffViewer.changedFilesInThisDiff}
           onPageChange={(page) => goToFileIndex(page - 1)}
         />
 
@@ -1833,11 +1866,19 @@ export function DiffViewer({
             state instead, which is what a screen reader reads out either way
             and what the tooltip already had to say. */}
         <Tooltip
-          content={sessionPrefs.hideUnchanged ? 'Show unchanged regions' : 'Collapse unchanged regions'}
+          content={
+            sessionPrefs.hideUnchanged
+              ? appCopy.auxWindows.diffViewer.showUnchangedRegions
+              : appCopy.auxWindows.diffViewer.collapseUnchangedRegions
+          }
           placement="bottom"
         >
           <ToolbarButton
-            ariaLabel={sessionPrefs.hideUnchanged ? 'Show unchanged regions' : 'Collapse unchanged regions'}
+            ariaLabel={
+              sessionPrefs.hideUnchanged
+                ? appCopy.auxWindows.diffViewer.showUnchangedRegions
+                : appCopy.auxWindows.diffViewer.collapseUnchangedRegions
+            }
             onClick={() => setSessionPrefs((prefs) => ({ ...prefs, hideUnchanged: !prefs.hideUnchanged }))}
           >
             <CollapseAllGlyph />
@@ -1857,17 +1898,22 @@ export function DiffViewer({
 
         <SegmentedControl<DiffViewMode>
           iconOnly
-          ariaLabel="Diff view"
+          ariaLabel={appCopy.auxWindows.diffViewer.diffView}
           value={diffView}
           onChange={setDiffView}
           items={[
             {
               value: 'side-by-side',
-              label: 'Side by side',
+              label: appCopy.auxWindows.diffViewer.sideBySide,
               icon: <SideBySideGlyph />,
-              tooltip: 'Side by side',
+              tooltip: appCopy.auxWindows.diffViewer.sideBySide,
             },
-            { value: 'unified', label: 'Unified', icon: <UnifiedGlyph />, tooltip: 'Unified' },
+            {
+              value: 'unified',
+              label: appCopy.auxWindows.diffViewer.unified,
+              icon: <UnifiedGlyph />,
+              tooltip: appCopy.auxWindows.diffViewer.unified,
+            },
           ]}
           className="mx-1 shrink-0"
         />
@@ -1928,7 +1974,7 @@ export function DiffViewer({
           {filtering ? (
             <>
               <Select
-                ariaLabel="Show one changelist"
+                ariaLabel={appCopy.auxWindows.diffViewer.showOneChangelist}
                 className="shrink-0"
                 triggerMinWidthClassName="min-w-0"
                 value={filterList ? filterList.id : ALL_CHANGES}
@@ -1945,7 +1991,7 @@ export function DiffViewer({
                 // agent exited and reconcile cleared it. Say so and show
                 // everything — a viewer that went blank because its filter
                 // outlived its list is the failure this sentence exists for.
-                <MicroChip className="shrink-0">That changelist is gone</MicroChip>
+                <MicroChip className="shrink-0">{appCopy.auxWindows.diffViewer.thatChangelistIsGone}</MicroChip>
               ) : null}
               <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-[color:var(--border-subtle)]" />
             </>
@@ -1974,7 +2020,8 @@ export function DiffViewer({
           </span>
           {tour.renamedFrom ? (
             <span className="shrink-0 truncate text-micro text-[color:var(--text-subtle)]" title={tour.renamedFrom}>
-              renamed from {tour.renamedFrom}
+              {appCopy.auxWindows.diffViewer.renamedFrom}
+              {tour.renamedFrom}
             </span>
           ) : null}
           {currentItem ? (
@@ -2005,8 +2052,8 @@ export function DiffViewer({
               onChange={toggleInclude}
               ariaLabel={
                 listStageRef.current.list && filterList
-                  ? `Include ${filterList.name}\u2019s changes to ${currentItem.relativePath} in the commit`
-                  : `Include ${currentItem.relativePath} in the commit`
+                  ? appCopy.auxWindows.diffViewer.includeSChangesToIn(filterList.name, currentItem.relativePath)
+                  : appCopy.auxWindows.diffViewer.includeInTheCommit(currentItem.relativePath)
               }
             />
           ) : null}
@@ -2027,7 +2074,7 @@ export function DiffViewer({
                 {viewedCount} of {items.length} viewed
               </span>
               <Checkbox
-                label="Viewed"
+                label={appCopy.auxWindows.diffViewer.viewed}
                 className="shrink-0"
                 checked={currentViewed}
                 disabled={contentFingerprint === null}
@@ -2058,11 +2105,11 @@ export function DiffViewer({
           className="flex h-7 shrink-0 items-center gap-1.5 px-3 text-meta text-[color:var(--text-muted)]"
         >
           <span className="truncate">
-            Showing {narrowedCounts.shown} of {narrowedCounts.total} changed{' '}
-            {narrowedCounts.total === 1 ? 'file' : 'files'}
+            {appCopy.auxWindows.diffViewer.showing}
+            {narrowedCounts.shown} of {narrowedCounts.total} changed {narrowedCounts.total === 1 ? 'file' : 'files'}
           </span>
           <span aria-hidden="true">·</span>
-          <LinkButton onClick={() => setPathsShownAll(pathsKey)}>Show all</LinkButton>
+          <LinkButton onClick={() => setPathsShownAll(pathsKey)}>{appCopy.auxWindows.diffViewer.showAll}</LinkButton>
         </div>
       ) : null}
 
@@ -2104,14 +2151,16 @@ export function DiffViewer({
             // The lists are one IPC read behind the status snapshot. "No changed
             // files" during that beat would be a claim about the repository made
             // before anyone asked it anything.
-            <CenteredMessage>Loading changes\u2026</CenteredMessage>
+            <CenteredMessage>{appCopy.auxWindows.diffViewer.loadingChangesU2026}</CenteredMessage>
           ) : !tour.active && filteredEmpty ? (
             <EmptyState
-              title={`No changes in ${filterList?.name ?? 'this changelist'}`}
-              body="Its changes were committed, moved or discarded."
+              title={appCopy.auxWindows.diffViewer.noChangesIn(
+                filterList?.name ?? appCopy.auxWindows.diffViewer.thisChangelist,
+              )}
+              body={appCopy.auxWindows.diffViewer.itsChangesWereCommittedMoved}
               action={
                 <OutlineButton size="sm" onClick={showAllChanges}>
-                  Show all changes
+                  {appCopy.auxWindows.diffViewer.showAllChanges}
                 </OutlineButton>
               }
             />

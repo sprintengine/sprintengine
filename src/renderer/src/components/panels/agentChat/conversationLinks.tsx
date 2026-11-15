@@ -20,6 +20,7 @@ import { clientSupports, hostPlatform } from '../../../clientCapabilities'
 import { revealLabel } from '../../../utils/revealLabel'
 import { parseQuoteHref } from '../../../../../shared/chat-quotes'
 import { SentQuoteChip } from './chatQuotes'
+import { copy } from '../../../../../shared/copy'
 
 export type ConversationLinkContext = {
   workspaceId: string
@@ -230,7 +231,7 @@ export const ConversationFileLink = React.memo(function ConversationFileLink({
           ink={ink}
           underline="hover"
           size="inherit"
-          aria-label={`Open ${token}`}
+          aria-label={copy.panels.agentChat.conversationLinks.open(token)}
           title={resolved ?? token}
           onClick={(event) => void open(event.metaKey || event.ctrlKey)}
           onContextMenu={onContextMenu}
@@ -242,7 +243,7 @@ export const ConversationFileLink = React.memo(function ConversationFileLink({
           <ChipButton
             tone="neutral"
             variant="outline"
-            aria-label={`Open ${token}`}
+            aria-label={copy.panels.agentChat.conversationLinks.open(token)}
             onClick={(event) => void open(event.metaKey || event.ctrlKey)}
             onContextMenu={onContextMenu}
           >

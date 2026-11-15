@@ -12,6 +12,7 @@ import {
 import { pausedSinceWords } from '../../../utils/scheduledAgentsPause'
 import { ProjectLine, type FlatProjectLine, type RowMachine } from './rowParts'
 import { ROW_SEAT_CLASS, SELECTED_ROW_ACCENT, SELECTION_EDGE_CLASS } from './rowStyle'
+import { copy } from '../../../../../shared/copy'
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
@@ -166,15 +167,25 @@ export function ScheduledAgentRow({
     <span className={ROW_SEAT_CLASS}>
       <span className="inline-flex items-center gap-1 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
         {paused ? (
-          <Badge tone="neutral" ariaLabel={ownPause ? 'Paused' : 'Paused with every scheduled agent'}>
-            Paused
+          <Badge
+            tone="neutral"
+            ariaLabel={
+              ownPause
+                ? copy.workspace.sidebar.scheduledAgentRow.paused
+                : copy.workspace.sidebar.scheduledAgentRow.pausedWithEveryScheduledAgent
+            }
+          >
+            {copy.workspace.sidebar.scheduledAgentRow.paused}
           </Badge>
         ) : null}
         {next ? (
-          <Tooltip content={`Next run ${nextFull}`}>
+          <Tooltip content={copy.workspace.sidebar.scheduledAgentRow.nextRun(nextFull)}>
             <span className="text-meta tabular-nums text-[color:var(--text-muted)]">
               <span aria-hidden="true">{next}</span>
-              <span className="sr-only">Runs next {nextFull}</span>
+              <span className="sr-only">
+                {copy.workspace.sidebar.scheduledAgentRow.runsNext}
+                {nextFull}
+              </span>
             </span>
           </Tooltip>
         ) : null}
@@ -200,10 +211,10 @@ export function ScheduledAgentRow({
           </Tooltip>
         ) : null}
         {onClose ? (
-          <Tooltip content="Close — stops the schedule">
+          <Tooltip content={copy.workspace.sidebar.scheduledAgentRow.closeStopsTheSchedule}>
             <IconButton
               tone="quiet"
-              aria-label={`Close scheduled agent: ${title}`}
+              aria-label={copy.workspace.sidebar.scheduledAgentRow.closeScheduledAgent(title)}
               onClick={(event) => {
                 event.stopPropagation()
                 onClose()
@@ -230,9 +241,14 @@ export function ScheduledAgentRow({
       role="treeitem"
       tabIndex={-1}
       aria-current={selected ? 'true' : undefined}
-      aria-label={`Scheduled agent: ${title}, in ${project.name}${machine ? ` on ${machine.name}` : ''}. ${words}.${
-        status.text === words ? '' : ` ${status.text}.`
-      }${paused && !ownPause ? ' All scheduled agents paused.' : ''}`}
+      aria-label={copy.workspace.sidebar.scheduledAgentRow.scheduledAgentIn(
+        title,
+        project.name,
+        machine ? copy.workspace.sidebar.scheduledAgentRow.on(machine.name) : '',
+        words,
+        status.text === words ? '' : ` ${status.text}.`,
+        paused && !ownPause ? copy.workspace.sidebar.scheduledAgentRow.allScheduledAgentsPaused : '',
+      )}
       data-scheduled-agent={agent.id}
       data-paused={paused ? 'true' : undefined}
       onClick={open}
@@ -283,16 +299,20 @@ export function ScheduledAgentRow({
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          ariaLabel={`Scheduled agent actions: ${title}`}
+          ariaLabel={copy.workspace.sidebar.scheduledAgentRow.scheduledAgentActions(title)}
           onClose={() => setMenu(null)}
           surfaceClassName="min-w-[220px]"
         >
-          {onOpen ? <MenuItem onClick={() => select('open')}>Open</MenuItem> : null}
+          {onOpen ? (
+            <MenuItem onClick={() => select('open')}>{copy.workspace.sidebar.scheduledAgentRow.open}</MenuItem>
+          ) : null}
           {/* Asked for, so it runs paused or not. */}
-          {onRunNow ? <MenuItem onClick={() => select('run-now')}>Run now</MenuItem> : null}
+          {onRunNow ? (
+            <MenuItem onClick={() => select('run-now')}>{copy.workspace.sidebar.scheduledAgentRow.runNow}</MenuItem>
+          ) : null}
           {onTogglePause ? (
             <MenuItem
-              hint={ownPause ? undefined : 'Runs going carry on'}
+              hint={ownPause ? undefined : copy.workspace.sidebar.scheduledAgentRow.runsGoingCarryOn}
               onClick={() => select('toggle-pause')}
               icon={ownPause ? <PlayGlyph className="icon-sm" /> : <PauseGlyph className="icon-sm" />}
             >
@@ -303,7 +323,7 @@ export function ScheduledAgentRow({
             <>
               <MenuDivider />
               <MenuItem variant="danger" onClick={() => select('close')}>
-                Close schedule
+                {copy.workspace.sidebar.scheduledAgentRow.closeSchedule}
               </MenuItem>
             </>
           ) : null}

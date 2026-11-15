@@ -6,6 +6,7 @@ import { relativeFromNow } from '../../utils/relativeTime'
 import { webDevicesApi } from '../../studio/webDevices'
 import { GhostButton, InlineNotice, Input, OutlineButton, useConfirmDialog } from '../ui'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Remote, in a web tab: the browsers paired with this server
 // (phase 9 spec, 6.2, 14.9). Every paired browser is listed with where it
@@ -58,11 +59,11 @@ export function BrowsersSettings() {
 
   const revoke = async (id: string, name: string, current: boolean) => {
     const confirmed = await dialog.confirm({
-      title: current ? 'Remove this browser?' : `Remove ${name}?`,
+      title: current ? copy.settings.browsersSettings.removeThisBrowser : copy.settings.browsersSettings.remove(name),
       body: current
-        ? 'Disconnects this browser now. Pair it again to reconnect.'
-        : 'Disconnects it now. Pair it again to reconnect.',
-      confirmLabel: 'Remove',
+        ? copy.settings.browsersSettings.disconnectsThisBrowserNowPair
+        : copy.settings.browsersSettings.disconnectsItNowPairIt,
+      confirmLabel: copy.settings.browsersSettings.remove2,
       tone: 'danger',
     })
     if (confirmed) await act(() => webDevicesApi.webDevicesRevoke(id))
@@ -71,7 +72,7 @@ export function BrowsersSettings() {
   return (
     <section aria-labelledby="browsers-settings-title" className="space-y-3">
       <SettingsSectionTitle id="browsers-settings-title" count={status.devices.length}>
-        Browsers
+        {copy.settings.browsersSettings.browsers}
       </SettingsSectionTitle>
       {error ? <InlineNotice tone="error" title={error} /> : null}
 
@@ -80,7 +81,7 @@ export function BrowsersSettings() {
           {status.requests.map((request) => (
             <SettingsRow
               key={request.requestId}
-              label={`${request.name} asks to pair`}
+              label={copy.settings.browsersSettings.asksToPair(request.name)}
               help={[
                 request.route === 'tailnet' ? 'Over the tailnet' : 'On this machine',
                 'type the six digits it shows',
@@ -94,7 +95,7 @@ export function BrowsersSettings() {
                 }}
               >
                 <Input
-                  aria-label={`The code ${request.name} shows`}
+                  aria-label={copy.settings.browsersSettings.theCodeShows(request.name)}
                   inputMode="numeric"
                   autoComplete="off"
                   size="sm"
@@ -109,10 +110,10 @@ export function BrowsersSettings() {
                   }
                 />
                 <OutlineButton type="submit" disabled={(codes[request.requestId] ?? '').length !== 6}>
-                  Let in
+                  {copy.settings.browsersSettings.letIn}
                 </OutlineButton>
                 <GhostButton onClick={() => void act(() => webDevicesApi.webDevicesDecline(request.requestId))}>
-                  Decline
+                  {copy.settings.browsersSettings.decline}
                 </GhostButton>
               </form>
             </SettingsRow>
@@ -124,7 +125,7 @@ export function BrowsersSettings() {
         {status.devices.map((device) => (
           <SettingsRow
             key={device.id}
-            label={device.current ? `${device.name} (this browser)` : device.name}
+            label={device.current ? copy.settings.browsersSettings.thisBrowser(device.name) : device.name}
             help={[
               device.route === 'tailnet' ? 'Over the tailnet' : 'On this machine',
               device.lastSeenAt ? `last seen ${relativeFromNow(Date.parse(device.lastSeenAt), now)}` : null,
@@ -134,7 +135,7 @@ export function BrowsersSettings() {
               .join(' · ')}
           >
             <GhostButton tone="danger" onClick={() => void revoke(device.id, device.name, device.current)}>
-              Remove
+              {copy.settings.browsersSettings.remove2}
             </GhostButton>
           </SettingsRow>
         ))}
@@ -142,7 +143,7 @@ export function BrowsersSettings() {
 
       <SettingCard>
         <SettingsRow
-          label="Pair another browser"
+          label={copy.settings.browsersSettings.pairAnotherBrowser}
           help={`Open ${status.origins[0] ?? 'this server'} in it and ask to pair; it shows six digits to type here. Or run studio-server pair on this machine.`}
         >
           {null}

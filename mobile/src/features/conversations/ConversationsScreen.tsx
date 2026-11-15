@@ -56,6 +56,7 @@ import {
 } from "./conversationListLogic";
 import type { ConversationTarget } from "./conversationLogic";
 import { isChatSnoozed, resolveSnoozePresets, snoozeOffered, snoozeWakeLabel, splitSnoozed } from "./snoozeLogic";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 type Section = {
   key: string;
@@ -212,7 +213,7 @@ export function ConversationsScreen({
     const { awake, asleep } = splitSnoozed(matching, now);
     const open = shelfOpen || deferredQuery.trim().length > 0;
     const shelf: Section[] = asleep.length
-      ? [{ key: "snoozed", title: "Snoozed", data: open ? asleep : [], shelf: { count: asleep.length, open } }]
+      ? [{ key: "snoozed", title: appCopy.phone.conversations.conversationsScreen.snoozed, data: open ? asleep : [], shelf: { count: asleep.length, open } }]
       : [];
     if (view === "project") {
       return [
@@ -239,7 +240,7 @@ export function ConversationsScreen({
     const { recent, earlier } = chatSections(awake, now);
     return [
       ...(recent.length ? [{ key: "recent", title: null, data: recent }] : []),
-      ...(earlier.length ? [{ key: "earlier", title: "Earlier", data: earlier }] : []),
+      ...(earlier.length ? [{ key: "earlier", title: appCopy.phone.conversations.conversationsScreen.earlier, data: earlier }] : []),
       ...shelf,
     ];
   }, [now, deferredQuery, rows, shelfOpen, view]);
@@ -299,12 +300,12 @@ export function ConversationsScreen({
     <ScreenFrame
       overlay={
         <ExpandingSearch
-          accessibilityLabel="Search chats by title, project or machine"
+          accessibilityLabel={appCopy.phone.conversations.conversationsScreen.searchChatsByTitleProject}
           onChangeText={setQuery}
           onClose={search.close}
           open={search.open}
           origin={search.origin}
-          placeholder="Search chats"
+          placeholder={appCopy.phone.conversations.conversationsScreen.searchChats}
           progress={search.progress}
           ref={search.inputRef}
           value={query}
@@ -320,25 +321,25 @@ export function ConversationsScreen({
           <CircleButton
             active={search.open}
             icon={<SearchIcon size={iconSize.md} tone="textPrimary" />}
-            label="Search chats"
+            label={appCopy.phone.conversations.conversationsScreen.searchChats}
             onPress={search.show}
           />
           {onOpenScheduled ? (
             <CircleButton
               icon={<ScheduleIcon size={iconSize.md} tone="textPrimary" />}
-              label="Scheduled agents"
+              label={appCopy.phone.conversations.conversationsScreen.scheduledAgents}
               onPress={onOpenScheduled}
             />
           ) : null}
           <CircleButton
             badge={noticeCount > 0}
             icon={<BellIcon size={iconSize.md} tone="textPrimary" />}
-            label={noticeCount > 0 ? `Notices, ${noticeCount} open` : "Notices"}
+            label={noticeCount > 0 ? appCopy.phone.conversations.conversationsScreen.noticesOpen(noticeCount) : appCopy.phone.conversations.conversationsScreen.notices}
             onPress={onOpenNotices}
           />
           {/* Only while a newer build is waiting (Android). */}
           <AppUpdateButton />
-          <CircleButton icon={<GearIcon size={iconSize.md} tone="textPrimary" />} label="Settings" onPress={onOpenSettings} />
+          <CircleButton icon={<GearIcon size={iconSize.md} tone="textPrimary" />} label={appCopy.phone.conversations.conversationsScreen.settings} onPress={onOpenSettings} />
         </Animated.View>
       }
       monogram
@@ -368,8 +369,7 @@ export function ConversationsScreen({
         ListHeaderComponent={
           failures.length ? (
             <Text accessibilityRole="alert" style={styles.failure}>
-              {failures.length === 1 ? `${failures[0]} is` : `${failures.join(", ")} are`} unavailable. Check the tailnet, then refresh.
-            </Text>
+              {failures.length === 1 ? `${failures[0]} is` : `${failures.join(", ")} are`}{appCopy.phone.conversations.conversationsScreen.unavailableCheckTheTailnetThen}</Text>
           ) : null
         }
         refreshControl={refreshControl}
@@ -435,7 +435,7 @@ export function ConversationsScreen({
         <View pointerEvents="box-none" style={styles.fab}>
           <CircleButton
             icon={<PlusIcon size={iconSize.lg} tone="buttonInk" />}
-            label="New"
+            label={appCopy.phone.conversations.conversationsScreen.new}
             onPress={onNew}
             size={60}
             variant="inverse"
@@ -444,29 +444,29 @@ export function ConversationsScreen({
       ) : null}
       <BottomSheet
         onClose={() => setMenuRow(null)}
-        title={menuRow ? chatRowTitle(menuRow).title : "Chat"}
+        title={menuRow ? chatRowTitle(menuRow).title : appCopy.phone.conversations.conversationsScreen.chat}
         visible={menuRow !== null}
       >
         {menuRow && offersMarkUnread(menuRow) ? (
           <SheetOption
-            label="Mark unread"
+            label={appCopy.phone.conversations.conversationsScreen.markUnread}
             onPress={() => markUnread(menuRow)}
             sub={`Shows its latest reply as new again, here and on ${menuRow.desktopName}.`}
           />
         ) : null}
         {menuRow && !isChatSnoozed(menuRow.thread, now) && snoozeOffered(menuRow) ? (
           <SheetOption
-            label="Snooze"
+            label={appCopy.phone.conversations.conversationsScreen.snooze}
             onPress={() => askSnooze(menuRow)}
             sub="Puts it on the Snoozed shelf until a time you choose."
           />
         ) : null}
         {menuRow?.snoozable && isChatSnoozed(menuRow.thread, now) ? (
-          <SheetOption label="Wake now" onPress={() => wake(menuRow)} sub="Brings it back to the list." />
+          <SheetOption label={appCopy.phone.conversations.conversationsScreen.wakeNow} onPress={() => wake(menuRow)} sub="Brings it back to the list." />
         ) : null}
         {menuRow?.settleable ? (
           <SheetOption
-            label="Settle"
+            label={appCopy.phone.conversations.conversationsScreen.settle}
             onPress={() => settle(menuRow)}
             sub={`Moves it to Settled on ${menuRow.desktopName}, and off this list.`}
           />
@@ -474,7 +474,7 @@ export function ConversationsScreen({
       </BottomSheet>
       <BottomSheet
         onClose={() => setSnoozeRow(null)}
-        title={snoozeRow ? `Snooze “${chatRowTitle(snoozeRow).title}”` : "Snooze"}
+        title={snoozeRow ? appCopy.phone.conversations.conversationsScreen.snooze2(chatRowTitle(snoozeRow).title) : appCopy.phone.conversations.conversationsScreen.snooze}
         visible={snoozeRow !== null}
       >
         {snoozeRow
@@ -659,11 +659,11 @@ const ChatRow = memo(function ChatRow({
   // The row speaks as one element, so what is inside it, or behind its long
   // press, is offered as its actions.
   const actions = [
-    ...(pr ? [{ name: "openPullRequest", label: `Open pull request ${pr.text}` }] : []),
-    ...(onMarkUnread ? [{ name: "markUnread", label: "Mark unread" }] : []),
-    ...(onSnooze ? [{ name: "snooze", label: "Snooze" }] : []),
-    ...(onWake ? [{ name: "wake", label: "Wake now" }] : []),
-    ...(onSettle ? [{ name: "settle", label: "Settle" }] : []),
+    ...(pr ? [{ name: "openPullRequest", label: appCopy.phone.conversations.conversationsScreen.openPullRequest(pr.text) }] : []),
+    ...(onMarkUnread ? [{ name: "markUnread", label: appCopy.phone.conversations.conversationsScreen.markUnread }] : []),
+    ...(onSnooze ? [{ name: "snooze", label: appCopy.phone.conversations.conversationsScreen.snooze }] : []),
+    ...(onWake ? [{ name: "wake", label: appCopy.phone.conversations.conversationsScreen.wakeNow }] : []),
+    ...(onSettle ? [{ name: "settle", label: appCopy.phone.conversations.conversationsScreen.settle }] : []),
   ];
   // The same, behind the row's swipe to the left: Snooze or Wake now, then
   // Settle outermost, which a full swipe does.
@@ -672,7 +672,7 @@ const ChatRow = memo(function ChatRow({
       ? [
           {
             key: "snooze",
-            label: "Snooze",
+            label: appCopy.phone.conversations.conversationsScreen.snooze,
             icon: <ScheduleIcon size={iconSize.sm} tone="textPrimary" />,
             tone: "quiet" as const,
             onPress: () => onSnooze(row),
@@ -683,7 +683,7 @@ const ChatRow = memo(function ChatRow({
       ? [
           {
             key: "wake",
-            label: "Wake",
+            label: appCopy.phone.conversations.conversationsScreen.wake,
             icon: <ScheduleIcon size={iconSize.sm} tone="textPrimary" />,
             tone: "quiet" as const,
             onPress: () => onWake(row),
@@ -694,7 +694,7 @@ const ChatRow = memo(function ChatRow({
       ? [
           {
             key: "settle",
-            label: "Settle",
+            label: appCopy.phone.conversations.conversationsScreen.settle,
             icon: <CheckIcon size={iconSize.sm} tone="buttonInk" />,
             tone: "primary" as const,
             onPress: () => onSettle(row),
@@ -836,14 +836,14 @@ function ShelfHeader({ count, open, onToggle }: { count: number; open: boolean; 
   const styles = useThemedStyles(createStyles);
   return (
     <Pressable
-      accessibilityLabel={`Snoozed, ${count} ${count === 1 ? "chat" : "chats"}`}
+      accessibilityLabel={appCopy.phone.conversations.conversationsScreen.snoozed2(count, count === 1 ? "chat" : "chats")}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
       onPress={onToggle}
       style={({ pressed }) => [styles.shelfHeader, pressed ? styles.pressed : null]}
     >
       <ChevronIcon direction={open ? "down" : "right"} size={iconSize.xs} tone="textSubtle" />
-      <Text style={styles.shelfHeaderText}>Snoozed</Text>
+      <Text style={styles.shelfHeaderText}>{appCopy.phone.conversations.conversationsScreen.snoozed}</Text>
       <Text style={styles.projectCount}>{count}</Text>
     </Pressable>
   );

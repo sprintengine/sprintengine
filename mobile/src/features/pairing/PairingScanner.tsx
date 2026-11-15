@@ -6,6 +6,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, type Theme, typography, fontWeight } from "../../theme/tokens";
 import { isPairingDeepLink } from "./pairingPayload";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * The camera half of pairing: point the phone at the square Studio is showing.
@@ -53,18 +54,16 @@ export function PairingScanner({
     return (
       <View style={styles.root}>
         <View style={styles.notice}>
-          <Text style={styles.noticeTitle}>Camera access</Text>
-          <Text style={styles.noticeBody}>
-            Scans the square in Studio&rsquo;s Remote settings. No image leaves this phone.
-          </Text>
+          <Text style={styles.noticeTitle}>{copy.phone.pairing.pairingScanner.cameraAccess}</Text>
+          <Text style={styles.noticeBody}>{copy.phone.pairing.pairingScanner.scansTheSquareInStudio}</Text>
         </View>
         <View style={styles.actions}>
           {permission.canAskAgain ? (
-            <PrimaryButton label="Allow camera" onPress={() => void requestPermission()} />
+            <PrimaryButton label={copy.phone.pairing.pairingScanner.allowCamera} onPress={() => void requestPermission()} />
           ) : (
-            <PrimaryButton label="Open Settings" onPress={() => void Linking.openSettings()} />
+            <PrimaryButton label={copy.phone.pairing.pairingScanner.openSettings} onPress={() => void Linking.openSettings()} />
           )}
-          <PrimaryButton label="Enter the link instead" variant="ghost" onPress={onCancel} />
+          <PrimaryButton label={copy.phone.pairing.pairingScanner.enterTheLinkInstead} variant="ghost" onPress={onCancel} />
         </View>
       </View>
     );
@@ -92,10 +91,10 @@ export function PairingScanner({
       />
       <View pointerEvents="none" style={styles.reticle} />
       <View style={styles.hint}>
-        <Text style={styles.hintText}>Point at the square in Studio → Settings → Remote</Text>
+        <Text style={styles.hintText}>{copy.phone.pairing.pairingScanner.pointAtTheSquareIn}</Text>
       </View>
       <View style={styles.actions}>
-        <PrimaryButton label="Enter the link instead" variant="ghost" onPress={onCancel} />
+        <PrimaryButton label={copy.phone.pairing.pairingScanner.enterTheLinkInstead} variant="ghost" onPress={onCancel} />
       </View>
     </View>
   );

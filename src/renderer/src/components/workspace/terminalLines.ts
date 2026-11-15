@@ -16,6 +16,7 @@ import {
   readableConversationPhase,
   type ConversationWireChanges,
 } from '../../../../../packages/conversation-protocol/src/public'
+import { copy } from '../../../../shared/copy'
 
 // The sidebar row's terminal lines (sidebar-lists-every-terminal): one line
 // per live terminal under the row's title — its CLI mark (whose tooltip
@@ -387,7 +388,7 @@ function recencyOf(session: TerminalSessionSnapshot) {
     needsInput: recency.needsInput,
     failed: session.activity.kind === 'failed',
     idleSince: recency.idleSince,
-    idleLabel: 'Idle',
+    idleLabel: copy.workspace.terminalLines.idle,
   }
 }
 
@@ -485,7 +486,7 @@ function lineOfMeshPane(
     needsInput: false,
     failed: false,
     idleSince: null,
-    idleLabel: 'Idle',
+    idleLabel: copy.workspace.terminalLines.idle,
   }
 }
 
@@ -549,7 +550,7 @@ export function lineOfRemoteRow(row: RemoteSessionRow): TerminalLine {
     // Idle since the agent last finished, the clock a local chat's line
     // reads; a chat whose machine does not say counts from when it last moved.
     idleSince: row.activity === 'working' ? null : (row.lastTurnEndedAt ?? row.since),
-    idleLabel: 'Idle',
+    idleLabel: copy.workspace.terminalLines.idle,
   }
 }
 

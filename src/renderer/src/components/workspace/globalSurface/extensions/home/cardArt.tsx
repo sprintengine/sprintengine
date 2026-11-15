@@ -31,6 +31,7 @@
 import React, { type JSX } from 'react'
 
 import { CARD_ART_NAMES, type CardArtName } from './cardArtNames'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 export { CARD_ART_NAMES, type CardArtName }
 
@@ -334,7 +335,7 @@ export const CARD_ART: Record<CardArtName, () => JSX.Element> = {
   split: () => (
     <>
       <PlateWash tone="accent" />
-      <Shot label="SprintEngine Studio">
+      <Shot label={appCopy.workspace.globalSurface.extensions.home.cardArt.sprintEngineStudio}>
         <div className="flex min-w-0 flex-1 flex-col justify-center p-2">
           <ShotGlyph name="split" />
         </div>
@@ -344,7 +345,7 @@ export const CARD_ART: Record<CardArtName, () => JSX.Element> = {
   tokens: () => (
     <>
       <PlateWash tone="accent" />
-      <Shot label="design-system / foundations / tokens.css">
+      <Shot label={appCopy.workspace.globalSurface.extensions.home.cardArt.designSystemFoundationsTokensCss}>
         <div className="flex min-w-0 flex-1 flex-col justify-center p-2">
           <ShotGlyph name="tokens" />
         </div>
@@ -354,7 +355,7 @@ export const CARD_ART: Record<CardArtName, () => JSX.Element> = {
   graph: () => (
     <>
       <PlateWash tone="accent" />
-      <Shot label="SprintEngine Studio">
+      <Shot label={appCopy.workspace.globalSurface.extensions.home.cardArt.sprintEngineStudio}>
         <ShotRail />
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 p-2">
           <Line width="50%" tone="ink" />

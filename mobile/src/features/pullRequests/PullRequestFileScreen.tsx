@@ -12,6 +12,7 @@ import { UnifiedDiff } from "../conversations/ConversationFileDiffScreen";
 import { splitPath } from "../diff/unifiedDiff";
 import { diffProgress } from "./pullRequestView";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * One file of a pull request as a unified diff, read a page at a time: the
@@ -73,7 +74,7 @@ export function PullRequestFileScreen({
   const next = pages[pages.length - 1]?.nextOffset ?? null;
   return (
     <ScreenFrame
-      backLabel="Files changed"
+      backLabel={copy.phone.pullRequests.pullRequestFileScreen.filesChanged}
       onBack={onBack}
       subtitle={
         dir ? (
@@ -90,8 +91,8 @@ export function PullRequestFileScreen({
         ) : loading ? (
           <View accessibilityLiveRegion="polite" style={styles.state}>
             <View style={styles.loading}>
-              <WorkingMark label="Loading diff" />
-              <Text style={styles.meta}>Loading diff…</Text>
+              <WorkingMark label={copy.phone.pullRequests.pullRequestFileScreen.loadingDiff} />
+              <Text style={styles.meta}>{copy.phone.pullRequests.pullRequestFileScreen.loadingDiff2}</Text>
             </View>
           </View>
         ) : null}
@@ -100,7 +101,7 @@ export function PullRequestFileScreen({
             <Text accessibilityRole="alert" style={styles.message}>
               {error}
             </Text>
-            <PrimaryButton label="Try again" onPress={() => void readFrom(0)} variant="secondary" />
+            <PrimaryButton label={copy.phone.pullRequests.pullRequestFileScreen.tryAgain} onPress={() => void readFrom(0)} variant="secondary" />
           </View>
         ) : null}
       </View>
@@ -117,7 +118,7 @@ export function PullRequestFileScreen({
           )}
           <PrimaryButton
             disabled={loading || next === null}
-            label={loading ? "Loading…" : error ? "Try again" : "Show more"}
+            label={loading ? copy.phone.pullRequests.pullRequestFileScreen.loading : error ? copy.phone.pullRequests.pullRequestFileScreen.tryAgain : copy.phone.pullRequests.pullRequestFileScreen.showMore}
             onPress={() => next !== null && void readFrom(next)}
             variant="ghost"
           />

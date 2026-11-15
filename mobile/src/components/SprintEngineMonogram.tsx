@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 
 import { useTheme } from "../theme/ThemeProvider";
 import { controlSize, fontWeight, typography } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 // The desktop sets the pair at -0.06em, tighter than the wordmark, because at
 // mark size the letters' optical closeness has to be drawn in. RN takes points.
@@ -31,7 +32,7 @@ export function SprintEngineMonogram() {
       // One accessible name for the two letters, and the screen's heading,
       // as the wordmark it replaced was.
       accessible
-      accessibilityLabel="SprintEngine"
+      accessibilityLabel={copy.phone.components.sprintEngineMonogram.sprintEngine}
       accessibilityRole="header"
       style={{ minHeight: controlSize.sm, justifyContent: "center", alignSelf: "flex-start" }}
     >

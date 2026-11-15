@@ -149,6 +149,7 @@ import { configureTerminals, listTerminals } from '../studio/terminals'
 import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
 import { agentSettingsApi } from '../studio/agentSettings'
 import { workspaceSyncApi, workspaceSyncReachable } from '../studio/workspaceSync'
+import { copy as appCopy } from '../../../shared/copy'
 
 migrateLegacyWorkspaceStorageKey()
 
@@ -1880,8 +1881,8 @@ function initWorkspaceSyncClient(): void {
         .find(Boolean)
       showToast({
         tone: 'error',
-        title: `“${workspace.name}” was not saved`,
-        description: firstMessage ? `${message} First message: “${firstMessage}”` : message,
+        title: appCopy.store.workspaceStore.wasNotSaved(workspace.name),
+        description: firstMessage ? appCopy.store.workspaceStore.firstMessage(message, firstMessage) : message,
         autoDismissMs: false,
       })
     },

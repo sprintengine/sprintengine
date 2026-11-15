@@ -1,5 +1,6 @@
 import { collapseDuplicateKeybindings } from './keybindings'
 import type { CommandDefinition } from './types'
+import { copy as appCopy } from '../../../shared/copy'
 
 function command(definition: CommandDefinition): CommandDefinition {
   return {
@@ -13,7 +14,7 @@ function command(definition: CommandDefinition): CommandDefinition {
 export const COMMAND_REGISTRY = [
   command({
     id: 'app.settings.open',
-    title: 'Open settings',
+    title: appCopy.commands.commandRegistry.openSettings,
     category: 'settings',
     scopes: ['global'],
     defaultKeybindings: ['Primary+,'],
@@ -21,14 +22,14 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'app.updates.check',
-    title: 'Check for updates',
+    title: appCopy.commands.commandRegistry.checkForUpdates,
     category: 'settings',
     scopes: ['global'],
     handlerPath: { kind: 'app-menu', command: 'app.updates.check' },
   }),
   command({
     id: 'commandPalette.open',
-    title: 'Open command palette',
+    title: appCopy.commands.commandRegistry.openCommandPalette,
     category: 'command_palette',
     scopes: ['global'],
     defaultKeybindings: ['Primary+K', 'Primary+Shift+P'],
@@ -47,7 +48,7 @@ export const COMMAND_REGISTRY = [
   // turning off ⌘K with it (double-shift review, 2026-09-10).
   command({
     id: 'search.everywhere',
-    title: 'Search everywhere',
+    title: appCopy.commands.commandRegistry.searchEverywhere,
     category: 'command_palette',
     scopes: ['global'],
     defaultKeybindings: ['Shift Shift'],
@@ -63,7 +64,7 @@ export const COMMAND_REGISTRY = [
   // a terminal is the shell's previous-command key.
   command({
     id: 'search.goToFile',
-    title: 'Go to file',
+    title: appCopy.commands.commandRegistry.goToFile,
     category: 'command_palette',
     scopes: ['global'],
     defaultKeybindings: ['Primary+P'],
@@ -76,7 +77,7 @@ export const COMMAND_REGISTRY = [
   // the behaviour a user pressing a search shortcut expects.
   command({
     id: 'search.files.open',
-    title: 'Search in files',
+    title: appCopy.commands.commandRegistry.searchInFiles,
     category: 'command_palette',
     scopes: ['global'],
     defaultKeybindings: ['Primary+Shift+F'],
@@ -88,7 +89,7 @@ export const COMMAND_REGISTRY = [
   // and to null otherwise, so it works with no active workspace.
   command({
     id: 'chat.new',
-    title: 'New chat',
+    title: appCopy.commands.commandRegistry.newChat,
     category: 'workspace',
     scopes: ['global'],
     defaultKeybindings: ['Primary+N'],
@@ -101,7 +102,7 @@ export const COMMAND_REGISTRY = [
   // its modules.
   command({
     id: 'chat.newWithoutProject',
-    title: 'New chat without a project',
+    title: appCopy.commands.commandRegistry.newChatWithoutAProject,
     category: 'workspace',
     scopes: ['global'],
     defaultKeybindings: ['Primary+Alt+N'],
@@ -118,7 +119,7 @@ export const COMMAND_REGISTRY = [
   // conflicts like any other command.
   command({
     id: 'chat.new.launchInBackground',
-    title: 'Start chat and stay on New chat',
+    title: appCopy.commands.commandRegistry.startChatAndStayOn,
     category: 'workspace',
     scopes: ['new-chat'],
     defaultKeybindings: ['Primary+Enter'],
@@ -138,7 +139,7 @@ export const COMMAND_REGISTRY = [
   // conflicts.
   command({
     id: 'chat.sendAndNew',
-    title: 'Send and start a new chat',
+    title: appCopy.commands.commandRegistry.sendAndStartANew,
     category: 'workspace',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Alt+Enter'],
@@ -158,7 +159,7 @@ export const COMMAND_REGISTRY = [
   // tab, rebindable and checked for conflicts, for both composers.
   command({
     id: 'chat.stash',
-    title: 'Stash prompt, or open stashed prompts',
+    title: appCopy.commands.commandRegistry.stashPromptOrOpenStashed,
     category: 'workspace',
     scopes: ['workspace', 'new-chat'],
     defaultKeybindings: ['Primary+S'],
@@ -176,7 +177,7 @@ export const COMMAND_REGISTRY = [
   // composer, so it works there too.
   command({
     id: 'chat.nextWaiting',
-    title: 'Go to next chat that needs you',
+    title: appCopy.commands.commandRegistry.goToNextChatThat,
     category: 'workspace',
     scopes: ['global'],
     defaultKeybindings: ['Primary+Shift+J'],
@@ -195,7 +196,7 @@ export const COMMAND_REGISTRY = [
   // its row refuses it.
   command({
     id: 'chat.settle',
-    title: 'Settle chat, or bring it back',
+    title: appCopy.commands.commandRegistry.settleChatOrBringIt,
     category: 'workspace',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+S'],
@@ -212,7 +213,7 @@ export const COMMAND_REGISTRY = [
   // key for it. No chord by default; one can be set in Keyboard shortcuts.
   command({
     id: 'chat.regenerateTitle',
-    title: 'Regenerate chat title',
+    title: appCopy.commands.commandRegistry.regenerateChatTitle,
     category: 'workspace',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -226,14 +227,14 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.newConversation',
-    title: 'New conversation',
+    title: appCopy.commands.commandRegistry.newConversation,
     category: 'workspace',
     scopes: ['global'],
     handlerPath: { kind: 'workspace-manager', handler: 'openNewChatPanel(undefined, null, { kind: "conversation" })' },
   }),
   command({
     id: 'chat.newTerminalAgent',
-    title: 'New terminal agent',
+    title: appCopy.commands.commandRegistry.newTerminalAgent,
     category: 'workspace',
     scopes: ['global'],
     handlerPath: { kind: 'workspace-manager', handler: 'openNewChatPanel(undefined, null, { kind: "general" })' },
@@ -246,7 +247,7 @@ export const COMMAND_REGISTRY = [
   // palette row) and the view's own binding resolution dispatch.
   command({
     id: 'chat.modelPicker.toggle',
-    title: 'Toggle model picker',
+    title: appCopy.commands.commandRegistry.toggleModelPicker,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+M'],
@@ -256,7 +257,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.effort.cycle',
-    title: 'Cycle reasoning effort',
+    title: appCopy.commands.commandRegistry.cycleReasoningEffort,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -268,7 +269,7 @@ export const COMMAND_REGISTRY = [
   // terminal agent running the CLI's own resume.
   command({
     id: 'chat.resumeInTerminal',
-    title: 'Continue chat in terminal',
+    title: appCopy.commands.commandRegistry.continueChatInTerminal,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -282,7 +283,7 @@ export const COMMAND_REGISTRY = [
   // for rarely, from the palette.
   command({
     id: 'chat.restartSession',
-    title: 'Restart agent session',
+    title: appCopy.commands.commandRegistry.restartAgentSession,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -296,7 +297,7 @@ export const COMMAND_REGISTRY = [
   // (the composer), ⌘⇧↑/↓ stays the text field's select-to-start/end.
   command({
     id: 'chat.turn.previous',
-    title: 'Jump to previous turn',
+    title: appCopy.commands.commandRegistry.jumpToPreviousTurn,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+ArrowUp'],
@@ -305,7 +306,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.turn.next',
-    title: 'Jump to next turn',
+    title: appCopy.commands.commandRegistry.jumpToNextTurn,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+ArrowDown'],
@@ -318,7 +319,7 @@ export const COMMAND_REGISTRY = [
   // the bare keys (Space, the arrows, Esc) while it has focus.
   command({
     id: 'chat.replay.start',
-    title: 'Replay conversation',
+    title: appCopy.commands.commandRegistry.replayConversation,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -330,7 +331,7 @@ export const COMMAND_REGISTRY = [
   // none: they are reached for rarely, from here or the chat tab's menu.
   command({
     id: 'chat.export.copy',
-    title: 'Copy chat',
+    title: appCopy.commands.commandRegistry.copyChat,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -339,7 +340,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.export.copyMarkdown',
-    title: 'Copy chat as Markdown',
+    title: appCopy.commands.commandRegistry.copyChatAsMarkdown,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -348,7 +349,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.export.pdf',
-    title: 'Export chat as PDF…',
+    title: appCopy.commands.commandRegistry.exportChatAsPDF,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -357,7 +358,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.export.docx',
-    title: 'Export chat as Word document…',
+    title: appCopy.commands.commandRegistry.exportChatAsWordDocument,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -366,7 +367,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'chat.export.markdown',
-    title: 'Export chat as Markdown…',
+    title: appCopy.commands.commandRegistry.exportChatAsMarkdown,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: [],
@@ -382,7 +383,7 @@ export const COMMAND_REGISTRY = [
   // the person is when they think to look something up.
   command({
     id: 'chat.find',
-    title: 'Find in chat',
+    title: appCopy.commands.commandRegistry.findInChat,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+F'],
@@ -398,7 +399,7 @@ export const COMMAND_REGISTRY = [
   // focus is there with it.
   command({
     id: 'chat.quoteSelection',
-    title: 'Quote selection in reply',
+    title: appCopy.commands.commandRegistry.quoteSelectionInReply,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+.'],
@@ -411,7 +412,7 @@ export const COMMAND_REGISTRY = [
   // where the person is when the question comes to them.
   command({
     id: 'chat.sideQuestion',
-    title: 'Ask a side question',
+    title: appCopy.commands.commandRegistry.askASideQuestion,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+B'],
@@ -421,7 +422,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'workspace.switch.next',
-    title: 'Switch workspace forward',
+    title: appCopy.commands.commandRegistry.switchWorkspaceForward,
     category: 'workspace',
     scopes: ['workspace-navigation'],
     defaultKeybindings: ['Primary+`', 'Meta+Alt+ArrowRight'],
@@ -435,7 +436,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'workspace.switch.previous',
-    title: 'Switch workspace back',
+    title: appCopy.commands.commandRegistry.switchWorkspaceBack,
     category: 'workspace',
     scopes: ['workspace-navigation'],
     defaultKeybindings: ['Primary+Shift+`', 'Meta+Alt+ArrowLeft'],
@@ -449,7 +450,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'workspace.history.back',
-    title: 'Go back (recent workspace)',
+    title: appCopy.commands.commandRegistry.goBackRecentWorkspace,
     category: 'workspace',
     scopes: ['workspace-navigation'],
     availability: ['activeWorkspace'],
@@ -462,7 +463,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'workspace.history.forward',
-    title: 'Go forward (recent workspace)',
+    title: appCopy.commands.commandRegistry.goForwardRecentWorkspace,
     category: 'workspace',
     scopes: ['workspace-navigation'],
     availability: ['activeWorkspace'],
@@ -477,7 +478,7 @@ export const COMMAND_REGISTRY = [
     const workspaceNumber = index + 1
     return command({
       id: `workspace.switch.${workspaceNumber}`,
-      title: `Switch to workspace ${workspaceNumber}`,
+      title: appCopy.commands.commandRegistry.switchToWorkspace(workspaceNumber),
       category: 'workspace',
       scopes: ['workspace-navigation'],
       defaultKeybindings: [`Primary+${workspaceNumber}`],
@@ -491,7 +492,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'workspace.sidebar.toggle',
-    title: 'Toggle sidebar',
+    title: appCopy.commands.commandRegistry.toggleSidebar,
     category: 'workspace',
     scopes: ['global'],
     defaultKeybindings: ['Primary+B'],
@@ -499,7 +500,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'layout.tab.next',
-    title: 'Next tab',
+    title: appCopy.commands.commandRegistry.nextTab,
     category: 'workspace',
     scopes: ['global'],
     // Tab cycling uses the physical Control key on every platform. On macOS,
@@ -516,7 +517,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'layout.tab.previous',
-    title: 'Previous tab',
+    title: appCopy.commands.commandRegistry.previousTab,
     category: 'workspace',
     scopes: ['global'],
     defaultKeybindings: ['Ctrl+Shift+Tab', 'Meta+Shift+['],
@@ -529,7 +530,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'layout.tab.close',
-    title: 'Close layout tab',
+    title: appCopy.commands.commandRegistry.closeLayoutTab,
     category: 'workspace',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+W'],
@@ -546,7 +547,7 @@ export const COMMAND_REGISTRY = [
   // file again; never an agent, whose close ended a conversation.
   command({
     id: 'layout.tab.reopen',
-    title: 'Reopen closed tab',
+    title: appCopy.commands.commandRegistry.reopenClosedTab,
     category: 'workspace',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+T'],
@@ -569,7 +570,7 @@ export const COMMAND_REGISTRY = [
   // panel commands, which gate on `gitPanelActive` for the same reason.
   command({
     id: 'workspace.folder.reveal',
-    title: 'Reveal workspace folder',
+    title: appCopy.commands.commandRegistry.revealWorkspaceFolder,
     category: 'workspace',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+O'],
@@ -583,7 +584,7 @@ export const COMMAND_REGISTRY = [
   // their pane tab.
   command({
     id: 'pane.toggle',
-    title: 'Toggle panel',
+    title: appCopy.commands.commandRegistry.togglePanel,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Alt+B'],
@@ -597,7 +598,7 @@ export const COMMAND_REGISTRY = [
   // macOS, where Ctrl+T is the transpose (`shellTakesChordFrom`).
   command({
     id: 'pane.add',
-    title: 'Open in the pane…',
+    title: appCopy.commands.commandRegistry.openInThePane,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+T'],
@@ -611,7 +612,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'panel.files.toggle',
-    title: 'Toggle file explorer',
+    title: appCopy.commands.commandRegistry.toggleFileExplorer,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+E'],
@@ -620,7 +621,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'panel.editor.toggle',
-    title: 'Toggle code editor',
+    title: appCopy.commands.commandRegistry.toggleCodeEditor,
     category: 'panel',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+O'],
@@ -629,7 +630,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'panel.git.toggle',
-    title: 'Toggle Git panel',
+    title: appCopy.commands.commandRegistry.toggleGitPanel,
     category: 'git',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Shift+G'],
@@ -642,7 +643,7 @@ export const COMMAND_REGISTRY = [
   // a chord, and a new command does not get to take one.
   command({
     id: 'panel.backlog.toggle',
-    title: 'Toggle backlog',
+    title: appCopy.commands.commandRegistry.toggleBacklog,
     category: 'panel',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'backlogEnabled'],
@@ -652,7 +653,7 @@ export const COMMAND_REGISTRY = [
   // its menu, and leaves it open if it is. Unbound, like Canvas.
   command({
     id: 'panel.subagents.show',
-    title: 'Show subagents',
+    title: appCopy.commands.commandRegistry.showSubagents,
     category: 'panel',
     scopes: ['workspace'],
     availability: ['activeWorkspace'],
@@ -667,7 +668,7 @@ export const COMMAND_REGISTRY = [
   // where a person who draws every day binds it.
   command({
     id: 'panel.canvas.toggle',
-    title: 'Toggle canvas',
+    title: appCopy.commands.commandRegistry.toggleCanvas,
     category: 'panel',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'canvasEnabled'],
@@ -679,7 +680,7 @@ export const COMMAND_REGISTRY = [
   // It ships unbound; users can bind it in Shortcuts settings.
   command({
     id: 'panel.knowledge-graph.toggle',
-    title: 'Toggle knowledge graph',
+    title: appCopy.commands.commandRegistry.toggleKnowledgeGraph,
     category: 'panel',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'memoryGraphEnabled'],
@@ -687,7 +688,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'git.worktrees.open',
-    title: 'Git: Manage worktrees',
+    title: appCopy.commands.commandRegistry.gitManageWorktrees,
     category: 'git',
     scopes: ['workspace'],
     availability: ['activeWorkspace'],
@@ -701,7 +702,7 @@ export const COMMAND_REGISTRY = [
   // per the plan's no-risky-default rule).
   command({
     id: 'git.refresh',
-    title: 'Git: Refresh status',
+    title: appCopy.commands.commandRegistry.gitRefreshStatus,
     category: 'git',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'gitPanelActive'],
@@ -709,7 +710,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'git.fetch',
-    title: 'Git: Fetch remotes',
+    title: appCopy.commands.commandRegistry.gitFetchRemotes,
     category: 'git',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'gitPanelActive'],
@@ -717,7 +718,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'git.commit',
-    title: 'Git: Commit staged changes',
+    title: appCopy.commands.commandRegistry.gitCommitStagedChanges,
     category: 'git',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'gitPanelActive'],
@@ -736,7 +737,7 @@ export const COMMAND_REGISTRY = [
   // carries no hint for it either, per the kit's menu rule.
   command({
     id: 'git.changes.showDiff',
-    title: 'Git: Show diff for the selected file',
+    title: appCopy.commands.commandRegistry.gitShowDiffForThe,
     category: 'git',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+D'],
@@ -745,7 +746,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'git.changes.discard',
-    title: 'Git: Discard changes in the selected files',
+    title: appCopy.commands.commandRegistry.gitDiscardChangesInThe,
     category: 'git',
     scopes: ['workspace'],
     defaultKeybindings: ['Primary+Alt+Z'],
@@ -754,7 +755,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'git.changes.moveToChangelist',
-    title: 'Git: Move the selected files to another changelist',
+    title: appCopy.commands.commandRegistry.gitMoveTheSelectedFiles,
     category: 'git',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'gitPanelActive'],
@@ -766,7 +767,7 @@ export const COMMAND_REGISTRY = [
   // the account menu's Remote row (AccountSurfaces → RemotePopover).
   command({
     id: 'terminal.new',
-    title: 'Open plain terminal',
+    title: appCopy.commands.commandRegistry.openPlainTerminal,
     category: 'terminal',
     scopes: ['workspace'],
     defaultKeybindings: ["Primary+Shift+'"],
@@ -778,7 +779,7 @@ export const COMMAND_REGISTRY = [
   // and stop kills a session (destructive) so it ships without a default key.
   command({
     id: 'terminal.focus',
-    title: 'Focus terminal',
+    title: appCopy.commands.commandRegistry.focusTerminal,
     category: 'terminal',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'terminalActive'],
@@ -797,7 +798,7 @@ export const COMMAND_REGISTRY = [
   // `isGlobalShortcutSuppressedTarget` treats as editable.
   command({
     id: 'terminal.find',
-    title: 'Find in terminal',
+    title: appCopy.commands.commandRegistry.findInTerminal,
     category: 'terminal',
     scopes: ['terminal'],
     defaultKeybindings: ['Primary+F'],
@@ -817,7 +818,7 @@ export const COMMAND_REGISTRY = [
   // textarea, which `isGlobalShortcutSuppressedTarget` treats as editable.
   command({
     id: 'terminal.promptPrevious',
-    title: 'Jump to previous prompt',
+    title: appCopy.commands.commandRegistry.jumpToPreviousPrompt,
     category: 'terminal',
     scopes: ['terminal'],
     defaultKeybindings: ['Primary+Shift+ArrowUp'],
@@ -827,7 +828,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'terminal.promptNext',
-    title: 'Jump to next prompt',
+    title: appCopy.commands.commandRegistry.jumpToNextPrompt,
     category: 'terminal',
     scopes: ['terminal'],
     defaultKeybindings: ['Primary+Shift+ArrowDown'],
@@ -837,7 +838,7 @@ export const COMMAND_REGISTRY = [
   }),
   command({
     id: 'terminal.stop',
-    title: 'Stop active terminal',
+    title: appCopy.commands.commandRegistry.stopActiveTerminal,
     category: 'terminal',
     scopes: ['workspace'],
     availability: ['activeWorkspace', 'terminalActive'],
@@ -847,7 +848,7 @@ export const COMMAND_REGISTRY = [
   // same modal the chart glyph at the foot of the app rail opens. Unbound.
   command({
     id: 'usage.show',
-    title: 'Show usage',
+    title: appCopy.commands.commandRegistry.showUsage,
     category: 'settings',
     scopes: ['global'],
     handlerPath: { kind: 'workspace-manager', handler: "openModalSurface('usage')" },
@@ -858,7 +859,7 @@ export const COMMAND_REGISTRY = [
   // Codex chat open to open them from. Unbound.
   command({
     id: 'usage.limits.show',
-    title: 'Show usage limits',
+    title: appCopy.commands.commandRegistry.showUsageLimits,
     category: 'settings',
     scopes: ['global'],
     handlerPath: { kind: 'workspace-manager', handler: 'setUsageLimitsOpen(true)' },
@@ -867,7 +868,7 @@ export const COMMAND_REGISTRY = [
   // unbound (users can bind it in Shortcuts settings).
   command({
     id: 'diagnostics.open',
-    title: 'Diagnostics: Performance panel',
+    title: appCopy.commands.commandRegistry.diagnosticsPerformancePanel,
     category: 'diagnostics',
     scopes: ['global'],
     availability: ['diagnosticsEnabled'],

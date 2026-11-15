@@ -27,6 +27,7 @@ import { Modal, ModalBody, ModalFooter, ModalHeader } from '../ui/Modal'
 import { ExtensionTrustReview, trustCodeRequired, trustReviewReady } from './ExtensionTrustReview'
 import { isImeKey } from '../../utils/imeKey'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
+import { copy as appCopy } from '../../../../shared/copy'
 
 type Phase =
   | { kind: 'idle' }
@@ -104,7 +105,7 @@ export function InstallFromGitHubDialog({
     const value = url.trim()
     if (!value) return
     if (!windowHasStudio()) {
-      setPhase({ kind: 'failed', message: 'Update and restart the app to install from GitHub.' })
+      setPhase({ kind: 'failed', message: appCopy.extensions.installFromGitHubDialog.updateAndRestartTheApp })
       return
     }
     setPhase({ kind: 'resolving' })
@@ -167,7 +168,11 @@ export function InstallFromGitHubDialog({
 
   return (
     <Modal open={open} onClose={onClose} labelledBy="install-from-github-title" size="standard">
-      <ModalHeader titleId="install-from-github-title" title="Install extension from GitHub" onClose={onClose} />
+      <ModalHeader
+        titleId="install-from-github-title"
+        title={appCopy.extensions.installFromGitHubDialog.installExtensionFromGitHub}
+        onClose={onClose}
+      />
       <ModalBody className="flex flex-col gap-4">
         <Input
           value={url}
@@ -183,28 +188,28 @@ export function InstallFromGitHubDialog({
             if (event.key === 'Enter' && phase.kind === 'idle') void resolve()
           }}
           placeholder="https://github.com/owner/repo"
-          aria-label="Repository URL"
+          aria-label={appCopy.extensions.installFromGitHubDialog.repositoryURL}
           className="font-mono"
         />
 
         {phase.kind === 'resolving' ? (
           <div className="flex items-center gap-2 text-body text-[color:var(--text-muted)]">
             <Spinner size={14} />
-            Reading the repository at its latest commit…
+            {appCopy.extensions.installFromGitHubDialog.readingTheRepositoryAtIts}
           </div>
         ) : null}
 
         {phase.kind === 'failed' ? (
           <InlineNotice
             tone="error"
-            title="This can’t be installed."
+            title={appCopy.extensions.installFromGitHubDialog.thisCanTBeInstalled}
             hint={phase.message}
             {...(phase.issues?.length ? { detail: phase.issues.join('\n') } : {})}
             {...(phase.skillSource && onAddSkillSource
               ? {
                   action: (
                     <LinkButton onClick={() => onAddSkillSource(url.trim())}>
-                      Add it as a skill source instead
+                      {appCopy.extensions.installFromGitHubDialog.addItAsASkill}
                     </LinkButton>
                   ),
                 }
@@ -245,9 +250,7 @@ export function InstallFromGitHubDialog({
               onTrustCodeChange={setTrustCode}
             />
             {workspaceBlocked ? (
-              <InlineNotice tone="warn">
-                It adds MCP servers or skills to a project. Open that project, then install.
-              </InlineNotice>
+              <InlineNotice tone="warn">{appCopy.extensions.installFromGitHubDialog.itAddsMCPServersOr}</InlineNotice>
             ) : null}
           </>
         ) : null}
@@ -269,12 +272,12 @@ export function InstallFromGitHubDialog({
       <ModalFooter>
         {phase.kind === 'installed' ? (
           <PrimaryButton size="md" onClick={onClose}>
-            Done
+            {appCopy.extensions.installFromGitHubDialog.done}
           </PrimaryButton>
         ) : (
           <>
             <GhostButton size="md" onClick={onClose}>
-              Cancel
+              {appCopy.extensions.installFromGitHubDialog.cancel}
             </GhostButton>
             {phase.kind === 'review' || phase.kind === 'installing' ? (
               <PrimaryButton

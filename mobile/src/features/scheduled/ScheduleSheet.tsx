@@ -31,6 +31,7 @@ import {
   withDayOffset,
   withMinutesOfDay,
 } from "./sendTime";
+import { copy } from "../../../../src/shared/copy";
 
 // New chat's schedule, on a phone: the desktop's picker (`SchedulePicker.tsx`)
 // as a sheet. Once runs a single time; Daily, Weekly and Monthly write the
@@ -40,11 +41,11 @@ import {
 // last schedule that did stays.
 
 const TABS: { value: ScheduleTab | "once"; label: string }[] = [
-  { value: "once", label: "Once" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-  { value: "cron", label: "Cron" },
+  { value: "once", label: copy.phone.scheduled.scheduleSheet.once },
+  { value: "daily", label: copy.phone.scheduled.scheduleSheet.daily },
+  { value: "weekly", label: copy.phone.scheduled.scheduleSheet.weekly },
+  { value: "monthly", label: copy.phone.scheduled.scheduleSheet.monthly },
+  { value: "cron", label: copy.phone.scheduled.scheduleSheet.cron },
 ];
 
 // Monday first, the way a working week is read; the values are cron's.
@@ -84,10 +85,10 @@ export function ScheduleSheet({
 }) {
   const styles = useThemedStyles(createStyles);
   return (
-    <BottomSheet onClose={onClose} title="Schedule" visible={visible}>
+    <BottomSheet onClose={onClose} title={copy.phone.scheduled.scheduleSheet.schedule} visible={visible}>
       {visible ? <ScheduleEditor onChange={onChange} onceOffered={onceOffered} schedule={schedule} timezone={timezone} /> : null}
       <View style={styles.done}>
-        <PrimaryButton label="Done" onPress={onClose} />
+        <PrimaryButton label={copy.phone.scheduled.scheduleSheet.done} onPress={onClose} />
       </View>
     </BottomSheet>
   );
@@ -119,7 +120,7 @@ function ScheduleEditor({
   const tab = schedule.once !== null ? "once" : state.tab;
 
   const tabs = (
-    <View accessibilityLabel="How often" accessibilityRole="tablist" style={styles.tabs}>
+    <View accessibilityLabel={copy.phone.scheduled.scheduleSheet.howOften} accessibilityRole="tablist" style={styles.tabs}>
       {TABS.filter((entry) => onceOffered || entry.value !== "once").map((entry) => {
         const selected = entry.value === tab;
         return (
@@ -172,8 +173,8 @@ function ScheduleEditor({
       {tabs}
 
       {state.tab === "weekly" ? (
-        <Section label="On">
-          <View accessibilityLabel="Days of the week" style={styles.days}>
+        <Section label={copy.phone.scheduled.scheduleSheet.on}>
+          <View accessibilityLabel={copy.phone.scheduled.scheduleSheet.daysOfTheWeek} style={styles.days}>
             {WEEKDAYS.map((day) => {
               const on = state.weekdays.includes(day.value);
               return (
@@ -196,8 +197,8 @@ function ScheduleEditor({
       ) : null}
 
       {state.tab === "monthly" ? (
-        <Section label="On day">
-          <View accessibilityLabel="Days of the month" style={styles.monthDays}>
+        <Section label={copy.phone.scheduled.scheduleSheet.onDay}>
+          <View accessibilityLabel={copy.phone.scheduled.scheduleSheet.daysOfTheMonth} style={styles.monthDays}>
             {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => {
               const on = state.monthDays.includes(day);
               return (
@@ -226,7 +227,7 @@ function ScheduleEditor({
           text={state.cronText}
         />
       ) : (
-        <Section label="At">
+        <Section label={copy.phone.scheduled.scheduleSheet.at}>
           <View style={styles.wrap}>
             {state.times.map((time, index) => (
               <TimeField
@@ -238,21 +239,21 @@ function ScheduleEditor({
                 time={time}
               />
             ))}
-            <OptionChip label="+ Time" onPress={() => update({ ...state, times: [...state.times, nextFreeTime(state.times)] })} />
+            <OptionChip label={copy.phone.scheduled.scheduleSheet.time} onPress={() => update({ ...state, times: [...state.times, nextFreeTime(state.times)] })} />
           </View>
         </Section>
       )}
 
-      <View accessibilityLabel="What this schedule does" accessibilityLiveRegion="polite" style={styles.readout}>
+      <View accessibilityLabel={copy.phone.scheduled.scheduleSheet.whatThisScheduleDoes} accessibilityLiveRegion="polite" style={styles.readout}>
         {read.ok ? (
           <>
             <Text style={styles.readoutWords}>{read.words}</Text>
-            <Text style={styles.readoutNext}>Next {read.next.join(" · ")}</Text>
+            <Text style={styles.readoutNext}>{copy.phone.scheduled.scheduleSheet.next}{read.next.join(" · ")}</Text>
           </>
         ) : (
           <>
             <Text style={styles.readoutError}>{read.message}</Text>
-            <Text style={styles.readoutNext}>The last valid schedule stays until this one is valid.</Text>
+            <Text style={styles.readoutNext}>{copy.phone.scheduled.scheduleSheet.theLastValidScheduleStays}</Text>
           </>
         )}
       </View>
@@ -282,31 +283,31 @@ export function SendTimeEditor({
   const passed = at <= now;
   return (
     <View style={styles.editor}>
-      <View accessibilityLabel="Quick times" style={styles.wrap}>
+      <View accessibilityLabel={copy.phone.scheduled.scheduleSheet.quickTimes} style={styles.wrap}>
         {quickSendTimes(now).map((choice) => (
           <OptionChip key={choice.label} label={choice.label} onPress={() => onChange(choice.at)} selected={choice.at === at} />
         ))}
       </View>
       <View style={styles.row}>
-        <Section label="On">
+        <Section label={copy.phone.scheduled.scheduleSheet.on}>
           <View style={styles.stepper}>
             <StepButton
               direction="left"
               disabled={onOrBeforeToday(at, now)}
-              label="The day before"
+              label={copy.phone.scheduled.scheduleSheet.theDayBefore}
               onPress={() => onChange(withDayOffset(at, -1))}
             />
             <Text style={styles.stepperText}>{sendDayWords(at, now)}</Text>
-            <StepButton direction="right" label="The day after" onPress={() => onChange(withDayOffset(at, 1))} />
+            <StepButton direction="right" label={copy.phone.scheduled.scheduleSheet.theDayAfter} onPress={() => onChange(withDayOffset(at, 1))} />
           </View>
         </Section>
-        <Section label="At">
+        <Section label={copy.phone.scheduled.scheduleSheet.at}>
           <TimeField onChange={(minutes) => onChange(withMinutesOfDay(at, minutes))} time={minutesOfDay(at)} />
         </Section>
       </View>
-      <View accessibilityLabel="When it sends" accessibilityLiveRegion="polite" style={styles.readout}>
+      <View accessibilityLabel={copy.phone.scheduled.scheduleSheet.whenItSends} accessibilityLiveRegion="polite" style={styles.readout}>
         {passed ? (
-          <Text style={styles.readoutError}>That time has passed — pick one ahead.</Text>
+          <Text style={styles.readoutError}>{copy.phone.scheduled.scheduleSheet.thatTimeHasPassedPick}</Text>
         ) : (
           <>
             <Text style={styles.readoutWords}>{sendTimeWords(at, now)}</Text>
@@ -333,10 +334,10 @@ export function SendTimeSheet({
 }) {
   const styles = useThemedStyles(createStyles);
   return (
-    <BottomSheet onClose={onClose} title="Send at" visible={visible}>
+    <BottomSheet onClose={onClose} title={copy.phone.scheduled.scheduleSheet.sendAt} visible={visible}>
       {visible ? <SendTimeEditor at={at} onChange={onChange} /> : null}
       <View style={styles.done}>
-        <PrimaryButton label="Done" onPress={onClose} />
+        <PrimaryButton label={copy.phone.scheduled.scheduleSheet.done} onPress={onClose} />
       </View>
     </BottomSheet>
   );
@@ -352,11 +353,11 @@ export function SendTimeTag({ at, onPress, onRemove }: { at: number; onPress: ()
   const words = sendTimeWords(at, now);
   return (
     <TagShell
-      accessibilityLabel={`Sends ${words}`}
+      accessibilityLabel={copy.phone.scheduled.scheduleSheet.sends(words)}
       error={at <= now}
       onPress={onPress}
       onRemove={onRemove}
-      removeLabel="Don't schedule, send as usual"
+      removeLabel={copy.phone.scheduled.scheduleSheet.donTScheduleSendAs}
       words={words}
     />
   );
@@ -378,11 +379,11 @@ export function ScheduleTag({
   const read = readPickedSchedule(schedule, timezone, now);
   return (
     <TagShell
-      accessibilityLabel={read.ok ? `Schedule: ${read.words}, next ${read.next[0]}` : `Schedule: ${read.message}`}
+      accessibilityLabel={read.ok ? copy.phone.scheduled.scheduleSheet.scheduleNext(read.words, read.next[0]) : copy.phone.scheduled.scheduleSheet.schedule2(read.message)}
       error={!read.ok}
       onPress={onPress}
       onRemove={onRemove}
-      removeLabel="Stop scheduling"
+      removeLabel={copy.phone.scheduled.scheduleSheet.stopScheduling}
       words={read.ok ? read.words : read.message}
     />
   );
@@ -407,7 +408,7 @@ function TagShell({
   return (
     <View style={styles.tag}>
       <Pressable
-        accessibilityHint="Change when it runs."
+        accessibilityHint={copy.phone.scheduled.scheduleSheet.changeWhenItRuns}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         hitSlop={touchSlop(TAG_HEIGHT)}
@@ -528,7 +529,7 @@ function TimeField({ time, onChange, onRemove }: { time: ScheduleTime; onChange:
   return (
     <View style={styles.timeField}>
       <TextInput
-        accessibilityLabel="Time of day"
+        accessibilityLabel={copy.phone.scheduled.scheduleSheet.timeOfDay}
         autoCorrect={false}
         onBlur={commit}
         onChangeText={setText}
@@ -541,7 +542,7 @@ function TimeField({ time, onChange, onRemove }: { time: ScheduleTime; onChange:
       />
       {onRemove ? (
         <Pressable
-          accessibilityLabel={`Remove ${shown.clock} ${shown.meridiem}`}
+          accessibilityLabel={copy.phone.scheduled.scheduleSheet.remove(shown.clock, shown.meridiem)}
           accessibilityRole="button"
           hitSlop={touchSlop(TAG_HEIGHT)}
           onPress={onRemove}
@@ -560,7 +561,7 @@ function CronField({ text, badField, onChange }: { text: string; badField: strin
   return (
     <View style={styles.section}>
       <TextInput
-        accessibilityLabel="Cron schedule"
+        accessibilityLabel={copy.phone.scheduled.scheduleSheet.cronSchedule}
         autoCapitalize="none"
         autoCorrect={false}
         onChangeText={onChange}
@@ -588,8 +589,7 @@ function ZoneLine({ timezone, cron = null }: { timezone: string; cron?: string |
   return (
     <View style={styles.zone}>
       <ScheduleIcon size={iconSize.xs} tone="textSubtle" />
-      <Text numberOfLines={1} style={styles.zoneText}>
-        Your time · {timezone}
+      <Text numberOfLines={1} style={styles.zoneText}>{copy.phone.scheduled.scheduleSheet.yourTime}{timezone}
       </Text>
       {cron ? <Text style={styles.zoneCron}>{cron}</Text> : null}
     </View>

@@ -2,6 +2,7 @@ import React, { type JSX } from 'react'
 
 import { EmptyState, GhostButton } from '../ui'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Ticket trackers (since narrowed, and emptied on 2026-09-08).
 //
@@ -30,11 +31,11 @@ export function TicketTrackerSection(): JSX.Element {
     <section className="space-y-3">
       <EmptyState
         density="list"
-        title="Trackers are plugins."
-        body="Jira, Linear, GitHub and GitLab install from the plugin catalogue."
+        title={copy.settings.ticketTrackerSection.trackersArePlugins}
+        body={copy.settings.ticketTrackerSection.jiraLinearGitHubAndGitLab}
         action={
           <GhostButton size="md" onClick={() => openExtensionsSurface({ view: 'plugins' })} className="h-control-md">
-            Browse plugins
+            {copy.settings.ticketTrackerSection.browsePlugins}
           </GhostButton>
         }
       />

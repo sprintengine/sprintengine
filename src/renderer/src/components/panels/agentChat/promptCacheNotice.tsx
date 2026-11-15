@@ -18,6 +18,7 @@ import { promptCacheNeedsAttention, promptCacheNoticeLine, promptCacheState } fr
 import { ComposerTrayRow } from './composerTray'
 import { CompactGlyph } from './toolRows/ToolKindGlyph'
 import { HandoffGlyph } from './turnMeta'
+import { copy } from '../../../../../shared/copy'
 
 // What a dismissal is about: this reading. The next request writes a new one,
 // and a cache that goes cold after that is news again.
@@ -63,19 +64,19 @@ export function PromptCacheComposerNotice({
         state.kind === 'cold' && onHandoff ? (
           <SplitButton
             quiet
-            label="Handoff"
+            label={copy.panels.agentChat.promptCacheNotice.handoff}
             glyph={<HandoffGlyph className="icon-xs" />}
-            primaryAriaLabel="Hand off to a new session"
+            primaryAriaLabel={copy.panels.agentChat.promptCacheNotice.handOffToANew}
             primaryTooltip={handoffTooltip(state.recacheTokens)}
-            menuAriaLabel="Other ways to make the next message smaller"
+            menuAriaLabel={copy.panels.agentChat.promptCacheNotice.otherWaysToMakeThe}
             menuKind="alternatives"
             onPrimary={onHandoff}
             items={[
               {
                 id: 'compact',
-                label: 'Compact',
+                label: copy.panels.agentChat.promptCacheNotice.compact,
                 icon: compactGlyph,
-                hint: `Re-reads ${tokensAtStake(state.recacheTokens)} uncached`,
+                hint: copy.panels.agentChat.promptCacheNotice.reReadsUncached(tokensAtStake(state.recacheTokens)),
                 onSelect: onCompact,
               },
             ]}
@@ -83,7 +84,7 @@ export function PromptCacheComposerNotice({
         ) : (
           <GhostButton size="xs" onClick={onCompact}>
             {compactGlyph}
-            Compact
+            {copy.panels.agentChat.promptCacheNotice.compact}
           </GhostButton>
         )
       }

@@ -15,6 +15,7 @@ import { sendTimeFromNow, sendTimeWords } from '../../workspace/agentComposer/sc
 import { ComposerTrayRow } from './composerTray'
 import { heldMessageCarries } from './queuedTurnBubble'
 import { quotesToInlineText } from '../../../../../shared/chat-quotes'
+import { copy } from '../../../../../shared/copy'
 
 /** What a row draws of a scheduled message, wherever it is kept. */
 export type ScheduledMessageView = Pick<
@@ -69,7 +70,7 @@ export function ScheduledMessageRowList<Message extends ScheduledMessageView>({
             key={message.id}
             tone={failed ? 'warn' : 'neutral'}
             role="group"
-            ariaLabel="Scheduled message"
+            ariaLabel={copy.panels.agentChat.scheduledMessages.scheduledMessage}
             glyph={failed ? undefined : <ScheduleGlyph className="icon-sm shrink-0 text-[color:var(--text-subtle)]" />}
             actions={
               message.sending ? null : (
@@ -77,13 +78,13 @@ export function ScheduledMessageRowList<Message extends ScheduledMessageView>({
                   <GhostButton size="xs" onClick={() => onSendNow(message)}>
                     {failed ? 'Retry' : 'Send now'}
                   </GhostButton>
-                  <Tooltip content="Take it back into the composer" placement="top">
+                  <Tooltip content={copy.panels.agentChat.scheduledMessages.takeItBackIntoThe} placement="top">
                     <GhostButton size="xs" onClick={() => onEdit(message)}>
-                      Edit
+                      {copy.panels.agentChat.scheduledMessages.edit}
                     </GhostButton>
                   </Tooltip>
                   <GhostButton size="xs" onClick={() => onDelete(message)}>
-                    Delete
+                    {copy.panels.agentChat.scheduledMessages.delete}
                   </GhostButton>
                 </>
               )
@@ -94,7 +95,10 @@ export function ScheduledMessageRowList<Message extends ScheduledMessageView>({
                 <Tooltip
                   content={
                     machineName
-                      ? `${new Date(message.sendAt).toLocaleString()}, sent by ${machineName}`
+                      ? copy.panels.agentChat.scheduledMessages.sentBy(
+                          new Date(message.sendAt).toLocaleString(),
+                          machineName,
+                        )
                       : new Date(message.sendAt).toLocaleString()
                   }
                   placement="top"

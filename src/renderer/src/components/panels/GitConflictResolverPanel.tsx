@@ -16,6 +16,7 @@ import { configureMonacoLanguages } from '../../utils/patchLanguage'
 import { EmptyState, GhostButton, InlineNotice, PanelHeader, PrimaryButton, Section, Spinner } from '../ui'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { gitApi } from '../../studio/git'
+import { copy } from '../../../../shared/copy'
 
 type ResolverState =
   | { status: 'loading' }
@@ -56,14 +57,14 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
 
     const load = async () => {
       if (typeof gitApi.getGitConflictFile !== 'function') {
-        setState({ status: 'error', message: 'Restart the app to enable the conflict resolver.' })
+        setState({ status: 'error', message: copy.panels.gitConflictResolverPanel.restartTheAppToEnable })
         return
       }
 
       const conflict = await gitApi.getGitConflictFile(repoRoot, filePath)
       if (cancelled) return
       if (!conflict) {
-        setState({ status: 'error', message: 'This file is not available as a Git conflict.' })
+        setState({ status: 'error', message: copy.panels.gitConflictResolverPanel.thisFileIsNotAvailable })
         return
       }
 
@@ -107,9 +108,9 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
     if (state.status !== 'ready' || state.saving) return
     if (hasGitConflictMarkers(state.content)) {
       const confirmed = await dialog.confirm({
-        title: 'Conflict markers remain',
-        body: 'The file still has conflict markers. Mark it resolved anyway?',
-        confirmLabel: 'Mark resolved',
+        title: copy.panels.gitConflictResolverPanel.conflictMarkersRemain,
+        body: copy.panels.gitConflictResolverPanel.theFileStillHasConflict,
+        confirmLabel: copy.panels.gitConflictResolverPanel.markResolved,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -123,7 +124,9 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
           ? {
               ...current,
               saving: false,
-              message: result.ok ? 'Saved and marked resolved.' : (result.message ?? 'Unable to mark resolved.'),
+              message: result.ok
+                ? copy.panels.gitConflictResolverPanel.savedAndMarkedResolved
+                : (result.message ?? copy.panels.gitConflictResolverPanel.unableToMarkResolved),
             }
           : current,
       )
@@ -143,7 +146,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
   if (state.status === 'loading') {
     return (
       <div className="flex h-full items-center justify-center bg-[color:var(--bg-app)]">
-        <Spinner label="Loading conflict" />
+        <Spinner label={copy.panels.gitConflictResolverPanel.loadingConflict} />
       </div>
     )
   }
@@ -151,7 +154,11 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
   if (state.status === 'error') {
     return (
       <div className="flex h-full items-center justify-center bg-[color:var(--bg-app)] px-6">
-        <InlineNotice tone="error" title="Could not load the conflict" detail={state.message} />
+        <InlineNotice
+          tone="error"
+          title={copy.panels.gitConflictResolverPanel.couldNotLoadTheConflict}
+          detail={state.message}
+        />
       </div>
     )
   }
@@ -163,7 +170,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
           replaced ran a second caption naming the two sides and the result — that each pane below already carries as its own
           title, and a hand-rolled save button beside it (2112). */}
       <PanelHeader
-        title="Resolve conflict"
+        title={copy.panels.gitConflictResolverPanel.resolveConflict}
         subtitle={state.conflict.relativePath}
         primaryAction={
           <PrimaryButton onClick={() => void saveResolved()} disabled={state.saving}>
@@ -196,9 +203,11 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
 
         <div className="grid min-h-0 grid-cols-[260px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-y-auto border-r border-[color:var(--border-default)] bg-[color:var(--bg-surface)]">
-            <Section title="Conflicts" count={blocks.length} level={3} inset>
+            <Section title={copy.panels.gitConflictResolverPanel.conflicts} count={blocks.length} level={3} inset>
               {blocks.length === 0 ? (
-                <div className="text-micro text-[color:var(--text-subtle)]">No conflict markers remain.</div>
+                <div className="text-micro text-[color:var(--text-subtle)]">
+                  {copy.panels.gitConflictResolverPanel.noConflictMarkersRemain}
+                </div>
               ) : (
                 <div className="space-y-2">
                   {blocks.map((block) => (
@@ -207,7 +216,8 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
                       className="rounded-md border border-[color:var(--border-default)] bg-[color:var(--bg-surface-raised)] p-2"
                     >
                       <div className="mb-2 text-micro font-semibold text-[color:var(--text-default)]">
-                        Conflict {block.index + 1}
+                        {copy.panels.gitConflictResolverPanel.conflict}
+                        {block.index + 1}
                       </div>
                       <div className="grid gap-1">
                         <ConflictActionButton
@@ -219,7 +229,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
                           onClick={() => applyBlock(block.index, block.theirs)}
                         />
                         <ConflictActionButton
-                          label="Use both"
+                          label={copy.panels.gitConflictResolverPanel.useBoth}
                           onClick={() =>
                             applyBlock(block.index, combineConflictSides(block, lineEndingOf(state.content)))
                           }

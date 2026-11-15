@@ -19,6 +19,7 @@ import type { ConversationTimelineRow } from './conversationTimeline'
 import { quoteSources } from './quoteAnchors'
 import { QuoteHighlights, type QuoteHighlightControl, type ShownQuote } from './quoteHighlights'
 import type { SelectionAnchor, SelectionCitation } from './quoteSelection'
+import { copy } from '../../../../../shared/copy'
 
 // A chat's quotes, end to end: a passage cited from the transcript goes into
 // the draft as a token at the caret (drawn as a chip) and opens the comment
@@ -150,11 +151,11 @@ export function useChatQuotes(input: ChatQuotesInput): ChatQuotes {
     if (token.length > QUOTE_TOKEN_MAX_CHARS || draft.length + token.length + 2 > MAX_DRAFT_CHARS) {
       showToast({
         tone: 'neutral',
-        title: 'Selection too long to quote',
+        title: copy.panels.agentChat.useChatQuotes.selectionTooLongToQuote,
         description:
           token.length > QUOTE_TOKEN_MAX_CHARS
-            ? 'Select a shorter passage.'
-            : 'No room left in the message. Shorten it or select less.',
+            ? copy.panels.agentChat.useChatQuotes.selectAShorterPassage
+            : copy.panels.agentChat.useChatQuotes.noRoomLeftInThe,
       })
       return
     }
@@ -372,7 +373,7 @@ function stripPosition({ from: _from, to: _to, token: _token, ...quote }: ChatQu
 function sourceGone(): void {
   showToast({
     tone: 'neutral',
-    title: 'Reply not found',
-    description: 'The quoted reply is no longer in this chat.',
+    title: copy.panels.agentChat.useChatQuotes.replyNotFound,
+    description: copy.panels.agentChat.useChatQuotes.theQuotedReplyIsNo,
   })
 }

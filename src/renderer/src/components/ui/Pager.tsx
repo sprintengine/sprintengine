@@ -21,6 +21,7 @@ import React, { type JSX } from 'react'
 import { FOCUS_RING_CLASS } from './tokens'
 import { toolbarItemProps, useInToolbarBand } from './Toolbar'
 import { Tooltip } from './Tooltip'
+import { copy } from '../../../../shared/copy'
 
 /** A gap in the number strip, standing for the pages it hides. */
 export type PagerStep = number | 'gap'
@@ -139,7 +140,7 @@ export function Pager({
         {withStepHint(
           <button
             type="button"
-            aria-label="Previous"
+            aria-label={copy.ui.pager.previous}
             disabled={page <= 1}
             {...toolbarItemProps(inBand)}
             tabIndex={inBand ? -1 : undefined}
@@ -164,7 +165,7 @@ export function Pager({
         {withStepHint(
           <button
             type="button"
-            aria-label="Next"
+            aria-label={copy.ui.pager.next}
             disabled={page >= pageCount}
             {...toolbarItemProps(inBand)}
             tabIndex={inBand ? -1 : undefined}
@@ -193,7 +194,7 @@ export function Pager({
         <span className="flex items-center gap-0.5">
           <button
             type="button"
-            aria-label="Previous page"
+            aria-label={copy.ui.pager.previousPage}
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
             className={`${STEP_CLASS} text-[color:var(--text-muted)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-strong)] ${FOCUS_RING_CLASS}`}
@@ -210,7 +211,7 @@ export function Pager({
                 key={step}
                 type="button"
                 aria-current={step === page ? 'page' : undefined}
-                aria-label={`Page ${step}`}
+                aria-label={copy.ui.pager.page(step)}
                 onClick={() => onPageChange(step)}
                 className={`${STEP_CLASS} ${FOCUS_RING_CLASS} ${
                   step === page
@@ -224,7 +225,7 @@ export function Pager({
           )}
           <button
             type="button"
-            aria-label="Next page"
+            aria-label={copy.ui.pager.nextPage}
             disabled={page >= pageCount}
             onClick={() => onPageChange(page + 1)}
             className={`${STEP_CLASS} text-[color:var(--text-muted)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-strong)] ${FOCUS_RING_CLASS}`}

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type JSX } from 'react'
 
 import { EmptyState, InboxSearchInput, MenuItem, MenuOption } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 export type BacklogItemSearchOption = {
   id: string
@@ -98,7 +99,7 @@ export function BacklogItemSearchPicker({
           onChange={setQuery}
           ariaLabel={ariaLabel}
           placeholder={placeholder}
-          clearAriaLabel="Clear item search"
+          clearAriaLabel={copy.backlog.backlogItemSearchPicker.clearItemSearch}
           autoFocus
         />
       </div>
@@ -109,10 +110,12 @@ export function BacklogItemSearchPicker({
         options.length === 0 ? (
           <EmptyState density="list" title={noOptionsMessage} />
         ) : (
-          <p className="px-2.5 py-2 text-meta text-[color:var(--text-muted)]">Type an item ID or name.</p>
+          <p className="px-2.5 py-2 text-meta text-[color:var(--text-muted)]">
+            {copy.backlog.backlogItemSearchPicker.typeAnItemIDOr}
+          </p>
         )
       ) : visible.length === 0 ? (
-        <EmptyState density="list" title="No matching items." />
+        <EmptyState density="list" title={copy.backlog.backlogItemSearchPicker.noMatchingItems} />
       ) : (
         <div
           role={resultRole === 'listbox' ? 'listbox' : undefined}
@@ -164,7 +167,8 @@ export function BacklogItemSearchPicker({
           })}
           {remaining > 0 ? (
             <p className="px-2.5 py-1.5 text-micro text-[color:var(--text-muted)]">
-              {remaining} more — refine the search.
+              {remaining}
+              {copy.backlog.backlogItemSearchPicker.moreRefineTheSearch}
             </p>
           ) : null}
         </div>

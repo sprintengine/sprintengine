@@ -2,6 +2,7 @@ import type { BacklogScanSnapshot } from '../hooks/useSharedBacklogScan'
 import type { BacklogItem, BacklogScanResult } from '../utils/backlog'
 import type { BacklogWatchError } from '../../../shared/modules/backlog-service'
 import type { BacklogReader } from './renderer-host'
+import { copy as appCopy } from '../../../shared/copy'
 
 // The backlog module's implementation of the kernel's BacklogReader seam:
 // module renderers list/watch Backlog items through the SAME shared scan the
@@ -101,7 +102,7 @@ export function createBacklogReader(deps: BacklogReaderDeps): BacklogReader {
           if (!folderPath) {
             fail({
               code: 'workspace_folder_missing',
-              message: `Workspace "${workspaceId}" has no project folder, so it has no Backlog.`,
+              message: appCopy.modules.backlogReader.workspaceHasNoProjectFolder(workspaceId),
             })
             return
           }
@@ -113,7 +114,10 @@ export function createBacklogReader(deps: BacklogReaderDeps): BacklogReader {
               const cause = snapshot.scan.errors[0]
               fail({
                 code: 'scan_failed',
-                message: `Couldn't read the Backlog for "${workspaceId}"${cause ? `: ${cause.relativePath}: ${cause.message}` : '.'}`,
+                message: appCopy.modules.backlogReader.couldnTReadTheBacklog(
+                  workspaceId,
+                  cause ? `: ${cause.relativePath}: ${cause.message}` : '.',
+                ),
               })
               return
             }
@@ -128,7 +132,10 @@ export function createBacklogReader(deps: BacklogReaderDeps): BacklogReader {
           fail(
             {
               code: 'unknown_workspace',
-              message: `Couldn't find workspace "${workspaceId}": ${error instanceof Error ? error.message : String(error)}`,
+              message: appCopy.modules.backlogReader.couldnTFindWorkspace(
+                workspaceId,
+                error instanceof Error ? error.message : String(error),
+              ),
             },
             error,
           )

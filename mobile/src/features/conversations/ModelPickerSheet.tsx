@@ -23,6 +23,7 @@ import {
   type PickerRow,
   type PickerSelection,
 } from "./modelPickerLogic";
+import { copy } from "../../../../src/shared/copy";
 
 // The rail's chips and the window's segments, drawn under the touch floor and
 // padded out to it with `touchSlop`.
@@ -107,11 +108,11 @@ export function ModelPickerSheet({
   const levels = effort?.levels ?? [];
 
   return (
-    <BottomSheet closeLabel="Done" onClose={onClose} onDismiss={onDismiss} title={title} visible={visible}>
+    <BottomSheet closeLabel={copy.phone.conversations.modelPickerSheet.done} onClose={onClose} onDismiss={onDismiss} title={title} visible={visible}>
       {leading}
       {providers.length > 1 ? (
         <ScrollView
-          accessibilityLabel="Provider"
+          accessibilityLabel={copy.phone.conversations.modelPickerSheet.provider}
           accessibilityRole="radiogroup"
           contentContainerStyle={styles.rail}
           horizontal
@@ -157,7 +158,7 @@ export function ModelPickerSheet({
         </Text>
       ) : null}
       {pickerSearchOffered(providers, locked) ? (
-        <SearchField accessibilityLabel={`Search ${title}`} onChangeText={setQuery} placeholder="Search models…" value={query} />
+        <SearchField accessibilityLabel={copy.phone.conversations.modelPickerSheet.search(title)} onChangeText={setQuery} placeholder={copy.phone.conversations.modelPickerSheet.searchModels} value={query} />
       ) : null}
 
       <View style={styles.list}>
@@ -177,14 +178,14 @@ export function ModelPickerSheet({
                   selected={selected}
                 />
                 {windows.length ? (
-                  <View accessibilityLabel="Context window" accessibilityRole="radiogroup" style={styles.windows}>
-                    <Text style={styles.windowsLabel}>Context window</Text>
+                  <View accessibilityLabel={copy.phone.conversations.modelPickerSheet.contextWindow} accessibilityRole="radiogroup" style={styles.windows}>
+                    <Text style={styles.windowsLabel}>{copy.phone.conversations.modelPickerSheet.contextWindow}</Text>
                     <View style={styles.segments}>
                       {windows.map((variant) => {
                         const on = variant.id === selection.model;
                         return (
                           <Pressable
-                            accessibilityLabel={`${variant.label} context window`}
+                            accessibilityLabel={copy.phone.conversations.modelPickerSheet.contextWindow2(variant.label)}
                             accessibilityRole="radio"
                             accessibilityState={{ checked: on, disabled: locked }}
                             disabled={locked}
@@ -212,8 +213,8 @@ export function ModelPickerSheet({
       ) : null}
 
       {access ? (
-        <Pressable accessibilityLabel={`Access, ${access.label}`} accessibilityRole="button" onPress={access.onPress} style={styles.kv}>
-          <Text style={styles.kvKey}>Access</Text>
+        <Pressable accessibilityLabel={copy.phone.conversations.modelPickerSheet.access(access.label)} accessibilityRole="button" onPress={access.onPress} style={styles.kv}>
+          <Text style={styles.kvKey}>{copy.phone.conversations.modelPickerSheet.access2}</Text>
           <Text style={styles.kvValue}>{access.label}</Text>
           <ChevronIcon direction="right" size={iconSize.sm} tone="textSubtle" />
         </Pressable>
@@ -269,7 +270,7 @@ function ModelRow({
           {/* A chip, not a hoist: the row stays where the catalog put it. */}
           {row.isNew ? (
             <View style={styles.newChip}>
-              <Text style={styles.newChipText}>New</Text>
+              <Text style={styles.newChipText}>{copy.phone.conversations.modelPickerSheet.new}</Text>
             </View>
           ) : null}
         </View>
@@ -318,10 +319,10 @@ function EffortRamp({
   return (
     <View style={styles.effort}>
       <View style={styles.effortHead}>
-        <Text style={styles.effortKey}>Reasoning</Text>
+        <Text style={styles.effortKey}>{copy.phone.conversations.modelPickerSheet.reasoning}</Text>
         {value !== null && value === defaultLevel ? (
           <View style={styles.defaultChip}>
-            <Text style={styles.defaultChipText}>Default</Text>
+            <Text style={styles.defaultChipText}>{copy.phone.conversations.modelPickerSheet.default}</Text>
           </View>
         ) : null}
         <Text style={[styles.effortValue, costly ? styles.warnInk : null]}>{label}</Text>
@@ -331,7 +332,7 @@ function EffortRamp({
       <View
         accessible
         accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
-        accessibilityLabel="Reasoning effort"
+        accessibilityLabel={copy.phone.conversations.modelPickerSheet.reasoningEffort}
         accessibilityRole="adjustable"
         accessibilityValue={{ text: label }}
         onAccessibilityAction={(event) => step(event.nativeEvent.actionName === "increment" ? 1 : -1)}

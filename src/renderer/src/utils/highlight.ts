@@ -1,4 +1,5 @@
 import type { HighlightColor, Workspace, WorkspaceHighlight, WorkspaceMode } from '../../../shared/workspace'
+import { copy } from '../../../shared/copy'
 
 export const HIGHLIGHT_COLORS: HighlightColor[] = ['red', 'orange', 'amber', 'green', 'blue', 'purple', 'pink']
 
@@ -23,7 +24,7 @@ type HighlightSwatch = {
 const swatches: Record<HighlightColor, HighlightSwatch> = {
   red: {
     color: 'red',
-    label: 'Red',
+    label: copy.utils.highlight.red,
     hex: '#ff5a5f',
     border: 'border-l-[#ff5a5f]',
     bg: 'highlight-bg-red',
@@ -36,7 +37,7 @@ const swatches: Record<HighlightColor, HighlightSwatch> = {
   },
   orange: {
     color: 'orange',
-    label: 'Orange',
+    label: copy.utils.highlight.orange,
     hex: '#ff8c42',
     border: 'border-l-[#ff8c42]',
     bg: 'highlight-bg-orange',
@@ -49,7 +50,7 @@ const swatches: Record<HighlightColor, HighlightSwatch> = {
   },
   amber: {
     color: 'amber',
-    label: 'Amber',
+    label: copy.utils.highlight.amber,
     hex: '#ffbf2f',
     border: 'border-l-[#ffbf2f]',
     bg: 'highlight-bg-amber',
@@ -62,7 +63,7 @@ const swatches: Record<HighlightColor, HighlightSwatch> = {
   },
   green: {
     color: 'green',
-    label: 'Green',
+    label: copy.utils.highlight.green,
     hex: '#30d158',
     border: 'border-l-[#30d158]',
     bg: 'highlight-bg-green',
@@ -75,7 +76,7 @@ const swatches: Record<HighlightColor, HighlightSwatch> = {
   },
   blue: {
     color: 'blue',
-    label: 'Blue',
+    label: copy.utils.highlight.blue,
     hex: '#5c7cff',
     border: 'border-l-[#5c7cff]',
     bg: 'highlight-bg-blue',
@@ -88,7 +89,7 @@ const swatches: Record<HighlightColor, HighlightSwatch> = {
   },
   purple: {
     color: 'purple',
-    label: 'Purple',
+    label: copy.utils.highlight.purple,
     hex: '#a78bfa',
     border: 'border-l-[#a78bfa]',
     bg: 'highlight-bg-purple',
@@ -101,7 +102,7 @@ const swatches: Record<HighlightColor, HighlightSwatch> = {
   },
   pink: {
     color: 'pink',
-    label: 'Pink',
+    label: copy.utils.highlight.pink,
     hex: '#ff7eb3',
     border: 'border-l-[#ff7eb3]',
     bg: 'highlight-bg-pink',

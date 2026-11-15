@@ -14,6 +14,7 @@ import {
   type FileExplorerTreeHandle,
   type FileExplorerTreeSource,
 } from '../panels/FileExplorer'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The editor window's file tree: where the open file lives, shown beside it.
 //
@@ -54,8 +55,8 @@ type Props = {
 }
 
 const FILTER_ITEMS = [
-  { value: 'all', label: 'All files' },
-  { value: 'changed', label: 'Changed files' },
+  { value: 'all', label: appCopy.auxWindows.editorFileTree.allFiles },
+  { value: 'changed', label: appCopy.auxWindows.editorFileTree.changedFiles },
 ] as const
 
 const FILESYSTEM: FileExplorerTreeSource = { kind: 'filesystem' }
@@ -83,7 +84,10 @@ export function EditorFileTree({
     [filter, gitStatus, rootPath],
   )
   const source = useMemo<FileExplorerTreeSource>(
-    () => (changedEntries ? { kind: 'paths', entries: changedEntries, emptyTitle: 'No changed files' } : FILESYSTEM),
+    () =>
+      changedEntries
+        ? { kind: 'paths', entries: changedEntries, emptyTitle: appCopy.auxWindows.editorFileTree.noChangedFiles }
+        : FILESYSTEM,
     [changedEntries],
   )
 
@@ -106,7 +110,11 @@ export function EditorFileTree({
           label: revealLabel(hostPlatform()),
           onSelect: () => void window.api.showItemInFolder(activePath),
         },
-        { id: 'copy-path', label: 'Copy path', onSelect: () => void window.api.clipboardWriteText(activePath) },
+        {
+          id: 'copy-path',
+          label: appCopy.auxWindows.editorFileTree.copyPath,
+          onSelect: () => void window.api.clipboardWriteText(activePath),
+        },
       ]
     : []
 
@@ -121,10 +129,10 @@ export function EditorFileTree({
           </span>
         </Tooltip>
         <FilterMenu
-          ariaLabel="Show files"
+          ariaLabel={appCopy.auxWindows.editorFileTree.showFiles}
           groups={[
             {
-              label: 'Show',
+              label: appCopy.auxWindows.editorFileTree.show,
               items: FILTER_ITEMS,
               value: filter,
               defaultValue: 'all',
@@ -132,10 +140,10 @@ export function EditorFileTree({
             },
           ]}
         />
-        <Tooltip content="Collapse all" placement="bottom">
+        <Tooltip content={appCopy.auxWindows.editorFileTree.collapseAll} placement="bottom">
           <IconButton
             size="xs"
-            aria-label="Collapse all folders"
+            aria-label={appCopy.auxWindows.editorFileTree.collapseAllFolders}
             onClick={() => treeRef.current?.collapseAll()}
             disabled={!rootPath}
           >
@@ -156,7 +164,12 @@ export function EditorFileTree({
               event.preventDefault()
               setPinnedMenu({ x: event.clientX, y: event.clientY })
             }}
-            trailing={<OverflowMenu ariaLabel={`Actions for ${outside.name}`} items={pinnedItems} />}
+            trailing={
+              <OverflowMenu
+                ariaLabel={appCopy.auxWindows.editorFileTree.actionsFor(outside.name)}
+                items={pinnedItems}
+              />
+            }
           />
         </div>
       ) : null}
@@ -172,7 +185,9 @@ export function EditorFileTree({
             persistence="local"
             workspaceWindow={false}
             variant="banded"
-            ariaLabel={rootName ? `Files in ${rootName}` : 'Files'}
+            ariaLabel={
+              rootName ? appCopy.auxWindows.editorFileTree.filesIn(rootName) : appCopy.auxWindows.editorFileTree.files
+            }
             followPath={activePath}
             gitStatus={gitStatus}
             directoryStatus={directoryStatus}
@@ -185,7 +200,7 @@ export function EditorFileTree({
         ) : (
           <div className="flex items-center gap-2 px-3 py-2 text-micro text-[color:var(--text-muted)]">
             <Spinner size={12} />
-            <span role="status">Finding the folder…</span>
+            <span role="status">{appCopy.auxWindows.editorFileTree.findingTheFolder}</span>
           </div>
         )}
       </div>
@@ -193,7 +208,7 @@ export function EditorFileTree({
         <ContextMenu
           x={pinnedMenu.x}
           y={pinnedMenu.y}
-          ariaLabel={`Actions for ${outside.name}`}
+          ariaLabel={appCopy.auxWindows.editorFileTree.actionsFor(outside.name)}
           onClose={() => setPinnedMenu(null)}
         >
           {pinnedItems.map((item) => (

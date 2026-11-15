@@ -3,6 +3,7 @@ import React from 'react'
 import { CloseIconButton, Input } from '../../../ui'
 import { formatScheduleTime, parseScheduleTime, type ScheduleTime } from './scheduleEditor'
 import { isImeKey } from '../../../../utils/imeKey'
+import { copy } from '../../../../../../shared/copy'
 
 /**
  * One time of day, typed: "9", "9:30", "9pm", "21:00". Read on Enter or when
@@ -43,11 +44,15 @@ export function TimeField({
             commit()
           }
         }}
-        aria-label="Time of day"
+        aria-label={copy.workspace.agentComposer.schedule.timeField.timeOfDay}
         className="w-[10ch] tabular-nums"
       />
       {removable && onRemove ? (
-        <CloseIconButton size="xs" aria-label={`Remove ${shown.clock} ${shown.meridiem}`} onClick={onRemove} />
+        <CloseIconButton
+          size="xs"
+          aria-label={copy.workspace.agentComposer.schedule.timeField.remove(shown.clock, shown.meridiem)}
+          onClick={onRemove}
+        />
       ) : null}
     </span>
   )

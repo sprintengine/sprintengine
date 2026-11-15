@@ -154,6 +154,7 @@ import type {
 import { listTerminals } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
 import { backlogApi } from '../../studio/backlog'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Backlog panel: capture / browse / triage / start surface for the lightweight
 // items (rough ideas, notes, feature sketches, imported markdown, mockups)
@@ -177,34 +178,34 @@ import { backlogApi } from '../../studio/backlog'
 // control. Active is the default — the live working set with the two terminal
 // states hidden — while All items is the firehose that hides nothing.
 const VIEW_ITEMS: SelectItem<BacklogView>[] = [
-  { value: 'active', label: 'Active' },
-  { value: 'all', label: 'All items' },
-  { value: 'epics', label: 'Epics' },
-  { value: 'quick_wins', label: 'Quick wins' },
-  { value: 'strategic_bets', label: 'Strategic bets' },
-  { value: 'defer', label: 'Defer candidates' },
-  { value: 'unestimated', label: 'Unestimated' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'archived', label: 'Archived' },
+  { value: 'active', label: appCopy.panels.backlogPanel.active },
+  { value: 'all', label: appCopy.panels.backlogPanel.allItems },
+  { value: 'epics', label: appCopy.panels.backlogPanel.epics },
+  { value: 'quick_wins', label: appCopy.panels.backlogPanel.quickWins },
+  { value: 'strategic_bets', label: appCopy.panels.backlogPanel.strategicBets },
+  { value: 'defer', label: appCopy.panels.backlogPanel.deferCandidates },
+  { value: 'unestimated', label: appCopy.panels.backlogPanel.unestimated },
+  { value: 'completed', label: appCopy.panels.backlogPanel.completed },
+  { value: 'archived', label: appCopy.panels.backlogPanel.archived },
 ]
 
 const SORT_ITEMS: SelectItem<BacklogSort>[] = [
-  { value: 'best', label: 'Best' },
-  { value: 'recent', label: 'Updated at' },
-  { value: 'created', label: 'Created at' },
-  { value: 'status', label: 'Status' },
-  { value: 'priority', label: 'Priority' },
-  { value: 'largest', label: 'Largest first' },
-  { value: 'smallest', label: 'Smallest first' },
-  { value: 'dependency', label: 'Dependency order' },
-  { value: 'no_epic', label: 'No epic first' },
+  { value: 'best', label: appCopy.panels.backlogPanel.best },
+  { value: 'recent', label: appCopy.panels.backlogPanel.updatedAt },
+  { value: 'created', label: appCopy.panels.backlogPanel.createdAt },
+  { value: 'status', label: appCopy.panels.backlogPanel.status },
+  { value: 'priority', label: appCopy.panels.backlogPanel.priority },
+  { value: 'largest', label: appCopy.panels.backlogPanel.largestFirst },
+  { value: 'smallest', label: appCopy.panels.backlogPanel.smallestFirst },
+  { value: 'dependency', label: appCopy.panels.backlogPanel.dependencyOrder },
+  { value: 'no_epic', label: appCopy.panels.backlogPanel.noEpicFirst },
 ]
 
 // Grouping is orthogonal to view/sort: None is today's flat list, By epic nests
 // items under collapsible epic headers (T9).
 const GROUP_ITEMS: SelectItem<BacklogGroup>[] = [
-  { value: 'none', label: 'None' },
-  { value: 'by_epic', label: 'By epic' },
+  { value: 'none', label: appCopy.panels.backlogPanel.none },
+  { value: 'by_epic', label: appCopy.panels.backlogPanel.byEpic },
 ]
 
 // Scope word shown next to the header count when a lens narrows the list, so a
@@ -1016,10 +1017,10 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         if (!folderPath) return
         const current = basename(item.relativePath)
         const typed = await dialog.prompt({
-          title: 'Rename item',
-          inputLabel: 'File name',
+          title: appCopy.panels.backlogPanel.renameItem,
+          inputLabel: appCopy.panels.backlogPanel.fileName,
           initialValue: current,
-          confirmLabel: 'Rename',
+          confirmLabel: appCopy.panels.backlogPanel.rename,
           required: true,
           selectFileStem: true,
         })
@@ -1141,9 +1142,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     (item: BacklogItem) =>
       runAction(async () => {
         const confirmed = await dialog.confirm({
-          title: 'Delete item?',
-          body: `Moves “${item.title}” to the trash.`,
-          confirmLabel: 'Delete',
+          title: appCopy.panels.backlogPanel.deleteItem,
+          body: appCopy.panels.backlogPanel.movesToTheTrash(item.title),
+          confirmLabel: appCopy.panels.backlogPanel.delete,
           tone: 'danger',
         })
         if (!confirmed) return
@@ -1217,9 +1218,14 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         const needsUnlink = executionLinks.length > 0 && !childDriven && status !== derivedStatus
         if (needsUnlink) {
           const confirmed = await dialog.confirm({
-            title: 'Override linked status?',
-            body: `Setting “${BACKLOG_STATUS_LABEL[status]}” unlinks ${executionLinks.length === 1 ? 'the linked execution' : `${executionLinks.length} linked executions`}. The linked work isn't deleted.`,
-            confirmLabel: `Unlink and set ${BACKLOG_STATUS_LABEL[status]}`,
+            title: appCopy.panels.backlogPanel.overrideLinkedStatus,
+            body: appCopy.panels.backlogPanel.settingUnlinksTheLinkedWork(
+              BACKLOG_STATUS_LABEL[status],
+              executionLinks.length === 1
+                ? appCopy.panels.backlogPanel.theLinkedExecution
+                : appCopy.panels.backlogPanel.linkedExecutions(executionLinks.length),
+            ),
+            confirmLabel: appCopy.panels.backlogPanel.unlinkAndSet(BACKLOG_STATUS_LABEL[status]),
           })
           if (!confirmed) return
           for (const link of executionLinks) {
@@ -1247,9 +1253,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       runAction(async () => {
         if (!folderPath) return
         const confirmed = await dialog.confirm({
-          title: `Unlink ${link.label}?`,
-          body: "Removes the link only. The linked agent or target isn't deleted.",
-          confirmLabel: 'Unlink',
+          title: appCopy.panels.backlogPanel.unlink(link.label),
+          body: appCopy.panels.backlogPanel.removesTheLinkOnlyThe,
+          confirmLabel: appCopy.panels.backlogPanel.unlink2,
         })
         if (!confirmed) return
         const removed = await backlogApi.removeBacklogLink({
@@ -1350,9 +1356,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         if (!folderPath) return
         const title = (
           await dialog.prompt({
-            title: 'New epic',
-            inputLabel: 'Epic title',
-            confirmLabel: 'Create',
+            title: appCopy.panels.backlogPanel.newEpic,
+            inputLabel: appCopy.panels.backlogPanel.epicTitle,
+            confirmLabel: appCopy.panels.backlogPanel.create,
             required: true,
           })
         )?.trim()
@@ -1400,7 +1406,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     ? [
         {
           id: 'refresh-backlog',
-          label: 'Refresh backlog',
+          label: appCopy.panels.backlogPanel.refreshBacklog,
           onSelect: () => void runScan(),
           disabled: loading,
           icon: <RefreshIcon />,
@@ -1410,15 +1416,15 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
 
   const backlogOverflow =
     backlogOverflowItems.length > 0 ? (
-      <OverflowMenu ariaLabel="Backlog actions" items={backlogOverflowItems} />
+      <OverflowMenu ariaLabel={appCopy.panels.backlogPanel.backlogActions} items={backlogOverflowItems} />
     ) : undefined
 
   // A bare plus. The word is redundant next to a panel that already says
   // Backlog, and at panel widths it was the thing that squeezed the title into
   // an ellipsis.
   const newPlanButton = (
-    <Tooltip content="New item" placement="bottom">
-      <IconButton aria-label="New backlog item" onClick={openCreate} disabled={!folderPath}>
+    <Tooltip content={appCopy.panels.backlogPanel.newItem} placement="bottom">
+      <IconButton aria-label={appCopy.panels.backlogPanel.newBacklogItem} onClick={openCreate} disabled={!folderPath}>
         <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
           <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
@@ -1691,10 +1697,10 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           className="min-w-0 flex-1 font-mono"
         />
         <GhostButton size="sm" onClick={chooseBacklogFolder}>
-          Change
+          {appCopy.panels.backlogPanel.change}
         </GhostButton>
         <GhostButton size="sm" onClick={() => void applyBacklogRoot(null)}>
-          Use default
+          {appCopy.panels.backlogPanel.useDefault}
         </GhostButton>
       </div>
     ) : null
@@ -1766,7 +1772,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     <section
       ref={rootRef}
       className="flex h-full min-h-0 flex-col overflow-hidden bg-[color:var(--bg-surface)] text-[color:var(--text-default)]"
-      aria-label="Backlog"
+      aria-label={appCopy.panels.backlogPanel.backlog}
     >
       {/*
        * The panel's one chrome row: search on the left, the count, the filter
@@ -1799,9 +1805,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           <InboxSearchInput
             value={search}
             onChange={setSearch}
-            ariaLabel="Search backlog items"
-            placeholder="Search items…"
-            clearAriaLabel="Clear backlog search"
+            ariaLabel={appCopy.panels.backlogPanel.searchBacklogItems}
+            placeholder={appCopy.panels.backlogPanel.searchItems}
+            clearAriaLabel={appCopy.panels.backlogPanel.clearBacklogSearch}
           />
         </div>
         <BacklogFilterMenu
@@ -1832,7 +1838,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
             tone="error"
             action={
               <GhostButton size="xs" onClick={() => setActionError(null)}>
-                Dismiss
+                {appCopy.panels.backlogPanel.dismiss}
               </GhostButton>
             }
           >
@@ -1844,8 +1850,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       {partialErrors ? (
         <div className="shrink-0 px-3 py-2">
           <InlineNotice tone="warn">
-            {partialErrors.length} {partialErrors.length === 1 ? 'item' : 'items'} couldn’t be read and{' '}
-            {partialErrors.length === 1 ? 'is' : 'are'} not listed
+            {partialErrors.length} {partialErrors.length === 1 ? 'item' : 'items'}
+            {appCopy.panels.backlogPanel.couldnTBeReadAnd} {partialErrors.length === 1 ? 'is' : 'are'}
+            {appCopy.panels.backlogPanel.notListed}
             {': '}
             <span className="font-mono text-meta tabular-nums">
               {partialErrors.map((error) => error.relativePath).join(', ')}
@@ -1857,8 +1864,8 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       {duplicateIdWarnings ? (
         <div className="shrink-0 px-3 py-2">
           <InlineNotice tone="warn">
-            {duplicateIdWarnings.length === 1 ? 'A duplicate id' : 'Duplicate ids'} from concurrent edits — re-allocate
-            one side:
+            {duplicateIdWarnings.length === 1 ? 'A duplicate id' : 'Duplicate ids'}
+            {appCopy.panels.backlogPanel.fromConcurrentEditsReAllocate}
             {duplicateIdWarnings.map((warning) => (
               <span key={warning.label} className="mt-0.5 block font-mono text-meta tabular-nums">
                 {warning.label}: {warning.paths.join(', ')}
@@ -1941,7 +1948,7 @@ function BacklogListSkeleton(): JSX.Element {
   return (
     <div className="min-h-0 flex-1 overflow-hidden py-1">
       <span role="status" className="sr-only">
-        Loading backlog…
+        {appCopy.panels.backlogPanel.loadingBacklog}
       </span>
       <div aria-hidden="true">
         {BACKLOG_SKELETON_ROWS.map((row, index) => (
@@ -2033,7 +2040,7 @@ function BacklogList({
     <ul
       ref={listRef}
       role="listbox"
-      aria-label="Backlog items"
+      aria-label={appCopy.panels.backlogPanel.backlogItems}
       aria-multiselectable
       tabIndex={0}
       onKeyDown={onKeyDown}
@@ -2383,7 +2390,12 @@ export function BacklogDetail({
   backlogLocation?: BacklogLocationInfo | null
 }): JSX.Element {
   if (!folderPath) {
-    return <DetailState heading="No workspace folder" body="Open a project folder to use the backlog." />
+    return (
+      <DetailState
+        heading={appCopy.panels.backlogPanel.noWorkspaceFolder}
+        body={appCopy.panels.backlogPanel.openAProjectFolderTo}
+      />
+    )
   }
   if (loading && !scan) {
     return <BacklogDetailSkeleton />
@@ -2396,15 +2408,21 @@ export function BacklogDetail({
     const redirected = backlogLocation !== null && !backlogLocation.isDefault
     return (
       <DetailState
-        heading={redirected ? 'Backlog folder not found' : 'No backlog folder'}
+        heading={
+          redirected ? appCopy.panels.backlogPanel.backlogFolderNotFound : appCopy.panels.backlogPanel.noBacklogFolder
+        }
         body={
           redirected
-            ? `${backlogLocation.root} isn't there right now. Nothing is lost: reconnect it, pick another folder, or use the default.`
-            : 'Create one, or point to a folder you already use.'
+            ? appCopy.panels.backlogPanel.isnTThereRightNow(backlogLocation.root)
+            : appCopy.panels.backlogPanel.createOneOrPointTo
         }
         cta={
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {redirected ? null : <PrimaryButton onClick={actions.createFolder}>Create backlog folder</PrimaryButton>}
+            {redirected ? null : (
+              <PrimaryButton onClick={actions.createFolder}>
+                {appCopy.panels.backlogPanel.createBacklogFolder}
+              </PrimaryButton>
+            )}
             {/* Outlined: when the folder went missing there is no primary, and
                 this is the way forward; beside Create it is the one rung down. */}
             {actions.chooseFolder ? (
@@ -2413,7 +2431,7 @@ export function BacklogDetail({
               </OutlineButton>
             ) : null}
             {redirected && actions.useDefaultFolder ? (
-              <GhostButton onClick={actions.useDefaultFolder}>Use the default</GhostButton>
+              <GhostButton onClick={actions.useDefaultFolder}>{appCopy.panels.backlogPanel.useTheDefault}</GhostButton>
             ) : null}
           </div>
         }
@@ -2424,7 +2442,7 @@ export function BacklogDetail({
     return (
       <div className="p-4">
         <InlineNotice tone="error">
-          <p className="font-medium">Couldn’t read the backlog folder.</p>
+          <p className="font-medium">{appCopy.panels.backlogPanel.couldnTReadTheBacklog}</p>
           <ul className="mt-1 space-y-0.5">
             {scan.errors.map((error) => (
               <li key={error.relativePath} className="font-mono text-meta tabular-nums">
@@ -2439,14 +2457,14 @@ export function BacklogDetail({
   if (scan?.state === 'empty-folder' || (!hasItems && scan?.state === 'ready')) {
     return (
       <DetailState
-        heading="Backlog is empty"
-        body="Capture an idea, or drop in a Markdown or HTML file."
-        cta={<PrimaryButton onClick={actions.createPlan}>Capture first item</PrimaryButton>}
+        heading={appCopy.panels.backlogPanel.backlogIsEmpty}
+        body={appCopy.panels.backlogPanel.captureAnIdeaOrDrop}
+        cta={<PrimaryButton onClick={actions.createPlan}>{appCopy.panels.backlogPanel.captureFirstItem}</PrimaryButton>}
       />
     )
   }
   if (!selected) {
-    return <DetailState body="Select an item to preview." />
+    return <DetailState body={appCopy.panels.backlogPanel.selectAnItemToPreview} />
   }
 
   // Inline mockup preview: while a mockup is open it replaces the
@@ -2538,7 +2556,11 @@ export function BacklogDetail({
       <header className="shrink-0 px-3 py-2">
         <div className="flex min-w-0 items-start gap-2">
           {showBack ? (
-            <IconButton onClick={onBack} aria-label="Back to list" className="-ml-1.5 -mt-0.5 shrink-0">
+            <IconButton
+              onClick={onBack}
+              aria-label={appCopy.panels.backlogPanel.backToList}
+              className="-ml-1.5 -mt-0.5 shrink-0"
+            >
               <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
                 <path
                   d="M10 4L6 8l4 4"
@@ -2611,8 +2633,8 @@ export function BacklogDetail({
               </span>
             </Tooltip>
             <OverflowMenu
-              ariaLabel="More actions"
-              triggerTooltip="More actions"
+              ariaLabel={appCopy.panels.backlogPanel.moreActions}
+              triggerTooltip={appCopy.panels.backlogPanel.moreActions}
               items={[
                 ...overflowItemsForBacklogModuleActions(
                   externalActions.map(({ action, label, disabled, run }) => ({
@@ -2626,8 +2648,16 @@ export function BacklogDetail({
                 ),
                 // The file-navigation actions were on their own buttons; folded in
                 // here they free the row down to the primary action + this menu.
-                { id: 'open-in-editor', label: 'Open in editor', onSelect: () => actions.openInEditor(selected) },
-                { id: 'reveal-in-files', label: 'Reveal in Files', onSelect: () => actions.revealInFiles(selected) },
+                {
+                  id: 'open-in-editor',
+                  label: appCopy.panels.backlogPanel.openInEditor,
+                  onSelect: () => actions.openInEditor(selected),
+                },
+                {
+                  id: 'reveal-in-files',
+                  label: appCopy.panels.backlogPanel.revealInFiles,
+                  onSelect: () => actions.revealInFiles(selected),
+                },
                 // Where the path went when it left the crumb. Through
                 // the app's own clipboard bridge: an Electron renderer has no
                 // permission-free `navigator.clipboard`, so that path was a
@@ -2635,7 +2665,7 @@ export function BacklogDetail({
                 // — a relative path is ambiguous across projects on a door.
                 {
                   id: 'copy-path',
-                  label: 'Copy path',
+                  label: appCopy.panels.backlogPanel.copyPath,
                   onSelect: () => {
                     void window.api?.clipboardWriteText?.(selected.path)
                   },
@@ -2646,8 +2676,8 @@ export function BacklogDetail({
                 {
                   kind: 'flyout' as const,
                   id: 'send-to-agent',
-                  label: 'Send to agent',
-                  ariaLabel: 'Send to agent',
+                  label: appCopy.panels.backlogPanel.sendToAgent,
+                  ariaLabel: appCopy.panels.backlogPanel.sendToAgent,
                   surfaceClassName: 'min-w-[200px]',
                   onOpenChange: (open: boolean) => {
                     if (open) onAgentFlyoutOpen()
@@ -2671,8 +2701,8 @@ export function BacklogDetail({
                 {
                   kind: 'flyout' as const,
                   id: 'set-status',
-                  label: 'Status',
-                  ariaLabel: 'Set status',
+                  label: appCopy.panels.backlogPanel.status,
+                  ariaLabel: appCopy.panels.backlogPanel.setStatus,
                   surfaceClassName: 'min-w-[180px]',
                   render: (close: () => void) =>
                     STATUS_MENU_CHOICES.map((status) => (
@@ -2692,8 +2722,8 @@ export function BacklogDetail({
                 {
                   kind: 'flyout' as const,
                   id: 'set-priority',
-                  label: 'Priority',
-                  ariaLabel: 'Set priority',
+                  label: appCopy.panels.backlogPanel.priority,
+                  ariaLabel: appCopy.panels.backlogPanel.setPriority,
                   surfaceClassName: 'min-w-[180px]',
                   render: (close: () => void) =>
                     CRITICALITY_EDIT_ITEMS.map(({ value, label }) => (
@@ -2713,8 +2743,8 @@ export function BacklogDetail({
                 {
                   kind: 'flyout' as const,
                   id: 'set-size',
-                  label: 'Size',
-                  ariaLabel: 'Set size',
+                  label: appCopy.panels.backlogPanel.size,
+                  ariaLabel: appCopy.panels.backlogPanel.setSize,
                   surfaceClassName: 'min-w-[180px]',
                   render: (close: () => void) =>
                     DIFFICULTY_EDIT_ITEMS.map(({ value, label }) => (
@@ -2734,8 +2764,8 @@ export function BacklogDetail({
                 {
                   kind: 'flyout' as const,
                   id: 'set-risk',
-                  label: 'Risk',
-                  ariaLabel: 'Set risk',
+                  label: appCopy.panels.backlogPanel.risk,
+                  ariaLabel: appCopy.panels.backlogPanel.setRisk,
                   surfaceClassName: 'min-w-[180px]',
                   render: (close: () => void) =>
                     RISK_EDIT_ITEMS.map(({ value, label }) => (
@@ -2757,14 +2787,16 @@ export function BacklogDetail({
                   ? [
                       {
                         id: 'mark-completed',
-                        label: 'Mark completed',
+                        label: appCopy.panels.backlogPanel.markCompleted,
                         onSelect: () => actions.setStatus(selected, 'completed'),
                       },
                     ]
                   : []),
                 {
                   id: 'star',
-                  label: selected.highlight?.starred ? 'Unstar' : 'Star',
+                  label: selected.highlight?.starred
+                    ? appCopy.panels.backlogPanel.unstar
+                    : appCopy.panels.backlogPanel.star,
                   onSelect: () =>
                     actions.setHighlight(selected, {
                       starred: !selected.highlight?.starred,
@@ -2779,21 +2811,38 @@ export function BacklogDetail({
                       {
                         kind: 'swatch' as const,
                         id: 'epic-color',
-                        label: 'Epic color',
+                        label: appCopy.panels.backlogPanel.epicColor,
                         value: currentEpicColor,
                         onPick: (color: BacklogHighlightColor) => actions.setEpicColor(selected, color),
                         onClear: () => actions.setEpicColor(selected, null),
                       },
                     ]
                   : []),
-                { id: 'rename', label: 'Rename…', onSelect: () => actions.rename(selected) },
+                { id: 'rename', label: appCopy.panels.backlogPanel.rename2, onSelect: () => actions.rename(selected) },
                 ...(selected.status === 'archived'
                   ? []
                   : selected.isEpic
-                    ? [{ id: 'archive-epic', label: 'Archive epic', onSelect: () => actions.archiveEpic(selected) }]
-                    : [{ id: 'archive', label: 'Archive', onSelect: () => actions.archive(selected) }]),
+                    ? [
+                        {
+                          id: 'archive-epic',
+                          label: appCopy.panels.backlogPanel.archiveEpic,
+                          onSelect: () => actions.archiveEpic(selected),
+                        },
+                      ]
+                    : [
+                        {
+                          id: 'archive',
+                          label: appCopy.panels.backlogPanel.archive,
+                          onSelect: () => actions.archive(selected),
+                        },
+                      ]),
                 { kind: 'separator' as const, id: 'sep' },
-                { id: 'delete', label: 'Delete…', destructive: true, onSelect: () => actions.remove(selected) },
+                {
+                  id: 'delete',
+                  label: appCopy.panels.backlogPanel.delete2,
+                  destructive: true,
+                  onSelect: () => actions.remove(selected),
+                },
               ]}
             />
           </div>
@@ -2806,7 +2855,7 @@ export function BacklogDetail({
             size="inline"
             align="start"
             onClick={() => onNavigate(parentEpic.id)}
-            aria-label={`Open epic ${parentEpic.title}`}
+            aria-label={appCopy.panels.backlogPanel.openEpic(parentEpic.title)}
             className="mt-1.5 -ml-1 min-h-6 max-w-full"
           >
             <EpicColorDot color={parentEpicColor} size={7} />
@@ -2944,7 +2993,7 @@ function BacklogEpicChildren({
   const done = members.reduce((count, child) => (child.status === 'completed' ? count + 1 : count), 0)
   return (
     <Section
-      title="Children"
+      title={appCopy.panels.backlogPanel.children}
       level={4}
       inset
       // The count, the `N of M done` sentence and a bar of its own said one
@@ -2958,7 +3007,8 @@ function BacklogEpicChildren({
           <span className="flex items-baseline gap-2">
             {blockedRollup && blockedRollup.blocked > 0 ? (
               <span className="whitespace-nowrap text-micro tabular-nums text-[color:var(--text-muted)]">
-                {blockedRollup.blocked} of {blockedRollup.remaining} remaining blocked
+                {blockedRollup.blocked} of {blockedRollup.remaining}
+                {appCopy.panels.backlogPanel.remainingBlocked}
               </span>
             ) : null}
             <EpicProgressMeter progress={{ done, total }} color={color} />
@@ -3047,7 +3097,7 @@ function BacklogTriage({
     // No hairline, and no label column: the section heading already
     // says "Epic", so a second "Epic" beside the one control it holds restated
     // the heading in a 3.5rem gutter. The control is now the section's body.
-    <Section title="Epic" level={4} inset className="shrink-0 pb-3">
+    <Section title={appCopy.panels.backlogPanel.epic} level={4} inset className="shrink-0 pb-3">
       <div className="max-w-[16rem] px-3">
         <BacklogEpicSearchEditor item={item} actions={actions} epicChoices={epicChoices} />
       </div>
@@ -3072,7 +3122,7 @@ function BacklogEpicSearchEditor({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Move to epic"
+      ariaLabel={appCopy.panels.backlogPanel.moveToEpic}
       popupRole="dialog"
       className="w-full"
       placement="bottom-start"
@@ -3084,7 +3134,7 @@ function BacklogEpicSearchEditor({
           aria-haspopup="dialog"
           aria-expanded={triggerProps['aria-expanded']}
           aria-controls={triggerProps['aria-controls']}
-          aria-label="Move to epic"
+          aria-label={appCopy.panels.backlogPanel.moveToEpic}
           onClick={togglePopover}
           className="min-w-[140px]"
         >
@@ -3117,9 +3167,9 @@ function BacklogEpicSearchEditor({
           searchText: epic.slug,
         }))}
         selectedValues={item.epic ? [item.epic] : []}
-        ariaLabel="Search epics"
-        placeholder="Search epic ID or name…"
-        noOptionsMessage="No epics yet."
+        ariaLabel={appCopy.panels.backlogPanel.searchEpics}
+        placeholder={appCopy.panels.backlogPanel.searchEpicIDOrName}
+        noOptionsMessage={appCopy.panels.backlogPanel.noEpicsYet}
         resultRole="listbox"
         onSelect={(epic) => {
           actions.setEpic(item, epic.value)
@@ -3141,7 +3191,7 @@ function BacklogEpicSearchEditor({
           }}
           className="text-meta"
         >
-          New epic…
+          {appCopy.panels.backlogPanel.newEpic2}
         </RowButton>
         {item.epic ? (
           <RowButton
@@ -3151,7 +3201,7 @@ function BacklogEpicSearchEditor({
             }}
             className="text-meta"
           >
-            Remove from epic
+            {appCopy.panels.backlogPanel.removeFromEpic}
           </RowButton>
         ) : null}
       </div>
@@ -3170,7 +3220,11 @@ function BacklogPreviewBody({ item }: { item: BacklogItem }): JSX.Element {
     // title-stripped excerpt).
     const body = backlogPreviewMarkdown(item.sourceContent)
     if (!body) {
-      return <p className="text-meta text-[color:var(--text-muted)]">No description beyond the title yet.</p>
+      return (
+        <p className="text-meta text-[color:var(--text-muted)]">
+          {appCopy.panels.backlogPanel.noDescriptionBeyondTheTitle}
+        </p>
+      )
     }
     // `compact` is the dense-surface ramp (the skill reader's), not the document
     // one: at `document` the body's own h2 renders at 24px inside a pane whose

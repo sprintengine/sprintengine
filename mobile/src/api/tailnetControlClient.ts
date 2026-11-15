@@ -1,6 +1,7 @@
 import { isLinkId } from "../../../packages/studio-protocol/src/chat-link";
 import { readPeerRefusal, readTransportDeclaration, type TailnetTransportDeclaration } from "./tailnetTransport";
 import type { ApiResult, DesktopMachineMark } from "./types";
+import { copy } from "../../../src/shared/copy";
 
 // Pairing with a desktop's tailnet gateway, and what the gateway says of the
 // pairing after: plain fetch + JSON, no account and no server in between.
@@ -52,7 +53,7 @@ export async function completeTailnetPairing(input: {
     return {
       ok: false,
       errorCode: "desktop_unavailable",
-      message: "Can't reach the desktop. Check Tailscale on both devices and remote control on the desktop.",
+      message: copy.phone.api.tailnetControlClient.canTReachTheDesktop,
     };
   }
 
@@ -71,8 +72,8 @@ export async function completeTailnetPairing(input: {
       ok: false,
       errorCode: response.status === 400 ? "invalid_payload" : "unauthenticated",
       message: gatewayError
-        ? `The desktop refused the pairing: ${gatewayError}.`
-        : "Code refused. Codes are single-use and expire — make a new one on the desktop.",
+        ? copy.phone.api.tailnetControlClient.theDesktopRefusedThePairing(gatewayError)
+        : copy.phone.api.tailnetControlClient.codeRefusedCodesAreSingle,
     };
   }
   if (
@@ -83,7 +84,7 @@ export async function completeTailnetPairing(input: {
     !Array.isArray(body.scopes) ||
     body.scopes.some((scope) => typeof scope !== "string")
   ) {
-    return { ok: false, errorCode: "invalid_payload", message: "The desktop returned an invalid pairing response." };
+    return { ok: false, errorCode: "invalid_payload", message: copy.phone.api.tailnetControlClient.theDesktopReturnedAnInvalid };
   }
   return {
     ok: true,
@@ -126,12 +127,12 @@ export async function readTailnetIdentity(input: {
       headers: { authorization: `Bearer ${input.deviceToken}` },
     });
   } catch {
-    return { ok: false, errorCode: "desktop_unavailable", message: "The desktop did not answer." };
+    return { ok: false, errorCode: "desktop_unavailable", message: copy.phone.api.tailnetControlClient.theDesktopDidNotAnswer };
   }
   const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (response.status === 401) return unauthorizedResult(body);
   if (!response.ok || !body) {
-    return { ok: false, errorCode: "desktop_unavailable", message: `The desktop answered ${response.status}.` };
+    return { ok: false, errorCode: "desktop_unavailable", message: copy.phone.api.tailnetControlClient.theDesktopAnswered(response.status) };
   }
   const scopes = Array.isArray(body.scopes) ? body.scopes.filter((scope): scope is string => typeof scope === "string") : null;
   return {
@@ -168,7 +169,7 @@ export function unauthorizedResult(body: unknown): ApiResult<never> {
   const refusal = readPeerRefusal(401, body);
   if (refusal?.code === "peer_unverified") return { ok: false, errorCode: "desktop_unavailable", message: refusal.message };
   if (refusal) return { ok: false, errorCode: "unauthenticated", message: refusal.message };
-  return { ok: false, errorCode: "unauthenticated", message: "This device is no longer paired with the desktop." };
+  return { ok: false, errorCode: "unauthenticated", message: copy.phone.api.tailnetControlClient.thisDeviceIsNoLonger };
 }
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number = READ_TIMEOUT_MS): Promise<Response> {

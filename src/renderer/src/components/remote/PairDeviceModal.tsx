@@ -5,6 +5,7 @@ import { Field, GhostButton, PrimaryButton, Select, type SelectItem } from '../u
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '../ui/Modal'
 import { ScopePicker } from './ScopePicker'
 import { STANDARD_SCOPES } from './scopePickerModel'
+import { copy } from '../../../../shared/copy'
 
 // "Pair a device" (remote-settings-rebuild §6): choose which machine, choose
 // what it may do here, then ask it or create the link.
@@ -84,7 +85,7 @@ export function PairDeviceModal({
 
   const items: SelectItem[] = [
     ...choices.map((peer) => ({ value: peer.endpoint, label: peer.machineName })),
-    { value: LINK_CHOICE, label: 'A phone or another device — make a link' },
+    { value: LINK_CHOICE, label: copy.remote.pairDeviceModal.aPhoneOrAnotherDevice },
   ]
 
   const create = (): void => {
@@ -101,16 +102,16 @@ export function PairDeviceModal({
     <Modal open={open} onClose={onClose} labelledBy={titleId} size="standard">
       {/* No subtitle: the eight rows say what the dialog is for, and a
           sentence above them would only be a worse version of them. */}
-      <ModalHeader title="Pair a device" titleId={titleId} onClose={onClose} />
+      <ModalHeader title={copy.remote.pairDeviceModal.pairADevice} titleId={titleId} onClose={onClose} />
       <ModalBody>
         <div className="flex flex-col gap-4">
           {/* Only when there is a choice to make: with no Studio answering on
               the tailnet, a one-item select would be a control that does
               nothing, and the button below already says "Create link". */}
           {choices.length > 0 ? (
-            <Field label="Pair with" htmlFor={choiceId}>
+            <Field label={copy.remote.pairDeviceModal.pairWith} htmlFor={choiceId}>
               <Select
-                ariaLabel="Pair with"
+                ariaLabel={copy.remote.pairDeviceModal.pairWith}
                 items={items}
                 value={chosen.kind === 'peer' ? chosen.endpoint : LINK_CHOICE}
                 onChange={setChoice}
@@ -123,7 +124,7 @@ export function PairDeviceModal({
       </ModalBody>
       <ModalFooter>
         <GhostButton size="md" onClick={onClose} disabled={busy}>
-          Cancel
+          {copy.remote.pairDeviceModal.cancel}
         </GhostButton>
         <PrimaryButton size="md" onClick={create} disabled={busy || scopes.length === 0}>
           {chosen.kind === 'peer' ? 'Ask to pair' : 'Create link'}

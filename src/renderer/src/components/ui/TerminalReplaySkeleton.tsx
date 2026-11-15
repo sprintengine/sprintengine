@@ -1,4 +1,5 @@
 import React from 'react'
+import { copy } from '../../../../shared/copy'
 
 /**
  * Terminal-shaped placeholder shown while retained scrollback is being
@@ -44,7 +45,7 @@ export function TerminalReplaySkeleton() {
     // has to name a layer to stay over them rather than rely on tree order.
     <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden bg-[color:var(--terminal-bg,var(--bg-app))] p-2">
       <span role="status" className="sr-only">
-        Restoring terminal history…
+        {copy.ui.terminalReplaySkeleton.restoringTerminalHistory}
       </span>
       <div aria-hidden="true" className="flex flex-col gap-2">
         {REPLAY_SKELETON_ROWS.map((row, rowIndex) => (

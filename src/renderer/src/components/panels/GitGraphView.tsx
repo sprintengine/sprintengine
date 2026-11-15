@@ -14,6 +14,7 @@ import {
   type OverflowMenuItem,
 } from '../ui'
 import { setCommitDropData } from '../../utils/terminalDrop'
+import { copy as appCopy } from '../../../../shared/copy'
 
 export type GitGraphState =
   { status: 'loading' } | { status: 'ready'; snapshot: GitGraphSnapshot } | { status: 'error'; message: string }
@@ -235,9 +236,9 @@ const KEBAB_GLYPH = (
 )
 
 const RESET_MODES: { mode: GitResetMode; label: string; hint: string }[] = [
-  { mode: 'soft', label: 'Soft', hint: 'keep changes staged' },
-  { mode: 'mixed', label: 'Mixed', hint: 'keep changes unstaged' },
-  { mode: 'hard', label: 'Hard', hint: 'discard changes' },
+  { mode: 'soft', label: appCopy.panels.gitGraphView.soft, hint: appCopy.panels.gitGraphView.keepChangesStaged },
+  { mode: 'mixed', label: appCopy.panels.gitGraphView.mixed, hint: appCopy.panels.gitGraphView.keepChangesUnstaged },
+  { mode: 'hard', label: appCopy.panels.gitGraphView.hard, hint: appCopy.panels.gitGraphView.discardChanges },
 ]
 
 function buildCommitMenuItems(
@@ -257,8 +258,8 @@ function buildCommitMenuItems(
         id: `merge-${target.ref}`,
         label:
           target.kind === 'commit'
-            ? `Merge commit into ${currentBranch}`
-            : `Merge ${target.label} into ${currentBranch}`,
+            ? appCopy.panels.gitGraphView.mergeCommitInto(currentBranch)
+            : appCopy.panels.gitGraphView.mergeInto(target.label, currentBranch),
         onSelect: () => actions.merge(target),
       })
     }
@@ -267,8 +268,8 @@ function buildCommitMenuItems(
         id: `rebase-${target.ref}`,
         label:
           target.kind === 'commit'
-            ? `Rebase ${currentBranch} onto this commit`
-            : `Rebase ${currentBranch} onto ${target.label}`,
+            ? appCopy.panels.gitGraphView.rebaseOntoThisCommit(currentBranch)
+            : appCopy.panels.gitGraphView.rebaseOnto(currentBranch, target.label),
         onSelect: () => actions.rebaseOnto(target),
       })
     }
@@ -281,19 +282,23 @@ function buildCommitMenuItems(
   if (currentBranch && !isHead && !isOnCurrentBranch) {
     items.push({
       id: 'cherry-pick',
-      label: `Cherry-pick into ${currentBranch}`,
+      label: appCopy.panels.gitGraphView.cherryPickInto(currentBranch),
       onSelect: () => actions.cherryPick(commit),
     })
   }
   if (currentBranch && isOnCurrentBranch) {
-    items.push({ id: 'revert', label: 'Revert this commit…', onSelect: () => actions.revertCommit(commit) })
+    items.push({
+      id: 'revert',
+      label: appCopy.panels.gitGraphView.revertThisCommit,
+      onSelect: () => actions.revertCommit(commit),
+    })
   }
   if (currentBranch && !isHead) {
     items.push({
       kind: 'flyout',
       id: 'reset',
-      label: `Reset ${currentBranch} to here`,
-      ariaLabel: `Reset ${currentBranch} to ${commit.shortHash}`,
+      label: appCopy.panels.gitGraphView.resetToHere(currentBranch),
+      ariaLabel: appCopy.panels.gitGraphView.resetTo(currentBranch, commit.shortHash),
       render: (close) => (
         <>
           {RESET_MODES.map(({ mode, label, hint }) => (
@@ -317,15 +322,23 @@ function buildCommitMenuItems(
   }
 
   items.push(
-    { id: 'checkout', label: 'Checkout this commit', onSelect: () => actions.checkout(commit) },
-    { id: 'branch', label: 'New branch from here…', onSelect: () => actions.createBranch(commit) },
-    { id: 'tag', label: 'New tag from here…', onSelect: () => actions.createTag(commit) },
+    { id: 'checkout', label: appCopy.panels.gitGraphView.checkoutThisCommit, onSelect: () => actions.checkout(commit) },
+    {
+      id: 'branch',
+      label: appCopy.panels.gitGraphView.newBranchFromHere,
+      onSelect: () => actions.createBranch(commit),
+    },
+    { id: 'tag', label: appCopy.panels.gitGraphView.newTagFromHere, onSelect: () => actions.createTag(commit) },
     { kind: 'separator', id: 'sep' },
-    { id: 'copy-hash', label: 'Copy hash', onSelect: () => actions.copyHash(commit) },
-    { id: 'copy-subject', label: 'Copy subject', onSelect: () => actions.copySubject(commit) },
+    { id: 'copy-hash', label: appCopy.panels.gitGraphView.copyHash, onSelect: () => actions.copyHash(commit) },
+    { id: 'copy-subject', label: appCopy.panels.gitGraphView.copySubject, onSelect: () => actions.copySubject(commit) },
   )
   if (commit.commitWebUrl) {
-    items.push({ id: 'github', label: 'Open on GitHub', onSelect: () => actions.openOnGitHub(commit) })
+    items.push({
+      id: 'github',
+      label: appCopy.panels.gitGraphView.openOnGitHub,
+      onSelect: () => actions.openOnGitHub(commit),
+    })
   }
 
   if (localBranches.length > 0) {
@@ -333,13 +346,13 @@ function buildCommitMenuItems(
     for (const branch of localBranches) {
       items.push({
         id: `rename-${branch}`,
-        label: `Rename ${branch}…`,
+        label: appCopy.panels.gitGraphView.rename(branch),
         onSelect: () => actions.renameBranch(branch),
       })
       if (branch !== currentBranch) {
         items.push({
           id: `delete-${branch}`,
-          label: `Delete ${branch}…`,
+          label: appCopy.panels.gitGraphView.delete(branch),
           destructive: true,
           onSelect: () => actions.deleteBranch(branch),
         })
@@ -409,9 +422,11 @@ function GitGraphCommitRow({
       <RowButton
         density="flush"
         aria-pressed={selected}
-        aria-label={`Commit ${commit.shortHash}: ${commit.subject}${
-          refs.length > 0 ? ` (${refs.map((ref) => ref.label).join(', ')})` : ''
-        }`}
+        aria-label={appCopy.panels.gitGraphView.commit(
+          commit.shortHash,
+          commit.subject,
+          refs.length > 0 ? ` (${refs.map((ref) => ref.label).join(', ')})` : '',
+        )}
         onMouseEnter={() => onHover(commit.hash)}
         onMouseLeave={() => onHover(null)}
         onFocus={() => onHover(commit.hash)}
@@ -472,7 +487,7 @@ function GitGraphCommitRow({
       </RowButton>
       <span className="flex shrink-0 items-center pr-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
         <OverflowMenu
-          ariaLabel={`Commit ${commit.shortHash} actions`}
+          ariaLabel={appCopy.panels.gitGraphView.commitActions(commit.shortHash)}
           items={buildCommitMenuItems(
             commit,
             actions,
@@ -581,7 +596,7 @@ export function GitGraphView({
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <span role="status" className="sr-only">
-          Loading commit graph…
+          {appCopy.panels.gitGraphView.loadingCommitGraph}
         </span>
         <div aria-hidden="true">
           {[68, 52, 80, 44, 60].map((width, index) => (
@@ -603,12 +618,12 @@ export function GitGraphView({
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <InlineNotice
           tone="error"
-          title="Couldn't load the commit graph."
+          title={appCopy.panels.gitGraphView.couldnTLoadTheCommit}
           detail={state.message}
           action={
             onRetry ? (
               <OutlineButton size="xs" onClick={onRetry}>
-                Try again
+                {appCopy.panels.gitGraphView.tryAgain}
               </OutlineButton>
             ) : undefined
           }
@@ -620,7 +635,7 @@ export function GitGraphView({
   if (!snapshot || snapshot.commits.length === 0) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <EmptyState density="list" title="No commits yet" />
+        <EmptyState density="list" title={appCopy.panels.gitGraphView.noCommitsYet} />
       </div>
     )
   }
@@ -636,22 +651,27 @@ export function GitGraphView({
                 // The notice's one way out, so it stands off the notice rather
                 // than reading as more of its sentence.
                 <OutlineButton onClick={() => onReturnToBranch(detachedReturnBranch)}>
-                  Return to {detachedReturnBranch}
+                  {appCopy.panels.gitGraphView.returnTo}
+                  {detachedReturnBranch}
                 </OutlineButton>
               ) : undefined
             }
           >
-            <span className="font-medium">Detached HEAD</span>
+            <span className="font-medium">{appCopy.panels.gitGraphView.detachedHEAD}</span>
             {' — '}
-            <span>not on a branch. New commits here are easy to lose.</span>
+            <span>{appCopy.panels.gitGraphView.notOnABranchNew}</span>
           </InlineNotice>
         </div>
       ) : null}
 
       <div className="flex h-6 shrink-0 items-center justify-between gap-2 px-3 pt-3">
-        <div className="text-meta font-semibold text-[color:var(--text-strong)]">Graph</div>
+        <div className="text-meta font-semibold text-[color:var(--text-strong)]">
+          {appCopy.panels.gitGraphView.graph}
+        </div>
         <div className="tabular-nums text-micro text-[color:var(--text-muted)]">
-          {snapshot.totalCount} total · showing {snapshot.commits.length}
+          {snapshot.totalCount}
+          {appCopy.panels.gitGraphView.totalShowing}
+          {snapshot.commits.length}
         </div>
       </div>
 
@@ -691,7 +711,7 @@ export function GitGraphView({
 
         {snapshot.hasMore ? (
           <div className="px-3 pt-3">
-            <Tooltip content="Load older commits across all branches">
+            <Tooltip content={appCopy.panels.gitGraphView.loadOlderCommitsAcrossAll}>
               {/* The log's one bordered action, on the kit's `sm` step. It ran
                   the Git panels' private 28px/6px ramp at 40% disabled.
                  */}

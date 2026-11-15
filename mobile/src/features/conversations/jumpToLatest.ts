@@ -1,5 +1,6 @@
 import type { ConversationRow } from "../../../../packages/conversation-timeline/src/public";
 import { drawnAsReply, rowStreaming } from "./conversationLogic";
+import { copy } from "../../../../src/shared/copy";
 
 // "Jump to latest": the way back to the end of a chat the reader has scrolled
 // away from, and how many replies finished while they were up there. The
@@ -80,7 +81,7 @@ export function jumpToLatest(input: {
   newReplies: number;
 }): { label: string; accessibilityLabel: string } | null {
   if (!input.away || !input.landed || !input.scrollable) return null;
-  if (input.newReplies <= 0) return { label: "Jump to latest", accessibilityLabel: "Jump to latest" };
+  if (input.newReplies <= 0) return { label: copy.phone.conversations.jumpToLatest.jumpToLatest, accessibilityLabel: copy.phone.conversations.jumpToLatest.jumpToLatest };
   const label = `${input.newReplies} new ${input.newReplies === 1 ? "reply" : "replies"}`;
-  return { label, accessibilityLabel: `${label}, jump to latest` };
+  return { label, accessibilityLabel: copy.phone.conversations.jumpToLatest.jumpToLatest2(label) };
 }

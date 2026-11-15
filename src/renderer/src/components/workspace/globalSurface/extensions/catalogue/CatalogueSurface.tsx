@@ -58,6 +58,7 @@ import { INSTALLED_TAB_ID, catalogueMonogram, type CatalogueTab } from './catalo
 import { CatalogueViewSwitchContext } from './catalogueViewSwitch'
 import { InstalledStack } from './InstalledStack'
 import { SourceAvatar } from './SourceAvatar'
+import { copy } from '../../../../../../../shared/copy'
 
 const TABS_PREFIX = 'extensions-catalogue'
 
@@ -204,10 +205,16 @@ export function CatalogueSurface<T>({
       <div className="flex items-center gap-3">
         {viewSwitch ? (
           <SegmentedControl<ExtensionsDrawerView>
-            ariaLabel="Extensions to show"
+            ariaLabel={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.extensionsToShow}
             items={[
-              { value: EXTENSIONS_DRAWER_VIEWS.plugins, label: 'Plugins' },
-              { value: EXTENSIONS_DRAWER_VIEWS.skills, label: 'Skills' },
+              {
+                value: EXTENSIONS_DRAWER_VIEWS.plugins,
+                label: copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.plugins,
+              },
+              {
+                value: EXTENSIONS_DRAWER_VIEWS.skills,
+                label: copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.skills,
+              },
             ]}
             value={viewSwitch.view}
             onChange={viewSwitch.onChange}
@@ -299,9 +306,12 @@ export function CatalogueSurface<T>({
               more ? (
                 <LinkButton
                   onClick={() => setOpened({ place: placeKey, key: section.key })}
-                  aria-label={`View all ${section.items.length} in ${section.label}`}
+                  aria-label={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.viewAllIn(
+                    section.items.length,
+                    section.label,
+                  )}
                 >
-                  View all
+                  {copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.viewAll}
                 </LinkButton>
               ) : undefined,
             )}
@@ -337,8 +347,12 @@ export function CatalogueSurface<T>({
                   }}
                   ariaLabel={
                     acrossSources
-                      ? `Search ${title.toLowerCase()} across all sources`
-                      : `Search ${title.toLowerCase()} in the open tab`
+                      ? copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.searchAcrossAllSources(
+                          title.toLowerCase(),
+                        )
+                      : copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.searchInTheOpenTab(
+                          title.toLowerCase(),
+                        )
                   }
                   placeholder={search.placeholder}
                   controlsId={`${TABS_PREFIX}-panel-${activeTabId}`}
@@ -350,8 +364,17 @@ export function CatalogueSurface<T>({
               // A group opened as a page: the way back is glued to its name,
               // where the eye already is — the dialog's X is the way out.
               <div className="flex items-center gap-2">
-                <Tooltip content="Back" placement="bottom">
-                  <IconButton size="sm" aria-label={`Back to ${activeTabLabel}`} onClick={() => setOpened(null)}>
+                <Tooltip
+                  content={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.back}
+                  placement="bottom"
+                >
+                  <IconButton
+                    size="sm"
+                    aria-label={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.backTo(
+                      activeTabLabel,
+                    )}
+                    onClick={() => setOpened(null)}
+                  >
                     <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
                       <path
                         d="M10 3.5 5.5 8l4.5 4.5"
@@ -452,14 +475,19 @@ function SourcePills({
   }
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <div role="tablist" aria-label={`${title} sources`} className="contents" onKeyDown={onKeyDown}>
+      <div
+        role="tablist"
+        aria-label={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.sources(title)}
+        className="contents"
+        onKeyDown={onKeyDown}
+      >
         {visible.map((tab) => (
           <SourcePill key={tab.id} tab={tab} selected={tab.id === activeTabId} onSelect={() => onSelect(tab.id)} />
         ))}
       </div>
       {folded.length > 0 ? (
         <OverflowMenu
-          ariaLabel="More sources"
+          ariaLabel={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.moreSources}
           align="start"
           items={folded.map((tab) => ({
             id: tab.id,
@@ -468,7 +496,7 @@ function SourcePills({
           }))}
           renderTriggerControl={(props) => (
             <ChipButton variant="pill" {...props}>
-              More
+              {copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.more}
               <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
                 <path
                   d="m4 6 4 4 4-4"
@@ -514,9 +542,13 @@ function SourcePill({
       // names itself the way the tab strip it replaces did.
       aria-label={
         updates
-          ? `${tab.label}: ${tab.updateCount} ${tab.updateCount === 1 ? 'update' : 'updates'} available`
+          ? copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.available(
+              tab.label,
+              tab.updateCount,
+              tab.updateCount === 1 ? 'update' : 'updates',
+            )
           : moved
-            ? `${tab.label} — update available`
+            ? copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.updateAvailable(tab.label)
             : undefined
       }
       onClick={onSelect}
@@ -569,23 +601,30 @@ function UpdateMark(): JSX.Element {
 function AddSourceMenu({ add }: { add: CatalogueAddMenu }): JSX.Element {
   return (
     <OverflowMenu
-      ariaLabel="Add source"
+      ariaLabel={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.addSource}
       align="end"
       items={[
         { id: 'file', label: ADD_LOCAL_SKILL_SOURCE_LABEL, onSelect: add.onAddFromFile },
-        { id: 'github', label: 'Add skill source from GitHub…', onSelect: add.onAddFromGitHub },
+        {
+          id: 'github',
+          label: copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.addSkillSourceFromGitHub,
+          onSelect: add.onAddFromGitHub,
+        },
         ...(add.onInstallExtensionFromGitHub
           ? [
               {
                 id: 'install-extension-github',
-                label: 'Install extension from GitHub…',
+                label: copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.installExtensionFromGitHub,
                 onSelect: add.onInstallExtensionFromGitHub,
               },
             ]
           : []),
       ]}
       renderTriggerControl={(props, opened) => (
-        <Tooltip content="Add source" placement="bottom">
+        <Tooltip
+          content={copy.workspace.globalSurface.extensions.catalogue.catalogueSurface.addSource}
+          placement="bottom"
+        >
           {/* Beside the search field, at the field's own height: adding a
               source is the other way to find more, so it stands where the
               looking is done. */}

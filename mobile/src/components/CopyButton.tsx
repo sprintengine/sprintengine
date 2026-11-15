@@ -7,6 +7,7 @@ import { CheckIcon, CopyIcon, iconSize } from "./glyphs";
 import { useToast } from "./Toast";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { radius, space, touchSlop, typography, type Theme } from "../theme/tokens";
+import { copy as appCopy } from "../../../src/shared/copy";
 
 /**
  * How long the check and "Copied" hold before the copy glyph comes back: long
@@ -82,7 +83,7 @@ export const CopyButton = memo(function CopyButton({
       style={({ pressed }) => [styles.button, pressed ? styles.pressed : null]}
     >
       {copied ? <CheckIcon size={iconSize.xs} tone="toneGood" /> : <CopyIcon size={iconSize.xs} tone="textSubtle" />}
-      {copied ? <Text style={styles.copied}>Copied</Text> : null}
+      {copied ? <Text style={styles.copied}>{appCopy.phone.components.copyButton.copied}</Text> : null}
     </Pressable>
   );
 });

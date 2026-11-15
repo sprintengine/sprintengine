@@ -12,6 +12,7 @@ import { hiddenBrowserLayerStyle } from './WorkspacePaneBody'
 import { useRecordingWorkspaceIds } from './browser/recordingTabs'
 import { revealPoppedOutTab, showPaneTab, usePanePopOutHost } from './popout/panePopOutHost'
 import { canvasBoardSourceOf, watchPairedCanvasOpens } from './canvas/canvasBoardSource'
+import { copy } from '../../../../../shared/copy'
 
 // The pane column (browser-pane epic): the full-height column on the shell
 // row's right edge, beside the band, that hosts every retained
@@ -256,7 +257,7 @@ export function WorkspacePaneColumn({
 
   return (
     <WorkspaceAsideColumn
-      label="Workspace pane"
+      label={copy.workspace.pane.workspacePaneColumn.workspacePane}
       width={width}
       onWidthChange={setWidth}
       collapsed={!activeOpen}

@@ -5,6 +5,7 @@ import { buildScriptedVisualDocument, hasVisualScript } from '../../../../../sha
 import type { CodeBlockNoteAction } from '../../ui/CodeBlock'
 import { SealedVisualFrame } from '../../ui/SealedVisualFrame'
 import { VisualFrame } from '../../ui/VisualFrame'
+import { copy } from '../../../../../shared/copy'
 
 // Its own tag rather than ```html or ```svg: those are routinely source code
 // being shown, and drawing them would hide the code that was asked for.
@@ -74,7 +75,15 @@ export function useVisualDrawing(
   if (!wanted || !result) return {}
   if ('error' in result) {
     const note = `Shown as source: ${result.error}`
-    return result.retry ? { note, noteAction: { label: 'Retry', onClick: () => setAttempt((n) => n + 1) } } : { note }
+    return result.retry
+      ? {
+          note,
+          noteAction: {
+            label: copy.panels.agentChat.conversationVisual.retry,
+            onClick: () => setAttempt((n) => n + 1),
+          },
+        }
+      : { note }
   }
   return { drawing: <VisualFrame srcDoc={result.html} title={result.title} /> }
 }

@@ -3,6 +3,7 @@ import { isPathInside } from '../../../shared/host-paths'
 import { clientSupports } from '../clientCapabilities'
 import { hasFileDropData, readFileDropPayload, SPRINTENGINE_FILE_DROP_MIME } from './terminalDrop'
 import { filesApi } from '../studio/files'
+import { copy as appCopy } from '../../../shared/copy'
 
 // DataTransfer plumbing shared by every surface that takes an image from a
 // paste or a drop — the chat composer (AgentChatView) and the new-chat launch
@@ -329,10 +330,10 @@ export async function readPastedImagePaths(
     const name = path.split(/[\\/]/).pop() || 'image'
     try {
       const file = fileFromDataUrl(await readDataUrl(path), name)
-      if (!file) return { ok: false, message: `Couldn't read ${name}.` }
+      if (!file) return { ok: false, message: appCopy.utils.imageFileTransfer.couldnTRead(name) }
       files.push(file)
     } catch (error) {
-      return { ok: false, message: `Couldn't attach ${name}: ${pastedPathFailure(error)}` }
+      return { ok: false, message: appCopy.utils.imageFileTransfer.couldnTAttach(name, pastedPathFailure(error)) }
     }
   }
   return { ok: true, files }
