@@ -414,6 +414,22 @@ export function studioRuntimeCommandId(grant: StudioGrant, commandId: string): s
   return grant.owner ? `owner:${commandId}` : `client:${grant.clientId}:${commandId}`
 }
 
+/**
+ * An event as a client reads it: the person's message it sent carries the
+ * command id the client chose, not the receipt key it is held under here. A
+ * client draws its message the moment it sends it and matches the chat's copy
+ * to that by its own id, so an id it never chose leaves the message drawn
+ * twice until its send is answered, which for a send is when its turn ends.
+ * Another client's id stays as it is held: it is no id this one chose.
+ */
+export function studioClientEvent<E extends ConversationEvent>(grant: StudioGrant, event: E): E {
+  if (event.type !== 'user_message') return event
+  const held = event.payload?.commandId
+  const prefix = studioRuntimeCommandId(grant, '')
+  if (typeof held !== 'string' || !held.startsWith(prefix)) return event
+  return { ...event, payload: { ...event.payload, commandId: held.slice(prefix.length) } }
+}
+
 /** The strictest ceiling under which an app may answer a request for the rest of a conversation. */
 const CONVERSATION_RULE_FLOOR = 'auto' as const
 const MAX_REMEMBERED_STOPS = 1024
@@ -1278,7 +1294,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const read = await backend.loadEarlier(key, beforeCursor, turnLimit)
       if (!read.ok) return voice.failed('unavailable', read.message, 'conversation.loadEarlier')
       const { page } = boundConversationPage(read.page)
-      return { ok: true, result: { page: { ...page, events: page.events.map((event) => voice.redact(event)) } } }
+      return {
+        ok: true,
+        result: {
+          page: { ...page, events: page.events.map((event) => studioClientEvent(grant, voice.redact(event))) },
+        },
+      }
     },
     'conversation.toolDetail': async ({ key: wire, toolUseId }, { grant, voice }) => {
       const key = resolve(wire, grant)
@@ -1295,7 +1316,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
       const read = await backend.event(key, seq, id)
-      if (read.ok) return { ok: true, result: { event: voice.redact(read.event) } }
+      if (read.ok) return { ok: true, result: { event: studioClientEvent(grant, voice.redact(read.event)) } }
       return voice.failed(
         read.code === 'not_found' ? 'not_found' : read.code === 'invalid_input' ? 'invalid_params' : 'unavailable',
         read.message,

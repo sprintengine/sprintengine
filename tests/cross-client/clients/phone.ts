@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import type { Attachment, ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
-import { Feed, type GateEvent } from '../feed'
+import { Feed, isUserMessage, type GateEvent } from '../feed'
 
 // The phone: its own protocol client, the modules under mobile/src/api that
 // the app calls (mobile/src/__gate__/phoneProtocol.ts names them), bundled for
@@ -85,10 +85,14 @@ export async function phoneClient(input: {
   if (!paired.ok) throw new Error(`phone: pairing was refused: ${paired.message}`)
   const deviceToken = paired.data.deviceToken
   const api = input.protocol.createDesktopConversationsApi({ baseUrl, deviceToken })
-  const streams = new Map<string, { stream: PhoneStream; results: Map<string, (frame: PhoneFrame) => void> }>()
+  const streams = new Map<
+    string,
+    { stream: PhoneStream; results: Map<string, (frame: PhoneFrame) => void>; feed: Feed }
+  >()
   const keyOf = (chat: ChatRef) => `${chat.workspaceId}/${chat.agentId}`
 
-  async function command(chat: ChatRef, what: string, body: Record<string, unknown>): Promise<void> {
+  /** A command, answered: the id it went under. */
+  async function issue(chat: ChatRef, what: string, body: Record<string, unknown>): Promise<string> {
     const open = streams.get(keyOf(chat))
     if (!open) throw new Error(`phone: ${what}: the chat is not open`)
     const id = `phone-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -102,6 +106,30 @@ export async function phoneClient(input: {
     open.stream.command(body, id)
     const result = await answered
     if (result.ok === false) throw new Error(`phone: ${what}: ${result.code ?? ''} ${result.message ?? ''}`.trim())
+    return id
+  }
+
+  async function command(chat: ChatRef, what: string, body: Record<string, unknown>): Promise<void> {
+    await issue(chat, what, body)
+  }
+
+  /**
+   * A send, and its message as the chat echoes it: under the command id the
+   * phone sent it with. The phone draws a message the moment it is sent and
+   * matches the chat's copy to it by that id; under another it drew both
+   * until the send was answered.
+   */
+  async function send(chat: ChatRef, what: string, body: Record<string, unknown> & { message: string }): Promise<void> {
+    const id = await issue(chat, what, body)
+    const feed = streams.get(keyOf(chat))!.feed
+    const deadline = Date.now() + 20_000
+    let echo: GateEvent | undefined
+    while (!(echo = feed.events().findLast(isUserMessage(body.message)))) {
+      if (Date.now() > deadline) throw new Error(`phone: ${what}: its message never came back`)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    if (echo.payload?.commandId !== id)
+      throw new Error(`phone: ${what}: its message came back as ${String(echo.payload?.commandId)}, not ${id}`)
   }
 
   return {
@@ -154,7 +182,7 @@ export async function phoneClient(input: {
           }
         },
       })
-      streams.set(keyOf(chat), { stream, results })
+      streams.set(keyOf(chat), { stream, results, feed })
       return feed
     },
     async createChat(workspace, name) {
@@ -171,14 +199,14 @@ export async function phoneClient(input: {
         workspaceRoot: workspace.workspaceRoot,
       }
     },
-    send: (chat, text) => command(chat, 'send', { kind: 'send', message: text, composedAt: Date.now() }),
+    send: (chat, text) => send(chat, 'send', { kind: 'send', message: text, composedAt: Date.now() }),
     async sendWithAttachment(chat, text, attachment: Attachment) {
       const uploadId = await api.uploadImage({
         uri: pathToFileURL(attachment.path).toString(),
         name: attachment.name,
         mediaType: attachment.mediaType,
       })
-      await command(chat, 'send with a picture', {
+      await send(chat, 'send with a picture', {
         kind: 'send',
         message: text,
         uploadIds: [uploadId],
