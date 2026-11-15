@@ -109,6 +109,7 @@ import {
   SubagentStartRow,
   ThinkingRow,
   ToolGroup,
+  AgentNoticeRow,
   SideQuestionRow,
   TurnFold,
   type StepDetailSource,
@@ -1303,7 +1304,7 @@ export function ConversationScreen({
               accessibilityLabel={`${chatTitle}, chat details`}
               accessibilityRole="button"
               onPress={() => setPageOpen(true)}
-              style={({ pressed }) => [styles.titlePill, pressed ? styles.chipPressed : null]}
+              style={({ pressed }) => [styles.titlePill, pressed ? styles.titlePillPressed : null]}
             >
               <Text numberOfLines={1} style={styles.titlePillText}>
                 {chatTitle}
@@ -2103,6 +2104,16 @@ const ConversationItem = memo(function ConversationItem({
   }
   // A message Studio sent the chat itself: its quiet line under Studio's name,
   // as the desktop draws it, never the person's bubble and nothing to act on.
+  // News about agents the chat launched: a step per agent, its reply behind
+  // the disclosure, as the desktop draws it.
+  if (row.kind === "studio" && row.notices?.length)
+    return (
+      <View accessibilityLabel={`${STUDIO_NAME} said`}>
+        {row.notices.map((notice, index) => (
+          <AgentNoticeRow key={`${notice.agentId ?? notice.name}:${index}`} notice={notice} at={row.at} onNotice={onNotice} />
+        ))}
+      </View>
+    );
   if (row.kind === "studio")
     return (
       <Text accessibilityLabel={`${STUDIO_NAME} said: ${row.text}`} selectable style={styles.meta}>
@@ -2717,10 +2728,16 @@ const createStyles = ({ colors, cardShadowOpacity }: Theme) =>
       paddingLeft: space.xl,
       paddingRight: space.md,
       borderRadius: radius.chip,
-      backgroundColor: colors.bgSurfaceRaised,
+      // The composer's ground, one step above the conversation it floats on,
+      // with the strong hairline: on the raised paper it was the conversation's
+      // own colour (`agentSurface` is that paper) and its edge was all there
+      // was of it, as on the desktop's pill over a chat.
+      backgroundColor: colors.composerSurface,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.borderDefault,
+      borderColor: colors.borderStrong,
     },
+    // Its ground is already the hover step, so pressing goes one further.
+    titlePillPressed: { backgroundColor: colors.bgActive },
     titlePillText: { ...typography.heading, color: colors.textPrimary, flexShrink: 1 },
     floatStatus: { ...typography.micro, color: colors.textMuted, paddingLeft: space.xl },
     blockedBar: {

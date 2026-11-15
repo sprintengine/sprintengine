@@ -1214,7 +1214,12 @@ test("the ring of a chat over there opens what fills its window, read from that 
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
     expect(chat.far['conversation.contextBreakdown']).toHaveBeenCalledExactlyOnceWith({ key: ref })
     const panel = chat.document.querySelector('[data-context-breakdown]')
-    expect(panel?.querySelector('[data-context-heaviest="mcp"]')?.textContent).toContain('linear')
+    // The MCP tools row opens to the servers the reading names.
+    const mcp = [...(panel?.querySelectorAll('[data-context-category] button[aria-expanded]') ?? [])].find((button) =>
+      button.textContent?.startsWith('MCP tools'),
+    ) as HTMLButtonElement | undefined
+    await chat.act(async () => mcp!.click())
+    expect(panel?.querySelector('[data-context-mcp-server="linear"]')?.textContent).toContain('linear')
   } finally {
     await chat.unmount()
   }

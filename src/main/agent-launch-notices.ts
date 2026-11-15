@@ -3,7 +3,12 @@ import { dirname } from 'node:path'
 
 import type { AgentPhase } from '../shared/electron-api'
 import type { AgentPhaseEvent, AgentSessionExitEvent } from '../shared/agent-runtime'
-import type { ConversationEvent, ConversationSessionSummary } from '../shared/conversation-runtime'
+import type {
+  ConversationAgentNotice,
+  ConversationEvent,
+  ConversationMessageOrigin,
+  ConversationSessionSummary,
+} from '../shared/conversation-runtime'
 import type { McpConnectionContext } from '../shared/modules/mcp-tools'
 import { STUDIO_NOTICE_PREFIX } from '../shared/studio-notice'
 import {
@@ -103,6 +108,8 @@ export type LaunchedAgentLink = {
     name?: string
     /** A sub-agent: its whole result, not the end of it, goes to its parent. */
     subagent?: true
+    /** The harness it runs on (`claude-code`, `codex`, …), for the parent's chat to draw its notice with. */
+    cli?: string
   }
 }
 
@@ -666,7 +673,7 @@ export function createAgentLaunchNotices(deps: AgentLaunchNoticesDeps): AgentLau
         composeLaunchNotice(batch),
         session.transport === 'terminal'
           ? terminalSendOptions(() => isIdle(session.sessionId))
-          : { origin: LAUNCH_NOTICE_ORIGIN },
+          : { origin: launchNoticeOrigin(batch) },
       )
       if (!sent.ok) failure = sent
     } catch (error) {
@@ -906,7 +913,7 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
 
 function readSavedChild(value: unknown): LaunchedAgentLink['child'] | null {
   if (!isRecord(value)) return null
-  const { workspaceId, agentId, sessionId, transport, name, subagent } = value
+  const { workspaceId, agentId, sessionId, transport, name, subagent, cli } = value
   if (!isText(workspaceId) || !isText(agentId) || !isText(sessionId)) return null
   if (transport !== 'terminal' && transport !== 'conversation') return null
   return {
@@ -916,6 +923,7 @@ function readSavedChild(value: unknown): LaunchedAgentLink['child'] | null {
     transport,
     ...(isText(name) ? { name } : {}),
     ...(subagent === true ? { subagent: true as const } : {}),
+    ...(isText(cli) ? { cli } : {}),
   }
 }
 
@@ -994,6 +1002,36 @@ function parentKey(parent: { workspaceId: string | null; agentId: string }): str
 
 /** How a chat records a launch notice: Studio's, about an agent the chat started. */
 export const LAUNCH_NOTICE_ORIGIN = { kind: 'studio', reason: 'agent-notice' } as const
+
+/**
+ * How a chat records a notice: Studio's, with each agent's news beside the
+ * words, so the chat's view draws a row per agent (its harness, what happened,
+ * its reply as markdown) rather than the words written for the chat's agent.
+ * The reply is the one the words quote, cut the same way.
+ */
+export function launchNoticeOrigin(notices: readonly LaunchNotice[]): ConversationMessageOrigin {
+  return {
+    ...LAUNCH_NOTICE_ORIGIN,
+    notices: notices.map((notice): ConversationAgentNotice => {
+      const reply = notice.reply
+        ? notice.child.subagent
+          ? cleanResult(notice.reply, MAX_SUBAGENT_RESULT_CHARS)
+          : cleanTail(notice.reply, MAX_REPLY_CHARS)
+        : ''
+      const reason = notice.kind === 'failed' && notice.reason ? cleanLine(notice.reason, MAX_REPLY_CHARS) : ''
+      return {
+        kind: notice.kind,
+        name: cleanLine(notice.child.name ?? '', MAX_NAME_CHARS) || cleanLine(notice.child.agentId, MAX_ID_CHARS),
+        ...(notice.child.subagent ? { subagent: true as const } : {}),
+        ...(notice.child.cli ? { cli: notice.child.cli } : {}),
+        agentId: notice.child.agentId,
+        ...(reply ? { reply } : {}),
+        ...(reply && notice.replyTruncated ? { replyTruncated: true as const } : {}),
+        ...(reason ? { reason } : {}),
+      }
+    }),
+  }
+}
 
 /** One message for everything a parent is told at once. */
 export function composeLaunchNotice(notices: readonly LaunchNotice[]): string {

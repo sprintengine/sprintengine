@@ -114,7 +114,7 @@ test('PullRequestMark', async () => {
     await run('the sidebar tooltip is the number, the state, and what a click does', () => {
       const copy = sidebarMarkCopy([pr({ number: 418 })])
       assert.deepEqual(copy, {
-        title: `Pull request ${num(418)} open`,
+        title: `Pull request ${num(418)} · open`,
         lines: ['Open it on GitHub'],
         ariaLabel: 'Pull request 418, open. Open it on GitHub',
       })
@@ -122,26 +122,34 @@ test('PullRequestMark', async () => {
 
     await run('a draft is an OPEN pull request whose tooltip says draft — never a fourth state', () => {
       const copy = sidebarMarkCopy([pr({ number: 415, isDraft: true })])
-      assert.equal(copy?.title, `Pull request ${num(415)} open, a draft`)
+      assert.equal(copy?.title, `Pull request ${num(415)} · draft`)
       assert.match(copy?.ariaLabel ?? '', /415, open, a draft\./)
     })
 
-    await run('every earlier pull request gets its own line, newest first, and is spoken too', () => {
+    await run('earlier pull requests are counted on the title line, never listed one per line', () => {
       const copy = sidebarMarkCopy([
         pr({ number: 421, openedAt: NOW - HOUR }),
         pr({ number: 411, state: 'merged', openedAt: NOW - 2 * DAY }),
         pr({ number: 402, state: 'closed', openedAt: NOW - 4 * DAY }),
       ])
-      assert.equal(copy?.title, `Pull request ${num(421)} open`)
-      assert.deepEqual(copy?.lines, [
-        'Open it on GitHub',
-        `Earlier: ${num(411)} merged`,
-        `Earlier: ${num(402)} closed without merging`,
-      ])
-      assert.equal(
-        copy?.ariaLabel,
-        'Pull request 421, open. Earlier: pull request 411, merged. Earlier: pull request 402, closed without merging. Open it on GitHub',
+      assert.equal(copy?.title, `Pull request ${num(421)} · open · +2 earlier`)
+      assert.deepEqual(copy?.lines, ['Open it on GitHub'])
+      assert.equal(copy?.ariaLabel, 'Pull request 421, open. 2 earlier pull requests. Open it on GitHub')
+    })
+
+    await run('seventy pull requests still make a tooltip of two lines', () => {
+      const list = Array.from({ length: 70 }, (_, index) =>
+        pr({
+          number: 600 + index,
+          state: index === 0 ? 'open' : 'merged',
+          isDraft: index === 0,
+          openedAt: NOW - index * HOUR,
+        }),
       )
+      const copy = sidebarMarkCopy(list)
+      assert.equal(copy?.title, `Pull request ${num(600)} · draft · +69 earlier`)
+      assert.equal(copy?.lines.length, 1)
+      assert.match(copy?.ariaLabel ?? '', /69 earlier pull requests\./)
     })
 
     await run('the mark is the most recent OPEN one, not simply the newest', () => {
@@ -151,8 +159,8 @@ test('PullRequestMark', async () => {
         pr({ number: 420, state: 'merged', openedAt: NOW - HOUR }),
         pr({ number: 411, openedAt: NOW - 2 * DAY }),
       ])
-      assert.equal(copy?.title, `Pull request ${num(411)} open`, 'the open one wears the mark')
-      assert.deepEqual(copy?.lines.slice(1), [`Earlier: ${num(420)} merged`])
+      assert.equal(copy?.title, `Pull request ${num(411)} · open · +1 earlier`, 'the open one wears the mark')
+      assert.match(copy?.ariaLabel ?? '', /1 earlier pull request\./)
     })
 
     await run('once every one has landed the newest of them wears the mark', () => {
@@ -160,7 +168,7 @@ test('PullRequestMark', async () => {
         pr({ number: 420, state: 'merged', openedAt: NOW - HOUR }),
         pr({ number: 411, state: 'closed', openedAt: NOW - 2 * DAY }),
       ])
-      assert.equal(copy?.title, `Pull request ${num(420)} merged`)
+      assert.equal(copy?.title, `Pull request ${num(420)} · merged · +1 earlier`)
     })
 
     await run('a list spanning repositories names the repo on every line — and only then', () => {
@@ -171,11 +179,11 @@ test('PullRequestMark', async () => {
       assert.equal(pullRequestsSpanRepositories(list), true)
       assert.equal(pullRequestsSpanRepositories([list[1]!]), false)
       const copy = sidebarMarkCopy(list)
-      assert.equal(copy?.title, `sprintengine-website ${num(12)} · open`)
-      assert.deepEqual(copy?.lines, ['Open it on GitHub', `Earlier: sprintengine ${num(411)} · merged`])
+      assert.equal(copy?.title, `sprintengine-website ${num(12)} · open · +1 earlier`)
+      assert.deepEqual(copy?.lines, ['Open it on GitHub'])
       assert.equal(
         copy?.ariaLabel,
-        'Pull request 12 in sprintengine-website, open. Earlier: pull request 411 in sprintengine, merged. Open it on GitHub',
+        'Pull request 12 in sprintengine-website, open. 1 earlier pull request. Open it on GitHub',
       )
     })
 

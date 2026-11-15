@@ -28,6 +28,7 @@ import { applyPromptCacheEvent, type PromptCacheReading } from './promptCache.js
 import { isBackgroundLaunchAck, readSubagentStatus } from './subagents.js'
 import { readBackgroundTasks } from './backgroundTasks.js'
 import { readConversationGoal } from './goal.js'
+import { agentNoticesOf } from './agentNotices.js'
 
 // ── Pure projection ─────────────────────────────────────────────────────────
 
@@ -1013,7 +1014,11 @@ export function projectConversation(
         if (event.seq !== undefined) lastFileChangeSeq = event.seq
         if (turnId) ensureTurn(turnId, false)
         const localTurnId = readString(event.payload, 'localTurnId')
-        const origin = readConversationMessageOrigin(event.payload?.origin)
+        const recordedOrigin = readConversationMessageOrigin(event.payload?.origin)
+        // A launch notice's news, one entry per agent: as Studio recorded it,
+        // or read back from the words of one recorded before it did.
+        const notices = agentNoticesOf(recordedOrigin, readString(event.payload, 'text') ?? '')
+        const origin = recordedOrigin && notices ? { ...recordedOrigin, notices } : recordedOrigin
         const subagentMessage = readConversationSubagentMessage(event.payload?.subagentMessage)
         const commandId = readString(event.payload, 'commandId')
         // The lane was spawned before anyone could write to it, so it is

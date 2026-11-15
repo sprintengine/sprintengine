@@ -25,8 +25,10 @@ import { ConversationPicture, type ChatImages, type SentImages } from "./Convers
 import { toolPicture } from "./conversationImageLogic";
 import { DisclosureGlyph, SideQuestionGlyph, ThoughtGlyph, ToolKindGlyph } from "./toolGlyphs";
 import {
+  type ConversationAgentNotice,
   type ConversationSubagent,
 } from "../../../../packages/conversation-protocol/src/public";
+import { agentNoticeTitle } from "../../../../packages/conversation-timeline/src/public";
 import {
   chatSubagentName,
   chatSubagentStatus,
@@ -315,6 +317,80 @@ export function SideQuestionRow({
           {truncated ? (
             <Text style={styles.thoughtPreview}>Answer too long to keep; showing the start.</Text>
           ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Studio's news about an agent the chat launched (`agent-notice`), drawn as a
+ * step, as the desktop draws it: the logo of the harness it runs on,
+ * "Sub-agent Reviewer finished" and when, closed until tapped. Open, it is
+ * the agent's reply as Markdown on the steps' rail. The words the chat's agent
+ * was handed (which id, the reply quoted as untrusted output) are for that
+ * agent, not the person.
+ */
+export function AgentNoticeRow({
+  notice,
+  at,
+  onNotice,
+}: {
+  notice: ConversationAgentNotice;
+  at: number;
+  onNotice: (message: string) => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
+  const title = agentNoticeTitle(notice);
+  const reply = notice.reply?.trim() ?? "";
+  const time = at ? new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const glyph = notice.cli ? (
+    <CliLogo cli={notice.cli} size={iconSize.sm} />
+  ) : (
+    <ToolKindGlyph kind="subagent" color={colors.textSubtle} />
+  );
+  const head = (
+    <>
+      {glyph}
+      <Text numberOfLines={1} style={styles.groupHead}>
+        {title}
+        {notice.kind === "failed" && notice.reason ? <Text style={styles.errorInk}> · {notice.reason}</Text> : null}
+      </Text>
+      <View style={[styles.end, styles.noticeEnd]}>
+        {time ? <Text style={styles.noticeTime}>{time}</Text> : null}
+        {reply ? <DisclosureGlyph open={open} color={colors.textDisabled} /> : null}
+      </View>
+    </>
+  );
+  return (
+    <View style={styles.steps}>
+      {reply ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${title}. Its reply`}
+          accessibilityState={{ expanded: open }}
+          hitSlop={space.xs}
+          onPress={() => setOpen(!open)}
+          style={({ pressed }) => [styles.step, pressed ? styles.pressed : null]}
+        >
+          {head}
+        </Pressable>
+      ) : (
+        <View accessible accessibilityLabel={title} style={styles.step}>
+          {head}
+        </View>
+      )}
+      {open && reply ? (
+        <View style={styles.rail}>
+          {notice.replyTruncated ? (
+            <Text style={styles.thoughtPreview}>Its start was cut to fit; the agent&apos;s own chat has the whole reply.</Text>
+          ) : null}
+          <View style={styles.prose}>
+            <MarkdownDocument body={reply} variant="chat" reply onLinkBlocked={onLinkBlocked} />
+          </View>
         </View>
       ) : null}
     </View>
@@ -690,6 +766,8 @@ const createStyles = ({ colors }: Theme) =>
     prose: { paddingVertical: space.xs },
     thoughtPreview: { ...typography.body, fontSize: 14, color: colors.textSubtle, flexShrink: 1 },
     thought: { paddingTop: space["2xs"] },
+    noticeEnd: { flexDirection: "row", alignItems: "center", gap: space.xs },
+    noticeTime: { ...typography.meta, color: colors.textSubtle },
     lane: {
       flexDirection: "row",
       alignItems: "center",

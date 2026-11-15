@@ -132,7 +132,70 @@ export type ConversationStudioMessageReason =
  * agent still receives the message as text; `origin` is for whoever draws or
  * counts the conversation (a Studio notice is not the person writing).
  */
-export type ConversationMessageOrigin = { kind: 'studio'; reason?: ConversationStudioMessageReason }
+export type ConversationMessageOrigin = {
+  kind: 'studio'
+  reason?: ConversationStudioMessageReason
+  /**
+   * On an `agent-notice`: each agent's news as Studio composed it, so a view
+   * draws a row per agent (its harness, its name, what happened, its reply as
+   * markdown under a disclosure) in place of the words the chat's agent was
+   * handed. Optional and additive: a reader that does not know it draws the
+   * message's text, as it always did.
+   */
+  notices?: ConversationAgentNotice[]
+}
+
+/** What became of an agent a chat launched, as a launch notice says it. */
+export type ConversationAgentNoticeKind = 'finished' | 'failed' | 'waiting' | 'stopped'
+
+/** One agent's news in an `agent-notice`. */
+export type ConversationAgentNotice = {
+  kind: ConversationAgentNoticeKind
+  /** The agent's name, or its id where it has none. */
+  name: string
+  /** Started with `subagent.start`: a sub-agent of the chat, not a chat of its own. */
+  subagent?: true
+  /** The harness it runs on (`claude-code`, `codex`, …), where Studio knew it. */
+  cli?: string
+  /** The agent's id: a sub-agent's `subagentId`. */
+  agentId?: string
+  /** Its reply as it wrote it: a sub-agent's whole result, or the end of a chat's last reply. */
+  reply?: string
+  /** The reply was cut from its start to fit. */
+  replyTruncated?: true
+  /** Why it failed, where its record says. */
+  reason?: string
+}
+
+const AGENT_NOTICE_KINDS: readonly string[] = [
+  'finished',
+  'failed',
+  'waiting',
+  'stopped',
+] satisfies ConversationAgentNoticeKind[]
+
+/** An origin's `notices`, each one well formed, or null where it carries none. */
+export function readConversationAgentNotices(value: unknown): ConversationAgentNotice[] | null {
+  if (!Array.isArray(value)) return null
+  const text = (field: unknown): field is string => typeof field === 'string' && field.length > 0
+  const notices: ConversationAgentNotice[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue
+    const notice = item as Record<string, unknown>
+    if (!text(notice.kind) || !AGENT_NOTICE_KINDS.includes(notice.kind) || !text(notice.name)) continue
+    notices.push({
+      kind: notice.kind as ConversationAgentNoticeKind,
+      name: notice.name,
+      ...(notice.subagent === true ? { subagent: true as const } : {}),
+      ...(text(notice.cli) ? { cli: notice.cli } : {}),
+      ...(text(notice.agentId) ? { agentId: notice.agentId } : {}),
+      ...(text(notice.reply) ? { reply: notice.reply } : {}),
+      ...(notice.replyTruncated === true ? { replyTruncated: true as const } : {}),
+      ...(text(notice.reason) ? { reason: notice.reason } : {}),
+    })
+  }
+  return notices.length ? notices : null
+}
 
 const STUDIO_MESSAGE_REASONS: readonly string[] = [
   'agent-notice',
@@ -152,9 +215,13 @@ export function readConversationMessageOrigin(value: unknown): ConversationMessa
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const origin = value as { kind?: unknown; reason?: unknown }
   if (origin.kind !== 'studio') return null
-  return typeof origin.reason === 'string' && STUDIO_MESSAGE_REASONS.includes(origin.reason)
-    ? { kind: 'studio', reason: origin.reason as ConversationStudioMessageReason }
-    : { kind: 'studio' }
+  const reason =
+    typeof origin.reason === 'string' && STUDIO_MESSAGE_REASONS.includes(origin.reason)
+      ? (origin.reason as ConversationStudioMessageReason)
+      : undefined
+  const notices =
+    reason === 'agent-notice' ? readConversationAgentNotices((value as { notices?: unknown }).notices) : null
+  return { kind: 'studio', ...(reason ? { reason } : {}), ...(notices ? { notices } : {}) }
 }
 
 /**

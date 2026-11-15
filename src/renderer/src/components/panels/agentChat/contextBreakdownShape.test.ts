@@ -1,16 +1,18 @@
 // The breakdown's picture, worked out apart from its drawing: the bar's
-// segments as shares of the window, each row's colour fixed by what it is
-// rather than where it falls, the rows not in the window kept out of the bar,
-// and the one loaded item that weighs most.
+// segments as shares of the window, each row's colour by where it falls, the
+// slivers folded into one row, the rows not in the window kept out of the bar
+// and said in one line, and which list each category opens to.
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { ConversationContextBreakdown } from '../../../../../shared/conversation-runtime'
 import {
+  categoryGroup,
+  contextPercentLabel,
   contextSegments,
   contextShareLabel,
+  deferredLabel,
   deferredRows,
-  heaviestLoaded,
   memoryFileLabel,
 } from './contextBreakdownShape'
 
@@ -79,7 +81,7 @@ test('past the eighth content row the rest fold into the grey', () => {
     tokens: 10,
     kind: 'used' as const,
   }))
-  const segments = contextSegments(breakdown({ categories: rows }))
+  const segments = contextSegments(breakdown({ windowTokens: 90, categories: rows }))
   assert.deepEqual(
     segments.map((segment) => segment.slot),
     [1, 2, 3, 4, 5, 6, 7, 8, 'other'],
@@ -103,14 +105,78 @@ test('a window read over its limit is drawn against the rows’ own sum, so the 
   )
 })
 
-test('the heaviest is the heaviest thing a person loaded, never the conversation itself', () => {
-  assert.deepEqual(heaviestLoaded(breakdown()), { group: 'mcp', name: 'sprintengine-studio', tokens: 12_000 })
-  assert.deepEqual(heaviestLoaded(breakdown({ mcpServers: [], skills: [{ name: 'deploy', tokens: 2_500 }] })), {
-    group: 'skill',
-    name: 'deploy',
-    tokens: 2_500,
-  })
-  assert.equal(heaviestLoaded(breakdown({ mcpServers: [], skills: [], memoryFiles: [] })), null)
+test('rows under 1% of the window fold into one grey row where the first of them was, heaviest first inside', () => {
+  const segments = contextSegments(
+    breakdown({
+      windowTokens: 1_000_000,
+      categories: [
+        { name: 'System prompt', tokens: 2_100, kind: 'used' },
+        { name: 'System tools', tokens: 13_100, kind: 'used' },
+        { name: 'Skills', tokens: 5_800, kind: 'used' },
+        { name: 'Messages', tokens: 251_000, kind: 'used' },
+        { name: 'Free space', tokens: 728_000, kind: 'free' },
+      ],
+    }),
+  )
+  assert.deepEqual(
+    segments.map((segment) => [segment.name, segment.tokens, segment.slot]),
+    [
+      ['2 more under 1%', 7_900, 'other'],
+      ['System tools', 13_100, 1],
+      ['Messages', 251_000, 2],
+      ['Free space', 728_000, null],
+    ],
+  )
+  assert.deepEqual(
+    segments[0]!.members!.map((member) => member.name),
+    ['Skills', 'System prompt'],
+  )
+  assert.ok(Math.abs(segments[0]!.share - 0.0079) < 1e-9, 'the folded row is drawn as wide as its rows together')
+})
+
+test('a single sliver stays itself: a row that opens to one row says nothing', () => {
+  const segments = contextSegments(
+    breakdown({
+      windowTokens: 1_000_000,
+      categories: [
+        { name: 'System prompt', tokens: 2_100, kind: 'used' },
+        { name: 'Messages', tokens: 251_000, kind: 'used' },
+      ],
+    }),
+  )
+  assert.deepEqual(
+    segments.map((segment) => [segment.name, segment.members === undefined]),
+    [
+      ['System prompt', true],
+      ['Messages', true],
+    ],
+  )
+})
+
+test('a category opens to the list it names; a name it does not know opens to nothing', () => {
+  assert.equal(categoryGroup('MCP tools'), 'mcp')
+  assert.equal(categoryGroup('Skills'), 'skills')
+  assert.equal(categoryGroup('Memory files'), 'memory')
+  assert.equal(categoryGroup('Custom agents'), 'agents')
+  assert.equal(categoryGroup('MCP tools (deferred)'), null)
+  assert.equal(categoryGroup('Messages'), null)
+})
+
+test('the rows not in the window read as one line, without the agent’s "(deferred)"', () => {
+  assert.equal(
+    deferredLabel([
+      { name: 'MCP tools (deferred)', tokens: 110_000 },
+      { name: 'System tools (deferred)', tokens: 26_700 },
+    ]),
+    'MCP tools 110k · System tools 26.7k',
+  )
+})
+
+test('a share under 1% has no number of its own: the tokens say enough', () => {
+  assert.equal(contextPercentLabel(251_000, 1_000_000), '25%')
+  assert.equal(contextPercentLabel(13_100, 1_000_000), '1%')
+  assert.equal(contextPercentLabel(2_100, 1_000_000), null)
+  assert.equal(contextPercentLabel(10, 0), null)
 })
 
 test('shares read in whole percent, with a floor that is not zero', () => {

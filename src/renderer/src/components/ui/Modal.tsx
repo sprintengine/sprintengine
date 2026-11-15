@@ -22,6 +22,7 @@
 // transient family beats modal; toast beats everything. Consuming the token
 // removes the second ladder this file used to carry.
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { backdropHasNoTerminal } from '../palette/paletteBackdrop'
 import { acquireTerminalRepaintPause } from '../../utils/terminalRepaintPause'
 import { CloseIconButton, DangerButton, GhostButton, PrimaryButton } from './Buttons'
@@ -145,7 +146,7 @@ export function Modal({
 
   if (!open) return null
 
-  return (
+  const scrim = (
     <div
       // Scrim: `.overlay-scrim`, matching the Command Palette and every other
       // full-screen overlay so modals read as one system. That claim used to be
@@ -207,6 +208,17 @@ export function Modal({
       </FocusTrap>
     </div>
   )
+  // A window-wide dialog is portaled to <body>, as every popover, menu and
+  // tooltip already is. Drawn where it was declared, a `fixed` scrim is only as
+  // free as its ancestors let it be: a scrolled `ScrollArea` wears a
+  // `mask-image` for its edge fade, and a mask clips everything painted inside
+  // it, fixed descendants included — so "Pair a device", opened from the
+  // Settings page's scrolled body, lost its left side to the page's edge. A
+  // `transform`, `filter` or `contain` on any ancestor would do the same. React
+  // context and synthetic events still flow through the portal, so a dialog
+  // keeps everything its declaring tree gives it. `contained` stays put: being
+  // bounded by the panel it sits in is the whole point of that variant.
+  return contained || typeof document === 'undefined' ? scrim : createPortal(scrim, document.body)
 }
 
 type ModalHeaderProps = {

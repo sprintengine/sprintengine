@@ -16,6 +16,7 @@ import type {
   ConversationToolStatus,
 } from '../../packages/conversation-protocol/src/public'
 export type {
+  ConversationAgentNotice,
   ConversationApprovalKind,
   ConversationApprovalRequestedPayload,
   ConversationBackgroundTask,

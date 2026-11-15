@@ -1925,11 +1925,15 @@ function WorkspaceLayoutBody({
       if (!hostsAgents) return
       values.stickyButtons.push(
         <Tooltip key="new-agent" content="New agent" placement="bottom">
-          {/* `GHOST_TONE.quiet` is this control's rest ink exactly —
-              `--text-disabled`, lifting on `--bg-hover` — which is what keeps a
-              sticky control from competing with the tab labels beside it. */}
+          {/* Under a split, `GHOST_TONE.quiet` is this control's rest ink
+              exactly — `--text-disabled`, lifting on `--bg-hover` — which
+              keeps a sticky control from competing with the tab labels beside
+              it. On the band it is folded away until the pill is hovered, and
+              then it is the one thing the half pill it rides in holds, so it
+              takes the ordinary ink and the tab strip's step. */}
           <IconButton
-            tone="quiet"
+            tone={marks ? 'neutral' : 'quiet'}
+            size={marks ? '2xs' : 'sm'}
             aria-label="New agent"
             onClick={(event) => {
               // The strip's own click handler would select whatever tab sits

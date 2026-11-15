@@ -306,6 +306,107 @@ test('ConversationPeekCard', async () => {
     assert.match(two, /Pull request 421, open/, 'the primary is still the most recent open one')
   })
 
+  // --- What the chat holds: its pull requests, servers and agents --------------
+  run('every pull request is listed, open ones first, newest first within each state', () => {
+    const markup = card({
+      agent: {
+        pullRequests: [
+          pullRequest({ number: 667, state: 'merged', openedAt: NOW - HOUR }),
+          pullRequest({ number: 472, isDraft: true, openedAt: NOW - 4 * 24 * HOUR }),
+          pullRequest({ number: 666, state: 'merged', openedAt: NOW - 2 * HOUR }),
+        ],
+      },
+    })
+    assert.match(markup, /aria-label="Pull requests from this chat"/)
+    const order = [472, 667, 666].map((n) => markup.indexOf(`aria-label="Pull request ${n},`))
+    assert.ok(
+      order.every((index) => index >= 0),
+      'each row is named for a screen reader',
+    )
+    assert.deepEqual(
+      [...order].sort((a, b) => a - b),
+      order,
+      'the open one leads, then newest first',
+    )
+    assert.match(markup, /Pull request 472, open, a draft: Pull request 472\. Open it on GitHub/)
+  })
+
+  run('a long list scrolls inside the card rather than running off the screen', () => {
+    const many = Array.from({ length: 70 }, (_, index) =>
+      pullRequest({ number: 600 + index, state: 'merged', openedAt: NOW - index * HOUR }),
+    )
+    const markup = card({ agent: { pullRequests: many } })
+    const list = markup.slice(markup.indexOf('aria-label="Pull requests from this chat"') - 200)
+    assert.match(list.slice(0, 400), /max-h-40 overflow-y-auto/)
+    const rows = markup.slice(markup.indexOf('aria-label="Pull requests from this chat"'))
+    assert.equal(rows.match(/aria-label="Pull request 6\d\d,/g)?.length, 70, 'none is dropped')
+    const few = card({ agent: { pullRequests: many.slice(0, 3) } })
+    assert.equal(few.includes('max-h-40'), false, 'a short list does not scroll')
+  })
+
+  run('no pull requests, no servers and one agent draw no sections at all', () => {
+    const markup = card()
+    for (const heading of ['>Agents<', '>Pull requests<', '>Servers<'])
+      assert.equal(markup.includes(heading), false, `${heading} is not drawn empty`)
+  })
+
+  run('servers are listed with their state in words, running ones first', () => {
+    const markup = card({
+      identity: {
+        servers: [
+          { id: 'a', url: 'http://localhost:4000/', title: 'Old preview', state: 'stopped' },
+          { id: 'b', url: 'http://localhost:5173', title: 'Dev server', state: 'running' },
+        ],
+        openServer: () => undefined,
+      },
+    })
+    assert.match(markup, />Servers</)
+    assert.ok(markup.indexOf('Dev server') < markup.indexOf('Old preview'), 'the running one leads')
+    assert.match(markup, /localhost:5173/)
+    assert.match(markup, /aria-label="Local server Dev server, localhost:5173, running\. Open it"/)
+    assert.match(markup, />Stopped</)
+  })
+
+  run('a server the shell cannot open is a fact, not a button', () => {
+    const markup = card({
+      identity: { servers: [{ id: 'b', url: 'http://localhost:5173', title: 'Dev server', state: 'running' }] },
+    })
+    assert.match(markup, /aria-label="Local server Dev server, localhost:5173, running"/)
+    assert.equal(markup.includes('running. Open it'), false)
+  })
+
+  run('the chat’s agents are listed when there is more than one, this one marked', () => {
+    const other: ConversationPeekIdentity = {
+      ...IDENTITY,
+      status: { kind: 'idle', label: 'Idle' },
+      open: () => undefined,
+      agent: { ...AGENT, sessionId: 'other', name: 'Review agent' },
+    }
+    const self: ConversationPeekIdentity = {
+      ...IDENTITY,
+      open: () => undefined,
+      agent: { ...AGENT, name: 'Docs agent' },
+    }
+    const markup = renderToStaticMarkup(<ConversationPeekCard identity={self} roster={[self, other]} now={NOW} />)
+    assert.match(markup, />Agents</)
+    assert.match(
+      markup,
+      /aria-label="Docs agent, working\. Open this agent"[^>]*aria-current="true"|aria-current="true"[^>]*aria-label="Docs agent, working\. Open this agent"/,
+    )
+    assert.match(markup, /aria-label="Review agent, idle\. Open this agent"/)
+    const alone = renderToStaticMarkup(<ConversationPeekCard identity={self} roster={[self]} now={NOW} />)
+    assert.equal(alone.includes('>Agents<'), false, 'one agent is the card itself')
+  })
+
+  run('sub-agents out are counted under Agents, and only while the agent works', () => {
+    const working = card({ identity: { open: () => undefined }, agent: { activeSubagents: 3 } })
+    assert.match(working, />Agents</)
+    assert.match(working, /3 sub-agents running/)
+    assert.match(working, /aria-label="3 sub-agents running\. Open the agent that started them"/)
+    const idle = card({ identity: { status: { kind: 'idle', label: 'Idle' } }, agent: { activeSubagents: 3 } })
+    assert.equal(idle.includes('sub-agents running'), false)
+  })
+
   if (failures > 0) {
     console.error(`ConversationPeekCard.test.tsx: ${failures} failing`)
     process.exit(1)

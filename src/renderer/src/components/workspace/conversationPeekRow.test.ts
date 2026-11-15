@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 
-import { peekMachineOf, peekPlaceOf, peekStatusOf, rowConversationPeekIdentities } from './conversationPeekRow'
+import {
+  peekMachineOf,
+  peekPlaceOf,
+  peekStatusOf,
+  remoteConversationPeekIdentities,
+  rowConversationPeekIdentities,
+  type RemotePeekAgent,
+} from './conversationPeekRow'
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
+import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
+import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import type { AgentState } from '../../../../shared/workspace'
 import { test } from 'vitest'
 
@@ -373,6 +382,121 @@ test('conversationPeekRow', async () => {
     })
     assert.equal(identities.length, 2, 'the live session and the parked record')
     for (const identity of identities) assert.equal(identity.place?.machine?.label, 'WSL: Ubuntu')
+  })
+
+  // --- What the chat holds rides each card -------------------------------------
+  const pullRequest = (number: number, state: BranchPullRequest['state'] = 'open'): BranchPullRequest => ({
+    url: `https://github.com/acme/sprintengine/pull/${number}`,
+    repoKey: 'github.com/acme/sprintengine',
+    repoName: 'sprintengine',
+    number,
+    title: `Change ${number}`,
+    state,
+    isDraft: false,
+    openedAt: 0,
+    stateAt: 0,
+  })
+  const summary = (over: Partial<ConversationSessionSummary> = {}): ConversationSessionSummary =>
+    ({
+      sessionId: 'conv-1',
+      workspaceId: 'w1',
+      agentId: 'a1',
+      providerId: 'claude-agent',
+      modelId: 'opus',
+      status: 'ready',
+      createdAt: NOW - 3_600_000,
+      updatedAt: NOW - 60_000,
+      ...over,
+    }) as ConversationSessionSummary
+
+  run('a chat’s card lists the pull requests the record files under its agent, and its servers', () => {
+    const opened: string[] = []
+    const identities = rowConversationPeekIdentities({
+      workspace: { name: 'A chat', agents: { a1: agent({ name: 'Docs agent' }) } },
+      sessions: [],
+      conversations: [summary(), summary({ sessionId: 'conv-2', agentId: 'a2', updatedAt: NOW - 120_000 })],
+      status: peekStatusOf('idle', ''),
+      now: NOW,
+      platform: 'darwin',
+      pullRequestsByAgent: { a1: [pullRequest(472), pullRequest(667, 'merged')] },
+      servers: [{ id: 's', url: 'http://localhost:5173', title: 'Dev server', state: 'running' }],
+      openAgent: (agentId, name) => opened.push(`${agentId}:${name}`),
+    })
+    const [first, second] = identities
+    assert.deepEqual(
+      first?.agent.pullRequests.map((pr) => pr.number),
+      [472, 667],
+    )
+    assert.deepEqual(second?.agent.pullRequests, [], 'another agent of the chat has its own, here none')
+    assert.equal(first?.agent.name, 'Docs agent')
+    assert.equal(first?.agent.cli, 'claude-code', 'a chat says what it runs on, as a terminal agent does')
+    assert.equal(first?.servers?.length, 1)
+    first?.open?.()
+    assert.deepEqual(opened, ['a1:Docs agent'])
+  })
+
+  run('a one-agent row whose agent has no list of its own shows the row’s', () => {
+    const [only] = rowConversationPeekIdentities({
+      workspace: { name: 'A chat', agents: {} },
+      sessions: [],
+      conversations: [summary()],
+      status: peekStatusOf('idle', ''),
+      now: NOW,
+      platform: 'darwin',
+      rowPullRequests: [pullRequest(12)],
+    })
+    assert.deepEqual(
+      only?.agent.pullRequests.map((pr) => pr.number),
+      [12],
+    )
+  })
+
+  run('a chat on a paired machine gets the same card from what its list carries', () => {
+    const followed: string[] = []
+    const row: RemotePeekAgent & { remoteAgentId: string } = {
+      remoteAgentId: 'remote-a1',
+      sessionId: 'mesh:w1:a1',
+      title: 'Docs agent',
+      cli: 'claude-code',
+      phase: 'running',
+      activity: 'working',
+      since: NOW - 60_000,
+      branch: 'feat/peek',
+      pullRequests: [pullRequest(472)],
+      lastTurnEndedAt: null,
+      modelId: 'opus',
+      backgroundAgents: 4,
+      localServers: [
+        {
+          id: 's',
+          url: 'http://localhost:5173',
+          title: 'Dev server',
+          state: 'running',
+          port: 5173,
+          agentId: 'a1',
+          linkedAt: 0,
+          stateAt: 0,
+        },
+      ],
+    }
+    const [identity] = remoteConversationPeekIdentities({
+      name: 'A chat',
+      machineName: 'mac-mini',
+      agents: [row],
+      openAgent: (picked) => followed.push(picked.remoteAgentId),
+    })
+    assert.deepEqual(identity?.place, { machine: { label: 'mac-mini', kind: 'remote' }, branch: 'feat/peek' })
+    assert.deepEqual(identity?.status, { kind: 'working', label: 'Working' })
+    assert.equal(identity?.agent.activeSubagents, 4)
+    assert.equal(identity?.agent.model, 'opus')
+    assert.deepEqual(
+      identity?.agent.pullRequests.map((pr) => pr.number),
+      [472],
+    )
+    assert.equal(identity?.servers?.length, 1)
+    assert.equal(identity?.openServer, undefined, 'that machine’s localhost opens only there')
+    identity?.open?.()
+    assert.deepEqual(followed, ['remote-a1'])
   })
 
   if (failures !== 0) process.exit(1)

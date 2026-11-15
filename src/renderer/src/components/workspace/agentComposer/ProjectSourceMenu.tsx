@@ -3,8 +3,8 @@ import React from 'react'
 import type { CloneProgress, RepositoryCloneInput, RepositoryCloneResult } from '../../../../../shared/electron-api'
 import {
   GhostButton,
+  IconButton,
   Input,
-  LinkButton,
   MenuItem,
   MENU_DIVIDER_CLASS,
   MENU_LIST_CLASS,
@@ -14,24 +14,24 @@ import {
   Spinner,
   Tooltip,
 } from '../../ui'
-import { FolderTypeIcon, NoProjectGlyph } from '../../AppIcons'
+import { ChevronDownIcon, FolderTypeIcon, NoProjectGlyph } from '../../AppIcons'
 import { isProjectlessChatsRoot, PROJECTLESS_CHATS_LABEL } from '../../../../../shared/projectless-chats'
 import type { ProjectColor } from '../../../utils/projectColor'
-import { GitHubRepoPicker, toRepoListState, type GitHubRepoListState } from '../newWorkspace/GitHubRepoPicker'
-import { cloneParentFor, describeCloneProgress, draftNamesRepo, resolveCloneSource } from '../newWorkspace/githubClone'
+import { cloneParentFor, describeCloneProgress, resolveCloneSource } from '../newWorkspace/githubClone'
 import { suggestedWorkspaceFolderName } from '../newWorkspace/folderCreation'
 import { NewProjectStep, type NewProjectRequest } from '../newWorkspace/NewProjectStep'
 import type { NewProjectResult } from '../../../../../shared/electron-api'
 import { basename } from '../../../utils/paths'
-import { isImeKey } from '../../../utils/imeKey'
 import { gitApi } from '../../../studio/git'
 
 // The New-chat project selector's body (remote-sessions-ux /
 // project-selector-sources): one surface that searches the projects, browses
-// the disk, and imports from Git — the shipped clone machinery
-// (GitHubRepoPicker, github-repos, git-clone) resurfaced where the owner
-// wants everything created, stepped in place rather than stacking a second
-// dialog on the first.
+// the disk, and imports from Git — the shipped clone machinery (git-clone)
+// resurfaced where the owner wants everything created, stepped in place rather
+// than stacking a second dialog on the first. The Git step asks for a URL, a
+// branch and a folder and nothing else: a list of the account's repositories
+// and a note naming the hosts it takes were taken out as clutter (owner,
+// 2026-11-15) — the field takes any Git host's address on its own.
 
 export type ProjectSourceOption = {
   path: string
@@ -126,8 +126,6 @@ export function ProjectSourceMenu({
 }) {
   const [step, setStep] = React.useState<'projects' | 'git' | 'new'>('projects')
   const [query, setQuery] = React.useState('')
-  const [repoList, setRepoList] = React.useState<GitHubRepoListState>({ status: 'loading' })
-  const [repoFilter, setRepoFilter] = React.useState('')
   const [urlDraft, setUrlDraft] = React.useState('')
   // null follows the source: the branch a pasted page named, and the
   // repository's own name for the folder. Typing in either field takes it over.
@@ -136,32 +134,9 @@ export function ProjectSourceMenu({
   const [parentOverride, setParentOverride] = React.useState<string | null>(null)
   const [cloning, setCloning] = React.useState<{ id: string; progress: CloneProgress | null } | null>(null)
   const [cloneError, setCloneError] = React.useState<{ message: string; existingPath?: string } | null>(null)
-  const repoRequestSeq = React.useRef(0)
   const fieldId = React.useId()
 
-  const loadRepos = React.useCallback(() => {
-    const seq = ++repoRequestSeq.current
-    setRepoList({ status: 'loading' })
-    void gitApi
-      .listGitHubRepos()
-      .then((result) => {
-        if (repoRequestSeq.current === seq) setRepoList(toRepoListState(result))
-      })
-      .catch((error: unknown) => {
-        if (repoRequestSeq.current === seq) {
-          setRepoList({
-            status: 'error',
-            reason: 'network',
-            message: error instanceof Error ? error.message : String(error),
-          })
-        }
-      })
-  }, [])
-
-  const openGitStep = () => {
-    setStep('git')
-    loadRepos()
-  }
+  const openGitStep = () => setStep('git')
 
   const resolution = resolveCloneSource(urlDraft)
   const source = resolution.source
@@ -243,26 +218,47 @@ export function ProjectSourceMenu({
 
   if (step === 'git') {
     const parentLabel = parentDir ? `${basename(parentDir) || parentDir}/` : 'Choose a folder'
+    const urlNote = resolution.error ? (
+      <span className="text-[color:var(--tone-error)]">{resolution.error}</span>
+    ) : source ? (
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="shrink-0 font-medium text-[color:var(--text-default)]">{source.providerName}</span>
+        <span className="min-w-0 truncate font-mono text-[color:var(--text-subtle)]" title={source.location}>
+          {source.location}
+        </span>
+      </span>
+    ) : null
     return (
-      <div className="flex w-[380px] flex-col gap-3 p-2.5">
-        {/* The kit's text link in its `quiet` ink — the back affordance is a
-            word, not a control with a box. */}
-        <LinkButton ink="quiet" underline="never" onClick={() => setStep('projects')} className="self-start">
-          <span aria-hidden="true">←</span> Import from Git
-        </LinkButton>
+      // A form, so Enter in any of its fields clones once there is something
+      // to clone; the browser leaves a key that ends an IME composition alone.
+      <form
+        noValidate
+        aria-labelledby={`${fieldId}-title`}
+        className="flex w-[380px] flex-col gap-3 p-2.5"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (canClone) void runClone()
+        }}
+      >
+        <div className="flex items-center gap-1">
+          <IconButton size="xs" tone="subtle" aria-label="Back to projects" onClick={() => setStep('projects')}>
+            <ChevronDownIcon className="icon-xs rotate-90" />
+          </IconButton>
+          <h3 id={`${fieldId}-title`} className="text-body font-medium text-[color:var(--text-strong)]">
+            Import from Git
+          </h3>
+        </div>
 
-        {/* The URL leads: it is the one lane that reaches every host — GitHub,
-            GitLab, Bitbucket, Azure DevOps, Gitea, a company's own server —
-            and the account's GitHub list below only fills it in. */}
-        <div className="flex flex-col gap-1.5">
-          {/* A real <label for>, at the kit label's type step: the field
-              carries its own note in aria-describedby, which `Field` would
-              overwrite when it clones its child. */}
-          <label htmlFor={`${fieldId}-url`} className="text-body font-medium text-[color:var(--text-default)]">
-            Repository URL
+        {/* One column of labels, one of controls, every control one height
+            (`sm`). The URL is any Git host's: what it names is said under it
+            once it parses, and nothing is said before. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+          <label htmlFor={`${fieldId}-url`} className="text-meta text-[color:var(--text-muted)]">
+            Repository
           </label>
           <Input
             id={`${fieldId}-url`}
+            size="sm"
             aria-label="Repository URL"
             autoFocus
             value={urlDraft}
@@ -272,60 +268,24 @@ export function ProjectSourceMenu({
               setFolderDraft(null)
               setCloneError(null)
             }}
-            onKeyDown={(event) => {
-              if (isImeKey(event)) return
-              if (event.key === 'Enter' && canClone) {
-                event.preventDefault()
-                void runClone()
-              }
-            }}
-            placeholder="https://…, git@host:owner/repo, or owner/repo"
+            placeholder="https://… or owner/repo"
             spellCheck={false}
             autoComplete="off"
             aria-invalid={resolution.error ? true : undefined}
-            aria-describedby={`${fieldId}-url-note`}
+            aria-describedby={urlNote ? `${fieldId}-url-note` : undefined}
             disabled={Boolean(cloning)}
             className="font-mono"
           />
-          <p id={`${fieldId}-url-note`} className="min-w-0 px-0.5 text-micro leading-4">
-            {resolution.error ? (
-              <span className="text-[color:var(--tone-error)]">{resolution.error}</span>
-            ) : source ? (
-              <span className="flex min-w-0 items-baseline gap-1.5">
-                <span className="shrink-0 font-medium text-[color:var(--text-default)]">{source.providerName}</span>
-                <span className="min-w-0 truncate font-mono text-[color:var(--text-subtle)]" title={source.location}>
-                  {source.location}
-                </span>
-              </span>
-            ) : (
-              <span className="text-[color:var(--text-subtle)]">
-                GitHub, GitLab, or any Git server, public or self-hosted
-              </span>
-            )}
-          </p>
+          {urlNote ? (
+            <p id={`${fieldId}-url-note`} className="col-start-2 -mt-1 min-w-0 px-0.5 text-micro leading-4">
+              {urlNote}
+            </p>
+          ) : null}
           {source?.insecure ? (
-            <p className="px-0.5 text-micro leading-4 text-[color:var(--tone-warn)]">
+            <p className="col-start-2 -mt-1 px-0.5 text-micro leading-4 text-[color:var(--tone-warn)]">
               Not encrypted: code and any sign-in are sent in the clear.
             </p>
           ) : null}
-        </div>
-
-        <GitHubRepoPicker
-          listState={repoList}
-          filter={repoFilter}
-          onChangeFilter={setRepoFilter}
-          isSelected={(repo) => draftNamesRepo(urlDraft, repo)}
-          onSelectRepo={(repo) => {
-            // Picking fills the field; picking the row it already names clears it.
-            setUrlDraft((current) => (draftNamesRepo(current, repo) ? '' : repo.cloneUrl))
-            setBranchDraft(null)
-            setFolderDraft(null)
-            setCloneError(null)
-          }}
-          onRetry={loadRepos}
-        />
-
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">
           <label htmlFor={`${fieldId}-branch`} className="text-meta text-[color:var(--text-muted)]">
             Branch
           </label>
@@ -417,11 +377,11 @@ export function ProjectSourceMenu({
               Cancel
             </GhostButton>
           ) : null}
-          <PrimaryButton size="sm" disabled={!canClone} onClick={() => void runClone()}>
+          <PrimaryButton type="submit" size="sm" disabled={!canClone}>
             {cloning ? 'Cloning…' : 'Clone'}
           </PrimaryButton>
         </div>
-      </div>
+      </form>
     )
   }
 

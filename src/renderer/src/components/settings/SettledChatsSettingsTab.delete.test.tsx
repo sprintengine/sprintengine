@@ -130,7 +130,8 @@ async function render(): Promise<void> {
 }
 
 const button = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-const dialog = () => host.querySelector<HTMLElement>('[role="dialog"]')
+// The dialog is drawn on <body>, outside the tab's own tree.
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')
 const dialogButton = (text: string) =>
   [...(dialog()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
     (candidate) => candidate.textContent === text,

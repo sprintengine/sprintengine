@@ -5,6 +5,7 @@ import type { ConversationEvent as AppConversationEvent } from '../../../src/sha
 import {
   CONVERSATION_EVENT_TYPES,
   isConversationEventType,
+  readConversationAgentNotices,
   readConversationMessageOrigin,
   type ConversationEvent,
 } from '../src/events'
@@ -75,4 +76,35 @@ test('a user message names Studio as its origin, and one without an origin is th
     event('user_message', { payload: { text: 'hi', origin: { kind: 'studio', reason: 'agent-notice' } } }),
   )
   assert.deepEqual(wire?.payload?.origin, { kind: 'studio', reason: 'agent-notice' })
+})
+
+test('a launch notice carries each agent’s news beside its words, and a malformed entry is left out', () => {
+  const notice = {
+    kind: 'finished',
+    name: 'Reviewer',
+    subagent: true,
+    cli: 'claude-code',
+    agentId: 'agent-reviewer',
+    reply: '**Ship it.**',
+    replyTruncated: true,
+  }
+  assert.deepEqual(
+    readConversationMessageOrigin({
+      kind: 'studio',
+      reason: 'agent-notice',
+      notices: [notice, { kind: 'exploded', name: 'x' }, { kind: 'stopped' }, 'news'],
+    }),
+    { kind: 'studio', reason: 'agent-notice', notices: [notice] },
+  )
+  // Only a launch notice carries them; none well formed is none at all.
+  assert.deepEqual(readConversationMessageOrigin({ kind: 'studio', reason: 'usage-resume', notices: [notice] }), {
+    kind: 'studio',
+    reason: 'usage-resume',
+  })
+  assert.equal(readConversationAgentNotices([{ kind: 'finished' }]), null)
+  assert.equal(readConversationAgentNotices('finished'), null)
+  assert.deepEqual(
+    readConversationAgentNotices([{ kind: 'failed', name: 'Builder', reason: 'tests failed', subagent: 'yes' }]),
+    [{ kind: 'failed', name: 'Builder', reason: 'tests failed' }],
+  )
 })

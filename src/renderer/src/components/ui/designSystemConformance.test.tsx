@@ -484,7 +484,13 @@ test('designSystemConformance', async () => {
 
     await run('the peek card composes: a corner and one line per fact', () => {
       assert.ok(peekContainer.querySelector('.working-mark'), 'the corner drew the sidebar’s mark')
-      assert.equal(peekContainer.querySelectorAll('li').length, 4, 'machine, branch, model and context')
+      // The facts are the card's unnamed list; the agents and pull requests
+      // below it are lists of their own, each named by its heading.
+      assert.equal(
+        peekContainer.querySelectorAll('ul:not([aria-label]) > li').length,
+        4,
+        'machine, branch, model and context',
+      )
       assert.ok(peekContainer.querySelector('[aria-label="Context: 76k / 200k tokens · 38%"]'), 'the context line drew')
     })
 
@@ -924,11 +930,14 @@ test('designSystemConformance', async () => {
       )
     })
 
-    const sentinels = Array.from(trapContainer.querySelectorAll('[data-focus-sentinel="true"]')) as HTMLElement[]
+    // The dialog is drawn on <body> (Modal portals it), not inside the container.
+    const sentinels = Array.from(
+      dom.window.document.body.querySelectorAll('[data-focus-sentinel="true"]'),
+    ) as HTMLElement[]
 
     await run('a Modal mounts one sentinel each side of the dialog it declares modal', () => {
       assert.equal(sentinels.length, 2, 'the dialog is guarded on both edges')
-      const dialog = trapContainer.querySelector('[role="dialog"]')
+      const dialog = dom.window.document.body.querySelector('[role="dialog"]')
       assert.ok(dialog, 'the dialog mounted')
       assert.equal(
         sentinels[0].nextElementSibling,
@@ -951,7 +960,7 @@ test('designSystemConformance', async () => {
     // surface every other dialog is supposed to converge on was the one that
     // looked wrong.
     await run('the default Modal renders the shell chrome and a step of the width scale', () => {
-      const dialog = trapContainer.querySelector('[role="dialog"]') as HTMLElement | null
+      const dialog = dom.window.document.body.querySelector('[role="dialog"]') as HTMLElement | null
       assert.ok(dialog, 'the dialog mounted')
       const classes = classesOf(dialog)
       assert.ok(

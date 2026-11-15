@@ -39,3 +39,20 @@ export const TRANSCRIPT_FOOT = <div aria-hidden="true" data-transcript-foot="" c
  * so a row brought into view at either edge does not land flush against it.
  */
 export const TRANSCRIPT_SCROLL_PADDING_CLASS = 'scroll-py-4'
+
+/**
+ * Where a message the person just sent comes to rest: a sixth of the way down
+ * the transcript, not flush with its top edge. At the very top it sat under
+ * the window's title band, as if scrolled half out of view; a sixth down it
+ * reads as the start of what comes next, with the turn's reply opening under
+ * it. A share of the pane rather than a fixed distance, so a short pane does
+ * not spend most of its height above the message and a tall one does not
+ * leave it pinned to the edge.
+ */
+export const SENT_MESSAGE_REST_SHARE = 1 / 6
+
+/** How far below the transcript's top edge a sent message rests, in pixels, for a pane this tall. */
+export function sentMessageRestOffset(viewportHeight: number | undefined): number {
+  if (!viewportHeight || !Number.isFinite(viewportHeight) || viewportHeight <= 0) return 0
+  return Math.round(viewportHeight * SENT_MESSAGE_REST_SHARE)
+}

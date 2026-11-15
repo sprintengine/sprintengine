@@ -23,6 +23,7 @@ import type { PromptCacheReading } from './promptCache.js'
 import {
   presentedToolKind,
   presentedToolTone,
+  type ConversationAgentNotice,
   type ConversationAttachedFile,
   type ConversationStudioMessageReason,
   type PresentableTool,
@@ -97,9 +98,18 @@ export type ConversationRow =
   /**
    * A message Studio sent the chat itself: its words without the name they
    * open with, drawn as Studio's quiet row and never as the person's bubble.
-   * `turn` is the turn it opened.
+   * `turn` is the turn it opened. A launch notice carries each agent's news
+   * (`notices`), which a view draws as a row per agent in place of the words.
    */
-  | { kind: 'studio'; id: string; text: string; at: number; reason?: ConversationStudioMessageReason; turn?: string }
+  | {
+      kind: 'studio'
+      id: string
+      text: string
+      at: number
+      reason?: ConversationStudioMessageReason
+      turn?: string
+      notices?: ConversationAgentNotice[]
+    }
   /**
    * What the model thought on its way to the reply, one row per stretch of
    * thinking, where in the turn it happened. `live` while it is the last thing
@@ -470,6 +480,7 @@ export function deriveConversationRows(
           at,
           ...(entry.origin.reason ? { reason: entry.origin.reason } : {}),
           ...(turn ? { turn } : {}),
+          ...(entry.origin.notices?.length ? { notices: entry.origin.notices } : {}),
         })
         continue
       }

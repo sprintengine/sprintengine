@@ -134,8 +134,10 @@ test('Modal.repaintPause', async () => {
 
       // React still believes the tree is mounted, so no cleanup runs and the
       // release is never called — the shape of a thrown render or a swallowed
-      // subtree. The node is simply gone from the document.
+      // subtree. The node is simply gone from the document: the dialog's own,
+      // which is drawn on <body> rather than inside the host.
       dialog.host.remove()
+      dom.window.document.querySelector('[role="dialog"]')?.closest('.overlay-scrim')?.remove()
       assert.equal(isTerminalRepaintPaused(), true, 'still held until the watchdog looks')
 
       runTerminalRepaintPauseWatchdogForTests()

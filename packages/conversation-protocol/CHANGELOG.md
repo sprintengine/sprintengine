@@ -46,6 +46,17 @@ client used for them go:
 - `conversationPeerSupports` and `checkConversationProtocolVersion` (the lane's
   `hello`; a Studio client reads the welcome).
 
+### Added (a launch notice's news beside its words)
+
+- **`ConversationMessageOrigin.notices`**: on an `agent-notice`, each agent's
+  news as Studio composed it (`ConversationAgentNotice`: what became of it,
+  its name, whether it is a sub-agent, the harness it runs on, its id, its
+  reply as it wrote it, and why it failed), read by
+  `readConversationAgentNotices` and by `readConversationMessageOrigin`. A view
+  draws a row per agent from it in place of the words the chat's agent was
+  handed. Optional and additive: a reader that does not know it draws the
+  words, as before.
+
 ### Added (a step's kind and tone without its words)
 
 - **`presentedToolKind`** and **`presentedToolTone`**: the kind and the tone

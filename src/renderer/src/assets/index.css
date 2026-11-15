@@ -4405,7 +4405,12 @@ body:has([data-selection-pane]:focus-within)
 
 /* The pill: the selected tab of a top-row strip, its name centred over the
    column. It floats on whatever scrolls under it, so it is opaque and lifted. It
-   closes from its menu and the keyboard, so it wears no close of its own. */
+   closes from its menu and the keyboard, so it wears no close of its own.
+
+   Its ground is the composer's, one step above the conversation it floats on,
+   with the default hairline. On --bg-surface it was the conversation's own
+   black in Dark (whose --agent-surface is --bg-app) and read as a hole in the
+   page rather than a control on it. */
 .flexlayout__layout .flexlayout__tabset_tabbar_inner:has([data-tab-pill]) {
   justify-content: center;
 }
@@ -4415,16 +4420,23 @@ body:has([data-selection-pane]:focus-within)
   height: var(--control-xs);
   max-width: 430px;
   padding: 0 12px 0 8px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-default);
   border-radius: 999px;
-  background: var(--bg-surface);
+  background: var(--composer-surface);
   box-shadow: var(--shadow-popover);
   color: var(--text-strong);
   font-weight: 500;
 }
 
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill]):hover {
-  background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-surface);
+  background: var(--composer-surface-hover);
+}
+
+/* Every tab of a band strip stands over the "+" tucked behind its right end
+   (below), so the "+" reads as coming out from under the pill. */
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_button {
+  position: relative;
+  z-index: 1;
 }
 
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill]) .flexlayout__tab_button_trailing {
@@ -4445,9 +4457,9 @@ body:has([data-selection-pane]:focus-within)
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border: 0 solid var(--border-subtle);
+  border: 0 solid var(--border-default);
   border-radius: 999px;
-  background: var(--bg-surface);
+  background: var(--composer-surface);
   opacity: 0;
   transition:
     max-width var(--motion-fast) var(--motion-ease),
@@ -4478,10 +4490,10 @@ body:has([data-selection-pane]:focus-within)
   right: -7px;
   width: 6px;
   height: auto;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-default);
   border-left: none;
   border-radius: 0 999px 999px 0;
-  background: var(--bg-surface);
+  background: var(--composer-surface);
   pointer-events: none;
 }
 
@@ -4491,7 +4503,55 @@ body:has([data-selection-pane]:focus-within)
   pointer-events: auto;
 }
 
-/* The "+" waits with the folded tabs: nothing else stands on the conversation. */
+/* The "+" (a new tab) is a half pill tucked under the right end of the pill, or
+   of the last tab once they have come forward. At rest it is folded away whole:
+   nothing else stands on the conversation, and a control that is not drawn is
+   not a target. Hovering the pill slides it out to the right. It used to be a
+   bare quiet glyph a few pixels off the pill, drawn at rest too, which was hard
+   to see and easy to miss with the pointer. The container is FlexLayout's
+   sticky-button bar, which stops a press from starting a tab drag, and it opts
+   out of the window's drag region with the rest of the strip (above). */
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar_sticky_buttons_container {
+  --band-plus-tuck: calc(var(--control-xs) / 2);
+  position: relative;
+  z-index: 0;
+  box-sizing: border-box;
+  height: var(--control-xs);
+  max-width: var(--band-plus-tuck);
+  /* Back over the tab container's own end padding and under the pill's cap. */
+  margin-left: calc(-1 * (var(--band-plus-tuck) + var(--sem-space-2xs)));
+  padding: 0 var(--sem-space-2xs) 0 var(--band-plus-tuck);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--composer-surface);
+  box-shadow: var(--shadow-popover);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    max-width var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease),
+    visibility 0s linear var(--motion-fast);
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):is(:hover, :has(:focus-visible)) .flexlayout__tab_toolbar_sticky_buttons_container {
+  max-width: calc(var(--band-plus-tuck) + var(--control-xs) + var(--sem-space-2xs));
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    max-width var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease),
+    visibility 0s;
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar_sticky_buttons_container:hover {
+  background: var(--composer-surface-hover);
+}
+
+/* FlexLayout's own toolbar beside a band strip holds nothing, and waits with
+   the folded tabs as the "+" does. */
 .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar {
   opacity: 0;
   transition: opacity var(--motion-fast) var(--motion-ease);
@@ -4504,7 +4564,9 @@ body:has([data-selection-pane]:focus-within)
 
 @media (prefers-reduced-motion: reduce) {
   .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_button--unselected,
-  .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar {
+  .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar,
+  .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar_sticky_buttons_container,
+  .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):is(:hover, :has(:focus-visible)) .flexlayout__tab_toolbar_sticky_buttons_container {
     transition: none;
   }
 }
@@ -4812,6 +4874,14 @@ body:has([data-selection-pane]:focus-within)
 .chat-column-gutter {
   padding-inline: max(var(--sem-space-xl), calc((100% - var(--chat-max-width)) / 2));
   scrollbar-gutter: stable;
+}
+
+/* A chat scrolls up under the window's band, and at the band's far right the
+ * panel toggle stands over the scroller's own lane. The bar starts below the
+ * band, so its thumb never runs up under the toggle and crops it, whichever
+ * way the notch at that end is cut. */
+.band-clear .chat-column-gutter::-webkit-scrollbar-track:vertical {
+  margin-top: var(--band-clearance, 0px);
 }
 
 /* The composer tray (agentChat/composerTray.tsx) slides up out from behind the
