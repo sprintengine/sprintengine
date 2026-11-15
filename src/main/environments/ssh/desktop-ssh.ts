@@ -6,6 +6,7 @@ import { writeDiagnosticLog } from '../../diagnostics-service'
 import { allowMachinePartitions } from '../../browser/guest-policy'
 import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
 import { ContainerChats } from '../container/container-chats'
+import { ContainerCommandReceipts } from '../container/container-command-receipts'
 import {
   createContainersDomain,
   serveContainersToServer,
@@ -113,6 +114,9 @@ export function createDesktopSsh(deps: {
   const containersDomain: DesktopContainersDomain = createContainersDomain({
     containers,
     token: containerToken,
+    // What each create, push and remove did, by the client's command id, kept
+    // on disk: one sent again after the server restarted is answered, not redone.
+    receipts: new ContainerCommandReceipts({ path: join(app.getPath('userData'), 'container-commands.json') }),
     onTokenChanged: () => void sshEnvironments.restartContainerServers(),
   })
   // The pane's tabs for a workspace on an SSH machine: that machine's own

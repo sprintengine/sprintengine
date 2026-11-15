@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { test } from 'vitest'
 
-import { shellContainersDomain } from '../../../server/desktop/shell-containers'
+import { STUDIO_DEFAULT_READ_TIMEOUT_MS } from '../../../../packages/client-runtime/src/public'
+import { CONTAINER_CALL_TIMEOUT_MS, shellContainersDomain } from '../../../server/desktop/shell-containers'
 import type { ControlRpc } from '../../../server/bootstrap/control-rpc'
 import { answerContainersCall, createContainersDomain, serveContainersToServer } from './containers-domain'
+import { CONTAINER_COMMAND_INTERRUPTED, ContainerCommandReceipts } from './container-command-receipts'
 
 // The containers as main serves them to the desktop's Studio: in process the
 // domain itself, out of process each call over the control channel, checked
@@ -67,6 +72,7 @@ test('a token set or forgotten restarts the container servers here; a refused on
       ...store,
       set: async (token) => (token === 'bad' ? { ok: false, message: 'Not a token.' } : store.set(token)),
     },
+    receipts: new ContainerCommandReceipts({ path: null }),
     onTokenChanged: () => void restarts++,
   })
   assert.deepEqual(await domain.setToken('bad'), { ok: false, message: 'Not a token.' })
@@ -82,6 +88,7 @@ test('a server out of process reaches every call through main, and hears each ch
   const main = createContainersDomain({
     containers: chats.containers,
     token: tokenStore(),
+    receipts: new ContainerCommandReceipts({ path: null }),
     onTokenChanged: () => undefined,
   })
   const rpc = channel()
@@ -91,12 +98,15 @@ test('a server out of process reaches every call through main, and hears each ch
   server.onChanged(() => void heard++)
   assert.deepEqual(await server.status({ kind: 'ssh', machine: 'build-box' }), READY)
   assert.deepEqual(
-    await server.create({
-      host: { kind: 'local' },
-      folder: '/Users/dev/proj',
-      label: 'Fix it',
-      image: { kind: 'studio-default' },
-    }),
+    await server.create(
+      {
+        host: { kind: 'local' },
+        folder: '/Users/dev/proj',
+        label: 'Fix it',
+        image: { kind: 'studio-default' },
+      },
+      'owner:c1',
+    ),
     {
       ok: true,
       id: SAVED_ID,
@@ -104,10 +114,11 @@ test('a server out of process reaches every call through main, and hears each ch
       folder: '/home/node/work/proj',
     },
   )
-  assert.deepEqual(await server.push(SAVED_ID), { ok: true })
-  assert.deepEqual(await server.remove({ host: { kind: 'local' }, name: `sprintengine-${SAVED_ID}`, context: null }), {
-    ok: true,
-  })
+  assert.deepEqual(await server.push(SAVED_ID, 'owner:c2'), { ok: true })
+  assert.deepEqual(
+    await server.remove({ host: { kind: 'local' }, name: `sprintengine-${SAVED_ID}`, context: null }, 'owner:c3'),
+    { ok: true },
+  )
   assert.deepEqual(await server.setToken('sk-ant-oat01-x'), { ok: true })
   assert.deepEqual(await server.tokenStatus(), { set: true, kept: 'sealed' })
   main.changed()
@@ -124,6 +135,7 @@ test('main checks every call again: an unknown call, or args the protocol would 
   const main = createContainersDomain({
     containers: chats.containers,
     token: tokenStore(),
+    receipts: new ContainerCommandReceipts({ path: null }),
     onTokenChanged: () => undefined,
   })
   for (const payload of [
@@ -133,8 +145,94 @@ test('main checks every call again: an unknown call, or args the protocol would 
     { call: 'status', args: { host: { kind: 'wsl' } } },
     { call: 'push', args: { id: '../../etc' } },
     { call: 'remove', args: { host: { kind: 'local' }, name: 'postgres' } },
-    { call: 'create', args: { host: { kind: 'local' }, folder: 'a\0b' } },
+    { call: 'create', args: { commandId: 'owner:c', host: { kind: 'local' }, folder: 'a\0b' } },
+    // A change with no command id could not be carried out only once.
+    { call: 'push', args: { id: SAVED_ID } },
+    { call: 'create', args: { host: { kind: 'local' }, folder: '/Users/dev/proj' } },
   ])
     await assert.rejects(answerContainersCall(main, payload), Error, JSON.stringify(payload))
   assert.deepEqual(chats.done, [])
+})
+
+const REQUEST = {
+  host: { kind: 'local' as const },
+  folder: '/Users/dev/proj',
+  label: 'Fix it',
+  image: { kind: 'studio-default' as const },
+}
+
+test('a create sent again under its id while it runs, or after, is the first one: one container', async () => {
+  const chats = fakeChats()
+  let finish: () => void = () => undefined
+  const held = new Promise<void>((resolve) => (finish = resolve))
+  const create = chats.containers.create
+  chats.containers.create = async (request: unknown) => (await held, create(request))
+  const main = createContainersDomain({
+    containers: chats.containers,
+    token: tokenStore(),
+    receipts: new ContainerCommandReceipts({ path: null }),
+    onTokenChanged: () => undefined,
+  })
+  // The server restarted mid-build and the client sent it again: the same id.
+  const first = main.create(REQUEST, 'owner:k1')
+  const again = main.create(REQUEST, 'owner:k1')
+  finish()
+  assert.deepEqual(await again, await first)
+  // Long after, past any server's own memory of answers.
+  assert.deepEqual(await main.create(REQUEST, 'owner:k1'), await first)
+  assert.equal(chats.done.filter(([name]) => name === 'create').length, 1)
+  // Another id is another container; the same id for another request is refused in words.
+  await main.create(REQUEST, 'owner:k2')
+  assert.equal(chats.done.filter(([name]) => name === 'create').length, 2)
+  const conflict = await main.create({ ...REQUEST, label: 'Something else' }, 'owner:k1')
+  assert.equal(conflict.ok, false)
+  assert.equal(chats.done.filter(([name]) => name === 'create').length, 2)
+})
+
+test('what each command did is kept on disk: answered after Studio restarts, and one cut short is never redone', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'container-receipts-'))
+  try {
+    const path = join(dir, 'container-commands.json')
+    const chats = fakeChats()
+    const before = new ContainerCommandReceipts({ path })
+    const main = createContainersDomain({
+      containers: chats.containers,
+      token: tokenStore(),
+      receipts: before,
+      onTokenChanged: () => undefined,
+    })
+    const made = await main.create(REQUEST, 'owner:k1')
+    // One still running when Studio stopped: its receipt has no answer yet.
+    void before.run('owner:k9', 'fingerprint', () => new Promise(() => undefined))
+    const after = createContainersDomain({
+      containers: chats.containers,
+      token: tokenStore(),
+      receipts: new ContainerCommandReceipts({ path }),
+      onTokenChanged: () => undefined,
+    })
+    assert.deepEqual(await after.create(REQUEST, 'owner:k1'), made)
+    assert.equal(chats.done.filter(([name]) => name === 'create').length, 1)
+    const reloaded = new ContainerCommandReceipts({ path })
+    assert.deepEqual(
+      await reloaded.run('owner:k9', 'fingerprint', async () => ({ ok: true })),
+      CONTAINER_COMMAND_INTERRUPTED,
+    )
+    assert.match(CONTAINER_COMMAND_INTERRUPTED.message, /Settings › Machines › Containers/u)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a command that threw, rather than answered, may be tried again', async () => {
+  const receipts = new ContainerCommandReceipts({ path: null })
+  await assert.rejects(receipts.run('owner:k1', 'f', async () => Promise.reject(new Error('gone'))))
+  assert.deepEqual(await receipts.run('owner:k1', 'f', async () => ({ ok: true })), { ok: true })
+})
+
+test('a read gets its answer, or this side’s words, before the client gives up on it', () => {
+  // Main's probes are bounded at 30 s; the server waits on them under the
+  // client's read timeout, so a slow host is said as "Docker did not answer
+  // in time", not the client's bare "did not answer".
+  for (const read of ['status', 'list', 'tokenStatus'] as const)
+    assert.ok(CONTAINER_CALL_TIMEOUT_MS[read] < STUDIO_DEFAULT_READ_TIMEOUT_MS, read)
 })

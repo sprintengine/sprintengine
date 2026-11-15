@@ -1092,6 +1092,34 @@ test('NewAgentPanel launch paths', async () => {
           await settle()
           second.unmount()
 
+          // An answer that never came (Studio went mid-build) is not "No container":
+          // it may have been made, and the person is sent to look before making another.
+          const { useToastStore } = await import('../../../store/toastStore')
+          useToastStore.setState({ toasts: [] })
+          created.length = 0
+          api.containerCreate = async (request: Record<string, unknown>) => {
+            created.push(request)
+            throw new StudioError('unknown_outcome', 'Studio restarted before it answered.')
+          }
+          const lost = await render(scheduleProps())
+          await settle()
+          await click(lost.container.querySelector('[data-container-trigger="true"]')!)
+          await settle()
+          await click(dom.window.document.querySelector('[data-container-settings="true"] [role="switch"]')!)
+          await typePrompt(lost, 'Fix the login.')
+          await click(sendOf(lost)!)
+          await settle()
+          assert.equal(created.length, 1)
+          const titles = useToastStore.getState().toasts.map((toast) => toast.title)
+          assert.ok(titles.includes('Container not confirmed'), `told it is not confirmed: ${titles.join(', ')}`)
+          assert.equal(titles.includes('No container'), false, 'not told there is no container')
+          assert.match(
+            useToastStore.getState().toasts.find((toast) => toast.title === 'Container not confirmed')?.description ??
+              '',
+            /Settings › Machines › Containers/u,
+          )
+          lost.unmount()
+
           // Windows itself does not run containers yet: said in words, and Container
           // on never starts the chat without one.
           created.length = 0

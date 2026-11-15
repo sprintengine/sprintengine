@@ -2131,13 +2131,23 @@ export default function NewAgentPanel({
         label: activeIdentity?.name ?? (source ? (source.split(/[\\/]/u).pop() ?? 'Chat') : 'Chat'),
         image: { kind: 'studio-default' },
       })
+      // Thrown, not answered: the connection or Studio went before the answer
+      // came, so whether the container was made is not known. It is never
+      // called "No container", which would invite a second one beside it.
       .catch((error: unknown) => ({
         ok: false as const,
+        unknown: true as const,
         message: error instanceof Error ? error.message : String(error),
       }))
     containerLaunch.set(false)
     if (!made.ok) {
-      showToast({ tone: 'error', title: 'No container', description: made.message })
+      if ('unknown' in made)
+        showToast({
+          tone: 'warn',
+          title: 'Container not confirmed',
+          description: `${made.message} It may have been made: check Settings › Machines › Containers before making another.`,
+        })
+      else showToast({ tone: 'error', title: 'No container', description: made.message })
       return
     }
     const sentImages = images.map((image) => image.path)

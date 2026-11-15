@@ -12,6 +12,7 @@ import {
   type StudioContainersDomain,
 } from '../../../server/rpc/studio-containers'
 import type { ContainerChats } from './container-chats'
+import { containerCommandFingerprint, type ContainerCommandReceipts } from './container-command-receipts'
 
 // Chats' containers as the desktop's Studio serves them (`containers.*`,
 // docs/design/container-chats.md): main's `ContainerChats`, which runs Docker
@@ -35,17 +36,21 @@ export type DesktopContainersDomain = StudioContainersDomain & {
 export function createContainersDomain(deps: {
   containers: Pick<ContainerChats, 'status' | 'startDocker' | 'create' | 'list' | 'push' | 'remove'>
   token: ContainerTokenStore
+  /** What each create, push and remove a client sent did, by its command id: carried out once. */
+  receipts: Pick<ContainerCommandReceipts, 'run'>
   /** A token set or forgotten: the servers already running in containers here start again on it. */
   onTokenChanged(): void
 }): DesktopContainersDomain {
   const listeners = new Set<() => void>()
+  const once = <T>(call: string, commandId: string, args: unknown, work: () => Promise<T>) =>
+    deps.receipts.run(commandId, containerCommandFingerprint(call, args), work)
   return {
     status: (host) => deps.containers.status(host),
     startDocker: (host) => deps.containers.startDocker(host),
-    create: (request) => deps.containers.create(request),
+    create: (request, commandId) => once('create', commandId, request, () => deps.containers.create(request)),
     list: () => deps.containers.list(),
-    push: (id) => deps.containers.push(id),
-    remove: (target) => deps.containers.remove(target),
+    push: (id, commandId) => once('push', commandId, { id }, () => deps.containers.push(id)),
+    remove: (target, commandId) => once('remove', commandId, target, () => deps.containers.remove(target)),
     tokenStatus: () => deps.token.status(),
     setToken: async (token): Promise<ContainerResult> => {
       const result = await deps.token.set(token)
@@ -79,6 +84,9 @@ const METHOD_OF: Record<StudioContainersCall, keyof typeof STUDIO_METHODS> = {
   clearToken: 'containers.clearToken',
 }
 
+/** The calls main carries out once per command id: what changes a host. */
+const ONCE_PER_ID: ReadonlySet<StudioContainersCall> = new Set(['create', 'push', 'remove'])
+
 /**
  * One call from the server, checked again here by the protocol's own reader
  * of the method it serves: the server is trusted to ask, not to have checked.
@@ -89,28 +97,35 @@ export async function answerContainersCall(domain: StudioContainersDomain, paylo
     throw new Error('That is not something Studio does with containers.')
   const named = call as StudioContainersCall
   const raw = (args && typeof args === 'object' ? args : {}) as Record<string, unknown>
-  const parsed = STUDIO_METHODS[METHOD_OF[named]].params({ commandId: 'shell', ...raw })
+  // A mutation carries the client's command id as the server namespaced it
+  // (longer than a client's own), which the domain carries it out once by;
+  // the rest is read as the method reads it.
+  const { commandId, ...rest } = raw
+  if (ONCE_PER_ID.has(named) && (typeof commandId !== 'string' || !/^\S{1,512}$/u.test(commandId)))
+    throw new Error('That container request carried no command id.')
+  const parsed = STUDIO_METHODS[METHOD_OF[named]].params({ ...rest, commandId: 'shell' })
   if (!parsed.ok) throw new Error(parsed.message)
-  const read = parsed.params as Record<string, unknown>
+  const { commandId: _shell, ...read } = parsed.params as Record<string, unknown>
   switch (named) {
     case 'status':
     case 'startDocker':
       return domain[named](parseContainerHost(read.host)!)
     case 'create':
-      return domain.create({
-        host: parseContainerHost(read.host)!,
-        folder: read.folder as string | null,
-        label: read.label as string,
-        image: { kind: 'studio-default' },
-      })
+      return domain.create(
+        {
+          host: parseContainerHost(read.host)!,
+          folder: read.folder as string | null,
+          label: read.label as string,
+          image: { kind: 'studio-default' },
+        },
+        commandId as string,
+      )
     case 'list':
       return domain.list()
     case 'push':
-      return domain.push(read.id as string)
-    case 'remove': {
-      const { commandId: _commandId, ...target } = read
-      return domain.remove(target as Parameters<StudioContainersDomain['remove']>[0])
-    }
+      return domain.push(read.id as string, commandId as string)
+    case 'remove':
+      return domain.remove(read as Parameters<StudioContainersDomain['remove']>[0], commandId as string)
     case 'tokenStatus':
       return domain.tokenStatus()
     case 'setToken':

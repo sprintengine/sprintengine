@@ -23,12 +23,29 @@ type Api = Pick<
   | 'containerTokenClear'
 >
 
-export function useContainers(api: Api | null): { containers: ContainerSummary[] | null; reload: () => Promise<void> } {
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/**
+ * Every container Studio made, and why the last read failed when it did: a
+ * list that could not be read is said in words, never shown as an empty one,
+ * which would read as "none left running".
+ */
+export function useContainers(api: Api | null): {
+  containers: ContainerSummary[] | null
+  failure: string | null
+  reload: () => Promise<void>
+} {
   const [containers, setContainers] = useState<ContainerSummary[] | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
   const reload = useCallback(async () => {
     if (typeof api?.containersList !== 'function') return
-    const listed = await api.containersList().catch(() => [])
-    setContainers(Array.isArray(listed) ? listed : [])
+    try {
+      const listed = await api.containersList()
+      setContainers(Array.isArray(listed) ? listed : [])
+      setFailure(null)
+    } catch (error) {
+      setFailure(messageOf(error))
+    }
   }, [api])
   useEffect(() => {
     void reload()
@@ -46,13 +63,13 @@ export function useContainers(api: Api | null): { containers: ContainerSummary[]
       if (typeof off === 'function') off()
     }
   }, [api, reload])
-  return { containers, reload }
+  return { containers, failure, reload }
 }
 
 export function ContainersSection({ api }: { api: Api | null }): React.JSX.Element | null {
-  const { containers, reload } = useContainers(api)
+  const { containers, failure, reload } = useContainers(api)
   const [busy, setBusy] = useState<string | null>(null)
-  if (!api || !containers) return null
+  if (!api || (!containers && !failure)) return null
 
   const act = async (key: string, run: () => Promise<ContainerResult>, done: string) => {
     setBusy(key)
@@ -63,6 +80,14 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
           ? { tone: 'good', title: done, ...(result.message ? { description: result.message } : {}) }
           : { tone: 'error', title: 'Not done', description: result.message },
       )
+    } catch (error) {
+      // No answer came (Studio or its connection went): whether it was done is
+      // not known, and the list read again below shows what is there now.
+      showToast({
+        tone: 'warn',
+        title: 'Not confirmed',
+        description: `${messageOf(error)} The list shows what is there now.`,
+      })
     } finally {
       setBusy(null)
       void reload()
@@ -71,13 +96,20 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
 
   return (
     <section className="space-y-2">
-      <SettingsSectionTitle count={containers.length}>Containers</SettingsSectionTitle>
+      <SettingsSectionTitle {...(containers ? { count: containers.length } : {})}>Containers</SettingsSectionTitle>
       <p className="text-body leading-5 text-[color:var(--text-muted)]">
         The containers Studio made for chats. Each is kept after its chat settles and removed with the chat. A chat’s
         changes leave only as its branch, pushed from the machine the container runs on.
       </p>
       <ClaudeTokenRow api={api} />
-      {containers.length > 0 ? (
+      {failure ? (
+        <InlineNotice
+          tone="error"
+          title="The containers could not be listed."
+          hint={containers ? `${failure} Shown as last read.` : failure}
+        />
+      ) : null}
+      {containers && containers.length > 0 ? (
         <SettingCard as="ul" ariaLabel="Containers">
           {containers.map((container) => {
             const key = container.id ?? `${container.hostLabel}:${container.name}`
@@ -136,7 +168,7 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
           })}
         </SettingCard>
       ) : null}
-      {containers.some((container) => container.status.startsWith('Not read')) ? (
+      {containers?.some((container) => container.status.startsWith('Not read')) ? (
         <InlineNotice
           tone="warn"
           title="Some machines did not answer."
@@ -160,21 +192,42 @@ function ClaudeTokenRow({ api }: { api: Api }): React.JSX.Element | null {
   const [problem, setProblem] = useState<string | null>(null)
   const reload = useCallback(async () => {
     if (typeof api.containerTokenStatus !== 'function') return
-    setStatus(await api.containerTokenStatus().catch(() => null))
+    try {
+      setStatus(await api.containerTokenStatus())
+    } catch (error) {
+      setProblem(`Whether a token is kept could not be read. ${messageOf(error)}`)
+    }
   }, [api])
   useEffect(() => {
     void reload()
   }, [reload])
-  if (!status) return null
-  const save = async () => {
-    const result = await api.containerTokenSet(draft)
-    if (!result.ok) {
-      setProblem(result.message)
-      return
+  if (!status)
+    return problem ? (
+      <SettingCard>
+        <InlineNotice tone="error" className="mx-4 my-3">
+          {problem}
+        </InlineNotice>
+      </SettingCard>
+    ) : null
+  // Each says what went wrong in words, an answer that never came included.
+  const attempt = async (run: () => Promise<ContainerResult>, what: string) => {
+    try {
+      const result = await run()
+      if (!result.ok) {
+        setProblem(result.message)
+        return false
+      }
+      setProblem(null)
+      return true
+    } catch (error) {
+      setProblem(`The token was not ${what}. ${messageOf(error)}`)
+      return false
+    } finally {
+      void reload()
     }
-    setDraft('')
-    setProblem(null)
-    void reload()
+  }
+  const save = async () => {
+    if (await attempt(() => api.containerTokenSet(draft), 'saved')) setDraft('')
   }
   return (
     <SettingCard>
@@ -190,7 +243,7 @@ function ClaudeTokenRow({ api }: { api: Api }): React.JSX.Element | null {
         {status.set ? (
           <OutlineButton
             size="xs"
-            onClick={() => void api.containerTokenClear().then(() => reload())}
+            onClick={() => void attempt(() => api.containerTokenClear(), 'forgotten')}
             aria-label="Forget Claude Code's token for containers"
           >
             Forget token

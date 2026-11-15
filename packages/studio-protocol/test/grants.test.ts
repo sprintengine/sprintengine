@@ -341,8 +341,15 @@ test('what only Studio’s own desktop windows may call is an owner’s too, and
     ...(Object.keys(STUDIO_TOPICS) as StudioTopic[]).filter((name) => STUDIO_TOPICS[name].window),
   ]
   assert.deepEqual(windowOnly.sort(), [
+    'containers.changed',
     'containers.clearToken',
+    'containers.create',
+    'containers.list',
+    'containers.push',
+    'containers.remove',
     'containers.setToken',
+    'containers.startDocker',
+    'containers.status',
     'containers.tokenStatus',
     'localApps.cancelOffer',
     'localApps.changed',

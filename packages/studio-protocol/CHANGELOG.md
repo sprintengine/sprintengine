@@ -32,8 +32,9 @@
   capability `containers`): Docker on a host in words, a container made for a
   chat with its repository copied in, every container Studio made listed, its
   branch pushed out from the host, its removal, and Claude Code's token for
-  them. An owner's; the token's methods Studio's own desktop windows' only. No
-  paired device reaches any of them. The shapes (`ContainerHost`,
+  them. Studio's own desktop windows' only: no paired device, owner's web tab
+  or owner's app reaches any of them. `containers.create`, `.push` and
+  `.remove` are `receipts: 'durable'`. The shapes (`ContainerHost`,
   `DockerStatus`, `ContainerCreateRequest`, `ContainerCreateResult`,
   `ContainerSummary`, `ContainerRepo`, `ContainerResult`,
   `ContainerTokenStatus`, `ContainerRemoveTarget`) move into the package. They

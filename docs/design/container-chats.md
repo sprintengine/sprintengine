@@ -246,16 +246,27 @@ it runs in a process of its own (`SHELL_METHODS.containers`). The window's New
 chat and Settings › Machines › Containers use these methods; there is no IPC
 for them.
 
-Who may call them:
+Every method and the stream is served to Studio's own desktop windows only:
+not a paired device, not an owner's web tab, and not an app or script holding
+the owner's credential. No other surface uses them yet.
 
-| Methods                                 | Who                          | Why                                                                                                                                                                                                                                              |
-| --------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `create`                                | an owner's connection        | A container's chat runs on its own Studio (`ssh:<id>`), which paired devices do not reach through this desktop (#602). A device that made one could not follow the chat in it, so it is not offered the making until it can (an owner decision). |
-| `push`                                  | an owner's connection        | It pushes with the host's git credentials.                                                                                                                                                                                                       |
-| `remove`                                | an owner's connection        | It destroys the container and its chat's work.                                                                                                                                                                                                   |
-| `startDocker`                           | an owner's connection        | It starts a VM on the host.                                                                                                                                                                                                                      |
-| `status`, `list`, `containers.changed`  | an owner's connection        | The status probes Docker on the host (and may ask an SSH passphrase there); the list names folders on this computer and its SSH machines.                                                                                                        |
-| `tokenStatus`, `setToken`, `clearToken` | Studio's own desktop windows | A credential sealed with this computer's keychain, as the tailnet's credential-making methods are.                                                                                                                                               |
+| Methods                                 | Why                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create`                                | A container's chat runs on its own Studio (`ssh:<id>`), which paired devices do not reach through this desktop (#602), so a device that made one could not follow its chat (an owner decision is pending). From a web tab it would start a chat outside the folders a tailnet browser may start one in, and on SSH machines reached from the desktop alone. |
+| `push`                                  | It pushes with the host's git credentials.                                                                                                                                                                                                                                                                                                                  |
+| `remove`                                | It destroys the container and its chat's work.                                                                                                                                                                                                                                                                                                              |
+| `startDocker`                           | It starts a VM on the host.                                                                                                                                                                                                                                                                                                                                 |
+| `status`, `list`, `containers.changed`  | The status probes Docker on the host and may raise an SSH passphrase dialog on the desktop; the list names folders on this computer and its SSH machines.                                                                                                                                                                                                   |
+| `tokenStatus`, `setToken`, `clearToken` | A credential sealed with this computer's keychain.                                                                                                                                                                                                                                                                                                          |
+
+A create can take half an hour (the first image build on a host). Create, push
+and remove carry the client's command id through to main, which keeps what
+each id did on disk (`container-command-receipts.ts`), and they are
+`receipts: 'durable'`: when the desktop's server restarts mid-build, the window
+sends the create again under its id and is answered with the one container,
+never a second. One that was running when Studio itself stopped is answered
+in words that send the person to Settings › Machines › Containers. An answer
+that never came is never called "No container" in New chat.
 
 So a paired desktop's New chat still shows the Container chip for that machine
 with the words "A chat in a container on <machine> is started from <machine>

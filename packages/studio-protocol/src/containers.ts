@@ -17,29 +17,39 @@ import { STUDIO_CONTAINERS_CAPABILITY } from './handshake.js'
 // where it can run Docker (the SSH machines preview on); a machine's own
 // Studio (WSL, SSH, a container) offers none.
 //
-// Grants, decided conservatively:
-// - Every method is an owner's (`STUDIO_CONTAINERS_OWNER`). A container's chat
-//   runs on its own Studio, which the desktop reaches as one of its machines
-//   (`ssh:<id>`), and paired devices reach no machine through the desktop
-//   (#602's ruling): a device that made a container could not follow the chat
-//   in it. Until devices can, they are not offered the making either, and a
-//   paired client says in words that a container chat is started from the
-//   desktop itself. Reading is held too: the status probes Docker on the host
-//   (and may ask an SSH passphrase there), and the list names folders on this
-//   computer and on its SSH machines.
+// Grants, decided conservatively. Every method and the stream is served to
+// Studio's own desktop windows only (`window`), an owner's connection, and to
+// nothing else:
+// - Not a paired device. A container's chat runs on its own Studio, which the
+//   desktop reaches as one of its machines (`ssh:<id>`), and paired devices
+//   reach no machine through the desktop (#602's ruling): a device that made a
+//   container could not follow the chat in it. Until devices can (an owner
+//   decision), a paired client says in words that a container chat is started
+//   from the desktop itself.
+// - Not an owner's web tab, nor an app or script holding the owner's
+//   credential (coordinator ruling 2026-11-15). Making one starts a chat in a
+//   folder a browser on the tailnet could not otherwise start one in, and on
+//   the desktop's SSH machines, which are reached from the desktop alone; the
+//   status of an SSH host may raise a passphrase dialog on the desktop at a
+//   remote browser's asking. No surface but the window uses them: the web
+//   client's are not built, and no agent tool reaches them.
 // - Push (`containers.push`) runs `git push` with the host's own credentials,
 //   remove destroys the container and its chat's work, and starting Docker
-//   starts a VM here: an owner's, whatever is decided for making one.
+//   starts a VM here; the list names folders on this computer and its SSH
+//   machines.
 // - Claude Code's token for containers (`containers.tokenStatus`,
 //   `.setToken`, `.clearToken`) is a credential sealed with this computer's
-//   keychain: Studio's own desktop windows only (`STUDIO_CONTAINERS_WINDOW`),
-//   as the tailnet's credential-making methods are.
+//   keychain.
 //
 // Every mutation carries a `commandId`; a retry under the same id is answered
 // with the first answer, so a create retried after a dropped connection makes
-// one container. `containers.create` may take minutes (a first image build);
-// a client waits on it and follows `containers.changed`, whose list carries
-// what the container being made is doing (`status`).
+// one container. Create, push and remove are `receipts: 'durable'`: the
+// desktop keeps what each id did in main, on disk, beyond the server's run,
+// so a client sends one again to a restarted server and is answered with the
+// first outcome rather than told it is unknown. `containers.create` may take
+// many minutes (a first image build); a client waits on it and follows
+// `containers.changed`, whose list carries what the container being made is
+// doing (`status`).
 
 /** The machine a container runs on: the desktop's own computer, or one of its saved SSH machines by id. */
 export type ContainerHost = { kind: 'local' } | { kind: 'ssh'; machine: string }
@@ -141,11 +151,11 @@ export function parseContainerHost(value: unknown): ContainerHost | null {
   return null
 }
 
-/** Why the containers are an owner's. */
-export const STUDIO_CONTAINERS_OWNER =
-  'It runs Docker on this computer or its SSH machines; a container chat is started from this desktop itself.'
-/** Why Claude Code's token for containers is reached from Studio's own windows only. */
-export const STUDIO_CONTAINERS_WINDOW = "It keeps a credential sealed with this computer's keychain."
+/** Why chats' containers are reached from Studio's own desktop windows only. */
+export const STUDIO_CONTAINERS_WINDOW =
+  'It runs Docker on this computer or its SSH machines, with their credentials; a container chat is started from this desktop itself.'
+/** Why Claude Code's token for containers is reached from Studio's own desktop windows only. */
+export const STUDIO_CONTAINERS_TOKEN_WINDOW = "It keeps a credential sealed with this computer's keychain."
 
 type Commanded<P> = P & { commandId: string }
 
@@ -250,31 +260,48 @@ const token = commanded((value) =>
 
 // ── The table ───────────────────────────────────────────────────────────────
 
-const owner = { capability: STUDIO_CONTAINERS_CAPABILITY, owner: STUDIO_CONTAINERS_OWNER } as const
 const ownWindow = {
-  scope: 'settings:write',
   capability: STUDIO_CONTAINERS_CAPABILITY,
   owner: STUDIO_CONTAINERS_WINDOW,
   window: STUDIO_CONTAINERS_WINDOW,
 } as const
+const tokenWindow = {
+  scope: 'settings:write',
+  capability: STUDIO_CONTAINERS_CAPABILITY,
+  owner: STUDIO_CONTAINERS_TOKEN_WINDOW,
+  window: STUDIO_CONTAINERS_TOKEN_WINDOW,
+} as const
 
 export const STUDIO_CONTAINERS_METHODS: StudioMethodTable<StudioContainersMethodMap> = {
-  'containers.status': { ...owner, scope: 'workspaces:read', mutation: false, params: hosted },
-  'containers.startDocker': { ...owner, scope: 'workspaces:operate', mutation: true, params: commanded(hosted) },
-  'containers.create': { ...owner, scope: 'conversation:create', mutation: true, params: created },
-  'containers.list': { ...owner, scope: 'workspaces:read', mutation: false, params: studioNoParams },
-  'containers.push': { ...owner, scope: 'workspaces:operate', mutation: true, params: saved },
-  'containers.remove': { ...owner, scope: 'workspaces:operate', mutation: true, params: removed },
-  'containers.tokenStatus': { ...ownWindow, mutation: false, params: studioNoParams },
-  'containers.setToken': { ...ownWindow, mutation: true, params: token },
-  'containers.clearToken': { ...ownWindow, mutation: true, params: commanded(() => studioParams({})) },
+  'containers.status': { ...ownWindow, scope: 'workspaces:read', mutation: false, params: hosted },
+  'containers.startDocker': { ...ownWindow, scope: 'workspaces:operate', mutation: true, params: commanded(hosted) },
+  'containers.create': {
+    ...ownWindow,
+    scope: 'conversation:create',
+    mutation: true,
+    receipts: 'durable',
+    params: created,
+  },
+  'containers.list': { ...ownWindow, scope: 'workspaces:read', mutation: false, params: studioNoParams },
+  'containers.push': { ...ownWindow, scope: 'workspaces:operate', mutation: true, receipts: 'durable', params: saved },
+  'containers.remove': {
+    ...ownWindow,
+    scope: 'workspaces:operate',
+    mutation: true,
+    receipts: 'durable',
+    params: removed,
+  },
+  'containers.tokenStatus': { ...tokenWindow, mutation: false, params: studioNoParams },
+  'containers.setToken': { ...tokenWindow, mutation: true, params: token },
+  'containers.clearToken': { ...tokenWindow, mutation: true, params: commanded(() => studioParams({})) },
 }
 
 export const STUDIO_CONTAINERS_TOPICS: StudioTopicTable<StudioContainersTopicMap> = {
   'containers.changed': {
     scope: 'workspaces:read',
     capability: STUDIO_CONTAINERS_CAPABILITY,
-    owner: STUDIO_CONTAINERS_OWNER,
+    owner: STUDIO_CONTAINERS_WINDOW,
+    window: STUDIO_CONTAINERS_WINDOW,
     push: true,
     params: studioNoParams,
   },

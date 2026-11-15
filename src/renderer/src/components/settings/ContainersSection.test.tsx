@@ -137,3 +137,59 @@ test("a deleted chat's container still waiting to be removed says so, and why", 
     'Its chat was deleted; removing it is waiting. Docker is not running on this Mac, so it is still there.',
   )
 })
+
+test('a list that could not be read is said in words, never shown as no containers', async () => {
+  tokenSet = false
+  const failing = { ...api, containersList: async () => Promise.reject(new Error('Studio did not answer in time.')) }
+  act(() => root.render(<ContainersSection api={failing as never} />))
+  await flush()
+  expect(host.textContent).toContain('The containers could not be listed.')
+  expect(host.textContent).toContain('Studio did not answer in time.')
+  expect(host.querySelector('ul[aria-label="Containers"]')).toBeNull()
+})
+
+test('a push, a removal or a token change that gets no answer says so in words', async () => {
+  const { useToastStore } = await import('../../store/toastStore')
+  useToastStore.setState({ toasts: [] })
+  tokenSet = false
+  listed = [
+    {
+      id: '0123456789abcdef',
+      name: 'sprintengine-0123456789abcdef',
+      host: { kind: 'local' },
+      hostLabel: 'this Mac',
+      status: 'Up 3 minutes',
+      repo: {
+        source: '/Users/dev/app',
+        path: '/home/node/work/app',
+        branch: 'studio/container-01234567',
+        base: 'main',
+      },
+    },
+  ]
+  const lost = new Error('The connection to Studio closed.')
+  const failing = {
+    ...api,
+    containerPush: async () => Promise.reject(lost),
+    containerTokenSet: async () => Promise.reject(lost),
+  }
+  act(() => root.render(<ContainersSection api={failing as never} />))
+  await flush()
+  const push = host.querySelector<HTMLButtonElement>('ul[aria-label="Containers"] button')!
+  await act(async () => push.click())
+  await flush()
+  const toast = useToastStore.getState().toasts.find((each) => each.title === 'Not confirmed')
+  expect(toast?.description).toContain('The connection to Studio closed.')
+  // The buttons work again: nothing is left busy.
+  expect(push.disabled).toBe(false)
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="Claude Code token for containers"]')!
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  await act(async () => {
+    setValue.call(field, 'sk-ant-oat01-x')
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const save = [...host.querySelectorAll('button')].find((each) => each.textContent === 'Save')!
+  await act(async () => save.click())
+  await flush()
+  expect(host.textContent).toContain('The token was not saved. The connection to Studio closed.')
+})

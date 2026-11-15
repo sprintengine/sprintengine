@@ -62,16 +62,17 @@ function stub() {
   const domain: StudioContainersDomain = {
     status: async (host) => (done.push(['status', host]), ready),
     startDocker: async (host) => (done.push(['startDocker', host]), ready),
-    create: async (request) => {
+    create: async (request, commandId) => {
       done.push(['create', request])
+      done.push(['create id', commandId])
       // A first build takes minutes: held until the test lets it go.
       await held
       listeners.forEach((listener) => listener())
       return { ok: true, id: SAVED_ID, label: request.label, folder: '/home/node/work/proj' }
     },
     list: async () => (done.push(['list', null]), LISTED),
-    push: async (id) => (done.push(['push', id]), { ok: true, message: 'Pushed.' }),
-    remove: async (target) => (done.push(['remove', target]), { ok: true }),
+    push: async (id, commandId) => (done.push(['push', id], ['push id', commandId]), { ok: true, message: 'Pushed.' }),
+    remove: async (target, commandId) => (done.push(['remove', target], ['remove id', commandId]), { ok: true }),
     tokenStatus: async () => (done.push(['tokenStatus', null]), { set: false, kept: null }),
     setToken: async (token) => (done.push(['setToken', token.length]), { ok: true }),
     clearToken: async () => (done.push(['clearToken', null]), { ok: true }),
@@ -94,7 +95,8 @@ const CALLS: Record<keyof typeof STUDIO_CONTAINERS_METHODS, Record<string, unkno
   'containers.setToken': { commandId: 'k5', token: 'sk-ant-oat01-abc' },
   'containers.clearToken': { commandId: 'k6' },
 }
-const WINDOW_ONLY = ['containers.clearToken', 'containers.setToken', 'containers.tokenStatus']
+// Every one: none is reached from a web tab or a script holding the owner's credential.
+const WINDOW_ONLY = Object.keys(CALLS).sort()
 
 /** A connection attached as main attaches it: a desktop window, or a script holding the owner's credential. */
 async function attached(
@@ -163,7 +165,7 @@ async function serve(withDomain = true) {
   return { started, ...domain }
 }
 
-test('every method of the family has a call here; the token’s are the windows’', () => {
+test('every method of the family has a call here, and every one is Studio’s own windows’', () => {
   assert.deepEqual(Object.keys(CALLS).sort(), Object.keys(STUDIO_CONTAINERS_METHODS).sort())
   assert.deepEqual(
     Object.keys(CALLS)
@@ -199,6 +201,12 @@ test('Studio’s own desktop window reaches every method, the list whole, and a 
   assert.deepEqual(one.result, { ok: true, id: SAVED_ID, label: 'Fix it', folder: '/home/node/work/proj' })
   assert.deepEqual(two.result, one.result)
   assert.equal(done.filter(([name]) => name === 'create').length, 1)
+  // The client's id goes on to main, namespaced as every receipt is, so main
+  // answers it again after this server restarted.
+  assert.deepEqual(
+    done.find(([name]) => name === 'create id'),
+    ['create id', 'owner:k2'],
+  )
   assert.deepEqual(done.find(([name]) => name === 'create')?.[1], {
     host: { kind: 'local' },
     folder: '/Users/dev/proj',
@@ -215,6 +223,14 @@ test('Studio’s own desktop window reaches every method, the list whole, and a 
   }
   const listed = await window.request('containers.list', {})
   assert.deepEqual(listed.result, { containers: LISTED })
+  assert.deepEqual(
+    done.find(([name]) => name === 'push id'),
+    ['push id', 'owner:k3'],
+  )
+  assert.deepEqual(
+    done.find(([name]) => name === 'remove id'),
+    ['remove id', 'owner:k4'],
+  )
   // The token went to the domain; its words never come back.
   assert.deepEqual(
     done.find(([name]) => name === 'setToken'),
@@ -222,18 +238,21 @@ test('Studio’s own desktop window reaches every method, the list whole, and a 
   )
 })
 
-test("an owner's other connection reaches the containers but not the token", async () => {
+test("an owner's web tab and a script holding the owner's credential are refused every method and the stream", async () => {
   const { started, done, release } = await serve()
   release()
-  const script = await attached(started.server, { ownWindow: false })
-  for (const method of WINDOW_ONLY)
-    assert.equal(errorCode(await script.request(method, CALLS[method as keyof typeof CALLS])), 'owner_required', method)
-  assert.equal((await script.request('containers.list', {})).ok, true)
-  assert.equal((await script.request('containers.push', { commandId: 'p1', id: SAVED_ID })).ok, true)
-  assert.equal(
-    done.some(([name]) => WINDOW_ONLY.includes(`containers.${name}`)),
-    false,
-  )
+  // A browser tab of the owner's (the web client), and an app or script on the owner socket.
+  for (const options of [{ ownWindow: false, browser: true }, { ownWindow: false }]) {
+    const other = await attached(started.server, options)
+    for (const method of WINDOW_ONLY) {
+      const answer = await other.request(method, CALLS[method as keyof typeof CALLS])
+      assert.equal(errorCode(answer), 'owner_required', `${JSON.stringify(options)} ${method}`)
+    }
+    const sub = other.subscribe('containers.changed')
+    const failed = await other.until((frame) => frame.t === 'subFailed' && frame.sub === sub)
+    assert.equal(failed.code, 'owner_required')
+  }
+  assert.deepEqual(done, [])
 })
 
 test('a paired app is refused every method and the stream, whatever it holds, and nothing reaches Docker', async () => {

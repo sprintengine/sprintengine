@@ -27,11 +27,20 @@ test('every containers method and its stream is an owner’s, behind the contain
     assert.equal(STUDIO_CONTAINERS_METHODS[method].mutation, false, method)
 })
 
-test('Claude Code’s token for containers is reached from Studio’s own windows only', () => {
-  for (const method of ['containers.tokenStatus', 'containers.setToken', 'containers.clearToken'] as const)
-    assert.ok(STUDIO_CONTAINERS_METHODS[method].window, method)
-  for (const method of ['containers.create', 'containers.list', 'containers.push', 'containers.remove'] as const)
-    assert.equal(STUDIO_CONTAINERS_METHODS[method].window, undefined, method)
+test('every method and the stream is Studio’s own desktop windows’: not a web tab’s, nor a script’s', () => {
+  // Making one starts a chat outside the folders a tailnet browser may start
+  // one in, and on SSH machines reached from the desktop alone; a status may
+  // raise a passphrase dialog here; the token is a keychain credential.
+  for (const [method, spec] of Object.entries(STUDIO_CONTAINERS_METHODS))
+    assert.ok((spec.window ?? '').length > 20, `${method} says why it is the windows'`)
+  assert.ok(STUDIO_CONTAINERS_TOPICS['containers.changed'].window)
+})
+
+test('create, push and remove are answered from what the desktop kept, beyond a restart of its server', () => {
+  for (const method of ['containers.create', 'containers.push', 'containers.remove'] as const)
+    assert.equal(STUDIO_CONTAINERS_METHODS[method].receipts, 'durable', method)
+  for (const method of ['containers.startDocker', 'containers.setToken', 'containers.clearToken'] as const)
+    assert.equal(STUDIO_CONTAINERS_METHODS[method].receipts, undefined, method)
 })
 
 test('no paired grant reaches a container: not the making, the push, the removal or the list', () => {

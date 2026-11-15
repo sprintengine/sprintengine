@@ -19,7 +19,10 @@ import type {
 // method table says which, and why). What is left here is the family's own
 // rule: a command is carried out once per command id, a retry answered with
 // the first answer, so a create retried after a dropped connection makes one
-// container and a push retried pushes once.
+// container and a push retried pushes once. The router's memory of answers
+// is this process's and bounded; the id goes on to the domain, whose memory
+// is main's and on disk, so a create, push or remove sent again after this
+// server restarted (they are `receipts: 'durable'`) is answered from there.
 //
 // The domain is the desktop's `ContainerChats` and its token, which live in
 // main (it runs Docker and holds the SSH sessions): handed over directly when
@@ -30,10 +33,16 @@ import type {
 export type StudioContainersDomain = {
   status(host: ContainerHost): Promise<DockerStatus>
   startDocker(host: ContainerHost): Promise<DockerStatus>
-  create(request: ContainerCreateRequest): Promise<ContainerCreateResult>
+  /**
+   * The three that change what is on a host carry the client's command id
+   * (namespaced by the client): the domain carries each out once per id and
+   * answers a second ask with the first answer, across a restart of the
+   * server too, since the domain is main's.
+   */
+  create(request: ContainerCreateRequest, commandId: string): Promise<ContainerCreateResult>
   list(): Promise<ContainerSummary[]>
-  push(id: string): Promise<ContainerResult>
-  remove(target: ContainerRemoveTarget): Promise<ContainerResult>
+  push(id: string, commandId: string): Promise<ContainerResult>
+  remove(target: ContainerRemoveTarget, commandId: string): Promise<ContainerResult>
   tokenStatus(): Promise<ContainerTokenStatus>
   setToken(token: string): Promise<ContainerResult>
   clearToken(): Promise<ContainerResult>
@@ -97,15 +106,12 @@ export function createStudioContainersHandlers(options: StudioContainersHandlerO
     method: Method,
     commandId: string,
     asking: StudioContainersAsking,
-    work: (domain: StudioContainersDomain) => Promise<R>,
+    work: (domain: StudioContainersDomain, id: string) => Promise<R>,
   ): Promise<{ ok: true; result: R } | Refused> | Refused {
     if (!containers) return unserved(method)
-    return options.once(
-      `${method}:${options.runtimeId(asking.grant, commandId)}`,
-      async () => ok(await work(containers)),
-      asking.voice,
-      method,
-    )
+    // Namespaced by the client, as every receipt is: one client's id never answers another's.
+    const id = options.runtimeId(asking.grant, commandId)
+    return options.once(`${method}:${id}`, async () => ok(await work(containers, id)), asking.voice, method)
   }
   const read = async <R>(method: Method, work: (domain: StudioContainersDomain) => Promise<R>) =>
     containers ? ok(await work(containers)) : unserved(method)
@@ -115,12 +121,14 @@ export function createStudioContainersHandlers(options: StudioContainersHandlerO
     'containers.startDocker': ({ commandId, host }, asking) =>
       command('containers.startDocker', commandId, asking, (domain) => domain.startDocker(host)),
     'containers.create': ({ commandId, host, folder, label, image }, asking) =>
-      command('containers.create', commandId, asking, (domain) => domain.create({ host, folder, label, image })),
+      command('containers.create', commandId, asking, (domain, id) =>
+        domain.create({ host, folder, label, image }, id),
+      ),
     'containers.list': () => read('containers.list', async (domain) => ({ containers: await domain.list() })),
     'containers.push': ({ commandId, id }, asking) =>
-      command('containers.push', commandId, asking, (domain) => domain.push(id)),
+      command('containers.push', commandId, asking, (domain, command) => domain.push(id, command)),
     'containers.remove': ({ commandId, ...target }, asking) =>
-      command('containers.remove', commandId, asking, (domain) => domain.remove(target)),
+      command('containers.remove', commandId, asking, (domain, id) => domain.remove(target, id)),
     'containers.tokenStatus': () => read('containers.tokenStatus', (domain) => domain.tokenStatus()),
     'containers.setToken': ({ commandId, token }, asking) =>
       command('containers.setToken', commandId, asking, (domain) => domain.setToken(token)),
