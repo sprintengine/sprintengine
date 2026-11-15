@@ -11,6 +11,7 @@ import {
   useStudioAreaSkillChoices,
 } from '../../store/studioAreaSkillsStore'
 import { LinkButton } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 /**
  * A surface offering its own Studio skill, in one line at the top of the
@@ -49,7 +50,7 @@ export function StudioSkillSuggestion({
 
   return (
     <div
-      aria-label={`${skill.name} skill for agents`}
+      aria-label={copy.studioSkills.studioSkillSuggestion.skillForAgents(skill.name)}
       role="group"
       className={[
         'flex flex-wrap items-baseline gap-x-3 gap-y-1 text-meta text-[color:var(--text-muted)]',
@@ -57,17 +58,20 @@ export function StudioSkillSuggestion({
       ].join(' ')}
     >
       <span className="min-w-0">
-        {skill.gives} Install the {skill.name} skill for every workspace, or later in Settings.
+        {skill.gives}
+        {copy.studioSkills.studioSkillSuggestion.installThe}
+        {skill.name}
+        {copy.studioSkills.studioSkillSuggestion.skillForEveryWorkspaceOr}
       </span>
       <span className="flex shrink-0 items-baseline gap-3">
         <LinkButton disabled={pending} onClick={() => answer(() => setStudioAreaSkillEnabled(skillId, true))}>
-          Install
+          {copy.studioSkills.studioSkillSuggestion.install}
         </LinkButton>
         <LinkButton ink="quiet" disabled={pending} onClick={() => answer(() => dismissStudioAreaSkill(skillId))}>
-          Not now
+          {copy.studioSkills.studioSkillSuggestion.notNow}
         </LinkButton>
       </span>
-      {failed ? <span className="w-full">Didn't save. Try again, or use Settings › Agents.</span> : null}
+      {failed ? <span className="w-full">{copy.studioSkills.studioSkillSuggestion.didnTSaveTryAgain}</span> : null}
     </div>
   )
 }

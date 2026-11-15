@@ -3,6 +3,7 @@ import { WarningIcon } from '../AppIcons'
 import { TruncatedText } from './TruncatedText'
 import { inertHtml } from '../../utils/inertHtml'
 import { filesApi } from '../../studio/files'
+import { copy } from '../../../../shared/copy'
 
 // Shared card primitive: a small live render of one HTML file on disk + title +
 // mono path meta + click-through. The live render holds the same scripts-off
@@ -73,7 +74,7 @@ export function HtmlPreviewCard({ absolutePath, relativePath, title, onOpen, tab
       tabIndex={tabIndex}
       onFocus={onFocus}
       onClick={onOpen}
-      aria-label={state.kind === 'error' ? `${title} — can’t render; open the file` : title}
+      aria-label={state.kind === 'error' ? copy.ui.htmlPreviewCard.canTRenderOpenThe(title) : title}
       className="
         flex w-full flex-col overflow-hidden rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] text-left
         transition-colors hover:border-[color:var(--border-default)] hover:bg-[color:var(--bg-hover)]
@@ -108,12 +109,12 @@ export function HtmlPreviewCard({ absolutePath, relativePath, title, onOpen, tab
         ) : (
           <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-3 text-center">
             {state.kind === 'loading' ? (
-              <span className="text-micro text-[color:var(--text-subtle)]">Loading…</span>
+              <span className="text-micro text-[color:var(--text-subtle)]">{copy.ui.htmlPreviewCard.loading}</span>
             ) : (
               <>
                 <WarningIcon className="icon-sm text-[color:var(--tone-error)]" />
                 <span className="text-micro leading-4 text-[color:var(--text-muted)]">
-                  Demo won’t render — open to see the file
+                  {copy.ui.htmlPreviewCard.demoWonTRenderOpen}
                 </span>
               </>
             )}

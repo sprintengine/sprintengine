@@ -21,6 +21,7 @@ import {
   visualTitle,
   waitsForHeight,
 } from "./visualFrame";
+import { copy as appCopy } from "../../../../../src/shared/copy";
 
 /**
  * A reply's ```visual fence: the chart, table or drawing an agent wrote as
@@ -48,7 +49,7 @@ export function VisualBlock({ source, language, ready }: { source: string; langu
   if (showSource) {
     return (
       <SourceBlock
-        action={{ label: "Visual", accessibilityLabel: "Show the visual", onPress: () => setShowSource(false) }}
+        action={{ label: appCopy.phone.components.document.rich.visualBlock.visual, accessibilityLabel: appCopy.phone.components.document.rich.visualBlock.showTheVisual, onPress: () => setShowSource(false) }}
         content={source}
         header={header}
         language="visual"
@@ -58,7 +59,7 @@ export function VisualBlock({ source, language, ready }: { source: string; langu
   return (
     <View style={styles.well}>
       <WellHeader
-        action={{ label: "Source", accessibilityLabel: "Show the visual's source", onPress: () => setShowSource(true) }}
+        action={{ label: appCopy.phone.components.document.rich.visualBlock.source, accessibilityLabel: appCopy.phone.components.document.rich.visualBlock.showTheVisualSSource, onPress: () => setShowSource(true) }}
         copy={source}
         label={header}
       />

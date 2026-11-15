@@ -3,6 +3,7 @@ import React from 'react'
 import type { TailnetScope } from '../../../../shared/tailnet'
 import { showToast } from '../../store/toastStore'
 import { tailnetApi } from '../../studio/tailnet'
+import { copy } from '../../../../shared/copy'
 
 // Answering a pair request, in one place: the code normaliser and the IPC
 // round trip with its inline-mismatch rule. Two surfaces answer — the full card
@@ -75,14 +76,21 @@ export function usePairRequestAnswer(requestId: string): PairRequestAnswer {
             // `request_not_found` is an answer, not an exception — answered
             // elsewhere or lapsed under the cursor — and swallowing it would
             // leave a person who pressed Allow believing they had paired.
-            showToast({ tone: 'error', title: 'Could not approve the pair request', description: result.message })
+            showToast({
+              tone: 'error',
+              title: copy.remote.pairRequestAnswer.couldNotApproveThePair,
+              description: result.message,
+            })
           }
         } else await tailnetApi.tailnetDenyPairRequest(requestId)
         // The push channel clears the surface everywhere; nothing to do locally.
       } catch (error) {
         showToast({
           tone: 'error',
-          title: kind === 'allow' ? 'Could not approve the pair request' : 'Could not decline the pair request',
+          title:
+            kind === 'allow'
+              ? copy.remote.pairRequestAnswer.couldNotApproveThePair
+              : copy.remote.pairRequestAnswer.couldNotDeclineThePair,
           description: error instanceof Error ? error.message : String(error),
         })
       } finally {

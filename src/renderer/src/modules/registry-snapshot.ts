@@ -24,6 +24,7 @@ import {
   type ModuleRegistrySnapshot,
 } from '../../../shared/modules/registry-snapshot'
 import { resolveModuleEnablement } from '../../../shared/modules/resolve'
+import { copy } from '../../../shared/copy'
 
 // The kernel getters this projection reads, structurally — so a test fakes the
 // registry with plain objects instead of standing up the real host. Each is
@@ -106,7 +107,7 @@ export function buildModuleRegistrySnapshot(input: {
         ? null
         : blocker
           ? { reason: blocker.code, message: blocker.message }
-          : { reason: 'disabled', message: `Module "${manifest.id}" is not enabled (Settings → Modules).` },
+          : { reason: 'disabled', message: copy.modules.registrySnapshot.moduleIsNotEnabledSettings(manifest.id) },
       surfaces: input.surfaces[manifest.id] ?? { ...EMPTY_MODULE_SURFACES },
     }
   })

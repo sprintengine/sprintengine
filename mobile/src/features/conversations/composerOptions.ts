@@ -19,6 +19,8 @@
 //     speaks does not carry them yet.
 
 /** How a launch starts. The phone's protocol starts a conversation and nothing else. */
+import { copy } from "../../../../src/shared/copy";
+
 export type StartAs = "conversation" | "terminal-agent" | "terminal";
 
 /** What the phone may start. */
@@ -33,9 +35,9 @@ export const START_AS_LABELS: Record<StartAs, string> = {
 export type AttachSource = "library" | "camera" | "file";
 
 export type ComposerOption =
-  | { kind: "start-as"; label: "Start as"; choices: readonly StartAs[]; selected: StartAs }
+  | { kind: "start-as"; label: string; choices: readonly StartAs[]; selected: StartAs }
   | { kind: "attach"; source: AttachSource; label: string; disabledReason: string | null }
-  | { kind: "schedule"; label: "Schedule"; on: boolean; repeats: boolean; disabledReason: string | null };
+  | { kind: "schedule"; label: string; on: boolean; repeats: boolean; disabledReason: string | null };
 
 export const ATTACH_LABELS: Record<AttachSource, string> = {
   library: "Choose photos",
@@ -68,7 +70,7 @@ export function composerOptions(input: {
   const rows: ComposerOption[] = [];
   const offered = input.startAs.offered.filter((kind, index, all) => all.indexOf(kind) === index);
   if (offered.length > 1) {
-    rows.push({ kind: "start-as", label: "Start as", choices: offered, selected: input.startAs.selected });
+    rows.push({ kind: "start-as", label: copy.phone.conversations.composerOptions.startAs, choices: offered, selected: input.startAs.selected });
   }
   if (input.attach) {
     const { held, max, busy, pictures = true, files = false } = input.attach;
@@ -97,7 +99,7 @@ export function composerOptions(input: {
         : held > 0
           ? "Each run starts from words alone: remove the attachments to schedule it."
           : null;
-    rows.push({ kind: "schedule", label: "Schedule", on, repeats, disabledReason });
+    rows.push({ kind: "schedule", label: copy.phone.conversations.composerOptions.schedule, on, repeats, disabledReason });
   }
   return rows;
 }
@@ -205,14 +207,14 @@ export function readPickedImage(
 ): { ok: true; image: PickedImage } | { ok: false; message: string } {
   const size = typeof inspected?.size === "number" ? inspected.size : asset.fileSize;
   if (typeof size === "number" && size > maxBytes) {
-    return { ok: false, message: `Choose an image smaller than ${Math.round(maxBytes / (1024 * 1024))} MB.` };
+    return { ok: false, message: copy.phone.conversations.composerOptions.chooseAnImageSmallerThan(Math.round(maxBytes / (1024 * 1024))) };
   }
   // The desktop reads the type case-blind; "image/jpg" is a spelling some
   // Android galleries give JPEG, and the desktop knows only "image/jpeg".
   const given = inspected?.type || asset.mimeType?.trim().toLowerCase() || "image/jpeg";
   const mediaType = given === "image/jpg" ? "image/jpeg" : given;
   if (!CHAT_IMAGE_TYPES.includes(mediaType)) {
-    return { ok: false, message: "Choose a JPEG, PNG, GIF, or WebP image." };
+    return { ok: false, message: copy.phone.conversations.composerOptions.chooseAJPEGPNGGIF };
   }
   // The desktop refuses an upload with no name, and a picker can hand back an
   // empty one, so a blank name is made up like a missing one.

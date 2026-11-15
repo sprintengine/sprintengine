@@ -18,6 +18,7 @@ import { comparablePath } from '../../../../../shared/host-paths'
 import { Spinner } from '../../ui'
 import { ComposerTrayRow } from './composerTray'
 import { worktreesApi } from '../../../studio/worktrees'
+import { copy } from '../../../../../shared/copy'
 
 /** The running installs after one more change: added or moved on while it runs, dropped once it ends. */
 export function applyInstallChange(
@@ -88,7 +89,9 @@ export const WorktreeInstallTrayRow = memo(function WorktreeInstallTrayRow({
   if (!install) return null
   return (
     <ComposerTrayRow glyph={<Spinner />}>
-      Installing this worktree’s dependencies ({install.command}). The agent starts on them when it finishes.
+      {copy.panels.agentChat.worktreeInstallRow.installingThisWorktreeSDependencies}
+      {install.command}
+      {copy.panels.agentChat.worktreeInstallRow.theAgentStartsOnThem}
       {install.lastLine ? (
         <span className="block truncate text-meta text-[color:var(--text-muted)]">{install.lastLine}</span>
       ) : null}

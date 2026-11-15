@@ -11,6 +11,7 @@ import {
   useThemedStyles,
 } from "../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../theme/tokens";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * Three rows with a check.
@@ -30,11 +31,11 @@ export function AppearanceScreen({ onBack }: { onBack: () => void }) {
     useThemePreference();
 
   return (
-    <ScreenFrame backLabel="Back to settings" onBack={onBack} title="Appearance">
+    <ScreenFrame backLabel={copy.phone.settings.appearanceScreen.backToSettings} onBack={onBack} title={copy.phone.settings.appearanceScreen.appearance}>
       <ScrollView contentContainerStyle={contentStyle}>
         {themePreferences.map((option) => (
           <SettingsChoice
-            accessibilityLabel={`Use ${themePreferenceLabel[option]} appearance`}
+            accessibilityLabel={copy.phone.settings.appearanceScreen.useAppearance(themePreferenceLabel[option])}
             key={option}
             label={themePreferenceLabel[option]}
             onPress={() => setPreference(option)}
@@ -46,20 +47,18 @@ export function AppearanceScreen({ onBack }: { onBack: () => void }) {
             ? `Following the phone: ${themePreferenceLabel[resolvedTheme.name]}.`
             : `Pinned to ${themePreferenceLabel[resolvedTheme.name]} on this device.`}
         </SettingsNote>
-        <SettingsGroupLabel>Agents</SettingsGroupLabel>
+        <SettingsGroupLabel>{copy.phone.settings.appearanceScreen.agents}</SettingsGroupLabel>
         <SettingsRow
-          control={<Toggle label="Agent characters" onValueChange={setAgentCharacters} value={agentCharacters} />}
+          control={<Toggle label={copy.phone.settings.appearanceScreen.agentCharacters} onValueChange={setAgentCharacters} value={agentCharacters} />}
           // The row shows what the switch does: a character while on, the
           // working mark while off.
           icon={<AgentGlyph agentId="appearance-preview" size={iconSize.lg} state="working" />}
-          title="Agent characters"
+          title={copy.phone.settings.appearanceScreen.agentCharacters}
         />
-        <SettingsNote>
-          Draw subagents as little characters that move as they work and change with the seasons.
-        </SettingsNote>
+        <SettingsNote>{copy.phone.settings.appearanceScreen.drawSubagentsAsLittleCharacters}</SettingsNote>
         {isPreferenceUnsaved ? (
           <View accessibilityRole="alert">
-            <Text style={styles.unsaved}>Couldn&apos;t save this choice; it lasts until you close the app.</Text>
+            <Text style={styles.unsaved}>{copy.phone.settings.appearanceScreen.couldnTSaveThisChoice}</Text>
           </View>
         ) : null}
       </ScrollView>

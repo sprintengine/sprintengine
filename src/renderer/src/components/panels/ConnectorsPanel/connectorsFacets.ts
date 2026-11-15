@@ -18,6 +18,7 @@ import type { AgentComposerConnector } from '../../workspace/agentComposer/useAg
 import type { MarketplacePluginEntry, MarketplaceProvidesKind } from '../../../../../shared/marketplace/manifest'
 import { componentKindLabels } from '../../settings/storefrontView'
 import { connectorCanLaunch } from '../../../../../shared/connector-launch'
+import { copy } from '../../../../../shared/copy'
 
 type ConnectorSource = 'registry'
 
@@ -203,7 +204,7 @@ const SECTION_ORDER: readonly NamedFacet[] = ['Infrastructure', 'Payments', 'Pro
 export function sectionConnectors(entries: ConnectorEntry[]): ConnectorSection[] {
   if (entries.length === 0) return []
   return SECTION_ORDER.map((bucket) => ({
-    title: bucket === 'Other' ? 'More' : bucket,
+    title: bucket === 'Other' ? copy.panels.connectorsPanel.connectorsFacets.more : bucket,
     entries: entries.filter((entry) => entry.facet === bucket),
   })).filter((section) => section.entries.length > 0)
 }

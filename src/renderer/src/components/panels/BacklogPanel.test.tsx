@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -9,6 +8,7 @@ import {
 } from '../backlog/backlogModuleActions'
 import type { BacklogItemActionCategory } from '../../modules/renderer-host'
 import { test } from 'vitest'
+import { readSourceWithCopy } from '../../../../../tests/source-with-copy'
 
 test('BacklogPanel', async () => {
   let failures = 0
@@ -23,16 +23,19 @@ test('BacklogPanel', async () => {
     }
   }
 
-  const panelSource = readFileSync(join(process.cwd(), 'src/renderer/src/components/panels/BacklogPanel.tsx'), 'utf8')
-  const handToAgentSource = readFileSync(
+  const panelSource = readSourceWithCopy(
+    join(process.cwd(), 'src/renderer/src/components/panels/BacklogPanel.tsx'),
+    'utf8',
+  )
+  const handToAgentSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/backlog/BacklogHandToAgentButton.tsx'),
     'utf8',
   )
-  const contextMenuSource = readFileSync(
+  const contextMenuSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/backlog/BacklogItemContextMenu.tsx'),
     'utf8',
   )
-  const agentRuntimeSource = readFileSync(
+  const agentRuntimeSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/modules/agent-runtime-module.ts'),
     'utf8',
   )

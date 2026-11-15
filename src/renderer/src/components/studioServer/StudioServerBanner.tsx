@@ -4,6 +4,7 @@ import { GhostButton } from '../ui'
 import { Banner } from '../ui/Banner'
 import { useStudioServerStatus } from './useStudioServerStatus'
 import { studioServerNotice } from './studioServerWords'
+import { copy } from '../../../../shared/copy'
 
 // The strip across the top of a workspace window while the Studio server is
 // not there: starting (only once it has taken a noticeable moment),
@@ -39,7 +40,7 @@ export function StudioServerBanner() {
       action={
         notice.recoverable ? (
           <GhostButton onClick={() => void window.api.studioServerRelaunch({ compatibility: true })}>
-            Restart in compatibility mode
+            {copy.studioServer.studioServerBanner.restartInCompatibilityMode}
           </GhostButton>
         ) : undefined
       }

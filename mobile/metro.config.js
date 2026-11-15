@@ -7,7 +7,9 @@ const config = getDefaultConfig(__dirname);
 // `packages/` folder, as source: Metro watches it, and the packages' NodeNext
 // `.js` specifiers name TypeScript files there.
 const packages = path.resolve(__dirname, "../packages");
-config.watchFolders = [...(config.watchFolders ?? []), packages];
+// The app's words live in one file the desktop shares (src/shared/copy).
+const copy = path.resolve(__dirname, "../src/shared/copy");
+config.watchFolders = [...(config.watchFolders ?? []), packages, copy];
 const resolve = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const resolveNext = resolve ?? context.resolveRequest;

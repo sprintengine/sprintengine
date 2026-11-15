@@ -43,6 +43,7 @@ import type {
 import type { UsageQuery, UsageQueryResult } from '../../../shared/modules/activity-service'
 import type { StudioModuleServicesMethodMap } from '../../../../packages/studio-protocol/src/public'
 import { publishSurfaceView } from '../components/workspace/surfaceView'
+import { copy as appCopy } from '../../../shared/copy'
 
 // Renderer-side host kernel. Mirrors the main-process MainHost: capability
 // modules register their contributions (panels for now) into shared registries
@@ -1625,7 +1626,7 @@ export function createRendererHost(): RendererKernel {
       return Promise.resolve({
         ok: false,
         code: 'backlog_unavailable',
-        message: 'The Backlog module is disabled.',
+        message: appCopy.modules.rendererHost.theBacklogModuleIsDisabled,
       } as ModuleServiceAnswer<M>)
     }
     return callModuleService(method, params)
@@ -2029,16 +2030,20 @@ export function createRendererHost(): RendererKernel {
             return {
               ok: false,
               code: 'permission_missing',
-              message: `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
+              message: appCopy.modules.rendererHost.moduleMustDeclareTheIpc(moduleId),
             }
           }
           if (!workspaceGitInfoSource) {
-            return { ok: false, code: 'unavailable', message: 'Workspace git information is not available yet.' }
+            return {
+              ok: false,
+              code: 'unavailable',
+              message: appCopy.modules.rendererHost.workspaceGitInformationIsNot,
+            }
           }
           try {
             return await workspaceGitInfoSource(workspaceId)
           } catch {
-            return { ok: false, code: 'git_failed', message: "The workspace's git information could not be read." }
+            return { ok: false, code: 'git_failed', message: appCopy.modules.rendererHost.theWorkspaceSGitInformation }
           }
         },
         watchWorkspaces(cb) {
@@ -2124,13 +2129,13 @@ export function createRendererHost(): RendererKernel {
               code: 'permission_missing',
               message:
                 input?.send === true
-                  ? `Module "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`
-                  : `Module "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
+                  ? appCopy.modules.rendererHost.moduleDoesNotDeclareThe(moduleId)
+                  : appCopy.modules.rendererHost.moduleDeclaresNeitherChatDraft(moduleId),
             }
           }
           const opener = getWorkspaceChatOpener()
           if (!opener) {
-            return { ok: false, code: 'unavailable', message: 'This window cannot open a chat yet.' }
+            return { ok: false, code: 'unavailable', message: appCopy.modules.rendererHost.thisWindowCannotOpenA }
           }
           return opener({ ...input, moduleId })
         },
@@ -2225,10 +2230,10 @@ export function createRendererHost(): RendererKernel {
         async openExternal(url) {
           const safe = externalHttpUrl(url)
           if (!safe) {
-            return { ok: false, code: 'invalid_url', message: 'Only an absolute http(s) URL can be opened.' }
+            return { ok: false, code: 'invalid_url', message: appCopy.modules.rendererHost.onlyAnAbsoluteHttpS }
           }
           if (!externalLinkOpener || moduleIsDisabled(moduleId)) {
-            return { ok: false, code: 'unavailable', message: 'This window cannot open links yet.' }
+            return { ok: false, code: 'unavailable', message: appCopy.modules.rendererHost.thisWindowCannotOpenLinks }
           }
           try {
             const result = await externalLinkOpener(safe)
@@ -2237,7 +2242,7 @@ export function createRendererHost(): RendererKernel {
             return {
               ok: false,
               code: 'failed',
-              message: error instanceof Error ? error.message : 'Could not open the link.',
+              message: error instanceof Error ? error.message : appCopy.modules.rendererHost.couldNotOpenTheLink,
             }
           }
         },
@@ -2248,7 +2253,7 @@ export function createRendererHost(): RendererKernel {
               return Promise.resolve({
                 ok: false as const,
                 code: 'unavailable' as const,
-                message: 'This window has no Studio connection for module calls.',
+                message: appCopy.modules.rendererHost.thisWindowHasNoStudio,
               })
             return moduleMethodCaller({
               moduleId,

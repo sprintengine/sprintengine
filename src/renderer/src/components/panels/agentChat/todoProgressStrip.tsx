@@ -11,6 +11,7 @@ import { useConversationDisclosure } from './conversationViewState'
 import { ChevronRightGlyph, ToolKindGlyph } from './toolRows/ToolKindGlyph'
 import { toolGlyphInk } from './toolRows/ToolRow'
 import { deriveTodoProgress, type TodoStepStatus } from './todoProgress'
+import { copy } from '../../../../../shared/copy'
 
 const SEGMENT_INK: Record<TodoStepStatus, string> = {
   completed: 'bg-[color:var(--text-subtle)]',
@@ -71,7 +72,11 @@ export const ConversationTodoStrip = React.memo(function ConversationTodoStrip({
         density="row"
         className="group/tool-row gap-2 text-meta"
         aria-expanded={open}
-        aria-label={`Tasks: ${progress.completed} of ${progress.total} done. Current: ${progress.current}`}
+        aria-label={copy.panels.agentChat.todoProgressStrip.tasksOfDoneCurrent(
+          progress.completed,
+          progress.total,
+          progress.current,
+        )}
         onClick={() => setOpen(!open)}
       >
         <span className={`flex shrink-0 ${toolGlyphInk(working ? 'running' : 'neutral')}`}>
@@ -92,7 +97,7 @@ export const ConversationTodoStrip = React.memo(function ConversationTodoStrip({
       </RowButton>
       {open ? (
         <ul
-          aria-label={`Task list, ${progress.completed} of ${progress.total} done`}
+          aria-label={copy.panels.agentChat.todoProgressStrip.taskListOfDone(progress.completed, progress.total)}
           className="flex max-h-48 flex-col gap-1 overflow-y-auto px-2 pb-2 pt-0.5 text-meta leading-5"
         >
           {progress.steps.map((step, index) => (

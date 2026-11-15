@@ -21,6 +21,7 @@ import {
 } from './editorTreePrefs'
 import type { DiffFileItem } from './diffFileList'
 import type { BranchDiffItem } from './branchSteps'
+import { copy } from '../../../../shared/copy'
 
 // The diff viewer's file list, as a tree: the workspace's Files tree
 // (panels/FileExplorer.tsx) with a filter applied — the files this diff holds,
@@ -138,7 +139,7 @@ export function DiffFileTree({
   const treeRef = useRef<FileExplorerTreeHandle>(null)
   const entries = useMemo(() => diffTreeEntries(items), [items])
   const source = useMemo<FileExplorerTreeSource>(
-    () => ({ kind: 'paths', entries, emptyTitle: 'No changed files' }),
+    () => ({ kind: 'paths', entries, emptyTitle: copy.auxWindows.diffFileTree.noChangedFiles }),
     [entries],
   )
   const summaries = useMemo(() => summarise(items), [items])
@@ -154,7 +155,7 @@ export function DiffFileTree({
       return {
         badge: appearance.badge,
         nameClassName: appearance.textClass,
-        title: both ? `${entry.name}: staged and unstaged changes` : undefined,
+        title: both ? copy.auxWindows.diffFileTree.stagedAndUnstagedChanges(entry.name) : undefined,
         meta:
           summary.additions + summary.deletions > 0 ? (
             // The diff surface's one channel for counts: --diff-*, as the
@@ -181,8 +182,12 @@ export function DiffFileTree({
         <span className="min-w-0 flex-1 truncate text-meta font-medium text-[color:var(--text-strong)]">
           {fileCount} changed {fileCount === 1 ? 'file' : 'files'}
         </span>
-        <Tooltip content="Collapse all" placement="bottom">
-          <IconButton size="xs" aria-label="Collapse all folders" onClick={() => treeRef.current?.collapseAll()}>
+        <Tooltip content={copy.auxWindows.diffFileTree.collapseAll} placement="bottom">
+          <IconButton
+            size="xs"
+            aria-label={copy.auxWindows.diffFileTree.collapseAllFolders}
+            onClick={() => treeRef.current?.collapseAll()}
+          >
             <CollapseAllGlyph />
           </IconButton>
         </Tooltip>
@@ -198,7 +203,7 @@ export function DiffFileTree({
           persistence="local"
           workspaceWindow={workspaceWindow}
           variant="banded"
-          ariaLabel="Changed files in this diff"
+          ariaLabel={copy.auxWindows.diffFileTree.changedFilesInThisDiff}
           followPath={currentPath}
           gitStatus={gitStatus}
           directoryStatus={directoryStatus}
@@ -280,7 +285,7 @@ export function DiffFileTreeColumn({
   return (
     <aside
       ref={columnRef}
-      aria-label="Changed files"
+      aria-label={copy.auxWindows.diffFileTree.changedFiles}
       className="relative flex max-w-[50%] shrink-0 flex-col border-r border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)]"
       style={{ width: clampEditorTreeWidth(dragWidthRef.current ?? prefs.width) }}
     >
@@ -288,7 +293,7 @@ export function DiffFileTreeColumn({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize changed files"
+        aria-label={copy.auxWindows.diffFileTree.resizeChangedFiles}
         aria-valuemin={EDITOR_TREE_MIN_WIDTH}
         aria-valuemax={EDITOR_TREE_MAX_WIDTH}
         aria-valuenow={prefs.width}

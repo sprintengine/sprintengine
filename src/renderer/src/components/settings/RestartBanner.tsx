@@ -1,6 +1,7 @@
 import { useState, type JSX } from 'react'
 
 import { GhostButton, PrimaryButton, RefreshIcon } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // One line for every extension whose main entry waits on the next launch, in
 // place of a "loads on the next app launch" sentence under each of them. It is
@@ -30,7 +31,7 @@ export function RestartBanner({
       <RefreshIcon className="icon-sm shrink-0 text-[color:var(--accent-primary)]" />
       <span className="min-w-0 flex-1 text-body font-medium text-[color:var(--text-strong)]">{title}</span>
       <GhostButton size="xs" onClick={onLater}>
-        Later
+        {copy.settings.restartBanner.later}
       </GhostButton>
       {onRestart ? (
         <PrimaryButton
@@ -44,7 +45,7 @@ export function RestartBanner({
             void onRestart().finally(() => setRestarting(false))
           }}
         >
-          Restart now
+          {copy.settings.restartBanner.restartNow}
         </PrimaryButton>
       ) : null}
     </div>

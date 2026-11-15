@@ -10,6 +10,7 @@ import type {
 import { BACKLOG_BLOCKED_LABEL, BACKLOG_STATUS_LABEL } from './BacklogRow'
 import { toggleDependencySlug, type BacklogActions, type BacklogDependencyChoice } from './BacklogItemContextMenu'
 import { BacklogItemSearchPicker } from './BacklogItemSearchPicker'
+import { copy } from '../../../../shared/copy'
 
 // Detail-pane dependency surface, the analog of BacklogLinksSection for the
 // `dependsOn` axis. It renders the derived view (T2 backlogDependencies) — the
@@ -70,7 +71,7 @@ export function BacklogDependenciesSection({
 
   return (
     <Section
-      title="Dependencies"
+      title={copy.backlog.backlogDependenciesSection.dependencies}
       level={4}
       inset
       // No hairline: padding and the heading separate this section from the next
@@ -80,14 +81,12 @@ export function BacklogDependenciesSection({
     >
       <div className="flex flex-col gap-2 px-3">
         {inCycle ? (
-          <InlineNotice tone="warn">
-            This item is in a dependency cycle. Remove a prerequisite to break it.
-          </InlineNotice>
+          <InlineNotice tone="warn">{copy.backlog.backlogDependenciesSection.thisItemIsInA}</InlineNotice>
         ) : null}
 
         {prerequisites.length > 0 ? (
           <div className="flex flex-col gap-0.5">
-            <SubsectionLabel>Prerequisites</SubsectionLabel>
+            <SubsectionLabel>{copy.backlog.backlogDependenciesSection.prerequisites}</SubsectionLabel>
             <ul className="flex flex-col gap-0.5">
               {prerequisites.map((prerequisite) => (
                 <PrerequisiteRow
@@ -104,7 +103,7 @@ export function BacklogDependenciesSection({
 
         {blocks.length > 0 ? (
           <div className="flex flex-col gap-0.5">
-            <SubsectionLabel>Blocks</SubsectionLabel>
+            <SubsectionLabel>{copy.backlog.backlogDependenciesSection.blocks}</SubsectionLabel>
             <ul className="flex flex-col gap-0.5">
               {blocks.map((blocked) => (
                 <li key={blocked.id} className="flex min-w-0 items-center gap-2">
@@ -164,14 +163,14 @@ function PrerequisiteRow({
         <NavigateButton displayId={target.displayId} title={target.title} onNavigate={() => onNavigate(target.id)} />
       ) : (
         <Tooltip
-          content={`No item matches “${prerequisite.slug}” — remove or create it`}
+          content={copy.backlog.backlogDependenciesSection.noItemMatchesRemoveOr(prerequisite.slug)}
           placement="top"
           wrapperClassName="inline-flex min-w-0 flex-1"
         >
           <span
             tabIndex={0}
             role="note"
-            aria-label={`${prerequisite.slug}: no matching item`}
+            aria-label={copy.backlog.backlogDependenciesSection.noMatchingItem(prerequisite.slug)}
             // Readable ink: the slug is what a person reads to clear the row, so
             // it is never disabled ink — the "Unknown" word beside it carries state.
             className="min-w-0 flex-1 truncate rounded-sm px-1.5 py-1 font-mono text-meta text-[color:var(--text-muted)] outline-none focus-visible:focus-ring"
@@ -182,7 +181,11 @@ function PrerequisiteRow({
       )}
       <StatusWord>{statusWord}</StatusWord>
       <RemoveButton
-        label={target ? `Remove prerequisite ${target.title}` : `Remove unknown prerequisite ${prerequisite.slug}`}
+        label={
+          target
+            ? copy.backlog.backlogDependenciesSection.removePrerequisite(target.title)
+            : copy.backlog.backlogDependenciesSection.removeUnknownPrerequisite(prerequisite.slug)
+        }
         onClick={onRemove}
       />
     </li>
@@ -215,7 +218,7 @@ function NavigateButton({
 // hand-rolled square under the 24px hit-target floor, with no focus ring.
 function RemoveButton({ label, onClick }: { label: string; onClick: () => void }): JSX.Element {
   return (
-    <Tooltip content="Remove" placement="top">
+    <Tooltip content={copy.backlog.backlogDependenciesSection.remove} placement="top">
       <IconButton aria-label={label} onClick={onClick} className="shrink-0">
         <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -246,7 +249,7 @@ function DependsOnEditor({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Set prerequisites"
+      ariaLabel={copy.backlog.backlogDependenciesSection.setPrerequisites}
       popupRole="dialog"
       placement="bottom-end"
       surfaceClassName="min-w-[19rem] p-1"
@@ -260,7 +263,7 @@ function DependsOnEditor({
           onClick={togglePopover}
           className={opened ? 'bg-[color:var(--bg-hover)] text-[color:var(--text-strong)]' : ''}
         >
-          Depends on…
+          {copy.backlog.backlogDependenciesSection.dependsOn}
         </GhostButton>
       )}
     >
@@ -273,8 +276,8 @@ function DependsOnEditor({
           searchText: candidate.slug,
         }))}
         selectedValues={dependsOn}
-        ariaLabel="Search prerequisite items"
-        noOptionsMessage="No other items."
+        ariaLabel={copy.backlog.backlogDependenciesSection.searchPrerequisiteItems}
+        noOptionsMessage={copy.backlog.backlogDependenciesSection.noOtherItems}
         multiple
         resultRole="listbox"
         onSelect={(candidate) => onToggle(candidate.value)}

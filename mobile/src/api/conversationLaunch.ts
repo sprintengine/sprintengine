@@ -7,6 +7,7 @@ import {
 } from "../../../packages/conversation-protocol/src/public";
 import { plainLineBreaks } from "../features/conversations/sendRules";
 import { desktopStudio, type DesktopStudioOptions } from "./desktopStudio";
+import { copy } from "../../../src/shared/copy";
 
 // Starting a chat on a paired desktop: `conversation.create` on the desktop's
 // Studio protocol (desktopStudio.ts). The desktop starts a new chat in the
@@ -137,7 +138,7 @@ export function readConversationCreateFailure(error: unknown, machineName: strin
   switch (code) {
     case "unauthorized":
     case "revoked":
-      return { ok: false, failure: "unpaired", title: `This phone is no longer paired with ${machine}.`, message: "Pair again from Settings." };
+      return { ok: false, failure: "unpaired", title: copy.phone.api.conversationLaunch.thisPhoneIsNoLonger(machine), message: copy.phone.api.conversationLaunch.pairAgainFromSettings };
     case "peer_mismatch":
       return { ok: false, failure: "unpaired", title: detail };
     case "outdated":
@@ -147,7 +148,7 @@ export function readConversationCreateFailure(error: unknown, machineName: strin
     case "disconnected":
     case "offline":
     case "":
-      return { ok: false, failure: "unavailable", title: `${machine} did not answer.`, message: detail || "Is Tailscale up on both devices?" };
+      return { ok: false, failure: "unavailable", title: copy.phone.api.conversationLaunch.didNotAnswer(machine), message: detail || copy.phone.api.conversationLaunch.isTailscaleUpOnBoth };
     default:
       return refusal(code, detail, machine);
   }
@@ -158,8 +159,8 @@ export function chatLaunchUnsupported(machine: string): CreateConversationResult
   return {
     ok: false,
     failure: "unsupported",
-    title: `${machine} cannot start chat agents yet.`,
-    message: "Update Studio there first.",
+    title: copy.phone.api.conversationLaunch.cannotStartChatAgentsYet(machine),
+    message: copy.phone.api.conversationLaunch.updateStudioThereFirst,
   };
 }
 
@@ -209,7 +210,7 @@ export function threadFromLaunch(
     workspaceId: conversation.workspaceId,
     agentId: conversation.agentId,
     ...(conversation.sessionId ? { sessionId: conversation.sessionId } : {}),
-    title: conversation.name || "Chat",
+    title: conversation.name || copy.phone.api.conversationLaunch.chat,
     phase: "starting",
     updatedAt: options.now,
     createdAt: options.now,
@@ -261,10 +262,10 @@ export async function createConversation(
     // A minute is long past a healthy start, but the desktop may still have
     // started it: say where it would be rather than that it failed.
     if (answer === "timeout")
-      return { ok: false, failure: "unavailable", title: `${machine} took too long to start the chat.`, message: "If it started, it is under Chats." };
+      return { ok: false, failure: "unavailable", title: copy.phone.api.conversationLaunch.tookTooLongToStart(machine), message: copy.phone.api.conversationLaunch.ifItStartedItIs };
     const conversation = answer.conversation;
     if (!conversation.workspaceId || !conversation.agentId) {
-      return { ok: false, failure: "refused", title: `${machine} didn't say which chat it started.`, message: "Find it under Chats." };
+      return { ok: false, failure: "refused", title: copy.phone.api.conversationLaunch.didnTSayWhichChat(machine), message: copy.phone.api.conversationLaunch.findItUnderChats };
     }
     return {
       ok: true,

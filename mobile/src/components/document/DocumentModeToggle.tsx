@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, type Theme, typography, space, fontWeight } from "../../theme/tokens";
+import { copy } from "../../../../src/shared/copy";
 
 /** `document` reads the source; `preview` renders it in the sandbox. */
 export type DocumentViewMode = "document" | "preview";
@@ -12,8 +13,8 @@ interface DocumentModeToggleProps {
 }
 
 const modes: { mode: DocumentViewMode; label: string }[] = [
-  { mode: "document", label: "Document" },
-  { mode: "preview", label: "HTML preview" },
+  { mode: "document", label: copy.phone.components.document.documentModeToggle.document },
+  { mode: "preview", label: copy.phone.components.document.documentModeToggle.hTMLPreview },
 ];
 
 export function DocumentModeToggle({ value, onChange }: DocumentModeToggleProps) {

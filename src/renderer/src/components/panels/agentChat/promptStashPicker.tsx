@@ -13,6 +13,7 @@ import {
   type StashedPrompt,
 } from './promptStash'
 import { quotesToInlineText } from '../../../../../shared/chat-quotes'
+import { copy } from '../../../../../shared/copy'
 
 // ⌘S in a composer (`chat.stash`, rebindable): with something typed, the
 // draft is set aside and the box cleared, and a toast offers Undo; on an empty
@@ -125,8 +126,11 @@ export function usePromptStash({
       if (loaded.missingImages > 0)
         showToast({
           tone: 'warn',
-          title: loaded.missingImages === 1 ? 'An image did not come back' : 'Some images did not come back',
-          description: 'They were no longer on this device.',
+          title:
+            loaded.missingImages === 1
+              ? copy.panels.agentChat.promptStashPicker.anImageDidNotCome
+              : copy.panels.agentChat.promptStashPicker.someImagesDidNotCome,
+          description: copy.panels.agentChat.promptStashPicker.theyWereNoLongerOn,
         })
       return true
     },
@@ -142,14 +146,14 @@ export function usePromptStash({
     showToast({
       id: PROMPT_STASH_UNDO_TOAST_ID,
       tone: stash.saveFailed() ? 'warn' : 'good',
-      title: 'Prompt stashed',
+      title: copy.panels.agentChat.promptStashPicker.promptStashed,
       description: stash.saveFailed()
-        ? "Couldn't save on this device. Kept until the app closes."
-        : `${stashLabel} in an empty box brings it back.`,
+        ? copy.panels.agentChat.promptStashPicker.couldnTSaveOnThis
+        : copy.panels.agentChat.promptStashPicker.inAnEmptyBoxBrings(stashLabel),
       actions: [
         {
           id: 'undo',
-          label: 'Undo',
+          label: copy.panels.agentChat.promptStashPicker.undo,
           run: () => {
             useToastStore.getState().dismissToast(PROMPT_STASH_UNDO_TOAST_ID)
             if (undoOwner === owner.current) undoOwner = null
@@ -265,10 +269,18 @@ function PromptStashList({
   }, [active])
   return (
     <div data-prompt-stash="">
-      <ScrollArea ref={listRef} id={listId} role="listbox" aria-label="Stashed prompts" className="max-h-64 py-1">
+      <ScrollArea
+        ref={listRef}
+        id={listId}
+        role="listbox"
+        aria-label={copy.panels.agentChat.promptStashPicker.stashedPrompts}
+        className="max-h-64 py-1"
+      >
         {entries.length === 0 ? (
           <p role="status" className="px-3 py-2 text-meta text-[color:var(--text-muted)]">
-            Nothing stashed. {stashLabel} with something typed sets it aside here.
+            {copy.panels.agentChat.promptStashPicker.nothingStashed}
+            {stashLabel}
+            {copy.panels.agentChat.promptStashPicker.withSomethingTypedSetsIt}
           </p>
         ) : null}
         {entries.map((entry, index) => {
@@ -296,7 +308,9 @@ function PromptStashList({
         })}
       </ScrollArea>
       <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
-        ↑↓ choose · enter restore · {renderKeybinding('Primary+Backspace', platform)} delete · esc close
+        {copy.panels.agentChat.promptStashPicker.chooseEnterRestore}
+        {renderKeybinding('Primary+Backspace', platform)}
+        {copy.panels.agentChat.promptStashPicker.deleteEscClose}
       </div>
     </div>
   )

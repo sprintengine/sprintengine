@@ -16,6 +16,7 @@ import { PROJECT_MARK_CLASS, projectColorStyle, type ProjectColor } from '../../
 import { formatElapsedMs } from '../../../utils/relativeTime'
 import { useRelativeNow } from '../../../hooks/useRelativeNow'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
+import { copy } from '../../../../../shared/copy'
 
 // A shelf's fold row (settled-chats, 2026-09-07): the one line a folder shows
 // for a group of parked chats — its name, and how many — collapsed by default,
@@ -223,10 +224,14 @@ export function MachineRowGlyph({
   if (!machine || !identity) return null
   const short = shortMachineName(machine.name)
   return (
-    <Tooltip content={`On ${short}`} placement="bottom" wrapperClassName="flex shrink-0 items-center">
+    <Tooltip
+      content={copy.workspace.sidebar.rowParts.on(short)}
+      placement="bottom"
+      wrapperClassName="flex shrink-0 items-center"
+    >
       <span
         role="img"
-        aria-label={`On ${short}`}
+        aria-label={copy.workspace.sidebar.rowParts.on(short)}
         className={`flex shrink-0 items-center ${
           projectInk ? `${projectInk.className} ${projectInk.color === null ? '' : PROJECT_MARK_CLASS}` : ''
         }`}
@@ -248,10 +253,14 @@ export function MachineRowGlyph({
  */
 export function ScheduledRunGlyph({ scheduledAgentId }: { scheduledAgentId: string }) {
   return (
-    <Tooltip content="Started by a schedule" placement="bottom" wrapperClassName="flex shrink-0 items-center">
+    <Tooltip
+      content={copy.workspace.sidebar.rowParts.startedByASchedule}
+      placement="bottom"
+      wrapperClassName="flex shrink-0 items-center"
+    >
       <span
         role="img"
-        aria-label="Started by a schedule"
+        aria-label={copy.workspace.sidebar.rowParts.startedByASchedule}
         className="flex shrink-0 items-center"
         data-scheduled-run={scheduledAgentId}
       >
@@ -385,7 +394,10 @@ export function WorkingElapsed({ since }: { since: number }) {
     // the visible text and an sr-only sentence says what it measures.
     <span className="tabular-nums text-[color:var(--working-ink)]">
       <span aria-hidden="true">{text}</span>
-      <span className="sr-only">Working for {text}</span>
+      <span className="sr-only">
+        {copy.workspace.sidebar.rowParts.workingFor}
+        {text}
+      </span>
     </span>
   )
 }
@@ -416,7 +428,14 @@ export function BranchChip({
   return (
     <RowTooltip
       content={
-        tooltip ?? (cwd ? (worktree ? `Worktree · ${cwd}` : cwd) : worktree ? 'A worktree of its own' : `On ${branch}`)
+        tooltip ??
+        (cwd
+          ? worktree
+            ? copy.workspace.sidebar.rowParts.worktree(cwd)
+            : cwd
+          : worktree
+            ? copy.workspace.sidebar.rowParts.aWorktreeOfItsOwn
+            : copy.workspace.sidebar.rowParts.on2(branch))
       }
       wrapperClassName="flex min-w-[4ch] shrink-[3] items-center"
     >
@@ -433,7 +452,7 @@ export function BranchChip({
       >
         <GitBranchGlyph className="icon-xs shrink-0" />
         <TruncatedText as="span" text={branch} className="min-w-0" />
-        {worktree ? <span className="sr-only"> (worktree)</span> : null}
+        {worktree ? <span className="sr-only">{copy.workspace.sidebar.rowParts.worktree2}</span> : null}
       </span>
     </RowTooltip>
   )

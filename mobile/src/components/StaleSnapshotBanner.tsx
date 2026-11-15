@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { space, typography, type Theme, fontWeight } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 /**
  * A read failed while rows from the last good read are still on screen. Those rows
@@ -18,7 +19,7 @@ export function StaleSnapshotBanner({ message }: { message: string }) {
 
   return (
     <View accessibilityRole="alert" style={styles.banner}>
-      <Text style={styles.label}>Showing the last update</Text>
+      <Text style={styles.label}>{copy.phone.components.staleSnapshotBanner.showingTheLastUpdate}</Text>
       <Text numberOfLines={2} style={styles.message}>
         {message}
       </Text>

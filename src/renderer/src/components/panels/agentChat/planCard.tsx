@@ -20,6 +20,7 @@ import { ConversationMarkdown, useConversationLinkContext } from './conversation
 import type { ChatServices } from './chatServices'
 import { useConversationTransport } from './conversationTransport'
 import { useShellReach } from './shellReach'
+import { copy } from '../../../../../shared/copy'
 
 const HEADING = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/u
 
@@ -53,7 +54,7 @@ type PlanDocumentTarget = { workspaceId: string; workspaceRoot: string; agentId:
 async function openPlanInPane(services: ChatServices, target: PlanDocumentTarget, plan: string): Promise<void> {
   const title = planTitle(plan) ?? 'Proposed plan'
   const failed = (description: string) =>
-    void showToast({ tone: 'error', title: 'Couldn’t open the plan', description })
+    void showToast({ tone: 'error', title: copy.panels.agentChat.planCard.couldnTOpenThePlan, description })
   try {
     const result = await services.planDocument({ ...target, plan, title })
     if (!result.ok) return failed(result.message)
@@ -102,7 +103,7 @@ export function OpenPlanButton({ onOpen }: { onOpen: () => void }) {
   return (
     <GhostButton size="xs" onClick={onOpen} className="shrink-0">
       <OpenInPaneGlyph className="icon-xs" />
-      Open plan
+      {copy.panels.agentChat.planCard.openPlan}
     </GhostButton>
   )
 }
@@ -139,7 +140,7 @@ export function ResolvedPlanCard({
       className="rounded-sm border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)]"
     >
       <div className="flex items-center gap-2 px-3 pt-2">
-        <Badge className="shrink-0">Plan</Badge>
+        <Badge className="shrink-0">{copy.panels.agentChat.planCard.plan}</Badge>
         <span
           className="min-w-0 flex-1 truncate text-body font-medium text-[color:var(--text-strong)]"
           {...(named ? segment : {})}
@@ -149,7 +150,7 @@ export function ResolvedPlanCard({
         {open ? <OpenPlanButton onOpen={() => open(plan, planFilePath)} /> : null}
         <CopyGlyphButton
           size="xs"
-          label="Copy plan"
+          label={copy.panels.agentChat.planCard.copyPlan}
           text={plan.trim()}
           html={() => markdownClipboardHtml(plan.trim())}
           className="shrink-0"

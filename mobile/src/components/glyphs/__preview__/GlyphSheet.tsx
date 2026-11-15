@@ -29,6 +29,7 @@ import {
   type BacklogType,
   type LifecycleState,
 } from "../index";
+import { copy } from "../../../../../src/shared/copy";
 
 // Static review surface for the glyph pack, mirroring the desktop's
 // components/ui/__preview__/PrimitivePreview.tsx. This is a design surface, not
@@ -70,9 +71,9 @@ export function GlyphSheet() {
 
   return (
     <ScrollView style={styles.canvas} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Glyph pack — {theme.name}</Text>
+      <Text style={styles.title}>{copy.phone.components.glyphs.preview.glyphSheet.glyphPack}{theme.name}</Text>
 
-      <Section title="Lifecycle" caption="Shape carries the state; tone only reinforces it.">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.lifecycle} caption={copy.phone.components.glyphs.preview.glyphSheet.shapeCarriesTheStateTone}>
         <View style={styles.grid}>
           {LIFECYCLE_STATES.map((state) => (
             <View key={state} style={styles.cell}>
@@ -83,12 +84,12 @@ export function GlyphSheet() {
           ))}
           <View style={styles.cell}>
             <LifecycleGlyph state="in_progress" size={iconSize.md} />
-            <Text style={styles.cellLabel}>In progress · live</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.inProgressLive}</Text>
           </View>
         </View>
       </Section>
 
-      <Section title="Status" caption="A shape per tone, never a dot. Working is the working mark.">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.status} caption={copy.phone.components.glyphs.preview.glyphSheet.aShapePerToneNever}>
         <View style={styles.grid}>
           {STATUS_TONES.map((tone) => (
             <View key={tone} style={styles.cell}>
@@ -103,7 +104,7 @@ export function GlyphSheet() {
         </View>
       </Section>
 
-      <Section title="Agent characters" caption="Every drawing in every state; the season picks one per agent.">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.agentCharacters} caption={copy.phone.components.glyphs.preview.glyphSheet.everyDrawingInEveryState}>
         <View style={styles.grid}>
           {(Object.keys(AGENT_CHARACTERS) as AgentCharacterId[]).flatMap((character) =>
             AGENT_STATES.map((state) => (
@@ -118,7 +119,7 @@ export function GlyphSheet() {
         </View>
       </Section>
 
-      <Section title="Backlog type" caption="Epic rolls up work; the rest are leaves.">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.backlogType} caption={copy.phone.components.glyphs.preview.glyphSheet.epicRollsUpWorkThe}>
         <View style={styles.grid}>
           {BACKLOG_TYPES.map((type) => (
             <View key={type} style={styles.cell}>
@@ -129,7 +130,7 @@ export function GlyphSheet() {
         </View>
       </Section>
 
-      <Section title="Triage" caption="Unset reads as a calm dash, never a warning.">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.triage} caption={copy.phone.components.glyphs.preview.glyphSheet.unsetReadsAsACalm}>
         <View style={styles.grid}>
           {DIFFICULTIES.map((difficulty) => (
             <View key={difficulty ?? "unset"} style={styles.cell}>
@@ -146,73 +147,73 @@ export function GlyphSheet() {
         </View>
       </Section>
 
-      <Section title="Chrome — tabs" caption="Muted at rest, one accent when active.">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.chromeTabs} caption={copy.phone.components.glyphs.preview.glyphSheet.mutedAtRestOneAccent}>
         <View style={styles.grid}>
           <View style={styles.cell}>
             <BacklogIcon />
-            <Text style={styles.cellLabel}>Backlog</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.backlog}</Text>
           </View>
           <View style={styles.cell}>
             <SettingsIcon />
-            <Text style={styles.cellLabel}>Settings</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.settings}</Text>
           </View>
           <View style={styles.cell}>
             <BacklogIcon tone="accentPrimary" />
-            <Text style={styles.cellLabel}>Backlog · active</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.backlogActive}</Text>
           </View>
           <View style={styles.cell}>
             <SettingsIcon tone="accentPrimary" />
-            <Text style={styles.cellLabel}>Settings · active</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.settingsActive}</Text>
           </View>
         </View>
       </Section>
 
-      <Section title="Chrome — controls">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.chromeControls}>
         <View style={styles.grid}>
           <View style={styles.cell}>
             <ChevronIcon direction="up" size={iconSize.md} />
-            <Text style={styles.cellLabel}>Chevron up</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.chevronUp}</Text>
           </View>
           <View style={styles.cell}>
             <ChevronIcon direction="right" size={iconSize.md} />
-            <Text style={styles.cellLabel}>Chevron right</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.chevronRight}</Text>
           </View>
           <View style={styles.cell}>
             <ChevronIcon direction="down" size={iconSize.md} />
-            <Text style={styles.cellLabel}>Chevron down</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.chevronDown}</Text>
           </View>
           <View style={styles.cell}>
             <ChevronIcon direction="left" size={iconSize.md} />
-            <Text style={styles.cellLabel}>Chevron left</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.chevronLeft}</Text>
           </View>
           <View style={styles.cell}>
             <FilterIcon size={iconSize.md} />
-            <Text style={styles.cellLabel}>Filter</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.filter}</Text>
           </View>
           <View style={styles.cell}>
             <GearIcon size={iconSize.md} />
-            <Text style={styles.cellLabel}>Gear</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.gear}</Text>
           </View>
           <View style={styles.cell}>
             <CloseIcon size={iconSize.md} />
-            <Text style={styles.cellLabel}>Close</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.close}</Text>
           </View>
           <View style={styles.cell}>
             <ExpandIcon size={iconSize.md} />
-            <Text style={styles.cellLabel}>Expand</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.expand}</Text>
           </View>
           <View style={styles.cell}>
             <CollapseIcon size={iconSize.md} />
-            <Text style={styles.cellLabel}>Collapse</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.collapse}</Text>
           </View>
           <View style={styles.cell}>
             <SearchIcon size={iconSize.md} />
-            <Text style={styles.cellLabel}>Search</Text>
+            <Text style={styles.cellLabel}>{copy.phone.components.glyphs.preview.glyphSheet.search}</Text>
           </View>
         </View>
       </Section>
 
-      <Section title="Size ramp" caption="xs 14 · sm 16 · md 18 · lg 22">
+      <Section title={copy.phone.components.glyphs.preview.glyphSheet.sizeRamp} caption={copy.phone.components.glyphs.preview.glyphSheet.xs14Sm16Md}>
         <View style={styles.grid}>
           {(Object.entries(iconSize) as [string, number][]).map(([name, size]) => (
             <View key={name} style={styles.cell}>

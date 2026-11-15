@@ -3,6 +3,7 @@ import { showToast, useToastStore } from '../store/toastStore'
 import { isWindowVisible } from '../utils/windowActivity'
 import { WEB_TUNNEL_REOPENED_EVENT, watchWebReconnectTriggers } from './webReconnect'
 import { webPageUrl } from './webLocation'
+import { copy } from '../../../shared/copy'
 
 // A tab loaded from a bundle the server no longer serves (phase 9 spec, 3.5
 // and 14.11). The page is served by the server it talks to, so the two match
@@ -52,12 +53,16 @@ export function startWebBuildWatch(): () => void {
       showToast({
         id: TOAST_ID,
         tone: 'good',
-        title: 'Studio was updated',
-        description: 'Reload this tab to use it. Until then, it keeps working.',
+        title: copy.web.webBuildWatch.studioWasUpdated,
+        description: copy.web.webBuildWatch.reloadThisTabToUse,
         autoDismissMs: false,
         actions: [
-          { id: 'later', label: 'Later', run: () => useToastStore.getState().dismissToast(TOAST_ID) },
-          { id: 'reload', label: 'Reload', primary: true, run: () => window.location.reload() },
+          {
+            id: 'later',
+            label: copy.web.webBuildWatch.later,
+            run: () => useToastStore.getState().dismissToast(TOAST_ID),
+          },
+          { id: 'reload', label: copy.web.webBuildWatch.reload, primary: true, run: () => window.location.reload() },
         ],
       })
     } finally {

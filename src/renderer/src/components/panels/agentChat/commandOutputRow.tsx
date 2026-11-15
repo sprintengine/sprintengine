@@ -16,6 +16,7 @@ import { CopyGlyphButton } from '../../ui'
 import { AnsiOutput } from './AnsiOutput'
 import { ConversationMarkdown } from './conversationLinks'
 import type { CommandOutputEntry } from './conversationProjection'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // eslint-disable-next-line no-control-regex -- the escape byte is what is being looked for
 const ANSI_ESCAPE = /\u001b\[/
@@ -45,7 +46,7 @@ export function CommandOutputRow({ entry }: { entry: CommandOutputEntry }) {
           </span>
           <CopyGlyphButton
             text={entry.output}
-            label="Copy output"
+            label={appCopy.panels.agentChat.commandOutputRow.copyOutput}
             size="xs"
             className="opacity-0 group-hover/command-output:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100"
           />

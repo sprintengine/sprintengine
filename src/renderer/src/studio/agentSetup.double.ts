@@ -1,4 +1,5 @@
 import type * as AgentSetup from './agentSetup'
+import { copy } from '../../../shared/copy'
 
 // A stand-in for the window's agent setup (`agentSetup.ts`), for tests of what
 // calls it. A test mocks the module with this one:
@@ -12,20 +13,20 @@ import type * as AgentSetup from './agentSetup'
 type Api = AgentSetup.AgentSetupApi
 
 function blank(): Api {
-  const none = { ok: false as const, message: 'Nothing set up here.' }
+  const none = { ok: false as const, message: copy.studio.agentSetupDouble.nothingSetUpHere }
   const choices = { enabled: [], dismissed: [] }
   return {
     memoryResolveRoot: async ({ relativeRoot }) => ({
       ok: false,
       status: 'missing-workspace',
       relativeRoot,
-      message: 'No workspace here.',
+      message: copy.studio.agentSetupDouble.noWorkspaceHere,
     }),
     memoryIndex: async ({ relativeRoot }) => ({
       ok: false,
       status: 'missing-workspace',
       relativeRoot,
-      message: 'No workspace here.',
+      message: copy.studio.agentSetupDouble.noWorkspaceHere,
     }),
     memoryReadPreview: async () => none,
     memoryActivityInstall: async () => none,
@@ -53,7 +54,7 @@ function blank(): Api {
       ok: false,
       status: 'unknown-skill',
       skillId,
-      message: 'No skills here.',
+      message: copy.studio.agentSetupDouble.noSkillsHere,
     }),
     studioAreaSkillsGet: async () => choices,
     studioAreaSkillsSetEnabled: async () => choices,

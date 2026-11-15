@@ -20,6 +20,7 @@ import { OutlineButton, PrimaryButton } from './Buttons'
 import { Popover, type PopoverPlacement } from './Popover'
 import { Spinner } from './Spinner'
 import { listLiveAgentSessions, pickTargetSession, type LiveAgentSession } from '../../utils/useSkillInAgent'
+import { copy } from '../../../../shared/copy'
 
 export type UseSkillInAgentMenuProps = {
   /** Names the skill in the trigger's accessible label. */
@@ -185,7 +186,7 @@ export function UseSkillInAgentMenu({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel={`Use ${skillName} in an agent`}
+      ariaLabel={copy.ui.useSkillInAgentMenu.useInAnAgent(skillName)}
       popupRole="menu"
       placement={placement}
       // The kit's list layer on the Popover's own `role="menu"` surface; the
@@ -218,12 +219,14 @@ export function UseSkillInAgentMenu({
         {sessions === null ? (
           <div className="flex items-center gap-2 px-2.5 py-2 text-body text-[color:var(--text-muted)]" role="status">
             <Spinner size={14} />
-            Finding running agents…
+            {copy.ui.useSkillInAgentMenu.findingRunningAgents}
           </div>
         ) : (
           <>
             {sessions.length === 0 ? (
-              <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">No running agents</div>
+              <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">
+                {copy.ui.useSkillInAgentMenu.noRunningAgents}
+              </div>
             ) : (
               sessions.map((session) => (
                 <MenuItem
@@ -244,7 +247,7 @@ export function UseSkillInAgentMenu({
               <>
                 <MenuDivider />
                 <MenuItem disabled={busy} onClick={() => void run(() => onNewAgent())}>
-                  New agent…
+                  {copy.ui.useSkillInAgentMenu.newAgent}
                 </MenuItem>
               </>
             ) : null}

@@ -7,6 +7,7 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
+import { copy } from '../../../shared/copy'
 
 // The window's way to where its Studio publishes agents' pages: Settings ▸
 // Artifacts (`artifacts.settings`, `artifacts.setUp`) and the question put to
@@ -44,7 +45,7 @@ export const artifactsApi: ArtifactsApi = {
   setUpArtifacts: async (input, save) => {
     try {
       const client = await served()
-      if (!client) return { ok: false, steps: [], message: 'This Studio does not publish artifacts.' }
+      if (!client) return { ok: false, steps: [], message: copy.studio.artifacts.thisStudioDoesNotPublish }
       return await client.request('artifacts.setUp', { input, save, commandId: commandId() })
     } catch (error) {
       return { ok: false, steps: [], message: error instanceof Error ? error.message : String(error) }

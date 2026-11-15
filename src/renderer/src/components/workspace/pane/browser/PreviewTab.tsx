@@ -7,6 +7,7 @@ import { InlineNotice } from '../../../ui/InlineNotice'
 import { Input } from '../../../ui/Input'
 import { RefreshIcon } from '../../../ui/RefreshIcon'
 import { Select } from '../../../ui/Select'
+import { copy } from '../../../../../../shared/copy'
 
 // The web client's preview pane (phase 9 spec, 3.6; R77): what a browser tab
 // shows where the desktop shows its browser pane. It shows an agent's dev
@@ -109,10 +110,10 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--border-subtle)] px-2 py-1.5">
         {portItems.length > 0 ? (
           <Select
-            ariaLabel="Dev server"
+            ariaLabel={copy.workspace.pane.browser.previewTab.devServer}
             items={portItems}
             value={opened ? String(opened.port) : null}
-            placeholder="Choose a dev server"
+            placeholder={copy.workspace.pane.browser.previewTab.chooseADevServer}
             onChange={(value) => void open(Number(value), false)}
           />
         ) : null}
@@ -125,9 +126,9 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
           }}
         >
           <Input
-            aria-label="Port"
+            aria-label={copy.workspace.pane.browser.previewTab.port}
             inputMode="numeric"
-            placeholder="Port"
+            placeholder={copy.workspace.pane.browser.previewTab.port}
             size="xs"
             fullWidth={false}
             className="w-20"
@@ -135,7 +136,7 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
             onChange={(event) => setTypedPort(event.target.value.replace(/[^0-9]/gu, ''))}
           />
           <GhostButton type="submit" size="xs" disabled={typedPort === ''}>
-            Open
+            {copy.workspace.pane.browser.previewTab.open}
           </GhostButton>
         </form>
         {opened ? (
@@ -148,25 +149,33 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
               }}
             >
               <Input
-                aria-label="Path"
+                aria-label={copy.workspace.pane.browser.previewTab.path}
                 size="xs"
                 spellCheck={false}
                 value={path}
                 onChange={(event) => setPath(event.target.value)}
               />
             </form>
-            <IconButton aria-label="Reload" size="xs" onClick={() => setFrameKey((key) => key + 1)}>
+            <IconButton
+              aria-label={copy.workspace.pane.browser.previewTab.reload}
+              size="xs"
+              onClick={() => setFrameKey((key) => key + 1)}
+            >
               <RefreshIcon />
             </IconButton>
             <GhostButton
               size="xs"
               onClick={() => window.open(`${opened.origin}${path}`, '_blank', 'noopener,noreferrer')}
             >
-              Open in a new tab
+              {copy.workspace.pane.browser.previewTab.openInANewTab}
             </GhostButton>
           </>
         ) : (
-          <IconButton aria-label="Refresh the list of dev servers" size="xs" onClick={() => void refreshPorts()}>
+          <IconButton
+            aria-label={copy.workspace.pane.browser.previewTab.refreshTheListOfDev}
+            size="xs"
+            onClick={() => void refreshPorts()}
+          >
             <RefreshIcon />
           </IconButton>
         )}
@@ -175,7 +184,11 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
       {src ? (
         <iframe
           key={frameKey}
-          title={opened ? `Preview of port ${opened.port}` : 'Preview'}
+          title={
+            opened
+              ? copy.workspace.pane.browser.previewTab.previewOfPort(opened.port)
+              : copy.workspace.pane.browser.previewTab.preview
+          }
           src={src}
           sandbox={SANDBOX}
           referrerPolicy="no-referrer"
@@ -185,19 +198,15 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
         <EmptyState
           title={
             ports && ports.length === 0
-              ? 'No agent is running a dev server yet.'
-              : 'Choose a dev server to preview it here.'
+              ? copy.workspace.pane.browser.previewTab.noAgentIsRunningA
+              : copy.workspace.pane.browser.previewTab.chooseADevServerTo
           }
-          body={
-            <span id={helpId}>
-              Previews can’t reach Studio. Calls to localhost hit this browser’s machine, not the server; use relative
-              URLs or the dev server’s proxy.
-            </span>
-          }
+          body={<span id={helpId}>{copy.workspace.pane.browser.previewTab.previewsCanTReachStudio}</span>}
           action={
             ports && ports.length > 0 ? (
               <PrimaryButton onClick={() => void open(ports[0].port, false)}>
-                Preview {portLabel(ports[0])}
+                {copy.workspace.pane.browser.previewTab.preview2}
+                {portLabel(ports[0])}
               </PrimaryButton>
             ) : null
           }

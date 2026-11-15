@@ -8,6 +8,7 @@ import {
   WORKSPACE_ASIDE_MIN_WIDTH,
   clampWorkspaceAsideWidth,
 } from './workspaceAsideWidth'
+import { copy } from '../../../../shared/copy'
 
 // The workspace aside: the right-docked, width-consuming column that sits
 // OUTSIDE the rounded workspace card, on the same --bg-app gutter as the
@@ -189,7 +190,7 @@ export function WorkspaceAsideColumn({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label={`Resize ${label} panel`}
+          aria-label={copy.workspace.workspaceAsideColumn.resizePanel(label)}
           tabIndex={0}
           onPointerDown={handleResizePointerDown}
           onKeyDown={handleResizeKeyDown}

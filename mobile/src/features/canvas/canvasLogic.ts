@@ -6,6 +6,7 @@ import {
   type PhoneCanvasBoard,
 } from "../../api/canvasBoards";
 import { formatChatSettledAt } from "../conversations/conversationListLogic";
+import { copy } from "../../../../src/shared/copy";
 
 // The phone's Canvases, as rules: what a desktop's list says, what a row says, what a picture is asked for, and where Continue in
 // a new chat starts. Pure and free of React Native, so the regression suite
@@ -145,7 +146,7 @@ export function canvasContinueTarget(
   if (input.noProject) return { kind: "no-project" };
   return {
     kind: "refused",
-    message: `This board's project is gone from ${input.machine}. Update Studio there, or continue from a chat on ${input.machine}.`,
+    message: copy.phone.canvas.canvasLogic.thisBoardSProjectIs(input.machine),
   };
 }
 

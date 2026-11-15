@@ -65,6 +65,7 @@ import {
 } from '../../ui'
 import type { ChangeRowMenuEntry } from './changeRowMenu'
 import { changeRowDomId, gitStatusWord, type GitChangeGroup, type GitChangeRow } from './gitChangesModel'
+import { copy } from '../../../../../shared/copy'
 
 export type GitChangesListProps = {
   /** Prefix for the region and row ids. Unique per panel instance. */
@@ -227,7 +228,11 @@ const GitChangeRowItem = React.memo(function GitChangeRowItem({
               every other box on screen does — travels with the
               name where a screen reader meets it first. */}
           {row.partial ? (
-            <span className="sr-only">, partial: {groupTitle}’s changes only. Ticking stages just those hunks.</span>
+            <span className="sr-only">
+              {copy.panels.git.gitChangesList.partial}
+              {groupTitle}
+              {copy.panels.git.gitChangesList.sChangesOnlyTickingStages}
+            </span>
           ) : null}
         </span>
       }
@@ -388,7 +393,7 @@ export const GitChangesList = React.memo(function GitChangesList({
       // `group`, not `listbox`: the bands below are not options, and the walk
       // spans every group's listbox rather than living inside one of them.
       role="group"
-      aria-label="Changed files"
+      aria-label={copy.panels.git.gitChangesList.changedFiles}
       aria-activedescendant={cursorRowKey ? changeRowDomId(listId, cursorRowKey) : undefined}
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -447,7 +452,7 @@ export const GitChangesList = React.memo(function GitChangesList({
                 // handler here would make the box a dead area that the row
                 // underneath answers for.
                 onCheckedChange={group.checked === null ? undefined : (next) => onToggleGroup(group, next)}
-                checkLabel={`Stage every file in ${group.title}`}
+                checkLabel={copy.panels.git.gitChangesList.stageEveryFileIn(group.title)}
                 // The chip states a fact that was true before the person
                 // arrived — this is the list the next change lands in — which is
                 // exactly what `micro-chip` is for, and why it takes no tone.
@@ -462,7 +467,7 @@ export const GitChangesList = React.memo(function GitChangesList({
                 // revealed on hover AND focus, which is the slot's whole rule.
                 action={
                   <GroupHeaderAction
-                    ariaLabel={`Actions for ${group.title}`}
+                    ariaLabel={copy.panels.git.gitChangesList.actionsFor(group.title)}
                     // It opens the band's menu, so it says so — and says
                     // whether that menu is showing, which is the half a person
                     // driving this by ear actually needs.
@@ -502,7 +507,8 @@ export const GitChangesList = React.memo(function GitChangesList({
               </div>
               {group.omittedCount > 0 ? (
                 <div className="mx-2 mt-1 rounded-sm border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] px-2 py-1.5 text-micro text-[color:var(--text-subtle)]">
-                  {group.omittedCount} more changes hidden. The group’s checkbox still covers them all.
+                  {group.omittedCount}
+                  {copy.panels.git.gitChangesList.moreChangesHiddenTheGroup}
                 </div>
               ) : null}
             </div>
@@ -517,8 +523,8 @@ export const GitChangesList = React.memo(function GitChangesList({
             // A guest row and its home row are the same file with two menus, so
             // the menu says which of the two it belongs to.
             rowMenu.row.partial
-              ? `Actions for ${rowMenu.groupTitle}’s changes to ${rowMenu.row.relativePath}`
-              : `Actions for ${rowMenu.row.relativePath}`
+              ? copy.panels.git.gitChangesList.actionsForSChangesTo(rowMenu.groupTitle, rowMenu.row.relativePath)
+              : copy.panels.git.gitChangesList.actionsFor2(rowMenu.row.relativePath)
           }
           onClose={() => setRowMenu(null)}
           surfaceClassName="min-w-[260px]"
@@ -530,7 +536,7 @@ export const GitChangesList = React.memo(function GitChangesList({
         <ContextMenu
           x={groupMenu.x}
           y={groupMenu.y}
-          ariaLabel={`Actions for ${groupMenu.group.title}`}
+          ariaLabel={copy.panels.git.gitChangesList.actionsFor(groupMenu.group.title)}
           onClose={() => setGroupMenu(null)}
           surfaceClassName="min-w-[260px]"
         >

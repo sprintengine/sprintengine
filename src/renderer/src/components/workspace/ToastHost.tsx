@@ -9,6 +9,7 @@ import { PairRequestToastAccept } from '../remote/PairRequestToastAccept'
 import { shortMachineName } from '../remote/machineRowModel'
 import { tailnetApi } from '../../studio/tailnet'
 import { clientSupports } from '../../clientCapabilities'
+import { copy } from '../../../../shared/copy'
 
 // The main window's toast host: mounts the one region and runs the app-level
 // producers that have no pane of their own (MC: remote-sessions-ux /
@@ -78,12 +79,12 @@ function usePairRequestToastBridge(): void {
           id: toastId,
           tone: 'warn',
           title: event.oauth
-            ? `${event.deviceName} wants access`
-            : `Pair request from ${shortMachineName(event.peerNode ?? event.deviceName)}`,
+            ? copy.workspace.toastHost.wantsAccess(event.deviceName)
+            : copy.workspace.toastHost.pairRequestFrom(shortMachineName(event.peerNode ?? event.deviceName)),
           // No body without the request itself: a code field that cannot name
           // what it is answering would be worse than the pointer it replaced.
           content: request ? <PairRequestToastAccept request={request} /> : undefined,
-          description: request ? undefined : 'Answer it from the Remote glyph.',
+          description: request ? undefined : copy.workspace.toastHost.answerItFromTheRemote,
         })
         return
       }
@@ -127,7 +128,7 @@ function useListenerToastBridge(): void {
         showToast({
           id: LISTENER_TOAST_ID,
           tone: 'warn',
-          title: 'Remote stopped serving',
+          title: copy.workspace.toastHost.remoteStoppedServing,
           // Main's own words: the reason a listener is down is the whole
           // content of the report, and the Remote popover shows the same line.
           description: event.error,
@@ -137,7 +138,7 @@ function useListenerToastBridge(): void {
       if (!stopped.current) return
       stopped.current = false
       useToastStore.getState().dismissToast(LISTENER_TOAST_ID)
-      showToast({ tone: 'good', title: 'Remote is serving again' })
+      showToast({ tone: 'good', title: copy.workspace.toastHost.remoteIsServingAgain })
     })
   }, [])
 }
@@ -157,8 +158,8 @@ function useMeshToastBridge(): void {
       if (event.kind === 'machine-paired') {
         showToast({
           tone: 'good',
-          title: 'Machine paired',
-          description: `${event.connection.machineName} is in your mesh.`,
+          title: copy.workspace.toastHost.machinePaired,
+          description: copy.workspace.toastHost.isInYourMesh(event.connection.machineName),
         })
         return
       }
@@ -168,8 +169,8 @@ function useMeshToastBridge(): void {
         }
         showToast({
           tone: 'neutral',
-          title: 'Machine removed',
-          description: `${event.machineName} was removed from your mesh.`,
+          title: copy.workspace.toastHost.machineRemoved,
+          description: copy.workspace.toastHost.wasRemovedFromYourMesh(event.machineName),
         })
         return
       }
@@ -181,19 +182,19 @@ function useMeshToastBridge(): void {
         if (event.phase === 'denied') {
           showToast({
             tone: 'error',
-            title: `${machine} declined`,
-            description: event.detail ?? 'Someone there said no.',
+            title: copy.workspace.toastHost.declined(machine),
+            description: event.detail ?? copy.workspace.toastHost.someoneThereSaidNo,
           })
         } else if (event.phase === 'expired') {
           showToast({
             tone: 'neutral',
-            title: `${machine} did not answer in time`,
-            description: 'Ask again when someone is at it.',
+            title: copy.workspace.toastHost.didNotAnswerInTime(machine),
+            description: copy.workspace.toastHost.askAgainWhenSomeoneIs,
           })
         } else if (event.phase === 'failed') {
           showToast({
             tone: 'error',
-            title: `Pairing with ${machine} did not complete`,
+            title: copy.workspace.toastHost.pairingWithDidNotComplete(machine),
             description: event.detail ?? '',
           })
         }
@@ -210,8 +211,8 @@ function useMeshToastBridge(): void {
           showToast({
             id: toastId,
             tone: 'warn',
-            title: `${event.machineName} revoked this device`,
-            description: 'Pair again from the Mesh to reconnect.',
+            title: copy.workspace.toastHost.revokedThisDevice(event.machineName),
+            description: copy.workspace.toastHost.pairAgainFromTheMesh,
           })
         } else if (event.reachable && revokedConnections.current.delete(event.connectionId)) {
           useToastStore.getState().dismissToast(toastId)

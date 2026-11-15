@@ -1,3 +1,5 @@
+import { copy } from '../../../shared/copy'
+
 export type KeybindingPlatform = 'darwin' | 'windows' | 'linux'
 
 type KeybindingModifier = 'primary' | 'ctrl' | 'alt' | 'shift' | 'meta'
@@ -54,7 +56,7 @@ export function isModifierKeyToken(key: string): boolean {
 const DISPLAY_MODIFIER: Record<KeybindingModifier, string> = {
   primary: 'Ctrl',
   ctrl: 'Ctrl',
-  alt: 'Alt',
+  alt: copy.commands.keybindings.alt,
   shift: 'Shift',
   meta: 'Cmd',
 }

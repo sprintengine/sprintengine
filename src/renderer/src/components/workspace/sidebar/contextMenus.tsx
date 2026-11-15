@@ -33,6 +33,7 @@ import { clientSupports } from '../../../clientCapabilities'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import { chatMenuTooltips as tips, type ChatMenuPlace } from './chatMenuTooltips'
 import type { MeshConversationManage } from '../../../../../shared/tailnet-mesh'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 export function sidebarWorkspaceOf(workspace: Workspace): {
   id: string
@@ -208,16 +209,16 @@ function ChatRestAndMarkItems({
           chat's agents, and their work with them: it waits until they finish. */}
       {settle === 'unsettle' ? (
         <ChatMenuItem tooltip={tips.unsettle()} onClick={() => onSelect('toggle-settle')}>
-          Un-settle
+          {appCopy.workspace.sidebar.contextMenus.unSettle}
         </ChatMenuItem>
       ) : settle === 'settle' ? (
         <ChatMenuItem
           disabled={working}
-          hint={working ? 'Working' : undefined}
+          hint={working ? appCopy.workspace.sidebar.contextMenus.working : undefined}
           tooltip={tips.settle(working, where)}
           onClick={() => onSelect('toggle-settle')}
         >
-          Settle
+          {appCopy.workspace.sidebar.contextMenus.settle}
         </ChatMenuItem>
       ) : null}
       {/* Sleep by hand (snooze, 2026-09-10), beneath Settle because it is the
@@ -231,14 +232,14 @@ function ChatRestAndMarkItems({
           temporary and the reason is worth showing. */}
       {snooze === 'wake' ? (
         <ChatMenuItem tooltip={tips.wake(where)} onClick={() => onSelect('wake')}>
-          Wake now
+          {appCopy.workspace.sidebar.contextMenus.wakeNow}
         </ChatMenuItem>
       ) : snooze ? (
         <MenuFlyoutItem
-          label="Snooze"
-          ariaLabel="Snooze chat"
+          label={appCopy.workspace.sidebar.contextMenus.snooze}
+          ariaLabel={appCopy.workspace.sidebar.contextMenus.snoozeChat}
           disabled={snooze.disabled || working}
-          hint={working ? 'Working' : undefined}
+          hint={working ? appCopy.workspace.sidebar.contextMenus.working : undefined}
           tooltip={tips.snooze(working, where)}
         >
           {resolveSnoozePresets(Date.now()).map((preset) => (
@@ -266,7 +267,7 @@ function ChatRestAndMarkItems({
           )}
           onClick={() => onSelect('toggle-auto-settle')}
         >
-          Auto-settle
+          {appCopy.workspace.sidebar.contextMenus.autoSettle}
         </ChatMenuItem>
       ) : null}
       {/* Whether Studio compacts the chat by itself before its prompt cache
@@ -277,16 +278,16 @@ function ChatRestAndMarkItems({
         <ChatMenuItem
           checked={autoCompact.claude && autoCompact.on}
           disabled={!autoCompact.claude}
-          hint={autoCompact.claude ? undefined : 'Claude only'}
+          hint={autoCompact.claude ? undefined : appCopy.workspace.sidebar.contextMenus.claudeOnly}
           trailing={<SwitchGlyph checked={autoCompact.claude && autoCompact.on} />}
           tooltip={tips.autoCompact(autoCompact.claude, where)}
           onClick={() => onSelect('toggle-auto-compact')}
         >
-          Auto compact
+          {appCopy.workspace.sidebar.contextMenus.autoCompact}
         </ChatMenuItem>
       ) : null}
       <MenuSwatchRow
-        label="Highlight color"
+        label={appCopy.workspace.sidebar.contextMenus.highlightColor}
         value={color}
         onPick={onPickColor}
         onClear={() => onSelect('clear-color')}
@@ -422,24 +423,24 @@ export function WorkspaceContextMenu({
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={`Workspace actions: ${workspace.name}`}
+      ariaLabel={appCopy.workspace.sidebar.contextMenus.workspaceActions(workspace.name)}
       onClose={onClose}
       surfaceClassName="min-w-[240px]"
     >
       <ChatMenuItem tooltip={tips.open()} onClick={() => onSelect('open')}>
-        Open
+        {appCopy.workspace.sidebar.contextMenus.open}
       </ChatMenuItem>
       {canMarkUnread ? (
         <ChatMenuItem tooltip={tips.markUnread(where)} onClick={() => onSelect('mark-unread')}>
-          Mark unread
+          {appCopy.workspace.sidebar.contextMenus.markUnread}
         </ChatMenuItem>
       ) : null}
       <ChatMenuItem tooltip={tips.rename(where)} onClick={() => onSelect('rename')} shortcut="F2">
-        Rename
+        {appCopy.workspace.sidebar.contextMenus.rename}
       </ChatMenuItem>
       {canRegenerateTitleOf(workspace) ? (
         <ChatMenuItem tooltip={tips.regenerateTitle()} onClick={() => onSelect('regenerate-title')}>
-          Regenerate title
+          {appCopy.workspace.sidebar.contextMenus.regenerateTitle}
         </ChatMenuItem>
       ) : null}
       {canNewChatInProject ? (
@@ -451,35 +452,39 @@ export function WorkspaceContextMenu({
         </ChatMenuItem>
       ) : remote && remoteNewChat ? (
         <ChatMenuItem tooltip={tips.newChat(false, where)} onClick={() => onSelect('new-chat')}>
-          New chat in project
+          {appCopy.workspace.sidebar.contextMenus.newChatInProject}
         </ChatMenuItem>
       ) : null}
       {folderPathExists ? (
         <ChatMenuItem tooltip={tips.reveal()} onClick={() => onSelect('reveal')}>
-          Reveal folder
+          {appCopy.workspace.sidebar.contextMenus.revealFolder}
         </ChatMenuItem>
       ) : revealUnavailable ? (
         <ChatMenuItem
           disabled
-          hint={remote ? `On ${workspace.remoteOrigin!.machineName}` : 'Missing'}
+          hint={
+            remote
+              ? appCopy.workspace.sidebar.contextMenus.on(workspace.remoteOrigin!.machineName)
+              : appCopy.workspace.sidebar.contextMenus.missing
+          }
           tooltip={tips.revealUnavailable(where)}
           onClick={() => undefined}
         >
-          Reveal folder
+          {appCopy.workspace.sidebar.contextMenus.revealFolder}
         </ChatMenuItem>
       ) : null}
       {canCopyLink ? (
         <ChatMenuItem tooltip={tips.copyLink(where)} onClick={() => onSelect('copy-link')}>
-          Copy link to chat
+          {appCopy.workspace.sidebar.contextMenus.copyLinkToChat}
         </ChatMenuItem>
       ) : null}
       {isDetachedWindow ? (
         <ChatMenuItem tooltip={tips.moveToMainWindow()} onClick={() => onSelect('move-to-main-window')}>
-          Move to Main Window
+          {appCopy.workspace.sidebar.contextMenus.moveToMainWindow}
         </ChatMenuItem>
       ) : (
         <ChatMenuItem tooltip={tips.moveToNewWindow()} onClick={() => onSelect('move-to-new-window')}>
-          Move to New Window
+          {appCopy.workspace.sidebar.contextMenus.moveToNewWindow}
         </ChatMenuItem>
       )}
       <MenuDivider />
@@ -502,7 +507,8 @@ export function WorkspaceContextMenu({
                 tooltip={tips.stopWatching(watchedPullRequestNumber, where)}
                 onClick={() => onSelect('stop-watching')}
               >
-                Stop watching #{watchedPullRequestNumber}
+                {appCopy.workspace.sidebar.contextMenus.stopWatching}
+                {watchedPullRequestNumber}
               </ChatMenuItem>
             ) : null}
             {/* A run's chat is where a person notices a schedule doing too much:
@@ -510,7 +516,7 @@ export function WorkspaceContextMenu({
                 run still going) as it is. */}
             {schedule ? (
               <ChatMenuItem
-                hint={schedule.paused ? undefined : 'This chat carries on'}
+                hint={schedule.paused ? undefined : appCopy.workspace.sidebar.contextMenus.thisChatCarriesOn}
                 tooltip={tips.schedule(schedule.paused)}
                 onClick={() => onSelect('toggle-schedule-pause')}
               >
@@ -541,7 +547,7 @@ export function WorkspaceContextMenu({
         <>
           <MenuDivider />
           <ChatMenuItem variant="danger" tooltip={tips.deleteSettled(where)} onClick={() => onSelect('delete-settled')}>
-            Delete chat…
+            {appCopy.workspace.sidebar.contextMenus.deleteChat}
           </ChatMenuItem>
         </>
       ) : null}
@@ -637,50 +643,50 @@ export function RemoteConversationContextMenu({
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={`Chat actions: ${title} on ${machineName}`}
+      ariaLabel={appCopy.workspace.sidebar.contextMenus.chatActionsOn(title, machineName)}
       onClose={onClose}
       surfaceClassName="min-w-[240px]"
     >
       <ChatMenuItem tooltip={tips.open(where)} onClick={() => onSelect('open')}>
-        Open
+        {appCopy.workspace.sidebar.contextMenus.open}
       </ChatMenuItem>
       {canMarkUnread ? (
         <ChatMenuItem tooltip={tips.markUnread(where)} onClick={() => onSelect('mark-unread')}>
-          Mark unread
+          {appCopy.workspace.sidebar.contextMenus.markUnread}
         </ChatMenuItem>
       ) : null}
       {manage?.rename ? (
         <ChatMenuItem tooltip={tips.rename(where)} onClick={() => onSelect('rename')}>
-          Rename
+          {appCopy.workspace.sidebar.contextMenus.rename}
         </ChatMenuItem>
       ) : null}
       {canNewChat ? (
         <ChatMenuItem tooltip={tips.newChat(false, where)} onClick={() => onSelect('new-chat')}>
-          New chat in project
+          {appCopy.workspace.sidebar.contextMenus.newChatInProject}
         </ChatMenuItem>
       ) : null}
       {/* Off, and saying why: the folder is on the other machine's disk. */}
       <ChatMenuItem
         disabled
-        hint={`On ${machineName}`}
+        hint={appCopy.workspace.sidebar.contextMenus.on(machineName)}
         tooltip={tips.revealUnavailable(where)}
         onClick={() => undefined}
       >
-        Reveal folder
+        {appCopy.workspace.sidebar.contextMenus.revealFolder}
       </ChatMenuItem>
       {canCopyLink ? (
         <ChatMenuItem tooltip={tips.copyLink(where)} onClick={() => onSelect('copy-link')}>
-          Copy link to chat
+          {appCopy.workspace.sidebar.contextMenus.copyLinkToChat}
         </ChatMenuItem>
       ) : null}
       {/* Opened in that window, as a local row is moved to it. */}
       {isDetachedWindow ? (
         <ChatMenuItem tooltip={tips.moveToMainWindow(where)} onClick={() => onSelect('move-to-main-window')}>
-          Move to Main Window
+          {appCopy.workspace.sidebar.contextMenus.moveToMainWindow}
         </ChatMenuItem>
       ) : (
         <ChatMenuItem tooltip={tips.moveToNewWindow(where)} onClick={() => onSelect('move-to-new-window')}>
-          Move to New Window
+          {appCopy.workspace.sidebar.contextMenus.moveToNewWindow}
         </ChatMenuItem>
       )}
       {marks || canSettle ? (
@@ -705,7 +711,8 @@ export function RemoteConversationContextMenu({
                     tooltip={tips.stopWatching(watchedPullRequestNumber, where)}
                     onClick={() => onSelect('stop-watching')}
                   >
-                    Stop watching #{watchedPullRequestNumber}
+                    {appCopy.workspace.sidebar.contextMenus.stopWatching}
+                    {watchedPullRequestNumber}
                   </ChatMenuItem>
                 ) : null
               }
@@ -715,11 +722,11 @@ export function RemoteConversationContextMenu({
           ) : (
             <ChatMenuItem
               disabled={working}
-              hint={working ? 'Working' : undefined}
+              hint={working ? appCopy.workspace.sidebar.contextMenus.working : undefined}
               tooltip={tips.settle(working, where)}
               onClick={() => onSelect('toggle-settle')}
             >
-              Settle
+              {appCopy.workspace.sidebar.contextMenus.settle}
             </ChatMenuItem>
           )}
         </>
@@ -785,7 +792,7 @@ export function FolderContextMenu({
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={`Folder actions: ${group.displayName}`}
+      ariaLabel={appCopy.workspace.sidebar.contextMenus.folderActions(group.displayName)}
       onClose={onClose}
       surfaceClassName="min-w-[220px]"
     >
@@ -796,11 +803,13 @@ export function FolderContextMenu({
           {isProjectlessChatsRoot(group.fullPath) ? 'New chat without a project' : 'New chat in project'}
         </MenuItem>
       ) : null}
-      {canReveal ? <MenuItem onClick={() => onSelect('reveal')}>Reveal folder</MenuItem> : null}
+      {canReveal ? (
+        <MenuItem onClick={() => onSelect('reveal')}>{appCopy.workspace.sidebar.contextMenus.revealFolder}</MenuItem>
+      ) : null}
       {/* The icon is a folder's, on this disk: a chosen file is a path here,
           so only a project with a folder that is present offers it. */}
       {canReveal && !isProjectlessChatsRoot(group.fullPath) ? (
-        <MenuItem onClick={() => onSelect('icon')}>Project icon…</MenuItem>
+        <MenuItem onClick={() => onSelect('icon')}>{appCopy.workspace.sidebar.contextMenus.projectIcon}</MenuItem>
       ) : null}
       {/* The same swatch control the row menu spends on "Highlight color", one
           menu up: a highlight is a tint a person puts ON a chat, a project
@@ -810,7 +819,7 @@ export function FolderContextMenu({
           identifies it. */}
       {canPickColor ? (
         <ProjectColorSwatchRow
-          label="Project color"
+          label={appCopy.workspace.sidebar.contextMenus.projectColor}
           value={projectColor}
           automaticColor={automaticProjectColor}
           onPick={onPickProjectColor}
@@ -819,7 +828,7 @@ export function FolderContextMenu({
       {canCreateWorkspace && canForget ? <MenuDivider /> : null}
       {canForget ? (
         <MenuItem variant="danger" onClick={() => onSelect('forget')}>
-          Forget folder…
+          {appCopy.workspace.sidebar.contextMenus.forgetFolder}
         </MenuItem>
       ) : null}
     </ContextMenu>

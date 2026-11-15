@@ -15,6 +15,7 @@ import type { Workspace } from '../../../../shared/workspace'
 import { remoteOriginChatWorkspaceId } from './remoteBand/remoteSessionsModel'
 import type { SessionGroup, SessionItem } from './topbar/SessionsPopover'
 import type { ConversationSessionStatus, ConversationSessionSummary } from '../../../../shared/conversation-runtime'
+import { copy } from '../../../../shared/copy'
 
 export type WorkspaceActivity = 'needs-input' | 'working' | 'failed' | 'idle'
 type SessionStatus = 'needs-input' | 'working' | 'idle' | 'failed'
@@ -325,7 +326,7 @@ export function getSessionItems(
             // workspace.agents record — label from the snapshot's agentName
             // before falling back to the raw id, and to a plain noun when the
             // snapshot carries neither.
-            label: agent?.name || session.agentName || session.agentId || 'Agent',
+            label: agent?.name || session.agentName || session.agentId || copy.workspace.workspaceManagerHelpers.agent,
             cli: session.cli ?? agent?.cli ?? '',
             status: statusInfo.status,
             source: statusInfo.source,

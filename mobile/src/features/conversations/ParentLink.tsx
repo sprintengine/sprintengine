@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ChevronIcon } from "../../components/glyphs";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { iconSize, radius, space, typography, type Theme } from "../../theme/tokens";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 /**
  * A subagent's way up: a quiet card at the top of its screen naming who
@@ -13,7 +14,7 @@ export function ParentLink({ relation, name, onPress }: { relation: string; name
   const styles = useThemedStyles(createStyles);
   return (
     <Pressable
-      accessibilityHint="Opens the chat or agent that started it"
+      accessibilityHint={appCopy.phone.conversations.parentLink.opensTheChatOrAgent}
       accessibilityLabel={`${relation}: ${name}`}
       accessibilityRole="link"
       onPress={onPress}

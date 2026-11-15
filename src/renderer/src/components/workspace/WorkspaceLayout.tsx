@@ -111,6 +111,7 @@ import { remoteConversationFactsKey, useRemoteConversationFacts } from './remote
 import { isImeKey } from '../../utils/imeKey'
 import { agentPanelChunk } from '../panels/agentPanelChunks'
 import { filesApi } from '../../studio/files'
+import { copy } from '../../../../shared/copy'
 
 const EMPTY_LAYOUT_MODEL: IJsonModel = { global: {}, borders: [], layout: { type: 'row', children: [] } }
 
@@ -207,12 +208,14 @@ const RemoteConversationPanel = React.lazy(() => import('../panels/agentChat/Rem
 const DISABLED_SURFACE = (
   <div
     role="note"
-    aria-label="Panel unavailable"
+    aria-label={copy.workspace.workspaceLayout.panelUnavailable}
     className="flex h-full flex-col items-center justify-center gap-1 bg-[color:var(--bg-app)] px-6 text-center"
   >
-    <p className="text-meta font-medium text-[color:var(--text-strong)]">Panel unavailable</p>
+    <p className="text-meta font-medium text-[color:var(--text-strong)]">
+      {copy.workspace.workspaceLayout.panelUnavailable}
+    </p>
     <p className="max-w-xs text-micro leading-5 text-[color:var(--text-muted)]">
-      Its feature may be off, or the tab is out of date.
+      {copy.workspace.workspaceLayout.itsFeatureMayBeOff}
     </p>
   </div>
 )
@@ -265,7 +268,12 @@ function tabMachineMark(identity: MachineIdentity | null, machineName: string): 
   // label is the same for every machine on the tailnet.
   const name = shortMachineName(machineName)
   return (
-    <span role="img" className="inline-flex shrink-0 items-center" title={`On ${name}`} aria-label={`On ${name}`}>
+    <span
+      role="img"
+      className="inline-flex shrink-0 items-center"
+      title={copy.workspace.workspaceLayout.on(name)}
+      aria-label={copy.workspace.workspaceLayout.on(name)}
+    >
       <MachineGlyph identity={identity} className={TAB_CHIP_GLYPH_CLASS} />
     </span>
   )
@@ -303,13 +311,13 @@ function agentTabStatusDot(session: TerminalSessionSnapshot | undefined): AgentT
   // it is stopped, not resting — distinguish it from a live idle tab (which has
   // no dot). "Paused" mirrors the AgentPanel footer's user-facing wording.
   if (session?.suspended) {
-    return { tone: 'neutral', pulse: false, label: 'Paused' }
+    return { tone: 'neutral', pulse: false, label: copy.workspace.workspaceLayout.paused }
   }
   if (isSessionWorking(session)) {
-    return { tone: 'good', pulse: true, label: 'Working' }
+    return { tone: 'good', pulse: true, label: copy.workspace.workspaceLayout.working }
   }
   if (isSessionFailed(session)) {
-    return { tone: 'error', pulse: false, label: 'Failed' }
+    return { tone: 'error', pulse: false, label: copy.workspace.workspaceLayout.failed }
   }
   return null
 }
@@ -319,10 +327,12 @@ function agentTabStatusDot(session: TerminalSessionSnapshot | undefined): AgentT
 // for a chat here and a chat followed from a paired machine, so the two tabs
 // read alike.
 function conversationPhaseDot(phase: string | null | undefined, working: boolean): AgentTabActivityDot | null {
-  if (phase === 'waiting_for_approval') return { tone: 'warn', pulse: false, label: 'Needs approval' }
-  if (phase === 'waiting_for_input') return { tone: 'warn', pulse: false, label: 'Asked a question' }
-  if (phase === 'failed') return { tone: 'error', pulse: false, label: 'Failed' }
-  if (working) return { tone: 'good', pulse: true, label: 'Working' }
+  if (phase === 'waiting_for_approval')
+    return { tone: 'warn', pulse: false, label: copy.workspace.workspaceLayout.needsApproval }
+  if (phase === 'waiting_for_input')
+    return { tone: 'warn', pulse: false, label: copy.workspace.workspaceLayout.askedAQuestion }
+  if (phase === 'failed') return { tone: 'error', pulse: false, label: copy.workspace.workspaceLayout.failed }
+  if (working) return { tone: 'good', pulse: true, label: copy.workspace.workspaceLayout.working }
   return null
 }
 
@@ -338,7 +348,7 @@ function activityDotMark(dot: AgentTabActivityDot | null): React.ReactNode {
 // to render was a dark-tuned hex gradient that washed out on the light themes
 // (audit, suspense-loader-is-a-dark-tuned-brand-mark; ruling 6).
 function PanelLoadingFallback() {
-  return <LoadingOverlay label="Loading panel…" className="bg-[color:var(--bg-app)]" />
+  return <LoadingOverlay label={copy.workspace.workspaceLayout.loadingPanel} className="bg-[color:var(--bg-app)]" />
 }
 
 function TimedPanelLoad({
@@ -381,10 +391,10 @@ function renderTerminalRecencyIndicator(session: TerminalSessionSnapshot | undef
   // the tab's card already draw. Idle sessions show elapsed idle time instead,
   // beginning at 1m; sub-minute recency renders blank.
   if (isSessionWorking(session)) {
-    return <WorkingMark label="Working" />
+    return <WorkingMark label={copy.workspace.workspaceLayout.working} />
   }
   if (isSessionFailed(session)) {
-    return <StatusDot tone="error" label="Failed" className="ml-0.5" />
+    return <StatusDot tone="error" label={copy.workspace.workspaceLayout.failed} className="ml-0.5" />
   }
   const recency = pickTerminalTabRecency(session)
   if (!recency) return null
@@ -1484,15 +1494,15 @@ function WorkspaceLayoutBody({
             {tabContent}
             {agentHere ? (
               <>
-                <span className="sr-only">, an agent is using this</span>
+                <span className="sr-only">{copy.workspace.workspaceLayout.anAgentIsUsingThis}</span>
                 <AgentPill />
               </>
             ) : null}
             {file?.isDirty && (
               <span
                 className="shrink-0 text-[color:var(--tone-warn)]"
-                aria-label="Unsaved changes"
-                title="Unsaved changes"
+                aria-label={copy.workspace.workspaceLayout.unsavedChanges}
+                title={copy.workspace.workspaceLayout.unsavedChanges}
               >
                 •
               </span>
@@ -1512,8 +1522,8 @@ function WorkspaceLayoutBody({
               <span
                 className="h-3 w-3 shrink-0 rounded-full"
                 style={{ backgroundColor: swatch.hex }}
-                aria-label={`${swatch.label} terminal`}
-                title={`${swatch.label} terminal`}
+                aria-label={copy.workspace.workspaceLayout.terminal(swatch.label)}
+                title={copy.workspace.workspaceLayout.terminal(swatch.label)}
               />
             )
           }
@@ -1556,8 +1566,8 @@ function WorkspaceLayoutBody({
           renderValues.leading = (
             <span
               className={`${TAB_CHIP_CLASS} text-[color:var(--text-muted)]`}
-              title={runtimeLabel ?? 'Chat'}
-              aria-label={runtimeLabel ?? 'Chat'}
+              title={runtimeLabel ?? copy.workspace.workspaceLayout.chat}
+              aria-label={runtimeLabel ?? copy.workspace.workspaceLayout.chat}
             >
               <ViewedAgentTabLogo
                 workspaceId={workspaceId}
@@ -1595,10 +1605,10 @@ function WorkspaceLayoutBody({
               : finishedAt !== null
                 ? {
                     kind: 'idle',
-                    label: 'Idle',
+                    label: copy.workspace.workspaceLayout.idle,
                     aged: { label: tabRecencyLabel('finished'), since: finishedAt },
                   }
-                : { kind: 'idle', label: 'Idle' },
+                : { kind: 'idle', label: copy.workspace.workspaceLayout.idle },
             agent: {
               sessionId: meshSessionId,
               agentId: meshConfig?.remoteAgentId ?? null,
@@ -1674,7 +1684,11 @@ function WorkspaceLayoutBody({
         )
       } else if (agent?.runtimeKind === 'conversation') {
         renderValues.leading = (
-          <span className={`${TAB_CHIP_CLASS} text-[color:var(--text-muted)]`} title="Chat" aria-label="Chat agent">
+          <span
+            className={`${TAB_CHIP_CLASS} text-[color:var(--text-muted)]`}
+            title={copy.workspace.workspaceLayout.chat}
+            aria-label={copy.workspace.workspaceLayout.chatAgent}
+          >
             <ChatGlyph className={TAB_CHIP_GLYPH_CLASS} />
           </span>
         )
@@ -1798,8 +1812,10 @@ function WorkspaceLayoutBody({
       const identityStatus: AgentTabIdentity['status'] = agentSession?.suspended
         ? {
             kind: 'attention',
-            label: 'Paused',
-            ...(agentRecency !== null ? { aged: { label: 'Paused', since: agentRecency.at } } : {}),
+            label: copy.workspace.workspaceLayout.paused,
+            ...(agentRecency !== null
+              ? { aged: { label: copy.workspace.workspaceLayout.paused, since: agentRecency.at } }
+              : {}),
           }
         : activityDot
           ? {
@@ -1811,10 +1827,10 @@ function WorkspaceLayoutBody({
           : agentRecency !== null
             ? {
                 kind: 'idle',
-                label: 'Idle',
+                label: copy.workspace.workspaceLayout.idle,
                 aged: { label: tabRecencyLabel(agentRecency.source), since: agentRecency.at },
               }
-            : { kind: 'idle', label: 'Idle' }
+            : { kind: 'idle', label: copy.workspace.workspaceLayout.idle }
       // The tab's card is about the tab's OWN agent, so the session snapshot it
       // reads is that agent's — the ledger, the subagent count and the context
       // reading all belong to one session and none of them merge.
@@ -1924,7 +1940,7 @@ function WorkspaceLayoutBody({
       })
       if (!hostsAgents) return
       values.stickyButtons.push(
-        <Tooltip key="new-agent" content="New agent" placement="bottom">
+        <Tooltip key="new-agent" content={copy.workspace.workspaceLayout.newAgent} placement="bottom">
           {/* Under a split, `GHOST_TONE.quiet` is this control's rest ink
               exactly — `--text-disabled`, lifting on `--bg-hover` — which
               keeps a sticky control from competing with the tab labels beside
@@ -1934,7 +1950,7 @@ function WorkspaceLayoutBody({
           <IconButton
             tone={marks ? 'neutral' : 'quiet'}
             size={marks ? '2xs' : 'sm'}
-            aria-label="New agent"
+            aria-label={copy.workspace.workspaceLayout.newAgent}
             onClick={(event) => {
               // The strip's own click handler would select whatever tab sits
               // under the button; this is a control, not a tab.
@@ -2015,7 +2031,9 @@ function WorkspaceLayoutBody({
         <ModuleNotInstalledSurface
           label={moduleAbsence.label}
           installed={moduleAbsence.kind === 'disabled'}
-          {...(moduleAbsence.kind === 'disabled' ? { actionLabel: 'Open module settings' } : {})}
+          {...(moduleAbsence.kind === 'disabled'
+            ? { actionLabel: copy.workspace.workspaceLayout.openModuleSettings }
+            : {})}
           onOpenMarketplace={openSettings}
         />
       </div>
@@ -2056,7 +2074,7 @@ function WorkspaceLayoutBody({
         <ContextMenu
           x={tabMenu.x}
           y={tabMenu.y}
-          ariaLabel={`Tab actions: ${tabMenu.node.getName()}`}
+          ariaLabel={copy.workspace.workspaceLayout.tabActions(tabMenu.node.getName())}
           onClose={() => setTabMenu(null)}
           surfaceClassName="min-w-[196px]"
         >
@@ -2068,7 +2086,7 @@ function WorkspaceLayoutBody({
                 startRename(event, node)
               }}
             >
-              Rename
+              {copy.workspace.workspaceLayout.rename}
             </MenuItem>
           ) : null}
           <MenuItem
@@ -2079,7 +2097,7 @@ function WorkspaceLayoutBody({
               hideTab(node)
             }}
           >
-            Hide tab
+            {copy.workspace.workspaceLayout.hideTab}
           </MenuItem>
           <MenuItem
             disabled={!tabMenu.canHideAllTabs}
@@ -2088,7 +2106,7 @@ function WorkspaceLayoutBody({
               hideAllAgentTabs()
             }}
           >
-            Hide all
+            {copy.workspace.workspaceLayout.hideAll}
           </MenuItem>
           <MenuItem
             disabled={!tabMenu.canCloseOtherTabs}
@@ -2098,7 +2116,7 @@ function WorkspaceLayoutBody({
               closeOtherTabsInSet(node)
             }}
           >
-            Close other tabs
+            {copy.workspace.workspaceLayout.closeOtherTabs}
           </MenuItem>
           {tabMenu.chatId || tabMenu.resumableChatId ? <MenuDivider /> : null}
           {tabMenu.chatId ? (
@@ -2112,7 +2130,7 @@ function WorkspaceLayoutBody({
                 requestChatReplay(workspaceId, agentId)
               }}
             >
-              Replay conversation
+              {copy.workspace.workspaceLayout.replayConversation}
             </MenuItem>
           ) : null}
           {tabMenu.chatId && tabMenu.chatExport ? (
@@ -2132,7 +2150,7 @@ function WorkspaceLayoutBody({
                 void resumeChatInTerminalOrToast({ workspaceId, agentId })
               }}
             >
-              Continue in terminal
+              {copy.workspace.workspaceLayout.continueInTerminal}
             </MenuItem>
           ) : null}
           {tabMenu.agentId ? (
@@ -2146,7 +2164,7 @@ function WorkspaceLayoutBody({
             <>
               <MenuDivider />
               <MenuSwatchRow
-                label="Color"
+                label={copy.workspace.workspaceLayout.color}
                 value={tabMenu.currentColor}
                 onPick={(color) => {
                   const { node } = tabMenu

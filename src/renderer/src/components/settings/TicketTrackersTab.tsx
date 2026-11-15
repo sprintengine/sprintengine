@@ -2,6 +2,7 @@ import React, { type JSX } from 'react'
 
 import { TicketTrackerSection } from './TicketTrackerSection'
 import { SettingsPageHeader } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Ticket trackers.
 //
@@ -17,7 +18,7 @@ import { SettingsPageHeader } from './SettingsAtoms'
 export function TicketTrackersTab(): JSX.Element {
   return (
     <div role="tabpanel" id="settings-panel-trackers" aria-labelledby="settings-tab-trackers" className="space-y-6">
-      <SettingsPageHeader title="Ticket trackers" />
+      <SettingsPageHeader title={copy.settings.ticketTrackersTab.ticketTrackers} />
       <TicketTrackerSection />
     </div>
   )

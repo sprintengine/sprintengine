@@ -26,6 +26,7 @@ import {
 import type { AgentCli } from '../../../../shared/workspace'
 import { isImeKey } from '../../utils/imeKey'
 import { ScrollArea } from './ScrollArea'
+import { copy } from '../../../../shared/copy'
 
 export type { CliRuntimeOption, CliRuntimePickerOption } from './cliRuntimeCatalog'
 
@@ -432,7 +433,7 @@ export function CliModelPopoverSurface({
       ? [
           {
             key: FAVOURITES_FILTER as RailFilter,
-            label: 'Starred',
+            label: copy.ui.cliModelPicker.starred,
             glyph: <StarGlyph filled className="size-icon-sm" />,
           },
         ]
@@ -453,7 +454,7 @@ export function CliModelPopoverSurface({
         // A one-of-N filter, not tabs: `tablist`/`tab` promises a tabpanel this
         // rail does not have, and a screen reader announces one.
         role="radiogroup"
-        aria-label="Provider"
+        aria-label={copy.ui.cliModelPicker.provider}
         aria-orientation="vertical"
         onKeyDown={onRailKeyDown}
         className="flex flex-col gap-0.5 border-r border-[color:var(--border-subtle)] p-1.5"
@@ -492,7 +493,7 @@ export function CliModelPopoverSurface({
               setActiveKey(null)
             }}
             onKeyDown={onQueryKeyDown}
-            aria-label={`Search ${ariaLabel}`}
+            aria-label={copy.ui.cliModelPicker.search(ariaLabel)}
             // This field IS the combobox: it owns the query, keeps focus while
             // the arrows move the highlight, and names the highlighted row
             // through `aria-activedescendant`. The list below is rendered for as
@@ -501,7 +502,7 @@ export function CliModelPopoverSurface({
             aria-expanded
             aria-controls={listId}
             aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
-            placeholder="Search models…"
+            placeholder={copy.ui.cliModelPicker.searchModels}
             className="min-w-0 flex-1 bg-transparent text-meta text-[color:var(--text-default)] outline-none placeholder:text-[color:var(--text-subtle)] [&::-webkit-search-cancel-button]:hidden"
           />
         </div>
@@ -574,7 +575,7 @@ export function CliModelPopoverSurface({
             {showReasoning && hasContextWindows(reasoningAxes) ? (
               <ReasoningSelector
                 scope="context"
-                ariaLabel="Context window"
+                ariaLabel={copy.ui.cliModelPicker.contextWindow}
                 reasoningSelection={currentOption?.reasoningSelection}
                 reasoning={effectiveReasoningFor?.(currentCli)}
                 onSelectReasoning={
@@ -588,7 +589,7 @@ export function CliModelPopoverSurface({
             {showReasoning && showReasoningLevels && hasReasoningLevels(reasoningAxes) ? (
               <ReasoningSelector
                 scope="reasoning"
-                ariaLabel={reasoningAriaLabel ?? 'Reasoning'}
+                ariaLabel={reasoningAriaLabel ?? copy.ui.cliModelPicker.reasoning}
                 reasoningSelection={currentOption?.reasoningSelection}
                 reasoning={effectiveReasoningFor?.(currentCli)}
                 onSelectReasoning={
@@ -744,7 +745,7 @@ function ModelRowView({
         type="button"
         data-model-star="true"
         aria-pressed={starred}
-        aria-label={`${starred ? 'Unstar' : 'Star'} ${row.name}`}
+        aria-label={`${starred ? copy.ui.cliModelPicker.unstar : copy.ui.cliModelPicker.star} ${row.name}`}
         tabIndex={-1}
         onClick={(event) => {
           event.stopPropagation()
@@ -906,7 +907,7 @@ export function CliModelPickerButton({
         className="min-w-0 shrink-0"
         surfaceClassName="overflow-hidden"
         renderTrigger={({ ref, triggerProps, togglePopover }) => (
-          <Tooltip content={`Agent runtime: ${runtimeLabel}`} wrapperClassName="inline-flex min-w-0">
+          <Tooltip content={copy.ui.cliModelPicker.agentRuntime(runtimeLabel)} wrapperClassName="inline-flex min-w-0">
             <button
               ref={ref}
               type="button"
@@ -938,14 +939,14 @@ export function CliModelPickerButton({
         )}
       >
         <CliModelPopoverSurface
-          ariaLabel={`${ariaLabel} options`}
+          ariaLabel={copy.ui.cliModelPicker.options(ariaLabel)}
           options={resolvedOptions}
           currentCli={cli}
           effectiveModelFor={effectiveModelFor}
           effectiveReasoningFor={effectiveReasoningFor}
           onSelectReasoning={onSelectReasoning}
           showReasoning
-          reasoningAriaLabel={`Reasoning for ${ariaLabel}`}
+          reasoningAriaLabel={copy.ui.cliModelPicker.reasoningFor(ariaLabel)}
           onSelectCli={(nextCli) => {
             onSelectCli(nextCli)
             setOpen(false)

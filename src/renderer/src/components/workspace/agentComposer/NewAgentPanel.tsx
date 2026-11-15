@@ -171,6 +171,7 @@ import { gitApi } from '../../../studio/git'
 import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
 import { schedulesApi } from '../../../studio/schedules'
 import { tailnetApi } from '../../../studio/tailnet'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
   /** The agent's startup prompt. Empty means "start with nothing typed". */
@@ -1488,7 +1489,10 @@ export default function NewAgentPanel({
         if (cancelled) return
         setCommandLine({
           status: 'error',
-          message: error instanceof Error ? error.message : 'Could not read this agent’s launch command.',
+          message:
+            error instanceof Error
+              ? error.message
+              : appCopy.workspace.agentComposer.newAgentPanel.couldNotReadThisAgent,
         })
       })
     return () => {
@@ -1654,8 +1658,8 @@ export default function NewAgentPanel({
     if (!picked || isRemoteNoProject(picked)) {
       showToast({
         tone: 'warn',
-        title: 'Choose a project',
-        description: `Schedules on ${target.connection.machineName} run in a project.`,
+        title: appCopy.workspace.agentComposer.newAgentPanel.chooseAProject,
+        description: appCopy.workspace.agentComposer.newAgentPanel.schedulesOnRunInA(target.connection.machineName),
       })
       return
     }
@@ -1664,8 +1668,8 @@ export default function NewAgentPanel({
     if (images.length > 0 || files.length > 0) {
       showToast({
         tone: 'warn',
-        title: 'Not scheduled',
-        description: `Schedules on ${target.connection.machineName} can’t take attachments. Remove them.`,
+        title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
+        description: appCopy.workspace.agentComposer.newAgentPanel.schedulesOnCanTTake(target.connection.machineName),
       })
       return
     }
@@ -1673,14 +1677,18 @@ export default function NewAgentPanel({
     if (!body) {
       showToast({
         tone: 'warn',
-        title: 'Say what it should do',
-        description: 'Each run starts from this prompt.',
+        title: appCopy.workspace.agentComposer.newAgentPanel.sayWhatItShouldDo,
+        description: appCopy.workspace.agentComposer.newAgentPanel.eachRunStartsFromThis,
       })
       promptRef.current?.focus()
       return
     }
     if (once !== null && once <= Date.now()) {
-      showToast({ tone: 'warn', title: 'Pick a time ahead', description: 'That time has already passed.' })
+      showToast({
+        tone: 'warn',
+        title: appCopy.workspace.agentComposer.newAgentPanel.pickATimeAhead,
+        description: appCopy.workspace.agentComposer.newAgentPanel.thatTimeHasAlreadyPassed,
+      })
       return
     }
     const confirm = buildLaunchConfirm(selection)
@@ -1706,7 +1714,11 @@ export default function NewAgentPanel({
         remoteCommandId(target.connection.id, draft),
       )
       if (!result.ok) {
-        showToast({ tone: 'error', title: 'Not scheduled', description: result.message })
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
+          description: result.message,
+        })
         return
       }
       remoteCommandDone()
@@ -1716,7 +1728,7 @@ export default function NewAgentPanel({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: 'Not scheduled',
+        title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -1733,8 +1745,8 @@ export default function NewAgentPanel({
     if (images.length > 0 || files.length > 0) {
       showToast({
         tone: 'warn',
-        title: 'Not scheduled',
-        description: `Schedules on ${machineName} can’t take attachments. Remove them.`,
+        title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
+        description: appCopy.workspace.agentComposer.newAgentPanel.schedulesOnCanTTake(machineName),
       })
       return
     }
@@ -1742,14 +1754,18 @@ export default function NewAgentPanel({
     if (!body) {
       showToast({
         tone: 'warn',
-        title: 'Say what it should do',
-        description: 'Each run starts from this prompt.',
+        title: appCopy.workspace.agentComposer.newAgentPanel.sayWhatItShouldDo,
+        description: appCopy.workspace.agentComposer.newAgentPanel.eachRunStartsFromThis,
       })
       promptRef.current?.focus()
       return
     }
     if (once !== null && once <= Date.now()) {
-      showToast({ tone: 'warn', title: 'Pick a time ahead', description: 'That time has already passed.' })
+      showToast({
+        tone: 'warn',
+        title: appCopy.workspace.agentComposer.newAgentPanel.pickATimeAhead,
+        description: appCopy.workspace.agentComposer.newAgentPanel.thatTimeHasAlreadyPassed,
+      })
       return
     }
     const confirm = buildLaunchConfirm(selection)
@@ -1778,7 +1794,11 @@ export default function NewAgentPanel({
         remoteCommandId(route, draft),
       )
       if (!result.ok) {
-        showToast({ tone: 'error', title: 'Not scheduled', description: result.message })
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
+          description: result.message,
+        })
         return
       }
       remoteCommandDone()
@@ -1787,7 +1807,7 @@ export default function NewAgentPanel({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: 'Not scheduled',
+        title: appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -1802,8 +1822,8 @@ export default function NewAgentPanel({
     if (images.length > 0 || files.length > 0) {
       showToast({
         tone: 'warn',
-        title: 'Not saved',
-        description: `Schedules on ${machineName} can’t take attachments. Remove them.`,
+        title: appCopy.workspace.agentComposer.newAgentPanel.notSaved,
+        description: appCopy.workspace.agentComposer.newAgentPanel.schedulesOnCanTTake(machineName),
       })
       return
     }
@@ -1811,14 +1831,18 @@ export default function NewAgentPanel({
     if (!body) {
       showToast({
         tone: 'warn',
-        title: 'Say what it should do',
-        description: 'Each run starts from this prompt.',
+        title: appCopy.workspace.agentComposer.newAgentPanel.sayWhatItShouldDo,
+        description: appCopy.workspace.agentComposer.newAgentPanel.eachRunStartsFromThis,
       })
       promptRef.current?.focus()
       return
     }
     if (once !== null && once <= Date.now()) {
-      showToast({ tone: 'warn', title: 'Pick a time ahead', description: 'That time has already passed.' })
+      showToast({
+        tone: 'warn',
+        title: appCopy.workspace.agentComposer.newAgentPanel.pickATimeAhead,
+        description: appCopy.workspace.agentComposer.newAgentPanel.thatTimeHasAlreadyPassed,
+      })
       return
     }
     const confirm = buildLaunchConfirm(selection)
@@ -1846,7 +1870,11 @@ export default function NewAgentPanel({
         remoteCommandId(on.route, change),
       )
       if (!result.ok) {
-        showToast({ tone: 'error', title: 'Not saved', description: result.message })
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.agentComposer.newAgentPanel.notSaved,
+          description: result.message,
+        })
         return
       }
       remoteCommandDone()
@@ -1856,7 +1884,7 @@ export default function NewAgentPanel({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: 'Not saved',
+        title: appCopy.workspace.agentComposer.newAgentPanel.notSaved,
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -1883,8 +1911,8 @@ export default function NewAgentPanel({
     if (!folder) {
       showToast({
         tone: 'warn',
-        title: 'Choose a project',
-        description: 'A scheduled agent starts its chats in a project.',
+        title: appCopy.workspace.agentComposer.newAgentPanel.chooseAProject,
+        description: appCopy.workspace.agentComposer.newAgentPanel.aScheduledAgentStartsIts,
       })
       return
     }
@@ -1893,14 +1921,18 @@ export default function NewAgentPanel({
     if (!body) {
       showToast({
         tone: 'warn',
-        title: 'Say what it should do',
-        description: 'Each run starts from this prompt.',
+        title: appCopy.workspace.agentComposer.newAgentPanel.sayWhatItShouldDo,
+        description: appCopy.workspace.agentComposer.newAgentPanel.eachRunStartsFromThis,
       })
       promptRef.current?.focus()
       return
     }
     if (once !== null && once <= Date.now()) {
-      showToast({ tone: 'warn', title: 'Pick a time ahead', description: 'That time has already passed.' })
+      showToast({
+        tone: 'warn',
+        title: appCopy.workspace.agentComposer.newAgentPanel.pickATimeAhead,
+        description: appCopy.workspace.agentComposer.newAgentPanel.thatTimeHasAlreadyPassed,
+      })
       return
     }
     const confirm = buildLaunchConfirm(selection)
@@ -1926,7 +1958,13 @@ export default function NewAgentPanel({
         ? await schedulesApi.updateScheduledAgent(editing.id, draftRecord)
         : await schedulesApi.createScheduledAgent(draftRecord)
       if (!result.ok) {
-        showToast({ tone: 'error', title: editing ? 'Not saved' : 'Not scheduled', description: result.message })
+        showToast({
+          tone: 'error',
+          title: editing
+            ? appCopy.workspace.agentComposer.newAgentPanel.notSaved
+            : appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
+          description: result.message,
+        })
         return
       }
       if (once === null) rememberSchedule(cron)
@@ -1934,7 +1972,9 @@ export default function NewAgentPanel({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: editing ? 'Not saved' : 'Not scheduled',
+        title: editing
+          ? appCopy.workspace.agentComposer.newAgentPanel.notSaved
+          : appCopy.workspace.agentComposer.newAgentPanel.notScheduled,
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -1950,8 +1990,12 @@ export default function NewAgentPanel({
       const ran = await pairedScheduledAgentAction(editingTarget!, editing.id, 'run')
       showToast(
         ran.ok
-          ? { tone: 'good', title: 'Started', description: remoteScheduleActionWords('run', editingRemote.machineName) }
-          : { tone: 'error', title: 'Did not run', description: ran.message },
+          ? {
+              tone: 'good',
+              title: appCopy.workspace.agentComposer.newAgentPanel.started,
+              description: remoteScheduleActionWords('run', editingRemote.machineName),
+            }
+          : { tone: 'error', title: appCopy.workspace.agentComposer.newAgentPanel.didNotRun, description: ran.message },
       )
       announceEditedOn(editingRemote)
       return
@@ -1961,7 +2005,11 @@ export default function NewAgentPanel({
       message: error instanceof Error ? error.message : String(error),
     }))
     if (!result.ok) {
-      showToast({ tone: 'error', title: 'Did not run', description: result.message })
+      showToast({
+        tone: 'error',
+        title: appCopy.workspace.agentComposer.newAgentPanel.didNotRun,
+        description: result.message,
+      })
     } else if (!result.run.ok) {
       setLastRunFailure(result.run.message)
     } else {
@@ -1969,7 +2017,11 @@ export default function NewAgentPanel({
       // The run is a chat of its own, started in the background as every run
       // is, so the window stays on this editor; it lands first under Recent
       // runs below as soon as this window hears of it — the place to open it.
-      showToast({ tone: 'good', title: 'Started', description: 'Its chat is first under Recent runs, below.' })
+      showToast({
+        tone: 'good',
+        title: appCopy.workspace.agentComposer.newAgentPanel.started,
+        description: appCopy.workspace.agentComposer.newAgentPanel.itsChatIsFirstUnder,
+      })
     }
   }
 
@@ -1985,10 +2037,18 @@ export default function NewAgentPanel({
       result.ok
         ? {
             tone: 'neutral',
-            title: paused ? 'Schedule paused' : 'Schedule resumed',
+            title: paused
+              ? appCopy.workspace.agentComposer.newAgentPanel.schedulePaused
+              : appCopy.workspace.agentComposer.newAgentPanel.scheduleResumed,
             description: remoteScheduleActionWords(action, editingRemote.machineName),
           }
-        : { tone: 'error', title: paused ? 'Not paused' : 'Not resumed', description: result.message },
+        : {
+            tone: 'error',
+            title: paused
+              ? appCopy.workspace.agentComposer.newAgentPanel.notPaused
+              : appCopy.workspace.agentComposer.newAgentPanel.notResumed,
+            description: result.message,
+          },
     )
     announceEditedOn(editingRemote)
   }
@@ -2036,7 +2096,11 @@ export default function NewAgentPanel({
     if (!chatHasMessage(text)) return
     if (pickedSsh) {
       if (sshFolderProblem) {
-        showToast({ tone: 'warn', title: 'Which folder?', description: sshFolderProblem })
+        showToast({
+          tone: 'warn',
+          title: appCopy.workspace.agentComposer.newAgentPanel.whichFolder,
+          description: sshFolderProblem,
+        })
         return
       }
       const confirm = buildLaunchConfirm(selection)
@@ -2078,8 +2142,8 @@ export default function NewAgentPanel({
       if (files.length > 0) {
         showToast({
           tone: 'warn',
-          title: 'That chat cannot travel yet',
-          description: `Remove the attached files, or start it on This device.`,
+          title: appCopy.workspace.agentComposer.newAgentPanel.thatChatCannotTravelYet,
+          description: appCopy.workspace.agentComposer.newAgentPanel.removeTheAttachedFilesOr,
         })
         return
       }
@@ -2560,10 +2624,13 @@ export default function NewAgentPanel({
     />
   ) : pickedSsh ? (
     <Input
-      aria-label={`Folder on ${pickedSsh.label}`}
+      aria-label={appCopy.workspace.agentComposer.newAgentPanel.folderOn(pickedSsh.label)}
       value={sshFolder}
       onChange={(event) => setSshFolder(event.target.value)}
-      placeholder={`Folder on ${pickedSsh.label}, such as ${machineFolderExample(pickedSsh)}`}
+      placeholder={appCopy.workspace.agentComposer.newAgentPanel.folderOnSuchAs(
+        pickedSsh.label,
+        machineFolderExample(pickedSsh),
+      )}
       size="sm"
       variant="well"
       fullWidth={false}
@@ -2592,7 +2659,7 @@ export default function NewAgentPanel({
   ) : canChooseProject ? (
     <>
       <ProjectScopePicker
-        label={projectLabel ?? 'Choose a project'}
+        label={projectLabel ?? appCopy.workspace.agentComposer.newAgentPanel.chooseAProject}
         // The branch has its own place on the strip.
         branch={null}
         options={projectOptions ?? []}
@@ -2617,13 +2684,15 @@ export default function NewAgentPanel({
         <Tooltip
           content={
             withoutProjectKeys[0]
-              ? `Runs in a folder of its own · ${renderKeybinding(withoutProjectKeys[0], keyPlatform)}`
-              : 'Runs in a folder of its own'
+              ? appCopy.workspace.agentComposer.newAgentPanel.runsInAFolderOf(
+                  renderKeybinding(withoutProjectKeys[0], keyPlatform),
+                )
+              : appCopy.workspace.agentComposer.newAgentPanel.runsInAFolderOf2
           }
           placement="top"
         >
           <LinkButton ink="quiet" className="shrink-0 px-1 text-meta" onClick={onStartWithoutProject}>
-            or start without a project
+            {appCopy.workspace.agentComposer.newAgentPanel.orStartWithoutAProject}
           </LinkButton>
         </Tooltip>
       ) : null}
@@ -2680,7 +2749,7 @@ export default function NewAgentPanel({
     >
       {showCloseButton ? (
         <div className="absolute right-3 top-3">
-          <CloseIconButton onClick={onClose} aria-label="Cancel" />
+          <CloseIconButton onClick={onClose} aria-label={appCopy.workspace.agentComposer.newAgentPanel.cancel} />
         </div>
       ) : null}
       {/* Centred in the pane while it fits, and scrolling from the top when it
@@ -2694,7 +2763,7 @@ export default function NewAgentPanel({
           <div className="mb-5 text-center">
             <ExtensionsGlyph className="icon-lg mx-auto text-[color:var(--text-strong)]" />
             <h1 className="mt-2.5 text-title font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]">
-              What should your extension do?
+              {appCopy.workspace.agentComposer.newAgentPanel.whatShouldYourExtensionDo}
             </h1>
           </div>
         ) : null}
@@ -2704,10 +2773,14 @@ export default function NewAgentPanel({
             density="list"
             title={
               chatUnavailable
-                ? 'No agent CLI on this machine can run as a chat.'
-                : 'No agent CLI is installed on this machine.'
+                ? appCopy.workspace.agentComposer.newAgentPanel.noAgentCLIOnThis
+                : appCopy.workspace.agentComposer.newAgentPanel.noAgentCLIIsInstalled
             }
-            body={chatUnavailable ? 'Install one that can run as a chat.' : 'Install one to start an agent here.'}
+            body={
+              chatUnavailable
+                ? appCopy.workspace.agentComposer.newAgentPanel.installOneThatCanRun
+                : appCopy.workspace.agentComposer.newAgentPanel.installOneToStartAn
+            }
             action={<CliInstallCta />}
           />
         ) : null}
@@ -2837,7 +2910,10 @@ export default function NewAgentPanel({
                 onKeyDown={onPromptKeyDown}
                 placeholder={placeholder}
                 adoptInput={bootComposer ? adoptBootInput : undefined}
-                contentAttributes={{ 'aria-label': 'What this agent should do', ...stashPicker.comboboxProps }}
+                contentAttributes={{
+                  'aria-label': appCopy.workspace.agentComposer.newAgentPanel.whatThisAgentShouldDo,
+                  ...stashPicker.comboboxProps,
+                }}
                 className="max-h-[280px] min-h-[66px] w-full font-mono text-body"
               />
             </div>
@@ -2874,7 +2950,9 @@ export default function NewAgentPanel({
                 <AttachmentChip
                   glyph={<StartAsGlyph kind={selection.kind} className="icon-xs shrink-0" />}
                   label={startAsLabel(selection.kind)}
-                  removeLabel={`Start as a conversation instead of ${startAsLabel(selection.kind).toLowerCase()}`}
+                  removeLabel={appCopy.workspace.agentComposer.newAgentPanel.startAsAConversationInstead(
+                    startAsLabel(selection.kind).toLowerCase(),
+                  )}
                   onRemove={() => startAs('conversation')}
                 />
               ) : (
@@ -2892,8 +2970,8 @@ export default function NewAgentPanel({
             {extensionMode ? (
               <AttachmentChip
                 glyph={<ExtensionsGlyph className="icon-xs text-[color:var(--accent-primary)]" />}
-                label="Extension"
-                removeLabel="Start a plain chat instead"
+                label={appCopy.workspace.agentComposer.newAgentPanel.extension}
+                removeLabel={appCopy.workspace.agentComposer.newAgentPanel.startAPlainChatInstead}
                 onRemove={() => setMode('chat')}
               />
             ) : null}
@@ -2914,7 +2992,7 @@ export default function NewAgentPanel({
                     key={`skill-${skill.id}`}
                     glyph={<StarGlyph filled className="icon-xs text-[color:var(--accent-primary)]" />}
                     label={skill.name}
-                    removeLabel={`Remove skill ${skill.name}`}
+                    removeLabel={appCopy.workspace.agentComposer.newAgentPanel.removeSkill(skill.name)}
                     onRemove={() => composer.setSkills(composer.skills.filter((entry) => entry.id !== skill.id))}
                   />
                 ))}
@@ -2925,7 +3003,7 @@ export default function NewAgentPanel({
                       <ExtensionIcon slug={mcpIconSlug(server.id)} name={server.name} icon={server.icon} size={13} />
                     }
                     label={server.name}
-                    removeLabel={`Remove MCP server ${server.name}`}
+                    removeLabel={appCopy.workspace.agentComposer.newAgentPanel.removeMCPServer(server.name)}
                     onRemove={() =>
                       composer.setMcpServers(composer.mcpServers.filter((entry) => entry.id !== server.id))
                     }
@@ -2974,8 +3052,8 @@ export default function NewAgentPanel({
                 <Tooltip
                   content={
                     editing.pausedAt !== undefined
-                      ? 'Missed runs won’t be made up'
-                      : 'Stops future runs; a running one carries on'
+                      ? appCopy.workspace.agentComposer.newAgentPanel.missedRunsWonTBe
+                      : appCopy.workspace.agentComposer.newAgentPanel.stopsFutureRunsARunning
                   }
                   placement="top"
                 >
@@ -2988,7 +3066,7 @@ export default function NewAgentPanel({
                   </GhostButton>
                 </Tooltip>
                 <GhostButton size="xs" onClick={() => void runSavedNow()}>
-                  Run now
+                  {appCopy.workspace.agentComposer.newAgentPanel.runNow}
                 </GhostButton>
               </>
             ) : null}
@@ -3001,11 +3079,14 @@ export default function NewAgentPanel({
               content={
                 scheduled ? (
                   editing ? (
-                    'Save the prompt, schedule and settings'
+                    appCopy.workspace.agentComposer.newAgentPanel.saveThePromptScheduleAnd
                   ) : once !== null ? (
-                    `Starts a ${engineNames.cliLabel} chat once, ${sendTimeWords(once, Date.now())}`
+                    appCopy.workspace.agentComposer.newAgentPanel.startsAChatOnce(
+                      engineNames.cliLabel,
+                      sendTimeWords(once, Date.now()),
+                    )
                   ) : (
-                    `Starts a ${engineNames.cliLabel} chat on each run`
+                    appCopy.workspace.agentComposer.newAgentPanel.startsAChatOnEach(engineNames.cliLabel)
                   )
                 ) : launchInBackgroundHint ? (
                   <>
@@ -3039,11 +3120,11 @@ export default function NewAgentPanel({
                   size="sm"
                   onClick={() => launch(prompt)}
                   disabled={!canLaunch}
-                  aria-label="Open terminal"
+                  aria-label={appCopy.workspace.agentComposer.newAgentPanel.openTerminal}
                   aria-keyshortcuts="Enter"
                   className="shrink-0 gap-1.5 pl-3 pr-2.5"
                 >
-                  Open terminal
+                  {appCopy.workspace.agentComposer.newAgentPanel.openTerminal}
                   <SendGlyph className="icon-sm" />
                 </SendButton>
               ) : (
@@ -3051,7 +3132,7 @@ export default function NewAgentPanel({
                   size="sm"
                   onClick={() => launch(prompt)}
                   disabled={!canLaunch || !extensionReady || !chatHasMessage(prompt)}
-                  aria-label="Start agent"
+                  aria-label={appCopy.workspace.agentComposer.newAgentPanel.startAgent}
                   aria-keyshortcuts="Enter"
                   className="w-control-sm shrink-0 px-0"
                 >
@@ -3186,16 +3267,19 @@ export default function NewAgentPanel({
           </p>
         ) : extensionMode && extensionTargetState === 'extension' ? (
           <p role="status" className="mt-1.5 text-meta leading-5 text-[color:var(--text-muted)]">
-            {extensionName} already exists there; the chat picks it up.
+            {extensionName}
+            {appCopy.workspace.agentComposer.newAgentPanel.alreadyExistsThereTheChat}
           </p>
         ) : null}
 
         {/* Extension mode's cards fill the box and start nothing: the words
             are the person's to change, and the chat needs a name first. */}
         {extensionMode && !terminalUnavailable ? (
-          <section aria-label="Extension ideas" className="mt-6">
+          <section aria-label={appCopy.workspace.agentComposer.newAgentPanel.extensionIdeas} className="mt-6">
             <div className="mb-2 flex items-baseline justify-between gap-3">
-              <h2 className="m-0 text-meta font-medium text-[color:var(--text-subtle)]">Start from an idea</h2>
+              <h2 className="m-0 text-meta font-medium text-[color:var(--text-subtle)]">
+                {appCopy.workspace.agentComposer.newAgentPanel.startFromAnIdea}
+              </h2>
               <LinkButton ink="quiet" onClick={() => setAllIdeas((current) => !current)}>
                 {allIdeas ? 'Show fewer' : `Show all ${EXTENSION_IDEAS.length}`}
               </LinkButton>
@@ -3214,7 +3298,11 @@ export default function NewAgentPanel({
             beside words or attachments of the person's one would throw the
             words away and send the attachments with a stranger's text. */}
         {terminalUnavailable || isTerminalLaunch || scheduled || extensionMode || boxHasContent ? null : (
-          <CardScroller title="Things to try" glyph={<SparkGlyph className="icon-xs" />} className="mt-6">
+          <CardScroller
+            title={appCopy.workspace.agentComposer.newAgentPanel.thingsToTry}
+            glyph={<SparkGlyph className="icon-xs" />}
+            className="mt-6"
+          >
             {suggestions.map((entry) => (
               <SuggestionCard
                 key={entry.id}

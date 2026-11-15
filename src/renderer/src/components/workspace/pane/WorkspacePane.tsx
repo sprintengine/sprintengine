@@ -35,6 +35,7 @@ import { PANEL_COMMAND_EVENT } from '../../../utils/panelCommands'
 import { WorkspacePaneBody } from './WorkspacePaneBody'
 import { ChatPanel } from './panel/ChatPanel'
 import { WindowCaptionReserve, paneStripOwnsCaptionCorner, windowCaptionReserve } from '../WindowControls'
+import { copy } from '../../../../../shared/copy'
 
 // One workspace's pane: the 36px strip (Back · tabs · + · pop out · maximise ·
 // close) over the tab bodies, or over the menu (`ChatPanel`), which is what the
@@ -266,7 +267,11 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
 
   return (
     <section
-      aria-label={workspaceName ? `${workspaceName} pane` : 'Workspace pane'}
+      aria-label={
+        workspaceName
+          ? copy.workspace.pane.workspacePane.pane(workspaceName)
+          : copy.workspace.pane.workspacePane.workspacePane
+      }
       data-control-tab-scope
       {...{ [WORKSPACE_PANE_DATA_ATTRIBUTE]: workspaceId }}
       className="relative flex h-full min-h-0 flex-col"
@@ -309,8 +314,11 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
         {!showsMenu && activeTabId ? (
           <>
             <div className="app-no-drag flex h-full shrink-0 items-center pr-0.5">
-              <Tooltip content="Back to the panel" placement="bottom">
-                <IconButton onClick={() => showPaneMenu(workspaceId)} aria-label="Back to the panel">
+              <Tooltip content={copy.workspace.pane.workspacePane.backToThePanel} placement="bottom">
+                <IconButton
+                  onClick={() => showPaneMenu(workspaceId)}
+                  aria-label={copy.workspace.pane.workspacePane.backToThePanel}
+                >
                   <BackGlyph className="icon-sm" />
                 </IconButton>
               </Tooltip>
@@ -323,7 +331,7 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
                 window. */}
             <TabsScroller className="flex min-w-0 flex-initial items-center self-stretch">
               <Tabs
-                ariaLabel="Pane tabs"
+                ariaLabel={copy.workspace.pane.workspacePane.paneTabs}
                 className="app-no-drag"
                 idPrefix={`pane-${workspaceId}`}
                 items={items}
@@ -365,10 +373,10 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
               front. The tabs stay in this strip, marked, and come back when
               the window closes. */}
           {popOutOffered && !showsMenu ? (
-            <Tooltip content="Pop out pane" placement="bottom">
+            <Tooltip content={copy.workspace.pane.workspacePane.popOutPane} placement="bottom">
               <IconButton
                 onClick={() => void popOutPaneTabs(workspaceId, dockedTabIds)}
-                aria-label="Pop out pane"
+                aria-label={copy.workspace.pane.workspacePane.popOutPane}
                 disabled={dockedTabIds.length === 0}
               >
                 <OpenInWindowGlyph className="icon-sm" />
@@ -376,10 +384,21 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
             </Tooltip>
           ) : null}
           {showsMenu ? null : (
-            <Tooltip content={maximised ? 'Restore pane' : 'Maximise pane'} placement="bottom">
+            <Tooltip
+              content={
+                maximised
+                  ? copy.workspace.pane.workspacePane.restorePane
+                  : copy.workspace.pane.workspacePane.maximisePane
+              }
+              placement="bottom"
+            >
               <IconButton
                 onClick={() => setMaximised(!maximised)}
-                aria-label={maximised ? 'Restore pane' : 'Maximise pane'}
+                aria-label={
+                  maximised
+                    ? copy.workspace.pane.workspacePane.restorePane
+                    : copy.workspace.pane.workspacePane.maximisePane
+                }
                 pressed={maximised}
               >
                 {maximised ? <RestoreGlyph className="icon-sm" /> : <MaximiseGlyph className="icon-sm" />}
@@ -391,8 +410,8 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
               this strip sits directly under the band, so the band's toggle
               takes it back and this one goes. */}
           {belowBand ? null : (
-            <Tooltip content="Close panel" placement="bottom">
-              <IconButton onClick={closePane} aria-label="Close panel" pressed>
+            <Tooltip content={copy.workspace.pane.workspacePane.closePanel} placement="bottom">
+              <IconButton onClick={closePane} aria-label={copy.workspace.pane.workspacePane.closePanel} pressed>
                 <ClosePaneGlyph className="icon-sm" />
               </IconButton>
             </Tooltip>
@@ -472,34 +491,40 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
         <ContextMenu
           x={tabMenu.x}
           y={tabMenu.y}
-          ariaLabel="Pane tab actions"
+          ariaLabel={copy.workspace.pane.workspacePane.paneTabActions}
           onClose={() => setTabMenu(null)}
           surfaceClassName="min-w-[180px]"
         >
-          <MenuItem onClick={() => closeTab(tabMenu.tabId)}>Close</MenuItem>
+          <MenuItem onClick={() => closeTab(tabMenu.tabId)}>{copy.workspace.pane.workspacePane.close}</MenuItem>
           <MenuItem disabled={tabs.length <= 1} onClick={() => closeTabsWhere((tab) => tab.id !== tabMenu.tabId)}>
-            Close others
+            {copy.workspace.pane.workspacePane.closeOthers}
           </MenuItem>
           <MenuItem
             disabled={menuTabIndex === -1 || menuTabIndex >= tabs.length - 1}
             onClick={() => closeTabsWhere((_tab, index) => index > menuTabIndex)}
           >
-            Close to the right
+            {copy.workspace.pane.workspacePane.closeToTheRight}
           </MenuItem>
           {popOutOffered && menuTab ? (
             <>
               <MenuDivider />
               {menuTab.poppedOut ? (
                 <>
-                  <MenuItem onClick={() => showPanePopOut(menuTab.poppedOut!)}>Show window</MenuItem>
+                  <MenuItem onClick={() => showPanePopOut(menuTab.poppedOut!)}>
+                    {copy.workspace.pane.workspacePane.showWindow}
+                  </MenuItem>
                   {menuTab.kind === 'diff' ? null : (
-                    <MenuItem onClick={() => bringBackPaneTab(workspaceId, menuTab)}>Bring back</MenuItem>
+                    <MenuItem onClick={() => bringBackPaneTab(workspaceId, menuTab)}>
+                      {copy.workspace.pane.workspacePane.bringBack}
+                    </MenuItem>
                   )}
                 </>
               ) : (
                 // Just this tab, in a window of its own; the rest of the pane
                 // stays where it is.
-                <MenuItem onClick={() => void popOutPaneTabs(workspaceId, [menuTab.id])}>Pop out</MenuItem>
+                <MenuItem onClick={() => void popOutPaneTabs(workspaceId, [menuTab.id])}>
+                  {copy.workspace.pane.workspacePane.popOut}
+                </MenuItem>
               )}
             </>
           ) : null}

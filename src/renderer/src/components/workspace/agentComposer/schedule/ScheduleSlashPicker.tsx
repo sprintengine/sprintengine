@@ -5,6 +5,7 @@ import { ScheduleGlyph } from '../../../AppIcons'
 import { describeCronSchedule, parseCronSchedule } from '../../../../../../shared/cron'
 import { scheduleSuggestionsFor, type ScheduleSuggestion } from '../../../../../../shared/schedule-phrases'
 import { readRecentSchedules } from './recentSchedules'
+import { copy } from '../../../../../../shared/copy'
 
 export type ScheduleSlashPickerHandle = {
   /** Move the highlight; false when there is nothing to move through. */
@@ -61,7 +62,7 @@ export const ScheduleSlashPicker = React.forwardRef<
         onOpenChange={(open) => {
           if (!open) onDismiss()
         }}
-        ariaLabel="Schedule this agent"
+        ariaLabel={copy.workspace.agentComposer.schedule.scheduleSlashPicker.scheduleThisAgent}
         popupRole="menu"
         placement="top-start"
         material="glass"
@@ -79,7 +80,9 @@ export const ScheduleSlashPicker = React.forwardRef<
           ) : (
             <>
               {query.trim() ? null : (
-                <p className="px-2.5 pb-1 text-micro font-medium text-[color:var(--text-subtle)]">Recent</p>
+                <p className="px-2.5 pb-1 text-micro font-medium text-[color:var(--text-subtle)]">
+                  {copy.workspace.agentComposer.schedule.scheduleSlashPicker.recent}
+                </p>
               )}
               {options.map((option, index) => (
                 <MenuOption
@@ -108,7 +111,7 @@ export const ScheduleSlashPicker = React.forwardRef<
             </>
           )}
           <div className="mt-1 px-2.5 pt-1.5 text-micro text-[color:var(--text-subtle)]">
-            ↑↓ choose · ⏎ schedule · esc dismiss
+            {copy.workspace.agentComposer.schedule.scheduleSlashPicker.chooseScheduleEscDismiss}
           </div>
         </div>
       </Popover>

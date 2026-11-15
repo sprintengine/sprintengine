@@ -14,6 +14,7 @@ import { ExtensionIcon } from '../../ui/ExtensionIcon'
 import { mcpIconSlug } from '../../ui/mcpIconSlug'
 import { PluginIcon, resolveIconUrl } from '../../settings/BrowseStorefront'
 import type { ConnectorEntry } from './connectorsFacets'
+import { copy } from '../../../../../shared/copy'
 
 // The one section-heading treatment for the whole Connectors surface: muted
 // label · count. It used to carry a hairline out to the right edge, which was
@@ -204,7 +205,7 @@ export function ConnectorRow({
           density="flush"
           onClick={onOpen}
           aria-expanded={selected}
-          aria-label={`Show details for ${name}`}
+          aria-label={copy.panels.connectorsPanel.connectorRow.showDetailsFor(name)}
           className="min-w-0 flex-1"
         >
           {content}
@@ -257,7 +258,7 @@ export function ConnectorEntryRow({
         <>
           {entry.source === 'registry' ? (
             <GhostButton size="sm" onClick={onOpen} className="border border-[color:var(--border-default)]">
-              Get
+              {copy.panels.connectorsPanel.connectorRow.get}
             </GhostButton>
           ) : entry.installed ? (
             <span className="flex items-center gap-1 pr-1 text-meta font-medium text-[color:var(--accent-primary)]">
@@ -273,21 +274,21 @@ export function ConnectorEntryRow({
               >
                 <polyline points="1.5,5 4,7.5 8.5,2.5" />
               </svg>
-              Added
+              {copy.panels.connectorsPanel.connectorRow.added}
             </span>
           ) : onToggleInstalled ? (
             <GhostButton
               size="sm"
               onClick={onToggleInstalled}
               className="border border-[color:var(--border-default)]"
-              aria-label={`Add ${entry.name}`}
+              aria-label={copy.panels.connectorsPanel.connectorRow.add(entry.name)}
             >
-              Add
+              {copy.panels.connectorsPanel.connectorRow.add2}
             </GhostButton>
           ) : null}
           {onLaunch ? (
             <PrimaryButton size="sm" onClick={onLaunch}>
-              New chat
+              {copy.panels.connectorsPanel.connectorRow.newChat}
             </PrimaryButton>
           ) : null}
         </>

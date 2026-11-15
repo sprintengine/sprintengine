@@ -12,6 +12,7 @@ import { randomId } from '../../../shared/random-id'
 import { webStudioTicket } from './webStudio'
 import { uploadFilesToServer } from './webUploads'
 import { webCanvasPaneApi } from './canvas/webCanvasPane'
+import { copy as appCopy } from '../../../shared/copy'
 
 // A web tab's `window.api` (phase 9 spec, 3.2): typed `ElectronApi`, with no
 // casts, so the compiler names any member nobody decided about.
@@ -37,10 +38,10 @@ export function openExternalInBrowser(url: string): OpenExternalResult {
   try {
     parsed = new URL(url)
   } catch {
-    return { ok: false, message: 'That link is not a web address.' }
+    return { ok: false, message: appCopy.web.createWebApi.thatLinkIsNotA }
   }
   if (!EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
-    return { ok: false, message: `A browser tab does not open ${parsed.protocol} links.` }
+    return { ok: false, message: appCopy.web.createWebApi.aBrowserTabDoesNot(parsed.protocol) }
   }
   window.open(parsed.toString(), '_blank', 'noopener,noreferrer')
   return { ok: true }

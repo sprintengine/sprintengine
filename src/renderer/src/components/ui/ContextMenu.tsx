@@ -12,6 +12,7 @@ import {
   type ProjectColorSetting,
 } from '../../utils/projectColor'
 import type { HighlightColor } from '../../../../shared/workspace'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Pointer-positioned context menu. Unlike Popover (anchored to a trigger
 // element), this surface opens at viewport coordinates — a right-click point
@@ -465,7 +466,7 @@ export function MenuSwatchRow({ label, value, onPick, onClear, onItemKeyDown, sw
             tabIndex={-1}
             onClick={onClear}
             onKeyDown={onItemKeyDown}
-            aria-label="Clear color"
+            aria-label={appCopy.ui.contextMenu.clearColor}
             // A 20px circle padded out to the 24px hit-target floor: the box is
             // the target, the inner ring is the mark. Hover is the background
             // change every control gets — no scale, no glow (principles.md →
@@ -500,7 +501,7 @@ export function MenuSwatchRow({ label, value, onPick, onClear, onItemKeyDown, sw
                 tabIndex={-1}
                 onClick={() => onPick(color)}
                 onKeyDown={onItemKeyDown}
-                aria-label={`Highlight ${swatch.label}`}
+                aria-label={appCopy.ui.contextMenu.highlight(swatch.label)}
                 className={`${SWATCH_TARGET_CLASS} ${FOCUS_RING_CLASS}`}
               >
                 {/* The selected mark is the ring and only the ring — the glow
@@ -564,7 +565,7 @@ export function ProjectColorSwatchRow({
   onItemKeyDown,
 }: ProjectColorSwatchRowProps) {
   const swatches: Array<{ key: string; label: string; hue: ProjectColor; pick: ProjectColorSetting | null }> = [
-    { key: 'automatic', label: 'Automatic', hue: automaticColor, pick: null },
+    { key: 'automatic', label: appCopy.ui.contextMenu.automatic, hue: automaticColor, pick: null },
     ...PROJECT_COLOR_PRESETS.map((preset) => ({
       key: preset.label,
       label: preset.label,
@@ -594,7 +595,7 @@ export function ProjectColorSwatchRow({
                 tabIndex={-1}
                 onClick={() => onPick(swatch.pick)}
                 onKeyDown={onItemKeyDown}
-                aria-label={`Project color ${swatch.label}`}
+                aria-label={appCopy.ui.contextMenu.projectColor(swatch.label)}
                 className={`${SWATCH_TARGET_CLASS} ${FOCUS_RING_CLASS}`}
               >
                 {/* The hue rides the same class and custom property the glyph
@@ -614,7 +615,7 @@ export function ProjectColorSwatchRow({
             </Tooltip>
           )
         })}
-        <Tooltip content="No color">
+        <Tooltip content={appCopy.ui.contextMenu.noColor}>
           <button
             type="button"
             // design-tokens-allow: 2026-09-09 — the trailing swatch of the row
@@ -625,7 +626,7 @@ export function ProjectColorSwatchRow({
             tabIndex={-1}
             onClick={() => onPick('none')}
             onKeyDown={onItemKeyDown}
-            aria-label="No color"
+            aria-label={appCopy.ui.contextMenu.noColor}
             className={`${SWATCH_TARGET_CLASS} ${FOCUS_RING_CLASS} text-[color:var(--text-disabled)] hover:text-[color:var(--text-default)]`}
           >
             {/* Dashed and empty, the same "there is deliberately nothing here"

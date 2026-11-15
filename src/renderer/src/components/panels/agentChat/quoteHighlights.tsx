@@ -7,6 +7,7 @@ import { EditChangelistGlyph } from '../../ui/GitActionGlyphs'
 import { OVERLAY_SURFACE_CLASS } from '../../ui/tokens'
 import { QUOTE_NUMBER_CLASS, QUOTE_NUMBER_FILL } from './chatQuotes'
 import { quoteSourceOf, quoteSources, rangeForQuote, QUOTE_SOURCE_ATTRIBUTE } from './quoteAnchors'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Every quote in the conversation keeps its passage marked in the reply it
 // came from: a gold tint behind the words, and the quote's number
@@ -555,7 +556,7 @@ function QuoteHoverCard({
     <div
       ref={ref}
       role="group"
-      aria-label={`Quote ${quote.n}`}
+      aria-label={appCopy.panels.agentChat.quoteHighlights.quote(quote.n)}
       data-quote-card={quote.n}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
@@ -573,13 +574,17 @@ function QuoteHoverCard({
         // One size and one ink for both: the pencil is drawn on a 16 grid and
         // the × on a 14, so at the same icon step they read as one weight.
         <div className="-my-0.5 flex shrink-0 items-center gap-0.5">
-          <Tooltip content="Edit comment">
-            <IconButton size="2xs" aria-label="Edit comment" onClick={onEdit}>
+          <Tooltip content={appCopy.panels.agentChat.quoteHighlights.editComment}>
+            <IconButton size="2xs" aria-label={appCopy.panels.agentChat.quoteHighlights.editComment} onClick={onEdit}>
               <EditChangelistGlyph className="icon-sm" />
             </IconButton>
           </Tooltip>
-          <Tooltip content="Remove quote">
-            <CloseIconButton size="2xs" aria-label="Remove quote" onClick={onRemove} />
+          <Tooltip content={appCopy.panels.agentChat.quoteHighlights.removeQuote}>
+            <CloseIconButton
+              size="2xs"
+              aria-label={appCopy.panels.agentChat.quoteHighlights.removeQuote}
+              onClick={onRemove}
+            />
           </Tooltip>
         </div>
       )}

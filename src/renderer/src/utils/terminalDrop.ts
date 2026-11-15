@@ -9,6 +9,7 @@ import { listTerminals, writeTerminal } from '../studio/terminals'
 import { agentSetupApi } from '../studio/agentSetup'
 import { agentSkillsApi } from '../studio/agentSkills'
 import { extensionsApi } from '../studio/extensions'
+import { copy as appCopy } from '../../../shared/copy'
 
 export const SPRINTENGINE_FILE_DROP_MIME = 'application/x-sprintengine-file-drop'
 const SPRINTENGINE_COMMIT_DROP_MIME = 'application/x-sprintengine-commit-drop'
@@ -77,11 +78,11 @@ export async function pasteDroppedCommitIntoTerminal(input: {
   sessionId: string
 }): Promise<TerminalDropResult> {
   const hash = parseCommitDropHash(input.dataTransfer)
-  if (!hash) return { ok: false, message: 'No commit hash was dropped.' }
+  if (!hash) return { ok: false, message: appCopy.utils.terminalDrop.noCommitHashWasDropped }
 
   const sessions = await listTerminals()
   const session = sessions.find((candidate) => candidate.sessionId === input.sessionId && candidate.processAlive)
-  if (!session) return { ok: false, message: 'Terminal session is no longer running.' }
+  if (!session) return { ok: false, message: appCopy.utils.terminalDrop.terminalSessionIsNoLonger }
 
   await writeTerminal(input.sessionId, bracketedPaste(hash))
   return { ok: true, text: hash }
@@ -125,9 +126,9 @@ export async function pasteDroppedSkillIntoTerminal(input: {
   workspaceRoot: string
 }): Promise<TerminalDropResult> {
   const payload = parseSkillDropPayload(input.dataTransfer)
-  if (!payload) return { ok: false, message: 'No skill was dropped.' }
+  if (!payload) return { ok: false, message: appCopy.utils.terminalDrop.noSkillWasDropped }
   if (payload.workspaceId && payload.workspaceId !== input.workspaceId) {
-    return { ok: false, message: 'Drop skills into a terminal from the same workspace.' }
+    return { ok: false, message: appCopy.utils.terminalDrop.dropSkillsIntoATerminal }
   }
   return sendSkillToTerminal({
     skillId: payload.skillId,
@@ -166,11 +167,11 @@ export async function sendSkillToTerminal(input: {
 }): Promise<TerminalDropResult> {
   const sessions = await listTerminals()
   const session = sessions.find((candidate) => candidate.sessionId === input.sessionId && candidate.processAlive)
-  if (!session) return { ok: false, message: 'Terminal session is no longer running.' }
+  if (!session) return { ok: false, message: appCopy.utils.terminalDrop.terminalSessionIsNoLonger }
   // A shell has no agent to read a skill, and which CLI is running is what
   // decides the form — a session that cannot answer that gets neither.
   if (session.kind !== 'agent' || !session.cli) {
-    return { ok: false, message: 'Skills go to an agent, not a plain terminal.' }
+    return { ok: false, message: appCopy.utils.terminalDrop.skillsGoToAnAgent }
   }
 
   let plugins: PluginRegistryListEntry[]
@@ -190,7 +191,7 @@ export async function sendSkillToTerminal(input: {
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : 'Could not read this agent’s skills.',
+      message: error instanceof Error ? error.message : appCopy.utils.terminalDrop.couldNotReadThisAgent,
     }
   }
 
@@ -199,7 +200,7 @@ export async function sendSkillToTerminal(input: {
   // sentence it will never act on. A CLI that declares no skill integration at
   // all is a different answer — it gets the plain mention below.
   if (integration?.support === 'unsupported') {
-    return { ok: false, message: 'This agent does not read skills.' }
+    return { ok: false, message: appCopy.utils.terminalDrop.thisAgentDoesNotRead }
   }
 
   // The resolver already rendered this CLI's own form for a skill it can see.
@@ -222,7 +223,7 @@ export async function pasteDroppedFilesIntoTerminal(input: {
   workspaceId: string
 }): Promise<TerminalDropResult> {
   const payload = parseFileDropPayload(input.dataTransfer)
-  if (!payload) return { ok: false, message: 'That drop carried no file.' }
+  if (!payload) return { ok: false, message: appCopy.utils.terminalDrop.thatDropCarriedNoFile }
   return sendFileDropToTerminal({
     payload,
     sessionId: input.sessionId,
@@ -239,12 +240,12 @@ export async function sendFileDropToTerminal(input: {
 }): Promise<TerminalDropResult> {
   const { payload } = input
   if (payload.workspaceId && payload.workspaceId !== input.workspaceId) {
-    return { ok: false, message: 'Drop files into a terminal from the same workspace.' }
+    return { ok: false, message: appCopy.utils.terminalDrop.dropFilesIntoATerminal }
   }
 
   const sessions = await listTerminals()
   const session = sessions.find((candidate) => candidate.sessionId === input.sessionId && candidate.processAlive)
-  if (!session) return { ok: false, message: 'Terminal session is no longer running.' }
+  if (!session) return { ok: false, message: appCopy.utils.terminalDrop.terminalSessionIsNoLonger }
 
   // Same gating as the skill invocation, but recorded even when the paste falls
   // back to a plain path (unsupported CLI) — a handoff is a handoff.
@@ -257,7 +258,7 @@ export async function sendFileDropToTerminal(input: {
   }
 
   const text = formatDroppedPathsForTerminal(payload, session)
-  if (!text) return { ok: false, message: 'No valid file path was available to drop.' }
+  if (!text) return { ok: false, message: appCopy.utils.terminalDrop.noValidFilePathWas }
 
   await writeTerminal(input.sessionId, bracketedPaste(text))
   return { ok: true, text, ...(backlog ? { backlog } : {}) }

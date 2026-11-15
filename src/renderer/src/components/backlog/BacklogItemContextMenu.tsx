@@ -26,6 +26,7 @@ import type {
 import { CRITICALITY_LABEL, DIFFICULTY_WORD, RISK_LABEL } from '../../utils/backlogTriage'
 import { BACKLOG_STATUS_LABEL } from './BacklogRow'
 import { BacklogItemSearchPicker } from './BacklogItemSearchPicker'
+import { copy } from '../../../../shared/copy'
 
 // Row-level Backlog actions, owned by the panel (the handlers persist through
 // the backlog methods and re-scan). The context menu and the detail pane dispatch
@@ -93,7 +94,7 @@ export function AgentTargetMenuItems({
   if (agentTargets.length === 0) {
     return (
       <MenuItem disabled onClick={() => {}}>
-        No running agents
+        {copy.backlog.backlogItemContextMenu.noRunningAgents}
       </MenuItem>
     )
   }
@@ -177,16 +178,16 @@ export type BacklogActions = {
 // Shared size/priority choice lists (detail-pane Selects, create dialog, and
 // the context-menu submenus). The cleared state leads so clearing is one click.
 export const DIFFICULTY_EDIT_ITEMS: SelectItem<DifficultyChoice>[] = [
-  { value: 'unset', label: 'Unestimated' },
-  { value: 'xs', label: `XS · ${DIFFICULTY_WORD.xs.toLowerCase()}` },
+  { value: 'unset', label: copy.backlog.backlogItemContextMenu.unestimated },
+  { value: 'xs', label: copy.backlog.backlogItemContextMenu.xS(DIFFICULTY_WORD.xs.toLowerCase()) },
   { value: 's', label: `S · ${DIFFICULTY_WORD.s.toLowerCase()}` },
   { value: 'm', label: `M · ${DIFFICULTY_WORD.m.toLowerCase()}` },
   { value: 'l', label: `L · ${DIFFICULTY_WORD.l.toLowerCase()}` },
-  { value: 'xl', label: `XL · ${DIFFICULTY_WORD.xl.toLowerCase()}` },
+  { value: 'xl', label: copy.backlog.backlogItemContextMenu.xL(DIFFICULTY_WORD.xl.toLowerCase()) },
 ]
 
 export const CRITICALITY_EDIT_ITEMS: SelectItem<CriticalityChoice>[] = [
-  { value: 'unset', label: 'No priority' },
+  { value: 'unset', label: copy.backlog.backlogItemContextMenu.noPriority },
   { value: 'low', label: CRITICALITY_LABEL.low },
   { value: 'normal', label: CRITICALITY_LABEL.normal },
   { value: 'high', label: CRITICALITY_LABEL.high },
@@ -196,7 +197,7 @@ export const CRITICALITY_EDIT_ITEMS: SelectItem<CriticalityChoice>[] = [
 // Risk = likelihood the work goes sideways, distinct from effort and impact.
 // Cleared leads (one-click reset), same idiom as size/priority.
 export const RISK_EDIT_ITEMS: SelectItem<RiskChoice>[] = [
-  { value: 'unset', label: 'No risk set' },
+  { value: 'unset', label: copy.backlog.backlogItemContextMenu.noRiskSet },
   { value: 'low', label: RISK_LABEL.low },
   { value: 'normal', label: RISK_LABEL.normal },
   { value: 'high', label: RISK_LABEL.high },
@@ -280,7 +281,7 @@ export function BacklogItemContextMenu({
       <ContextMenu
         x={x}
         y={y}
-        ariaLabel={`Backlog selection actions: ${selectionCount} items`}
+        ariaLabel={copy.backlog.backlogItemContextMenu.backlogSelectionActionsItems(selectionCount)}
         onClose={onClose}
         surfaceClassName="min-w-[240px]"
       >
@@ -294,7 +295,7 @@ export function BacklogItemContextMenu({
           />
         ) : (
           <MenuItem disabled onClick={() => {}}>
-            No actions for this selection
+            {copy.backlog.backlogItemContextMenu.noActionsForThisSelection}
           </MenuItem>
         )}
       </ContextMenu>
@@ -305,7 +306,7 @@ export function BacklogItemContextMenu({
     <ContextMenu
       x={x}
       y={y}
-      ariaLabel={`Backlog item actions: ${item.title}`}
+      ariaLabel={copy.backlog.backlogItemContextMenu.backlogItemActions(item.title)}
       onClose={onClose}
       surfaceClassName="min-w-[240px]"
     >
@@ -320,8 +321,8 @@ export function BacklogItemContextMenu({
       ) : null}
       {itemActions.length > 0 ? <MenuDivider /> : null}
       <MenuFlyoutItem
-        label="Send to agent"
-        ariaLabel="Send to agent"
+        label={copy.backlog.backlogItemContextMenu.sendToAgent}
+        ariaLabel={copy.backlog.backlogItemContextMenu.sendToAgent}
         surfaceClassName="min-w-[200px]"
         onOpenChange={(open) => {
           if (open) onFlyoutOpen()
@@ -351,13 +352,17 @@ export function BacklogItemContextMenu({
         {starred ? 'Unstar' : 'Star'}
       </MenuItem>
       <MenuSwatchRow
-        label="Highlight color"
+        label={copy.backlog.backlogItemContextMenu.highlightColor}
         value={currentColor}
         onPick={(color) => actions.setHighlight(item, { starred, color })}
         onClear={() => actions.setHighlight(item, { starred, color: null })}
       />
       <MenuDivider />
-      <MenuFlyoutItem label="Status" ariaLabel="Set status" surfaceClassName="min-w-[180px]">
+      <MenuFlyoutItem
+        label={copy.backlog.backlogItemContextMenu.status}
+        ariaLabel={copy.backlog.backlogItemContextMenu.setStatus}
+        surfaceClassName="min-w-[180px]"
+      >
         {STATUS_MENU_CHOICES.map((status) => (
           <MenuItem
             key={status}
@@ -372,7 +377,11 @@ export function BacklogItemContextMenu({
           </MenuItem>
         ))}
       </MenuFlyoutItem>
-      <MenuFlyoutItem label="Priority" ariaLabel="Set priority" surfaceClassName="min-w-[180px]">
+      <MenuFlyoutItem
+        label={copy.backlog.backlogItemContextMenu.priority}
+        ariaLabel={copy.backlog.backlogItemContextMenu.setPriority}
+        surfaceClassName="min-w-[180px]"
+      >
         {CRITICALITY_EDIT_ITEMS.map(({ value, label }) => (
           <MenuItem
             key={value}
@@ -387,7 +396,11 @@ export function BacklogItemContextMenu({
           </MenuItem>
         ))}
       </MenuFlyoutItem>
-      <MenuFlyoutItem label="Size" ariaLabel="Set size" surfaceClassName="min-w-[180px]">
+      <MenuFlyoutItem
+        label={copy.backlog.backlogItemContextMenu.size}
+        ariaLabel={copy.backlog.backlogItemContextMenu.setSize}
+        surfaceClassName="min-w-[180px]"
+      >
         {DIFFICULTY_EDIT_ITEMS.map(({ value, label }) => (
           <MenuItem
             key={value}
@@ -402,7 +415,11 @@ export function BacklogItemContextMenu({
           </MenuItem>
         ))}
       </MenuFlyoutItem>
-      <MenuFlyoutItem label="Risk" ariaLabel="Set risk" surfaceClassName="min-w-[180px]">
+      <MenuFlyoutItem
+        label={copy.backlog.backlogItemContextMenu.risk}
+        ariaLabel={copy.backlog.backlogItemContextMenu.setRisk}
+        surfaceClassName="min-w-[180px]"
+      >
         {RISK_EDIT_ITEMS.map(({ value, label }) => (
           <MenuItem
             key={value}
@@ -420,7 +437,11 @@ export function BacklogItemContextMenu({
       {/* Epic membership is the child's `epic:` frontmatter; an epic can't nest
           inside another epic, so the affordance is hidden on epic rows. */}
       {!item.isEpic ? (
-        <MenuFlyoutItem label="Move to epic" ariaLabel="Move to epic" surfaceClassName="min-w-[19rem]">
+        <MenuFlyoutItem
+          label={copy.backlog.backlogItemContextMenu.moveToEpic}
+          ariaLabel={copy.backlog.backlogItemContextMenu.moveToEpic}
+          surfaceClassName="min-w-[19rem]"
+        >
           <BacklogItemSearchPicker
             options={epicChoices.map((epic) => ({
               id: epic.slug,
@@ -430,9 +451,9 @@ export function BacklogItemContextMenu({
               searchText: epic.slug,
             }))}
             selectedValues={item.epic ? [item.epic] : []}
-            ariaLabel="Search epics"
-            placeholder="Search epic ID or name…"
-            noOptionsMessage="No epics yet."
+            ariaLabel={copy.backlog.backlogItemContextMenu.searchEpics}
+            placeholder={copy.backlog.backlogItemContextMenu.searchEpicIDOrName}
+            noOptionsMessage={copy.backlog.backlogItemContextMenu.noEpicsYet}
             onSelect={(epic) => {
               actions.setEpic(item, epic.value)
               onClose()
@@ -445,7 +466,7 @@ export function BacklogItemContextMenu({
               onClose()
             }}
           >
-            New epic…
+            {copy.backlog.backlogItemContextMenu.newEpic}
           </MenuItem>
           {item.epic ? (
             <MenuItem
@@ -454,7 +475,7 @@ export function BacklogItemContextMenu({
                 onClose()
               }}
             >
-              Remove from epic
+              {copy.backlog.backlogItemContextMenu.removeFromEpic}
             </MenuItem>
           ) : null}
         </MenuFlyoutItem>
@@ -465,7 +486,11 @@ export function BacklogItemContextMenu({
           checks reflect the current set. Hidden on epics, mirroring Move to
           epic. */}
       {!item.isEpic ? (
-        <MenuFlyoutItem label="Depends on…" ariaLabel="Set prerequisites" surfaceClassName="min-w-[19rem]">
+        <MenuFlyoutItem
+          label={copy.backlog.backlogItemContextMenu.dependsOn}
+          ariaLabel={copy.backlog.backlogItemContextMenu.setPrerequisites}
+          surfaceClassName="min-w-[19rem]"
+        >
           <BacklogItemSearchPicker
             options={dependencyCandidates.map((candidate) => ({
               id: candidate.id,
@@ -475,8 +500,8 @@ export function BacklogItemContextMenu({
               searchText: candidate.slug,
             }))}
             selectedValues={dependsOn}
-            ariaLabel="Search prerequisite items"
-            noOptionsMessage="No other items."
+            ariaLabel={copy.backlog.backlogItemContextMenu.searchPrerequisiteItems}
+            noOptionsMessage={copy.backlog.backlogItemContextMenu.noOtherItems}
             multiple
             onSelect={(candidate) => {
               const next = toggleDependencySlug(dependsOn, candidate.value)
@@ -492,7 +517,7 @@ export function BacklogItemContextMenu({
                   onClose()
                 }}
               >
-                Clear prerequisites
+                {copy.backlog.backlogItemContextMenu.clearPrerequisites}
               </MenuItem>
             </>
           ) : null}
@@ -505,7 +530,7 @@ export function BacklogItemContextMenu({
           onClose()
         }}
       >
-        Open in editor
+        {copy.backlog.backlogItemContextMenu.openInEditor}
       </MenuItem>
       <MenuItem
         onClick={() => {
@@ -513,7 +538,7 @@ export function BacklogItemContextMenu({
           onClose()
         }}
       >
-        Reveal in Files
+        {copy.backlog.backlogItemContextMenu.revealInFiles}
       </MenuItem>
       <MenuItem
         onClick={() => {
@@ -521,7 +546,7 @@ export function BacklogItemContextMenu({
           onClose()
         }}
       >
-        Rename…
+        {copy.backlog.backlogItemContextMenu.rename}
       </MenuItem>
       {!archived ? (
         item.isEpic ? (
@@ -533,7 +558,7 @@ export function BacklogItemContextMenu({
               onClose()
             }}
           >
-            Archive epic
+            {copy.backlog.backlogItemContextMenu.archiveEpic}
           </MenuItem>
         ) : (
           <MenuItem
@@ -542,7 +567,7 @@ export function BacklogItemContextMenu({
               onClose()
             }}
           >
-            Archive
+            {copy.backlog.backlogItemContextMenu.archive}
           </MenuItem>
         )
       ) : null}
@@ -553,7 +578,7 @@ export function BacklogItemContextMenu({
           onClose()
         }}
       >
-        Delete…
+        {copy.backlog.backlogItemContextMenu.delete}
       </MenuItem>
     </ContextMenu>
   )

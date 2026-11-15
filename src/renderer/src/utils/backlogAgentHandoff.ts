@@ -4,6 +4,7 @@ import { basename } from './paths'
 import { toTitleName } from '../components/workspace/newWorkspace/helpers'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { backlogApi } from '../studio/backlog'
+import { copy } from '../../../shared/copy'
 
 // A readable item title from a `backlog/...` path, for the agent-side glyph
 // tooltip when the caller has no scanned title (the drag-drop path). Strips the
@@ -74,8 +75,8 @@ export async function recordBacklogAgentHandoff(input: {
     void publishDiagnostic({
       level: 'warning',
       source: 'terminal',
-      title: 'Could not link Backlog item to agent',
-      message: `Handed off to ${agent.name}, but the Backlog link wasn't saved.`,
+      title: copy.utils.backlogAgentHandoff.couldNotLinkBacklogItem,
+      message: copy.utils.backlogAgentHandoff.handedOffToButThe(agent.name),
       details: [input.relativePath, error instanceof Error ? error.message : String(error)].join('\n'),
       workspaceId: input.workspaceId,
       agentId: input.agentId,

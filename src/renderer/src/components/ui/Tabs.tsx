@@ -5,6 +5,7 @@ import { Tooltip } from './Tooltip'
 import { TAB_DROP_MARKER_INSET_PX, TAB_REORDER_THRESHOLD_PX, tabReorderSlot, tabReorderTargetIndex } from './tabReorder'
 import { FOCUS_RING_CLASS, FOCUS_RING_INSET_CLASS } from './tokens'
 import { SCROLL_FADE_PX, useFadingScroll } from './useFadingScroll'
+import { copy } from '../../../../shared/copy'
 
 export type TabItem<T extends string = string> = {
   id: T
@@ -404,7 +405,7 @@ export function Tabs<T extends string = string>({
             aria-label={
               item.ariaLabel ??
               (badged
-                ? (item.badgeLabel ?? `${item.label}: ${item.badgeCount} waiting`)
+                ? (item.badgeLabel ?? copy.ui.tabs.waiting(item.label, item.badgeCount))
                 : iconOnly
                   ? item.label
                   : undefined)
@@ -490,7 +491,7 @@ export function Tabs<T extends string = string>({
                   tone="accent"
                   count={item.badgeCount as number}
                   max={99}
-                  ariaLabel={item.badgeLabel ?? `${item.label}: ${item.badgeCount} waiting`}
+                  ariaLabel={item.badgeLabel ?? copy.ui.tabs.waiting(item.label, item.badgeCount)}
                 />
               </span>
             ) : null}

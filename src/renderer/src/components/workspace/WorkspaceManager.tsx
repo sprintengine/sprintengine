@@ -328,6 +328,7 @@ import { hostsApi } from '../../studio/hosts'
 import { worktreesApi } from '../../studio/worktrees'
 import { extensionsApi } from '../../studio/extensions'
 import { workspaceSyncApi } from '../../studio/workspaceSync'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -363,7 +364,7 @@ const SettingsModalSurface = React.lazy(() => import('../settings/SettingsModalS
 const CORE_SETTINGS_MODAL_SURFACE = {
   id: 'settings',
   moduleId: 'core',
-  label: 'Settings',
+  label: appCopy.workspace.workspaceManager.settings,
   Component: SettingsModalSurface,
 } as const
 // The usage dashboard (owner ruling 2026-10-10): the app's own like Settings,
@@ -373,7 +374,7 @@ const UsageDashboard = React.lazy(() => import('../usage/UsageDashboard'))
 const CORE_USAGE_MODAL_SURFACE = {
   id: 'usage',
   moduleId: 'core',
-  label: 'Usage',
+  label: appCopy.workspace.workspaceManager.usage,
   Component: UsageDashboard,
 } as const
 // The Diff popout — the pane's Diff tab floated in a workbench modal — was a
@@ -394,7 +395,7 @@ const ExtensionsHomeSurface = React.lazy(() => import('../extensions/ExtensionsH
 const CORE_EXTENSIONS_HOME_SURFACE = {
   id: EXTENSIONS_HOME_SURFACE_ID,
   moduleId: 'core',
-  label: 'Extensions',
+  label: appCopy.workspace.workspaceManager.extensions,
   railPlacement: 'inline',
   Component: ExtensionsHomeSurface,
 } as const
@@ -1090,7 +1091,12 @@ export default function WorkspaceManager() {
         (moduleId) => selectModuleEnabled(moduleEnablement, moduleId),
         (target) => openExtensionsSurface(target),
       )
-      return { id: door.id, moduleId: door.moduleId, label: 'Extensions', Component: door.Component }
+      return {
+        id: door.id,
+        moduleId: door.moduleId,
+        label: appCopy.workspace.workspaceManager.extensions,
+        Component: door.Component,
+      }
     }
     return resolveActiveModalSurface(
       activeModalSurface,
@@ -1504,8 +1510,8 @@ export default function WorkspaceManager() {
         publishDiagnosticSync({
           level: 'error',
           source: 'workspace',
-          title: 'New chat unavailable',
-          message: "The Solo layout template is missing, so a one-agent chat can't be created.",
+          title: appCopy.workspace.workspaceManager.newChatUnavailable,
+          message: appCopy.workspace.workspaceManager.theSoloLayoutTemplateIs,
         })
         return null
       }
@@ -2207,7 +2213,7 @@ export default function WorkspaceManager() {
       publishDiagnosticSync({
         level: 'error',
         source: 'auth',
-        title: 'Sign-in failed',
+        title: appCopy.workspace.workspaceManager.signInFailed,
         message,
       })
     })
@@ -2456,7 +2462,7 @@ export default function WorkspaceManager() {
         publishDiagnosticSync({
           level: 'error',
           source: 'workspace',
-          title: 'Move to new window failed',
+          title: appCopy.workspace.workspaceManager.moveToNewWindowFailed,
           message: result.message,
           workspaceId,
         })
@@ -2631,8 +2637,10 @@ export default function WorkspaceManager() {
       const name = workspaces.find((workspace) => workspace.id === workspaceId)?.name
       showToast({
         tone: 'error',
-        title: name ? `${name} stopped with an error` : 'A chat you started stopped with an error',
-        description: 'It is in the sidebar, with what went wrong.',
+        title: name
+          ? appCopy.workspace.workspaceManager.stoppedWithAnError(name)
+          : appCopy.workspace.workspaceManager.aChatYouStartedStopped,
+        description: appCopy.workspace.workspaceManager.itIsInTheSidebar,
       })
     }
   }, [
@@ -2940,8 +2948,8 @@ export default function WorkspaceManager() {
     if (confirm.kind !== 'conversation') {
       showToast({
         tone: 'warn',
-        title: `Only a chat runs on ${environment.label}`,
-        description: 'Terminals only run on this computer. Pick a chat engine instead.',
+        title: appCopy.workspace.workspaceManager.onlyAChatRunsOn(environment.label),
+        description: appCopy.workspace.workspaceManager.terminalsOnlyRunOnThis,
       })
       return Promise.resolve(null)
     }
@@ -3374,9 +3382,11 @@ export default function WorkspaceManager() {
         // when there was more to do, how much of it did not run.
         showToast({
           tone: 'warn',
-          title: `${card.title} ${ran ? "didn't finish" : "didn't run"}`,
+          title: `${card.title} ${ran ? appCopy.workspace.workspaceManager.didnTFinish : appCopy.workspace.workspaceManager.didnTRun}`,
           description:
-            ran && notRun > 0 ? `${said} ${notRun} later ${notRun === 1 ? 'step' : 'steps'} didn't run.` : said,
+            ran && notRun > 0
+              ? appCopy.workspace.workspaceManager.laterDidnTRun(said, notRun, notRun === 1 ? 'step' : 'steps')
+              : said,
         })
         return
       }
@@ -3488,8 +3498,11 @@ export default function WorkspaceManager() {
             .workspaces.find((workspace) => workspace.id === windowActiveWorkspaceId)
           showToast({
             tone: 'neutral',
-            title: `${card.title} started in ${landed?.name ?? 'its original project'}`,
-            description: 'You switched projects during setup, so it opened there.',
+            title: appCopy.workspace.workspaceManager.startedIn(
+              card.title,
+              landed?.name ?? appCopy.workspace.workspaceManager.itsOriginalProject,
+            ),
+            description: appCopy.workspace.workspaceManager.youSwitchedProjectsDuringSetup,
           })
         }
         return
@@ -3531,10 +3544,10 @@ export default function WorkspaceManager() {
       if (chat.send) {
         showToast({
           tone: 'neutral',
-          title: `${card.title} is ready`,
+          title: appCopy.workspace.workspaceManager.isReady(card.title),
           description: movedWorkspace
-            ? 'The prompt is waiting in New chat. Press Start to run it in the clone.'
-            : 'The prompt is waiting in New chat. Choose a folder and press Start.',
+            ? appCopy.workspace.workspaceManager.thePromptIsWaitingIn
+            : appCopy.workspace.workspaceManager.thePromptIsWaitingIn2,
         })
       }
     },
@@ -3741,7 +3754,7 @@ export default function WorkspaceManager() {
     } catch (caught) {
       showToast({
         tone: 'error',
-        title: 'Could not start without a project',
+        title: appCopy.workspace.workspaceManager.couldNotStartWithoutA,
         description: caught instanceof Error ? caught.message : String(caught),
       })
       return null
@@ -3775,7 +3788,7 @@ export default function WorkspaceManager() {
   const cloneNewChatProject = useCallback(async (input: RepositoryCloneInput): Promise<RepositoryCloneResult> => {
     const cloned = await gitApi.cloneRepository(input).catch((caught: unknown): RepositoryCloneResult => ({
       ok: false,
-      message: caught instanceof Error ? caught.message : 'Could not clone the repository.',
+      message: caught instanceof Error ? caught.message : appCopy.workspace.workspaceManager.couldNotCloneTheRepository,
     }))
     if (!cloned.ok) return cloned
     setNewChatPanelState((prev) =>
@@ -3790,8 +3803,8 @@ export default function WorkspaceManager() {
     )
     showToast({
       tone: 'good',
-      title: `Cloned ${newChatFolderLabel(cloned.path)}`,
-      description: `${cloned.path} — selected in New chat.`,
+      title: appCopy.workspace.workspaceManager.cloned(newChatFolderLabel(cloned.path)),
+      description: appCopy.workspace.workspaceManager.selectedInNewChat(cloned.path),
     })
     return { ok: true, path: cloned.path }
   }, [])
@@ -3902,10 +3915,15 @@ export default function WorkspaceManager() {
             })
             .catch((caught: unknown) => ({
               ok: false as const,
-              message: caught instanceof Error ? caught.message : 'The project could not be created.',
+              message:
+                caught instanceof Error ? caught.message : appCopy.workspace.workspaceManager.theProjectCouldNotBe,
             }))
           if (made.ok) return made.folder
-          showToast({ tone: 'error', title: `${id} was not created`, description: made.message })
+          showToast({
+            tone: 'error',
+            title: appCopy.workspace.workspaceManager.wasNotCreated(id),
+            description: made.message,
+          })
           return null
         },
         // The one New chat made while the person typed, when it can be taken.
@@ -3917,8 +3935,9 @@ export default function WorkspaceManager() {
           } catch (caught) {
             showToast({
               tone: 'error',
-              title: 'The chat was not started',
-              description: caught instanceof Error ? caught.message : 'Its folder could not be made.',
+              title: appCopy.workspace.workspaceManager.theChatWasNotStarted,
+              description:
+                caught instanceof Error ? caught.message : appCopy.workspace.workspaceManager.itsFolderCouldNotBe,
             })
             return null
           }
@@ -3977,12 +3996,12 @@ export default function WorkspaceManager() {
     showToast({
       id: NEW_CHAT_STARTED_TOAST_ID,
       tone: 'good',
-      title: 'Started in the background',
+      title: appCopy.workspace.workspaceManager.startedInTheBackground,
       ...(name ? { description: name } : {}),
       actions: [
         {
           id: 'open',
-          label: 'Open',
+          label: appCopy.workspace.workspaceManager.open,
           primary: true,
           run: () => {
             useToastStore.getState().dismissToast(NEW_CHAT_STARTED_TOAST_ID)
@@ -4019,8 +4038,8 @@ export default function WorkspaceManager() {
       if (!SOLO_CHAT_TEMPLATE) {
         showToast({
           tone: 'error',
-          title: `Couldn't open ${spec.title} from ${spec.machineName}`,
-          description: 'The Solo layout template is missing.',
+          title: appCopy.workspace.workspaceManager.couldnTOpenFrom(spec.title, spec.machineName),
+          description: appCopy.workspace.workspaceManager.theSoloLayoutTemplateIs2,
         })
         return null
       }
@@ -4108,7 +4127,7 @@ export default function WorkspaceManager() {
       if (!created.ok) {
         showToast({
           tone: 'error',
-          title: `Could not start a chat on ${launch.machineName}`,
+          title: appCopy.workspace.workspaceManager.couldNotStartAChat(launch.machineName),
           description: created.message,
         })
         return
@@ -4129,8 +4148,8 @@ export default function WorkspaceManager() {
       if (!SOLO_CHAT_TEMPLATE) {
         showToast({
           tone: 'error',
-          title: `Started on ${launch.machineName}, but no pane could open`,
-          description: `The Solo layout template is missing. Find "${created.title}" under Remote in the sidebar.`,
+          title: appCopy.workspace.workspaceManager.startedOnButNoPane(launch.machineName),
+          description: appCopy.workspace.workspaceManager.theSoloLayoutTemplateIs3(created.title),
         })
         closeNewChatPanel()
         return
@@ -4172,8 +4191,12 @@ export default function WorkspaceManager() {
       closeNewChatPanel()
       showToast({
         tone: 'good',
-        title: `Chat started on ${launch.machineName}`,
-        description: `${created.title} in ${launch.remoteWorkspaceName}${branch ? ` · ${branch}` : ''}`,
+        title: appCopy.workspace.workspaceManager.chatStartedOn(launch.machineName),
+        description: appCopy.workspace.workspaceManager.in(
+          created.title,
+          launch.remoteWorkspaceName,
+          branch ? ` · ${branch}` : '',
+        ),
       })
     },
     [addWorkspace, closeNewChatPanel, workspaceWindowId],
@@ -4351,7 +4374,10 @@ export default function WorkspaceManager() {
         if (!nextWorkspaceId) {
           showToast({
             tone: 'neutral',
-            title: waiting.length > 0 ? 'No other chats are waiting on you' : 'No chats are waiting on you',
+            title:
+              waiting.length > 0
+                ? appCopy.workspace.workspaceManager.noOtherChatsAreWaiting
+                : appCopy.workspace.workspaceManager.noChatsAreWaitingOn,
           })
           return true
         }
@@ -4832,7 +4858,7 @@ export default function WorkspaceManager() {
       publishDiagnosticSync({
         level: 'error',
         source: 'auth',
-        title: 'Sign-in did not open',
+        title: appCopy.workspace.workspaceManager.signInDidNotOpen,
         message,
         // Provider-agnostic on purpose: the message the adapter threw
         // already names the service and its URL, so repeating the provider here
@@ -4958,10 +4984,10 @@ export default function WorkspaceManager() {
     const confirmed = await dialog.confirm({
       title:
         items.length === 1
-          ? `Stop the session in ${group.label}?`
-          : `Stop all ${items.length} sessions in ${group.label}?`,
-      body: 'The listed terminals and agents will be stopped.',
-      confirmLabel: 'Stop all',
+          ? appCopy.workspace.workspaceManager.stopTheSessionIn(group.label)
+          : appCopy.workspace.workspaceManager.stopAllSessionsIn(items.length, group.label),
+      body: appCopy.workspace.workspaceManager.theListedTerminalsAndAgents,
+      confirmLabel: appCopy.workspace.workspaceManager.stopAll,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -5125,14 +5151,14 @@ export default function WorkspaceManager() {
           several: (places) =>
             showToast({
               tone: 'warn',
-              title: 'That link matches chats on more than one machine',
-              description: `Open the chat from the sidebar: ${places.join(', ')}.`,
+              title: appCopy.workspace.workspaceManager.thatLinkMatchesChatsOn,
+              description: appCopy.workspace.workspaceManager.openTheChatFromThe(places.join(', ')),
             }),
           notOnThisMachine: () =>
             showToast({
               tone: 'warn',
-              title: "That chat isn't on this machine",
-              description: 'It was closed here, or started on another computer.',
+              title: appCopy.workspace.workspaceManager.thatChatIsnTOn,
+              description: appCopy.workspace.workspaceManager.itWasClosedHereOr,
             }),
         })
       })
@@ -5219,7 +5245,7 @@ export default function WorkspaceManager() {
       contextRailSurfaceKey !== null ? (
         <ContextRailColumn
           surfaceKey={contextRailSurfaceKey}
-          ariaLabel={`${surfaceLabel} rail`}
+          ariaLabel={appCopy.workspace.workspaceManager.rail(surfaceLabel)}
           active={contextRailActive}
           railRef={setSurfaceRailEl}
         />
@@ -5516,7 +5542,9 @@ export default function WorkspaceManager() {
                           data-new-chat-door=""
                           className="z-10 isolate overflow-auto rounded-[var(--shell-card-radius)] bg-[color:var(--agent-surface)]"
                         >
-                          <React.Suspense fallback={<SuspenseFallback label="Loading new chat" />}>
+                          <React.Suspense
+                            fallback={<SuspenseFallback label={appCopy.workspace.workspaceManager.loadingNewChat} />}
+                          >
                             {/* New chat opens the SAME launch surface the tab
                         strip's "+" opens. One shell, two destinations — here it
                         creates a solo workspace in the picked project rather
@@ -5593,7 +5621,9 @@ export default function WorkspaceManager() {
                                 const words = scheduledAgentScheduleWords(agent.schedule)
                                 showToast({
                                   tone: 'good',
-                                  title: editingScheduledAgent ? 'Saved' : 'Scheduled',
+                                  title: editingScheduledAgent
+                                    ? appCopy.workspace.workspaceManager.saved
+                                    : appCopy.workspace.workspaceManager.scheduled,
                                   description: [
                                     words,
                                     agent.nextRunAt
@@ -5657,7 +5687,11 @@ export default function WorkspaceManager() {
                               surfaceLabel={surfaceLabel}
                               onClose={closeGlobalSurface}
                             >
-                              <React.Suspense fallback={<SuspenseFallback label="Loading surface" />}>
+                              <React.Suspense
+                                fallback={
+                                  <SuspenseFallback label={appCopy.workspace.workspaceManager.loadingSurface} />
+                                }
+                              >
                                 <activeGlobalSurfaceEntry.Component />
                               </React.Suspense>
                             </GlobalSurfaceErrorBoundary>
@@ -5726,7 +5760,9 @@ export default function WorkspaceManager() {
                             surfaceLabel={activeModalSurfaceEntry.label}
                             onClose={closeModalSurface}
                           >
-                            <React.Suspense fallback={<SuspenseFallback label="Loading surface" />}>
+                            <React.Suspense
+                              fallback={<SuspenseFallback label={appCopy.workspace.workspaceManager.loadingSurface} />}
+                            >
                               <activeModalSurfaceEntry.Component
                                 workspaceId={activeModalSurfaceWorkspaceId ?? undefined}
                               />
@@ -5865,5 +5901,10 @@ function folderName(folderPath: string): string {
 // hand-rolled `rounded bg-…` button — a sentence meant to be read, greyed out as
 // if it were a dead control, beside the one thing on screen you can actually do.
 function EmptyState({ onNew }: { onNew: () => void }) {
-  return <KitEmptyState title="No workspace open" action={<PrimaryButton onClick={onNew}>New chat</PrimaryButton>} />
+  return (
+    <KitEmptyState
+      title={appCopy.workspace.workspaceManager.noWorkspaceOpen}
+      action={<PrimaryButton onClick={onNew}>{appCopy.workspace.workspaceManager.newChat}</PrimaryButton>}
+    />
+  )
 }

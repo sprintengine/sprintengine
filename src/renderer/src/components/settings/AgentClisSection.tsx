@@ -42,6 +42,7 @@ import { isImeKey } from '../../utils/imeKey'
 import { agentSettingsApi } from '../../studio/agentSettings'
 import { windowChatServices } from '../panels/agentChat/windowChat'
 import type { ConversationSecretStatusResult } from '../../../../shared/electron-api'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The bare shell runtime is the machine's own `sh`, not a CLI this app
 // installs or updates. Asked `--version`, bash answers with its whole banner
@@ -89,13 +90,13 @@ export function AgentsMachineSwitcher({
   return (
     <SettingCard>
       <SettingsRow
-        label="Machine"
+        label={appCopy.settings.agentClisSection.machine}
         help="Whose agent CLIs are listed below."
         helpId={MACHINE_HELP_ID}
         stacked={machines.length > 2}
       >
         <SegmentedControl<ExecutionHostId>
-          ariaLabel="Machine"
+          ariaLabel={appCopy.settings.agentClisSection.machine}
           ariaDescribedBy={MACHINE_HELP_ID}
           items={machines.map((machine) => {
             const badge = badges?.[machine.id]
@@ -374,27 +375,27 @@ export function AgentClisSection({
       ) : null}
 
       {pluginCatalogStatus === 'loading' && installedPluginRows.length === 0 ? (
-        <LoadingOverlay label="Loading agent CLIs…" className="py-8" />
+        <LoadingOverlay label={appCopy.settings.agentClisSection.loadingAgentCLIs} className="py-8" />
       ) : pluginCatalogStatus === 'error' ? (
         // The failure carries its own recovery, per the notice contract —
         // a Retry parked below the message is a dead end with a button.
         <InlineNotice
           tone="error"
-          title="The plugin registry could not be loaded."
+          title={appCopy.settings.agentClisSection.thePluginRegistryCouldNot}
           hint={pluginCatalogError ?? undefined}
           action={
             <OutlineButton size="md" onClick={() => void refreshPluginCatalog()}>
-              Retry
+              {appCopy.settings.agentClisSection.retry}
             </OutlineButton>
           }
         />
       ) : installedPluginRows.length === 0 ? (
         <EmptyState
           density="list"
-          title="No agent plugins are installed."
+          title={appCopy.settings.agentClisSection.noAgentPluginsAreInstalled}
           action={
             <OutlineButton size="md" onClick={() => void refreshPluginCatalog()}>
-              Refresh
+              {appCopy.settings.agentClisSection.refresh}
             </OutlineButton>
           }
         />
@@ -404,8 +405,17 @@ export function AgentClisSection({
         // rows full-bleed inside it — the shape the Remote tab's machines
         // drew first.
         <section className="space-y-2">
-          <SettingsSectionTitle count={installedPluginRows.length}>Agent CLIs</SettingsSectionTitle>
-          <SettingCard as="ul" ariaLabel={showMachine ? `Agent CLIs on ${machine.label}` : 'Agent CLIs'}>
+          <SettingsSectionTitle count={installedPluginRows.length}>
+            {appCopy.settings.agentClisSection.agentCLIs}
+          </SettingsSectionTitle>
+          <SettingCard
+            as="ul"
+            ariaLabel={
+              showMachine
+                ? appCopy.settings.agentClisSection.agentCLIsOn(machine.label)
+                : appCopy.settings.agentClisSection.agentCLIs
+            }
+          >
             {rows.map(({ plugin, state }) => {
               const localCommand = cliRuntimeForPlugin(plugin.id, cliRuntimes).command
               const command = wsl ? (ownSettings.cliCommands[plugin.id] ?? '') : localCommand
@@ -487,7 +497,7 @@ export function AgentClisSection({
                       // Installs down the bottom of the list pulled the eye to
                       // exactly the rows the list recedes (owner, 2026-09-24).
                       <OutlineButton size="xs" onClick={() => openRow(plugin.id, true)}>
-                        Install
+                        {appCopy.settings.agentClisSection.install}
                       </OutlineButton>
                     ) : behind ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -495,7 +505,10 @@ export function AgentClisSection({
                           <Badge
                             tone="accent"
                             count={1}
-                            ariaLabel={`${plugin.displayName} — update available: ${advisory.latestVersion}`}
+                            ariaLabel={appCopy.settings.agentClisSection.updateAvailable(
+                              plugin.displayName,
+                              advisory.latestVersion,
+                            )}
                           />
                         ) : null}
                         {/* Outline too (2026-11-04): beside the count, an accent
@@ -518,7 +531,7 @@ export function AgentClisSection({
                           }}
                         >
                           {updateRun?.running ? <Spinner className="icon-sm" /> : null}
-                          Update
+                          {appCopy.settings.agentClisSection.update}
                         </OutlineButton>
                       </span>
                     ) : null
@@ -532,7 +545,7 @@ export function AgentClisSection({
                   {updateRun?.notice ? (
                     <InlineNotice
                       tone={updateRun.notice.tone}
-                      title={`${plugin.displayName} did not update.`}
+                      title={appCopy.settings.agentClisSection.didNotUpdate(plugin.displayName)}
                       hint={updateRun.notice.text}
                     >
                       {advisory?.updateCommand ? (
@@ -546,7 +559,10 @@ export function AgentClisSection({
                     uses: live while it runs, and kept after a failure. A clean
                     update needs no log; its version line already moved. */}
                   {updateRun && (updateRun.running || updateRun.notice) ? (
-                    <CliUpdateLog label={`${plugin.displayName} update output`} log={updateRun.log} />
+                    <CliUpdateLog
+                      label={appCopy.settings.agentClisSection.updateOutput(plugin.displayName)}
+                      log={updateRun.log}
+                    />
                   ) : null}
                   <CliInstallControl
                     cli={plugin.id}
@@ -604,11 +620,13 @@ export function AgentClisSection({
                       />
                     ) : null}
                     <SettingsRow
-                      label="Command override"
+                      label={appCopy.settings.agentClisSection.commandOverride}
                       help={
                         <>
-                          Runs <span className="font-mono text-[color:var(--text-default)]">{plugin.binary}</span>
-                          {wsl ? ` in ${machine.label}` : ''} when blank.
+                          {appCopy.settings.agentClisSection.runs}
+                          <span className="font-mono text-[color:var(--text-default)]">{plugin.binary}</span>
+                          {wsl ? ` in ${machine.label}` : ''}
+                          {appCopy.settings.agentClisSection.whenBlank}
                         </>
                       }
                       htmlFor={commandFieldId}
@@ -619,8 +637,8 @@ export function AgentClisSection({
                         // identical "Command override" for every CLI.
                         aria-label={
                           wsl
-                            ? `${plugin.displayName} command override on ${machine.label}`
-                            : `${plugin.displayName} command override`
+                            ? appCopy.settings.agentClisSection.commandOverrideOn(plugin.displayName, machine.label)
+                            : appCopy.settings.agentClisSection.commandOverride2(plugin.displayName)
                         }
                         value={command}
                         onChange={(event) => {
@@ -733,7 +751,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
             <Input
               readOnly
               value="••••••••••••"
-              aria-label={`${displayName} API key is saved`}
+              aria-label={appCopy.settings.agentClisSection.aPIKeyIsSaved(displayName)}
               size="md"
               variant="well"
               fullWidth={false}
@@ -748,7 +766,8 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
         ) : (
           <div className="flex items-center gap-2">
             <label htmlFor={inputId} className="sr-only">
-              {displayName} API key
+              {displayName}
+              {appCopy.settings.agentClisSection.aPIKey}
             </label>
             <Input
               id={inputId}
@@ -762,7 +781,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
                   void save()
                 }
               }}
-              placeholder="Paste API key"
+              placeholder={appCopy.settings.agentClisSection.pasteAPIKey}
               autoComplete="off"
               disabled={busy}
               size="md"
@@ -777,10 +796,12 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
         )}
         {configured && source === 'environment' ? (
           <p className="text-meta leading-5 text-[color:var(--text-subtle)]">
-            Set by an environment variable. Change it there.
+            {appCopy.settings.agentClisSection.setByAnEnvironmentVariable}
           </p>
         ) : configured && persistence === 'session' ? (
-          <p className="text-meta leading-5 text-[color:var(--tone-warn)]">Kept until the app quits.</p>
+          <p className="text-meta leading-5 text-[color:var(--tone-warn)]">
+            {appCopy.settings.agentClisSection.keptUntilTheAppQuits}
+          </p>
         ) : null}
         <div aria-live="polite" className="text-meta leading-5 text-[color:var(--text-muted)] empty:hidden">
           {message}

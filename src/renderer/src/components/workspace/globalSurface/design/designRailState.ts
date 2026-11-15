@@ -3,6 +3,7 @@ import type {
   DesignSystemBundleIdentity,
 } from '../../../../../../shared/design-system/bundle-view'
 import { designSystemRegistrationId } from '../../../../../../shared/design-system/library'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // Pure rail model for the Design door (item 2002). Grouping, row identity, and
 // search matching live here so the surface stays composition and the rules are
@@ -182,9 +183,9 @@ export const DESIGN_RAIL_STATUS_ITEMS: ReadonlyArray<{
   value: DesignRailStatusFilter
   label: string
 }> = [
-  { value: 'all', label: 'All' },
-  { value: 'readable', label: 'Readable' },
-  { value: 'broken', label: 'Needs attention' },
+  { value: 'all', label: appCopy.workspace.globalSurface.design.designRailState.all },
+  { value: 'readable', label: appCopy.workspace.globalSurface.design.designRailState.readable },
+  { value: 'broken', label: appCopy.workspace.globalSurface.design.designRailState.needsAttention },
 ]
 
 function designRowMatchesStatus(entry: DesignRailEntry, status: DesignRailStatusFilter): boolean {

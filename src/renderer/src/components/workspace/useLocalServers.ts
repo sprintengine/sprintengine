@@ -8,6 +8,7 @@ import {
   type StudioLocalServerOwner,
 } from '../../../../../packages/studio-protocol/src/public'
 import { watchWindowStudio, windowStudioClient, windowStudioState } from '../../studio/windowStudioClient'
+import { copy } from '../../../../shared/copy'
 
 // The local servers a conversation's agents started — a dev server, a preview,
 // anything an agent linked with `local_server.link` — for the two places a
@@ -187,7 +188,7 @@ async function act(
   failed: string,
 ): Promise<LocalServerActionResult> {
   const client = await localServersClient()
-  if (!client) return { ok: false, message: `The server ${failed}: this Studio can't manage local servers.` }
+  if (!client) return { ok: false, message: copy.workspace.useLocalServers.theServerThisStudioCan(failed) }
   try {
     await client.request(method, { conversation, id })
     // The new state is not in the answer: it arrives as `localServers.changed`.
@@ -195,7 +196,7 @@ async function act(
   } catch (error) {
     return {
       ok: false,
-      message: `The server ${failed}: ${error instanceof Error ? error.message : String(error)}`,
+      message: copy.workspace.useLocalServers.theServer(failed, error instanceof Error ? error.message : String(error)),
     }
   }
 }

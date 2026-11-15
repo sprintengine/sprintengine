@@ -45,6 +45,7 @@ import {
   type PendingSnoozes,
 } from "./snoozeLogic";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { copy } from "../../../../src/shared/copy";
 
 /** One paired desktop whose projects this phone may read. */
 export interface ChatDesktop {
@@ -500,10 +501,10 @@ export function ChatsProvider({
         void refresh();
         const title = chatRowTitle(row).title;
         toastRef.current.show({
-          title: `Settled “${title}”.`,
+          title: copy.phone.conversations.chatsContext.settled(title),
           autoDismissMs: UNDO_TOAST_MS,
           action: {
-            label: "Undo",
+            label: copy.phone.conversations.chatsContext.undo,
             onPress: () => {
               void (async () => {
                 const undone = await api.settle(row.thread.workspaceId, false).catch(() => null);
@@ -513,8 +514,8 @@ export function ChatsProvider({
                   return;
                 }
                 toastRef.current.show({
-                  title: `Couldn't bring back “${title}”.`,
-                  message: undone?.message ?? "The desktop did not answer.",
+                  title: copy.phone.conversations.chatsContext.couldnTBringBack(title),
+                  message: undone?.message ?? copy.phone.conversations.chatsContext.theDesktopDidNotAnswer,
                   tone: "error",
                 });
               })();
@@ -525,8 +526,8 @@ export function ChatsProvider({
       }
       setSettles((current) => failSettle(current, key));
       toastRef.current.show({
-        title: `Couldn't settle “${chatRowTitle(row).title}”.`,
-        message: result?.message ?? "The desktop did not answer.",
+        title: copy.phone.conversations.chatsContext.couldnTSettle(chatRowTitle(row).title),
+        message: result?.message ?? copy.phone.conversations.chatsContext.theDesktopDidNotAnswer,
         tone: "error",
       });
       return false;
@@ -551,11 +552,11 @@ export function ChatsProvider({
         if (answered !== null && !undoing) {
           const title = chatRowTitle(row).title;
           toastRef.current.show({
-            title: `Snoozed “${title}”.`,
-            message: `It wakes ${snoozeWakeWords(answered, Date.now())}.`,
+            title: copy.phone.conversations.chatsContext.snoozed(title),
+            message: copy.phone.conversations.chatsContext.itWakes(snoozeWakeWords(answered, Date.now())),
             autoDismissMs: UNDO_TOAST_MS,
             action: {
-              label: "Undo",
+              label: copy.phone.conversations.chatsContext.undo,
               onPress: () => void snoozeRef.current(row, before !== null && before > Date.now() ? before : null, true),
             },
           });
@@ -566,9 +567,9 @@ export function ChatsProvider({
       toastRef.current.show({
         title:
           until === null
-            ? `Couldn't wake “${chatRowTitle(row).title}”.`
-            : `Couldn't snooze “${chatRowTitle(row).title}”.`,
-        message: result?.message ?? "The desktop did not answer.",
+            ? copy.phone.conversations.chatsContext.couldnTWake(chatRowTitle(row).title)
+            : copy.phone.conversations.chatsContext.couldnTSnooze(chatRowTitle(row).title),
+        message: result?.message ?? copy.phone.conversations.chatsContext.theDesktopDidNotAnswer,
         tone: "error",
       });
       return false;
@@ -610,8 +611,8 @@ export function ChatsProvider({
       }
       if (heldUnread.current.get(key) === openedKeys) heldUnread.current.delete(key);
       toastRef.current.show({
-        title: `Couldn't mark “${chatRowTitle(row).title}” unread.`,
-        message: result?.message ?? "The desktop did not answer.",
+        title: copy.phone.conversations.chatsContext.couldnTMarkUnread(chatRowTitle(row).title),
+        message: result?.message ?? copy.phone.conversations.chatsContext.theDesktopDidNotAnswer,
         tone: "error",
       });
       return false;

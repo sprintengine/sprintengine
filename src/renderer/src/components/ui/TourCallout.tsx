@@ -6,6 +6,7 @@ import { InlineNotice } from './InlineNotice'
 import { Input } from './Input'
 import { MicroChip } from './DefaultChip'
 import { WorkingEdge } from './WorkingEdge'
+import { copy } from '../../../../shared/copy'
 
 // One step of a diff tour, said beside the code it is about
 // (design-system/components/tour-callout). In the diff it lives in a Monaco
@@ -123,7 +124,7 @@ export function TourCallout({
       <section
         className="tour-callout relative"
         data-kind={kind}
-        aria-label={`Step ${index + 1} of ${count}: ${title}`}
+        aria-label={copy.ui.tourCallout.stepOf(index + 1, count, title)}
       >
         <header className="flex items-center gap-2">
           <span className="shrink-0 font-mono text-meta tabular-nums text-[color:var(--text-subtle)]">
@@ -135,10 +136,10 @@ export function TourCallout({
           {kindLabel ? <MicroChip>{kindLabel}</MicroChip> : null}
           {onPrev || onNext ? (
             <span className="flex shrink-0 items-center">
-              <IconButton aria-label="Previous step" size="xs" disabled={!onPrev} onClick={onPrev}>
+              <IconButton aria-label={copy.ui.tourCallout.previousStep} size="xs" disabled={!onPrev} onClick={onPrev}>
                 <PreviousDifferenceGlyph className="icon-xs" />
               </IconButton>
-              <IconButton aria-label="Next step" size="xs" disabled={!onNext} onClick={onNext}>
+              <IconButton aria-label={copy.ui.tourCallout.nextStep} size="xs" disabled={!onNext} onClick={onNext}>
                 <NextDifferenceGlyph className="icon-xs" />
               </IconButton>
             </span>
@@ -151,7 +152,7 @@ export function TourCallout({
             tone="warn"
             className="mt-2"
             title={
-              status === 'moved' ? 'This code changed after the tour was written' : 'This file is no longer in the diff'
+              status === 'moved' ? copy.ui.tourCallout.thisCodeChangedAfterThe : copy.ui.tourCallout.thisFileIsNoLonger
             }
           >
             {excerpt.length > 0 ? <TourExcerpt lines={excerpt} /> : null}
@@ -164,19 +165,19 @@ export function TourCallout({
           {ask.kind === 'author-gone' ? (
             <>
               <span className="min-w-0 flex-1 text-meta text-[color:var(--text-muted)]">
-                The agent that wrote this tour has exited.
+                {copy.ui.tourCallout.theAgentThatWroteThis}
               </span>
               <OutlineButton size="sm" onClick={() => onAskNewAgent(question.trim() || lastQuestion)}>
-                Ask a new agent
+                {copy.ui.tourCallout.askANewAgent}
               </OutlineButton>
             </>
           ) : ask.kind === 'queued' ? (
             <>
               <span className="min-w-0 flex-1 text-meta text-[color:var(--text-muted)]" role="status">
-                Queued · sends when the agent is ready
+                {copy.ui.tourCallout.queuedSendsWhenTheAgent}
               </span>
               <GhostButton size="sm" onClick={() => onCancelQueued(ask.askId)}>
-                Cancel
+                {copy.ui.tourCallout.cancel}
               </GhostButton>
             </>
           ) : (
@@ -190,8 +191,8 @@ export function TourCallout({
               <Input
                 size="sm"
                 value={question}
-                placeholder={answering ? 'Ask a follow-up…' : 'Ask about this…'}
-                aria-label={`Ask about step ${index + 1}`}
+                placeholder={answering ? copy.ui.tourCallout.askAFollowUp : copy.ui.tourCallout.askAboutThis}
+                aria-label={copy.ui.tourCallout.askAboutStep(index + 1)}
                 onChange={(event) => setQuestion(event.target.value)}
                 onFocus={() => {
                   focusRef.current = true
@@ -209,7 +210,7 @@ export function TourCallout({
                 }}
               />
               <OutlineButton size="sm" type="submit" disabled={!question.trim()}>
-                Ask
+                {copy.ui.tourCallout.ask}
               </OutlineButton>
             </form>
           )}
@@ -219,13 +220,20 @@ export function TourCallout({
             {ask.kind === 'failed' ? (
               ask.message
             ) : ask.kind === 'answering' ? (
-              <>Asked — {ask.agentName ?? 'the agent'} is answering in its terminal.</>
+              <>
+                {copy.ui.tourCallout.asked}
+                {ask.agentName ?? 'the agent'}
+                {copy.ui.tourCallout.isAnsweringInItsTerminal}
+              </>
             ) : (
-              <>{ask.agentName ?? 'The agent'} answered in its terminal.</>
+              <>
+                {ask.agentName ?? 'The agent'}
+                {copy.ui.tourCallout.answeredInItsTerminal}
+              </>
             )}
           </p>
         ) : null}
-        {answering ? <WorkingEdge label="The agent is answering" /> : null}
+        {answering ? <WorkingEdge label={copy.ui.tourCallout.theAgentIsAnswering} /> : null}
       </section>
     </div>
   )

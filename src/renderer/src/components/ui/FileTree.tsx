@@ -25,6 +25,7 @@ import {
   type FileTreeRowShape,
 } from './fileTreeExtent'
 import { folderRoleInk, type FolderRole } from '../../utils/folderRoles'
+import { copy } from '../../../../shared/copy'
 
 // File tree — the rows of a folder tree, at the 24px hit-target floor.
 //
@@ -112,7 +113,7 @@ export function FileTreeChevron({
       // 32px. The sibling spacer on file rows is still w-3, so the columns line
       // up.
       className="-mx-1.5 -my-1 shrink-0"
-      aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
+      aria-label={expanded ? copy.ui.fileTree.collapseFolder : copy.ui.fileTree.expandFolder}
     >
       <svg
         viewBox="0 0 12 12"
@@ -297,7 +298,7 @@ export function FileTreeRow({
               // The chevron's 12px advance, so the folder mark and the name hold
               // still while the spinner stands in and when the chevron returns.
               <span className="inline-flex w-3 shrink-0 items-center justify-center">
-                <Spinner size={12} label="Loading folder" />
+                <Spinner size={12} label={copy.ui.fileTree.loadingFolder} />
               </span>
             ) : (
               <FileTreeChevron
@@ -465,7 +466,7 @@ export function FileTreePinnedRow({
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'children'>): JSX.Element {
   const { head, tail } = splitDirectoryForDisplay(directory)
   return (
-    <div role="group" aria-label={`${fileName}, ${label.toLowerCase()}, in ${directory}`}>
+    <div role="group" aria-label={copy.ui.fileTree.in(fileName, label.toLowerCase(), directory)}>
       <p aria-hidden="true" className="px-2 pb-0.5 pt-1 text-micro font-medium text-[color:var(--text-muted)]">
         {label}
       </p>

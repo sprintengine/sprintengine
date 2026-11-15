@@ -4,6 +4,7 @@ import { isWindowVisible } from '../../../../utils/windowActivity'
 import { EMPTY_TAILNET_SHARE_STATUS, type TailnetShareStatus } from '../../../../../../shared/tailnet-share'
 import { tailnetApi } from '../../../../studio/tailnet'
 import { clientSupports } from '../../../../clientCapabilities'
+import { copy } from '../../../../../../shared/copy'
 
 // Which of this machine's dev servers are published on the tailnet.
 //
@@ -77,7 +78,11 @@ export function useTailnetShares(active: boolean, pollMs: number): TailnetShares
         ? { ok: true, message: '', url: result.share?.url ?? null }
         : { ok: false, message: result.message, url: null }
     } catch {
-      return { ok: false, message: 'Studio could not reach Tailscale on this machine.', url: null }
+      return {
+        ok: false,
+        message: copy.workspace.pane.browser.useTailnetShares.studioCouldNotReachTailscale,
+        url: null,
+      }
     } finally {
       setBusyPort(null)
     }
@@ -94,7 +99,7 @@ export function useTailnetShares(active: boolean, pollMs: number): TailnetShares
         setStatus(result.status)
         return result.ok ? { ok: true, message: '' } : { ok: false, message: result.message }
       } catch {
-        return { ok: false, message: 'Studio could not reach Tailscale on this machine.' }
+        return { ok: false, message: copy.workspace.pane.browser.useTailnetShares.studioCouldNotReachTailscale }
       } finally {
         setBusyPort(null)
       }

@@ -19,6 +19,7 @@ import { Toggle } from "../../components/Toggle";
 import { themePreferenceLabel, useThemePreference, useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../theme/tokens";
 import { CHAT_GROUPING_LABEL, type ChatGrouping } from "../conversations/chatGrouping";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 interface SettingsScreenProps {
   sessions: MobileSession[];
@@ -81,69 +82,69 @@ export function SettingsScreen({
   const { preference, resolvedTheme } = useThemePreference();
 
   return (
-    <ScreenFrame backLabel="Back" onBack={onBack} title="Settings">
+    <ScreenFrame backLabel={appCopy.phone.settings.settingsScreen.back} onBack={onBack} title={appCopy.phone.settings.settingsScreen.settings}>
       <ScrollView contentContainerStyle={contentStyle} refreshControl={refreshControl}>
-        <SettingsGroupLabel>Desktops</SettingsGroupLabel>
+        <SettingsGroupLabel>{appCopy.phone.settings.settingsScreen.desktops}</SettingsGroupLabel>
         <SettingsRow
-          accessibilityHint="Endpoints, this phone's id, and pairing."
+          accessibilityHint={appCopy.phone.settings.settingsScreen.endpointsThisPhoneSId}
           chevron
           icon={<RemoteMachineGlyph size={iconSize.md} />}
           onPress={onOpenDesktops}
-          title="Paired desktops"
+          title={appCopy.phone.settings.settingsScreen.pairedDesktops}
           value={String(sessions.length)}
         />
         {onOpenWeb ? (
           <SettingsRow
-            accessibilityHint="Dev servers a desktop publishes on your tailnet."
+            accessibilityHint={appCopy.phone.settings.settingsScreen.devServersADesktopPublishes}
             chevron
             icon={<RemoteMachineGlyph size={iconSize.md} />}
             onPress={onOpenWeb}
-            title="Web"
+            title={appCopy.phone.settings.settingsScreen.web}
             value={String(webTargetCount ?? 0)}
           />
         ) : null}
         {onOpenScheduled ? (
           <SettingsRow
-            accessibilityHint="Agents desktops run on a schedule"
+            accessibilityHint={appCopy.phone.settings.settingsScreen.agentsDesktopsRunOnA}
             chevron
             icon={<RemoteMachineGlyph size={iconSize.md} />}
             onPress={onOpenScheduled}
-            title="Scheduled agents"
+            title={appCopy.phone.settings.settingsScreen.scheduledAgents}
           />
         ) : null}
         {onOpenCanvases ? (
           <SettingsRow
-            accessibilityHint="Boards agents drew on desktop Canvases"
+            accessibilityHint={appCopy.phone.settings.settingsScreen.boardsAgentsDrewOnDesktop}
             chevron
             icon={<CanvasGlyph size={iconSize.md} />}
             onPress={onOpenCanvases}
-            title="Canvases"
+            title={appCopy.phone.settings.settingsScreen.canvases}
           />
         ) : null}
 
-        <SettingsGroupLabel>General</SettingsGroupLabel>
+        <SettingsGroupLabel>{appCopy.phone.settings.settingsScreen.general}</SettingsGroupLabel>
         <SettingsRow
           chevron
           icon={<AppearanceIcon size={iconSize.md} />}
           onPress={onOpenAppearance}
-          title="Appearance"
+          title={appCopy.phone.settings.settingsScreen.appearance}
           value={preference === "system" ? "System" : themePreferenceLabel[resolvedTheme.name]}
         />
         <SettingsRow
-          accessibilityHint="Newest first, by project, or by date."
-          accessibilityLabel={`Group chats: ${CHAT_GROUPING_LABEL[chatGrouping]}`}
+          accessibilityHint={appCopy.phone.settings.settingsScreen.newestFirstByProjectOr}
+          accessibilityLabel={appCopy.phone.settings.settingsScreen.groupChats(CHAT_GROUPING_LABEL[chatGrouping])}
           chevron
           icon={<FolderGlyph size={iconSize.md} />}
           onPress={onOpenChatGrouping}
-          title="Group chats"
+          title={appCopy.phone.settings.settingsScreen.groupChats2}
           value={CHAT_GROUPING_LABEL[chatGrouping]}
         />
         <SettingsRow
           control={
-            <Toggle label="Steer while an agent works" onValueChange={onSteerFollowUpsChange} value={steerFollowUps} />
+            <Toggle label={appCopy.phone.settings.settingsScreen.steerWhileAnAgentWorks} onValueChange={onSteerFollowUpsChange} value={steerFollowUps} />
           }
           icon={<BoltIcon size={iconSize.md} />}
-          title="Steer while an agent works"
+          title={appCopy.phone.settings.settingsScreen.steerWhileAnAgentWorks}
         />
         <SettingsNote>
           {steerFollowUps

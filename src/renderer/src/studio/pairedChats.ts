@@ -22,6 +22,7 @@ import type {
   MeshVisitConversationResult,
 } from '../../../shared/tailnet-mesh'
 import { askEnvironment, environmentCommandId, pairedTarget, type PairedMachine } from './environmentStudio'
+import { copy } from '../../../shared/copy'
 
 // A paired machine's chats' records, asked by this window of that machine's
 // Studio itself (`chat-lifecycle`, `approval-rules`, `pull-request-watch`):
@@ -33,7 +34,7 @@ import { askEnvironment, environmentCommandId, pairedTarget, type PairedMachine 
 
 const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
   code: 'lifecycle_unsupported',
-  message: `${machineName} can’t ${doing} from here yet. Update Studio there.`,
+  message: copy.studio.pairedChats.canTFromHereYet(machineName, doing),
 })
 
 /**
@@ -48,7 +49,7 @@ export async function listPairedChats(machine: PairedMachine): Promise<MeshConve
     STUDIO_CONVERSATIONS_CAPABILITY,
     (machineName) => ({
       code: 'conversations_unsupported',
-      message: `${machineName} can’t list its chats here yet. Update Studio there.`,
+      message: copy.studio.pairedChats.canTListItsChats(machineName),
     }),
     async (client) => ({ listed: await client.request('conversation.list', {}), grant: client.welcome?.grant ?? null }),
   )
@@ -67,7 +68,7 @@ export async function settlePairedChat(
   workspaceId: string,
   settled = true,
 ): Promise<MeshSettleConversationResult> {
-  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
+  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
@@ -90,7 +91,7 @@ export async function visitPairedChat(
   machine: PairedMachine,
   workspaceId: string,
 ): Promise<MeshVisitConversationResult> {
-  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
+  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
@@ -111,7 +112,7 @@ export async function changePairedChat(
   workspaceId: string,
   change: MeshConversationChange,
 ): Promise<MeshChangeConversationResult> {
-  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
+  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   if (change.kind === 'unwatch-pull-request') {
     const { agentId, url } = change
     const answer = await askEnvironment(
@@ -119,20 +120,20 @@ export async function changePairedChat(
       STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
       (machineName) => ({
         code: 'row_menu_unsupported',
-        message: `${machineName} can’t stop watching pull requests from here yet. Update Studio there.`,
+        message: copy.studio.pairedChats.canTStopWatchingPull(machineName),
       }),
       (client) => client.rpc['pullRequests.unwatch']({ conversation: { workspaceId, agentId }, url }),
     )
     return answer.ok ? { ok: true, workspaceId } : answer
   }
   const call = chatChangeOf(change)
-  if (!call) return { ok: false, code: 'invalid_arguments', message: 'That is not a change a chat takes.' }
+  if (!call) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.thatIsNotAChange }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'row_menu_unsupported',
-      message: `${machineName} can’t ${call.ask} from here yet. Update Studio there.`,
+      message: copy.studio.pairedChats.canTFromHereYet2(machineName, call.ask),
     }),
     (client) => call.send(client, { workspaceId, commandId: environmentCommandId() }),
   )
@@ -141,7 +142,7 @@ export async function changePairedChat(
 
 const deleteUnsupported = (machineName: string) => ({
   code: 'delete_unsupported',
-  message: `${machineName} can’t delete its chats from here yet. Update Studio there.`,
+  message: copy.studio.pairedChats.canTDeleteItsChats(machineName),
 })
 
 /** What deleting a settled chat there would do, as that machine plans it. */
@@ -149,7 +150,7 @@ export async function pairedChatDeletePlan(
   machine: PairedMachine,
   workspaceId: string,
 ): Promise<MeshConversationDeletePlanResult> {
-  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
+  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRemoteChat }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
@@ -166,7 +167,10 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
     return {
       ok: false,
       code: 'invalid_arguments',
-      message: `Search for ${STUDIO_CHAT_SEARCH_MIN_CHARS} to ${STUDIO_CHAT_SEARCH_MAX_CHARS} characters.`,
+      message: copy.studio.pairedChats.searchForToCharacters(
+        STUDIO_CHAT_SEARCH_MIN_CHARS,
+        STUDIO_CHAT_SEARCH_MAX_CHARS,
+      ),
     }
   }
   const answer = await askEnvironment(
@@ -174,7 +178,7 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'search_unsupported',
-      message: `${machineName} can’t search its chats from here yet. Update Studio there.`,
+      message: copy.studio.pairedChats.canTSearchItsChats(machineName),
     }),
     (client) => client.rpc['conversation.searchChats']({ query: asked }),
   )
@@ -183,7 +187,7 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
 
 const rulesUnsupported = (machineName: string) => ({
   code: 'approval_rules_unsupported',
-  message: `${machineName} doesn’t share its chat permissions yet. Update Studio there.`,
+  message: copy.studio.pairedChats.doesnTShareItsChat(machineName),
 })
 
 /** The "always allow" rules that machine's chats run with, for Settings. */
@@ -204,7 +208,7 @@ export async function revokePairedApprovalRule(
   machine: PairedMachine,
   ruleId: string,
 ): Promise<MeshRevokeApprovalRuleResult> {
-  if (!ruleId) return { ok: false, code: 'invalid_arguments', message: 'Name the rule.' }
+  if (!ruleId) return { ok: false, code: 'invalid_arguments', message: copy.studio.pairedChats.nameTheRule }
   const answer = await askEnvironment(
     pairedTarget(machine),
     STUDIO_APPROVAL_RULES_CAPABILITY,
@@ -371,7 +375,8 @@ export function searchAnswerOf(value: Record<string, unknown>): MeshConversation
     return [
       {
         workspaceId: chat.workspaceId,
-        chatTitle: typeof chat.chatTitle === 'string' && chat.chatTitle.trim() ? chat.chatTitle : 'Chat',
+        chatTitle:
+          typeof chat.chatTitle === 'string' && chat.chatTitle.trim() ? chat.chatTitle : copy.studio.pairedChats.chat,
         hits,
         count: Math.max(count, hits.length),
       },

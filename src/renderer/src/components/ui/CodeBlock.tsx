@@ -18,6 +18,7 @@ import {
   type CodeLine,
 } from '../../lib/highlight/codeHighlight'
 import '../../../../../design-system/components/code-block/component.css'
+import { copy as appCopy } from '../../../../shared/copy'
 
 export type CodeBlockProps = {
   code: string
@@ -197,7 +198,11 @@ export function CodeBlock(props: CodeBlockProps) {
   return (
     <section
       className={`ds-code-block${wrap ? ' ds-code-block--wrap' : ''}`}
-      aria-label={title.filename ? `${title.languageName} code, ${title.filename}` : `${title.languageName} code`}
+      aria-label={
+        title.filename
+          ? appCopy.ui.codeBlock.code(title.languageName, title.filename)
+          : appCopy.ui.codeBlock.code2(title.languageName)
+      }
       data-code-block=""
       data-code-language={normalizeCodeLanguage(title.highlightLanguage) ?? title.languageTag}
     >
@@ -212,11 +217,16 @@ export function CodeBlock(props: CodeBlockProps) {
             <span className="ds-code-block__language">{title.label}</span>
           )}
         </span>
-        <div className="ds-code-block__actions" role="group" aria-label="Code actions">
+        <div className="ds-code-block__actions" role="group" aria-label={appCopy.ui.codeBlock.codeActions}>
           {props.actions}
           {command && onPaste ? (
-            <Tooltip content="Paste into terminal — it runs when you press Enter">
-              <IconButton size="xs" tone="subtle" aria-label="Paste into terminal" onClick={() => onPaste(command)}>
+            <Tooltip content={appCopy.ui.codeBlock.pasteIntoTerminalItRuns}>
+              <IconButton
+                size="xs"
+                tone="subtle"
+                aria-label={appCopy.ui.codeBlock.pasteIntoTerminal}
+                onClick={() => onPaste(command)}
+              >
                 <TerminalPromptGlyph className="size-icon-xs" />
               </IconButton>
             </Tooltip>
@@ -225,11 +235,11 @@ export function CodeBlock(props: CodeBlockProps) {
               Show source: the toggle keeps its place beside Copy, and a second
               click on the same spot switches back. */}
           {drawn ? null : (
-            <Tooltip content="Wrap lines">
+            <Tooltip content={appCopy.ui.codeBlock.wrapLines}>
               <IconButton
                 size="xs"
                 tone="subtle"
-                aria-label="Wrap lines"
+                aria-label={appCopy.ui.codeBlock.wrapLines}
                 pressed={wrap}
                 onClick={() => setWrap((value) => !value)}
               >
@@ -238,11 +248,11 @@ export function CodeBlock(props: CodeBlockProps) {
             </Tooltip>
           )}
           {props.drawing != null && !streaming ? (
-            <Tooltip content="Show source">
+            <Tooltip content={appCopy.ui.codeBlock.showSource}>
               <IconButton
                 size="xs"
                 tone="subtle"
-                aria-label="Show source"
+                aria-label={appCopy.ui.codeBlock.showSource}
                 pressed={showSource}
                 onClick={() => setShowSource((value) => !value)}
               >
@@ -250,7 +260,7 @@ export function CodeBlock(props: CodeBlockProps) {
               </IconButton>
             </Tooltip>
           ) : null}
-          <CopyGlyphButton text={code} label="Copy code" size="xs" tone="subtle" />
+          <CopyGlyphButton text={code} label={appCopy.ui.codeBlock.copyCode} size="xs" tone="subtle" />
         </div>
       </div>
       {/* Folding clips the box, never the source: every line stays in the DOM,
@@ -293,7 +303,8 @@ export function CodeBlock(props: CodeBlockProps) {
       ) : null}
       {lineCount > HIGHLIGHT_LINE_LIMIT && !drawn ? (
         <div className="ds-code-block__note" data-copy-exclude="">
-          Highlighting stopped at {HIGHLIGHT_LINE_LIMIT} lines
+          {appCopy.ui.codeBlock.highlightingStoppedAt}
+          {HIGHLIGHT_LINE_LIMIT} lines
         </div>
       ) : null}
       {props.note ? (

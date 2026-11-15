@@ -1,4 +1,5 @@
 import { showToast } from '../store/toastStore'
+import { copy } from '../../../shared/copy'
 
 /**
  * An Option-click (Alt-click) on a web link opens it in the system browser,
@@ -35,9 +36,13 @@ export function bindAltClickLinks(): void {
         .openExternal(url)
         .then((result) => {
           if (result && !result.ok)
-            showToast({ tone: 'error', title: 'Could not open the link', description: result.message })
+            showToast({
+              tone: 'error',
+              title: copy.utils.altClickLinks.couldNotOpenTheLink,
+              description: result.message,
+            })
         })
-        .catch(() => showToast({ tone: 'error', title: 'Could not open the link' }))
+        .catch(() => showToast({ tone: 'error', title: copy.utils.altClickLinks.couldNotOpenTheLink }))
     })
   })
 }

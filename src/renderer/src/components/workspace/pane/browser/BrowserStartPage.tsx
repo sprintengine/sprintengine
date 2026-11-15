@@ -5,6 +5,7 @@ import { showToast } from '../../../../store/toastStore'
 import { useWindowActive } from '../../../../utils/windowActivity'
 import { EmptyState, IconButton, RowButton } from '../../../ui'
 import { useTailnetShares } from './useTailnetShares'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // A browser tab with nowhere to go yet: the start page. Two groups, headings
 // only — the rows are the explanation: the dev servers this workspace's
@@ -89,7 +90,10 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
   if (!hasServers && !hasRecent) {
     return (
       <div className="h-full bg-[color:var(--bg-app)]">
-        <EmptyState title="Nothing to open yet" body="Enter a URL above, or start a dev server to see it here." />
+        <EmptyState
+          title={appCopy.workspace.pane.browser.browserStartPage.nothingToOpenYet}
+          body={appCopy.workspace.pane.browser.browserStartPage.enterAURLAboveOr}
+        />
       </div>
     )
   }
@@ -97,9 +101,11 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
   return (
     <div className="h-full overflow-y-auto bg-[color:var(--bg-app)] px-2 py-3">
       {hasServers ? (
-        <section aria-label="Local servers" className="mb-2">
+        <section aria-label={appCopy.workspace.pane.browser.browserStartPage.localServers} className="mb-2">
           {showHeadings ? (
-            <h3 className="px-3 pb-1 text-micro font-medium text-[color:var(--text-subtle)]">Local servers</h3>
+            <h3 className="px-3 pb-1 text-micro font-medium text-[color:var(--text-subtle)]">
+              {appCopy.workspace.pane.browser.browserStartPage.localServers}
+            </h3>
           ) : null}
           {servers!.map((server) => {
             const sharedUrl = shares.urlFor(server.port)
@@ -121,7 +127,9 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
                   <span className="min-w-0 truncate text-meta text-[color:var(--text-muted)]">{server.command}</span>
                   {sharedUrl ? (
                     // Shared state is words, not colour alone: the row says so.
-                    <span className="shrink-0 text-micro text-[color:var(--text-subtle)]">On tailnet</span>
+                    <span className="shrink-0 text-micro text-[color:var(--text-subtle)]">
+                      {appCopy.workspace.pane.browser.browserStartPage.onTailnet}
+                    </span>
                   ) : null}
                 </RowButton>
                 <div
@@ -137,10 +145,13 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
                   {sharedUrl ? (
                     <IconButton
                       size="3xs"
-                      aria-label={`Copy the tailnet link for localhost:${server.port}`}
+                      aria-label={appCopy.workspace.pane.browser.browserStartPage.copyTheTailnetLinkFor(server.port)}
                       onClick={() => {
                         void navigator.clipboard.writeText(sharedUrl)
-                        showToast({ tone: 'good', title: 'Tailnet link copied' })
+                        showToast({
+                          tone: 'good',
+                          title: appCopy.workspace.pane.browser.browserStartPage.tailnetLinkCopied,
+                        })
                       }}
                     >
                       <Glyph d={COPY} />
@@ -151,8 +162,8 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
                     disabled={busy}
                     aria-label={
                       sharedUrl
-                        ? `Stop sharing localhost:${server.port} on the tailnet`
-                        : `Share localhost:${server.port} on the tailnet`
+                        ? appCopy.workspace.pane.browser.browserStartPage.stopSharingLocalhostOnThe(server.port)
+                        : appCopy.workspace.pane.browser.browserStartPage.shareLocalhostOnTheTailnet(server.port)
                     }
                     onClick={() => {
                       void (async () => {
@@ -160,16 +171,33 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
                           const result = await shares.unshare(server.port)
                           showToast(
                             result.ok
-                              ? { tone: 'good', title: `localhost:${server.port} is off the tailnet` }
-                              : { tone: 'error', title: 'Could not stop sharing', description: result.message },
+                              ? {
+                                  tone: 'good',
+                                  title: appCopy.workspace.pane.browser.browserStartPage.localhostIsOffTheTailnet(
+                                    server.port,
+                                  ),
+                                }
+                              : {
+                                  tone: 'error',
+                                  title: appCopy.workspace.pane.browser.browserStartPage.couldNotStopSharing,
+                                  description: result.message,
+                                },
                           )
                           return
                         }
                         const result = await shares.share(server.port)
                         showToast(
                           result.ok && result.url
-                            ? { tone: 'good', title: 'Shared on your tailnet', description: result.url }
-                            : { tone: 'error', title: 'Could not share this server', description: result.message },
+                            ? {
+                                tone: 'good',
+                                title: appCopy.workspace.pane.browser.browserStartPage.sharedOnYourTailnet,
+                                description: result.url,
+                              }
+                            : {
+                                tone: 'error',
+                                title: appCopy.workspace.pane.browser.browserStartPage.couldNotShareThisServer,
+                                description: result.message,
+                              },
                         )
                       })()
                     }}
@@ -183,9 +211,11 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
         </section>
       ) : null}
       {hasRecent ? (
-        <section aria-label="Recent">
+        <section aria-label={appCopy.workspace.pane.browser.browserStartPage.recent}>
           {showHeadings ? (
-            <h3 className="px-3 pb-1 text-micro font-medium text-[color:var(--text-subtle)]">Recent</h3>
+            <h3 className="px-3 pb-1 text-micro font-medium text-[color:var(--text-subtle)]">
+              {appCopy.workspace.pane.browser.browserStartPage.recent}
+            </h3>
           ) : null}
           {recentUrls.map((url) => (
             <RowButton key={url} density="nav" onClick={() => onOpen(url)}>

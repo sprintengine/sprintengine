@@ -20,6 +20,7 @@ import { deleteContainer, type ContainerApi } from './ContainerMachinesSection'
 import { MachineGhRow } from './MachineGhRow'
 import { SettingCard, SettingsRow, SettingToggle } from './SettingsAtoms'
 import { isImeKey } from '../../utils/imeKey'
+import { copy } from '../../../../shared/copy'
 
 // An SSH machine's parts of Settings › Machines (phase 8): its row's own
 // actions, its detail, and the field that adds one. The row itself is the
@@ -44,9 +45,9 @@ type Api = Pick<
 >
 
 const PANE_TRAFFIC_ITEMS: Array<{ value: SshPaneTraffic; label: string }> = [
-  { value: 'all', label: 'Everything, through the machine' },
-  { value: 'loopback', label: 'Only its localhost' },
-  { value: 'off', label: 'Nothing (tabs use this computer)' },
+  { value: 'all', label: copy.settings.sshMachinesSection.everythingThroughTheMachine },
+  { value: 'loopback', label: copy.settings.sshMachinesSection.onlyItsLocalhost },
+  { value: 'off', label: copy.settings.sshMachinesSection.nothingTabsUseThisComputer },
 ]
 
 const ROW_FIELD = 'w-60 max-w-full font-mono'
@@ -90,10 +91,10 @@ export function SshMachineActions({
     return (
       <OutlineButton
         size="xs"
-        aria-label={`Disconnect, ${machine.label}`}
+        aria-label={copy.settings.sshMachinesSection.disconnect(machine.label)}
         onClick={() => void api.sshEnvironmentDisconnect(machine.id)}
       >
-        Disconnect
+        {copy.settings.sshMachinesSection.disconnect2}
       </OutlineButton>
     )
   // This app's own update of its server did not start (the row says why):
@@ -102,26 +103,26 @@ export function SshMachineActions({
     return (
       <OutlineButton
         size="xs"
-        aria-label={`Retry the update, ${machine.label}`}
+        aria-label={copy.settings.sshMachinesSection.retryTheUpdate(machine.label)}
         onClick={() => void api.sshEnvironmentUpgradeServer(machine.id)}
       >
-        Retry update
+        {copy.settings.sshMachinesSection.retryUpdate}
       </OutlineButton>
     )
   if (machine.action === 'upgrade')
     return (
       <OutlineButton
         size="xs"
-        aria-label={`Update the Studio server, ${machine.label}`}
+        aria-label={copy.settings.sshMachinesSection.updateTheStudioServer(machine.label)}
         onClick={() =>
           void confirmDialog({
-            title: `Update the Studio server on ${machine.label}?`,
-            body: `It was started outside this app and may serve other clients. Its chats get a minute to finish first.`,
-            confirmLabel: 'Update it',
+            title: copy.settings.sshMachinesSection.updateTheStudioServerOn(machine.label),
+            body: copy.settings.sshMachinesSection.itWasStartedOutsideThis,
+            confirmLabel: copy.settings.sshMachinesSection.updateIt,
           }).then((yes) => (yes ? api.sshEnvironmentUpgradeServer(machine.id) : undefined))
         }
       >
-        Update
+        {copy.settings.sshMachinesSection.update}
       </OutlineButton>
     )
   return null
@@ -167,7 +168,7 @@ export function SshMachineDetail({
       ) : null}
       <div className="divide-y divide-[color:var(--border-subtle)]">
         <SettingsRow
-          label="Reached as"
+          label={copy.settings.sshMachinesSection.reachedAs}
           help="What your SSH config resolves it to. Your config decides; Studio only reads it."
         >
           <span className="font-mono text-body text-[color:var(--text-default)]">
@@ -178,7 +179,7 @@ export function SshMachineDetail({
         </SettingsRow>
         {machine.server ? (
           <SettingsRow
-            label="Studio server"
+            label={copy.settings.sshMachinesSection.studioServer}
             help={
               machine.server.origin === 'bootstrap'
                 ? `Started by ${machine.server.startedBy || 'Studio'}. It keeps running when you disconnect, so a chat left working carries on.`
@@ -189,30 +190,30 @@ export function SshMachineDetail({
           </SettingsRow>
         ) : null}
         <SettingToggle
-          label="Keep the server running"
-          description="Otherwise it stops when idle for five minutes with no clients or pending work."
+          label={copy.settings.sshMachinesSection.keepTheServerRunning}
+          description={copy.settings.sshMachinesSection.otherwiseItStopsWhenIdle}
           enabled={machine.settings.keepRunning}
           onChange={(keepRunning) => write({ keepRunning })}
         />
         <SettingsRow
-          label="Browser tabs' network"
+          label={copy.settings.sshMachinesSection.browserTabsNetwork}
           help={`What this machine's browser tabs reach through ${machine.label}. With everything, its localhost is the machine's.`}
         >
           <Select
-            ariaLabel={`Browser tab traffic through ${machine.label}`}
+            ariaLabel={copy.settings.sshMachinesSection.browserTabTrafficThrough(machine.label)}
             items={PANE_TRAFFIC_ITEMS}
             value={machine.settings.paneTraffic}
             onChange={(paneTraffic) => write({ paneTraffic })}
           />
         </SettingsRow>
         <SettingToggle
-          label="Download Node.js on the machine"
-          description="For a machine on a faster network. Checked against a pinned digest."
+          label={copy.settings.sshMachinesSection.downloadNodeJsOnThe}
+          description={copy.settings.sshMachinesSection.forAMachineOnA}
           enabled={machine.settings.remoteDownload}
           onChange={(remoteDownload) => write({ remoteDownload })}
         />
         <SettingsRow
-          label="Install directory"
+          label={copy.settings.sshMachinesSection.installDirectory}
           help="Only for a home mounted noexec: where the runtime and server go instead."
           htmlFor={installId}
         >
@@ -221,7 +222,7 @@ export function SshMachineDetail({
             value={installDir}
             onChange={(event) => setInstallDir(event.target.value)}
             onBlur={() => write({ installDir: installDir.trim() || null })}
-            placeholder="~/.local/share/sprintengine-studio"
+            placeholder={copy.settings.sshMachinesSection.localShareSprintengineStudio}
             size="md"
             variant="well"
             fullWidth={false}
@@ -235,14 +236,15 @@ export function SshMachineDetail({
             size="sm"
             onClick={() =>
               void confirmDialog({
-                title: `Stop the Studio server on ${machine.label}?`,
-                body: 'Running chats get a minute to finish.',
-                confirmLabel: 'Stop it',
+                title: copy.settings.sshMachinesSection.stopTheStudioServerOn(machine.label),
+                body: copy.settings.sshMachinesSection.runningChatsGetAMinute,
+                confirmLabel: copy.settings.sshMachinesSection.stopIt,
                 tone: 'danger',
               }).then((yes) => (yes ? api.sshEnvironmentStopServer(machine.id) : undefined))
             }
           >
-            Stop server on {machine.label}
+            {copy.settings.sshMachinesSection.stopServerOn}
+            {machine.label}
           </GhostButton>
         ) : null}
         <GhostButton
@@ -253,15 +255,15 @@ export function SshMachineDetail({
               .then((result) => setDiagnostics(result.ok ? result.text : result.message))
           }
         >
-          Diagnostics
+          {copy.settings.sshMachinesSection.diagnostics}
         </GhostButton>
         <GhostButton
           size="sm"
           onClick={() =>
             void confirmDialog({
-              title: `Forget ${machine.label}?`,
-              body: 'Its chats stay on the machine. Its server stops on its own when idle.',
-              confirmLabel: 'Forget',
+              title: copy.settings.sshMachinesSection.forget(machine.label),
+              body: copy.settings.sshMachinesSection.itsChatsStayOnThe,
+              confirmLabel: copy.settings.sshMachinesSection.forget2,
               tone: 'danger',
             }).then(async (yes) => {
               if (!yes) return
@@ -274,9 +276,9 @@ export function SshMachineDetail({
               // container is (what exists only in it said before it goes), or, the machine
               // being gone, only their records are dropped, as the person says.
               const remove = await confirmDialog({
-                title: `Delete the containers on ${machine.label} first?`,
-                body: `${forgotten.message} Each is shown with what exists only in it before it is deleted.`,
-                confirmLabel: 'Delete them, then forget',
+                title: copy.settings.sshMachinesSection.deleteTheContainersOnFirst(machine.label),
+                body: copy.settings.sshMachinesSection.eachIsShownWithWhat(forgotten.message),
+                confirmLabel: copy.settings.sshMachinesSection.deleteThemThenForget,
                 tone: 'danger',
               })
               if (remove) {
@@ -294,9 +296,9 @@ export function SshMachineDetail({
                 return
               }
               const recordsOnly = await confirmDialog({
-                title: `Forget ${machine.label}'s container records only?`,
-                body: `The containers stay on ${machine.label}, untracked. Only do this if ${machine.label} is gone.`,
-                confirmLabel: 'Forget the records',
+                title: copy.settings.sshMachinesSection.forgetSContainerRecordsOnly(machine.label),
+                body: copy.settings.sshMachinesSection.theContainersStayOnUntracked(machine.label),
+                confirmLabel: copy.settings.sshMachinesSection.forgetTheRecords,
                 tone: 'danger',
               })
               if (recordsOnly) {
@@ -306,7 +308,7 @@ export function SshMachineDetail({
             })
           }
         >
-          Forget
+          {copy.settings.sshMachinesSection.forget2}
         </GhostButton>
       </div>
       {diagnostics ? (
@@ -355,7 +357,11 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
   }
   return (
     <div className="space-y-2">
-      <SettingsRow label="Add SSH machine" help="An alias from your SSH config, or user@host:port." htmlFor={fieldId}>
+      <SettingsRow
+        label={copy.settings.sshMachinesSection.addSSHMachine}
+        help="An alias from your SSH config, or user@host:port."
+        htmlFor={fieldId}
+      >
         <span className="flex items-center gap-2">
           <Input
             id={fieldId}
@@ -375,13 +381,13 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
             className={ROW_FIELD}
           />
           <OutlineButton size="sm" disabled={busy || !text.trim()} onClick={() => void check(text)}>
-            Check
+            {copy.settings.sshMachinesSection.check}
           </OutlineButton>
         </span>
       </SettingsRow>
       {suggestions.length > 0 && !text ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className={MUTED}>From your SSH config:</span>
+          <span className={MUTED}>{copy.settings.sshMachinesSection.fromYourSSHConfig}</span>
           {suggestions.slice(0, 12).map((name) => (
             <ChipButton
               key={name}
@@ -399,7 +405,7 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
       {checked?.ok ? (
         <div className="space-y-2">
           <p className={MUTED}>
-            Studio will connect to{' '}
+            {copy.settings.sshMachinesSection.studioWillConnectTo}{' '}
             <ProviderStateId>
               {checked.resolved.user}@{checked.resolved.hostname}:{checked.resolved.port}
             </ProviderStateId>
@@ -409,7 +415,7 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
                 through <ProviderStateId>{checked.resolved.proxyJump}</ProviderStateId>
               </>
             ) : null}
-            . SSH will show its fingerprint to check on first connect.
+            {copy.settings.sshMachinesSection.sSHWillShowItsFingerprint}
           </p>
           {checked.resolved.notes.map((note) => (
             <p key={note} className={MUTED}>
@@ -417,7 +423,8 @@ export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
             </p>
           ))}
           <OutlineButton size="sm" disabled={busy} onClick={() => void add()}>
-            Add {checked.destination}
+            {copy.settings.sshMachinesSection.add}
+            {checked.destination}
           </OutlineButton>
         </div>
       ) : null}

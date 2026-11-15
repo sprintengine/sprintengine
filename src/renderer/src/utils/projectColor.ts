@@ -58,6 +58,7 @@ import {
   projectHue,
 } from '../../../shared/project-hue'
 import type { ProjectColor, ProjectColorSetting } from '../../../shared/workspace'
+import { copy } from '../../../shared/copy'
 
 // The two names live in types/workspace.ts, beside HighlightColor, because
 // AppSettings.projectColors is part of the settings shape main compiles against
@@ -87,14 +88,14 @@ export function isProjectColorSetting(value: unknown): value is ProjectColorSett
  * project-mark lightness in both modes.
  */
 export const PROJECT_COLOR_PRESETS: ReadonlyArray<{ hue: ProjectColor; label: string }> = [
-  { hue: 25, label: 'Red' },
-  { hue: 60, label: 'Orange' },
-  { hue: 100, label: 'Yellow' },
-  { hue: 145, label: 'Green' },
-  { hue: 200, label: 'Cyan' },
-  { hue: 255, label: 'Blue' },
-  { hue: 300, label: 'Violet' },
-  { hue: 345, label: 'Pink' },
+  { hue: 25, label: copy.utils.projectColor.red },
+  { hue: 60, label: copy.utils.projectColor.orange },
+  { hue: 100, label: copy.utils.projectColor.yellow },
+  { hue: 145, label: copy.utils.projectColor.green },
+  { hue: 200, label: copy.utils.projectColor.cyan },
+  { hue: 255, label: copy.utils.projectColor.blue },
+  { hue: 300, label: copy.utils.projectColor.violet },
+  { hue: 345, label: copy.utils.projectColor.pink },
 ]
 
 /**

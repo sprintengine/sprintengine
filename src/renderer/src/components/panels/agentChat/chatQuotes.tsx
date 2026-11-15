@@ -7,6 +7,7 @@ import { EditChangelistGlyph } from '../../ui/GitActionGlyphs'
 import { LinkButton, QuoteLinkButton } from '../../ui/LinkButton'
 import { PointerPopover } from '../../ui/PointerPopover'
 import { QuoteGlyph } from '../../ui/QuoteGlyph'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // The pieces a quote is drawn with (shared/chat-quotes.ts is what it is):
 //
@@ -82,7 +83,7 @@ export function QuoteChip({
     >
       <QuoteLinkButton
         size="inherit"
-        aria-label={`Quote ${quote.n}: ${label}`}
+        aria-label={appCopy.panels.agentChat.chatQuotes.quote(quote.n, label)}
         aria-haspopup="dialog"
         aria-expanded={open !== null}
         onClick={(event) => setOpen(chipPopoverPlace(event.currentTarget))}
@@ -95,10 +96,10 @@ export function QuoteChip({
         <span className="inline-block max-w-[22em] truncate align-bottom">{label}</span>
       </QuoteLinkButton>
       {onEdit ? (
-        <Tooltip content="Edit comment">
+        <Tooltip content={appCopy.panels.agentChat.chatQuotes.editComment}>
           <IconButton
             size="inline"
-            aria-label={`Edit comment on quote ${quote.n}`}
+            aria-label={appCopy.panels.agentChat.chatQuotes.editCommentOnQuote(quote.n)}
             className="ml-0.5 align-middle"
             onClick={(event) => onEdit(event.currentTarget)}
           >
@@ -162,7 +163,7 @@ export function QuotePopover({
       x={x}
       y={y}
       {...(above !== undefined ? { above } : {})}
-      ariaLabel={`Quote ${quote.n}`}
+      ariaLabel={appCopy.panels.agentChat.chatQuotes.quote2(quote.n)}
       popupRole="dialog"
       onClose={onClose}
     >
@@ -175,7 +176,7 @@ export function QuotePopover({
         ) : null}
         {onGoToSource ? (
           <div className="flex justify-end">
-            <LinkButton onClick={onGoToSource}>Go to source</LinkButton>
+            <LinkButton onClick={onGoToSource}>{appCopy.panels.agentChat.chatQuotes.goToSource}</LinkButton>
           </div>
         ) : null}
       </div>
@@ -239,7 +240,7 @@ export function QuoteCommentEditor({
     <PointerPopover
       x={anchor.left}
       y={anchor.bottom + OVERLAY_GAP}
-      ariaLabel={`Comment on quote ${n}`}
+      ariaLabel={appCopy.panels.agentChat.chatQuotes.commentOnQuote(n)}
       popupRole="dialog"
       onClose={() => finish(() => onSave(valueRef.current, false))}
     >
@@ -250,16 +251,20 @@ export function QuoteCommentEditor({
           resize="none"
           rows={1}
           autoFocus
-          aria-label={`Comment on quote ${n}`}
-          placeholder="Add an optional comment…"
+          aria-label={appCopy.panels.agentChat.chatQuotes.commentOnQuote(n)}
+          placeholder={appCopy.panels.agentChat.chatQuotes.addAnOptionalComment}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={onKeyDown}
           className="max-h-40 overflow-y-auto px-1 text-body"
         />
         <div className="flex justify-end">
-          <Tooltip content="Save">
-            <IconButton size="2xs" aria-label="Save" onClick={() => finish(() => onSave(valueRef.current, false))}>
+          <Tooltip content={appCopy.panels.agentChat.chatQuotes.save}>
+            <IconButton
+              size="2xs"
+              aria-label={appCopy.panels.agentChat.chatQuotes.save}
+              onClick={() => finish(() => onSave(valueRef.current, false))}
+            >
               <CheckIcon className="icon-sm" />
             </IconButton>
           </Tooltip>

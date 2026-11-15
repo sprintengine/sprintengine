@@ -7,6 +7,7 @@ import { accessApi } from '../../studio/access'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
 import { Field, GhostButton, InlineNotice, Input, OutlineButton, PrimaryButton, useConfirmDialog } from '../ui'
 import { SettingCard, SettingsRow } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → MCPs: the gateway over loopback HTTP, for an MCP client that
 // takes a URL. Each client gets a token of its own, named for it here, and
@@ -61,9 +62,9 @@ export function McpHttpSettings() {
 
   const revoke = async (id: string, clientName: string) => {
     const confirmed = await dialog.confirm({
-      title: `Revoke ${clientName}?`,
-      body: 'Its token stops working now. Copy a new MCP URL to reconnect.',
-      confirmLabel: 'Revoke',
+      title: copy.settings.mcpHttpSettings.revoke(clientName),
+      body: copy.settings.mcpHttpSettings.itsTokenStopsWorkingNow,
+      confirmLabel: copy.settings.mcpHttpSettings.revoke2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -76,7 +77,7 @@ export function McpHttpSettings() {
     <>
       <SettingCard>
         <SettingsRow
-          label="MCP over HTTP"
+          label={copy.settings.mcpHttpSettings.mCPOverHTTP}
           help={
             status.url ? (
               <span className="break-all font-mono text-meta">{status.url}</span>
@@ -94,14 +95,18 @@ export function McpHttpSettings() {
             help={client.lastUsedAt ? `Last used ${formatRelativeMsAgo(client.lastUsedAt, now)}` : 'Not used yet'}
           >
             <GhostButton tone="danger" onClick={() => void revoke(client.id, client.name)}>
-              Revoke
+              {copy.settings.mcpHttpSettings.revoke2}
             </GhostButton>
           </SettingsRow>
         ))}
         {name !== null ? (
-          <SettingsRow label="Copy MCP URL" help="Name the client this token is for." stacked>
+          <SettingsRow
+            label={copy.settings.mcpHttpSettings.copyMCPURL}
+            help="Name the client this token is for."
+            stacked
+          >
             <div className="space-y-3">
-              <Field label="Client" htmlFor={nameId}>
+              <Field label={copy.settings.mcpHttpSettings.client} htmlFor={nameId}>
                 <Input
                   id={nameId}
                   value={name}
@@ -115,9 +120,9 @@ export function McpHttpSettings() {
               </Field>
               <div className="flex items-center gap-2">
                 <PrimaryButton disabled={!name.trim()} onClick={() => void create()}>
-                  Copy MCP URL
+                  {copy.settings.mcpHttpSettings.copyMCPURL}
                 </PrimaryButton>
-                <GhostButton onClick={() => setName(null)}>Cancel</GhostButton>
+                <GhostButton onClick={() => setName(null)}>{copy.settings.mcpHttpSettings.cancel}</GhostButton>
               </div>
             </div>
           </SettingsRow>
@@ -125,8 +130,8 @@ export function McpHttpSettings() {
       </SettingCard>
       {name === null && !mints ? (
         <p className="text-meta text-[color:var(--text-muted)]">
-          Make a new MCP URL in the desktop app, or on the server with{' '}
-          <code>studio-server mcp-token --name &lt;client&gt;</code>.
+          {copy.settings.mcpHttpSettings.makeANewMCPURL}{' '}
+          <code>{copy.settings.mcpHttpSettings.studioServerMcpTokenName}</code>.
         </p>
       ) : null}
       {name === null && mints ? (
@@ -137,7 +142,7 @@ export function McpHttpSettings() {
             setName('')
           }}
         >
-          Copy MCP URL
+          {copy.settings.mcpHttpSettings.copyMCPURL}
         </OutlineButton>
       ) : null}
       {copied ? (

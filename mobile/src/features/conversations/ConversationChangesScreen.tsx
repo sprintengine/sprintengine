@@ -10,6 +10,7 @@ import { fontWeight, radius, space, typography, type Theme } from "../../theme/t
 import { diffTotals, splitPath, type ChangedFile } from "../diff/unifiedDiff";
 import { useTurnFiles } from "../diff/useTurnDiff";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";
+import { copy } from "../../../../src/shared/copy";
 
 const STATUS_LETTER: Record<ChangedFile["status"], string> = { added: "A", modified: "M", deleted: "D" };
 const STATUS_WORD: Record<ChangedFile["status"], string> = { added: "added", modified: "modified", deleted: "deleted" };
@@ -38,7 +39,7 @@ export function ConversationChangesScreen({
   const totals = files ? diffTotals(files) : null;
   return (
     <Screen
-      title="Changed files"
+      title={copy.phone.conversations.conversationChangesScreen.changedFiles}
       subtitle={
         totals?.files ? (
           <Text numberOfLines={1} style={styles.summary}>
@@ -50,8 +51,8 @@ export function ConversationChangesScreen({
     >
       {view.status === "loading" ? (
         <View style={styles.loading} accessibilityLiveRegion="polite">
-          <WorkingMark label="Loading changes" />
-          <Text style={styles.meta}>Loading changes…</Text>
+          <WorkingMark label={copy.phone.conversations.conversationChangesScreen.loadingChanges} />
+          <Text style={styles.meta}>{copy.phone.conversations.conversationChangesScreen.loadingChanges2}</Text>
         </View>
       ) : view.status === "offline" ? (
         <Text style={styles.meta}>
@@ -64,7 +65,7 @@ export function ConversationChangesScreen({
           <Text accessibilityRole="alert" style={styles.body}>
             {view.message}
           </Text>
-          <PrimaryButton label="Try again" variant="secondary" onPress={retry} />
+          <PrimaryButton label={copy.phone.conversations.conversationChangesScreen.tryAgain} variant="secondary" onPress={retry} />
         </View>
       ) : !files?.length ? (
         <View style={styles.block}>

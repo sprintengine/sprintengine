@@ -26,6 +26,8 @@
 
 // Scope marks where a field is surfaced. Every entry today is 'app': an
 // app-wide preference shown in SettingsPanel.
+import { copy } from '../../../../shared/copy'
+
 type SettingScope = 'app'
 
 type SelectOption<V extends string = string> = {
@@ -90,7 +92,7 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   // Background mode — whether the process outlives its last window.
   {
     id: 'keep-running-in-background',
-    label: 'Keep running when the last window closes',
+    label: copy.settings.settingsRegistry.keepRunningWhenTheLast,
     help: 'Agents and automations keep working with no window open.',
     scope: 'app',
     group: 'background',
@@ -104,7 +106,7 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   // are not looking at it.
   {
     id: 'telemetry-enabled',
-    label: 'Share anonymous usage data',
+    label: copy.settings.settingsRegistry.shareAnonymousUsageData,
     help: 'Counts and timings only — never your prompts, code, file paths, or project names.',
     scope: 'app',
     group: 'background',
@@ -116,7 +118,7 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   // Agent runtime defaults.
   {
     id: 'terminal-idle-suspend-minutes',
-    label: 'Pause idle terminals after',
+    label: copy.settings.settingsRegistry.pauseIdleTerminalsAfter,
     help: 'Minutes. Paused terminals keep their screen and resume on click.',
     scope: 'app',
     group: 'agents',
@@ -126,7 +128,7 @@ const settingsRegistry: ReadonlyArray<SettingDescriptor> = [
   },
   {
     id: 'terminal-keep-recent-alive',
-    label: 'Always keep running',
+    label: copy.settings.settingsRegistry.alwaysKeepRunning,
     help: 'The most recent terminals that are never paused.',
     scope: 'app',
     group: 'agents',

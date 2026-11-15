@@ -14,6 +14,7 @@ import {
   projectMetaLine,
   type ProjectSwitcherRow,
 } from "./projectContext";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 /**
  * The one context control, in every tab's header.
@@ -43,7 +44,7 @@ export function ProjectControl({ compact = false }: { compact?: boolean }) {
       <>
         <IconButton
           icon={<MenuIcon size={iconSize.md} tone="textMuted" />}
-          label={`Switch project. Current: ${projectName}${desktopName ? ` on ${desktopName}` : ""}`}
+          label={appCopy.phone.projects.projectControl.switchProjectCurrent(projectName, desktopName ? appCopy.phone.projects.projectControl.on(desktopName) : "")}
           onPress={() => setIsOpen(true)}
         />
         <ProjectSwitcherPanel onClose={() => setIsOpen(false)} visible={isOpen} />
@@ -54,8 +55,8 @@ export function ProjectControl({ compact = false }: { compact?: boolean }) {
   return (
     <>
       <Pressable
-        accessibilityHint="Opens the project switcher"
-        accessibilityLabel={`Project: ${projectName}${desktopName ? `, desktop: ${desktopName}` : ""}`}
+        accessibilityHint={appCopy.phone.projects.projectControl.opensTheProjectSwitcher}
+        accessibilityLabel={appCopy.phone.projects.projectControl.project(projectName, desktopName ? appCopy.phone.projects.projectControl.desktop(desktopName) : "")}
         accessibilityRole="button"
         onPress={() => setIsOpen(true)}
         style={({ pressed }) => [styles.chip, pressed ? styles.pressed : null]}
@@ -102,14 +103,12 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
   };
 
   return (
-    <SidePanel onClose={onClose} title="Projects" visible={visible}>
+    <SidePanel onClose={onClose} title={appCopy.phone.projects.projectControl.projects} visible={visible}>
       {projects.length === 0 && starred.length === 0 ? (
-        <Text style={styles.emptyText}>
-          No projects yet. Pull to refresh.
-        </Text>
+        <Text style={styles.emptyText}>{appCopy.phone.projects.projectControl.noProjectsYetPullTo}</Text>
       ) : null}
 
-      {starred.length > 0 ? <Text style={styles.sectionLabel}>Starred</Text> : null}
+      {starred.length > 0 ? <Text style={styles.sectionLabel}>{appCopy.phone.projects.projectControl.starred}</Text> : null}
       {starred.map((row) => (
         <ProjectRow
           key={row.key}
@@ -120,7 +119,7 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
         />
       ))}
 
-      {starred.length > 0 && others.length > 0 ? <Text style={styles.sectionLabel}>All projects</Text> : null}
+      {starred.length > 0 && others.length > 0 ? <Text style={styles.sectionLabel}>{appCopy.phone.projects.projectControl.allProjects}</Text> : null}
       {others.map((row) => (
         <ProjectRow
           key={row.key}
@@ -133,7 +132,7 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
 
       {orderedSessions.length > 0 ? (
         <>
-          <Text style={styles.sectionLabel}>Desktop</Text>
+          <Text style={styles.sectionLabel}>{appCopy.phone.projects.projectControl.desktop2}</Text>
           {orderedSessions.map((candidate) => {
             const status = sessionDisplayStatus(candidate);
             const isActive = candidate.deviceId === activeDeviceId;
@@ -186,7 +185,7 @@ function ProjectSwitcherPanel({ visible, onClose }: { visible: boolean; onClose:
               </Pressable>
             );
           })}
-          <Text style={styles.hint}>Manage desktops in Settings.</Text>
+          <Text style={styles.hint}>{appCopy.phone.projects.projectControl.manageDesktopsInSettings}</Text>
         </>
       ) : null}
     </SidePanel>
@@ -236,7 +235,7 @@ function ProjectRow({
     >
       {row.available ? (
         <Pressable
-          accessibilityHint={isActive ? undefined : "Switches the whole app to this project"}
+          accessibilityHint={isActive ? undefined : appCopy.phone.projects.projectControl.switchesTheWholeAppTo}
           accessibilityLabel={`${row.name}, ${meta}`}
           accessibilityRole="button"
           accessibilityState={{ selected: isActive }}
@@ -250,7 +249,7 @@ function ProjectRow({
       )}
       <IconButton
         icon={<StarIcon filled={row.starred} size={iconSize.sm} tone={row.starred ? "textPrimary" : "textSubtle"} />}
-        label={row.starred ? `Unstar ${row.name}` : `Star ${row.name}`}
+        label={row.starred ? appCopy.phone.projects.projectControl.unstar(row.name) : appCopy.phone.projects.projectControl.star(row.name)}
         onPress={() => onToggleStar(row.key)}
       />
     </View>

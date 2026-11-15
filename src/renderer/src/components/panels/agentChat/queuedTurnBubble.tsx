@@ -10,6 +10,7 @@ import { AttachmentThumbnail } from '../ComposerAttachmentStrip'
 import { GhostButton, Tooltip, TruncatedText } from '../../ui'
 import { ComposerTrayRow } from './composerTray'
 import { quotesToInlineText } from '../../../../../shared/chat-quotes'
+import { copy } from '../../../../../shared/copy'
 
 export type QueuedTurnSendNow = {
   // `steer` delivers into the running turn; `interrupt` stops it, and the queue
@@ -124,7 +125,7 @@ export function QueuedTurnRow({
   return (
     <ComposerTrayRow
       role="group"
-      ariaLabel="Queued message"
+      ariaLabel={copy.panels.agentChat.queuedTurnBubble.queuedMessage}
       tone={failed ? 'warn' : 'neutral'}
       glyph={failed ? undefined : <QueuedGlyph />}
       actions={
@@ -140,7 +141,7 @@ export function QueuedTurnRow({
             {onEdit ? (
               <Tooltip content={editHint} placement="top">
                 <GhostButton size="xs" onClick={onEdit}>
-                  Edit
+                  {copy.panels.agentChat.queuedTurnBubble.edit}
                 </GhostButton>
               </Tooltip>
             ) : null}

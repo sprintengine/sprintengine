@@ -1,4 +1,5 @@
 import type * as AgentSettings from './agentSettings'
+import { copy } from '../../../shared/copy'
 
 // A stand-in for the window's agent CLIs and launch settings
 // (`agentSettings.ts`), for tests of what calls them. A test mocks the module
@@ -39,7 +40,7 @@ function blank(): Api {
     cliUpdateAll: async () => ({ ok: true, items: [] }),
     onCliUpdateAllProgress: () => () => undefined,
     onCliInstallOutput: () => () => undefined,
-    cliVersionAdvisories: async () => ({ ok: false, message: 'No version checks here.' }),
+    cliVersionAdvisories: async () => ({ ok: false, message: copy.studio.agentSettingsDouble.noVersionChecksHere }),
     cliVersionChecksSetEnabled: async (enabled) => ({ enabled }),
     onCliVersionAdvisoriesChanged: () => () => undefined,
     cliModelsDiscover: async () => ({ entries: [], startedAt: '', finishedAt: '' }),
@@ -54,9 +55,17 @@ function blank(): Api {
       throw new Error('No launch settings here.')
     },
     onLaunchSettingsChanged: () => () => undefined,
-    generateChatTitle: async () => ({ ok: false, code: 'unavailable', message: 'No titles here.' }),
+    generateChatTitle: async () => ({
+      ok: false,
+      code: 'unavailable',
+      message: copy.studio.agentSettingsDouble.noTitlesHere,
+    }),
     setTextGenerationSettings: async () => undefined,
-    draftCommitMessage: async () => ({ ok: false, code: 'unavailable', message: 'No drafts here.' }),
+    draftCommitMessage: async () => ({
+      ok: false,
+      code: 'unavailable',
+      message: copy.studio.agentSettingsDouble.noDraftsHere,
+    }),
     cancelCommitMessageDraft: async () => undefined,
   }
 }

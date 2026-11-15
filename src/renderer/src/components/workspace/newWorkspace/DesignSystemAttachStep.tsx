@@ -9,6 +9,7 @@ import { CardButton, GhostButton } from '../../ui'
 import { pathJoin } from '../../../utils/paths'
 import { agentSkillsApi } from '../../../studio/agentSkills'
 import { filesApi } from '../../../studio/files'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Attach-a-design-system section of the wizard's Advanced setup, shared by
 // every create flow. Follows the
@@ -103,7 +104,10 @@ export function DesignSystemAttachStep({
         if (cancelled) return
         setLibrary({
           kind: 'unavailable',
-          message: error instanceof Error ? error.message : 'Could not read the design-system library.',
+          message:
+            error instanceof Error
+              ? error.message
+              : appCopy.workspace.newWorkspace.designSystemAttachStep.couldNotReadTheDesign,
         })
       })
     return () => {
@@ -140,8 +144,9 @@ export function DesignSystemAttachStep({
   if (existingBundle) {
     return (
       <p className="text-meta leading-5 text-[color:var(--text-muted)]">
-        This folder already has a <span className="font-mono text-[color:var(--text-default)]">design-system/</span>{' '}
-        directory. Attaching leaves it as is.
+        {appCopy.workspace.newWorkspace.designSystemAttachStep.thisFolderAlreadyHasA}
+        <span className="font-mono text-[color:var(--text-default)]">design-system/</span>{' '}
+        {appCopy.workspace.newWorkspace.designSystemAttachStep.directoryAttachingLeavesItAs}
       </p>
     )
   }
@@ -153,28 +158,36 @@ export function DesignSystemAttachStep({
     <div className="flex flex-col gap-2">
       {variant === 'create' ? (
         <p className="text-meta leading-5 text-[color:var(--text-muted)]">
-          Copies a released bundle into{' '}
-          <span className="font-mono text-[color:var(--text-default)]">design-system/</span>; agents here follow it.
+          {appCopy.workspace.newWorkspace.designSystemAttachStep.copiesAReleasedBundleInto}{' '}
+          <span className="font-mono text-[color:var(--text-default)]">design-system/</span>
+          {appCopy.workspace.newWorkspace.designSystemAttachStep.agentsHereFollowIt}
         </p>
       ) : null}
-      <div role="group" aria-label="Design system to attach" className="flex flex-col gap-1.5">
+      <div
+        role="group"
+        aria-label={appCopy.workspace.newWorkspace.designSystemAttachStep.designSystemToAttach}
+        className="flex flex-col gap-1.5"
+      >
         <AttachChoiceRow
           active={selectedKey === 'none'}
-          title="None"
-          detail="Start without a design system."
+          title={appCopy.workspace.newWorkspace.designSystemAttachStep.none}
+          detail={appCopy.workspace.newWorkspace.designSystemAttachStep.startWithoutADesignSystem}
           onSelect={() => onSelect(null)}
         />
         {library.kind === 'loading' ? (
-          <p className="px-1 text-meta leading-5 text-[color:var(--text-subtle)]">Reading your library…</p>
+          <p className="px-1 text-meta leading-5 text-[color:var(--text-subtle)]">
+            {appCopy.workspace.newWorkspace.designSystemAttachStep.readingYourLibrary}
+          </p>
         ) : null}
         {library.kind === 'unavailable' ? (
           <p className="px-1 text-meta leading-5 text-[color:var(--tone-error)]">
-            The design-system library could not be read: {library.message}
+            {appCopy.workspace.newWorkspace.designSystemAttachStep.theDesignSystemLibraryCould}
+            {library.message}
           </p>
         ) : null}
         {library.kind === 'ready' && library.entries.length === 0 ? (
           <p className="px-1 text-meta leading-5 text-[color:var(--text-subtle)]">
-            No design systems in your library yet. Browse to a bundle below.
+            {appCopy.workspace.newWorkspace.designSystemAttachStep.noDesignSystemsInYour}
           </p>
         ) : null}
         {library.kind === 'ready'
@@ -194,12 +207,16 @@ export function DesignSystemAttachStep({
           : null}
         <AttachChoiceRow
           active={folderSelection != null}
-          title={folderSelection ? folderSelection.path : 'Browse to a bundle folder…'}
+          title={
+            folderSelection
+              ? folderSelection.path
+              : appCopy.workspace.newWorkspace.designSystemAttachStep.browseToABundleFolder
+          }
           titleMono={folderSelection != null}
           detail={
             folderSelection
-              ? `Checked as a bundle before copying. ${FOLDER_ATTACH_TRUST_COPY}`
-              : `Any released bundle on disk. ${FOLDER_ATTACH_TRUST_COPY}`
+              ? appCopy.workspace.newWorkspace.designSystemAttachStep.checkedAsABundleBefore(FOLDER_ATTACH_TRUST_COPY)
+              : appCopy.workspace.newWorkspace.designSystemAttachStep.anyReleasedBundleOnDisk(FOLDER_ATTACH_TRUST_COPY)
           }
           detailWraps
           onSelect={() => void chooseFolder()}
@@ -207,8 +224,10 @@ export function DesignSystemAttachStep({
       </div>
       {library.kind === 'ready' && library.rejectedCount > 0 ? (
         <p className="text-micro leading-4 text-[color:var(--text-subtle)]">
-          {library.rejectedCount} release{library.rejectedCount === 1 ? '' : 's'} in the library could not be read and{' '}
-          {library.rejectedCount === 1 ? 'is' : 'are'} not listed.
+          {library.rejectedCount} release{library.rejectedCount === 1 ? '' : 's'}
+          {appCopy.workspace.newWorkspace.designSystemAttachStep.inTheLibraryCouldNot}{' '}
+          {library.rejectedCount === 1 ? 'is' : 'are'}
+          {appCopy.workspace.newWorkspace.designSystemAttachStep.notListed}
         </p>
       ) : null}
       {folderSelection ? (
@@ -218,7 +237,7 @@ export function DesignSystemAttachStep({
             onClick={() => void chooseFolder()}
             className="border border-[color:var(--border-default)] bg-[color:var(--bg-surface)] text-[color:var(--text-default)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-strong)]"
           >
-            Choose a different folder…
+            {appCopy.workspace.newWorkspace.designSystemAttachStep.chooseADifferentFolder}
           </GhostButton>
         </div>
       ) : null}

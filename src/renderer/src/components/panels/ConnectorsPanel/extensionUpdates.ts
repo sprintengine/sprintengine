@@ -19,6 +19,7 @@
 
 import type { MarketplaceUpdateStatesResult } from '../../../../../shared/electron-api'
 import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/manifest'
+import { copy } from '../../../../../shared/copy'
 
 export type ManageUpdate = {
   id: string
@@ -84,13 +85,13 @@ export function manageUpdateBannerCopy(updates: ManageUpdate[]): ManageUpdateBan
     return {
       strong: update.name,
       text: ` update · v${update.installedVersion} → v${update.latestVersion}`,
-      actionLabel: `Update to v${update.latestVersion}`,
+      actionLabel: copy.panels.connectorsPanel.extensionUpdates.updateToV(update.latestVersion),
     }
   }
   return {
     strong: null,
     text: `Updates available · ${updates.length} extensions`,
-    actionLabel: 'Update all',
+    actionLabel: copy.panels.connectorsPanel.extensionUpdates.updateAll,
   }
 }
 

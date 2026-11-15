@@ -11,6 +11,7 @@ import { PullRequestPanelButton } from '../../PullRequestMark'
 import { UsageGlyph } from '../../SidebarAccountBar'
 import { formatTokenCount } from '../../../../utils/tokenFormat'
 import { PanelRow } from './PanelRow'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The rows that are controls of their own, carried from the bar that used to
 // sit under the composer. Each still does what it did there: the pull request
@@ -29,7 +30,7 @@ export function PullRequestRow({ facts, now = NO_NOW }: { facts: ChatPanelFacts;
   return (
     <PanelRow
       glyph={<PullRequestGlyph state="open" className="icon-sm" />}
-      label="Pull request"
+      label={appCopy.workspace.pane.panel.chatPanelFactRows.pullRequest}
       meta={
         <span className="flex min-w-0 justify-end" data-panel-pull-request-slot="">
           {slot === 'create' && createPullRequest ? (
@@ -57,14 +58,18 @@ export function ServerRow({ localServers }: { localServers: NonNullable<ChatPane
     <LocalServersMenu
       workspaceId={workspaceId}
       servers={servers}
-      ariaLabel={single ? `Local server ${single.title}` : 'Local servers from this conversation'}
+      ariaLabel={
+        single
+          ? appCopy.workspace.pane.panel.chatPanelFactRows.localServer(single.title)
+          : appCopy.workspace.pane.panel.chatPanelFactRows.localServersFromThisConversation
+      }
       placement="bottom-end"
       fill
       {...(elsewhere ? { elsewhere } : {})}
       renderTrigger={({ ref, togglePopover, triggerProps }) => (
         <PanelRow
           glyph={<LocalServerGlyph className="icon-sm" />}
-          label="Server"
+          label={appCopy.workspace.pane.panel.chatPanelFactRows.server}
           meta={
             <>
               <span className="min-w-0 truncate">{copy.label}</span>
@@ -85,12 +90,16 @@ export function PermissionsRow({ facts }: { facts: ChatPanelFacts }) {
   const { permissions } = facts
   if (!permissions)
     return facts.permissionLabel ? (
-      <PanelRow glyph={<ShieldGlyph className="icon-sm" />} label="Permissions" meta={facts.permissionLabel} />
+      <PanelRow
+        glyph={<ShieldGlyph className="icon-sm" />}
+        label={appCopy.workspace.pane.panel.chatPanelFactRows.permissions}
+        meta={facts.permissionLabel}
+      />
     ) : null
   return (
     <PanelRow
       glyph={<ShieldGlyph className="icon-sm" />}
-      label="Permissions"
+      label={appCopy.workspace.pane.panel.chatPanelFactRows.permissions}
       meta={
         <PermissionFooter
           options={permissions.options}
@@ -124,7 +133,7 @@ export function TokensRow({ facts }: { facts: ChatPanelFacts }) {
   return (
     <PanelRow
       glyph={<UsageGlyph className="icon-sm" />}
-      label="Tokens"
+      label={appCopy.workspace.pane.panel.chatPanelFactRows.tokens}
       meta={<span className="tabular-nums">{formatTokenCount(facts.tokens)}</span>}
     />
   )

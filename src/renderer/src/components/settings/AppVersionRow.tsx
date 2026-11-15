@@ -5,6 +5,7 @@ import { formatRelativeMsAgo } from '../../utils/relativeTime'
 import { ReleaseNotesIcon } from '../AppIcons'
 import SprintEngineFrond from '../brand/SprintEngineFrond'
 import { IconButton, PrimaryButton, RefreshIcon, Spinner, Tooltip } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // Settings ▸ General's version row: which SprintEngine Studio this is, and —
 // when there is a newer one — that version, what it takes to get it, and how
@@ -124,7 +125,8 @@ export function AppVersionRow({
           <SprintEngineFrond tone="current" className="icon-md shrink-0" />
           <div className="min-w-0">
             <div className="text-body font-medium text-[color:var(--text-strong)]">
-              SprintEngine Studio <span className="tabular-nums">{state?.version ?? '…'}</span>
+              {copy.settings.appVersionRow.sprintEngineStudio}
+              <span className="tabular-nums">{state?.version ?? '…'}</span>
             </div>
             <div
               className={`mt-0.5 text-body tabular-nums ${
@@ -136,8 +138,8 @@ export function AppVersionRow({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Tooltip content="Release notes">
-            <IconButton aria-label="Release notes" onClick={onOpenReleaseNotes}>
+          <Tooltip content={copy.settings.appVersionRow.releaseNotes}>
+            <IconButton aria-label={copy.settings.appVersionRow.releaseNotes} onClick={onOpenReleaseNotes}>
               <ReleaseNotesIcon className="icon-sm" />
             </IconButton>
           </Tooltip>
@@ -156,14 +158,28 @@ export function AppVersionRow({
               size="md"
               onClick={onDownload}
               disabled={pending}
-              aria-label={next ? `Download SprintEngine Studio ${next}` : 'Download the update'}
+              aria-label={
+                next
+                  ? copy.settings.appVersionRow.downloadSprintEngineStudio(next)
+                  : copy.settings.appVersionRow.downloadTheUpdate
+              }
             >
-              Download
+              {copy.settings.appVersionRow.download}
             </PrimaryButton>
           ) : action === 'check' ? (
-            <Tooltip content={state?.status === 'error' ? 'Retry check' : 'Check for updates'}>
+            <Tooltip
+              content={
+                state?.status === 'error'
+                  ? copy.settings.appVersionRow.retryCheck
+                  : copy.settings.appVersionRow.checkForUpdates
+              }
+            >
               <IconButton
-                aria-label={state?.status === 'error' ? 'Retry the update check' : 'Check for updates'}
+                aria-label={
+                  state?.status === 'error'
+                    ? copy.settings.appVersionRow.retryTheUpdateCheck
+                    : copy.settings.appVersionRow.checkForUpdates
+                }
                 onClick={onCheck}
                 disabled={pending || state?.status === 'checking'}
               >
@@ -176,7 +192,11 @@ export function AppVersionRow({
       {percent !== null ? (
         <div
           role="progressbar"
-          aria-label={next ? `Downloading SprintEngine Studio ${next}` : 'Downloading the update'}
+          aria-label={
+            next
+              ? copy.settings.appVersionRow.downloadingSprintEngineStudio(next)
+              : copy.settings.appVersionRow.downloadingTheUpdate
+          }
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}

@@ -4,6 +4,7 @@ import type { MobileSession } from "../../api/types";
 import type { DesktopWorkspace } from "../../api/tailnetWorkspaces";
 import { DEFAULT_MODEL_ID, modelLabel, type ChatLink } from "./conversationLogic";
 import { cliForChatProvider } from "./launchLogic";
+import { copy } from "../../../../src/shared/copy";
 
 // Where it lived first; the launch rules need it too, without importing this file.
 export { cliForChatProvider };
@@ -71,7 +72,7 @@ export interface ChatListRow {
 export function chatRowTitle(row: ChatListRow): { title: string; agent: string | null } {
   const agentName = row.thread.title.trim();
   const summary = row.thread.chatTitle?.trim() || row.workspaceTitle?.trim();
-  if (!summary) return { title: agentName || "Chat", agent: null };
+  if (!summary) return { title: agentName || copy.phone.conversations.conversationListLogic.chat, agent: null };
   const agent = (row.workspaceChats ?? 1) > 1 && agentName && agentName !== summary ? agentName : null;
   return { title: summary, agent };
 }
@@ -407,7 +408,7 @@ export function chatCliMark(thread: Pick<ConversationThread, "providerId" | "mod
   const cli = thread.models?.cli?.trim() || cliForChatProvider(thread.providerId);
   if (!cli) {
     const initial = thread.providerId.trim().charAt(0).toUpperCase();
-    return { kind: "chat", label: "Chat", mark: initial || "C" };
+    return { kind: "chat", label: copy.phone.conversations.conversationListLogic.chat, mark: initial || "C" };
   }
   const label = thread.models?.cliLabel?.trim() || titleCase(cli);
   if (isClaudeCli(cli)) return { kind: "claude", cli, label };

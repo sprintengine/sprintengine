@@ -8,6 +8,7 @@ import {
   STUDIO_CLIENT_TOOLS_CAPABILITY,
   type StudioCapability,
 } from '../../../../../packages/studio-protocol/src/public'
+import { copy } from '../../../../shared/copy'
 
 // When a web tab offers `canvas`, and when it takes it back (phase 9 spec,
 // 3.8; decision R79):
@@ -64,7 +65,7 @@ export async function startWebCanvasToolset<C extends CanvasToolsetClient>(
   const offer = () => {
     if (offered || offering) return offering ?? Promise.resolve()
     offering = client.tools
-      .offer({ name: 'canvas', title: 'Canvas', tools: tools.definitions })
+      .offer({ name: 'canvas', title: copy.web.canvas.webCanvasToolset.canvas, tools: tools.definitions })
       .then((toolset) => {
         offered = toolset
         focus(deps.visible())

@@ -40,6 +40,7 @@ import { useTabRecording } from './useTabRecording'
 import { buildBrowserElementBlock, normalizePickedElement, readPickTheme, sendTextToFocusedAgent } from './browserPick'
 import { usePaneHost } from '../paneHost'
 import { replayGuestFocusAsPress } from './guestPress'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The browser tab (browser-pane epic): a `<webview>` guest the renderer mounts
 // and main drives. The element is created once per tab and never re-keyed —
@@ -206,7 +207,7 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
         if (!cancelled)
           showToast({
             tone: 'error',
-            title: 'The browser could not start',
+            title: appCopy.workspace.pane.browser.browserTab.theBrowserCouldNotStart,
             ...(onMachine && error instanceof Error ? { description: error.message } : {}),
           })
       },
@@ -235,7 +236,11 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
         if (result.ok) setState(result.state)
         else {
           registeredRef.current = false
-          showToast({ tone: 'error', title: 'The browser tab could not start', description: result.reason })
+          showToast({
+            tone: 'error',
+            title: appCopy.workspace.pane.browser.browserTab.theBrowserTabCouldNot,
+            description: result.reason,
+          })
         }
       })
     }
@@ -375,7 +380,7 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
   const startPicking = useCallback(() => {
     const element = webviewRef.current
     if (!element || !config?.preloadUrl) {
-      showToast({ tone: 'warn', title: 'Inspect is not available in this build' })
+      showToast({ tone: 'warn', title: appCopy.workspace.pane.browser.browserTab.inspectIsNotAvailableIn })
       return
     }
     if (!sendToGuest(BROWSER_PICK_START_CHANNEL, readPickTheme())) return
@@ -394,14 +399,21 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
       const block = buildBrowserElementBlock(picked, screenshotPath)
       const sent = await sendTextToFocusedAgent(workspaceId, block)
       if (sent.ok) {
-        showToast({ tone: 'good', title: 'Element sent to the agent', description: picked.selector })
+        showToast({
+          tone: 'good',
+          title: appCopy.workspace.pane.browser.browserTab.elementSentToTheAgent,
+          description: picked.selector,
+        })
         return
       }
       await window.api.clipboardWriteText(block)
       showToast({
         tone: 'neutral',
-        title: 'Element copied',
-        description: sent.reason === 'no_agent' ? 'No agent is focused' : 'The focused agent has no live session',
+        title: appCopy.workspace.pane.browser.browserTab.elementCopied,
+        description:
+          sent.reason === 'no_agent'
+            ? appCopy.workspace.pane.browser.browserTab.noAgentIsFocused
+            : appCopy.workspace.pane.browser.browserTab.theFocusedAgentHasNo,
       })
     },
     [tab.id, workspaceId, workspaceRoot],
@@ -455,30 +467,51 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
         const result = await window.api.browserCopyScreenshot(tab.id)
         showToast(
           result.ok
-            ? { tone: 'good', title: 'Screenshot copied' }
-            : { tone: 'error', title: 'Screenshot failed', description: result.message },
+            ? { tone: 'good', title: appCopy.workspace.pane.browser.browserTab.screenshotCopied }
+            : {
+                tone: 'error',
+                title: appCopy.workspace.pane.browser.browserTab.screenshotFailed,
+                description: result.message,
+              },
         )
         return
       }
       if (!workspaceRoot) {
-        showToast({ tone: 'warn', title: 'Open a project folder to save screenshots' })
+        showToast({ tone: 'warn', title: appCopy.workspace.pane.browser.browserTab.openAProjectFolderTo })
         return
       }
       const result = await window.api.browserCapture({ tabId: tab.id, kind: 'screenshot' })
       if (!result.ok) {
-        showToast({ tone: 'error', title: 'Screenshot failed', description: result.message })
+        showToast({
+          tone: 'error',
+          title: appCopy.workspace.pane.browser.browserTab.screenshotFailed,
+          description: result.message,
+        })
         return
       }
       const fileName = result.path.split('/').pop() ?? result.path
       if (intent === 'save') {
-        showToast({ tone: 'good', title: 'Screenshot saved', description: fileName })
+        showToast({
+          tone: 'good',
+          title: appCopy.workspace.pane.browser.browserTab.screenshotSaved,
+          description: fileName,
+        })
         return
       }
       const sent = await sendTextToFocusedAgent(workspaceId, `Look at the screenshot at ${result.path}`)
-      if (sent.ok) showToast({ tone: 'good', title: 'Screenshot sent to the agent', description: fileName })
+      if (sent.ok)
+        showToast({
+          tone: 'good',
+          title: appCopy.workspace.pane.browser.browserTab.screenshotSentToTheAgent,
+          description: fileName,
+        })
       else {
         await window.api.clipboardWriteText(result.path)
-        showToast({ tone: 'neutral', title: 'Screenshot saved, path copied', description: 'No agent is focused' })
+        showToast({
+          tone: 'neutral',
+          title: appCopy.workspace.pane.browser.browserTab.screenshotSavedPathCopied,
+          description: appCopy.workspace.pane.browser.browserTab.noAgentIsFocused,
+        })
       }
     },
     [tab.id, workspaceId, workspaceRoot],
@@ -570,7 +603,7 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
               {state?.controller === 'agent' ? (
                 // The agent violet, as on the tab and round the surface (ui/AgentPresence.tsx).
                 <span className="inline-flex shrink-0 whitespace-nowrap">
-                  <span className="sr-only">An agent is driving this page</span>
+                  <span className="sr-only">{appCopy.workspace.pane.browser.browserTab.anAgentIsDrivingThis}</span>
                   <AgentPill />
                 </span>
               ) : null}
@@ -580,10 +613,21 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
                   onStop={() => void window.api.browserStopRecording(tab.id)}
                 />
               ) : null}
-              <Tooltip content={picking ? 'Stop inspecting' : 'Inspect element'} placement="bottom">
+              <Tooltip
+                content={
+                  picking
+                    ? appCopy.workspace.pane.browser.browserTab.stopInspecting
+                    : appCopy.workspace.pane.browser.browserTab.inspectElement
+                }
+                placement="bottom"
+              >
                 <IconButton
                   onClick={() => (picking ? stopPicking() : startPicking())}
-                  aria-label={picking ? 'Stop inspecting' : 'Inspect element'}
+                  aria-label={
+                    picking
+                      ? appCopy.workspace.pane.browser.browserTab.stopInspecting
+                      : appCopy.workspace.pane.browser.browserTab.inspectElement
+                  }
                   pressed={picking}
                   disabled={!canCapture}
                 >
@@ -595,24 +639,24 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
                 the page state, so a focused trigger is never unmounted under
                 the person; its items disable instead. */}
               <OverflowMenu
-                ariaLabel="Screenshot"
+                ariaLabel={appCopy.workspace.pane.browser.browserTab.screenshot}
                 trigger={() => <CameraGlyph />}
                 items={[
                   {
                     id: 'copy',
-                    label: 'Copy screenshot',
+                    label: appCopy.workspace.pane.browser.browserTab.copyScreenshot,
                     onSelect: () => void capturePage('copy'),
                     disabled: !canCapture,
                   },
                   {
                     id: 'save',
-                    label: 'Save to workspace',
+                    label: appCopy.workspace.pane.browser.browserTab.saveToWorkspace,
                     onSelect: () => void capturePage('save'),
                     disabled: !canCapture || !workspaceRoot,
                   },
                   {
                     id: 'send',
-                    label: 'Send to agent',
+                    label: appCopy.workspace.pane.browser.browserTab.sendToAgent,
                     onSelect: () => void capturePage('send'),
                     disabled: !canCapture || !workspaceRoot,
                   },
@@ -640,20 +684,28 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
                 onClearCookies={() => {
                   void window.api.browserClearCookies().then((result) => {
                     if (!result.ok) {
-                      showToast({ tone: 'error', title: 'Cookies were not cleared', description: result.message })
+                      showToast({
+                        tone: 'error',
+                        title: appCopy.workspace.pane.browser.browserTab.cookiesWereNotCleared,
+                        description: result.message,
+                      })
                       return
                     }
-                    showToast({ tone: 'good', title: 'Cookies cleared' })
+                    showToast({ tone: 'good', title: appCopy.workspace.pane.browser.browserTab.cookiesCleared })
                     void window.api.browserReload(tab.id)
                   })
                 }}
                 onClearCache={() => {
                   void window.api.browserClearCache().then((result) => {
                     if (!result.ok) {
-                      showToast({ tone: 'error', title: 'The cache was not cleared', description: result.message })
+                      showToast({
+                        tone: 'error',
+                        title: appCopy.workspace.pane.browser.browserTab.theCacheWasNotCleared,
+                        description: result.message,
+                      })
                       return
                     }
-                    showToast({ tone: 'good', title: 'Cache cleared' })
+                    showToast({ tone: 'good', title: appCopy.workspace.pane.browser.browserTab.cacheCleared })
                     void window.api.browserReload(tab.id, true)
                   })
                 }}
@@ -684,7 +736,9 @@ export function BrowserTab({ workspaceId, tab, active }: BrowserTabProps) {
               // shows, but never `visibility:hidden`: macOS blanks a hidden
               // guest for good.
               style={guestStyle}
-              aria-label={`Web page for ${tab.title ?? 'this tab'}`}
+              aria-label={appCopy.workspace.pane.browser.browserTab.webPageFor(
+                tab.title ?? appCopy.workspace.pane.browser.browserTab.thisTab,
+              )}
               tabIndex={active && !miniature ? 0 : -1}
             />
           ) : null}

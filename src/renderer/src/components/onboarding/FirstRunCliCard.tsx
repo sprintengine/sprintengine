@@ -6,6 +6,7 @@ import CliIcon from '../CliIcon'
 import { CliInstallControl, type CliInstallProgress } from '../settings/CliInstallControl'
 import { cliRuntimeForPlugin, orderInstalledPlugins } from '../workspace/newWorkspace/cliRuntimeOptions'
 import { useHoldCliUpdateToasts } from '../workspace/manager/cliUpdateToast'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The one question that survived the onboarding wizard.
 //
@@ -77,18 +78,20 @@ export default function FirstRunCliCard({ onDismiss }: { onDismiss: () => void }
       <div className="pointer-events-auto flex max-h-full w-full max-w-[480px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-default)] bg-[color:var(--bg-surface)]">
         {/* No rules between header, list and footer: inside an overlay, space separates. */}
         <div className="px-5 pb-2 pt-4">
-          <h2 className="text-title font-semibold text-[color:var(--text-strong)]">Set up an agent CLI</h2>
+          <h2 className="text-title font-semibold text-[color:var(--text-strong)]">
+            {appCopy.onboarding.firstRunCliCard.setUpAnAgentCLI}
+          </h2>
           {/* Not helper copy: this states what the probe found on THIS machine,
               which is the only reason the card is on screen at all. */}
           <p className="mt-0.5 text-meta leading-5 text-[color:var(--text-muted)]">
-            No agent CLI is installed. Install one to start.
+            {appCopy.onboarding.firstRunCliCard.noAgentCLIIsInstalled}
           </p>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
           {rows.length === 0 ? (
             <p className="py-6 text-center text-meta text-[color:var(--text-muted)]">
-              No agent CLIs are available to install.
+              {appCopy.onboarding.firstRunCliCard.noAgentCLIsAreAvailable}
             </p>
           ) : (
             <div>
@@ -159,7 +162,7 @@ export default function FirstRunCliCard({ onDismiss }: { onDismiss: () => void }
                           {rowInstalling ? (
                             <>
                               <Spinner className="icon-sm" />
-                              Installing
+                              {appCopy.onboarding.firstRunCliCard.installing}
                             </>
                           ) : (
                             'Install'
@@ -199,7 +202,7 @@ export default function FirstRunCliCard({ onDismiss }: { onDismiss: () => void }
 
         <div className="flex items-center justify-end gap-3 px-5 pb-4 pt-2">
           <GhostButton size="sm" onClick={onDismiss} className="shrink-0 text-[color:var(--text-muted)]">
-            Not now
+            {appCopy.onboarding.firstRunCliCard.notNow}
           </GhostButton>
         </div>
       </div>

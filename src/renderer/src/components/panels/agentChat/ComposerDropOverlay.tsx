@@ -9,6 +9,8 @@
  * `ground` is the colour it is opaque in. The two composers have each kept
  * their own: the conversation's the surface, New chat's the app's ground.
  */
+import { copy } from '../../../../../shared/copy'
+
 export function ComposerDropOverlay({ ground }: { ground: 'surface' | 'app' }) {
   return (
     <div
@@ -16,7 +18,7 @@ export function ComposerDropOverlay({ ground }: { ground: 'surface' | 'app' }) {
         ground === 'surface' ? 'bg-[color:var(--bg-surface)]' : 'bg-[color:var(--bg-app)]'
       } text-meta font-medium text-[color:var(--accent-primary)]`}
     >
-      Drop to attach
+      {copy.panels.agentChat.composerDropOverlay.dropToAttach}
     </div>
   )
 }

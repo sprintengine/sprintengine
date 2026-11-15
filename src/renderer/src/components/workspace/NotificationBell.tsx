@@ -4,6 +4,7 @@ import { Badge, ChangePulse, IconButton, Popover, Tooltip, type PopoverPlacement
 import { clientSupports } from '../../clientCapabilities'
 import type { AppNotification } from '../../../../shared/workspace'
 import type { NotificationRowAction } from './topbar/NotificationsPopover'
+import { copy } from '../../../../shared/copy'
 
 // The bell: reports worth reading, at the rail's foot above the account (owner
 // ruling 2026-11-07), and in the window's band when the rail is hidden. It is
@@ -65,21 +66,21 @@ export function NotificationBell({
       <Popover
         open={open}
         onOpenChange={onOpenChange}
-        ariaLabel="Notifications"
+        ariaLabel={copy.workspace.notificationBell.notifications}
         // A list of reports, each with its own buttons — not a menu. It
         // carried `role="menu"` with `role="menuitem"` on the report blocks,
         // which announced rows that could not be activated.
         popupRole="dialog"
         placement={placement}
         renderTrigger={({ ref, triggerProps, togglePopover }) => (
-          <Tooltip content="Notifications" placement={onRail ? 'right' : 'bottom'}>
+          <Tooltip content={copy.workspace.notificationBell.notifications} placement={onRail ? 'right' : 'bottom'}>
             <IconButton
               ref={ref}
               size={onRail ? 'lg' : 'md'}
               onClick={togglePopover}
               pressed={open}
               className="relative"
-              aria-label="Notifications"
+              aria-label={copy.workspace.notificationBell.notifications}
               {...triggerProps}
             >
               <ChangePulse

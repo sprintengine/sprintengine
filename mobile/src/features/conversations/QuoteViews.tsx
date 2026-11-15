@@ -12,6 +12,7 @@ import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { fontWeight, iconSize, radius, space, touchSlop, typography, type Theme } from "../../theme/tokens";
 import { quoteLabel, type ChatQuote, type ChatQuoteToken } from "../../shared/quotes/chat-quotes";
 import { messageParts } from "./quoteLogic";
+import { copy } from "../../../../src/shared/copy";
 
 // A quote, drawn as the desktop draws it (`agentChat/chatQuotes.tsx`): a chip
 // with its number in a small gold pill, the quote mark and a label (the
@@ -34,8 +35,8 @@ export function ComposerQuoteChips({
       {quotes.map((quote) => (
         <Pressable
           key={quote.token}
-          accessibilityHint="Opens the quote to edit or remove it"
-          accessibilityLabel={`Quote ${quote.n}: ${quoteLabel(quote)}`}
+          accessibilityHint={copy.phone.conversations.quoteViews.opensTheQuoteToEdit}
+          accessibilityLabel={copy.phone.conversations.quoteViews.quote(quote.n, quoteLabel(quote))}
           accessibilityRole="button"
           onPress={() => onOpen(quote)}
           style={({ pressed }) => [styles.chip, pressed ? styles.pressed : null]}
@@ -80,7 +81,7 @@ export function QuotedWords({
         ) : (
           <Text
             key={`${index}:${part.quote.n}`}
-            accessibilityLabel={`Quote ${part.quote.n}: ${quoteLabel(part.quote)}`}
+            accessibilityLabel={copy.phone.conversations.quoteViews.quote(part.quote.n, quoteLabel(part.quote))}
             accessibilityRole="button"
             onPress={onOpenQuote ? () => onOpenQuote(part.quote) : undefined}
             style={styles.inlineChip}
@@ -119,7 +120,7 @@ export function QuoteSheet({
   const [comment, setComment] = useState(quote?.comment ?? "");
   useEffect(() => setComment(quote?.comment ?? ""), [quote]);
   return (
-    <BottomSheet onClose={onClose} title={quote ? `Quote ${quote.n}` : "Quote"} visible={quote !== null}>
+    <BottomSheet onClose={onClose} title={quote ? copy.phone.conversations.quoteViews.quote2(quote.n) : copy.phone.conversations.quoteViews.quote3} visible={quote !== null}>
       {quote ? (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.sheet}>
           <View style={styles.passage}>
@@ -127,10 +128,10 @@ export function QuoteSheet({
           </View>
           {draft ? (
             <TextInput
-              accessibilityLabel={`Comment on quote ${quote.n}`}
+              accessibilityLabel={copy.phone.conversations.quoteViews.commentOnQuote(quote.n)}
               multiline
               onChangeText={setComment}
-              placeholder="Add a comment (optional)"
+              placeholder={copy.phone.conversations.quoteViews.addACommentOptional}
               placeholderTextColor={colors.textMuted}
               style={styles.comment}
               value={comment}
@@ -141,10 +142,10 @@ export function QuoteSheet({
             </Text>
           ) : null}
           <View style={styles.actions}>
-            {draft && onRemove ? <PrimaryButton label="Take it out" variant="ghost" onPress={onRemove} /> : null}
-            {onGoToSource ? <PrimaryButton label="Go to source" variant="ghost" onPress={onGoToSource} /> : null}
+            {draft && onRemove ? <PrimaryButton label={copy.phone.conversations.quoteViews.takeItOut} variant="ghost" onPress={onRemove} /> : null}
+            {onGoToSource ? <PrimaryButton label={copy.phone.conversations.quoteViews.goToSource} variant="ghost" onPress={onGoToSource} /> : null}
             {draft && onSaveComment ? (
-              <PrimaryButton label="Done" onPress={() => onSaveComment(comment)} />
+              <PrimaryButton label={copy.phone.conversations.quoteViews.done} onPress={() => onSaveComment(comment)} />
             ) : null}
           </View>
         </ScrollView>
@@ -188,17 +189,15 @@ export function QuotePicker({
         <View style={styles.pickerHead}>
           <CircleButton
             icon={<ChevronIcon direction="left" size={iconSize.md} tone="textPrimary" />}
-            label="Back to the chat"
+            label={copy.phone.conversations.quoteViews.backToTheChat}
             onPress={onClose}
           />
-          <Text accessibilityRole="header" style={styles.pickerTitle}>
-            Quote from this reply
-          </Text>
+          <Text accessibilityRole="header" style={styles.pickerTitle}>{copy.phone.conversations.quoteViews.quoteFromThisReply}</Text>
         </View>
-        <Text style={styles.hint}>Select words, then Quote. Select nothing to quote the whole reply.</Text>
+        <Text style={styles.hint}>{copy.phone.conversations.quoteViews.selectWordsThenQuoteSelect}</Text>
         <TextInput
-          accessibilityHint="Select the words to quote."
-          accessibilityLabel="The reply"
+          accessibilityHint={copy.phone.conversations.quoteViews.selectTheWordsToQuote}
+          accessibilityLabel={copy.phone.conversations.quoteViews.theReply}
           // Selectable, never edited: no keyboard, and what is typed is not kept.
           caretHidden
           contextMenuHidden={false}
@@ -211,7 +210,7 @@ export function QuotePicker({
           value={reply ?? ""}
         />
         <PrimaryButton
-          label={picked ? "Quote selection" : "Quote the whole reply"}
+          label={picked ? copy.phone.conversations.quoteViews.quoteSelection : copy.phone.conversations.quoteViews.quoteTheWholeReply}
           onPress={() => onQuote(picked ? selection : { start: 0, end: reply?.length ?? 0 })}
         />
       </View>
@@ -284,8 +283,8 @@ export function QuoteReplyButton({ onPress }: { onPress: () => void }) {
   const styles = useThemedStyles(createButtonStyles);
   return (
     <Pressable
-      accessibilityHint="Quote words from this reply in your next message"
-      accessibilityLabel="Quote from this reply"
+      accessibilityHint={copy.phone.conversations.quoteViews.quoteWordsFromThisReply}
+      accessibilityLabel={copy.phone.conversations.quoteViews.quoteFromThisReply}
       accessibilityRole="button"
       hitSlop={touchSlop(QUOTE_BOX, QUOTE_BOX)}
       onPress={onPress}

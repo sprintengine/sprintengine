@@ -27,6 +27,7 @@ import type { Tone } from '../../ui'
 import type { RowRecency } from '../stableRowSlices'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
 import { environmentStatus, type EnvironmentStatusKind } from '../../../../../shared/environment-status'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // The sidebar's Remote band (remote-sessions-in-the-sidebar): the sessions
 // that live on each paired machine, as rows a person can open here. DOM-free,
@@ -444,12 +445,12 @@ function remoteChatRowOf(
     repository: remoteWorkspace?.repository ?? null,
     status:
       presence === 'running'
-        ? { label: 'Running', tone: 'accent' }
+        ? { label: appCopy.workspace.remoteBand.remoteSessionsModel.running, tone: 'accent' }
         : presence === 'needs-input'
-          ? { label: 'Needs approval', tone: 'warn' }
+          ? { label: appCopy.workspace.remoteBand.remoteSessionsModel.needsApproval, tone: 'warn' }
           : conversation.phase === 'failed'
-            ? { label: 'Failed', tone: 'error' }
-            : { label: 'Done', tone: 'neutral' },
+            ? { label: appCopy.workspace.remoteBand.remoteSessionsModel.failed, tone: 'error' }
+            : { label: appCopy.workspace.remoteBand.remoteSessionsModel.done, tone: 'neutral' },
     activity: presence === 'running' ? 'working' : presence === 'needs-input' ? 'needs-input' : 'idle',
     phase: conversation.phase,
     replyPreview: conversation.lastAssistantText ?? null,

@@ -8,6 +8,7 @@ import { DocumentModeToggle, type DocumentViewMode } from "./DocumentModeToggle"
 import { HtmlDocument } from "./HtmlDocument";
 import { MarkdownDocument } from "./MarkdownDocument";
 import { SourceBlock } from "./SourceBlock";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * How a document body should be read. Structurally the protocol's
@@ -61,7 +62,7 @@ export function DocumentView({ kind, body, title }: DocumentViewProps) {
   if (!body.trim()) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyText}>This document is empty.</Text>
+        <Text style={styles.emptyText}>{copy.phone.components.document.documentView.thisDocumentIsEmpty}</Text>
       </View>
     );
   }
@@ -74,7 +75,7 @@ export function DocumentView({ kind, body, title }: DocumentViewProps) {
         {mode === "preview" ? (
           <HtmlDocument accessibilityLabel={title} html={body} onNavigationBlocked={onNavigationBlocked} />
         ) : (
-          <SourceBlock accessibilityLabel={`${title} source`} content={body} />
+          <SourceBlock accessibilityLabel={copy.phone.components.document.documentView.source(title)} content={body} />
         )}
       </View>
     );

@@ -6,6 +6,7 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { CloseIcon, iconSize, LifecycleGlyph } from "../../components/glyphs";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { radius, space, typography, type Theme } from "../../theme/tokens";
+import { copy } from "../../../../src/shared/copy";
 
 // The tray tucked behind the composer's top edge, as the desktop's chat has
 // it (composerTray.tsx there): everything the chat has to say about the next
@@ -81,7 +82,7 @@ export function ComposerTrayRow({
           {actions}
           {onDismiss ? (
             <Pressable
-              accessibilityLabel="Dismiss"
+              accessibilityLabel={copy.phone.conversations.composerTray.dismiss}
               accessibilityRole="button"
               hitSlop={space.sm}
               onPress={onDismiss}

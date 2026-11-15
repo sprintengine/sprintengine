@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { SendButton, IconButton, ContextMenu, MenuItem, MenuDivider } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 // Menu shortcut hints use the platform's own editing chords, so the composer
 // menu teaches the keyboard path instead of inventing one.
@@ -92,23 +93,29 @@ export function ComposerContextMenu({
     onClose()
   }
   return (
-    <ContextMenu x={menu.x} y={menu.y} ariaLabel="Message actions" onClose={onClose} surfaceClassName="min-w-[200px]">
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      ariaLabel={copy.panels.agentChat.composerControls.messageActions}
+      onClose={onClose}
+      surfaceClassName="min-w-[200px]"
+    >
       <MenuItem disabled={send.disabled} shortcut="Enter" onClick={run(onSend)}>
         {send.label}
       </MenuItem>
       <MenuDivider />
       <MenuItem disabled={!editable || !hasSelection} shortcut={editingShortcut(platform, 'X')} onClick={run(onCut)}>
-        Cut
+        {copy.panels.agentChat.composerControls.cut}
       </MenuItem>
       <MenuItem disabled={!hasSelection} shortcut={editingShortcut(platform, 'C')} onClick={run(onCopy)}>
-        Copy
+        {copy.panels.agentChat.composerControls.copy}
       </MenuItem>
       <MenuItem
         disabled={!editable || menu.clipboardText === ''}
         shortcut={editingShortcut(platform, 'V')}
         onClick={run(onPaste)}
       >
-        Paste
+        {copy.panels.agentChat.composerControls.paste}
       </MenuItem>
     </ContextMenu>
   )

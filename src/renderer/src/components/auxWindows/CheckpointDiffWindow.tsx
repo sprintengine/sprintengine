@@ -11,6 +11,7 @@ import { TRAFFIC_LIGHT_INSET } from '../workspace/AppTitleBar'
 import type { ToolDiffWindowInput } from './openCheckpointDiffWindow'
 import { deriveEditHunks, editPreviewSources } from '../../../../shared/conversation/editHunks'
 import { conversationTransportOfKey } from '../panels/agentChat/environmentChat'
+import { copy } from '../../../../shared/copy'
 
 export function parseCheckpointDiffRequest(raw: string): ConversationTurnDiffInput | ToolDiffWindowInput | null {
   try {
@@ -35,9 +36,9 @@ async function loadDiff(input: ConversationTurnDiffInput | ToolDiffWindowInput):
   if (!('toolUseId' in input)) return transport.turnDiff(input)
   const result = await transport.toolDetail({ ...input.key, toolUseId: input.toolUseId })
   if (!result.ok) return result
-  if (result.detail.clipped) return { ok: false, message: 'Only part of this edit was saved.' }
+  if (result.detail.clipped) return { ok: false, message: copy.auxWindows.checkpointDiffWindow.onlyPartOfThisEdit }
   const edit = deriveEditHunks(result.detail.input)[input.editIndex]
-  if (!edit || edit.limited) return { ok: false, message: 'The tool edit could not be reconstructed.' }
+  if (!edit || edit.limited) return { ok: false, message: copy.auxWindows.checkpointDiffWindow.theToolEditCouldNot }
   return { ok: true, diff: { files: [], submodulesExcluded: true }, ...editPreviewSources(edit) }
 }
 
@@ -53,7 +54,7 @@ export default function CheckpointDiffWindow({ request }: { request: string }) {
     setResult(undefined)
     const parsed = parseCheckpointDiffRequest(request)
     if (!parsed) {
-      setResult({ ok: false, message: 'Invalid checkpoint diff request.' })
+      setResult({ ok: false, message: copy.auxWindows.checkpointDiffWindow.invalidCheckpointDiffRequest })
       return
     }
     void loadDiff(parsed)
@@ -70,7 +71,11 @@ export default function CheckpointDiffWindow({ request }: { request: string }) {
   return (
     <div className="flex h-screen flex-col bg-[color:var(--sem-color-bg-app)] text-[color:var(--sem-color-text-primary)]">
       <div style={{ paddingLeft: window.api.platform === 'darwin' ? TRAFFIC_LIGHT_INSET : undefined }}>
-        <Toolbar ariaLabel="Checkpoint diff" edge="rule" className="app-drag-region">
+        <Toolbar
+          ariaLabel={copy.auxWindows.checkpointDiffWindow.checkpointDiff}
+          edge="rule"
+          className="app-drag-region"
+        >
           <span className="truncate">
             {input?.path ?? 'Turn changes'} ·{' '}
             {input && 'toolUseId' in input ? 'Recorded edit and surrounding context' : 'Before / after turn'}
@@ -80,13 +85,13 @@ export default function CheckpointDiffWindow({ request }: { request: string }) {
         </Toolbar>
       </div>
       {!result ? (
-        <Spinner label="Loading checkpoint diff" />
+        <Spinner label={copy.auxWindows.checkpointDiffWindow.loadingCheckpointDiff} />
       ) : !result.ok ? (
         <InlineNotice
           tone="error"
           action={
             <GhostButton size="inline" onClick={() => setRetry(retry + 1)}>
-              Retry
+              {copy.auxWindows.checkpointDiffWindow.retry}
             </GhostButton>
           }
         >

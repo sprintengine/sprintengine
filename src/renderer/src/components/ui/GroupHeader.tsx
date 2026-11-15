@@ -21,6 +21,7 @@ import React, { type JSX } from 'react'
 
 import { Checkbox } from './Checkbox'
 import { FOCUS_RING_CLASS, FOCUS_RING_INSET_CLASS } from './tokens'
+import { copy } from '../../../../shared/copy'
 
 export type GroupHeaderProps = {
   /** The group's name — the one thing on the band at emphasis weight. */
@@ -86,7 +87,7 @@ export function GroupHeader({
         type="button"
         aria-expanded={expanded}
         aria-controls={controls}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${title}`}
+        aria-label={`${expanded ? copy.ui.groupHeader.collapse : copy.ui.groupHeader.expand} ${title}`}
         onClick={() => onExpandedChange(!expanded)}
         // Pads out to the hit-target floor with a transparent target rather
         // than growing the mark (the glyph rule) — which is what lets a 13px
@@ -113,7 +114,7 @@ export function GroupHeader({
           indeterminate={mixed}
           onChange={onCheckedChange}
           readOnly={onCheckedChange === undefined}
-          ariaLabel={checkLabel ?? `Select every item in ${title}`}
+          ariaLabel={checkLabel ?? copy.ui.groupHeader.selectEveryItemIn(title)}
           className="shrink-0"
         />
       ) : null}

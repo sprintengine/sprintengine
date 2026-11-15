@@ -13,6 +13,7 @@ import { PullRequestPeekMark, openPullRequestExternally, pullRequestMenuGroups }
 import { localServerStateWord } from './LocalServersMenu'
 import { labelForCliRuntime } from './newWorkspace/cliRuntimeOptions'
 import { formatTokenCount } from '../../utils/tokenFormat'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The conversation peek — one hover surface for "what is this chat", opened
 // from a sidebar row and from an agent tab.
@@ -349,8 +350,12 @@ function AgentsSection({
   if (others.length === 0 && out <= 0) return null
   const listed = others.length > 0 ? roster : []
   return (
-    <Section title="Agents" count={listed.length > 0 ? listed.length : undefined} inset={false}>
-      <SectionList label="Agents in this chat">
+    <Section
+      title={appCopy.workspace.conversationPeekCard.agents}
+      count={listed.length > 0 ? listed.length : undefined}
+      inset={false}
+    >
+      <SectionList label={appCopy.workspace.conversationPeekCard.agentsInThisChat}>
         {listed.map((entry) => {
           const name = entry.agent.name?.trim() || entry.name
           const current = entry.agent.sessionId === identity.agent.sessionId
@@ -366,7 +371,7 @@ function AgentsSection({
                 )
               }
               end={state}
-              ariaLabel={`${name}${state ? `, ${state.toLowerCase()}` : ''}${entry.open ? '. Open this agent' : ''}`}
+              ariaLabel={`${name}${state ? `, ${state.toLowerCase()}` : ''}${entry.open ? appCopy.workspace.conversationPeekCard.openThisAgent : ''}`}
               onOpen={entry.open ?? null}
               current={current}
             >
@@ -376,8 +381,14 @@ function AgentsSection({
         })}
         {out > 0 ? (
           <SectionRow
-            glyph={<WorkingMark label={`${out} sub-agent${out === 1 ? '' : 's'} running`} />}
-            ariaLabel={`${out} sub-agent${out === 1 ? '' : 's'} running${identity.open ? '. Open the agent that started them' : ''}`}
+            glyph={
+              <WorkingMark label={appCopy.workspace.conversationPeekCard.subAgentRunning(out, out === 1 ? '' : 's')} />
+            }
+            ariaLabel={appCopy.workspace.conversationPeekCard.subAgentRunning2(
+              out,
+              out === 1 ? '' : 's',
+              identity.open ? appCopy.workspace.conversationPeekCard.openTheAgentThatStarted : '',
+            )}
             onOpen={identity.open ?? null}
           >
             <span className="min-w-0 flex-1 truncate text-[color:var(--text-muted)]">
@@ -402,8 +413,8 @@ function PullRequestsSection({ pullRequests, now }: { pullRequests: readonly Bra
   const rows = pullRequestMenuGroups(pullRequests, now).flatMap((group) => group.rows)
   if (rows.length === 0) return null
   return (
-    <Section title="Pull requests" count={rows.length} inset={false}>
-      <SectionList label="Pull requests from this chat" scroll={rows.length > 5}>
+    <Section title={appCopy.workspace.conversationPeekCard.pullRequests} count={rows.length} inset={false}>
+      <SectionList label={appCopy.workspace.conversationPeekCard.pullRequestsFromThisChat} scroll={rows.length > 5}>
         {rows.map((row) => (
           <SectionRow
             key={row.url}
@@ -448,8 +459,8 @@ function ServersSection({
   const rank = (server: ConversationPeekServer) => (server.state === 'stopped' ? 1 : 0)
   const ordered = [...servers].sort((a, b) => rank(a) - rank(b))
   return (
-    <Section title="Servers" count={ordered.length} inset={false}>
-      <SectionList label="Local servers in this chat" scroll={ordered.length > 4}>
+    <Section title={appCopy.workspace.conversationPeekCard.servers} count={ordered.length} inset={false}>
+      <SectionList label={appCopy.workspace.conversationPeekCard.localServersInThisChat} scroll={ordered.length > 4}>
         {ordered.map((server) => {
           const state = localServerStateWord(server.state)
           const address = serverAddress(server.url)
@@ -458,7 +469,12 @@ function ServersSection({
               key={server.id}
               glyph={<LocalServerGlyph className="icon-xs text-[color:var(--text-subtle)]" />}
               end={state}
-              ariaLabel={`Local server ${server.title}, ${address}, ${state.toLowerCase()}${openServer ? '. Open it' : ''}`}
+              ariaLabel={appCopy.workspace.conversationPeekCard.localServer(
+                server.title,
+                address,
+                state.toLowerCase(),
+                openServer ? appCopy.workspace.conversationPeekCard.openIt : '',
+              )}
               onOpen={openServer ? () => openServer(server) : null}
             >
               <TruncatedText
@@ -519,25 +535,32 @@ export function ConversationPeekCard({
 
       <ul className="m-0 flex list-none flex-col gap-1 px-3 pb-2.5 pt-0.5">
         {place?.machine && MachineGlyph ? (
-          <Fact label="Machine" glyph={<MachineGlyph className="icon-xs" />}>
+          <Fact label={appCopy.workspace.conversationPeekCard.machine} glyph={<MachineGlyph className="icon-xs" />}>
             {place.machine.label}
           </Fact>
         ) : null}
         {place?.branch ? (
-          <Fact label="Branch" glyph={<GitBranchGlyph className="icon-xs" />} mono>
+          <Fact
+            label={appCopy.workspace.conversationPeekCard.branch}
+            glyph={<GitBranchGlyph className="icon-xs" />}
+            mono
+          >
             {place.branch}
           </Fact>
         ) : null}
         {modelLine ? (
           <Fact
-            label="Model"
+            label={appCopy.workspace.conversationPeekCard.model}
             glyph={agent.cli ? <CliIcon cli={agent.cli} className="icon-xs" /> : <span className="icon-xs" />}
           >
             {modelLine}
           </Fact>
         ) : null}
         {agent.contextUsage ? (
-          <Fact label="Context" glyph={<ContextRing usedPercentage={agent.contextUsage.usedPercentage} decorative />}>
+          <Fact
+            label={appCopy.workspace.conversationPeekCard.context}
+            glyph={<ContextRing usedPercentage={agent.contextUsage.usedPercentage} decorative />}
+          >
             {contextUsageText(agent.contextUsage)}
           </Fact>
         ) : null}

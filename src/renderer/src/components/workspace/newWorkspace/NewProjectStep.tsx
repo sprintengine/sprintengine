@@ -16,6 +16,7 @@ import {
 import { basename } from '../../../utils/paths'
 import { isImeKey } from '../../../utils/imeKey'
 import { gitApi } from '../../../studio/git'
+import { copy } from '../../../../../shared/copy'
 
 // The New-chat project selector's "New project" step: a name, where it goes on
 // this machine, and — only if the person ticks it — a GitHub repository for it.
@@ -136,13 +137,21 @@ export function NewProjectStep({
 
   if (confirming) {
     return (
-      <div className="flex w-[380px] flex-col gap-3 p-2.5" role="group" aria-label="Confirm the GitHub repository">
+      <div
+        className="flex w-[380px] flex-col gap-3 p-2.5"
+        role="group"
+        aria-label={copy.workspace.newWorkspace.newProjectStep.confirmTheGitHubRepository}
+      >
         <p className="text-body font-medium text-[color:var(--text-default)]">
-          Create {visibility === 'private' ? 'a private' : 'a public'} repository on GitHub?
+          {copy.workspace.newWorkspace.newProjectStep.create}
+          {visibility === 'private' ? 'a private' : 'a public'}
+          {copy.workspace.newWorkspace.newProjectStep.repositoryOnGitHub}
         </p>
         <p className="text-meta text-[color:var(--text-muted)]">
-          <span className="font-mono text-[color:var(--text-default)]">{repositoryName}</span> goes on your GitHub
-          account{visibility === 'public' ? ', visible to everyone,' : ''} with the first commit pushed.
+          <span className="font-mono text-[color:var(--text-default)]">{repositoryName}</span>
+          {copy.workspace.newWorkspace.newProjectStep.goesOnYourGitHubAccount}
+          {visibility === 'public' ? ', visible to everyone,' : ''}
+          {copy.workspace.newWorkspace.newProjectStep.withTheFirstCommitPushed}
         </p>
         {error ? (
           <p role="alert" className="text-micro leading-4 text-[color:var(--tone-error)]">
@@ -152,12 +161,16 @@ export function NewProjectStep({
         {creating ? (
           <p className="flex items-center gap-1.5 text-micro text-[color:var(--text-muted)]" aria-live="polite">
             <Spinner size={12} />
-            <span>Creating {trimmed} and publishing it…</span>
+            <span>
+              {copy.workspace.newWorkspace.newProjectStep.creating}
+              {trimmed}
+              {copy.workspace.newWorkspace.newProjectStep.andPublishingIt}
+            </span>
           </p>
         ) : null}
         <div className="flex items-center justify-end gap-1.5">
           <GhostButton size="sm" disabled={creating} onClick={() => setConfirming(false)}>
-            Back
+            {copy.workspace.newWorkspace.newProjectStep.back}
           </GhostButton>
           <PrimaryButton size="sm" disabled={creating} onClick={() => void create(true)}>
             {creating ? 'Creating…' : 'Create repository'}
@@ -170,16 +183,17 @@ export function NewProjectStep({
   return (
     <div className="flex w-[380px] flex-col gap-3 p-2.5">
       <LinkButton ink="quiet" underline="never" onClick={onBack} className="self-start">
-        <span aria-hidden="true">←</span> New project
+        <span aria-hidden="true">←</span>
+        {copy.workspace.newWorkspace.newProjectStep.newProject}
       </LinkButton>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor={`${fieldId}-name`} className="text-body font-medium text-[color:var(--text-default)]">
-          Name
+          {copy.workspace.newWorkspace.newProjectStep.name}
         </label>
         <Input
           id={`${fieldId}-name`}
-          aria-label="Project name"
+          aria-label={copy.workspace.newWorkspace.newProjectStep.projectName}
           autoFocus
           value={name}
           onChange={(event) => {
@@ -205,22 +219,34 @@ export function NewProjectStep({
           {nameProblem ? (
             <span className="text-[color:var(--tone-error)]">{nameProblem}</span>
           ) : (
-            <span className="text-[color:var(--text-subtle)]">A local folder with a README and a first commit.</span>
+            <span className="text-[color:var(--text-subtle)]">
+              {copy.workspace.newWorkspace.newProjectStep.aLocalFolderWithA}
+            </span>
           )}
         </p>
       </div>
 
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">
-        <span className="text-meta text-[color:var(--text-muted)]">Make it in</span>
+        <span className="text-meta text-[color:var(--text-muted)]">
+          {copy.workspace.newWorkspace.newProjectStep.makeItIn}
+        </span>
         <Tooltip
-          content={parentDir ? `${parentDir} — change where it is made` : 'Choose where to make it'}
+          content={
+            parentDir
+              ? copy.workspace.newWorkspace.newProjectStep.changeWhereItIsMade(parentDir)
+              : copy.workspace.newWorkspace.newProjectStep.chooseWhereToMakeIt
+          }
           wrapperClassName="min-w-0 justify-self-start"
         >
           <OutlineButton
             size="sm"
             onClick={() => void chooseParent()}
             disabled={creating}
-            aria-label={parentDir ? `Change where it is made, now ${parentDir}` : 'Choose where to make it'}
+            aria-label={
+              parentDir
+                ? copy.workspace.newWorkspace.newProjectStep.changeWhereItIsMade2(parentDir)
+                : copy.workspace.newWorkspace.newProjectStep.chooseWhereToMakeIt
+            }
             className="min-w-0"
           >
             <span className="min-w-0 truncate">{parentLabel}</span>
@@ -228,7 +254,13 @@ export function NewProjectStep({
         </Tooltip>
       </div>
 
-      <Checkbox checked={publish} onChange={togglePublish} disabled={creating} size="body" label="Publish to GitHub" />
+      <Checkbox
+        checked={publish}
+        onChange={togglePublish}
+        disabled={creating}
+        size="body"
+        label={copy.workspace.newWorkspace.newProjectStep.publishToGitHub}
+      />
 
       {publish ? (
         <div className="flex flex-col gap-2 pl-6">
@@ -240,18 +272,18 @@ export function NewProjectStep({
                   : owners.message}
               </p>
               <GhostButton size="sm" onClick={loadOwners}>
-                Retry
+                {copy.workspace.newWorkspace.newProjectStep.retry}
               </GhostButton>
             </div>
           ) : !('ok' in owners) ? (
             <p className="flex items-center gap-1.5 text-micro text-[color:var(--text-muted)]" aria-live="polite">
               <Spinner size={12} />
-              <span>Asking GitHub who you are…</span>
+              <span>{copy.workspace.newWorkspace.newProjectStep.askingGitHubWhoYouAre}</span>
             </p>
           ) : (
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">
               <label htmlFor={`${fieldId}-owner`} className="text-meta text-[color:var(--text-muted)]">
-                Owner
+                {copy.workspace.newWorkspace.newProjectStep.owner}
               </label>
               <Input
                 id={`${fieldId}-owner`}
@@ -267,16 +299,19 @@ export function NewProjectStep({
               />
               {owners.orgs.length > 0 ? (
                 <p id={`${fieldId}-owner-note`} className="col-start-2 text-micro text-[color:var(--text-subtle)]">
-                  Your account, or one of: {owners.orgs.join(', ')}
+                  {copy.workspace.newWorkspace.newProjectStep.yourAccountOrOneOf}
+                  {owners.orgs.join(', ')}
                 </p>
               ) : null}
-              <span className="text-meta text-[color:var(--text-muted)]">Visibility</span>
+              <span className="text-meta text-[color:var(--text-muted)]">
+                {copy.workspace.newWorkspace.newProjectStep.visibility}
+              </span>
               <SegmentedControl
-                ariaLabel="Repository visibility"
+                ariaLabel={copy.workspace.newWorkspace.newProjectStep.repositoryVisibility}
                 size="sm"
                 items={[
-                  { value: 'private', label: 'Private' },
-                  { value: 'public', label: 'Public' },
+                  { value: 'private', label: copy.workspace.newWorkspace.newProjectStep.private },
+                  { value: 'public', label: copy.workspace.newWorkspace.newProjectStep.public },
                 ]}
                 value={visibility}
                 onChange={(next) => setVisibility(next === 'public' ? 'public' : 'private')}
@@ -295,7 +330,10 @@ export function NewProjectStep({
       {creating ? (
         <p className="flex items-center gap-1.5 text-micro text-[color:var(--text-muted)]" aria-live="polite">
           <Spinner size={12} />
-          <span>Creating {trimmed}…</span>
+          <span>
+            {copy.workspace.newWorkspace.newProjectStep.creating}
+            {trimmed}…
+          </span>
         </p>
       ) : null}
 

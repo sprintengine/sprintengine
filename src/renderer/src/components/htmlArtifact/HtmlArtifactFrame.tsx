@@ -3,6 +3,7 @@ import { ChipButton, GhostButton, IconButton, Skeleton, Tooltip, TruncatedText }
 import { basename } from '../../utils/paths'
 import { inertHtml } from '../../utils/inertHtml'
 import { filesApi } from '../../studio/files'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The generated-HTML artifact viewer: one file on disk, live-rendered in a
 // scripts-off sandbox, with device widths, zoom and an optional source view.
@@ -34,7 +35,7 @@ type BrowserOpenState = { kind: 'idle' } | { kind: 'opening' } | { kind: 'failed
 export type HtmlPreviewViewport = 'fit' | 1280 | 768 | 390
 
 const PREVIEW_VIEWPORTS: ReadonlyArray<{ id: HtmlPreviewViewport; label: string }> = [
-  { id: 'fit', label: 'Fit' },
+  { id: 'fit', label: appCopy.htmlArtifact.htmlArtifactFrame.fit },
   { id: 1280, label: '1280' },
   { id: 768, label: '768' },
   { id: 390, label: '390' },
@@ -82,8 +83,8 @@ function resolveHtmlArtifactView(enableSourceView: boolean, viewMode: HtmlArtifa
 }
 
 const HTML_ARTIFACT_VIEW_MODES: ReadonlyArray<{ id: HtmlArtifactViewMode; label: string }> = [
-  { id: 'preview', label: 'Preview' },
-  { id: 'source', label: 'Source' },
+  { id: 'preview', label: appCopy.htmlArtifact.htmlArtifactFrame.preview },
+  { id: 'source', label: appCopy.htmlArtifact.htmlArtifactFrame.source },
 ]
 
 function browserOpenFailureMessage(relativePath: string, failure: 'missing' | 'handler', error?: unknown): string {
@@ -299,7 +300,11 @@ export function HtmlArtifactFrame({
         </span>
         <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           {view.showToggle ? (
-            <span role="group" aria-label="View mode" className="flex items-center gap-0.5">
+            <span
+              role="group"
+              aria-label={appCopy.htmlArtifact.htmlArtifactFrame.viewMode}
+              className="flex items-center gap-0.5"
+            >
               {HTML_ARTIFACT_VIEW_MODES.map((option) => (
                 <ChipButton key={option.id} onClick={() => setViewMode(option.id)} pressed={view.mode === option.id}>
                   {option.label}
@@ -309,7 +314,11 @@ export function HtmlArtifactFrame({
           ) : null}
           {view.showsPreviewControls ? (
             <>
-              <span role="group" aria-label="Viewport width" className="flex items-center gap-0.5">
+              <span
+                role="group"
+                aria-label={appCopy.htmlArtifact.htmlArtifactFrame.viewportWidth}
+                className="flex items-center gap-0.5"
+              >
                 {PREVIEW_VIEWPORTS.map((option) => (
                   <ChipButton
                     key={option.label}
@@ -323,7 +332,7 @@ export function HtmlArtifactFrame({
               </span>
               <ChipButton
                 onClick={() => setZoom((value) => nextHtmlPreviewZoom(value))}
-                aria-label={`Zoom ${Math.round(zoom * 100)} percent`}
+                aria-label={appCopy.htmlArtifact.htmlArtifactFrame.zoomPercent(Math.round(zoom * 100))}
                 className="tabular-nums"
               >
                 {Math.round(zoom * 100)}%
@@ -332,8 +341,12 @@ export function HtmlArtifactFrame({
               <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-[color:var(--border-subtle)]" />
             </>
           ) : null}
-          <Tooltip content="Reload">
-            <IconButton size="xs" aria-label="Reload preview" onClick={() => setReloadNonce((nonce) => nonce + 1)}>
+          <Tooltip content={appCopy.htmlArtifact.htmlArtifactFrame.reload}>
+            <IconButton
+              size="xs"
+              aria-label={appCopy.htmlArtifact.htmlArtifactFrame.reloadPreview}
+              onClick={() => setReloadNonce((nonce) => nonce + 1)}
+            >
               <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
                 <path d="M13 8a5 5 0 1 1-1.5-3.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 <path
@@ -346,8 +359,18 @@ export function HtmlArtifactFrame({
               </svg>
             </IconButton>
           </Tooltip>
-          <Tooltip content={copiedPath ? 'Copied' : 'Copy path'}>
-            <IconButton size="xs" aria-label="Copy path" onClick={() => void onCopyPath()}>
+          <Tooltip
+            content={
+              copiedPath
+                ? appCopy.htmlArtifact.htmlArtifactFrame.copied
+                : appCopy.htmlArtifact.htmlArtifactFrame.copyPath
+            }
+          >
+            <IconButton
+              size="xs"
+              aria-label={appCopy.htmlArtifact.htmlArtifactFrame.copyPath}
+              onClick={() => void onCopyPath()}
+            >
               <svg viewBox="0 0 16 16" fill="none" className="icon-xs" aria-hidden="true">
                 <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
                 <path
@@ -371,10 +394,10 @@ export function HtmlArtifactFrame({
                   >
                     !
                   </span>
-                  Scripts on
+                  {appCopy.htmlArtifact.htmlArtifactFrame.scriptsOn}
                 </>
               ) : (
-                <>Allow interactive demo</>
+                <>{appCopy.htmlArtifact.htmlArtifactFrame.allowInteractiveDemo}</>
               )}
             </ChipButton>
           ) : null}
@@ -416,7 +439,7 @@ export function HtmlArtifactFrame({
             >
               <iframe
                 key={`${absolutePath}::${allowScripts ? 'scripts' : 'no-scripts'}::${reloadNonce}`}
-                title={`Preview · ${pageTitle}`}
+                title={appCopy.htmlArtifact.htmlArtifactFrame.preview2(pageTitle)}
                 srcDoc={
                   allowScripts
                     ? stripHtmlFrontmatter(frameState.content)
@@ -435,18 +458,27 @@ export function HtmlArtifactFrame({
             </div>
           </div>
         ) : frameState.kind === 'generating' ? (
-          <PreviewState title="Building this page…" body="Refreshes as the file is written." skeleton />
+          <PreviewState
+            title={appCopy.htmlArtifact.htmlArtifactFrame.buildingThisPage}
+            body={appCopy.htmlArtifact.htmlArtifactFrame.refreshesAsTheFileIs}
+            skeleton
+          />
         ) : frameState.kind === 'deleted' ? (
           <PreviewState
             glyph="deleted"
-            title="This file isn’t on disk"
+            title={appCopy.htmlArtifact.htmlArtifactFrame.thisFileIsnTOn}
             path={relativePath}
-            body="It may have been removed or not written yet. Pick another file, or reload."
+            body={appCopy.htmlArtifact.htmlArtifactFrame.itMayHaveBeenRemoved}
           />
         ) : frameState.kind === 'error' ? (
-          <PreviewState glyph="error" tone="warn" title="This file can’t be previewed" body={frameState.reason} />
+          <PreviewState
+            glyph="error"
+            tone="warn"
+            title={appCopy.htmlArtifact.htmlArtifactFrame.thisFileCanTBe}
+            body={frameState.reason}
+          />
         ) : (
-          <PreviewState title="Loading preview…" skeleton />
+          <PreviewState title={appCopy.htmlArtifact.htmlArtifactFrame.loadingPreview} skeleton />
         )}
         {/* Paint gap: hold a shimmer over the dark stage until the iframe's own
             document paints, so a dark mockup never flashes an undesigned void. */}

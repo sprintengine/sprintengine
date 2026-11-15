@@ -2,6 +2,7 @@
 
 import { ChatGlyph } from '../../AppIcons'
 import { OutlineButton, PrimaryButton } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 // ── Readiness gating ────────────────────────────────────────────────────────
 
@@ -60,15 +61,18 @@ export function ReadinessState({
       <div className="flex h-full flex-col items-center justify-center px-8 text-center" role="alert">
         <ChatGlyph className="mb-4 h-[30px] w-[30px] text-[color:var(--text-subtle)]" />
         <h2 className="mb-1 text-title font-semibold tracking-[-0.01em] text-[color:var(--text-strong)]">
-          The worktree couldn’t be made
+          {copy.panels.agentChat.chatStates.theWorktreeCouldnTBe}
         </h2>
         <p className="mb-5 max-w-[44ch] text-body leading-[1.55] text-[color:var(--text-muted)]">
-          {readiness.message} Nothing was sent; your message is still below.
+          {readiness.message}
+          {copy.panels.agentChat.chatStates.nothingWasSentYourMessage}
         </p>
         {worktreeActions ? (
           <div className="flex items-center gap-2">
-            <PrimaryButton onClick={worktreeActions.onRetry}>Retry</PrimaryButton>
-            <OutlineButton onClick={worktreeActions.onStartInProject}>Start in the project</OutlineButton>
+            <PrimaryButton onClick={worktreeActions.onRetry}>{copy.panels.agentChat.chatStates.retry}</PrimaryButton>
+            <OutlineButton onClick={worktreeActions.onStartInProject}>
+              {copy.panels.agentChat.chatStates.startInTheProject}
+            </OutlineButton>
           </div>
         ) : null}
       </div>
@@ -96,7 +100,9 @@ export function ReadinessState({
       <p className="mb-5 max-w-[44ch] text-body leading-[1.55] text-[color:var(--text-muted)]">
         {readinessLabel(readiness)}
       </p>
-      {offerSwitch ? <OutlineButton onClick={onSwitchModel}>Use another model</OutlineButton> : null}
+      {offerSwitch ? (
+        <OutlineButton onClick={onSwitchModel}>{copy.panels.agentChat.chatStates.useAnotherModel}</OutlineButton>
+      ) : null}
     </div>
   )
 }

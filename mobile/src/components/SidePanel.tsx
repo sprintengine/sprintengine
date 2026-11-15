@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { motionDurations, useReducedMotion } from "./motion";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { space, typography, type Theme } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 interface SidePanelProps {
   visible: boolean;
@@ -80,7 +81,7 @@ function SidePanelBody({
 
   return (
     <View style={styles.root}>
-      <Pressable accessibilityLabel={`Close ${title}`} accessibilityRole="button" onPress={onClose} style={styles.scrim} />
+      <Pressable accessibilityLabel={copy.phone.components.sidePanel.close(title)} accessibilityRole="button" onPress={onClose} style={styles.scrim} />
       <Animated.View
         // Containment: the panel is the only thing the screen reader may reach
         // while it is up. The old drawer was specifically dinged for lacking this.

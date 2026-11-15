@@ -2,6 +2,7 @@ import { Text, type TextStyle } from "react-native";
 
 import { useTheme } from "../theme/ThemeProvider";
 import { fontWeight, tracking, typography } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 /** `header` is the site's 17px nav wordmark; `display` its 36px hero wordmark; `title` the phone's title step. */
 export type WordmarkSize = "header" | "title" | "display";
@@ -42,7 +43,7 @@ export function SprintEngineWordmark({ style, size = "title" }: { style?: TextSt
       // One accessible name, so the screen reader says the product's name rather
       // than spelling out two adjacent runs of text.
       accessibilityRole="header"
-      accessibilityLabel="Sprint Engine"
+      accessibilityLabel={copy.phone.components.sprintEngineWordmark.sprintEngine}
       style={[
         {
           ...WORDMARK_SIZE[size],

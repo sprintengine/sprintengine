@@ -2,6 +2,7 @@ import React from 'react'
 
 import type { RendererModule } from './renderer-host'
 import { DesignGlyph } from '../components/workspace/surfaceGlyphs'
+import { copy } from '../../../shared/copy'
 
 // The Design surface, mounted over the workspace card region as a door
 // (Extensions drawer ruling, 2026-09-05; a modal from 2026-09-01 until then).
@@ -41,7 +42,7 @@ export const designRendererModule: RendererModule = {
     // drawer stays in the sidebar column as the navigation that reached it.
     host.registerGlobalSurface({
       id: 'design',
-      label: 'Design',
+      label: copy.modules.designModule.design,
       Icon: DesignGlyph,
       railPlacement: 'inline',
       Component: DesignGlobalSurface,

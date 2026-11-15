@@ -24,6 +24,7 @@ import { Drawer } from '../../ui/Drawer'
 import { ConversationMarkdown } from './conversationLinks'
 import type { TranscriptEntry } from './conversationProjection'
 import { turnPreviewText } from './turnNavigation'
+import { copy } from '../../../../../shared/copy'
 
 /** A side question the chat keeps, as its transcript reads it. */
 export type KeptSideQuestion = Extract<TranscriptEntry, { kind: 'sideQuestion' }>
@@ -241,7 +242,7 @@ export function SideQuestionDrawer({
   const lastKept = lastAnswered(entries)
   const continueAction =
     continueInChat && lastKept ? (
-      <Tooltip content={continueInChat.disabled ?? 'New chat from the latest reply, with this question'}>
+      <Tooltip content={continueInChat.disabled ?? copy.panels.agentChat.sideQuestion.newChatFromTheLatest}>
         <span>
           <GhostButton
             size="sm"
@@ -269,9 +270,9 @@ export function SideQuestionDrawer({
     <Drawer
       open={open}
       onClose={state.close}
-      title="Side question"
-      ariaLabel={`Side question about ${chatName}`}
-      closeLabel="Close side question"
+      title={copy.panels.agentChat.sideQuestion.sideQuestion}
+      ariaLabel={copy.panels.agentChat.sideQuestion.sideQuestionAbout(chatName)}
+      closeLabel={copy.panels.agentChat.sideQuestion.closeSideQuestion}
       width={440}
     >
       <Drawer.Body className="flex flex-col gap-4">
@@ -293,7 +294,7 @@ export function SideQuestionDrawer({
                 <ConversationMarkdown text={entry.answer} size="compact" />
                 {entry.truncated ? (
                   <p className="text-meta text-[color:var(--text-muted)]">
-                    Answer too long to keep; showing the start.
+                    {copy.panels.agentChat.sideQuestion.answerTooLongToKeep}
                   </p>
                 ) : null}
               </div>
@@ -301,8 +302,8 @@ export function SideQuestionDrawer({
               <InlineNotice tone="error" title={entry.error} />
             ) : (
               <p role="status" className="flex items-center gap-2 text-meta text-[color:var(--text-muted)]">
-                <WorkingMark label="Answering" />
-                Answering…
+                <WorkingMark label={copy.panels.agentChat.sideQuestion.answering} />
+                {copy.panels.agentChat.sideQuestion.answering2}
               </p>
             )}
           </section>
@@ -320,8 +321,12 @@ export function SideQuestionDrawer({
             rows={3}
             resize="none"
             value={draft}
-            aria-label="Side question"
-            placeholder={entries.length ? 'Ask a follow-up' : 'Ask a side question'}
+            aria-label={copy.panels.agentChat.sideQuestion.sideQuestion}
+            placeholder={
+              entries.length
+                ? copy.panels.agentChat.sideQuestion.askAFollowUp
+                : copy.panels.agentChat.sideQuestion.askASideQuestion
+            }
             data-side-question-input="true"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -342,13 +347,13 @@ export function SideQuestionDrawer({
               data-side-question-ask="true"
               onClick={submit}
             >
-              Ask
+              {copy.panels.agentChat.sideQuestion.ask}
             </PrimaryButton>
           </div>
         </div>
       ) : (
         <p className="shrink-0 px-3 py-3 text-meta text-[color:var(--text-muted)]" data-side-question-read-only="true">
-          Side questions aren't available here right now.
+          {copy.panels.agentChat.sideQuestion.sideQuestionsArenTAvailable}
         </p>
       )}
     </Drawer>
@@ -379,12 +384,12 @@ export function SideQuestionMarker({
         size="xs"
         align="start"
         className="min-w-0 max-w-full gap-1.5"
-        aria-label={`Side question: ${question}`}
+        aria-label={copy.panels.agentChat.sideQuestion.sideQuestion2(question)}
         {...(onOpen ? { 'aria-haspopup': 'dialog' as const } : { 'aria-expanded': expanded })}
         onClick={() => (onOpen ? onOpen(entry) : setExpanded((open) => !open))}
       >
         <ConversationGlyph className="icon-xs shrink-0 text-[color:var(--tone-warn)]" />
-        <span className="shrink-0 font-medium">Side question</span>
+        <span className="shrink-0 font-medium">{copy.panels.agentChat.sideQuestion.sideQuestion}</span>
         <span className="min-w-0 truncate text-[color:var(--text-muted)]">{question}</span>
       </GhostButton>
       {!onOpen && expanded ? (

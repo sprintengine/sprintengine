@@ -7,6 +7,7 @@ import type {
 import { readPullRequestDetail as askDetail, readPullRequestDiff as askDiff } from "./desktopReads";
 import type { DesktopStudioOptions, DesktopTarget } from "./desktopStudio";
 import type { ApiResult } from "./types";
+import { copy } from "../../../src/shared/copy";
 
 // A pull request as the phone's viewer shows it, read from the desktop that
 // lists it: `pullRequests.detail` for its detail and `pullRequests.diff` for a
@@ -43,7 +44,7 @@ export function createPullRequestApi(target: DesktopTarget, options: DesktopStud
         : {
             ok: false,
             errorCode: "invalid_payload",
-            message: "Couldn't read this pull request from the desktop.",
+            message: copy.phone.api.pullRequests.couldnTReadThisPull,
           };
     },
     async diff(url, path, offset = 0) {
@@ -55,7 +56,7 @@ export function createPullRequestApi(target: DesktopTarget, options: DesktopStud
         : {
             ok: false,
             errorCode: "invalid_payload",
-            message: "Couldn't read this file from the desktop.",
+            message: copy.phone.api.pullRequests.couldnTReadThisFile,
           };
     },
   };

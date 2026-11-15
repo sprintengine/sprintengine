@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "./motion";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { space, typography, type Theme } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 interface BottomSheetProps {
   visible: boolean;
@@ -48,7 +49,7 @@ export function BottomSheet({ visible, onClose, title, closeLabel, onDismiss, ch
       visible={visible}
     >
       <Pressable
-        accessibilityLabel={closeLabel ?? `Close ${title}`}
+        accessibilityLabel={closeLabel ?? copy.phone.components.bottomSheet.close(title)}
         accessibilityRole="button"
         onPress={onClose}
         style={styles.scrim}

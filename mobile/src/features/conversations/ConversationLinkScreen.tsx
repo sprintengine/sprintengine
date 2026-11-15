@@ -7,6 +7,7 @@ import { useSessionData } from "../../navigation/SessionDataProvider";
 import { useTheme } from "../../theme/ThemeProvider";
 import type { ConversationLink } from "./conversationLogic";
 import { ConversationScreen } from "./ConversationScreen";
+import { copy } from "../../../../src/shared/copy";
 
 export function ConversationLinkScreen({
   target,
@@ -65,7 +66,7 @@ export function ConversationLinkScreen({
   if (thread)
     return <ConversationScreen deviceId={target.deviceId} thread={thread} onBack={onBack} onPairAgain={onPairAgain} {...navigation} />;
   return (
-    <Screen title="Conversation" onBack={onBack}>
+    <Screen title={copy.phone.conversations.conversationLinkScreen.conversation} onBack={onBack}>
       <Text
         accessibilityRole={error ? "alert" : undefined}
         style={{ color: theme.colors.textPrimary }}
@@ -73,7 +74,7 @@ export function ConversationLinkScreen({
         {error || "Opening conversation…"}
       </Text>
       {error ? (
-        <PrimaryButton label="Try again" onPress={() => setAttempt((value) => value + 1)} />
+        <PrimaryButton label={copy.phone.conversations.conversationLinkScreen.tryAgain} onPress={() => setAttempt((value) => value + 1)} />
       ) : null}
     </Screen>
   );

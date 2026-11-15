@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FileSystemStat } from '../../../shared/electron-api'
 import {
@@ -13,6 +12,8 @@ import {
   type BacklogFilesystemAdapter,
 } from './backlog'
 import { test } from 'vitest'
+import { readSourceWithCopy } from '../../../../tests/source-with-copy'
+import { copy } from '../../../shared/copy'
 
 test('backlog', async () => {
   const tests: Array<{ name: string; body: () => void | Promise<void> }> = []
@@ -702,11 +703,11 @@ test('backlog', async () => {
   // failure-surfacing, and de-duplicated against the primary action without a DOM.
   // The link state machine + renderer live in a focused BacklogLinksSection
   // component; the Backlog panel only decides which link the primary action owns.
-  const backlogPanelSource = readFileSync(
+  const backlogPanelSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/panels/BacklogPanel.tsx'),
     'utf8',
   )
-  const linksSectionSource = readFileSync(
+  const linksSectionSource = readSourceWithCopy(
     join(process.cwd(), 'src/renderer/src/components/backlog/BacklogLinksSection.tsx'),
     'utf8',
   )
@@ -767,12 +768,13 @@ test('backlog', async () => {
   run('Backlog links can be detached without deleting their targets', () => {
     assert.match(
       linksSectionSource,
-      /aria-label=\{`Unlink \$\{model\.label\}`\}/,
+      /aria-label=\{copy\.backlog\.backlogLinksSection\.unlink\(model\.label\)\}/,
       'each secondary link exposes an accessible unlink control',
     )
     assert.match(backlogPanelSource, /backlogApi\.removeBacklogLink\(/, 'unlink persists through the backlog methods')
+    assert.match(backlogPanelSource, /(?:appCopy|copy)\.panels\.backlogPanel\.settingUnlinksTheLinkedWork\(/)
     assert.match(
-      backlogPanelSource,
+      copy.panels.backlogPanel.settingUnlinksTheLinkedWork('Done', 'the linked execution'),
       /The linked work isn't deleted/,
       'manual status override explains that unlinking preserves the linked work',
     )

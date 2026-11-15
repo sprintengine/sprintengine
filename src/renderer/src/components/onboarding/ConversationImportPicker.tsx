@@ -17,6 +17,7 @@ import {
   sessionKey,
   withFolder,
 } from './conversationImport'
+import { copy } from '../../../../shared/copy'
 
 // The sessions a person ran in Claude Code and Codex, by the folder each ran
 // in, to tick and bring in as chats. The onboarding card and the Settings
@@ -42,7 +43,12 @@ export function useConversationImportSelection(folders: readonly ConversationImp
       showToast(describeImportResult(result))
       return result.ok && result.imported.length > 0
     } catch (error) {
-      showToast({ tone: 'error', title: `Couldn’t import: ${error instanceof Error ? error.message : String(error)}` })
+      showToast({
+        tone: 'error',
+        title: copy.onboarding.conversationImportPicker.couldnTImport(
+          error instanceof Error ? error.message : String(error),
+        ),
+      })
       return false
     } finally {
       setImporting(false)
@@ -68,15 +74,24 @@ export function ConversationImportPicker({
     return (
       <div className="flex items-center gap-2 py-6 text-meta text-[color:var(--text-muted)]">
         <Spinner className="icon-sm shrink-0" />
-        Looking for saved sessions…
+        {copy.onboarding.conversationImportPicker.lookingForSavedSessions}
       </div>
     )
   if (scan.status === 'error')
-    return <p className="py-6 text-meta text-[color:var(--text-muted)]">Couldn’t read saved sessions: {scan.message}</p>
+    return (
+      <p className="py-6 text-meta text-[color:var(--text-muted)]">
+        {copy.onboarding.conversationImportPicker.couldnTReadSavedSessions}
+        {scan.message}
+      </p>
+    )
   if (scan.folders.length === 0)
-    return <p className="py-6 text-meta text-[color:var(--text-muted)]">No Claude Code or Codex sessions to import.</p>
+    return (
+      <p className="py-6 text-meta text-[color:var(--text-muted)]">
+        {copy.onboarding.conversationImportPicker.noClaudeCodeOrCodex}
+      </p>
+    )
   return (
-    <ul className="space-y-1" aria-label="Folders with saved sessions">
+    <ul className="space-y-1" aria-label={copy.onboarding.conversationImportPicker.foldersWithSavedSessions}>
       {scan.folders.map((folder) => {
         const offered = importableSessions(folder)
         const state = folderCheckState(folder, selected)
@@ -108,11 +123,22 @@ export function ConversationImportPicker({
               </span>
               {/* A glyph of one width, not "Choose" / "Hide": two words of two
                   widths moved the timestamp beside them on every toggle. */}
-              <Tooltip content={open ? 'Hide sessions' : 'Choose sessions'}>
+              <Tooltip
+                content={
+                  open
+                    ? copy.onboarding.conversationImportPicker.hideSessions
+                    : copy.onboarding.conversationImportPicker.chooseSessions
+                }
+              >
                 <IconButton
                   size="xs"
                   aria-expanded={open}
-                  aria-label={`${open ? 'Hide' : 'Choose'} sessions in ${folder.name}`}
+                  aria-label={copy.onboarding.conversationImportPicker.sessionsIn(
+                    open
+                      ? copy.onboarding.conversationImportPicker.hide
+                      : copy.onboarding.conversationImportPicker.choose,
+                    folder.name,
+                  )}
                   onClick={() => setOpenFolder(open ? null : folder.folderPath)}
                 >
                   <ChevronDownIcon
@@ -124,7 +150,10 @@ export function ConversationImportPicker({
               </Tooltip>
             </div>
             {open ? (
-              <ul className="mb-2 ml-6 space-y-0.5" aria-label={`Sessions in ${folder.name}`}>
+              <ul
+                className="mb-2 ml-6 space-y-0.5"
+                aria-label={copy.onboarding.conversationImportPicker.sessionsIn2(folder.name)}
+              >
                 {folder.sessions.map((session) => {
                   const key = sessionKey(session)
                   return (

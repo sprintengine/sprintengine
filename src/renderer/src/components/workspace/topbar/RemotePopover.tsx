@@ -15,6 +15,7 @@ import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared
 import { environmentStatus } from '../../../../../shared/environment-status'
 import { retryEnvironment } from '../../../hooks/useEnvironments'
 import { tailnetApi } from '../../../studio/tailnet'
+import { copy } from '../../../../../shared/copy'
 
 // The Remote glyph's surface (remote-sessions-ux / remote-glyph-topbar):
 // ONE list of the other machines — the devices holding a socket here and the
@@ -61,7 +62,7 @@ export function RemotePopover({
   const listening = status?.running === true
   return (
     <div className="w-[360px]" data-tailnet-listening={listening ? 'true' : 'false'}>
-      <PanelHeader title="Remote" count={rowCount > 0 ? rowCount : undefined} />
+      <PanelHeader title={copy.workspace.topbar.remotePopover.remote} count={rowCount > 0 ? rowCount : undefined} />
       <div className="max-h-[420px] overflow-y-auto pb-1">
         {/* Requests waiting on a person here, first: the only rows that ask
             for anything. Then the machines, in one list. */}
@@ -87,24 +88,28 @@ export function RemotePopover({
           />
         ))}
         {quiet ? (
-          <div className="px-2.5 pb-1 pt-1 text-micro text-[color:var(--text-subtle)]">No machines connected.</div>
+          <div className="px-2.5 pb-1 pt-1 text-micro text-[color:var(--text-subtle)]">
+            {copy.workspace.topbar.remotePopover.noMachinesConnected}
+          </div>
         ) : null}
         {/* The two ways out of the list, on one row: pairing another machine
             and the tab that holds everything this popover leaves out. */}
         <div className="flex items-center gap-2 px-2.5 pb-1 pt-0.5">
           <Tooltip
             content={
-              listening ? 'Scan the tailnet and pair another machine' : 'Not connected to Tailscale — nothing to scan'
+              listening
+                ? copy.workspace.topbar.remotePopover.scanTheTailnetAndPair
+                : copy.workspace.topbar.remotePopover.notConnectedToTailscaleNothing
             }
             placement="top"
           >
             <GhostButton size="sm" onClick={onOpenRemoteSettings} disabled={!listening}>
-              Add a machine…
+              {copy.workspace.topbar.remotePopover.addAMachine}
             </GhostButton>
           </Tooltip>
           <span className="flex-1" />
           <GhostButton size="sm" onClick={onOpenRemoteSettings}>
-            Remote settings
+            {copy.workspace.topbar.remotePopover.remoteSettings}
           </GhostButton>
         </div>
       </div>
@@ -131,7 +136,7 @@ function ConnectedDeviceRow({ device, now }: { device: TailnetLiveDevice; now: n
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Could not revoke ${device.deviceName}`,
+        title: copy.workspace.topbar.remotePopover.couldNotRevoke(device.deviceName),
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -143,7 +148,11 @@ function ConnectedDeviceRow({ device, now }: { device: TailnetLiveDevice; now: n
       <div className="flex items-center gap-2">
         {/* Connected is green, on the glyph (owner ruling 2026-09-05: the
             glyph is the row's one status channel; no dot beside it). */}
-        <span role="img" aria-label="Connected" className="flex shrink-0 items-center">
+        <span
+          role="img"
+          aria-label={copy.workspace.topbar.remotePopover.connected}
+          className="flex shrink-0 items-center"
+        >
           <RemoteMachineGlyph className="size-icon-sm shrink-0 text-[color:var(--tone-good)]" />
         </span>
         <span className="min-w-0 flex-1">
@@ -159,13 +168,13 @@ function ConnectedDeviceRow({ device, now }: { device: TailnetLiveDevice; now: n
             than "Revoke" — the tooltip and the accessible name carry what it
             does and to whom. */}
         <Tooltip
-          content={`Revoke ${shortMachineName(device.deviceName)} (must pair again)`}
+          content={copy.workspace.topbar.remotePopover.revokeMustPairAgain(shortMachineName(device.deviceName))}
           placement="left"
           wrapperClassName="shrink-0"
         >
           <CloseIconButton
             tone="danger"
-            aria-label={`Revoke ${device.deviceName}`}
+            aria-label={copy.workspace.topbar.remotePopover.revoke(device.deviceName)}
             disabled={revoking}
             onClick={() => void revoke()}
           />
@@ -229,7 +238,7 @@ function MachineRow({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Could not check ${name}`,
+        title: copy.workspace.topbar.remotePopover.couldNotCheck(name),
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -245,13 +254,13 @@ function MachineRow({
       // removal; the half only a person over there can do is added here.
       showToast({
         tone: 'neutral',
-        title: `${name} disconnected`,
-        description: `Revoke “${connection.deviceName}” in that machine's Remote settings to end this device's access.`,
+        title: copy.workspace.topbar.remotePopover.disconnected(name),
+        description: copy.workspace.topbar.remotePopover.revokeInThatMachineS(connection.deviceName),
       })
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Could not disconnect ${name}`,
+        title: copy.workspace.topbar.remotePopover.couldNotDisconnect(name),
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -272,12 +281,12 @@ function MachineRow({
         role="img"
         aria-label={
           !listening
-            ? 'Not connected to Tailscale'
+            ? copy.workspace.topbar.remotePopover.notConnectedToTailscale
             : answering
-              ? 'Answering'
+              ? copy.workspace.topbar.remotePopover.answering
               : state?.kind === 'signed-out'
-                ? 'Revoked there'
-                : 'Not answering'
+                ? copy.workspace.topbar.remotePopover.revokedThere
+                : copy.workspace.topbar.remotePopover.notAnswering
         }
         className="flex shrink-0 items-center"
       >
@@ -309,12 +318,16 @@ function MachineRow({
           says it. */}
       {action === 'retry' ? (
         <Tooltip
-          content={retrying ? `Checking ${name}…` : `Check whether ${name} is answering`}
+          content={
+            retrying
+              ? copy.workspace.topbar.remotePopover.checking(name)
+              : copy.workspace.topbar.remotePopover.checkWhetherIsAnswering(name)
+          }
           placement="bottom"
           wrapperClassName="shrink-0"
         >
           <IconButton
-            aria-label={`Check whether ${name} is answering`}
+            aria-label={copy.workspace.topbar.remotePopover.checkWhetherIsAnswering(name)}
             onClick={() => void retry()}
             disabled={retrying}
           >
@@ -323,7 +336,7 @@ function MachineRow({
         </Tooltip>
       ) : action === 'open-settings' ? (
         <Tooltip
-          content={`${name} took back its pairing — ask it again`}
+          content={copy.workspace.topbar.remotePopover.tookBackItsPairingAsk(name)}
           placement="bottom"
           wrapperClassName="shrink-0"
         >
@@ -332,10 +345,14 @@ function MachineRow({
           </OutlineButton>
         </Tooltip>
       ) : null}
-      <Tooltip content={`Remove ${name} from this device`} placement="left" wrapperClassName="shrink-0">
+      <Tooltip
+        content={copy.workspace.topbar.remotePopover.removeFromThisDevice(name)}
+        placement="left"
+        wrapperClassName="shrink-0"
+      >
         <CloseIconButton
           tone="danger"
-          aria-label={`Remove ${name} from this device`}
+          aria-label={copy.workspace.topbar.remotePopover.removeFromThisDevice(name)}
           disabled={forgetting}
           onClick={() => void disconnect()}
         />

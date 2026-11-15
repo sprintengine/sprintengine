@@ -5,6 +5,7 @@ import type {
 import type { TranscriptEntry, TranscriptToolEntry } from './conversationProjection'
 import { canvasBoardName } from '../../../../../shared/canvas/paths'
 import { STUDIO_MCP_SERVER_ID } from '../../../../../shared/product-identity'
+import { copy } from '../../../../../shared/copy'
 
 // What the agent touched in one conversation, read off its transcript: the
 // rows of the card on the chat's right (ChatActivityCard), and of the pill the
@@ -144,7 +145,7 @@ export function deriveChatActivity(entries: readonly TranscriptEntry[]): ChatAct
             from: 'you',
             ...(turnSeq !== undefined ? { turnSeq } : {}),
             ...(entry.createdAt !== undefined ? { at: entry.createdAt } : {}),
-            caption: attachment.name ?? 'Attached picture',
+            caption: attachment.name ?? copy.panels.agentChat.chatActivity.attachedPicture,
             source: { kind: 'attachment', attachment },
           })
       else
@@ -154,7 +155,7 @@ export function deriveChatActivity(entries: readonly TranscriptEntry[]): ChatAct
             from: 'you',
             ...(turnSeq !== undefined ? { turnSeq } : {}),
             ...(entry.createdAt !== undefined ? { at: entry.createdAt } : {}),
-            caption: attachment.name ?? 'Attached picture',
+            caption: attachment.name ?? copy.panels.agentChat.chatActivity.attachedPicture,
             source: { kind: 'stored', attachment },
           })
       continue

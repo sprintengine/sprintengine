@@ -19,6 +19,7 @@ import { useStableCallback } from '../../hooks/useStableCallback'
 import { useDeleteSettledChats } from '../../hooks/useDeleteSettledChats'
 import { settlePairedChat } from '../../studio/pairedChats'
 import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { copy } from '../../../../shared/copy'
 
 const SETTLED_PAGE = 100
 
@@ -57,7 +58,7 @@ function AutoSettleDaysRow() {
   }
   return (
     <SettingsRow
-      label="Settle after quiet days"
+      label={copy.settings.settledChatsSettingsTab.settleAfterQuietDays}
       help={`For chats with Auto-settle switched on from their menu: how many days without activity settle one, from ${MIN_AUTO_SETTLE_AFTER_DAYS} to ${MAX_AUTO_SETTLE_AFTER_DAYS}.`}
       htmlFor="auto-settle-after-days"
     >
@@ -124,7 +125,11 @@ export function SettledChatsSettingsTab({
         return
       }
       const refused = (message: string) =>
-        showToast({ tone: 'error', title: 'The chat was not brought back', description: message })
+        showToast({
+          tone: 'error',
+          title: copy.settings.settledChatsSettingsTab.theChatWasNotBrought,
+          description: message,
+        })
       void settlePairedChat(
         { id: origin.connectionId, machineName: origin.machineName },
         remoteOriginChatWorkspaceId(origin),
@@ -164,24 +169,27 @@ export function SettledChatsSettingsTab({
 
   return (
     <div role="tabpanel" id="settings-panel-settled-chats" aria-labelledby="settings-tab-settled-chats">
-      <SettingsPageHeader title="Settled chats" meta={chats.length > 0 ? `${chats.length}` : undefined} />
+      <SettingsPageHeader
+        title={copy.settings.settledChatsSettingsTab.settledChats}
+        meta={chats.length > 0 ? `${chats.length}` : undefined}
+      />
       <SettingCard className="mb-5">
         <AutoSettleDaysRow />
         <SettingToggle
-          label="Settle when its pull requests merge"
-          description="With Auto-settle on, a chat settles once its pull requests are merged or closed, never mid-run. Its worktree is freed and restored when you return."
+          label={copy.settings.settledChatsSettingsTab.settleWhenItsPullRequests}
+          description={copy.settings.settledChatsSettingsTab.withAutoSettleOnA}
           enabled={settleOnMerge}
           onChange={setSettleOnMerge}
         />
         <SettingToggle
-          label="Keep chats with an open pull request"
-          description={`With Auto-settle on, a chat with an open or draft pull request doesn't settle after ${quietDays(autoSettleDays)} without activity.`}
+          label={copy.settings.settledChatsSettingsTab.keepChatsWithAnOpen}
+          description={copy.settings.settledChatsSettingsTab.withAutoSettleOnA2(quietDays(autoSettleDays))}
           enabled={keepWithOpenPr}
           onChange={setKeepWithOpenPr}
         />
         <SettingToggle
-          label="Auto compact idle chats"
-          description="Idle Claude chats over 100k tokens compact before their prompt cache expires, so coming back costs less. Your history stays visible."
+          label={copy.settings.settledChatsSettingsTab.autoCompactIdleChats}
+          description={copy.settings.settledChatsSettingsTab.idleClaudeChatsOver100k}
           enabled={autoCompact}
           onChange={setAutoCompact}
         />
@@ -189,8 +197,8 @@ export function SettledChatsSettingsTab({
       {chats.length === 0 ? (
         <EmptyState
           density="list"
-          title="No settled chats."
-          body={`Settle a chat from its menu, or let Auto-settle do it after ${quietDays(autoSettleDays)} without activity.`}
+          title={copy.settings.settledChatsSettingsTab.noSettledChats}
+          body={copy.settings.settledChatsSettingsTab.settleAChatFromIts(quietDays(autoSettleDays))}
         />
       ) : (
         <>
@@ -199,10 +207,14 @@ export function SettledChatsSettingsTab({
               checked={allSelected}
               indeterminate={selectedIds.length > 0 && !allSelected}
               onChange={() => setSelected(allSelected ? new Set() : new Set(chats.map((chat) => chat.id)))}
-              label={allSelected ? `All ${chats.length} selected` : 'Select all'}
+              label={
+                allSelected
+                  ? copy.settings.settledChatsSettingsTab.allSelected(chats.length)
+                  : copy.settings.settledChatsSettingsTab.selectAll
+              }
             />
           </div>
-          <SettingCard as="ul" ariaLabel="Settled chats">
+          <SettingCard as="ul" ariaLabel={copy.settings.settledChatsSettingsTab.settledChats}>
             {chats.slice(0, shown).map((chat) => (
               <SettledChatRow
                 key={chat.id}
@@ -222,7 +234,8 @@ export function SettledChatsSettingsTab({
       {remaining > 0 ? (
         <div className="mt-2 flex justify-center">
           <GhostButton size="xs" onClick={() => setShown((count) => count + SETTLED_PAGE)}>
-            Show {Math.min(SETTLED_PAGE, remaining)} more
+            {copy.settings.settledChatsSettingsTab.show}
+            {Math.min(SETTLED_PAGE, remaining)} more
           </GhostButton>
         </div>
       ) : null}
@@ -231,15 +244,16 @@ export function SettledChatsSettingsTab({
           <span className="text-body font-medium text-[color:var(--text-strong)]">{selectedIds.length} selected</span>
           <span className="flex-1" />
           <GhostButton size="xs" onClick={() => setSelected(new Set())}>
-            Clear selection
+            {copy.settings.settledChatsSettingsTab.clearSelection}
           </GhostButton>
-          <Tooltip multiline content="Delete the selected chats and their history for good">
+          <Tooltip multiline content={copy.settings.settledChatsSettingsTab.deleteTheSelectedChatsAnd}>
             <DangerButton
               size="xs"
               disabled={selectedIds.some((id) => deleting.has(id))}
               onClick={() => void remove(selectedIds)}
             >
-              Delete {selectedIds.length === 1 ? '1 chat' : `${selectedIds.length} chats`}
+              {copy.settings.settledChatsSettingsTab.delete}
+              {selectedIds.length === 1 ? '1 chat' : `${selectedIds.length} chats`}
             </DangerButton>
           </Tooltip>
         </div>
@@ -281,7 +295,7 @@ const SettledChatRow = React.memo(function SettledChatRow({
       <Checkbox
         checked={selected}
         onChange={() => onToggleSelected(chat.id)}
-        ariaLabel={`Select ${chat.title}`}
+        ariaLabel={copy.settings.settledChatsSettingsTab.select(chat.title)}
         disabled={busy}
       />
       <div className="min-w-0 flex-1">
@@ -289,18 +303,28 @@ const SettledChatRow = React.memo(function SettledChatRow({
           {chat.title}
         </div>
         <div className="truncate text-meta text-[color:var(--text-subtle)]">
-          {chat.project} · Settled {formatRelativeMsAgo(chat.settledAt, now)}
+          {chat.project}
+          {copy.settings.settledChatsSettingsTab.settled}
+          {formatRelativeMsAgo(chat.settledAt, now)}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {/* The visible word leads the accessible name, and the chat
             follows it, so a list of these is not a list of identical
             buttons. */}
-        <GhostButton size="xs" aria-label={`Un-settle ${chat.title}`} onClick={() => onUnsettle(chat.id)}>
-          Un-settle
+        <GhostButton
+          size="xs"
+          aria-label={copy.settings.settledChatsSettingsTab.unSettle(chat.title)}
+          onClick={() => onUnsettle(chat.id)}
+        >
+          {copy.settings.settledChatsSettingsTab.unSettle2}
         </GhostButton>
-        <OutlineButton size="xs" aria-label={`Open ${chat.title}`} onClick={() => onOpen(chat.id)}>
-          Open
+        <OutlineButton
+          size="xs"
+          aria-label={copy.settings.settledChatsSettingsTab.open(chat.title)}
+          onClick={() => onOpen(chat.id)}
+        >
+          {copy.settings.settledChatsSettingsTab.open2}
         </OutlineButton>
         <Tooltip multiline content={settledChatDeleteTooltip(chat.remoteMachine)}>
           <GhostButton

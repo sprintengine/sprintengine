@@ -48,6 +48,7 @@ import { getTerminalWriteSamples, summarizeTerminalThroughput } from '../../util
 import { collectScrollbackFootprint } from '../../utils/diagnostics/terminalInstanceRegistry'
 import type { IpcStatsSnapshot } from '../../../../shared/electron-api'
 import { workspaceSyncApi } from '../../studio/workspaceSync'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Poll process metrics once a second while the panel is mounted. Both surfaces
 // (overlay + standalone window) mount this only while visible, so this interval
@@ -86,11 +87,11 @@ const WARNING_SHORT: Record<TerminalDiagnosticsWarning, string> = {
 }
 
 const SORT_OPTIONS: { key: TerminalDiagnosticsSortKey; label: string }[] = [
-  { key: 'retained', label: 'Retained replay' },
-  { key: 'warnings', label: 'Warnings' },
-  { key: 'activity', label: 'Activity' },
-  { key: 'lastOutput', label: 'Last output' },
-  { key: 'workspace', label: 'Workspace' },
+  { key: 'retained', label: appCopy.diagnostics.diagnosticsContent.retainedReplay },
+  { key: 'warnings', label: appCopy.diagnostics.diagnosticsContent.warnings },
+  { key: 'activity', label: appCopy.diagnostics.diagnosticsContent.activity },
+  { key: 'lastOutput', label: appCopy.diagnostics.diagnosticsContent.lastOutput },
+  { key: 'workspace', label: appCopy.diagnostics.diagnosticsContent.workspace },
 ]
 
 const REAP_REASON_LABEL: Record<TerminalReapEvent['reason'], string> = {
@@ -191,7 +192,7 @@ function SummaryStat({ label, value, tone }: { label: string; value: string; ton
       <span className="text-micro text-[color:var(--text-muted)]">{label}</span>
       <WarnMetric
         flagged={tone === 'warn'}
-        label={`${label} needs attention`}
+        label={appCopy.diagnostics.diagnosticsContent.needsAttention(label)}
         className={`text-sm font-semibold tabular-nums ${tone === 'warn' ? '' : 'text-[color:var(--text-strong)]'}`}
       >
         {value}
@@ -244,12 +245,12 @@ function useWorkspaceSyncContext(): SyncContext {
 type DiagnosticTabId = 'dashboard' | 'memory' | 'rendering' | 'terminals' | 'workspaces' | 'subsystems'
 
 const DIAGNOSTIC_TABS: TabItem<DiagnosticTabId>[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'memory', label: 'Memory' },
-  { id: 'rendering', label: 'Rendering' },
-  { id: 'terminals', label: 'Terminals' },
-  { id: 'workspaces', label: 'Workspaces' },
-  { id: 'subsystems', label: 'Subsystems' },
+  { id: 'dashboard', label: appCopy.diagnostics.diagnosticsContent.dashboard },
+  { id: 'memory', label: appCopy.diagnostics.diagnosticsContent.memory },
+  { id: 'rendering', label: appCopy.diagnostics.diagnosticsContent.rendering },
+  { id: 'terminals', label: appCopy.diagnostics.diagnosticsContent.terminals },
+  { id: 'workspaces', label: appCopy.diagnostics.diagnosticsContent.workspaces },
+  { id: 'subsystems', label: appCopy.diagnostics.diagnosticsContent.subsystems },
 ]
 
 const DIAGNOSTIC_TAB_STORAGE_KEY = 'sprintengine.diagnostics.activeTab'
@@ -276,7 +277,7 @@ function DashboardCard({
       <span className="text-micro text-[color:var(--text-muted)]">{label}</span>
       <WarnMetric
         flagged={tone === 'warn'}
-        label={`${label} needs attention`}
+        label={appCopy.diagnostics.diagnosticsContent.needsAttention(label)}
         className={`text-title font-semibold tabular-nums ${tone === 'warn' ? '' : 'text-[color:var(--text-strong)]'}`}
       >
         {value}
@@ -475,18 +476,31 @@ export default function DiagnosticsContent({ headerActions }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[color:var(--border-subtle)] px-4 py-2.5">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-[color:var(--text-strong)]">Performance Diagnostics</span>
-          <span className="text-micro text-[color:var(--text-muted)]">dev · polling {PROCESS_METRICS_POLL_MS}ms</span>
+          <span className="text-sm font-semibold text-[color:var(--text-strong)]">
+            {appCopy.diagnostics.diagnosticsContent.performanceDiagnostics}
+          </span>
+          <span className="text-micro text-[color:var(--text-muted)]">
+            {appCopy.diagnostics.diagnosticsContent.devPolling}
+            {PROCESS_METRICS_POLL_MS}ms
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <GhostButton
             size="xs"
             onClick={handleToggleBaseline}
-            aria-label={metricsTrend.baseline ? 'Clear memory baseline' : 'Mark current metrics as baseline'}
+            aria-label={
+              metricsTrend.baseline
+                ? appCopy.diagnostics.diagnosticsContent.clearMemoryBaseline
+                : appCopy.diagnostics.diagnosticsContent.markCurrentMetricsAsBaseline
+            }
           >
             {metricsTrend.baseline ? 'Clear baseline' : 'Mark baseline'}
           </GhostButton>
-          <GhostButton size="xs" onClick={handleCopy} aria-label="Copy diagnostics report to clipboard">
+          <GhostButton
+            size="xs"
+            onClick={handleCopy}
+            aria-label={appCopy.diagnostics.diagnosticsContent.copyDiagnosticsReportToClipboard}
+          >
             {copied ? 'Copied!' : 'Copy'}
           </GhostButton>
           {headerActions}
@@ -496,25 +510,34 @@ export default function DiagnosticsContent({ headerActions }: Props) {
       {/* Global summary. Its raised ground is its edge; a rule under it as
           well drew the same boundary twice, one band under the header's. */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 bg-[color:var(--bg-surface-raised)] px-4 py-2">
-        <SummaryStat label="Terminals" value={String(totals.terminalCount)} />
-        <SummaryStat label="Live" value={String(totals.liveTerminalCount)} />
-        <SummaryStat label="Runtime-visible" value={String(totals.visibleTerminalCount)} />
+        <SummaryStat label={appCopy.diagnostics.diagnosticsContent.terminals} value={String(totals.terminalCount)} />
+        <SummaryStat label={appCopy.diagnostics.diagnosticsContent.live} value={String(totals.liveTerminalCount)} />
         <SummaryStat
-          label="Hidden+visible"
+          label={appCopy.diagnostics.diagnosticsContent.runtimeVisible}
+          value={String(totals.visibleTerminalCount)}
+        />
+        <SummaryStat
+          label={appCopy.diagnostics.diagnosticsContent.hiddenVisible}
           value={String(totals.hiddenButVisibleCount)}
           tone={totals.hiddenButVisibleCount > 0 ? 'warn' : undefined}
         />
-        <SummaryStat label="Retained replay" value={formatBytes(totals.totalRetainedReplayBytes)} />
-        <SummaryStat label="Largest replay" value={formatBytes(totals.largestRetainedReplayBytes)} />
         <SummaryStat
-          label="Warnings"
+          label={appCopy.diagnostics.diagnosticsContent.retainedReplay}
+          value={formatBytes(totals.totalRetainedReplayBytes)}
+        />
+        <SummaryStat
+          label={appCopy.diagnostics.diagnosticsContent.largestReplay}
+          value={formatBytes(totals.largestRetainedReplayBytes)}
+        />
+        <SummaryStat
+          label={appCopy.diagnostics.diagnosticsContent.warnings}
           value={String(totals.warningCount)}
           tone={totals.warningCount > 0 ? 'warn' : undefined}
         />
       </div>
 
       <Tabs
-        ariaLabel="Diagnostics sections"
+        ariaLabel={appCopy.diagnostics.diagnosticsContent.diagnosticsSections}
         items={DIAGNOSTIC_TABS}
         value={activeTab}
         onChange={handleTabChange}
@@ -540,64 +563,80 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               return (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                   <DashboardCard
-                    label="Estimated memory utilization"
+                    label={appCopy.diagnostics.diagnosticsContent.estimatedMemoryUtilization}
                     value={sys ? `${Math.round(sys.utilizationRatio * 100)}%` : '—'}
-                    detail={sys ? `${formatBytes(sys.usedBytes)} estimated non-reclaimable` : 'sampling…'}
+                    detail={
+                      sys
+                        ? appCopy.diagnostics.diagnosticsContent.estimatedNonReclaimable(formatBytes(sys.usedBytes))
+                        : appCopy.diagnostics.diagnosticsContent.sampling
+                    }
                   />
                   <DashboardCard
-                    label="Reported process memory"
+                    label={appCopy.diagnostics.diagnosticsContent.reportedProcessMemory}
                     value={formatBytes(c.totalRssBytes)}
-                    detail={`renderer ${formatBytes(c.rendererRssBytes)} · main ${formatBytes(c.mainRssBytes)} · children ${formatBytes(c.childRssBytes)}`}
+                    detail={appCopy.diagnostics.diagnosticsContent.rendererMainChildren(
+                      formatBytes(c.rendererRssBytes),
+                      formatBytes(c.mainRssBytes),
+                      formatBytes(c.childRssBytes),
+                    )}
                   />
                   <DashboardCard
-                    label="Growth (RSS)"
+                    label={appCopy.diagnostics.diagnosticsContent.growthRSS}
                     value={formatPerMin(growth.rssBytesPerMin)}
                     tone={(growth.rssBytesPerMin ?? 0) > 0 ? 'warn' : undefined}
-                    detail={`over ${Math.round(growth.windowMs / 1000)}s · ${growth.sampleCount} samples`}
+                    detail={appCopy.diagnostics.diagnosticsContent.overSSamples(
+                      Math.round(growth.windowMs / 1000),
+                      growth.sampleCount,
+                    )}
                   />
                   <DashboardCard
-                    label="Peak this session"
+                    label={appCopy.diagnostics.diagnosticsContent.peakThisSession}
                     value={peaks && peaks.totalRssBytes > 0 ? formatBytes(peaks.totalRssBytes) : '—'}
                     detail={
                       peaks && peaks.systemUtilizationRatio !== null
-                        ? `estimated utilization ${Math.round(peaks.systemUtilizationRatio * 100)}%`
+                        ? appCopy.diagnostics.diagnosticsContent.estimatedUtilization(
+                            Math.round(peaks.systemUtilizationRatio * 100),
+                          )
                         : peaks && peaks.totalRssAt
-                          ? formatRelativeMsAgo(peaks.totalRssAt, now) || 'just now'
+                          ? formatRelativeMsAgo(peaks.totalRssAt, now) || appCopy.diagnostics.diagnosticsContent.justNow
                           : undefined
                     }
                   />
                   <DashboardCard
-                    label="CPU"
+                    label={appCopy.diagnostics.diagnosticsContent.cPU}
                     value={`${cpu}%`}
-                    detail={`renderer ${c.rendererCpuPercent}% · main ${c.mainCpuPercent}%`}
+                    detail={appCopy.diagnostics.diagnosticsContent.rendererMain(c.rendererCpuPercent, c.mainCpuPercent)}
                   />
                   <DashboardCard
-                    label="Rendering"
+                    label={appCopy.diagnostics.diagnosticsContent.rendering}
                     value={frameStats.fps !== null ? `${frameStats.fps} fps last` : 'paused'}
-                    detail="open Rendering tab to sample"
+                    detail={appCopy.diagnostics.diagnosticsContent.openRenderingTabToSample}
                   />
                   <DashboardCard
-                    label="Main-thread stalls"
+                    label={appCopy.diagnostics.diagnosticsContent.mainThreadStalls}
                     value={longTaskSummary.count > 0 ? `${longTaskSummary.count} last` : 'paused'}
-                    detail="open Rendering tab to observe"
+                    detail={appCopy.diagnostics.diagnosticsContent.openRenderingTabToObserve}
                   />
                   <DashboardCard
-                    label="Terminals"
+                    label={appCopy.diagnostics.diagnosticsContent.terminals}
                     value={`${totals.liveTerminalCount} live`}
                     tone={totals.hiddenButVisibleCount > 0 ? 'warn' : undefined}
-                    detail={`${totals.visibleTerminalCount} visible · ${totals.hiddenButVisibleCount} hidden+visible`}
+                    detail={appCopy.diagnostics.diagnosticsContent.visibleHiddenVisible(
+                      totals.visibleTerminalCount,
+                      totals.hiddenButVisibleCount,
+                    )}
                   />
                   <DashboardCard
-                    label="Warnings"
+                    label={appCopy.diagnostics.diagnosticsContent.warnings}
                     value={String(totals.warningCount)}
                     tone={totals.warningCount > 0 ? 'warn' : undefined}
-                    detail={totals.warningCount > 0 ? 'see Terminals tab' : 'none'}
+                    detail={totals.warningCount > 0 ? appCopy.diagnostics.diagnosticsContent.seeTerminalsTab : 'none'}
                   />
                 </div>
               )
             })()
           ) : (
-            <p className="text-[color:var(--text-muted)]">Collecting samples…</p>
+            <p className="text-[color:var(--text-muted)]">{appCopy.diagnostics.diagnosticsContent.collectingSamples}</p>
           )}
         </TabPanel>
 
@@ -610,18 +649,20 @@ export default function DiagnosticsContent({ headerActions }: Props) {
         >
           {/* Process metrics */}
           <section>
-            <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">Processes</h2>
+            <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
+              {appCopy.diagnostics.diagnosticsContent.processes}
+            </h2>
             {metrics && metrics.processes.length > 0 ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th>Kind</Th>
-                    <Th numeric>PID</Th>
-                    <Th>Type / name</Th>
-                    <Th numeric>CPU %</Th>
-                    <Th numeric>Reported memory</Th>
-                    <Th numeric>Threads</Th>
-                    <Th numeric>FDs</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.kind}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.pID}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.typeName}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.cPU2}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.reportedMemory}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.threads}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.fDs}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -639,40 +680,51 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </tbody>
               </Table>
             ) : (
-              <p className="text-[color:var(--text-muted)]">Process metrics unavailable.</p>
+              <p className="text-[color:var(--text-muted)]">
+                {appCopy.diagnostics.diagnosticsContent.processMetricsUnavailable}
+              </p>
             )}
             <p className="mt-1 text-micro text-[color:var(--text-subtle)]">
-              Electron rows: working set; child rows: OS RSS. Not macOS physical footprint, so Activity Monitor may
-              differ. CPU % is since the last sample. FD counts aren't collected.
+              {appCopy.diagnostics.diagnosticsContent.electronRowsWorkingSetChild}
             </p>
           </section>
 
           {/* Memory trend + baseline diff */}
           <section>
-            <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">Memory trend</h2>
+            <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
+              {appCopy.diagnostics.diagnosticsContent.memoryTrend}
+            </h2>
             {metricsTrend.current ? (
               <div className="flex flex-col gap-1 text-micro text-[color:var(--text-default)]">
                 <div className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
                   <span>
-                    Reported process memory <strong>{formatBytes(metricsTrend.current.totalRssBytes)}</strong>
+                    {appCopy.diagnostics.diagnosticsContent.reportedProcessMemory2}
+                    <strong>{formatBytes(metricsTrend.current.totalRssBytes)}</strong>
                   </span>
                   <span>renderer {formatBytes(metricsTrend.current.rendererRssBytes)}</span>
                   <span>main {formatBytes(metricsTrend.current.mainRssBytes)}</span>
                   <span>gpu {formatBytes(metricsTrend.current.gpuRssBytes)}</span>
                   <span>children {formatBytes(metricsTrend.current.childRssBytes)}</span>
                   {metricsTrend.current.rendererHeapUsedBytes !== null && (
-                    <span>renderer JS heap {formatBytes(metricsTrend.current.rendererHeapUsedBytes)}</span>
+                    <span>
+                      {appCopy.diagnostics.diagnosticsContent.rendererJSHeap}
+                      {formatBytes(metricsTrend.current.rendererHeapUsedBytes)}
+                    </span>
                   )}
                 </div>
                 {metricsTrend.current.systemMemory && (
                   <div className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums">
                     <span>
-                      Estimated system utilization{' '}
+                      {appCopy.diagnostics.diagnosticsContent.estimatedSystemUtilization}{' '}
                       <strong>{Math.round(metricsTrend.current.systemMemory.utilizationRatio * 100)}%</strong> (
                       {formatBytes(metricsTrend.current.systemMemory.usedBytes)} /{' '}
-                      {formatBytes(metricsTrend.current.systemMemory.totalBytes)} estimated non-reclaimable)
+                      {formatBytes(metricsTrend.current.systemMemory.totalBytes)}
+                      {appCopy.diagnostics.diagnosticsContent.estimatedNonReclaimable2}
                     </span>
-                    <span>estimated available {formatBytes(metricsTrend.current.systemMemory.availableBytes)}</span>
+                    <span>
+                      {appCopy.diagnostics.diagnosticsContent.estimatedAvailable}
+                      {formatBytes(metricsTrend.current.systemMemory.availableBytes)}
+                    </span>
                     {metricsTrend.current.systemMemory.compressedBytes > 0 && (
                       <span>compressed {formatBytes(metricsTrend.current.systemMemory.compressedBytes)}</span>
                     )}
@@ -684,23 +736,37 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-[color:var(--text-subtle)]">
                   <span className="flex items-center gap-1 text-[color:var(--text-muted)]">
                     renderer
-                    <Sparkline values={memorySparklines.rendererRss} title="Renderer RSS over recent samples" />
+                    <Sparkline
+                      values={memorySparklines.rendererRss}
+                      title={appCopy.diagnostics.diagnosticsContent.rendererRSSOverRecentSamples}
+                    />
                   </span>
                   <span className="flex items-center gap-1 text-[color:var(--text-muted)]">
                     gpu
-                    <Sparkline values={memorySparklines.gpuRss} title="GPU RSS over recent samples" />
+                    <Sparkline
+                      values={memorySparklines.gpuRss}
+                      title={appCopy.diagnostics.diagnosticsContent.gPURSSOverRecentSamples}
+                    />
                   </span>
                   {metricsTrend.current.rendererHeapUsedBytes !== null && (
                     <span className="flex items-center gap-1 text-[color:var(--text-muted)]">
                       heap
-                      <Sparkline values={memorySparklines.heap} title="Renderer JS heap over recent samples" />
+                      <Sparkline
+                        values={memorySparklines.heap}
+                        title={appCopy.diagnostics.diagnosticsContent.rendererJSHeapOverRecent}
+                      />
                     </span>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums text-[color:var(--text-muted)]">
                   <span>
-                    Growth ({Math.round(metricsTrend.growth.windowMs / 1000)}s): RSS{' '}
-                    <WarnMetric flagged={(metricsTrend.growth.rssBytesPerMin ?? 0) > 0} label="RSS is growing">
+                    {appCopy.diagnostics.diagnosticsContent.growth}
+                    {Math.round(metricsTrend.growth.windowMs / 1000)}
+                    {appCopy.diagnostics.diagnosticsContent.sRSS}{' '}
+                    <WarnMetric
+                      flagged={(metricsTrend.growth.rssBytesPerMin ?? 0) > 0}
+                      label={appCopy.diagnostics.diagnosticsContent.rSSIsGrowing}
+                    >
                       {formatPerMin(metricsTrend.growth.rssBytesPerMin)}
                     </WarnMetric>
                   </span>
@@ -709,10 +775,16 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </div>
                 {metricsTrend.peaks && metricsTrend.peaks.totalRssBytes > 0 && (
                   <div className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums text-[color:var(--text-muted)]">
-                    <span>Peak this session: reported memory {formatBytes(metricsTrend.peaks.totalRssBytes)}</span>
+                    <span>
+                      {appCopy.diagnostics.diagnosticsContent.peakThisSessionReportedMemory}
+                      {formatBytes(metricsTrend.peaks.totalRssBytes)}
+                    </span>
                     <span>children {formatBytes(metricsTrend.peaks.childRssBytes)}</span>
                     {metricsTrend.peaks.systemUtilizationRatio !== null && (
-                      <span>estimated utilization {Math.round(metricsTrend.peaks.systemUtilizationRatio * 100)}%</span>
+                      <span>
+                        {appCopy.diagnostics.diagnosticsContent.estimatedUtilization2}
+                        {Math.round(metricsTrend.peaks.systemUtilizationRatio * 100)}%
+                      </span>
                     )}
                   </div>
                 )}
@@ -729,10 +801,22 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                           : null
                       return (
                         <>
-                          <span>vs baseline ({formatRelativeMsAgo(b.sampledAt, now) || 'just now'}):</span>
-                          <span>Δ total {formatSignedBytes(dTotal)}</span>
-                          <span>Δ renderer {formatSignedBytes(dRenderer)}</span>
-                          <span>Δ heap {dHeap === null ? '—' : formatSignedBytes(dHeap)}</span>
+                          <span>
+                            {appCopy.diagnostics.diagnosticsContent.vsBaseline}
+                            {formatRelativeMsAgo(b.sampledAt, now) || 'just now'}):
+                          </span>
+                          <span>
+                            {appCopy.diagnostics.diagnosticsContent.total}
+                            {formatSignedBytes(dTotal)}
+                          </span>
+                          <span>
+                            {appCopy.diagnostics.diagnosticsContent.renderer}
+                            {formatSignedBytes(dRenderer)}
+                          </span>
+                          <span>
+                            {appCopy.diagnostics.diagnosticsContent.heap}
+                            {dHeap === null ? '—' : formatSignedBytes(dHeap)}
+                          </span>
                         </>
                       )
                     })()}
@@ -740,7 +824,9 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 )}
               </div>
             ) : (
-              <p className="text-[color:var(--text-muted)]">Collecting samples…</p>
+              <p className="text-[color:var(--text-muted)]">
+                {appCopy.diagnostics.diagnosticsContent.collectingSamples}
+              </p>
             )}
           </section>
         </TabPanel>
@@ -755,14 +841,25 @@ export default function DiagnosticsContent({ headerActions }: Props) {
           {/* Long tasks */}
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              Long tasks (main-thread stalls &gt; 50ms, last {Math.round(longTaskSummary.windowMs / 1000)}s)
+              {appCopy.diagnostics.diagnosticsContent.longTasksMainThreadStalls}
+              {Math.round(longTaskSummary.windowMs / 1000)}s)
             </h2>
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-micro tabular-nums text-[color:var(--text-default)]">
-              <WarnMetric flagged={longTaskSummary.count > 0} label="Long tasks recorded">
-                Count <strong>{longTaskSummary.count}</strong>
+              <WarnMetric
+                flagged={longTaskSummary.count > 0}
+                label={appCopy.diagnostics.diagnosticsContent.longTasksRecorded}
+              >
+                {appCopy.diagnostics.diagnosticsContent.count}
+                <strong>{longTaskSummary.count}</strong>
               </WarnMetric>
-              <span>Blocking {longTaskSummary.totalBlockingMs} ms</span>
-              <span>Max {msOrDash(longTaskSummary.maxMs)} ms</span>
+              <span>
+                {appCopy.diagnostics.diagnosticsContent.blocking}
+                {longTaskSummary.totalBlockingMs} ms
+              </span>
+              <span>
+                {appCopy.diagnostics.diagnosticsContent.max}
+                {msOrDash(longTaskSummary.maxMs)} ms
+              </span>
               <span>p95 {msOrDash(longTaskSummary.p95Ms)} ms</span>
               <span className="text-[color:var(--text-subtle)]">
                 {longTaskSummary.lastAt ? `last ${formatRelativeMsAgo(longTaskSummary.lastAt, now)}` : 'none'}
@@ -773,43 +870,56 @@ export default function DiagnosticsContent({ headerActions }: Props) {
           {/* Frame cadence (rAF) — per-frame jank the longtask observer misses */}
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              Rendering cadence (frames, last {Math.round(frameStats.windowMs / 1000)}s)
+              {appCopy.diagnostics.diagnosticsContent.renderingCadenceFramesLast}
+              {Math.round(frameStats.windowMs / 1000)}s)
             </h2>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-micro tabular-nums text-[color:var(--text-default)]">
-              <WarnMetric flagged={frameStats.fps !== null && frameStats.fps < 50} label="Frame rate below 50">
-                FPS <strong>{frameStats.fps ?? '—'}</strong>
+              <WarnMetric
+                flagged={frameStats.fps !== null && frameStats.fps < 50}
+                label={appCopy.diagnostics.diagnosticsContent.frameRateBelow50}
+              >
+                {appCopy.diagnostics.diagnosticsContent.fPS}
+                <strong>{frameStats.fps ?? '—'}</strong>
               </WarnMetric>
-              <WarnMetric flagged={frameStats.longFrameCount > 0} label="Long frames recorded">
-                Long frames {frameStats.longFrameCount} ({frameStats.longFramePercent}%)
+              <WarnMetric
+                flagged={frameStats.longFrameCount > 0}
+                label={appCopy.diagnostics.diagnosticsContent.longFramesRecorded}
+              >
+                {appCopy.diagnostics.diagnosticsContent.longFrames}
+                {frameStats.longFrameCount} ({frameStats.longFramePercent}%)
               </WarnMetric>
               <span>p95 {msOrDash(frameStats.p95Ms)} ms</span>
               <span>worst {msOrDash(frameStats.maxMs)} ms</span>
               <span className="text-[color:var(--text-subtle)]">{frameStats.frameCount} frames</span>
               <span className="text-[color:var(--text-muted)]">
-                <Sparkline values={frameDurations} title="Frame durations (ms) — spikes are stutters" />
+                <Sparkline
+                  values={frameDurations}
+                  title={appCopy.diagnostics.diagnosticsContent.frameDurationsMsSpikesAre}
+                />
               </span>
             </div>
             <p className="mt-0.5 text-micro text-[color:var(--text-subtle)]">
-              Per-frame jank no single &gt;50ms task shows. GPU draw stalls may read low; check DevTools.
+              {appCopy.diagnostics.diagnosticsContent.perFrameJankNoSingle}
             </p>
           </section>
 
           {/* Perf events rollup */}
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              Perf events ({perfRollup.length})
+              {appCopy.diagnostics.diagnosticsContent.perfEvents}
+              {perfRollup.length})
             </h2>
             {perfRollup.length > 0 ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th>Scope</Th>
-                    <Th>Event</Th>
-                    <Th numeric>Count</Th>
-                    <Th numeric>p50 ms</Th>
-                    <Th numeric>p95 ms</Th>
-                    <Th numeric>Max ms</Th>
-                    <Th numeric>Last ms</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.scope}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.event}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.count2}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.p50Ms}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.p95Ms}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.maxMs}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.lastMs}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -827,7 +937,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </tbody>
               </Table>
             ) : (
-              <p className="text-[color:var(--text-muted)]">No perf events yet.</p>
+              <p className="text-[color:var(--text-muted)]">{appCopy.diagnostics.diagnosticsContent.noPerfEventsYet}</p>
             )}
           </section>
         </TabPanel>
@@ -843,12 +953,13 @@ export default function DiagnosticsContent({ headerActions }: Props) {
           <section>
             <div className="mb-1 flex items-center justify-between">
               <h2 className="text-micro font-semibold text-[color:var(--text-muted)]">
-                Terminals ({aggregation.rows.length})
+                {appCopy.diagnostics.diagnosticsContent.terminals2}
+                {aggregation.rows.length})
               </h2>
               <div className="flex items-center gap-1.5 text-micro text-[color:var(--text-muted)]">
-                <span>Sort</span>
+                <span>{appCopy.diagnostics.diagnosticsContent.sort}</span>
                 <Select<TerminalDiagnosticsSortKey>
-                  ariaLabel="Sort terminals by"
+                  ariaLabel={appCopy.diagnostics.diagnosticsContent.sortTerminalsBy}
                   items={SORT_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
                   value={sortKey}
                   onChange={setSortKey}
@@ -859,17 +970,17 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               <Table>
                 <thead>
                   <tr>
-                    <Th>Workspace</Th>
-                    <Th>Agent / term</Th>
-                    <Th>Kind</Th>
-                    <Th>Alive</Th>
-                    <Th>Activity</Th>
-                    <Th>Vis</Th>
-                    <Th numeric>Retained</Th>
-                    <Th numeric>Limit</Th>
-                    <Th>Tier</Th>
-                    <Th numeric>Last output</Th>
-                    <Th>Warnings</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.workspace}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.agentTerm}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.kind}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.alive}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.activity}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.vis}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.retained}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.limit}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.tier}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.lastOutput}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.warnings}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -887,7 +998,10 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                       <Td>{activityLabel(row.activity)}</Td>
                       <Td>
                         {row.hiddenButVisible ? (
-                          <WarnMetric flagged label="Runtime-visible but workspace is hidden">
+                          <WarnMetric
+                            flagged
+                            label={appCopy.diagnostics.diagnosticsContent.runtimeVisibleButWorkspaceIs}
+                          >
                             hidden
                           </WarnMetric>
                         ) : row.visible ? (
@@ -918,7 +1032,9 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </tbody>
               </Table>
             ) : (
-              <p className="text-[color:var(--text-muted)]">No terminal sessions.</p>
+              <p className="text-[color:var(--text-muted)]">
+                {appCopy.diagnostics.diagnosticsContent.noTerminalSessions}
+              </p>
             )}
           </section>
 
@@ -926,22 +1042,22 @@ export default function DiagnosticsContent({ headerActions }: Props) {
             suspended/disposed this session, and from which workspace. */}
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              Reaped terminals ({metrics?.reapEvents?.length ?? 0})
+              {appCopy.diagnostics.diagnosticsContent.reapedTerminals}
+              {metrics?.reapEvents?.length ?? 0})
             </h2>
             <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-              Idle agents suspended by the reaper or disposed after 24h stale. Newest first; cleared on restart.
-              Reopening one resumes it.
+              {appCopy.diagnostics.diagnosticsContent.idleAgentsSuspendedByThe}
             </p>
             {metrics?.reapEvents && metrics.reapEvents.length > 0 ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th numeric>Reaped</Th>
-                    <Th>Workspace</Th>
-                    <Th>Agent / term</Th>
-                    <Th>Kind</Th>
-                    <Th>Reason</Th>
-                    <Th numeric>Idle / unseen</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.reaped}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.workspace}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.agentTerm}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.kind}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.reason}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.idleUnseen}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -969,7 +1085,9 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </tbody>
               </Table>
             ) : (
-              <p className="text-[color:var(--text-muted)]">Nothing reaped yet this session.</p>
+              <p className="text-[color:var(--text-muted)]">
+                {appCopy.diagnostics.diagnosticsContent.nothingReapedYetThisSession}
+              </p>
             )}
           </section>
         </TabPanel>
@@ -983,25 +1101,25 @@ export default function DiagnosticsContent({ headerActions }: Props) {
         >
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              Workspaces ({workspacesByMemory.length})
+              {appCopy.diagnostics.diagnosticsContent.workspaces2}
+              {workspacesByMemory.length})
             </h2>
             <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-              RSS of each workspace's agent and terminal processes. Shared app overhead isn't counted, so these sum to
-              less than the app total. &quot;Live for&quot; counts from the oldest live terminal.
+              {appCopy.diagnostics.diagnosticsContent.rSSOfEachWorkspaceS}
             </p>
             {workspacesByMemory.length > 0 ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th>Workspace</Th>
-                    <Th numeric>Memory</Th>
-                    <Th numeric>Live</Th>
-                    <Th numeric>Active</Th>
-                    <Th numeric>Idle</Th>
-                    <Th numeric>Hidden+vis</Th>
-                    <Th numeric>Retained</Th>
-                    <Th numeric>Live for</Th>
-                    <Th numeric>Last output</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.workspace}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.memory}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.live}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.active}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.idle}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.hiddenVis}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.retained}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.liveFor}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.lastOutput}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1019,7 +1137,10 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                         <Td numeric>{workspace.idleCount}</Td>
                         <Td numeric>
                           {workspace.hiddenButVisibleCount > 0 ? (
-                            <WarnMetric flagged label="Terminals visible while the workspace is hidden">
+                            <WarnMetric
+                              flagged
+                              label={appCopy.diagnostics.diagnosticsContent.terminalsVisibleWhileTheWorkspace}
+                            >
                               {workspace.hiddenButVisibleCount}
                             </WarnMetric>
                           ) : (
@@ -1035,7 +1156,9 @@ export default function DiagnosticsContent({ headerActions }: Props) {
                 </tbody>
               </Table>
             ) : (
-              <p className="text-[color:var(--text-muted)]">No workspace terminals.</p>
+              <p className="text-[color:var(--text-muted)]">
+                {appCopy.diagnostics.diagnosticsContent.noWorkspaceTerminals}
+              </p>
             )}
           </section>
         </TabPanel>
@@ -1049,14 +1172,25 @@ export default function DiagnosticsContent({ headerActions }: Props) {
         >
           {/* Terminal scrollback + write throughput */}
           <section>
-            <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">Terminal subsystem</h2>
+            <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
+              {appCopy.diagnostics.diagnosticsContent.terminalSubsystem}
+            </h2>
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-micro tabular-nums text-[color:var(--text-default)]">
               <span>
-                Scrollback: <strong>{scrollback.instanceCount}</strong> instances ·{' '}
-                {scrollback.totalLines.toLocaleString()} lines · ~{formatBytes(scrollback.estimatedBytes)} est.
+                {appCopy.diagnostics.diagnosticsContent.scrollback}
+                <strong>{scrollback.instanceCount}</strong>
+                {appCopy.diagnostics.diagnosticsContent.instances} {scrollback.totalLines.toLocaleString()}
+                {appCopy.diagnostics.diagnosticsContent.lines}
+                {formatBytes(scrollback.estimatedBytes)} est.
               </span>
-              <span>Write total {formatBytes(terminalThroughput.totalBytesPerSec)}/s</span>
-              <WarnMetric flagged={terminalThroughput.hiddenBytesPerSec > 0} label="Hidden terminals are writing">
+              <span>
+                {appCopy.diagnostics.diagnosticsContent.writeTotal}
+                {formatBytes(terminalThroughput.totalBytesPerSec)}/s
+              </span>
+              <WarnMetric
+                flagged={terminalThroughput.hiddenBytesPerSec > 0}
+                label={appCopy.diagnostics.diagnosticsContent.hiddenTerminalsAreWriting}
+              >
                 hidden {formatBytes(terminalThroughput.hiddenBytesPerSec)}/s
               </WarnMetric>
               <span>visible {formatBytes(terminalThroughput.visibleBytesPerSec)}/s</span>
@@ -1066,18 +1200,19 @@ export default function DiagnosticsContent({ headerActions }: Props) {
           {/* IPC throughput */}
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              IPC throughput {ipcThroughput ? `(${ipcThroughput.channels.length} channels)` : ''}
+              {appCopy.diagnostics.diagnosticsContent.iPCThroughput}
+              {ipcThroughput ? `(${ipcThroughput.channels.length} channels)` : ''}
             </h2>
             {ipcThroughput && ipcThroughput.channels.length > 0 ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th>Channel</Th>
-                    <Th numeric>Calls/s</Th>
-                    <Th numeric>Out/s</Th>
-                    <Th numeric>Events/s</Th>
-                    <Th numeric>In/s</Th>
-                    <Th numeric>Total calls</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.channel}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.callsS}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.outS}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.eventsS}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.inS}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.totalCalls}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1095,7 +1230,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               </Table>
             ) : (
               <p className="text-[color:var(--text-muted)]">
-                IPC accounting needs diagnostics on (dev or SPRINTENGINE_DIAGNOSTICS=1).
+                {appCopy.diagnostics.diagnosticsContent.iPCAccountingNeedsDiagnosticsOn}
               </p>
             )}
           </section>
@@ -1103,20 +1238,21 @@ export default function DiagnosticsContent({ headerActions }: Props) {
           {/* Replay profiles */}
           <section>
             <h2 className="mb-1 text-micro font-semibold text-[color:var(--text-muted)]">
-              Recent replay profiles ({profiles.length})
+              {appCopy.diagnostics.diagnosticsContent.recentReplayProfiles}
+              {profiles.length})
             </h2>
             {profiles.length > 0 ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th>When</Th>
-                    <Th>Session</Th>
-                    <Th>Kind</Th>
-                    <Th numeric>Payload</Th>
-                    <Th numeric>Writes</Th>
-                    <Th numeric>Total ms</Th>
-                    <Th numeric>Max write ms</Th>
-                    <Th numeric>Live buffered</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.when}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.session}</Th>
+                    <Th>{appCopy.diagnostics.diagnosticsContent.kind}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.payload}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.writes}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.totalMs}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.maxWriteMs}</Th>
+                    <Th numeric>{appCopy.diagnostics.diagnosticsContent.liveBuffered}</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1139,7 +1275,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
               </Table>
             ) : (
               <p className="text-[color:var(--text-muted)]">
-                No replay profiles here. They record in the window that owns the terminal.
+                {appCopy.diagnostics.diagnosticsContent.noReplayProfilesHereThey}
               </p>
             )}
           </section>

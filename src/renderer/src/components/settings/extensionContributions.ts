@@ -13,6 +13,7 @@
 // what a module adds BEFORE any of its code has run.
 
 import type { ComponentType } from 'react'
+import { copy } from '../../../../shared/copy'
 
 type Owned = { moduleId: string }
 type Labelled = Owned & { id: string; label?: string; Icon?: ComponentType<{ className?: string }> }
@@ -52,19 +53,23 @@ export function deriveContributions(
   if (options.rendererLoaded) {
     for (const surface of mine(registry.getGlobalSurfaces())) {
       if (surface.views?.length) {
-        for (const view of surface.views) adds.push({ kind: 'door', label: `${view.label} door` })
+        for (const view of surface.views)
+          adds.push({ kind: 'door', label: copy.settings.extensionContributions.door(view.label) })
       } else {
-        adds.push({ kind: 'door', label: `${surface.label ?? titleCase(surface.id)} door` })
+        adds.push({
+          kind: 'door',
+          label: copy.settings.extensionContributions.door2(surface.label ?? titleCase(surface.id)),
+        })
       }
     }
     for (const type of mine(registry.getWorkspaceTypes())) {
-      adds.push({ kind: 'workspace', label: `${type.label} workspace` })
+      adds.push({ kind: 'workspace', label: copy.settings.extensionContributions.workspace(type.label) })
     }
     for (const modal of mine(registry.getModalSurfaces())) {
       adds.push({ kind: 'dialog', label: modal.label })
     }
     for (const section of mine(registry.getSettingsSections())) {
-      adds.push({ kind: 'settings', label: `${section.label} settings` })
+      adds.push({ kind: 'settings', label: copy.settings.extensionContributions.settings(section.label) })
     }
     const topBar = mine(registry.getTopBarItems()).length
     if (topBar > 0) adds.push({ kind: 'top-bar', label: count(topBar, 'top-bar control', 'top-bar controls') })

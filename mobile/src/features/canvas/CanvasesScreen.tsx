@@ -20,6 +20,7 @@ import {
   type CanvasDesktopRead,
 } from "./canvasLogic";
 import { useCanvasSource } from "./CanvasSourceContext";
+import { copy } from "../../../../src/shared/copy";
 
 /** The chat the list was opened from: its desktop, its workspace there, and its project's name. */
 export type CanvasesChat = { deviceId: string; workspaceId: string; projectName: string | null };
@@ -109,7 +110,7 @@ export function CanvasesScreen({
   const oneDesktop = readable.length <= 1;
 
   return (
-    <ScreenFrame backLabel="Back" count={count} onBack={onBack} title="Canvases">
+    <ScreenFrame backLabel={copy.phone.canvas.canvasesScreen.back} count={count} onBack={onBack} title={copy.phone.canvas.canvasesScreen.canvases}>
       <ScrollView contentContainerStyle={contentStyle} refreshControl={refreshControl}>
         {readable.length === 0 ? (
           <Card>
@@ -120,13 +121,11 @@ export function CanvasesScreen({
             </Text>
           </Card>
         ) : loading ? (
-          <SkeletonRows label="Reading the desktops' boards" />
+          <SkeletonRows label={copy.phone.canvas.canvasesScreen.readingTheDesktopsBoards} />
         ) : count === 0 && desktops.every((desktop) => !desktop.read?.error) ? (
           <>
             <Card>
-              <Text style={styles.notice}>
-                No boards yet. When an agent draws on a desktop&apos;s Canvas, it shows here.
-              </Text>
+              <Text style={styles.notice}>{copy.phone.canvas.canvasesScreen.noBoardsYetWhenAn}</Text>
             </Card>
             {desktops.flatMap((desktop) =>
               (desktop.read?.notes ?? []).map((note) => (
@@ -154,7 +153,7 @@ export function CanvasesScreen({
                     const changed = canvasBoardChanged(board, now);
                     return (
                       <CardRow
-                        accessibilityHint="Opens a picture of the board."
+                        accessibilityHint={copy.phone.canvas.canvasesScreen.opensAPictureOfThe}
                         accessibilityLabel={[board.name, meta, changed ? `changed ${changed}` : null].filter(Boolean).join(", ")}
                         first={index === 0}
                         key={board.id ?? `${board.workspaceId ?? ""}:${board.path}`}
@@ -168,7 +167,7 @@ export function CanvasesScreen({
                   })}
                 </Card>
               ) : read && !read.error ? (
-                <Text style={styles.footnote}>No boards on {session.desktopName} yet.</Text>
+                <Text style={styles.footnote}>{copy.phone.canvas.canvasesScreen.noBoardsOn}{session.desktopName} yet.</Text>
               ) : null}
               {read?.error ? <Text style={styles.footnote}>{read.error}</Text> : null}
               {(read?.notes ?? []).map((note) => (

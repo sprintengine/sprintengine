@@ -25,6 +25,7 @@ import type { ChatFileSource } from './chatServices'
 import { useConversationTransport } from './conversationTransport'
 import { useShellReach } from './shellReach'
 import { formatDiffCount } from '../../../utils/diffCount'
+import { copy } from '../../../../../shared/copy'
 
 export type TurnChangeSummary = { files: number; addedLines: number; removedLines: number }
 export function hasTurnChanges(available: boolean | undefined, summary: TurnChangeSummary | undefined): boolean {
@@ -76,12 +77,16 @@ function RevertTurnButton({
         const replacesLaterWork = reverted && overwritesLaterWork
         const accepted = await dialog.confirm({
           title: replacesLaterWork
-            ? 'Undo this revert and replace later changes?'
+            ? copy.panels.agentChat.changedFilesCard.undoThisRevertAndReplace
             : reverted
-              ? 'Undo this revert?'
-              : 'Revert to before this turn?',
+              ? copy.panels.agentChat.changedFilesCard.undoThisRevert
+              : copy.panels.agentChat.changedFilesCard.revertToBeforeThisTurn,
           tone: 'danger',
-          confirmLabel: replacesLaterWork ? 'Replace later changes' : reverted ? 'Undo revert' : 'Revert files',
+          confirmLabel: replacesLaterWork
+            ? copy.panels.agentChat.changedFilesCard.replaceLaterChanges
+            : reverted
+              ? copy.panels.agentChat.changedFilesCard.undoRevert
+              : copy.panels.agentChat.changedFilesCard.revertFiles,
           body: (
             <>
               {drift ? <p>{drift}</p> : null}
@@ -89,10 +94,8 @@ function RevertTurnButton({
                   and turns may have run since: its undo puts back files from
                   before all of that, so it says so rather than reading as the
                   harmless undo of a moment ago. */}
-              {replacesLaterWork ? (
-                <p>Files changed since this revert. Undoing it overwrites those later changes in the files below.</p>
-              ) : null}
-              <p>These files will be restored. Staged changes and the conversation are kept.</p>
+              {replacesLaterWork ? <p>{copy.panels.agentChat.changedFilesCard.filesChangedSinceThisRevert}</p> : null}
+              <p>{copy.panels.agentChat.changedFilesCard.theseFilesWillBeRestored}</p>
               <ul className="max-h-60 overflow-auto">
                 {shown.map((file) => (
                   <li key={file.path}>
@@ -119,22 +122,26 @@ function RevertTurnButton({
         if (!result.ok) throw new Error(result.message)
         showToast({
           tone: 'good',
-          title: reverted ? 'Revert undone' : 'Files reverted',
+          title: reverted
+            ? copy.panels.agentChat.changedFilesCard.revertUndone
+            : copy.panels.agentChat.changedFilesCard.filesReverted,
         })
         // A new file git ignores most likely existed, ignored, before the turn,
         // so the runtime keeps it; say so rather than leave it unexplained.
         if (result.kept?.length)
           showToast({
             tone: 'warn',
-            title: 'Some new files were left in place',
-            description: `Git-ignored, so they may predate this turn: ${result.kept.join(', ')}`,
+            title: copy.panels.agentChat.changedFilesCard.someNewFilesWereLeft,
+            description: copy.panels.agentChat.changedFilesCard.gitIgnoredSoTheyMay(result.kept.join(', ')),
           })
         return
       }
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Couldn't restore files: ${error instanceof Error ? error.message : String(error)}`,
+        title: copy.panels.agentChat.changedFilesCard.couldnTRestoreFiles(
+          error instanceof Error ? error.message : String(error),
+        ),
       })
     } finally {
       setPending(false)
@@ -144,10 +151,10 @@ function RevertTurnButton({
     <Tooltip
       content={
         running
-          ? 'Stop the running turn before restoring files'
+          ? copy.panels.agentChat.changedFilesCard.stopTheRunningTurnBefore
           : reverted
-            ? 'Restore the recovery checkpoint'
-            : 'Preview the files that will be restored'
+            ? copy.panels.agentChat.changedFilesCard.restoreTheRecoveryCheckpoint
+            : copy.panels.agentChat.changedFilesCard.previewTheFilesThatWill
       }
     >
       <span className={className}>
@@ -313,13 +320,13 @@ function ChangeTreeNode({
               ) : null}
               <DiffStat addedLines={node.addedLines} removedLines={node.removedLines} muted={muted} />
               {file && openDiff && !file.binary ? (
-                <Tooltip content="Open in diff viewer">
+                <Tooltip content={copy.panels.agentChat.changedFilesCard.openInDiffViewer}>
                   <IconButton
                     size="3xs"
                     tone="ink"
                     tabIndex={-1}
                     className={reveal}
-                    aria-label={`Open ${node.path} in diff viewer`}
+                    aria-label={copy.panels.agentChat.changedFilesCard.openInDiffViewer2(node.path)}
                     onClick={(event) => {
                       event.stopPropagation()
                       openDiff(node.path)
@@ -330,13 +337,13 @@ function ChangeTreeNode({
                 </Tooltip>
               ) : null}
               {file && openFile && file.status !== 'deleted' ? (
-                <Tooltip content="Open file">
+                <Tooltip content={copy.panels.agentChat.changedFilesCard.openFile}>
                   <IconButton
                     size="3xs"
                     tone="ink"
                     tabIndex={-1}
                     className={reveal}
-                    aria-label={`Open ${node.path}`}
+                    aria-label={copy.panels.agentChat.changedFilesCard.open(node.path)}
                     onClick={(event) => {
                       event.stopPropagation()
                       openFile(node.path)
@@ -351,8 +358,13 @@ function ChangeTreeNode({
         }
         aria-label={
           file
-            ? `${node.path}, ${file.status}, ${file.addedLines} added, ${file.removedLines} removed`
-            : `${node.path}, ${node.addedLines} added, ${node.removedLines} removed`
+            ? copy.panels.agentChat.changedFilesCard.addedRemoved(
+                node.path,
+                file.status,
+                file.addedLines,
+                file.removedLines,
+              )
+            : copy.panels.agentChat.changedFilesCard.addedRemoved2(node.path, node.addedLines, node.removedLines)
         }
       />
       {!file && open ? (
@@ -411,7 +423,7 @@ async function openChangedFile(files: ChatFileSource, context: ConversationLinkC
       rootPath: context.cwd,
     })
   } catch {
-    showToast({ tone: 'error', title: `File not found: ${path}` })
+    showToast({ tone: 'error', title: copy.panels.agentChat.changedFilesCard.fileNotFound(path) })
   }
 }
 
@@ -445,7 +457,9 @@ async function openTurnInDiffViewer(
   } catch (failure) {
     showToast({
       tone: 'error',
-      title: `Couldn't open diff: ${failure instanceof Error ? failure.message : String(failure)}`,
+      title: copy.panels.agentChat.changedFilesCard.couldnTOpenDiff(
+        failure instanceof Error ? failure.message : String(failure),
+      ),
     })
   }
 }
@@ -521,11 +535,13 @@ export function ChangedFilesCard({
       }
       const first = firstChangedFile(changeTree(list.filter((file) => !file.binary)))
       if (first) openDiff?.(first.path, list)
-      else showToast({ tone: 'warn', title: 'Only binary files changed; no diff to show' })
+      else showToast({ tone: 'warn', title: copy.panels.agentChat.changedFilesCard.onlyBinaryFilesChangedNo })
     } catch (failure) {
       showToast({
         tone: 'error',
-        title: `Couldn't open diff: ${failure instanceof Error ? failure.message : String(failure)}`,
+        title: copy.panels.agentChat.changedFilesCard.couldnTOpenDiff(
+          failure instanceof Error ? failure.message : String(failure),
+        ),
       })
     }
   }
@@ -623,24 +639,41 @@ export function ChangedFilesCard({
   return (
     <section
       className={`mt-3 ${reverted ? 'text-[color:var(--sem-color-text-muted)]' : ''}`}
-      aria-label="Turn file changes"
+      aria-label={copy.panels.agentChat.changedFilesCard.turnFileChanges}
     >
       <div className="flex items-center gap-1">
         <GhostButton
           size="inline"
           aria-expanded={open}
-          aria-label={`${summary.files} ${summary.files === 1 ? 'file' : 'files'} changed, ${summary.addedLines} added, ${summary.removedLines} removed${reverted ? ', reverted' : ''}`}
+          aria-label={copy.panels.agentChat.changedFilesCard.changedAddedRemoved(
+            summary.files,
+            summary.files === 1 ? 'file' : 'files',
+            summary.addedLines,
+            summary.removedLines,
+            reverted ? copy.panels.agentChat.changedFilesCard.reverted : '',
+          )}
           onClick={() => setOpen(!open)}
         >
-          {summary.files} {summary.files === 1 ? 'file' : 'files'} changed ·{' '}
+          {summary.files} {summary.files === 1 ? 'file' : 'files'}
+          {copy.panels.agentChat.changedFilesCard.changed}{' '}
           <DiffStat addedLines={summary.addedLines} removedLines={summary.removedLines} muted={reverted} />
           {reverted ? ' · Reverted' : ''}
         </GhostButton>
         {open && folders.length ? (
-          <Tooltip content={foldersOpen ? 'Collapse all folders' : 'Expand all folders'}>
+          <Tooltip
+            content={
+              foldersOpen
+                ? copy.panels.agentChat.changedFilesCard.collapseAllFolders
+                : copy.panels.agentChat.changedFilesCard.expandAllFolders
+            }
+          >
             <IconButton
               size="xs"
-              aria-label={foldersOpen ? 'Collapse all folders' : 'Expand all folders'}
+              aria-label={
+                foldersOpen
+                  ? copy.panels.agentChat.changedFilesCard.collapseAllFolders
+                  : copy.panels.agentChat.changedFilesCard.expandAllFolders
+              }
               onClick={() => {
                 setConversationDisclosures(
                   conversationKey,
@@ -655,8 +688,12 @@ export function ChangedFilesCard({
           </Tooltip>
         ) : null}
         {localKey ? (
-          <Tooltip content="Open this turn's changes in the diff viewer">
-            <IconButton size="xs" aria-label="Open diff" onClick={() => void openTurnDiff()}>
+          <Tooltip content={copy.panels.agentChat.changedFilesCard.openThisTurnSChanges}>
+            <IconButton
+              size="xs"
+              aria-label={copy.panels.agentChat.changedFilesCard.openDiff}
+              onClick={() => void openTurnDiff()}
+            >
               <ShowDiffGlyph />
             </IconButton>
           </Tooltip>
@@ -668,7 +705,7 @@ export function ChangedFilesCard({
             ref={tree}
             role="tree"
             tabIndex={0}
-            aria-label="Files changed by this turn"
+            aria-label={copy.panels.agentChat.changedFilesCard.filesChangedByThisTurn}
             aria-activedescendant={selected ? `${prefix}-${encodeURIComponent(selected)}` : undefined}
             onKeyDown={keyDown}
           >
@@ -689,7 +726,7 @@ export function ChangedFilesCard({
               />
             ))}
           </div>
-          {loading ? <Spinner label="Loading turn changes" /> : null}
+          {loading ? <Spinner label={copy.panels.agentChat.changedFilesCard.loadingTurnChanges} /> : null}
           {error ? (
             <InlineNotice
               tone="error"
@@ -705,7 +742,7 @@ export function ChangedFilesCard({
                       )
                   }}
                 >
-                  Retry
+                  {copy.panels.agentChat.changedFilesCard.retry}
                 </GhostButton>
               }
             >
@@ -716,7 +753,7 @@ export function ChangedFilesCard({
             <InlineDiff key={edit.path} edit={edit} />
           ))}
           {detail?.diff.files.find((file) => file.path === selected)?.binary ? (
-            <p>Binary file changed; no text preview is available.</p>
+            <p>{copy.panels.agentChat.changedFilesCard.binaryFileChangedNoText}</p>
           ) : null}
           {/* Only the most recent revert can be undone; an older one stays marked. */}
           {!reverted || undoTurnSeq !== undefined ? (

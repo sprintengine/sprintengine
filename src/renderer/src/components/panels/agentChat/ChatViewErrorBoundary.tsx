@@ -17,6 +17,7 @@ import React from 'react'
 
 import { preloadableLazy } from '../../../utils/preloadableLazy'
 import { GhostButton, InlineNotice } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 type ChatViewErrorBoundaryProps = {
   /** The chat shown; a different chat in the same pane starts clean. */
@@ -140,17 +141,25 @@ export function ChatViewErrorFallback({
     <div className="p-3">
       <InlineNotice
         tone="error"
-        title={onReloadWindow ? "This chat couldn't load." : 'This chat hit a problem and stopped.'}
+        title={
+          onReloadWindow
+            ? copy.panels.agentChat.chatViewErrorBoundary.thisChatCouldnTLoad
+            : copy.panels.agentChat.chatViewErrorBoundary.thisChatHitAProblem
+        }
         hint={
           onReloadWindow
-            ? 'Reload the chat, or the window if it keeps failing. Your conversation is kept.'
-            : 'Reload the chat to try again. Your conversation is kept.'
+            ? copy.panels.agentChat.chatViewErrorBoundary.reloadTheChatOrThe
+            : copy.panels.agentChat.chatViewErrorBoundary.reloadTheChatToTry
         }
         {...(detail ? { detail } : {})}
         action={
           <>
-            <GhostButton onClick={onRetry}>Reload chat</GhostButton>
-            {onReloadWindow ? <GhostButton onClick={onReloadWindow}>Reload window</GhostButton> : null}
+            <GhostButton onClick={onRetry}>{copy.panels.agentChat.chatViewErrorBoundary.reloadChat}</GhostButton>
+            {onReloadWindow ? (
+              <GhostButton onClick={onReloadWindow}>
+                {copy.panels.agentChat.chatViewErrorBoundary.reloadWindow}
+              </GhostButton>
+            ) : null}
           </>
         }
       />

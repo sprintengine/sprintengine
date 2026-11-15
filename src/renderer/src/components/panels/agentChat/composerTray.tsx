@@ -15,6 +15,7 @@
 import type React from 'react'
 import { CloseIconButton, LifecycleGlyph } from '../../ui'
 import { MarkdownAlertGlyph } from '../../ui/MarkdownAlertGlyph'
+import { copy } from '../../../../../shared/copy'
 
 export type ComposerTrayTone = 'warn' | 'error' | 'neutral'
 
@@ -82,7 +83,9 @@ export function ComposerTrayRow({
       {actions || onDismiss ? (
         <div className="flex shrink-0 items-center gap-0.5">
           {actions}
-          {onDismiss ? <CloseIconButton size="xs" aria-label="Dismiss" onClick={onDismiss} /> : null}
+          {onDismiss ? (
+            <CloseIconButton size="xs" aria-label={copy.panels.agentChat.composerTray.dismiss} onClick={onDismiss} />
+          ) : null}
         </div>
       ) : null}
     </div>

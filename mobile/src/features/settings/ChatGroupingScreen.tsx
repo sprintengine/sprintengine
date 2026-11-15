@@ -4,6 +4,7 @@ import { ScreenFrame, useListContentStyle } from "../../components/Screen";
 import { SettingsChoice, SettingsNote } from "../../components/SettingsRow";
 import { space } from "../../theme/tokens";
 import { CHAT_GROUPING_LABEL, CHAT_GROUPINGS, type ChatGrouping } from "../conversations/chatGrouping";
+import { copy } from "../../../../src/shared/copy";
 
 const groupingNote: Record<ChatGrouping, string> = {
   recent: "Newest message first, with chats at rest for a day under Earlier.",
@@ -32,7 +33,7 @@ export function ChatGroupingScreen({
 }) {
   const contentStyle = useListContentStyle(space["3xs"]);
   return (
-    <ScreenFrame backLabel="Back to settings" onBack={onBack} title="Group chats">
+    <ScreenFrame backLabel={copy.phone.settings.chatGroupingScreen.backToSettings} onBack={onBack} title={copy.phone.settings.chatGroupingScreen.groupChats}>
       <ScrollView contentContainerStyle={contentStyle}>
         {CHAT_GROUPINGS.map((option) => (
           <SettingsChoice

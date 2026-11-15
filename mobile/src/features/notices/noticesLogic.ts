@@ -15,6 +15,7 @@ import {
   chatTurnEndedAt,
   type ChatListRow,
 } from "../conversations/conversationListLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * Which half of the bell a notice belongs to.
@@ -86,7 +87,7 @@ export function buildNotices(input: NoticeBuildInput): Notice[] {
         id: `chat-waiting:${key}`,
         lane: "needs-you",
         kind: "chat-waiting",
-        title: thread.phase === "waiting_for_approval" ? `${title} needs approval` : `${title} asked a question`,
+        title: thread.phase === "waiting_for_approval" ? copy.phone.notices.noticesLogic.needsApproval(title) : copy.phone.notices.noticesLogic.askedAQuestion(title),
         message: null,
         context,
         at: thread.updatedAt,
@@ -106,7 +107,7 @@ export function buildNotices(input: NoticeBuildInput): Notice[] {
         id: `chat-finished:${key}:${ended}`,
         lane: "can-wait",
         kind: "chat-finished",
-        title: `${title} finished`,
+        title: copy.phone.notices.noticesLogic.finished(title),
         message: null,
         context,
         at: ended,

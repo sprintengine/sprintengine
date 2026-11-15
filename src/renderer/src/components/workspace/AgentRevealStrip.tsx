@@ -3,6 +3,7 @@ import React from 'react'
 import { openAwaitingFiles } from '../../hooks/useAgentEditorReveal'
 import { setAgentRevealNotice, useAgentRevealNotice } from '../../utils/agentEditorReveal'
 import { GhostButton } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // The files outside the workspace an agent asked to show, above the
 // workspace's editor area. It is a question with two answers, as ghost buttons
@@ -19,7 +20,8 @@ export function AgentRevealStrip({ workspaceId }: { workspaceId: string }) {
       {awaiting.length > 0 ? (
         <div className="flex min-h-control-sm items-center gap-2 px-3">
           <p role="status" className="min-w-0 flex-1 truncate text-meta text-[color:var(--text-muted)]">
-            {who} wants to show you{' '}
+            {who}
+            {copy.workspace.agentRevealStrip.wantsToShowYou}{' '}
             <span
               className="font-mono text-[color:var(--text-default)]"
               title={awaiting.map((file) => file.path).join('\n')}
@@ -28,10 +30,10 @@ export function AgentRevealStrip({ workspaceId }: { workspaceId: string }) {
             </span>
           </p>
           <GhostButton size="xs" onClick={() => void openAwaitingFiles(workspaceId)}>
-            Open
+            {copy.workspace.agentRevealStrip.open}
           </GhostButton>
           <GhostButton size="xs" onClick={() => setAgentRevealNotice(workspaceId, { ...notice, awaiting: [] })}>
-            Dismiss
+            {copy.workspace.agentRevealStrip.dismiss}
           </GhostButton>
         </div>
       ) : null}

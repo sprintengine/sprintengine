@@ -1,5 +1,6 @@
 import type { StudioShare } from "../../../../packages/studio-protocol/src/public";
 import type { DesktopSnapshot } from "../../api/desktopReads";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * Dev servers a paired desktop publishes on the tailnet, as this phone may open
@@ -78,7 +79,7 @@ export function readWebTargets(snapshot: Pick<DesktopSnapshot, "webTargets"> | n
     seen.add(entry.id);
     targets.push({
       id: entry.id,
-      label: typeof entry.label === "string" && entry.label.length > 0 ? entry.label : `localhost:${entry.localPort}`,
+      label: typeof entry.label === "string" && entry.label.length > 0 ? entry.label : copy.phone.web.webTargetsLogic.localhost(entry.localPort),
       url: entry.url,
       localPort: entry.localPort,
       machine: entry.machine,

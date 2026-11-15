@@ -6,6 +6,7 @@ import { useToast } from "../../components/Toast";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { fontWeight, iconSize, radius, space, typography, type Theme } from "../../theme/tokens";
 import { attachedFileName, attachedFileType, middleTruncateFileName, type AttachedFile } from "./attachedFiles";
+import { copy } from "../../../../src/shared/copy";
 
 // The files a person attached to a message, under their bubble: one quiet card
 // each, the desktop's sent card cut down to what a phone can say about a file
@@ -18,7 +19,7 @@ export const AttachedFileCards = memo(function AttachedFileCards({ files }: { fi
   const styles = useThemedStyles(createStyles);
   if (!files.length) return null;
   return (
-    <View accessibilityLabel="Attached files" style={styles.cards}>
+    <View accessibilityLabel={copy.phone.conversations.attachedFileCards.attachedFiles} style={styles.cards}>
       {files.map((file) => (
         <AttachedFileCard key={file.path} path={file.path} />
       ))}
@@ -34,9 +35,9 @@ function AttachedFileCard({ path }: { path: string }) {
   const showPath = () => toast.show(path);
   return (
     <Pressable
-      accessibilityActions={[{ name: "longpress", label: "Show its path" }]}
-      accessibilityHint="Long press to show where it is on the desktop."
-      accessibilityLabel={`Attached file ${name}, ${type.label}`}
+      accessibilityActions={[{ name: "longpress", label: copy.phone.conversations.attachedFileCards.showItsPath }]}
+      accessibilityHint={copy.phone.conversations.attachedFileCards.longPressToShowWhere}
+      accessibilityLabel={copy.phone.conversations.attachedFileCards.attachedFile(name, type.label)}
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === "longpress") showPath();
       }}

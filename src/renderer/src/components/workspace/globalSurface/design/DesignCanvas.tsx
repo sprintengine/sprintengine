@@ -21,6 +21,7 @@ import {
   type TabItem,
 } from '../../../ui'
 import { PreviewFrame } from './PreviewFrame'
+import { copy } from '../../../../../../shared/copy'
 
 // The Design door's canvas (item 2003) — the heart of the epic. Owner
 // (2026-07-29): "I want to see my design system. I want to see what everything
@@ -116,7 +117,7 @@ export function DesignCanvas({
       <div className="flex h-[36px] shrink-0 items-center gap-2 border-b border-[color:var(--border-default)] px-3">
         <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
           <Tabs<DesignCanvasTabId>
-            ariaLabel={`${view.identity.name} contents`}
+            ariaLabel={copy.workspace.globalSurface.design.designCanvas.contents(view.identity.name)}
             idPrefix={idPrefix}
             items={items}
             value={active ?? items[0]?.id ?? 'components'}
@@ -137,11 +138,14 @@ export function DesignCanvas({
       {view.specimen.problems.length > 0 ? (
         <p className="px-3 pt-2 text-meta text-[color:var(--text-muted)]">
           {view.specimen.problems.length} token
-          {view.specimen.problems.length === 1 ? '' : 's'} could not be read
+          {view.specimen.problems.length === 1 ? '' : 's'}
+          {copy.workspace.globalSurface.design.designCanvas.couldNotBeRead}
         </p>
       ) : null}
       {view.assetBudgetExhausted ? (
-        <p className="px-3 pt-2 text-meta text-[color:var(--text-muted)]">Some assets were too large to preview</p>
+        <p className="px-3 pt-2 text-meta text-[color:var(--text-muted)]">
+          {copy.workspace.globalSurface.design.designCanvas.someAssetsWereTooLarge}
+        </p>
       ) : null}
       {active ? (
         <TabPanel idPrefix={idPrefix} tabId={active} active className="min-h-0 flex-1 overflow-y-auto">
@@ -157,7 +161,9 @@ export function DesignCanvas({
       ) : (
         // A readable bundle that declares nothing this door can draw. Said
         // plainly rather than as six empty tabs.
-        <p className="px-3 pt-3 text-meta text-[color:var(--text-muted)]">This system declares nothing to show yet.</p>
+        <p className="px-3 pt-3 text-meta text-[color:var(--text-muted)]">
+          {copy.workspace.globalSurface.design.designCanvas.thisSystemDeclaresNothingTo}
+        </p>
       )}
     </div>
   )
@@ -327,12 +333,15 @@ function ComponentSpecimen({
       ) : (
         // A component whose demo document is empty: said plainly, never a
         // placeholder graphic pretending to be a rendering.
-        <p className="text-meta text-[color:var(--text-muted)]">No preview in this component</p>
+        <p className="text-meta text-[color:var(--text-muted)]">
+          {copy.workspace.globalSurface.design.designCanvas.noPreviewInThisComponent}
+        </p>
       )}
       {component.unresolvedRefs.length > 0 ? (
         <p className="text-meta text-[color:var(--text-muted)]">
           {component.unresolvedRefs.length} reference
-          {component.unresolvedRefs.length === 1 ? '' : 's'} could not be loaded
+          {component.unresolvedRefs.length === 1 ? '' : 's'}
+          {copy.workspace.globalSurface.design.designCanvas.couldNotBeLoaded}
         </p>
       ) : null}
     </Section>
@@ -418,9 +427,9 @@ function SpecimenPager({
     <Pager
       page={range.page}
       pageCount={range.pageCount}
-      rangeLabel={`Showing ${range.from + 1}–${range.to} of ${total}`}
+      rangeLabel={copy.workspace.globalSurface.design.designCanvas.showingOf(range.from + 1, range.to, total)}
       onPageChange={(next) => onPageChange(tab, next)}
-      ariaLabel={`${noun} in ${systemName}`}
+      ariaLabel={copy.workspace.globalSurface.design.designCanvas.in(noun, systemName)}
       className="px-3"
     />
   )
@@ -487,7 +496,7 @@ function GlyphStrip({ view, mode }: { view: DesignSystemBundleView; mode: Previe
       <PreviewFrame
         height={GLYPH_STRIP_RESERVE}
         sizeToContent
-        title={`Glyphs — ${mode}`}
+        title={copy.workspace.globalSurface.design.designCanvas.glyphs(mode)}
         className={STAGE_CLASS}
         srcDoc={srcDoc}
       />
@@ -575,21 +584,21 @@ function TypePanel({ view }: { view: DesignSystemBundleView }): JSX.Element {
   const tokens = tokenFamilies(view)
   return (
     <div className={PANEL_CLASS}>
-      <TokenSection title="Size" tokens={tokens.fontSize}>
+      <TokenSection title={copy.workspace.globalSurface.design.designCanvas.size} tokens={tokens.fontSize}>
         {(token, value) => (
           <span title={token.path} style={{ fontSize: value, lineHeight: 1.4 }}>
             {token.path}
           </span>
         )}
       </TokenSection>
-      <TokenSection title="Weight" tokens={tokens.fontWeight}>
+      <TokenSection title={copy.workspace.globalSurface.design.designCanvas.weight} tokens={tokens.fontWeight}>
         {(token, value) => (
           <span title={token.path} style={{ fontWeight: value }}>
             {token.path}
           </span>
         )}
       </TokenSection>
-      <TokenSection title="Line height" tokens={tokens.fontLine}>
+      <TokenSection title={copy.workspace.globalSurface.design.designCanvas.lineHeight} tokens={tokens.fontLine}>
         {(token, value) => (
           // Leading only exists BETWEEN lines, so the specimen has to be more
           // than one: the name three times, wrapped, and nothing else.
@@ -598,7 +607,7 @@ function TypePanel({ view }: { view: DesignSystemBundleView }): JSX.Element {
           </span>
         )}
       </TokenSection>
-      <TokenSection title="Tracking" tokens={tokens.fontTracking}>
+      <TokenSection title={copy.workspace.globalSurface.design.designCanvas.tracking} tokens={tokens.fontTracking}>
         {(token, value) => (
           <span title={token.path} style={{ letterSpacing: value }}>
             {token.path}
@@ -620,7 +629,7 @@ function SpacingPanel({ view, mode }: { view: DesignSystemBundleView; mode: Prev
   const draw = mode === 'dark' ? 'dark' : 'light'
   return (
     <div className={PANEL_CLASS}>
-      <Section title="Space" count={tokens.space.length} inset={false}>
+      <Section title={copy.workspace.globalSurface.design.designCanvas.space} count={tokens.space.length} inset={false}>
         {tokens.space.map((token) => (
           <InboxRow
             key={token.path}
@@ -637,7 +646,7 @@ function SpacingPanel({ view, mode }: { view: DesignSystemBundleView; mode: Prev
           />
         ))}
       </Section>
-      <Section title="Size" count={tokens.size.length} inset={false}>
+      <Section title={copy.workspace.globalSurface.design.designCanvas.size} count={tokens.size.length} inset={false}>
         {tokens.size.map((token) => (
           <InboxRow
             key={token.path}
@@ -654,7 +663,11 @@ function SpacingPanel({ view, mode }: { view: DesignSystemBundleView; mode: Prev
           />
         ))}
       </Section>
-      <Section title="Radius" count={tokens.radius.length} inset={false}>
+      <Section
+        title={copy.workspace.globalSurface.design.designCanvas.radius}
+        count={tokens.radius.length}
+        inset={false}
+      >
         {tokens.radius.map((token) => (
           <InboxRow
             key={token.path}
@@ -671,7 +684,11 @@ function SpacingPanel({ view, mode }: { view: DesignSystemBundleView; mode: Prev
           />
         ))}
       </Section>
-      <Section title="Shadow" count={tokens.shadow.length} inset={false}>
+      <Section
+        title={copy.workspace.globalSurface.design.designCanvas.shadow}
+        count={tokens.shadow.length}
+        inset={false}
+      >
         {tokens.shadow.map((token) => (
           <InboxRow
             key={token.path}
@@ -788,7 +805,9 @@ function MissingEntries({
   if (missing.length === 0) return null
   return (
     <p className="px-3 pt-3 text-meta text-[color:var(--text-muted)]">
-      {missing.length} declared but not on disk: {missing.join(', ')}
+      {missing.length}
+      {copy.workspace.globalSurface.design.designCanvas.declaredButNotOnDisk}
+      {missing.join(', ')}
     </p>
   )
 }

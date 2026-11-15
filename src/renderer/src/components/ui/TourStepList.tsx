@@ -5,6 +5,7 @@ import { PrimaryButton, GhostButton } from './Buttons'
 import { RowButton } from './RowButton'
 import { Tooltip } from './Tooltip'
 import { TourGlyph } from './TourGlyphs'
+import { copy } from '../../../../shared/copy'
 
 // The tour's disclosures (design-system/components/tour-strip): the step list
 // the strip's toggle shows beside the diff, and the card the tour waits behind
@@ -37,7 +38,7 @@ export function TourStepList({
 }): JSX.Element {
   return (
     <nav
-      aria-label="Tour steps"
+      aria-label={copy.ui.tourStepList.tourSteps}
       className="tour-step-list flex w-60 shrink-0 flex-col overflow-y-auto border-r border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] py-1"
     >
       <ol className="flex flex-col">
@@ -49,7 +50,13 @@ export function TourStepList({
               density="bleed"
               selected={index === current}
               onClick={() => onSelect(index)}
-              aria-label={`Step ${index + 1}: ${step.title}${state ? ` (${state === 'gone' ? 'file no longer in the diff' : state === 'moved' ? 'code has changed' : 'visited'})` : ''}`}
+              aria-label={copy.ui.tourStepList.step(
+                index + 1,
+                step.title,
+                state
+                  ? ` (${state === 'gone' ? copy.ui.tourStepList.fileNoLongerInThe : state === 'moved' ? copy.ui.tourStepList.codeHasChanged : 'visited'})`
+                  : '',
+              )}
               className="items-start px-3"
             >
               <span className="w-5 shrink-0 pt-px text-right font-mono text-meta tabular-nums text-[color:var(--text-subtle)]">
@@ -131,7 +138,7 @@ export function TourReadyCard({
     .join(' · ')
   return (
     <div className="tour-ready-scrim absolute inset-0 flex items-center justify-center px-6">
-      <section aria-label={`Tour ready: ${title}`} className="tour-ready-card w-full max-w-md">
+      <section aria-label={copy.ui.tourStepList.tourReady(title)} className="tour-ready-card w-full max-w-md">
         <div className="flex items-center gap-2 text-meta text-[color:var(--text-muted)]">
           <TourGlyph className="icon-sm shrink-0" />
           <span>{closed ? 'Tour' : 'Tour ready'}</span>
@@ -144,7 +151,7 @@ export function TourReadyCard({
             {resumeAt !== null && resumeAt > 0 ? `Resume at step ${resumeAt + 1}` : 'Start'}
           </PrimaryButton>
           <GhostButton size="md" onClick={onDismiss}>
-            Not now
+            {copy.ui.tourStepList.notNow}
           </GhostButton>
         </div>
       </section>

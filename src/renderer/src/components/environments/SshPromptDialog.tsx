@@ -4,6 +4,7 @@ import type { SshPromptRequest } from '../../../../shared/ssh-environments'
 import { Field } from '../ui/Field'
 import { Input } from '../ui/Input'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // What ssh asks while Studio connects to an SSH machine (phase 8 spec, 5.5),
 // one question at a time, in this window. Main classified each from ssh's
@@ -77,13 +78,17 @@ export function SshPromptDialogBody({
           {request.kind === 'host-key' && hostKey ? (
             <>
               <p className={TEXT}>
-                Studio hasn't connected to {request.label} before. Check this fingerprint with its owner before trusting
-                it.
+                {appCopy.environments.sshPromptDialog.studioHasnTConnectedTo}
+                {request.label}
+                {appCopy.environments.sshPromptDialog.beforeCheckThisFingerprintWith}
               </p>
               <dl className="flex flex-col gap-1">
-                <dt className={MUTED}>Host</dt>
+                <dt className={MUTED}>{appCopy.environments.sshPromptDialog.host}</dt>
                 <dd className={`${TEXT} font-mono`}>{hostKey.host}</dd>
-                <dt className={MUTED}>{hostKey.keyType} key fingerprint</dt>
+                <dt className={MUTED}>
+                  {hostKey.keyType}
+                  {appCopy.environments.sshPromptDialog.keyFingerprint}
+                </dt>
                 <dd className={`${TEXT} break-all font-mono`} data-testid="ssh-fingerprint">
                   {hostKey.fingerprint}
                 </dd>
@@ -92,22 +97,28 @@ export function SshPromptDialogBody({
           ) : null}
           {request.unverified ? (
             <>
-              <p className={MUTED}>ssh or {request.label} asks:</p>
+              <p className={MUTED}>
+                {appCopy.environments.sshPromptDialog.sshOr}
+                {request.label} asks:
+              </p>
               <div className={FRAME}>
                 <p className={`${TEXT} whitespace-pre-wrap break-words`} data-testid="ssh-unverified-text">
                   {request.text}
                 </p>
               </div>
               <p className={MUTED}>
-                This computer's OpenSSH is older than 8.4, so Studio can't tell if this comes from ssh here or from{' '}
-                {request.label}. Answer only if you expected it.
+                {appCopy.environments.sshPromptDialog.thisComputerSOpenSSHIs} {request.label}
+                {appCopy.environments.sshPromptDialog.answerOnlyIfYouExpected}
               </p>
             </>
           ) : request.kind === 'passphrase' || request.kind === 'password' || request.kind === 'confirm' ? (
             <p className={TEXT}>{request.text}</p>
           ) : null}
           {request.kind === 'touch' ? (
-            <p className={TEXT}>Touch your security key to sign in to {request.label}.</p>
+            <p className={TEXT}>
+              {appCopy.environments.sshPromptDialog.touchYourSecurityKeyTo}
+              {request.label}.
+            </p>
           ) : null}
           {request.kind === 'sign-in' && request.signIn ? (
             <>
@@ -130,7 +141,7 @@ export function SshPromptDialogBody({
                 </p>
               ) : null}
               <ModalButton type="button" onClick={() => void window.api?.openExternal?.(request.signIn!.url)}>
-                Open in browser
+                {appCopy.environments.sshPromptDialog.openInBrowser}
               </ModalButton>
             </>
           ) : null}
@@ -148,12 +159,12 @@ export function SshPromptDialogBody({
             <Field
               label={
                 request.kind === 'remote'
-                  ? 'Answer'
+                  ? appCopy.environments.sshPromptDialog.answer
                   : request.kind === 'password'
-                    ? 'Password'
+                    ? appCopy.environments.sshPromptDialog.password
                     : request.kind === 'sign-in'
-                      ? 'Code'
-                      : 'Passphrase'
+                      ? appCopy.environments.sshPromptDialog.code
+                      : appCopy.environments.sshPromptDialog.passphrase
               }
               htmlFor={inputId}
             >
@@ -168,12 +179,12 @@ export function SshPromptDialogBody({
             </Field>
           ) : null}
           {request.kind === 'passphrase' ? (
-            <p className={MUTED}>Studio doesn't keep it. Add the key to ssh-agent to skip this.</p>
+            <p className={MUTED}>{appCopy.environments.sshPromptDialog.studioDoesnTKeepIt}</p>
           ) : null}
         </ModalBody>
         <ModalFooter>
           <ModalButton type="button" onClick={cancel} autoFocus={!needsInput(request)}>
-            Cancel
+            {appCopy.environments.sshPromptDialog.cancel}
           </ModalButton>
           {request.kind === 'touch' || (request.kind === 'sign-in' && !request.signIn?.paste) ? null : (
             <ModalButton

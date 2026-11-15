@@ -1,5 +1,6 @@
 import React from 'react'
 import { GhostButton, InlineNotice, OutlineButton } from '../../ui'
+import { copy } from '../../../../../shared/copy'
 
 /**
  * What the file on disk did under an editor tab that the person has to know
@@ -23,21 +24,25 @@ export function EditorDiskNotice({
       {notice.kind === 'changed' ? (
         <InlineNotice
           tone="warn"
-          title="Changed on disk"
-          hint="Reload takes the disk version; Keep mine overwrites it on next save"
+          title={copy.panels.editor.editorDiskNotice.changedOnDisk}
+          hint={copy.panels.editor.editorDiskNotice.reloadTakesTheDiskVersion}
           action={
             <>
               <OutlineButton size="xs" onClick={onReload}>
-                Reload
+                {copy.panels.editor.editorDiskNotice.reload}
               </OutlineButton>
               <GhostButton size="xs" onClick={onKeepMine}>
-                Keep mine
+                {copy.panels.editor.editorDiskNotice.keepMine}
               </GhostButton>
             </>
           }
         />
       ) : (
-        <InlineNotice tone="warn" title="Deleted on disk" hint="Still open here; saving writes it back" />
+        <InlineNotice
+          tone="warn"
+          title={copy.panels.editor.editorDiskNotice.deletedOnDisk}
+          hint={copy.panels.editor.editorDiskNotice.stillOpenHereSavingWrites}
+        />
       )}
     </div>
   )
@@ -46,9 +51,9 @@ export function EditorDiskNotice({
 /** The question a save asks before it writes over a version on disk the tab never showed. */
 export function overwriteOnDiskConfirmation(fileName: string) {
   return {
-    title: `Overwrite ${fileName}?`,
-    body: 'It changed on disk since it was opened. Saving replaces that version with yours.',
-    confirmLabel: 'Overwrite',
+    title: copy.panels.editor.editorDiskNotice.overwrite(fileName),
+    body: copy.panels.editor.editorDiskNotice.itChangedOnDiskSince,
+    confirmLabel: copy.panels.editor.editorDiskNotice.overwrite2,
     tone: 'danger' as const,
   }
 }

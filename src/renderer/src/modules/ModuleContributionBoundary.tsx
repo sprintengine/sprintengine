@@ -14,6 +14,7 @@
 import React from 'react'
 
 import { GhostButton, InlineNotice } from '../components/ui'
+import { copy } from '../../../shared/copy'
 
 // The last crash per module id, as the Settings module list reads it. A plain
 // map rather than store state: the list reads it when it renders, and a crash
@@ -104,9 +105,9 @@ export function ModuleContributionErrorFallback({
     <div className="p-3">
       <InlineNotice
         tone="error"
-        title={`${label} hit a problem and stopped. The rest of the app is fine.`}
-        hint={`From ${moduleId}`}
-        action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
+        title={copy.modules.moduleContributionBoundary.hitAProblemAndStopped(label)}
+        hint={copy.modules.moduleContributionBoundary.from(moduleId)}
+        action={<GhostButton onClick={onRetry}>{copy.modules.moduleContributionBoundary.tryAgain}</GhostButton>}
       />
     </div>
   )

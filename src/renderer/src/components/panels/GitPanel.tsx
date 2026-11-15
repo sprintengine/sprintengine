@@ -83,6 +83,7 @@ import type { GitPanelView } from '../../../../shared/workspace'
 import { openTerminal, writeTerminal } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
+import { copy as appCopy } from '../../../../shared/copy'
 
 /** How long a success line stays under the panel before it clears. */
 const SUCCESS_MESSAGE_MS = 6000
@@ -272,9 +273,9 @@ function resolveReviewDiffTarget(
 // old always-on green "Ready" dot was noise). Only the exceptional states surface
 // a shape-coded glyph, matching the worktree list.
 function scopeHealthGlyph(label: string): { state: LifecycleState; label: string } | null {
-  if (label === 'Missing') return { state: 'failed', label: 'Missing' }
-  if (label === 'Prunable') return { state: 'archived', label: 'Prunable' }
-  if (label === 'Locked') return { state: 'paused', label: 'Locked' }
+  if (label === 'Missing') return { state: 'failed', label: appCopy.panels.gitPanel.missing }
+  if (label === 'Prunable') return { state: 'archived', label: appCopy.panels.gitPanel.prunable }
+  if (label === 'Locked') return { state: 'paused', label: appCopy.panels.gitPanel.locked }
   return null
 }
 
@@ -417,7 +418,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     const fallbackMainScope: GitScopeOption = {
       id: 'main',
       kind: 'main',
-      label: `Main checkout - ${basename(mainRepoRoot)}`,
+      label: appCopy.panels.gitPanel.mainCheckout(basename(mainRepoRoot)),
       path: mainRepoRoot,
       branch: null,
       head: null,
@@ -603,7 +604,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       if (!repoRoot || typeof gitApi.getGitCommitGraph !== 'function') {
         setGraph({
           status: 'error',
-          message: 'Restart the app to enable the commit graph.',
+          message: appCopy.panels.gitPanel.restartTheAppToEnable,
         })
         return
       }
@@ -619,8 +620,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
         setGraph({
           status: 'error',
           message: message.includes("No handler registered for 'git:get-commit-graph'")
-            ? 'Restart the app to enable the commit graph.'
-            : 'Unable to load the commit graph.',
+            ? appCopy.panels.gitPanel.restartTheAppToEnable
+            : appCopy.panels.gitPanel.unableToLoadTheCommit,
         })
       }
     },
@@ -775,9 +776,9 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     writeMessage: handleCommitMessageChange,
     confirmReplace: () =>
       dialog.confirm({
-        title: 'Replace your commit message?',
-        body: 'Your agent writes a new one from the checked files. You can edit it before committing.',
-        confirmLabel: 'Replace message',
+        title: appCopy.panels.gitPanel.replaceYourCommitMessage,
+        body: appCopy.panels.gitPanel.yourAgentWritesANew,
+        confirmLabel: appCopy.panels.gitPanel.replaceMessage,
       }),
     report: setMessage,
     // A draft is read from its subject down. The caret goes to the start, so a
@@ -911,26 +912,34 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (unique.length === 0) return null
     const many = unique.length > 1
     const confirmed = await dialog.confirm({
-      title: many ? `Discard changes in ${unique.length} files?` : `Discard changes to ${unique[0].relativePath}?`,
+      title: many
+        ? appCopy.panels.gitPanel.discardChangesInFiles(unique.length)
+        : appCopy.panels.gitPanel.discardChangesTo(unique[0].relativePath),
       body: (
         <>
-          Throws away every change to {many ? `these ${unique.length} files` : unique[0].relativePath} in{' '}
-          {activeScopeLabel}. This can’t be undone.
+          {appCopy.panels.gitPanel.throwsAwayEveryChangeTo}
+          {many ? `these ${unique.length} files` : unique[0].relativePath} in {activeScopeLabel}
+          {appCopy.panels.gitPanel.thisCanTBeUndone}
           {/* There is no per-hunk revert in the git layer, and `git checkout --`
               takes the whole file — so a file this list only owns a piece of is
               LEFT ALONE rather than discarded on another list's behalf, and the
               dialog says so before the person agrees to anything. */}
           {skippedPartial > 0 ? (
             <div className="mt-2">
-              {skippedPartial === 1 ? '1 file is' : `${skippedPartial} files are`} skipped: this list owns only part of{' '}
-              {skippedPartial === 1 ? 'it' : 'them'}. Discard {skippedPartial === 1 ? 'it' : 'them'} from the file’s own
-              row.
+              {skippedPartial === 1 ? '1 file is' : `${skippedPartial} files are`}
+              {appCopy.panels.gitPanel.skippedThisListOwnsOnly} {skippedPartial === 1 ? 'it' : 'them'}
+              {appCopy.panels.gitPanel.discard}
+              {skippedPartial === 1 ? 'it' : 'them'}
+              {appCopy.panels.gitPanel.fromTheFileSOwn}
             </div>
           ) : null}
-          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
+          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">
+            {appCopy.panels.gitPanel.scopePath}
+            {activeScopePath}
+          </div>
         </>
       ),
-      confirmLabel: 'Discard changes',
+      confirmLabel: appCopy.panels.gitPanel.discardChanges,
       tone: 'danger',
     })
     if (!confirmed) return null
@@ -1331,14 +1340,17 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     const shownCount =
       changeGroups.find((group) => group.changelistId === changelistId)?.totalCount ?? list.paths.length
     const confirmed = await dialog.confirm({
-      title: `Delete the changelist “${list.name}”?`,
+      title: appCopy.panels.gitPanel.deleteTheChangelist(list.name),
       body: (
         <>
-          The {shownCount === 1 ? 'file' : `${shownCount} files`} in it {shownCount === 1 ? 'returns' : 'return'} to
-          Changes. Files and staging are untouched.
+          {appCopy.panels.gitPanel.the}
+          {shownCount === 1 ? 'file' : `${shownCount} files`}
+          {appCopy.panels.gitPanel.inIt}
+          {shownCount === 1 ? 'returns' : 'return'}
+          {appCopy.panels.gitPanel.toChangesFilesAndStaging}
         </>
       ),
-      confirmLabel: 'Delete changelist',
+      confirmLabel: appCopy.panels.gitPanel.deleteChangelist,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -1432,15 +1444,23 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (rows.length === 0 || typeof filesApi.deletePath !== 'function') return
     const many = rows.length > 1
     const confirmed = await dialog.confirm({
-      title: many ? `Delete ${rows.length} files?` : `Delete ${rows[0].relativePath}?`,
+      title: many
+        ? appCopy.panels.gitPanel.deleteFiles(rows.length)
+        : appCopy.panels.gitPanel.delete(rows[0].relativePath),
       body: (
         <>
-          Removes {many ? `these ${rows.length} files` : 'the file'} from disk in {activeScopeLabel}. This can’t be
-          undone.
-          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
+          {appCopy.panels.gitPanel.removes}
+          {many ? `these ${rows.length} files` : 'the file'}
+          {appCopy.panels.gitPanel.fromDiskIn}
+          {activeScopeLabel}
+          {appCopy.panels.gitPanel.thisCanTBeUndone}
+          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">
+            {appCopy.panels.gitPanel.scopePath}
+            {activeScopePath}
+          </div>
         </>
       ),
-      confirmLabel: 'Delete',
+      confirmLabel: appCopy.panels.gitPanel.delete2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -1667,15 +1687,17 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     )
     if (checkedOutElsewhere) {
       const confirmed = await dialog.confirm({
-        title: `Branch already checked out`,
+        title: appCopy.panels.gitPanel.branchAlreadyCheckedOut,
         body: (
           <>
-            Branch <span className="font-mono">{branchName}</span> is already checked out at:
+            {appCopy.panels.gitPanel.branch}
+            <span className="font-mono">{branchName}</span>
+            {appCopy.panels.gitPanel.isAlreadyCheckedOutAt}
             <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">{checkedOutElsewhere.path}</div>
-            <div className="mt-2">Git may refuse to switch to it here.</div>
+            <div className="mt-2">{appCopy.panels.gitPanel.gitMayRefuseToSwitch}</div>
           </>
         ),
-        confirmLabel: 'Switch anyway',
+        confirmLabel: appCopy.panels.gitPanel.switchAnyway,
         tone: 'danger',
       })
       if (!confirmed) {
@@ -1716,15 +1738,19 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
         </>
       )
     const confirmed = await dialog.confirm({
-      title: `Merge into ${currentBranch}?`,
+      title: appCopy.panels.gitPanel.mergeInto(currentBranch),
       body: (
         <>
-          Merges {subject} into <span className="font-mono">{currentBranch}</span> in {activeScopeLabel}. Conflicts are
-          left for you to resolve.
-          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
+          {appCopy.panels.gitPanel.merges}
+          {subject} into <span className="font-mono">{currentBranch}</span> in {activeScopeLabel}
+          {appCopy.panels.gitPanel.conflictsAreLeftForYou}
+          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">
+            {appCopy.panels.gitPanel.scopePath}
+            {activeScopePath}
+          </div>
         </>
       ),
-      confirmLabel: 'Merge',
+      confirmLabel: appCopy.panels.gitPanel.merge,
     })
     if (!confirmed) return
 
@@ -1755,16 +1781,20 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     const subjectLabel = target.kind === 'commit' ? `commit ${target.commit.shortHash}` : target.label
     const confirmed = await dialog.confirm({
-      title: `Rebase ${currentBranch} onto ${subjectLabel}?`,
+      title: appCopy.panels.gitPanel.rebaseOnto(currentBranch, subjectLabel),
       body: (
         <>
-          Replays <span className="font-mono">{currentBranch}</span> onto{' '}
-          <span className="font-mono">{subjectLabel}</span> in {activeScopeLabel}, rewriting its commit hashes.
-          Conflicts pause it for you to resolve.
-          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
+          {appCopy.panels.gitPanel.replays}
+          <span className="font-mono">{currentBranch}</span> onto <span className="font-mono">{subjectLabel}</span> in{' '}
+          {activeScopeLabel}
+          {appCopy.panels.gitPanel.rewritingItsCommitHashesConflicts}
+          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">
+            {appCopy.panels.gitPanel.scopePath}
+            {activeScopePath}
+          </div>
         </>
       ),
-      confirmLabel: 'Rebase',
+      confirmLabel: appCopy.panels.gitPanel.rebase,
     })
     if (!confirmed) return
 
@@ -1784,14 +1814,17 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     }
 
     const confirmed = await dialog.confirm({
-      title: `Cherry-pick ${commit.shortHash} into ${currentBranch}?`,
+      title: appCopy.panels.gitPanel.cherryPickInto(commit.shortHash, currentBranch),
       body: (
         <>
-          Applies “{commit.subject}” onto <span className="font-mono">{currentBranch}</span> as a new commit. Conflicts
-          pause it for you to resolve.
+          {appCopy.panels.gitPanel.applies}
+          {commit.subject}
+          {appCopy.panels.gitPanel.onto}
+          <span className="font-mono">{currentBranch}</span>
+          {appCopy.panels.gitPanel.asANewCommitConflicts}
         </>
       ),
-      confirmLabel: 'Cherry-pick',
+      confirmLabel: appCopy.panels.gitPanel.cherryPick,
     })
     if (!confirmed) return
 
@@ -1805,9 +1838,15 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleRevertCommit = async (commit: GitGraphCommit) => {
     if (!repoRoot || !requireApi(gitApi.revertGitCommit, 'Git revert')) return
     const confirmed = await dialog.confirm({
-      title: `Revert ${commit.shortHash}?`,
-      body: <>This creates a new commit that undoes “{commit.subject}”. History is kept; nothing is rewritten.</>,
-      confirmLabel: 'Revert commit',
+      title: appCopy.panels.gitPanel.revert(commit.shortHash),
+      body: (
+        <>
+          {appCopy.panels.gitPanel.thisCreatesANewCommit}
+          {commit.subject}
+          {appCopy.panels.gitPanel.historyIsKeptNothingIs}
+        </>
+      ),
+      confirmLabel: appCopy.panels.gitPanel.revertCommit,
     })
     if (!confirmed) return
 
@@ -1833,15 +1872,21 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           ? 'Commits after it stay in the working tree as staged changes.'
           : 'Commits after it stay in the working tree as unstaged changes.'
     const confirmed = await dialog.confirm({
-      title: `Reset ${currentBranch} to ${commit.shortHash}?`,
+      title: appCopy.panels.gitPanel.resetTo(currentBranch, commit.shortHash),
       body: (
         <>
-          This moves <span className="font-mono">{currentBranch}</span> back to “{commit.subject}” ({mode} reset).{' '}
-          {consequence}
-          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
+          {appCopy.panels.gitPanel.thisMoves}
+          <span className="font-mono">{currentBranch}</span>
+          {appCopy.panels.gitPanel.backTo}
+          {commit.subject}” ({mode}
+          {appCopy.panels.gitPanel.reset} {consequence}
+          <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">
+            {appCopy.panels.gitPanel.scopePath}
+            {activeScopePath}
+          </div>
         </>
       ),
-      confirmLabel: mode === 'hard' ? 'Hard reset' : 'Reset',
+      confirmLabel: mode === 'hard' ? appCopy.panels.gitPanel.hardReset : appCopy.panels.gitPanel.reset2,
       tone: mode === 'hard' ? 'danger' : 'default',
     })
     if (!confirmed) return
@@ -1856,14 +1901,15 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleDeleteBranch = async (branchName: string) => {
     if (!repoRoot || !requireApi(gitApi.deleteGitBranch, 'Git branch deletion')) return
     const confirmed = await dialog.confirm({
-      title: `Delete branch ${branchName}?`,
+      title: appCopy.panels.gitPanel.deleteBranch(branchName),
       body: (
         <>
-          Deletes the local branch <span className="font-mono">{branchName}</span>. Unmerged branches need a force
-          delete.
+          {appCopy.panels.gitPanel.deletesTheLocalBranch}
+          <span className="font-mono">{branchName}</span>
+          {appCopy.panels.gitPanel.unmergedBranchesNeedAForce}
         </>
       ),
-      confirmLabel: 'Delete branch',
+      confirmLabel: appCopy.panels.gitPanel.deleteBranch2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -1881,14 +1927,14 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     // invocation (git-utils.ts).
     if (!/not fully merged/i.test(`${result.message ?? ''}\n${result.stderr}`)) return
     const forceConfirmed = await dialog.confirm({
-      title: `${branchName} is not fully merged`,
+      title: appCopy.panels.gitPanel.isNotFullyMerged(branchName),
       body: (
         <>
-          <span className="font-mono">{branchName}</span> has commits not merged anywhere else. Force-deleting makes
-          them unreachable.
+          <span className="font-mono">{branchName}</span>
+          {appCopy.panels.gitPanel.hasCommitsNotMergedAnywhere}
         </>
       ),
-      confirmLabel: 'Force delete',
+      confirmLabel: appCopy.panels.gitPanel.forceDelete,
       tone: 'danger',
     })
     if (!forceConfirmed) return
@@ -1903,11 +1949,11 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleRenameBranch = async (branchName: string) => {
     if (!repoRoot || !requireApi(gitApi.renameGitBranch, 'Git branch renaming')) return
     const newName = await dialog.prompt({
-      title: `Rename ${branchName}`,
-      inputLabel: 'New branch name',
+      title: appCopy.panels.gitPanel.rename(branchName),
+      inputLabel: appCopy.panels.gitPanel.newBranchName,
       initialValue: branchName,
       required: true,
-      confirmLabel: 'Rename',
+      confirmLabel: appCopy.panels.gitPanel.rename2,
     })
     if (!newName || newName.trim() === branchName) return
 
@@ -1933,9 +1979,14 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot || !operationInProgress || !requireApi(gitApi.abortGitOperation, 'Git abort')) return
     const label = operationInProgress.replace('-', ' ')
     const confirmed = await dialog.confirm({
-      title: `Abort the ${label}?`,
-      body: <>Rolls the working tree back to before the {label}.</>,
-      confirmLabel: 'Abort',
+      title: appCopy.panels.gitPanel.abortThe(label),
+      body: (
+        <>
+          {appCopy.panels.gitPanel.rollsTheWorkingTreeBack}
+          {label}.
+        </>
+      ),
+      confirmLabel: appCopy.panels.gitPanel.abort,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -1945,11 +1996,11 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleStashPush = async () => {
     if (!repoRoot || !requireApi(gitApi.pushGitStash, 'Git stash')) return
     const stashMessage = await dialog.prompt({
-      title: 'Stash changes',
-      body: <>Sets aside all local changes, including untracked files.</>,
-      inputLabel: 'Message (optional)',
-      placeholder: 'What is in this stash?',
-      confirmLabel: 'Stash',
+      title: appCopy.panels.gitPanel.stashChanges,
+      body: <>{appCopy.panels.gitPanel.setsAsideAllLocalChanges}</>,
+      inputLabel: appCopy.panels.gitPanel.messageOptional,
+      placeholder: appCopy.panels.gitPanel.whatIsInThisStash,
+      confirmLabel: appCopy.panels.gitPanel.stash,
     })
     if (stashMessage === null) return
 
@@ -1968,9 +2019,15 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleStashDrop = async (entry: GitStashEntry) => {
     if (!repoRoot || !requireApi(gitApi.dropGitStash, 'Git stash drop')) return
     const confirmed = await dialog.confirm({
-      title: `Drop ${entry.ref}?`,
-      body: <>Deletes the stash “{entry.message}”. This can’t be undone.</>,
-      confirmLabel: 'Drop stash',
+      title: appCopy.panels.gitPanel.drop(entry.ref),
+      body: (
+        <>
+          {appCopy.panels.gitPanel.deletesTheStash}
+          {entry.message}
+          {appCopy.panels.gitPanel.thisCanTBeUndone2}
+        </>
+      ),
+      confirmLabel: appCopy.panels.gitPanel.dropStash,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -1984,14 +2041,15 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleCheckoutCommit = async (commit: GitGraphCommit) => {
     if (!repoRoot) return
     const confirmed = await dialog.confirm({
-      title: `Checkout ${commit.shortHash}?`,
+      title: appCopy.panels.gitPanel.checkout(commit.shortHash),
       body: (
         <>
-          Detaches HEAD at <span className="font-mono">{commit.shortHash}</span> — “{commit.subject}”. Commits made here
-          are easy to lose without a branch.
+          {appCopy.panels.gitPanel.detachesHEADAt}
+          <span className="font-mono">{commit.shortHash}</span> — “{commit.subject}
+          {appCopy.panels.gitPanel.commitsMadeHereAreEasy}
         </>
       ),
-      confirmLabel: 'Checkout commit',
+      confirmLabel: appCopy.panels.gitPanel.checkoutCommit,
     })
     if (!confirmed) return
     await runAction(
@@ -2004,12 +2062,18 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleCreateBranchFromCommit = async (commit: GitGraphCommit) => {
     if (!repoRoot) return
     const name = await dialog.prompt({
-      title: `New branch from ${commit.shortHash}`,
-      body: <>Creates a branch at “{commit.subject}” and switches to it.</>,
-      inputLabel: 'Branch name',
+      title: appCopy.panels.gitPanel.newBranchFrom(commit.shortHash),
+      body: (
+        <>
+          {appCopy.panels.gitPanel.createsABranchAt}
+          {commit.subject}
+          {appCopy.panels.gitPanel.andSwitchesToIt}
+        </>
+      ),
+      inputLabel: appCopy.panels.gitPanel.branchName,
       placeholder: 'feature/my-branch',
       required: true,
-      confirmLabel: 'Create & switch',
+      confirmLabel: appCopy.panels.gitPanel.createSwitch,
     })
     if (!name) return
     await runAction(
@@ -2022,12 +2086,17 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const handleCreateTagFromCommit = async (commit: GitGraphCommit) => {
     if (!repoRoot) return
     const name = await dialog.prompt({
-      title: `New tag at ${commit.shortHash}`,
-      body: <>Tags “{commit.subject}”.</>,
-      inputLabel: 'Tag name',
+      title: appCopy.panels.gitPanel.newTagAt(commit.shortHash),
+      body: (
+        <>
+          {appCopy.panels.gitPanel.tags}
+          {commit.subject}”.
+        </>
+      ),
+      inputLabel: appCopy.panels.gitPanel.tagName,
       placeholder: 'v1.0.0',
       required: true,
-      confirmLabel: 'Create tag',
+      confirmLabel: appCopy.panels.gitPanel.createTag,
     })
     if (!name) return
     await runAction(
@@ -2183,7 +2252,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   if (!folderPath) {
     return (
       <div className="h-full bg-[color:var(--bg-surface)]">
-        <EmptyState title="Open a folder to use Git controls." />
+        <EmptyState title={appCopy.panels.gitPanel.openAFolderToUse} />
       </div>
     )
   }
@@ -2199,7 +2268,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   if (!repoRoot) {
     return (
       <div className="h-full bg-[color:var(--bg-surface)]">
-        <EmptyState title="This folder is not a Git repository." />
+        <EmptyState title={appCopy.panels.gitPanel.thisFolderIsNotA} />
       </div>
     )
   }
@@ -2217,30 +2286,37 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   const gitViewTabs: TabItem<GitPanelView>[] = [
     {
       id: 'changes',
-      label: 'Changes',
+      label: appCopy.panels.gitPanel.changes,
       icon: ChangesViewGlyph,
-      tooltip: allEntries.length === 1 ? 'Changes \u00b7 1 file' : `Changes \u00b7 ${allEntries.length} files`,
+      tooltip:
+        allEntries.length === 1
+          ? appCopy.panels.gitPanel.changes1File
+          : appCopy.panels.gitPanel.changesFiles(allEntries.length),
     },
     {
       id: 'worktrees',
-      label: 'Worktrees',
+      label: appCopy.panels.gitPanel.worktrees,
       icon: WorktreeGlyph,
-      tooltip: worktreeCount === 1 ? 'Worktrees \u00b7 1' : `Worktrees \u00b7 ${worktreeCount}`,
+      tooltip:
+        worktreeCount === 1 ? appCopy.panels.gitPanel.worktrees1 : appCopy.panels.gitPanel.worktrees2(worktreeCount),
     },
     {
       id: 'log',
-      label: 'Log',
+      label: appCopy.panels.gitPanel.log,
       icon: LogViewGlyph,
       tooltip:
-        totalCommitCount === 1 ? 'Log \u00b7 1 commit' : `Log \u00b7 ${totalCommitCount.toLocaleString()} commits`,
+        totalCommitCount === 1
+          ? appCopy.panels.gitPanel.log1Commit
+          : appCopy.panels.gitPanel.logCommits(totalCommitCount.toLocaleString()),
     },
     {
       id: 'stashes',
-      label: 'Stashes',
+      label: appCopy.panels.gitPanel.stashes,
       icon: StashGlyph,
-      tooltip: stashes.length === 1 ? 'Stashes \u00b7 1' : `Stashes \u00b7 ${stashes.length}`,
+      tooltip:
+        stashes.length === 1 ? appCopy.panels.gitPanel.stashes1 : appCopy.panels.gitPanel.stashes2(stashes.length),
     },
-    { id: 'terminal', label: 'Terminal', icon: TerminalViewGlyph },
+    { id: 'terminal', label: appCopy.panels.gitPanel.terminal, icon: TerminalViewGlyph },
   ]
 
   return (
@@ -2271,7 +2347,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-1.5 pr-1.5">
         <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
           <Tabs<GitPanelView>
-            ariaLabel="Git panel views"
+            ariaLabel={appCopy.panels.gitPanel.gitPanelViews}
             idPrefix={gitTabsIdPrefix}
             items={gitViewTabs}
             value={activeView}
@@ -2287,7 +2363,11 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
         <div className="flex shrink-0 items-center gap-1">
           {behind > 0 ? (
             <Tooltip
-              content={`Pull ${behind} commit${behind === 1 ? '' : 's'}${upstreamLabel ? ` from ${upstreamLabel}` : ''}`}
+              content={appCopy.panels.gitPanel.pullCommit(
+                behind,
+                behind === 1 ? '' : 's',
+                upstreamLabel ? appCopy.panels.gitPanel.from(upstreamLabel) : '',
+              )}
               placement="bottom"
             >
               <OutlineButton
@@ -2295,7 +2375,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 onClick={() => void handlePull()}
                 disabled={Boolean(busy)}
                 className="tabular-nums"
-                aria-label={`Pull ${behind} commit${behind === 1 ? '' : 's'}`}
+                aria-label={appCopy.panels.gitPanel.pullCommit2(behind, behind === 1 ? '' : 's')}
               >
                 <SyncArrowIcon direction="down" />
                 {behind}
@@ -2304,7 +2384,11 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           ) : null}
           {ahead > 0 ? (
             <Tooltip
-              content={`Push ${ahead} commit${ahead === 1 ? '' : 's'}${upstreamLabel ? ` to ${upstreamLabel}` : ''}`}
+              content={appCopy.panels.gitPanel.pushCommit(
+                ahead,
+                ahead === 1 ? '' : 's',
+                upstreamLabel ? appCopy.panels.gitPanel.to(upstreamLabel) : '',
+              )}
               placement="bottom"
             >
               <OutlineButton
@@ -2312,7 +2396,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 onClick={() => void handlePush()}
                 disabled={Boolean(busy)}
                 className="tabular-nums"
-                aria-label={`Push ${ahead} commit${ahead === 1 ? '' : 's'}`}
+                aria-label={appCopy.panels.gitPanel.pushCommit2(ahead, ahead === 1 ? '' : 's')}
               >
                 <SyncArrowIcon direction="up" />
                 {ahead}
@@ -2325,10 +2409,18 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 where the Pull/Push buttons beside it are absent, so it is
                 already next to the thing it explains. */}
           <Tooltip
-            content={syncSummary ? `Fetch and refresh \u00b7 ${syncSummary}` : 'Fetch and refresh'}
+            content={
+              syncSummary
+                ? appCopy.panels.gitPanel.fetchAndRefresh(syncSummary)
+                : appCopy.panels.gitPanel.fetchAndRefresh2
+            }
             placement="bottom"
           >
-            <IconButton aria-label="Fetch and refresh" onClick={() => void handleFetch()} disabled={Boolean(busy)}>
+            <IconButton
+              aria-label={appCopy.panels.gitPanel.fetchAndRefresh2}
+              onClick={() => void handleFetch()}
+              disabled={Boolean(busy)}
+            >
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -2344,15 +2436,15 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           <InlineNotice tone="warn">
             <span className="font-medium">{scopeHealth.label}</span>
             {' \u2014 '}
-            <span>restore this worktree to work in it.</span>
+            <span>{appCopy.panels.gitPanel.restoreThisWorktreeToWork}</span>
           </InlineNotice>
         </div>
       ) : null}
       <div className="space-y-1 px-3 pb-1 pt-2">
         <div className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-2">
-          <span className="text-micro text-[color:var(--text-subtle)]">Branch</span>
+          <span className="text-micro text-[color:var(--text-subtle)]">{appCopy.panels.gitPanel.branch2}</span>
           <Select<string>
-            ariaLabel="Current branch"
+            ariaLabel={appCopy.panels.gitPanel.currentBranch}
             items={
               branchOptions.length === 0
                 ? [{ value: '', label: branches?.current ?? 'detached' }]
@@ -2377,9 +2469,9 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           <div
             className={`grid ${activeScope?.kind === 'worktree' ? 'grid-cols-[4rem_minmax(0,1fr)_auto]' : 'grid-cols-[4rem_minmax(0,1fr)]'} items-center gap-2`}
           >
-            <span className="text-micro text-[color:var(--text-subtle)]">Worktree</span>
+            <span className="text-micro text-[color:var(--text-subtle)]">{appCopy.panels.gitPanel.worktree}</span>
             <Select<string>
-              ariaLabel="Active worktree"
+              ariaLabel={appCopy.panels.gitPanel.activeWorktree}
               items={scopeOptions.map((scope) => ({
                 value: scope.id,
                 label: scope.label,
@@ -2395,11 +2487,14 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
               triggerMinWidthClassName="min-w-0"
             />
             {activeScope?.kind === 'worktree' ? (
-              <Tooltip content={`Review changes against ${reviewDiffTarget.baseRef}`} placement="bottom">
+              <Tooltip
+                content={appCopy.panels.gitPanel.reviewChangesAgainst(reviewDiffTarget.baseRef)}
+                placement="bottom"
+              >
                 {/* Outlined to stand level with the scope picker it sits beside:
                     a flat label next to a bordered field read as a caption. */}
                 <OutlineButton size="xs" onClick={() => void handleReviewDiff()} disabled={Boolean(busy) || !repoRoot}>
-                  Review changes
+                  {appCopy.panels.gitPanel.reviewChanges}
                 </OutlineButton>
               </Tooltip>
             ) : null}
@@ -2416,17 +2511,20 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 {/* A confirm pair one rung apart: the way forward outlined, the
                     way back ghost. */}
                 <OutlineButton onClick={() => void handleContinueOperation()} disabled={Boolean(busy)}>
-                  Continue
+                  {appCopy.panels.gitPanel.continue}
                 </OutlineButton>
                 <GhostButton onClick={() => void handleAbortOperation()} disabled={Boolean(busy)}>
-                  Abort
+                  {appCopy.panels.gitPanel.abort}
                 </GhostButton>
               </span>
             }
           >
-            <span className="font-medium">{OPERATION_LABELS[operationInProgress]} in progress</span>
+            <span className="font-medium">
+              {OPERATION_LABELS[operationInProgress]}
+              {appCopy.panels.gitPanel.inProgress}
+            </span>
             {' — '}
-            <span>resolve conflicts, then continue, or abort to roll back.</span>
+            <span>{appCopy.panels.gitPanel.resolveConflictsThenContinueOr}</span>
           </InlineNotice>
         </div>
       ) : null}
@@ -2476,7 +2574,9 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 hidden. */}
           <ScrollArea className="flex-1 py-1" onMouseDown={beginChangeMarquee}>
             {allEntries.length === 0 ? (
-              <div className="px-3 py-2 text-meta text-[color:var(--text-subtle)]">Working tree clean</div>
+              <div className="px-3 py-2 text-meta text-[color:var(--text-subtle)]">
+                {appCopy.panels.gitPanel.workingTreeClean}
+              </div>
             ) : (
               <>
                 {conflictEntries.length > 0 ? (
@@ -2694,7 +2794,7 @@ function GitPanelSkeleton(): JSX.Element {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[color:var(--bg-surface)]">
       <span role="status" className="sr-only">
-        Loading Git status…
+        {appCopy.panels.gitPanel.loadingGitStatus}
       </span>
       <div
         aria-hidden="true"
@@ -2754,7 +2854,10 @@ function ConflictGroup({
   return (
     <section className="mb-4">
       <div className="mb-1 flex h-6 items-center justify-between gap-2">
-        <div className="text-meta font-semibold text-[color:var(--tone-error)]">Conflicts ({entries.length})</div>
+        <div className="text-meta font-semibold text-[color:var(--tone-error)]">
+          {appCopy.panels.gitPanel.conflicts}
+          {entries.length})
+        </div>
       </div>
       <div className="space-y-1">
         {entries.map((entry) => {
@@ -2787,19 +2890,19 @@ function ConflictGroup({
                   title={title}
                   trailing={<span className="font-mono text-micro font-semibold opacity-80">!</span>}
                   onSelect={() => void onOpenFile(entry)}
-                  ariaLabel={`Open ${entry.relativePath}, conflicted`}
+                  ariaLabel={appCopy.panels.gitPanel.openConflicted(entry.relativePath)}
                 />
               </div>
-              <Tooltip content={`Resolve ${entry.relativePath}`}>
+              <Tooltip content={appCopy.panels.gitPanel.resolve(entry.relativePath)}>
                 <GhostButton
                   size="xs"
                   onClick={() => onResolve(entry)}
                   disabled={Boolean(busy)}
                   tone="danger"
                   className="shrink-0"
-                  aria-label={`Resolve ${entry.relativePath}`}
+                  aria-label={appCopy.panels.gitPanel.resolve(entry.relativePath)}
                 >
-                  Resolve
+                  {appCopy.panels.gitPanel.resolve2}
                 </GhostButton>
               </Tooltip>
             </div>
@@ -2826,7 +2929,7 @@ function StashList({
   onDrop: (entry: GitStashEntry) => void
 }) {
   if (stashes.length === 0) {
-    return <EmptyState density="list" title="No stashes" />
+    return <EmptyState density="list" title={appCopy.panels.gitPanel.noStashes} />
   }
 
   return (
@@ -2858,35 +2961,35 @@ function StashList({
                 ) : null}
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-1 opacity-70 group-hover/row:opacity-100">
-                <Tooltip content={`Reapply ${entry.ref} and drop it`}>
+                <Tooltip content={appCopy.panels.gitPanel.reapplyAndDropIt(entry.ref)}>
                   <GhostButton
                     size="xs"
                     onClick={() => onApply(entry, true)}
                     disabled={Boolean(busy)}
-                    aria-label={`Pop ${entry.ref}`}
+                    aria-label={appCopy.panels.gitPanel.pop(entry.ref)}
                   >
-                    Pop
+                    {appCopy.panels.gitPanel.pop2}
                   </GhostButton>
                 </Tooltip>
-                <Tooltip content={`Reapply ${entry.ref} and keep it`}>
+                <Tooltip content={appCopy.panels.gitPanel.reapplyAndKeepIt(entry.ref)}>
                   <GhostButton
                     size="xs"
                     onClick={() => onApply(entry, false)}
                     disabled={Boolean(busy)}
-                    aria-label={`Apply ${entry.ref}`}
+                    aria-label={appCopy.panels.gitPanel.apply(entry.ref)}
                   >
-                    Apply
+                    {appCopy.panels.gitPanel.apply2}
                   </GhostButton>
                 </Tooltip>
-                <Tooltip content={`Delete ${entry.ref}`}>
+                <Tooltip content={appCopy.panels.gitPanel.delete3(entry.ref)}>
                   <GhostButton
                     size="xs"
                     tone="danger"
                     onClick={() => onDrop(entry)}
                     disabled={Boolean(busy)}
-                    aria-label={`Drop ${entry.ref}`}
+                    aria-label={appCopy.panels.gitPanel.drop2(entry.ref)}
                   >
-                    Drop
+                    {appCopy.panels.gitPanel.drop3}
                   </GhostButton>
                 </Tooltip>
               </div>
@@ -2964,7 +3067,7 @@ function CommitComposer({
     // and a raised band behind a raised box flattens the step between them.
     <section className="shrink-0 px-3 pb-3 pt-2">
       <div className="mb-2 min-w-0 text-micro text-[color:var(--text-subtle)]">
-        <span className="font-medium text-[color:var(--text-muted)]">Commit scope</span>
+        <span className="font-medium text-[color:var(--text-muted)]">{appCopy.panels.gitPanel.commitScope}</span>
         <span className="mx-1.5 text-[color:var(--text-disabled)]" aria-hidden="true">
           /
         </span>
@@ -3002,8 +3105,8 @@ function CommitComposer({
           // replaced by what the person agreed to replace.
           readOnly={drafting}
           aria-busy={drafting || undefined}
-          placeholder={placeholder ?? 'Commit message'}
-          aria-label="Commit message"
+          placeholder={placeholder ?? appCopy.panels.gitPanel.commitMessage}
+          aria-label={appCopy.panels.gitPanel.commitMessage}
           // Grows with the message between three lines and a body's worth, as
           // the chat composer grows with a draft. `text-meta` because the
           // composer variant sets no size and inherits one: the chat composer
@@ -3032,10 +3135,10 @@ function CommitComposer({
               primary, and before it, so Commit sits in the corner the
               composer keeps for Send. */}
             <OutlineButton size="sm" onClick={() => void onCommitAndPush()} disabled={Boolean(busy) || !readyToCommit}>
-              Commit &amp; Push…
+              {appCopy.panels.gitPanel.commitPush}
             </OutlineButton>
             <PrimaryButton size="sm" onClick={() => void onCommit()} disabled={Boolean(busy) || !readyToCommit}>
-              Commit
+              {appCopy.panels.gitPanel.commit}
             </PrimaryButton>
           </div>
         </div>

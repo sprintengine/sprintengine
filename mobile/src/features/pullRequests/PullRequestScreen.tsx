@@ -23,6 +23,7 @@ import {
   reviewSummaryWords,
 } from "./pullRequestView";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { copy } from "../../../../src/shared/copy";
 
 type ReadView =
   | { status: "loading" }
@@ -63,7 +64,7 @@ export function PullRequestScreen({
 
   const load = useCallback(async () => {
     if (!api) {
-      setView({ status: "error", message: "This desktop is no longer paired with this phone.", unsupported: false });
+      setView({ status: "error", message: copy.phone.pullRequests.pullRequestScreen.thisDesktopIsNoLonger, unsupported: false });
       return;
     }
     const result = await api.read(url);
@@ -74,8 +75,8 @@ export function PullRequestScreen({
         status: "error",
         unsupported: pullRequestReadsUnsupported(result),
         message: pullRequestReadsUnsupported(result)
-          ? `Update Studio on ${session?.desktopName ?? "the desktop"} to read pull requests here.`
-          : (result.message ?? "The desktop did not answer."),
+          ? copy.phone.pullRequests.pullRequestScreen.updateStudioOnToRead(session?.desktopName ?? copy.phone.pullRequests.pullRequestScreen.theDesktop)
+          : (result.message ?? copy.phone.pullRequests.pullRequestScreen.theDesktopDidNotAnswer),
       });
   }, [api, session?.desktopName, url]);
 
@@ -95,7 +96,7 @@ export function PullRequestScreen({
   const branches = detail ? branchWords(detail) : null;
   return (
     <Screen
-      title={detail?.number ? `#${detail.number}` : "Pull request"}
+      title={detail?.number ? `#${detail.number}` : copy.phone.pullRequests.pullRequestScreen.pullRequest}
       subtitle={
         state ? (
           <View style={styles.subtitle}>
@@ -112,22 +113,22 @@ export function PullRequestScreen({
         ) : undefined
       }
       onBack={onBack}
-      backLabel="Back"
+      backLabel={copy.phone.pullRequests.pullRequestScreen.back}
       onRefresh={refresh}
       refreshing={refreshing}
     >
       {view.status === "loading" ? (
         <View accessibilityLiveRegion="polite" style={styles.loading}>
-          <WorkingMark label="Loading pull request" />
-          <Text style={styles.meta}>Loading pull request…</Text>
+          <WorkingMark label={copy.phone.pullRequests.pullRequestScreen.loadingPullRequest} />
+          <Text style={styles.meta}>{copy.phone.pullRequests.pullRequestScreen.loadingPullRequest2}</Text>
         </View>
       ) : view.status === "error" ? (
         <View style={styles.block}>
           <Text accessibilityRole="alert" style={styles.body}>
             {view.message}
           </Text>
-          {view.unsupported ? null : <PrimaryButton label="Try again" onPress={refresh} variant="secondary" />}
-          <PrimaryButton label="Open on GitHub" onPress={onOpenInBrowser} variant="ghost" />
+          {view.unsupported ? null : <PrimaryButton label={copy.phone.pullRequests.pullRequestScreen.tryAgain} onPress={refresh} variant="secondary" />}
+          <PrimaryButton label={copy.phone.pullRequests.pullRequestScreen.openOnGitHub} onPress={onOpenInBrowser} variant="ghost" />
         </View>
       ) : (
         <PullRequestBody detail={view.detail} onOpenFile={onOpenFile} onOpenInBrowser={onOpenInBrowser} />
@@ -162,10 +163,10 @@ function PullRequestBody({
         </Text>
       </View>
 
-      <Section title="Checks">
+      <Section title={copy.phone.pullRequests.pullRequestScreen.checks}>
         <Card variant="list">
           <CardRow
-            accessibilityLabel={`Checks: ${checks.text}`}
+            accessibilityLabel={copy.phone.pullRequests.pullRequestScreen.checks2(checks.text)}
             first
             leading={<StatusShape size={iconSize.sm} tone={checks.tone} />}
             title={<Text style={styles.rowTitle}>{checks.text}</Text>}
@@ -174,7 +175,7 @@ function PullRequestBody({
             .filter((check) => check.status !== "passed")
             .map((check) => (
               <CardRow
-                accessibilityLabel={`${check.name}, ${check.status === "failed" ? "failing" : "running"}${check.required ? ", required" : ""}`}
+                accessibilityLabel={`${check.name}, ${check.status === "failed" ? "failing" : "running"}${check.required ? copy.phone.pullRequests.pullRequestScreen.required : ""}`}
                 key={`${check.workflow}\u0000${check.name}`}
                 leading={<StatusShape size={iconSize.sm} tone={check.status === "failed" ? "danger" : "warn"} />}
                 meta={
@@ -194,7 +195,7 @@ function PullRequestBody({
         </Card>
       </Section>
 
-      <Section title="Reviews and comments">
+      <Section title={copy.phone.pullRequests.pullRequestScreen.reviewsAndComments}>
         <Card variant="list">
           <CardRow first title={<Text style={styles.rowTitle}>{reviewSummaryWords(detail)}</Text>} />
           <CardRow title={<Text style={styles.rowTitle}>{remarksSummaryWords(detail.remarks)}</Text>} />
@@ -224,7 +225,7 @@ function PullRequestBody({
       </Section>
 
       <Section
-        title="Files changed"
+        title={copy.phone.pullRequests.pullRequestScreen.filesChanged}
         trailing={
           detail.files ? (
             <Text style={styles.counts}>
@@ -235,9 +236,9 @@ function PullRequestBody({
         }
       >
         {detail.files === null ? (
-          <Text style={styles.meta}>The desktop couldn&apos;t read this pull request&apos;s files.</Text>
+          <Text style={styles.meta}>{copy.phone.pullRequests.pullRequestScreen.theDesktopCouldnTRead}</Text>
         ) : detail.files.items.length === 0 ? (
-          <Text style={styles.meta}>This pull request changes no files.</Text>
+          <Text style={styles.meta}>{copy.phone.pullRequests.pullRequestScreen.thisPullRequestChangesNo}</Text>
         ) : (
           <Card variant="list">
             {detail.files.items.map((file, index) => {
@@ -245,7 +246,7 @@ function PullRequestBody({
               const status = fileChangeStatus(file.change);
               return (
                 <CardRow
-                  accessibilityLabel={`${file.path}, ${status}, ${file.additions} added, ${file.deletions} removed`}
+                  accessibilityLabel={copy.phone.pullRequests.pullRequestScreen.addedRemoved(file.path, status, file.additions, file.deletions)}
                   chevron
                   first={index === 0}
                   key={file.path}
@@ -275,12 +276,11 @@ function PullRequestBody({
         )}
         {detail.files && filesNotListed(detail.files) > 0 ? (
           <Text style={styles.meta}>
-            {filesNotListed(detail.files)} more not listed. See every file on GitHub.
-          </Text>
+            {filesNotListed(detail.files)}{copy.phone.pullRequests.pullRequestScreen.moreNotListedSeeEvery}</Text>
         ) : null}
       </Section>
 
-      <PrimaryButton label="Open on GitHub" onPress={onOpenInBrowser} variant="secondary" />
+      <PrimaryButton label={copy.phone.pullRequests.pullRequestScreen.openOnGitHub} onPress={onOpenInBrowser} variant="secondary" />
     </View>
   );
 }

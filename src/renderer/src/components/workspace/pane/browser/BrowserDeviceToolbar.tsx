@@ -9,6 +9,7 @@ import {
 } from '../../../../../../shared/browser-devices'
 import { IconButton, Input, Select, Tooltip } from '../../../ui'
 import { isImeKey } from '../../../../utils/imeKey'
+import { copy } from '../../../../../../shared/copy'
 
 // The device toolbar: a second, dismissable band under the browser toolbar
 // (the one case the panel-header rule allows a second band — off by default,
@@ -85,7 +86,7 @@ export function BrowserDeviceToolbar({ viewport, onChange, onClose }: BrowserDev
   const [aspectLocked, setAspectLocked] = useState(false)
   const selectValue = viewport.mode === 'preset' ? viewport.presetId : RESPONSIVE
   const items = [
-    { value: RESPONSIVE, label: 'Responsive' },
+    { value: RESPONSIVE, label: copy.workspace.pane.browser.browserDeviceToolbar.responsive },
     ...BROWSER_DEVICE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
   ]
 
@@ -96,7 +97,7 @@ export function BrowserDeviceToolbar({ viewport, onChange, onClose }: BrowserDev
   return (
     <div className="flex h-control-md shrink-0 items-center gap-1.5 border-b border-[color:var(--border-default)] bg-[color:var(--bg-surface)] px-1.5">
       <Select
-        ariaLabel="Device"
+        ariaLabel={copy.workspace.pane.browser.browserDeviceToolbar.device}
         items={items}
         value={selectValue}
         onChange={(value) => {
@@ -107,7 +108,7 @@ export function BrowserDeviceToolbar({ viewport, onChange, onClose }: BrowserDev
         className="max-w-[160px]"
       />
       <SizeField
-        label="Viewport width"
+        label={copy.workspace.pane.browser.browserDeviceToolbar.viewportWidth}
         value={viewport.width}
         onCommit={(raw) => {
           // Clamp first, then derive the other axis, so a locked ratio holds
@@ -120,30 +121,44 @@ export function BrowserDeviceToolbar({ viewport, onChange, onClose }: BrowserDev
         ×
       </span>
       <SizeField
-        label="Viewport height"
+        label={copy.workspace.pane.browser.browserDeviceToolbar.viewportHeight}
         value={viewport.height}
         onCommit={(raw) => {
           const height = clampViewportSize(raw)
           setSize(aspectLocked ? Math.round((height * viewport.width) / viewport.height) : viewport.width, height)
         }}
       />
-      <Tooltip content={aspectLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'} placement="bottom">
+      <Tooltip
+        content={
+          aspectLocked
+            ? copy.workspace.pane.browser.browserDeviceToolbar.unlockAspectRatio
+            : copy.workspace.pane.browser.browserDeviceToolbar.lockAspectRatio
+        }
+        placement="bottom"
+      >
         <IconButton
           onClick={() => setAspectLocked((value) => !value)}
-          aria-label={aspectLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+          aria-label={
+            aspectLocked
+              ? copy.workspace.pane.browser.browserDeviceToolbar.unlockAspectRatio
+              : copy.workspace.pane.browser.browserDeviceToolbar.lockAspectRatio
+          }
           pressed={aspectLocked}
         >
           <Glyph d={aspectLocked ? LOCK : UNLOCK} />
         </IconButton>
       </Tooltip>
-      <Tooltip content="Rotate" placement="bottom">
-        <IconButton onClick={() => onChange(rotateViewport(viewport))} aria-label="Rotate viewport">
+      <Tooltip content={copy.workspace.pane.browser.browserDeviceToolbar.rotate} placement="bottom">
+        <IconButton
+          onClick={() => onChange(rotateViewport(viewport))}
+          aria-label={copy.workspace.pane.browser.browserDeviceToolbar.rotateViewport}
+        >
           <Glyph d={ROTATE} />
         </IconButton>
       </Tooltip>
       <span className="flex-1" />
-      <Tooltip content="Hide device toolbar" placement="bottom">
-        <IconButton onClick={onClose} aria-label="Hide device toolbar">
+      <Tooltip content={copy.workspace.pane.browser.browserDeviceToolbar.hideDeviceToolbar} placement="bottom">
+        <IconButton onClick={onClose} aria-label={copy.workspace.pane.browser.browserDeviceToolbar.hideDeviceToolbar}>
           <Glyph d={CLOSE} />
         </IconButton>
       </Tooltip>

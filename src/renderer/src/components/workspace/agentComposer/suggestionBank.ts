@@ -10,6 +10,8 @@
 // and a re-render cannot reshuffle what someone is reading.
 
 /** Grouping used to keep one draw from being eight flavours of the same idea. */
+import { copy as appCopy } from '../../../../../shared/copy'
+
 export type SuggestionCategory =
   'review' | 'design' | 'performance' | 'security' | 'tests' | 'backlog' | 'docs' | 'deps'
 
@@ -44,8 +46,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'review-codebase',
     category: 'review',
-    title: 'Review the codebase',
-    description: 'Bugs, dead code, and drift between modules.',
+    title: appCopy.workspace.agentComposer.suggestionBank.reviewTheCodebase,
+    description: appCopy.workspace.agentComposer.suggestionBank.bugsDeadCodeAndDrift,
     outcome: 'Files backlog items',
     prompt: [
       'Review this codebase and report what is wrong with it.',
@@ -59,8 +61,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'review-recent-commits',
     category: 'review',
-    title: 'Review the last week of commits',
-    description: 'What landed, what broke, what is half-done.',
+    title: appCopy.workspace.agentComposer.suggestionBank.reviewTheLastWeekOf,
+    description: appCopy.workspace.agentComposer.suggestionBank.whatLandedWhatBrokeWhat,
     outcome: 'Files backlog items',
     prompt: [
       'Review what landed in this repo over the last seven days.',
@@ -73,8 +75,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'design-system-audit',
     category: 'design',
-    title: 'Audit the UI against the design system',
-    description: 'Drift in tokens, spacing, and states.',
+    title: appCopy.workspace.agentComposer.suggestionBank.auditTheUIAgainstThe,
+    description: appCopy.workspace.agentComposer.suggestionBank.driftInTokensSpacingAnd,
     outcome: 'Files backlog items',
     prompt: [
       "Audit this app's UI against its design system.",
@@ -88,8 +90,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'copy-voice-audit',
     category: 'design',
-    title: 'Check the copy against the voice rules',
-    description: 'One surface, judged against the voice guide.',
+    title: appCopy.workspace.agentComposer.suggestionBank.checkTheCopyAgainstThe,
+    description: appCopy.workspace.agentComposer.suggestionBank.oneSurfaceJudgedAgainstThe,
     outcome: 'Files backlog items',
     prompt: [
       "Check this app's user-visible copy against its documented voice rules.",
@@ -102,8 +104,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'performance-problems',
     category: 'performance',
-    title: 'Find performance problems',
-    description: 'Render, IPC, and startup, with the cost of each.',
+    title: appCopy.workspace.agentComposer.suggestionBank.findPerformanceProblems,
+    description: appCopy.workspace.agentComposer.suggestionBank.renderIPCAndStartupWith,
     outcome: 'Files backlog items',
     prompt: [
       "Find this application's real performance problems.",
@@ -117,8 +119,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'unused-weight',
     category: 'performance',
-    title: 'Find what the app loads and never uses',
-    description: 'Bundle weight, dead imports, unused assets.',
+    title: appCopy.workspace.agentComposer.suggestionBank.findWhatTheAppLoads,
+    description: appCopy.workspace.agentComposer.suggestionBank.bundleWeightDeadImportsUnused,
     outcome: 'Files backlog items',
     prompt: [
       'Find what this app pays to load and never uses.',
@@ -131,8 +133,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'security-review',
     category: 'security',
-    title: 'Review the app for security holes',
-    description: 'IPC, file access, and credentials.',
+    title: appCopy.workspace.agentComposer.suggestionBank.reviewTheAppForSecurity,
+    description: appCopy.workspace.agentComposer.suggestionBank.iPCFileAccessAndCredentials,
     outcome: 'Files backlog items',
     prompt: [
       'Review this application for security weaknesses.',
@@ -146,8 +148,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'untested-paths',
     category: 'tests',
-    title: 'Find the untested paths',
-    description: 'What the tests claim to cover vs. what runs.',
+    title: appCopy.workspace.agentComposer.suggestionBank.findTheUntestedPaths,
+    description: appCopy.workspace.agentComposer.suggestionBank.whatTheTestsClaimTo,
     outcome: 'Files backlog items',
     prompt: [
       'Find the parts of this codebase the test suite does not actually exercise.',
@@ -160,8 +162,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'flaky-tests',
     category: 'tests',
-    title: 'Hunt flaky tests',
-    description: 'The ones that pass on retry and hide a real race.',
+    title: appCopy.workspace.agentComposer.suggestionBank.huntFlakyTests,
+    description: appCopy.workspace.agentComposer.suggestionBank.theOnesThatPassOn,
     outcome: 'Files backlog items',
     prompt: [
       'Hunt for flaky tests in this repo.',
@@ -175,8 +177,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'triage-backlog',
     category: 'backlog',
-    title: 'Triage the backlog',
-    description: 'Merge duplicates and rank what comes next.',
+    title: appCopy.workspace.agentComposer.suggestionBank.triageTheBacklog,
+    description: appCopy.workspace.agentComposer.suggestionBank.mergeDuplicatesAndRankWhat,
     outcome: 'Updates backlog items',
     prompt: [
       "Triage this project's backlog.",
@@ -191,8 +193,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'docs-drift',
     category: 'docs',
-    title: 'Check the docs against the code',
-    description: 'Where the written record and the repo disagree.',
+    title: appCopy.workspace.agentComposer.suggestionBank.checkTheDocsAgainstThe,
+    description: appCopy.workspace.agentComposer.suggestionBank.whereTheWrittenRecordAnd,
     outcome: 'Files backlog items',
     prompt: [
       "Check this project's documentation against the code it describes.",
@@ -205,8 +207,8 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
   {
     id: 'dependency-audit',
     category: 'deps',
-    title: 'Audit dependencies',
-    description: 'Outdated, unused, or duplicated packages.',
+    title: appCopy.workspace.agentComposer.suggestionBank.auditDependencies,
+    description: appCopy.workspace.agentComposer.suggestionBank.outdatedUnusedOrDuplicatedPackages,
     outcome: 'Files backlog items',
     prompt: [
       "Audit this project's dependencies.",

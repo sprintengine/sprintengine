@@ -8,6 +8,7 @@ import { AttachmentThumbnail } from '../ComposerAttachmentStrip'
 import { Skeleton, Tooltip } from '../../ui'
 import { FileTypeGlyph } from '../../ui/FileTypeGlyph'
 import { useConversationTransport, type ConversationTransport } from './conversationTransport'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // A sent image in a bubble that was replayed rather than sent in this run: the
 // transcript names it by its attachment-store reference, and the bytes are read
@@ -127,10 +128,16 @@ export function StoredAttachmentThumbnail({
   // an image was sent, in the square the thumbnail would have filled.
   const label = attachment.name ?? 'Attached image'
   return (
-    <Tooltip content={transport.attachment ? `${label} is no longer available` : `${label} is on the other machine`}>
+    <Tooltip
+      content={
+        transport.attachment
+          ? appCopy.panels.agentChat.storedAttachments.isNoLongerAvailable(label)
+          : appCopy.panels.agentChat.storedAttachments.isOnTheOtherMachine(label)
+      }
+    >
       <span
         role="img"
-        aria-label={`${label}, not available`}
+        aria-label={appCopy.panels.agentChat.storedAttachments.notAvailable(label)}
         className={`inline-flex items-center justify-center rounded-sm border border-[color:var(--border-subtle)] text-[color:var(--text-subtle)] ${className}`}
       >
         <FileTypeGlyph kind="image" />

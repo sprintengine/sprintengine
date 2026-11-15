@@ -42,6 +42,7 @@ import { TRAFFIC_LIGHT_RESERVE, appRailWidth, trafficLightOverhang } from './App
 import { AppMenuButton } from './SidebarChrome'
 import { WindowCaptionReserve } from './WindowControls'
 import type { WorkspaceId } from '../../../../shared/workspace'
+import { copy } from '../../../../shared/copy'
 
 type WorkspaceBandProps<MenuItem extends string> = {
   // Window-scoped active workspace, which the panel toggle acts on (null while
@@ -86,8 +87,13 @@ type WorkspaceBandProps<MenuItem extends string> = {
 // Open-sidebar toggle for the collapsed launcher (panel-left glyph).
 function OpenSidebarButton({ onToggle }: { onToggle: () => void }) {
   return (
-    <Tooltip content="Open sidebar" placement="bottom">
-      <IconButton onClick={onToggle} aria-label="Open sidebar" aria-pressed={false} className="app-no-drag">
+    <Tooltip content={copy.workspace.workspaceBand.openSidebar} placement="bottom">
+      <IconButton
+        onClick={onToggle}
+        aria-label={copy.workspace.workspaceBand.openSidebar}
+        aria-pressed={false}
+        className="app-no-drag"
+      >
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
           <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
           <path d="M6 3V13" stroke="currentColor" strokeWidth="1.5" />
@@ -99,8 +105,8 @@ function OpenSidebarButton({ onToggle }: { onToggle: () => void }) {
 
 function LauncherSearchButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <Tooltip content="Search" placement="bottom">
-      <IconButton onClick={onOpen} aria-label="Search" className="app-no-drag">
+    <Tooltip content={copy.workspace.workspaceBand.search} placement="bottom">
+      <IconButton onClick={onOpen} aria-label={copy.workspace.workspaceBand.search} className="app-no-drag">
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
           <circle cx="7" cy="7" r="4.25" stroke="currentColor" strokeWidth="1.5" />
           <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -114,8 +120,8 @@ function LauncherSearchButton({ onOpen }: { onOpen: () => void }) {
 // the sidebar cluster does.
 function NewChatButton({ onClick }: { onClick: () => void }) {
   return (
-    <Tooltip content="New chat" placement="bottom">
-      <IconButton onClick={onClick} aria-label="New chat" className="app-no-drag">
+    <Tooltip content={copy.workspace.workspaceBand.newChat} placement="bottom">
+      <IconButton onClick={onClick} aria-label={copy.workspace.workspaceBand.newChat} className="app-no-drag">
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
           <path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>

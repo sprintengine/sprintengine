@@ -12,6 +12,7 @@ import {
 import { ResetIcon } from '../AppIcons'
 import { IconButton, SegmentedControl, SettingRow, Tooltip } from '../ui'
 import { Slider, type SliderStop } from '../ui/Slider'
+import { copy } from '../../../../shared/copy'
 
 // Every step the stored value can take, named the way the readout shows it,
 // so the slider's position, its announced value and the stored number are the
@@ -53,7 +54,7 @@ export function ChatAppearanceRows(): JSX.Element {
   return (
     <>
       <SettingRow
-        label="Chat text contrast"
+        label={copy.settings.chatAppearanceRows.chatTextContrast}
         labelId={labelId}
         help="Soften or strengthen the text in conversations and the composer, against the chat's own background."
       >
@@ -75,9 +76,9 @@ export function ChatAppearanceRows(): JSX.Element {
             does not jump sideways the moment it leaves the default. */}
         <span className="flex size-control-xs items-center justify-center">
           {contrast !== DEFAULT_CHAT_CONTRAST ? (
-            <Tooltip content={`Reset to ${DEFAULT_CHAT_CONTRAST}%`}>
+            <Tooltip content={copy.settings.chatAppearanceRows.resetTo(DEFAULT_CHAT_CONTRAST)}>
               <IconButton
-                aria-label={`Reset chat text contrast to ${DEFAULT_CHAT_CONTRAST}%`}
+                aria-label={copy.settings.chatAppearanceRows.resetChatTextContrastTo(DEFAULT_CHAT_CONTRAST)}
                 onClick={() => setContrast(DEFAULT_CHAT_CONTRAST)}
               >
                 <ResetIcon className="icon-sm" />
@@ -87,41 +88,44 @@ export function ChatAppearanceRows(): JSX.Element {
         </span>
       </SettingRow>
       <SettingRow
-        label="Chat width"
+        label={copy.settings.chatAppearanceRows.chatWidth}
         help="How wide conversations and the composer grow in a wide pane. Full uses the whole pane."
       >
         <SegmentedControl<ChatWidth>
-          ariaLabel="Chat width"
+          ariaLabel={copy.settings.chatAppearanceRows.chatWidth}
           items={[
-            { value: 'comfortable', label: 'Comfortable' },
-            { value: 'wide', label: 'Wide' },
-            { value: 'full', label: 'Full' },
+            { value: 'comfortable', label: copy.settings.chatAppearanceRows.comfortable },
+            { value: 'wide', label: copy.settings.chatAppearanceRows.wide },
+            { value: 'full', label: copy.settings.chatAppearanceRows.full },
           ]}
           value={width}
           onChange={setWidth}
         />
       </SettingRow>
-      <SettingRow label="Clock" help="How times of day are written. System follows your language and region.">
+      <SettingRow
+        label={copy.settings.chatAppearanceRows.clock}
+        help="How times of day are written. System follows your language and region."
+      >
         <SegmentedControl<ClockFormat>
-          ariaLabel="Clock"
+          ariaLabel={copy.settings.chatAppearanceRows.clock}
           items={[
-            { value: 'system', label: 'System' },
-            { value: '12h', label: '12-hour' },
-            { value: '24h', label: '24-hour' },
+            { value: 'system', label: copy.settings.chatAppearanceRows.system },
+            { value: '12h', label: copy.settings.chatAppearanceRows.n12Hour },
+            { value: '24h', label: copy.settings.chatAppearanceRows.n24Hour },
           ]}
           value={clockFormat}
           onChange={setClockFormat}
         />
       </SettingRow>
       <SettingRow
-        label="Show replies"
+        label={copy.settings.chatAppearanceRows.showReplies}
         help="A paragraph at a time holds each paragraph, list item or code block until it is finished, so text never moves while you read it. The working line stays up meanwhile, and the whole reply shows once it ends."
       >
         <SegmentedControl<ReplyStreaming>
-          ariaLabel="Show replies"
+          ariaLabel={copy.settings.chatAppearanceRows.showReplies}
           items={[
-            { value: 'live', label: 'As they’re written' },
-            { value: 'paragraph', label: 'A paragraph at a time' },
+            { value: 'live', label: copy.settings.chatAppearanceRows.asTheyReWritten },
+            { value: 'paragraph', label: copy.settings.chatAppearanceRows.aParagraphAtATime },
           ]}
           value={replyStreaming}
           onChange={setReplyStreaming}

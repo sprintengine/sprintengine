@@ -83,6 +83,7 @@ import {
 } from '../../studio/terminals'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { filesApi } from '../../studio/files'
+import { copy as appCopy } from '../../../../shared/copy'
 
 interface Props {
   workspaceId: string
@@ -163,7 +164,7 @@ async function resolveMemoryLaunchContext(
       ok: false,
       status: 'inaccessible',
       relativeRoot: configuredRoot,
-      message: error instanceof Error ? error.message : 'Unable to resolve workspace knowledge.',
+      message: error instanceof Error ? error.message : appCopy.panels.terminalView.unableToResolveWorkspaceKnowledge,
     }))
 
   // Resolved through `shared/project-knowledge` for the ENV VARS the spawn
@@ -385,8 +386,8 @@ function TerminalViewOnThisComputer({
       publishDiagnosticSync({
         level: 'error',
         source: 'terminal',
-        title: `${initialContext.agent?.name ?? agentId} was not started`,
-        message: 'Agent terminal is missing its CLI selection.',
+        title: appCopy.panels.terminalView.wasNotStarted(initialContext.agent?.name ?? agentId),
+        message: appCopy.panels.terminalView.agentTerminalIsMissingIts,
         details: [
           `Workspace: ${initialContext.workspaceName}`,
           `Workspace ID: ${workspaceId}`,
@@ -711,8 +712,8 @@ function TerminalViewOnThisComputer({
         publishDiagnosticSync({
           level: 'error',
           source: 'terminal',
-          title: `${latestContext.agent?.name ?? agentId} exited`,
-          message: `Terminal exited with code ${code}.`,
+          title: appCopy.panels.terminalView.exited(latestContext.agent?.name ?? agentId),
+          message: appCopy.panels.terminalView.terminalExitedWithCode(code),
           details: terminalLaunchDetails,
           workspaceId,
           workspaceName: latestContext.workspaceName,
@@ -742,7 +743,7 @@ function TerminalViewOnThisComputer({
       publishDiagnosticSync({
         level: 'error',
         source: 'terminal',
-        title: `${latestContext.agent?.name ?? agentId} failed to start`,
+        title: appCopy.panels.terminalView.failedToStart(latestContext.agent?.name ?? agentId),
         message,
         details: terminalLaunchDetails,
         workspaceId,
@@ -858,7 +859,7 @@ function TerminalViewOnThisComputer({
       const result = await resume().catch((): TerminalSpawnResult => ({
         ok: false,
         sessionId,
-        message: 'Failed to resume terminal.',
+        message: appCopy.panels.terminalView.failedToResumeTerminal,
         exitCode: 1,
       }))
       if (disposed) return
@@ -1372,7 +1373,7 @@ function TerminalViewOnThisComputer({
       ).catch((error): TerminalSpawnResult => ({
         ok: false,
         sessionId,
-        message: error instanceof Error ? error.message : 'Failed to start terminal.',
+        message: error instanceof Error ? error.message : appCopy.panels.terminalView.failedToStartTerminal,
         exitCode: 1,
       }))
       replayGate.finishReplayWait()
@@ -1407,7 +1408,7 @@ function TerminalViewOnThisComputer({
           publishDiagnosticSync({
             level: 'error',
             source: 'terminal',
-            title: `${failureContext.agent?.name ?? agentId} was not started`,
+            title: appCopy.panels.terminalView.wasNotStarted(failureContext.agent?.name ?? agentId),
             message: spawnResult.message,
             details: terminalLaunchDetails,
             workspaceId,
@@ -1601,7 +1602,7 @@ function TerminalViewOnThisComputer({
         workspaceRoot,
       }).catch((error): { ok: false; message: string } => ({
         ok: false,
-        message: error instanceof Error ? error.message : 'Could not drop the skill into the terminal.',
+        message: error instanceof Error ? error.message : appCopy.panels.terminalView.couldNotDropTheSkill,
       }))
       if (!skillResult.ok) showDropError(skillResult.message)
       return
@@ -1613,7 +1614,7 @@ function TerminalViewOnThisComputer({
         sessionId,
       }).catch((error): { ok: false; message: string } => ({
         ok: false,
-        message: error instanceof Error ? error.message : 'Could not drop the commit into the terminal.',
+        message: error instanceof Error ? error.message : appCopy.panels.terminalView.couldNotDropTheCommit,
       }))
       if (!commitResult.ok) showDropError(commitResult.message)
       return
@@ -1625,7 +1626,7 @@ function TerminalViewOnThisComputer({
       workspaceId,
     }).catch((error): { ok: false; message: string } => ({
       ok: false,
-      message: error instanceof Error ? error.message : 'Could not drop the file into the terminal.',
+      message: error instanceof Error ? error.message : appCopy.panels.terminalView.couldNotDropTheFile,
     }))
 
     if (!result.ok) {
@@ -1668,7 +1669,7 @@ function TerminalViewOnThisComputer({
       {folderBlocked && checkingFolder ? <TerminalReplaySkeleton /> : null}
       {/* A paused agent resuming: the frozen view stays readable and the edge
           says the click was heard, until the CLI's first frame replaces it. */}
-      {isResuming ? <WorkingEdge label="Resuming agent" /> : null}
+      {isResuming ? <WorkingEdge label={appCopy.panels.terminalView.resumingAgent} /> : null}
       {isFileDragOver ? (
         <div className="pointer-events-none absolute inset-2 z-10 rounded-md border border-[color:var(--accent-primary)] bg-[color:var(--accent-primary-soft)]" />
       ) : null}

@@ -11,6 +11,7 @@ import type { ReactNode, JSX } from 'react'
 import { ExtensionTrustReview, type ExtensionTrustReviewData } from '../../extensions/ExtensionTrustReview'
 import { GhostButton, InlineNotice, OutlineButton, PrimaryButton, Spinner, StatusDot } from '../../ui'
 import { COULDNT_CHECK_COPY, manageUpdateBannerCopy, type ManageUpdateBanner } from './extensionUpdates'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // The in-flight state of the banner's update run. `busy` covers both the
 // pre-update verify and the update itself; `needs-trust` pauses the run on the
@@ -100,10 +101,10 @@ export function ModuleUpdateBanner({
           <ExtensionTrustReview {...flow.review} publisher={flow.publisher} />
           <div className="flex gap-2">
             <PrimaryButton size="sm" onClick={onTrustConfirm}>
-              Trust and update
+              {appCopy.panels.connectorsPanel.extensionUpdateBanner.trustAndUpdate}
             </PrimaryButton>
             <GhostButton size="sm" onClick={onCancelTrust}>
-              Cancel
+              {appCopy.panels.connectorsPanel.extensionUpdateBanner.cancel}
             </GhostButton>
           </div>
         </div>

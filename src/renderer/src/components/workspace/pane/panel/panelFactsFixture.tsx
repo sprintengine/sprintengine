@@ -5,6 +5,7 @@ import { CreatePullRequestDialogHost, useCreatePullRequestFlow } from '../../../
 import type { PullRequestHost } from '../../../panels/agentChat/pullRequestHost'
 import type { PullRequestForge } from '../../../../../../shared/git/pr-url'
 import { PermissionsRow, PullRequestRow, ServerRow } from './ChatPanelFactRows'
+import { copy } from '../../../../../../shared/copy'
 
 // For tests: the panel's control rows, drawn from the facts a chat publishes,
 // with the Create PR flow the chat view holds in real life held here instead.
@@ -14,8 +15,8 @@ const NO_PULL_REQUESTS: ChatPanelFacts['pullRequests'] = []
 export const panelFacts = (patch: Partial<ChatPanelFacts> = {}): ChatPanelFacts => ({
   name: 'Calendar screen rebuild',
   cli: 'claude-code',
-  harnessLabel: 'Claude Code',
-  modelLabel: 'Opus 5.5',
+  harnessLabel: copy.workspace.pane.panel.panelFactsFixture.claudeCode,
+  modelLabel: copy.workspace.pane.panel.panelFactsFixture.opus55,
   machine: null,
   environmentLabel: null,
   branch: null,

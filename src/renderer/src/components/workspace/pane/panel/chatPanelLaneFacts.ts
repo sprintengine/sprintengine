@@ -1,5 +1,6 @@
 import type { ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import type { SubagentFamilyLane } from '../../../panels/agentChat/subagentFamily'
+import { copy } from '../../../../../../shared/copy'
 
 /**
  * What the panel can say of a lane, from the chat holding it. A lane is a part
@@ -22,7 +23,7 @@ export function laneFacts(
     createPullRequest: null,
     localServers: null,
     permissions: null,
-    permissionLabel: chat.permissionLabel ? 'Set by its parent' : null,
+    permissionLabel: chat.permissionLabel ? copy.workspace.pane.panel.chatPanelLaneFacts.setByItsParent : null,
     tokens: lane?.tokens ?? null,
   }
 }

@@ -44,6 +44,7 @@ import {
 } from './pluginsSurfaceModel'
 import { shortCommit } from '../skills/skillsSurfaceModel'
 import { UseSkillInAgentAction } from '../UseSkillInAgentAction'
+import { copy } from '../../../../../../../shared/copy'
 
 export type PluginDetailPaneProps = {
   source: SkillSource
@@ -142,15 +143,19 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
           <div className="px-3 pt-3">
             <InlineNotice
               tone="error"
-              title={`Couldn't read ${plugin.name}`}
-              hint="Its components can't be listed"
+              title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.couldnTRead(plugin.name)}
+              hint={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.itsComponentsCanTBe}
               detail={props.readError}
-              action={<GhostButton onClick={props.onRetryRead}>Try again</GhostButton>}
+              action={
+                <GhostButton onClick={props.onRetryRead}>
+                  {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.tryAgain}
+                </GhostButton>
+              }
             />
           </div>
         ) : null}
 
-        <Section level={4} title="About">
+        <Section level={4} title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.about}>
           <DefinitionList
             items={[
               { term: 'Source', description: describeOrigin(plugin, props.source, props.shape) },
@@ -171,8 +176,8 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
             <InboxSearchInput
               value={query}
               onChange={setQuery}
-              ariaLabel={`Filter ${plugin.name}`}
-              placeholder="Filter skills and servers"
+              ariaLabel={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.filter(plugin.name)}
+              placeholder={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.filterSkillsAndServers}
               controlsId={SKILLS_FILTER_LIST_ID}
             />
           </div>
@@ -180,11 +185,19 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
 
         {plugin.componentsKnown ? (
           <div id={SKILLS_FILTER_LIST_ID}>
-            <Section level={4} title="Skills" count={skills.length}>
+            <Section
+              level={4}
+              title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.skills}
+              count={skills.length}
+            >
               {skills.length === 0 ? (
-                <p className="text-meta text-[color:var(--text-subtle)]">None</p>
+                <p className="text-meta text-[color:var(--text-subtle)]">
+                  {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.none}
+                </p>
               ) : visibleSkills.length === 0 ? (
-                <p className="text-meta text-[color:var(--text-subtle)]">No skills match.</p>
+                <p className="text-meta text-[color:var(--text-subtle)]">
+                  {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.noSkillsMatch}
+                </p>
               ) : (
                 <ul role="list" className="flex flex-col gap-1.5">
                   {visibleSkills.map((skill) => (
@@ -204,11 +217,19 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
               )}
             </Section>
 
-            <Section level={4} title="MCP servers" count={servers.length}>
+            <Section
+              level={4}
+              title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.mCPServers}
+              count={servers.length}
+            >
               {servers.length === 0 ? (
-                <p className="text-meta text-[color:var(--text-subtle)]">None</p>
+                <p className="text-meta text-[color:var(--text-subtle)]">
+                  {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.none}
+                </p>
               ) : visibleServers.length === 0 ? (
-                <p className="text-meta text-[color:var(--text-subtle)]">No servers match.</p>
+                <p className="text-meta text-[color:var(--text-subtle)]">
+                  {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.noServersMatch}
+                </p>
               ) : (
                 <ul role="list" className="flex flex-col gap-1.5">
                   {visibleServers.map((server) => (
@@ -227,15 +248,26 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
               )}
             </Section>
 
-            <Section level={4} title="Also ships">
+            <Section level={4} title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.alsoShips}>
               <dl className="flex flex-col gap-2 text-meta">
                 {plugin.components.missingSkills.length > 0 ? (
-                  <ComponentRow label="Listed, not found" values={plugin.components.missingSkills} muted />
+                  <ComponentRow
+                    label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.listedNotFound}
+                    values={plugin.components.missingSkills}
+                    muted
+                  />
                 ) : null}
-                <ComponentRow label="Commands" values={plugin.components.commands.map((name) => `/${name}`)} mono />
-                <ComponentRow label="Agents" values={plugin.components.agents} />
                 <ComponentRow
-                  label="LSP servers"
+                  label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.commands}
+                  values={plugin.components.commands.map((name) => `/${name}`)}
+                  mono
+                />
+                <ComponentRow
+                  label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.agents}
+                  values={plugin.components.agents}
+                />
+                <ComponentRow
+                  label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.lSPServers}
                   values={plugin.components.lspServers.map((server) =>
                     [
                       server.id,
@@ -248,7 +280,7 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
                   mono
                 />
                 <ComponentRow
-                  label="Hooks"
+                  label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.hooks}
                   values={hooks.map(
                     (hook) => `${hook.event}${hook.matcher ? ` on ${hook.matcher}` : ''}: ${hook.command}`,
                   )}
@@ -258,7 +290,7 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
             </Section>
           </div>
         ) : (
-          <Section level={4} title="Components">
+          <Section level={4} title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.components}>
             <p className="text-meta text-[color:var(--text-muted)]">
               {props.reading ? 'Reading…' : describeUnreadPlugin(plugin)}
             </p>
@@ -266,11 +298,13 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
         )}
 
         {props.harnesses.length > 0 ? (
-          <Section level={4} title="What installs where">
+          <Section level={4} title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.whatInstallsWhere}>
             <dl className="flex flex-col gap-2 text-meta">
               {filesPlan ? (
                 <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-3">
-                  <dt className="font-medium text-[color:var(--text-strong)]">Plugin files</dt>
+                  <dt className="font-medium text-[color:var(--text-strong)]">
+                    {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.pluginFiles}
+                  </dt>
                   <dd className="break-words leading-relaxed text-[color:var(--text-muted)]">{filesPlan}</dd>
                 </div>
               ) : null}
@@ -288,8 +322,12 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
           <div className="px-3 pb-3">
             <InlineNotice
               tone="warn"
-              title={`Declares ${hooks.length === 1 ? 'a hook command' : `${hooks.length} hook commands`}`}
-              hint="Hooks run on your machine as the agent works. Installing here copies no hooks. Unsigned and unreviewed."
+              title={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.declares(
+                hooks.length === 1
+                  ? copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.aHookCommand
+                  : copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.hookCommands(hooks.length),
+              )}
+              hint={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.hooksRunOnYourMachine}
             />
           </div>
         ) : null}
@@ -311,7 +349,7 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
         <ModalFooter>
           {external ? (
             <GhostButton size="md" className="mr-auto" onClick={() => void window.api.openExternal(external)}>
-              Open on GitHub
+              {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.openOnGitHub}
             </GhostButton>
           ) : (
             <span className="mr-auto" />
@@ -371,7 +409,12 @@ function SkillItemRow({
       <span className="flex shrink-0 items-center gap-1.5">
         {installed ? (
           <>
-            <GhostButton size="sm" disabled={busy} onClick={onRemove} aria-label={`Remove ${skill.name}`}>
+            <GhostButton
+              size="sm"
+              disabled={busy}
+              onClick={onRemove}
+              aria-label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.remove(skill.name)}
+            >
               {busyThis ? 'Removing…' : 'Remove'}
             </GhostButton>
             <UseSkillInAgentAction
@@ -386,7 +429,7 @@ function SkillItemRow({
             size="sm"
             disabled={!availability.enabled || busy}
             onClick={onInstall}
-            aria-label={`Install ${skill.name}`}
+            aria-label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.install(skill.name)}
           >
             {busyThis ? 'Installing…' : 'Install'}
           </OutlineButton>
@@ -424,7 +467,14 @@ function McpItemRow({
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
         {installed ? (
-          <GhostButton size="sm" disabled={busy} onClick={onRemove} aria-label={`Remove ${server.name || server.id}`}>
+          <GhostButton
+            size="sm"
+            disabled={busy}
+            onClick={onRemove}
+            aria-label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.remove2(
+              server.name || server.id,
+            )}
+          >
             {busyThis ? 'Removing…' : 'Remove'}
           </GhostButton>
         ) : (
@@ -432,7 +482,9 @@ function McpItemRow({
             size="sm"
             disabled={!availability.enabled || busy}
             onClick={onInstall}
-            aria-label={`Install ${server.name || server.id}`}
+            aria-label={copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.install2(
+              server.name || server.id,
+            )}
           >
             {busyThis ? 'Installing…' : 'Install'}
           </OutlineButton>
@@ -460,7 +512,9 @@ function ComponentRow({
         className={`min-w-0 break-words ${muted ? 'text-[color:var(--text-subtle)]' : 'text-[color:var(--text-default)]'}`}
       >
         {values.length === 0 ? (
-          <span className="text-[color:var(--text-subtle)]">None</span>
+          <span className="text-[color:var(--text-subtle)]">
+            {copy.workspace.globalSurface.extensions.plugins.pluginDetailPane.none}
+          </span>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {values.map((value, index) => (

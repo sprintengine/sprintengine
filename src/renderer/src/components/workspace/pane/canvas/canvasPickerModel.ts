@@ -18,6 +18,7 @@ import {
   canvasBoardKeyPath,
   canvasBoardName,
 } from '../../../../../../shared/canvas/paths'
+import { copy } from '../../../../../../shared/copy'
 
 /**
  * Boards per page.
@@ -78,7 +79,10 @@ export function canvasPickerPage<Board>(input: {
     pageCount,
     rangeStart,
     rangeEnd,
-    rangeLabel: total === 0 ? 'No boards yet' : `Showing ${rangeStart}–${rangeEnd} of ${total}`,
+    rangeLabel:
+      total === 0
+        ? copy.workspace.pane.canvas.canvasPickerModel.noBoardsYet
+        : copy.workspace.pane.canvas.canvasPickerModel.showingOf(rangeStart, rangeEnd, total),
     boards: input.boards.slice(start, end),
   }
 }

@@ -4,6 +4,7 @@ import type { PullRequestState } from '../../../../shared/git/pull-request'
 import { FolderTypeIcon } from '../AppIcons'
 import { PullRequestGlyph } from '../ui/PullRequestGlyph'
 import { matchSegments } from './conversationSnippet'
+import { copy } from '../../../../shared/copy'
 
 /**
  * The query inside a line of text, marked: the matched letters in the
@@ -77,7 +78,7 @@ export function ConversationResultRow({
             // ink, with the sidebar's glyph so it reads as a pull request and
             // not as a count or an id of ours.
             <span
-              aria-label={`Pull request ${pullRequest.number}`}
+              aria-label={copy.palette.conversationResultRow.pullRequest(pullRequest.number)}
               className="flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-[color:var(--text-disabled)]"
             >
               <PullRequestGlyph state={pullRequest.state} className="icon-xs" />

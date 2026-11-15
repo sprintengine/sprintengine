@@ -24,6 +24,7 @@ import type { TranscriptEntry } from './conversationProjection'
 import { useConversationTransport, type ConversationTransport } from './conversationTransport'
 import { editFromHereDraft } from './editFromHere'
 import { attachedFilePaths } from '../../../utils/attachedFiles'
+import { copy } from '../../../../../shared/copy'
 
 type UserEntry = Extract<TranscriptEntry, { kind: 'user' }>
 
@@ -107,7 +108,7 @@ export function ForkMessageAction({
   return (
     <ForkFromHereButton
       running={running}
-      tooltip="Fork with this message ready to send"
+      tooltip={copy.panels.agentChat.forkFromHere.forkWithThisMessageReady}
       className={className}
       onFork={async () => {
         // The message goes back as it was sent, its images included, read from
@@ -149,7 +150,7 @@ export function ForkReplyAction({
   return (
     <ForkFromHereButton
       running={running}
-      tooltip="Fork the chat up to this reply"
+      tooltip={copy.panels.agentChat.forkFromHere.forkTheChatUpTo}
       className={className}
       onFork={() => onFork({ side: 'assistant', turnId })}
     />
@@ -176,14 +177,14 @@ function ForkFromHereButton({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Couldn't fork: ${error instanceof Error ? error.message : String(error)}`,
+        title: copy.panels.agentChat.forkFromHere.couldnTFork(error instanceof Error ? error.message : String(error)),
       })
     } finally {
       setPending(false)
     }
   }
   return (
-    <Tooltip content={running ? 'Stop the running turn to fork' : tooltip}>
+    <Tooltip content={running ? copy.panels.agentChat.forkFromHere.stopTheRunningTurnTo : tooltip}>
       <span className={className}>
         <GhostButton size="inline" disabled={running || pending} onClick={() => void fork()}>
           {pending ? 'Forking…' : 'Fork from here'}
@@ -291,7 +292,7 @@ async function openFork(
       mentions: [],
     })
   placeSpawnedAgentTab(workspaceId, agentId, name, { afterAgentId })
-  showToast({ tone: 'neutral', title: `Forked into ${name}. Both share the same files.` })
+  showToast({ tone: 'neutral', title: copy.panels.agentChat.forkFromHere.forkedIntoBothShareThe(name) })
 }
 
 /**
@@ -344,8 +345,8 @@ async function openPairedFork(input: {
     if (!template || !origin) {
       showToast({
         tone: 'neutral',
-        title: `Forked into ${name} on ${machineName}`,
-        description: `Find it under ${machineName} in the sidebar`,
+        title: copy.panels.agentChat.forkFromHere.forkedIntoOn(name, machineName),
+        description: copy.panels.agentChat.forkFromHere.findItUnderInThe(machineName),
       })
       return
     }
@@ -367,6 +368,6 @@ async function openPairedFork(input: {
     composerDraftStore().getState().put(workspaceId, agentId, { text: target.draft.text, skillIds: [], mentions: [] })
   showToast({
     tone: 'neutral',
-    title: `Forked into ${name} on ${machineName}. Both share the same files.`,
+    title: copy.panels.agentChat.forkFromHere.forkedIntoOnBothShare(name, machineName),
   })
 }

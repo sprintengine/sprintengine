@@ -39,6 +39,7 @@ import { isImeKey } from '../../../utils/imeKey'
 import { agentSetupApi } from '../../../studio/agentSetup'
 import { agentSkillsApi } from '../../../studio/agentSkills'
 import { extensionsApi } from '../../../studio/extensions'
+import { copy } from '../../../../../shared/copy'
 
 // The composer's one picker for what a new agent starts with (browser-pane
 // epic, child 7): the skills this workspace has, the skills it could have,
@@ -127,7 +128,7 @@ export function buildMcpRows(
     group: 'mcp',
     id: STUDIO_MCP_SERVER_ID,
     name: STUDIO_MCP_SERVER_ID,
-    description: 'Built-in: backlog, automations, terminals, browser',
+    description: copy.workspace.agentComposer.skillsAndMcpsPicker.builtInBacklogAutomationsTerminals,
     state: 'included',
     ...live(STUDIO_MCP_SERVER_ID),
   })
@@ -342,9 +343,11 @@ export function SkillsAndMcpsPicker({
   const openExtensionsSurface = useWorkspaceStore((s) => s.openExtensionsSurface)
   // Browse installs to this machine, so a chat on another one is not offered it.
   const tabItems: Array<{ value: PickerTab; label: string }> = [
-    { value: 'skills', label: 'Skills' },
-    ...(includeMcps ? [{ value: 'mcp' as const, label: 'MCP servers' }] : []),
-    ...(remote ? [] : [{ value: 'browse' as const, label: 'Browse' }]),
+    { value: 'skills', label: copy.workspace.agentComposer.skillsAndMcpsPicker.skills },
+    ...(includeMcps
+      ? [{ value: 'mcp' as const, label: copy.workspace.agentComposer.skillsAndMcpsPicker.mCPServers }]
+      : []),
+    ...(remote ? [] : [{ value: 'browse' as const, label: copy.workspace.agentComposer.skillsAndMcpsPicker.browse }]),
   ]
 
   const rows = useMemo<PickerRow[]>(() => {
@@ -537,7 +540,11 @@ export function SkillsAndMcpsPicker({
         }
         setOpen(next)
       }}
-      ariaLabel={includeMcps ? 'Skills and MCPs' : 'Skills'}
+      ariaLabel={
+        includeMcps
+          ? copy.workspace.agentComposer.skillsAndMcpsPicker.skillsAndMCPs
+          : copy.workspace.agentComposer.skillsAndMcpsPicker.skills
+      }
       popupRole="dialog"
       placement={placement}
       renderTrigger={
@@ -558,7 +565,7 @@ export function SkillsAndMcpsPicker({
         {tabItems.length > 1 ? (
           <div className="p-1.5 pb-0">
             <SegmentedControl
-              ariaLabel="Show"
+              ariaLabel={copy.workspace.agentComposer.skillsAndMcpsPicker.show}
               size="sm"
               items={tabItems}
               value={tab}
@@ -597,10 +604,18 @@ export function SkillsAndMcpsPicker({
             }}
             onKeyDown={onKeyDown}
             placeholder={
-              tab === 'browse' ? 'Search the marketplace…' : tab === 'mcp' ? 'Search MCP servers…' : 'Search skills…'
+              tab === 'browse'
+                ? copy.workspace.agentComposer.skillsAndMcpsPicker.searchTheMarketplace
+                : tab === 'mcp'
+                  ? copy.workspace.agentComposer.skillsAndMcpsPicker.searchMCPServers
+                  : copy.workspace.agentComposer.skillsAndMcpsPicker.searchSkills
             }
             aria-label={
-              tab === 'browse' ? 'Search the marketplace' : tab === 'mcp' ? 'Search MCP servers' : 'Search skills'
+              tab === 'browse'
+                ? copy.workspace.agentComposer.skillsAndMcpsPicker.searchTheMarketplace2
+                : tab === 'mcp'
+                  ? copy.workspace.agentComposer.skillsAndMcpsPicker.searchMCPServers2
+                  : copy.workspace.agentComposer.skillsAndMcpsPicker.searchSkills2
             }
             className="min-w-0 flex-1 px-1 py-1 text-body"
           />
@@ -610,13 +625,17 @@ export function SkillsAndMcpsPicker({
           id={listId}
           role="listbox"
           aria-multiselectable="true"
-          aria-label={includeMcps ? 'Skills and MCP servers' : 'Skills'}
+          aria-label={
+            includeMcps
+              ? copy.workspace.agentComposer.skillsAndMcpsPicker.skillsAndMCPServers
+              : copy.workspace.agentComposer.skillsAndMcpsPicker.skills
+          }
           className="flex-1 py-1"
         >
           {tab === 'skills' && skillInventory.loading && rows.length === 0 ? (
             <div className="flex items-center gap-2 px-2.5 py-3 text-meta text-[color:var(--text-muted)]" role="status">
               <Spinner />
-              Loading…
+              {copy.workspace.agentComposer.skillsAndMcpsPicker.loading}
             </div>
           ) : null}
           {tab === 'skills' && skillInventory.error ? (
@@ -698,7 +717,7 @@ export function SkillsAndMcpsPicker({
             }}
             className="text-micro"
           >
-            Manage extensions →
+            {copy.workspace.agentComposer.skillsAndMcpsPicker.manageExtensions}
           </LinkButton>
         </div>
       </div>
@@ -763,7 +782,16 @@ function PickerRowView({
   const description = row.kind === 'skill' ? row.skill.description : row.description
   const failure = row.kind === 'mcp' && row.status === 'failed' ? row.error : undefined
   const trailing = busy ? (
-    <Spinner size={12} label={row.kind === 'skill' ? 'Installing' : action ? ACTION_LABEL[action] : 'Adding'} />
+    <Spinner
+      size={12}
+      label={
+        row.kind === 'skill'
+          ? copy.workspace.agentComposer.skillsAndMcpsPicker.installing
+          : action
+            ? ACTION_LABEL[action]
+            : copy.workspace.agentComposer.skillsAndMcpsPicker.adding
+      }
+    />
   ) : action ? (
     <OutlineButton
       size="xs"
@@ -976,7 +1004,7 @@ function MarketplaceList({ query, onOpen }: { query: string; onOpen: () => void 
     return (
       <div className="flex items-center gap-2 px-2.5 py-3 text-meta text-[color:var(--text-muted)]" role="status">
         <Spinner />
-        Loading…
+        {copy.workspace.agentComposer.skillsAndMcpsPicker.loading}
       </div>
     )
   if (state.error)
@@ -992,7 +1020,7 @@ function MarketplaceList({ query, onOpen }: { query: string; onOpen: () => void 
       </div>
     )
   return (
-    <div role="list" aria-label="Marketplace">
+    <div role="list" aria-label={copy.workspace.agentComposer.skillsAndMcpsPicker.marketplace}>
       {shown.map((plugin) => {
         const installed = state.installed.has(plugin.id)
         return (
@@ -1017,10 +1045,12 @@ function MarketplaceList({ query, onOpen }: { query: string; onOpen: () => void 
             </span>
             <span className="mt-0.5 shrink-0">
               {installed ? (
-                <span className="text-micro text-[color:var(--text-subtle)]">Installed</span>
+                <span className="text-micro text-[color:var(--text-subtle)]">
+                  {copy.workspace.agentComposer.skillsAndMcpsPicker.installed}
+                </span>
               ) : (
                 <OutlineButton size="xs" onClick={onOpen}>
-                  Install
+                  {copy.workspace.agentComposer.skillsAndMcpsPicker.install}
                 </OutlineButton>
               )}
             </span>

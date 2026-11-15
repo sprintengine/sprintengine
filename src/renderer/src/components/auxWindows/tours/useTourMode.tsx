@@ -32,6 +32,7 @@ import {
 } from './tourModel'
 import { useDiffTour } from './useDiffTour'
 import { useTourSession } from './useTourSession'
+import { copy } from '../../../../../shared/copy'
 
 // Tour mode for the Diff viewer, in two halves because the viewer needs one
 // answer before it knows what file is on screen and the rest after:
@@ -379,7 +380,8 @@ export function useTourPlayer({
       if (latest.state === 'queued') return { kind: 'queued', askId: latest.id }
       if (latest.state === 'sent') return { kind: 'answering', agentName }
       if (latest.state === 'answered') return { kind: 'answered', agentName }
-      if (latest.state === 'failed') return { kind: 'failed', message: latest.error ?? 'The question was not sent.' }
+      if (latest.state === 'failed')
+        return { kind: 'failed', message: latest.error ?? copy.auxWindows.tours.useTourMode.theQuestionWasNotSent }
       return { kind: 'idle' }
     },
     [localAsk, tour],
@@ -579,7 +581,7 @@ export function useTourPlayer({
   // An agent's new tour, waiting because this viewer is busy or on screen.
   const offerChip = state.pendingOffer ? (
     <ChipButton className="shrink-0" onClick={state.takePendingOffer}>
-      New tour ready →
+      {copy.auxWindows.tours.useTourMode.newTourReady}
     </ChipButton>
   ) : null
 

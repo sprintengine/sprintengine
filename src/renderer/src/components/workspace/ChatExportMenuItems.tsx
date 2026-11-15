@@ -1,6 +1,7 @@
 import { MenuDivider, MenuFlyoutItem, MenuItem } from '../ui'
 import type { ChatExportAction } from '../../../../shared/chat-export'
 import { CHAT_EXPORT_EMPTY_REASON, CHAT_EXPORT_MENU, exportChatOrToast } from '../panels/agentChat/chatExport'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // A chat tab's Export chat row: a flyout of the ways to take the whole
 // conversation away, the two copies first (the quick one, for an email) and
@@ -34,8 +35,8 @@ export function ChatExportMenuItems({
   const files = CHAT_EXPORT_MENU.filter((row) => !copies.includes(row))
   return (
     <MenuFlyoutItem
-      label="Export chat"
-      ariaLabel="Export chat"
+      label={appCopy.workspace.chatExportMenuItems.exportChat}
+      ariaLabel={appCopy.workspace.chatExportMenuItems.exportChat}
       disabled={empty}
       hint={empty ? CHAT_EXPORT_EMPTY_REASON : undefined}
       surfaceClassName="min-w-[196px]"

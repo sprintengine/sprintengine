@@ -6,6 +6,7 @@
 import type { DiscoveredCliModelCatalog } from '../../../../shared/cli-model-catalog'
 import type { CliModelDiscoverySkipReason } from '../../../../shared/ipc/cli-model-discovery'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
+import { copy } from '../../../../shared/copy'
 
 /** What the last Refresh of one CLI found, when it did not bring back a list. */
 export type CliModelRefreshOutcome = {
@@ -67,12 +68,16 @@ export function modelRefreshProblem(input: {
     ? 'The list below stays as it was. To use another model, type its id.'
     : 'Type a model id below to add one.'
   if (outcome.skipped === 'not-installed') {
-    return { title: `${name} is not installed on this machine.`, hint: typeIt }
+    return { title: copy.settings.modelDiscoveryLine.isNotInstalledOnThis(name), hint: typeIt }
   }
   if (outcome.skipped === 'no-probe') {
-    return { title: `${name} has no way to report its models.`, hint: typeIt }
+    return { title: copy.settings.modelDiscoveryLine.hasNoWayToReport(name), hint: typeIt }
   }
-  return { title: `${name} did not list its models.`, hint: typeIt, detail: cleanDetail(outcome.error, name) }
+  return {
+    title: copy.settings.modelDiscoveryLine.didNotListItsModels(name),
+    hint: typeIt,
+    detail: cleanDetail(outcome.error, name),
+  }
 }
 
 // The reason arrives in the probe's words, which restate what the title says.

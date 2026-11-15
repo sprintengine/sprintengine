@@ -1,3 +1,5 @@
+import { copy } from '../../../shared/copy'
+
 export type GitStatusAppearance = {
   badge: string | null
   textClass: string
@@ -37,9 +39,10 @@ export function getGitStatusAppearance(status: GitFileStatus | null): GitStatusA
 }
 
 export function getGitScopeStatusAppearance(scope: GitScopeStatusInput): GitScopeStatusAppearance {
-  if (!scope) return { dotClass: 'bg-[color:var(--text-muted)]', label: 'Unknown' }
-  if (scope.missing) return { dotClass: 'bg-[color:var(--tone-error)]', label: 'Missing' }
-  if (scope.prunable) return { dotClass: 'bg-[color:var(--tone-error)]', label: 'Prunable' }
-  if (scope.locked) return { dotClass: 'bg-[color:var(--tone-warn)]', label: 'Locked' }
-  return { dotClass: 'bg-[color:var(--tone-good)]', label: 'Ready' }
+  if (!scope) return { dotClass: 'bg-[color:var(--text-muted)]', label: copy.utils.gitStatusAppearance.unknown }
+  if (scope.missing) return { dotClass: 'bg-[color:var(--tone-error)]', label: copy.utils.gitStatusAppearance.missing }
+  if (scope.prunable)
+    return { dotClass: 'bg-[color:var(--tone-error)]', label: copy.utils.gitStatusAppearance.prunable }
+  if (scope.locked) return { dotClass: 'bg-[color:var(--tone-warn)]', label: copy.utils.gitStatusAppearance.locked }
+  return { dotClass: 'bg-[color:var(--tone-good)]', label: copy.utils.gitStatusAppearance.ready }
 }

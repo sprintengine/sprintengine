@@ -85,6 +85,7 @@ import { STUDIO_PRODUCT_NAME } from '../../../../../shared/product-identity'
 import { withoutStudioNoticePrefix } from '../../../../../shared/studio-notice'
 import { QUOTE_SOURCE_ATTRIBUTE } from './quoteAnchors'
 import { quotesToReadableMarkdown } from '../../../../../shared/chat-quotes'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Auth-shaped turn failures get a sign-in action in the error block. Whole
 // words and stems, so a path or message that merely contains "author" or a
@@ -244,7 +245,7 @@ function HandoffTimelineRow({ entry }: { entry: Extract<TranscriptEntry, { kind:
       ? (path: string) =>
           useWorkspaceStore.getState().openPaneTab(workspaceId, {
             kind: 'document',
-            title: 'Handoff',
+            title: appCopy.panels.agentChat.timelineRows.handoff,
             document: { path },
           })
       : undefined
@@ -283,7 +284,7 @@ export function UserTimelineRow({
     text.trim()
       ? {
           name: 'Message',
-          label: 'Copy message',
+          label: appCopy.panels.agentChat.timelineRows.copyMessage,
           markdown: () => quotesToReadableMarkdown(text),
           html: () => messageHtml(text),
         }
@@ -291,7 +292,7 @@ export function UserTimelineRow({
   )
   return (
     <div className="flex flex-col items-end pb-6">
-      <MessageAuthorHeading>You said</MessageAuthorHeading>
+      <MessageAuthorHeading>{appCopy.panels.agentChat.timelineRows.youSaid}</MessageAuthorHeading>
       <div
         // A quote chip's popover opens clear of the bubble (chatQuotes.tsx).
         data-quote-chip-holder=""
@@ -312,20 +313,30 @@ export function UserTimelineRow({
           </div>
         ) : null}
         {entry.mentions?.length || entry.skills?.length || named.length ? (
-          <div data-copy-exclude="" className="mb-2 flex flex-wrap justify-end gap-1.5" aria-label="Attached context">
+          <div
+            data-copy-exclude=""
+            className="mb-2 flex flex-wrap justify-end gap-1.5"
+            aria-label={appCopy.panels.agentChat.timelineRows.attachedContext}
+          >
             {entry.skills?.map((skill) => (
-              <Badge key={`skill:${skill}`} ariaLabel={`Skill: ${skill}`}>
+              <Badge key={`skill:${skill}`} ariaLabel={appCopy.panels.agentChat.timelineRows.skill(skill)}>
                 {skill}
               </Badge>
             ))}
             {named.map((file) => (
-              <Badge key={`file:${file.path}`} ariaLabel={`Attached file: ${file.path}`}>
+              <Badge
+                key={`file:${file.path}`}
+                ariaLabel={appCopy.panels.agentChat.timelineRows.attachedFile(file.path)}
+              >
                 {attachedFileName(file.path)}
               </Badge>
             ))}
             {entry.mentions?.map((mention) =>
               mention.kind === 'folder' ? (
-                <Badge key={`folder:${mention.path}`} ariaLabel={`Folder: ${mention.path}`}>
+                <Badge
+                  key={`folder:${mention.path}`}
+                  ariaLabel={appCopy.panels.agentChat.timelineRows.folder(mention.path)}
+                >
                   {mention.path}/
                 </Badge>
               ) : (
@@ -348,7 +359,7 @@ export function UserTimelineRow({
         {entry.text.trim() ? (
           <CopyGlyphButton
             size="xs"
-            label="Copy message"
+            label={appCopy.panels.agentChat.timelineRows.copyMessage}
             text={() => quotesToReadableMarkdown(entry.text)}
             html={() => messageHtml(entry.text)}
             className={MESSAGE_ACTION_REVEAL}
@@ -427,9 +438,13 @@ function StudioNoticeRow({ entry }: { entry: Extract<TranscriptEntry, { kind: 'u
           : withoutStudioNoticePrefix(entry.text)}
       </p>
       {files.length ? (
-        <div data-copy-exclude="" className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Attached files">
+        <div
+          data-copy-exclude=""
+          className="mt-1.5 flex flex-wrap gap-1.5"
+          aria-label={appCopy.panels.agentChat.timelineRows.attachedFiles}
+        >
           {files.map((file) => (
-            <Badge key={`file:${file.path}`} ariaLabel={`Attached file: ${file.path}`}>
+            <Badge key={`file:${file.path}`} ariaLabel={appCopy.panels.agentChat.timelineRows.attachedFile(file.path)}>
               {attachedFileName(file.path)}
             </Badge>
           ))}
@@ -516,7 +531,12 @@ export function AssistantTurnBlock({
   const settledReply = entry.status !== 'streaming' && hasReply(entry)
   const copy = useMessageCopyMenu(
     settledReply
-      ? { name: 'Reply', label: 'Copy reply', markdown: () => replyText(entry), html: () => replyHtml(entry) }
+      ? {
+          name: 'Reply',
+          label: appCopy.panels.agentChat.timelineRows.copyReply,
+          markdown: () => replyText(entry),
+          html: () => replyHtml(entry),
+        }
       : null,
   )
   return (
@@ -531,7 +551,7 @@ export function AssistantTurnBlock({
           tone="subtle"
           aria-expanded={workOpen}
           aria-controls={foldRegionId}
-          aria-label={failed ? `${fold.label}, ${failed} failed` : undefined}
+          aria-label={failed ? appCopy.panels.agentChat.timelineRows.failed(fold.label, failed) : undefined}
           onClick={() => setWorkOpen(!workOpen)}
           className="group/fold"
         >
@@ -597,7 +617,7 @@ export function AssistantTurnBlock({
       ) : null}
       {entry.status === 'interrupted' ? (
         <span data-copy-exclude="" className="text-micro text-[color:var(--text-subtle)]">
-          Interrupted
+          {appCopy.panels.agentChat.timelineRows.interrupted}
         </span>
       ) : null}
       {entry.status !== 'streaming' ? (
@@ -610,7 +630,7 @@ export function AssistantTurnBlock({
           {settledReply ? (
             <CopyGlyphButton
               size="xs"
-              label="Copy reply"
+              label={appCopy.panels.agentChat.timelineRows.copyReply}
               text={() => replyText(entry)}
               // The rendered reply beside its markdown, so a paste into a rich
               // editor keeps the headings, lists and code.
@@ -825,7 +845,7 @@ const WorkTimelineGroup = memo(function WorkTimelineGroup({ tools }: { tools: Tr
             aria-expanded={open}
             // Named only while the rail is drawn: a closed group renders none.
             aria-controls={open ? railId : undefined}
-            aria-label={failed ? `${summary}, ${failed} failed` : undefined}
+            aria-label={failed ? appCopy.panels.agentChat.timelineRows.failed2(summary, failed) : undefined}
             onClick={() => setOpen(!open)}
           >
             <span className={`flex shrink-0 ${toolGlyphInk(failed ? 'error' : 'neutral')}`}>
@@ -872,7 +892,11 @@ const AgentLaneCards = memo(function AgentLaneCards({ lanes }: { lanes: Transcri
   const openAgents = useOpenAgentsPane()
   const stopAgent = useStopSubagent()
   return (
-    <ul aria-label="Agents" data-copy-exclude="" className="mb-3 flex flex-col gap-1.5">
+    <ul
+      aria-label={appCopy.panels.agentChat.timelineRows.agents}
+      data-copy-exclude=""
+      className="mb-3 flex flex-col gap-1.5"
+    >
       {lanes.map((lane) => {
         // A working agent's card carries its Stop over its right edge, beside
         // the card rather than in it: the card is itself a button.
@@ -914,7 +938,7 @@ const AgentLaneCard = memo(function AgentLaneCard({
       ref={cardRef}
       variant="bordered"
       onClick={onOpen}
-      aria-label={`${subagentLaneLabel(lane)}: ${laneTask(lane) || 'agent'}. Open it`}
+      aria-label={appCopy.panels.agentChat.timelineRows.openIt(subagentLaneLabel(lane), laneTask(lane) || 'agent')}
       className={`w-full py-2 pl-3 ${stoppable ? 'pr-8' : 'pr-3'}`}
     >
       <AgentLaneSummary lane={lane} />
@@ -989,7 +1013,8 @@ export const SubagentLane = memo(function SubagentLane({ tool }: { tool: Transcr
       <span className="ml-auto max-w-[55%] shrink-0 truncate pl-2 text-micro tabular-nums text-[color:var(--text-subtle)]">
         {running ? (
           <span className="text-[color:var(--accent-primary)]">
-            Working{tool.startedAt !== undefined ? ' · ' : ''}
+            {appCopy.panels.agentChat.timelineRows.working}
+            {tool.startedAt !== undefined ? ' · ' : ''}
             {tool.startedAt !== undefined ? <LiveElapsed startedAt={tool.startedAt} /> : null}
           </span>
         ) : (
@@ -1036,10 +1061,10 @@ export const SubagentLane = memo(function SubagentLane({ tool }: { tool: Transcr
         {running && stopAgent ? <StopAgentButton laneId={tool.id} stop={stopAgent} /> : null}
         {/* This agent's own chat, in the chat's place. */}
         {openAgents ? (
-          <Tooltip content="Open this subagent">
+          <Tooltip content={appCopy.panels.agentChat.timelineRows.openThisSubagent}>
             <IconButton
               size="xs"
-              aria-label={`Open ${subagentLaneLabel(tool)}`}
+              aria-label={appCopy.panels.agentChat.timelineRows.open(subagentLaneLabel(tool))}
               className="shrink-0 opacity-0 focus-visible:opacity-100 group-hover/lane:opacity-100"
               onClick={() => openAgents(tool.id, laneName(tool))}
             >
@@ -1058,7 +1083,8 @@ export const SubagentLane = memo(function SubagentLane({ tool }: { tool: Transcr
               onClick={() => setShowAllSteps(true)}
               className="self-start"
             >
-              Show {hiddenSteps} earlier {hiddenSteps === 1 ? 'step' : 'steps'}
+              {appCopy.panels.agentChat.timelineRows.show}
+              {hiddenSteps} earlier {hiddenSteps === 1 ? 'step' : 'steps'}
             </GhostButton>
           ) : null}
           {visibleChildren.map((child) => (
@@ -1117,11 +1143,12 @@ export function TurnErrorBlock({
     } ${kept}`
   ) : command ? (
     <>
-      Sign-in failed or expired. Run{' '}
+      {appCopy.panels.agentChat.timelineRows.signInFailedOrExpired}{' '}
       <code className="rounded-xs border border-[color:var(--border-subtle)] bg-[color:var(--bg-active)] px-[0.3em] py-[0.05em] font-mono text-[0.9em] text-[color:var(--text-strong)] box-decoration-clone">
         {command}
       </code>{' '}
-      in a terminal, then retry. {kept}
+      {appCopy.panels.agentChat.timelineRows.inATerminalThenRetry}
+      {kept}
     </>
   ) : (
     `Sign-in failed or expired. Sign in to ${chrome.assistantName} in a terminal, then retry. ${kept}`
@@ -1137,24 +1164,25 @@ export function TurnErrorBlock({
       className="mt-1 max-w-[68ch] rounded-sm border border-[color:var(--border-default)] bg-[color:var(--bg-surface)] px-4 py-3"
     >
       <div className="flex items-center gap-2 text-body font-semibold text-[color:var(--text-strong)]">
-        <LifecycleGlyph state="failed" label="Turn failed" />
-        {chrome.assistantName} couldn’t finish this turn
+        <LifecycleGlyph state="failed" label={appCopy.panels.agentChat.timelineRows.turnFailed} />
+        {chrome.assistantName}
+        {appCopy.panels.agentChat.timelineRows.couldnTFinishThisTurn}
       </div>
       <p className="mb-2.5 mt-1 text-body leading-[1.55] text-[color:var(--text-muted)]">{message}</p>
       <div className="flex items-center gap-2">
         {privacyBlocked && chrome.onOpenPrivacySettings ? (
           <OutlineButton size="sm" onClick={chrome.onOpenPrivacySettings}>
-            Open Privacy settings
+            {appCopy.panels.agentChat.timelineRows.openPrivacySettings}
           </OutlineButton>
         ) : null}
         {onSignIn ? (
           <OutlineButton size="sm" onClick={signIn} disabled={signingIn}>
-            Sign in
+            {appCopy.panels.agentChat.timelineRows.signIn}
           </OutlineButton>
         ) : null}
         {chrome.retryTurnId === entry.turnId ? (
           <OutlineButton size="sm" onClick={chrome.onRetry} disabled={chrome.retryDisabled}>
-            Retry
+            {appCopy.panels.agentChat.timelineRows.retry}
           </OutlineButton>
         ) : null}
         {detail ? (
@@ -1179,7 +1207,7 @@ export function TurnErrorBlock({
           </pre>
           {/* Placed by its own box: the glyph's wrapper is positioned relative. */}
           <div className="absolute right-1 top-1">
-            <CopyGlyphButton size="xs" label="Copy error details" text={detail} />
+            <CopyGlyphButton size="xs" label={appCopy.panels.agentChat.timelineRows.copyErrorDetails} text={detail} />
           </div>
         </div>
       ) : null}
@@ -1264,7 +1292,10 @@ export function ResolvedDecisionRow({ entry }: { entry: Extract<TranscriptEntry,
       {good ? (
         <CheckGlyph className="icon-xs shrink-0 text-[color:var(--accent-primary)]" />
       ) : (
-        <CrossGlyph className="icon-xs shrink-0 text-[color:var(--tone-error)]" label="Denied" />
+        <CrossGlyph
+          className="icon-xs shrink-0 text-[color:var(--tone-error)]"
+          label={appCopy.panels.agentChat.timelineRows.denied}
+        />
       )}
       {text}
     </div>
@@ -1286,7 +1317,7 @@ export function ResolvedDecisionRow({ entry }: { entry: Extract<TranscriptEntry,
                   answerLine(answer, true)
                 ) : entry.status === 'denied' ? (
                   <div className="mt-0.5 text-meta italic text-[color:var(--text-subtle)]">
-                    Dismissed without answering
+                    {appCopy.panels.agentChat.timelineRows.dismissedWithoutAnswering}
                   </div>
                 ) : null}
               </div>
@@ -1318,7 +1349,9 @@ export function ResolvedDecisionRow({ entry }: { entry: Extract<TranscriptEntry,
           ) : entry.status === 'denied' ? (
             answerLine(entry.requestKind === 'plan' ? 'Sent back for more planning' : 'Denied', false)
           ) : (
-            <div className="mt-0.5 text-meta italic text-[color:var(--text-subtle)]">Cancelled with the turn</div>
+            <div className="mt-0.5 text-meta italic text-[color:var(--text-subtle)]">
+              {appCopy.panels.agentChat.timelineRows.cancelledWithTheTurn}
+            </div>
           )}
         </div>
       )}
@@ -1372,7 +1405,11 @@ export function WorkingTimelineRow({
             tone="subtle"
             aria-expanded={detailsOpen}
             aria-controls={detailsId}
-            aria-label={detailsOpen ? 'Hide what it is doing' : 'Show what it is doing'}
+            aria-label={
+              detailsOpen
+                ? appCopy.panels.agentChat.timelineRows.hideWhatItIsDoing
+                : appCopy.panels.agentChat.timelineRows.showWhatItIsDoing
+            }
             onClick={() => setDetailsOpen((open) => !open)}
             className="group/fold self-center"
           >
@@ -1383,7 +1420,7 @@ export function WorkingTimelineRow({
         ) : null}
         {row.agents && openSubagents ? (
           <LinkButton ink="quiet" onClick={openSubagents}>
-            See subagents
+            {appCopy.panels.agentChat.timelineRows.seeSubagents}
           </LinkButton>
         ) : null}
       </div>
@@ -1473,10 +1510,20 @@ function MessageTimestamp({ at }: { at?: number }) {
 export function StopAgentButton({ laneId, stop }: { laneId: string; stop: (laneId: string) => Promise<boolean> }) {
   const [stopping, setStopping] = useState(false)
   return (
-    <Tooltip content={stopping ? 'Stopping this agent…' : 'Stop this agent'}>
+    <Tooltip
+      content={
+        stopping
+          ? appCopy.panels.agentChat.timelineRows.stoppingThisAgent
+          : appCopy.panels.agentChat.timelineRows.stopThisAgent
+      }
+    >
       <IconButton
         size="xs"
-        aria-label={stopping ? 'Stopping this agent' : 'Stop this agent'}
+        aria-label={
+          stopping
+            ? appCopy.panels.agentChat.timelineRows.stoppingThisAgent2
+            : appCopy.panels.agentChat.timelineRows.stopThisAgent
+        }
         busy={stopping}
         disabled={stopping}
         className="shrink-0"

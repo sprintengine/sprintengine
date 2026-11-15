@@ -29,6 +29,7 @@ import { LAYOUT_TEMPLATES } from '../../../../layouts/templates'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
 import type { Workspace } from '../../../../../../shared/workspace'
 import { remoteOriginChatWorkspaceId } from '../../remoteBand/remoteSessionsModel'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // Where a Canvas tab's boards are, behind the one list the picker asks.
 //
@@ -242,7 +243,7 @@ export async function readCanvasBoardAccess(source: CanvasBoardSource): Promise<
   try {
     return await windowPairedCanvas(pairedMachineOf(source)).access(source.connectionId)
   } catch {
-    return { ok: false, message: `${source.machineName} could not be reached.` }
+    return { ok: false, message: appCopy.workspace.pane.canvas.canvasBoardSource.couldNotBeReached(source.machineName) }
   }
 }
 

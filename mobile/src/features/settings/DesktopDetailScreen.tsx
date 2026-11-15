@@ -13,6 +13,7 @@ import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
 import { sessionDisplayStatus, sessionStatusLabel } from "../fleet/fleetLogic";
+import { copy } from "../../../../src/shared/copy";
 
 
 /**
@@ -53,10 +54,10 @@ export function DesktopDetailScreen({
 
   if (!session) {
     return (
-      <ScreenFrame backLabel="Back to desktops" onBack={onBack} title="Desktop">
+      <ScreenFrame backLabel={copy.phone.settings.desktopDetailScreen.backToDesktops} onBack={onBack} title={copy.phone.settings.desktopDetailScreen.desktop}>
         <ScrollView contentContainerStyle={contentStyle}>
           <Card>
-            <Text style={styles.notice}>This desktop is no longer paired with the phone.</Text>
+            <Text style={styles.notice}>{copy.phone.settings.desktopDetailScreen.thisDesktopIsNoLonger}</Text>
           </Card>
         </ScrollView>
       </ScreenFrame>
@@ -73,14 +74,13 @@ export function DesktopDetailScreen({
 
   return (
     <ScreenFrame
-      backLabel="Back to desktops"
+      backLabel={copy.phone.settings.desktopDetailScreen.backToDesktops}
       onBack={onBack}
       subtitle={
         <View style={styles.statusLine}>
           <StatusDot tone={status === "online" ? "good" : status === "revoked" ? "danger" : "neutral"} />
           <Text style={styles.statusText}>
-            {sessionStatusLabel[status]} · tailnet
-          </Text>
+            {sessionStatusLabel[status]}{copy.phone.settings.desktopDetailScreen.tailnet}</Text>
         </View>
       }
       title={session.desktopName}
@@ -89,10 +89,10 @@ export function DesktopDetailScreen({
       <ScrollView contentContainerStyle={contentStyle}>
         <Card variant="list">
           <View style={styles.nameField}>
-            <Text style={styles.fieldLabel}>Name on this phone</Text>
+            <Text style={styles.fieldLabel}>{copy.phone.settings.desktopDetailScreen.nameOnThisPhone}</Text>
             <TextInput
-              accessibilityHint="Only this phone sees this name."
-              accessibilityLabel="Desktop name"
+              accessibilityHint={copy.phone.settings.desktopDetailScreen.onlyThisPhoneSeesThis}
+              accessibilityLabel={copy.phone.settings.desktopDetailScreen.desktopName}
               autoCapitalize="words"
               autoCorrect={false}
               onBlur={() => {
@@ -111,22 +111,22 @@ export function DesktopDetailScreen({
               value={draftName ?? session.desktopName}
             />
           </View>
-          <Field label="Endpoint" mono value={session.baseUrl} />
-          <Field label="This phone" mono value={session.deviceId} />
-          <Field label="Last seen" value={formatTimestamp(session.lastSeenAt ?? session.pairedAt)} />
-          <Field label="Protocol" value={`Studio ${STUDIO_PROTOCOL_VERSION} · ${describeScopes(scopes)}`} />
-          <Field label="Transport" value={describeTransport(session)} />
-          <Field label="Storage" value="Encrypted on this device" />
+          <Field label={copy.phone.settings.desktopDetailScreen.endpoint} mono value={session.baseUrl} />
+          <Field label={copy.phone.settings.desktopDetailScreen.thisPhone} mono value={session.deviceId} />
+          <Field label={copy.phone.settings.desktopDetailScreen.lastSeen} value={formatTimestamp(session.lastSeenAt ?? session.pairedAt)} />
+          <Field label={copy.phone.settings.desktopDetailScreen.protocol} value={`Studio ${STUDIO_PROTOCOL_VERSION} · ${describeScopes(scopes)}`} />
+          <Field label={copy.phone.settings.desktopDetailScreen.transport} value={describeTransport(session)} />
+          <Field label={copy.phone.settings.desktopDetailScreen.storage} value="Encrypted on this device" />
         </Card>
 
         <View style={styles.actions}>
           {!isActive && !isRevoked ? (
-            <PrimaryButton label="Use this desktop" onPress={onSelect} variant="secondary" />
+            <PrimaryButton label={copy.phone.settings.desktopDetailScreen.useThisDesktop} onPress={onSelect} variant="secondary" />
           ) : null}
-          <PrimaryButton label="Pair another desktop" onPress={onStartPairing} variant="secondary" />
-          <PrimaryButton label="Forget this desktop" onPress={forget} variant="danger" />
+          <PrimaryButton label={copy.phone.settings.desktopDetailScreen.pairAnotherDesktop} onPress={onStartPairing} variant="secondary" />
+          <PrimaryButton label={copy.phone.settings.desktopDetailScreen.forgetThisDesktop} onPress={forget} variant="danger" />
         </View>
-        <Text style={styles.foot}>Removes this desktop from this phone only. To end pairing on the desktop, revoke this phone there.</Text>
+        <Text style={styles.foot}>{copy.phone.settings.desktopDetailScreen.removesThisDesktopFromThis}</Text>
       </ScrollView>
     </ScreenFrame>
   );

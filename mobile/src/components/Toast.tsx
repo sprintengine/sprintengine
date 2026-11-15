@@ -6,6 +6,7 @@ import { CloseIcon, iconSize, StatusShape, type StatusShapeTone } from "./glyphs
 import { motionDurations, useReducedMotion } from "./motion";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { cardShadow, radius, space, typography, type Theme, fontWeight } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 export type ToastTone = "neutral" | "success" | "warn" | "error";
 
@@ -195,7 +196,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <Text style={styles.actionText}>{message.action.label}</Text>
               </Pressable>
             ) : null}
-            <Pressable accessibilityLabel="Dismiss" accessibilityRole="button" onPress={dismiss} style={styles.close}>
+            <Pressable accessibilityLabel={copy.phone.components.toast.dismiss} accessibilityRole="button" onPress={dismiss} style={styles.close}>
               <CloseIcon size={iconSize.sm} tone="textSubtle" />
             </Pressable>
           </Pressable>

@@ -19,6 +19,7 @@ import { InstalledStack } from './globalSurface/extensions/catalogue/InstalledSt
 import type { RailBadge } from './AppRail'
 import type { Tone } from '../ui/tokens'
 import { SessionsIcon } from './topbar/SessionsPopover'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The account + Settings cluster lives at the sidebar bottom, relocated from
 // WorkspaceTopBar. The account menu, its trigger, and
@@ -210,7 +211,11 @@ function AccountPopover({
           {email ? (
             <TruncatedText as="div" text={email} className="mt-0.5 text-body text-[color:var(--text-muted)]" />
           ) : null}
-          {!signedIn ? <div className="mt-0.5 text-meta text-[color:var(--text-muted)]">Not signed in</div> : null}
+          {!signedIn ? (
+            <div className="mt-0.5 text-meta text-[color:var(--text-muted)]">
+              {appCopy.workspace.sidebarAccountBar.notSignedIn}
+            </div>
+          ) : null}
           {signedIn && metaLine ? (
             <TruncatedText as="div" text={metaLine} className="mt-1 text-meta text-[color:var(--text-subtle)]" />
           ) : null}
@@ -225,7 +230,7 @@ function AccountPopover({
       {message ? (
         <div className="pb-1">
           <div className="px-2.5 pb-1 text-body leading-5 text-[color:var(--tone-warn)]">{message}</div>
-          <AccountMenuItem onSelect={onRetry}>Try again</AccountMenuItem>
+          <AccountMenuItem onSelect={onRetry}>{appCopy.workspace.sidebarAccountBar.tryAgain}</AccountMenuItem>
         </div>
       ) : null}
       {remote || sessions ? (
@@ -233,7 +238,7 @@ function AccountPopover({
           {remote ? (
             <AccountRow
               glyph={<RemoteMachineGlyph className={`icon-sm ${remote.toneClass ?? ''}`} />}
-              label="Remote"
+              label={appCopy.workspace.sidebarAccountBar.remote}
               row={remote}
               onChosen={onChosen}
             />
@@ -241,7 +246,7 @@ function AccountPopover({
           {sessions ? (
             <AccountRow
               glyph={<SessionsIcon className="icon-sm" />}
-              label="Sessions"
+              label={appCopy.workspace.sidebarAccountBar.sessions}
               row={sessions}
               onChosen={onChosen}
             />
@@ -251,9 +256,9 @@ function AccountPopover({
       {message || remote || sessions ? <MenuDivider /> : null}
       <div className="pb-1">
         {signedIn ? (
-          <AccountMenuItem onSelect={onLogout}>Sign out</AccountMenuItem>
+          <AccountMenuItem onSelect={onLogout}>{appCopy.workspace.sidebarAccountBar.signOut}</AccountMenuItem>
         ) : (
-          <AccountMenuItem onSelect={onSignIn}>Sign in</AccountMenuItem>
+          <AccountMenuItem onSelect={onSignIn}>{appCopy.workspace.sidebarAccountBar.signIn}</AccountMenuItem>
         )}
       </div>
     </div>
@@ -361,7 +366,7 @@ export function AccountControl({
     <Popover
       open={accountOpen}
       onOpenChange={setAccountOpen}
-      ariaLabel="Account"
+      ariaLabel={appCopy.workspace.sidebarAccountBar.account}
       popupRole="menu"
       placement={placement}
       onOpenAutoFocus={(surface) => {
@@ -462,12 +467,12 @@ export default function SidebarAccountBar({
   // top would cover it; it opens beside the rail instead, as the rail's own
   // squares' tooltips do.
   const settingsButton = (
-    <Tooltip content="Settings" placement={collapsed ? 'right' : 'top'}>
+    <Tooltip content={appCopy.workspace.sidebarAccountBar.settings} placement={collapsed ? 'right' : 'top'}>
       <IconButton
         size={collapsed ? 'lg' : 'md'}
         pressed={settingsOpen}
         onClick={() => openSettings(false)}
-        aria-label="Settings"
+        aria-label={appCopy.workspace.sidebarAccountBar.settings}
         className={shownSettingsBadge ? 'relative' : undefined}
       >
         <GearIcon className={collapsed ? 'size-icon-lg' : 'size-icon-md'} />
@@ -486,8 +491,13 @@ export default function SidebarAccountBar({
   )
 
   const usageButton = openUsage ? (
-    <Tooltip content="Usage" placement={collapsed ? 'right' : 'top'}>
-      <IconButton size={collapsed ? 'lg' : 'md'} pressed={usageOpen} onClick={openUsage} aria-label="Usage">
+    <Tooltip content={appCopy.workspace.sidebarAccountBar.usage} placement={collapsed ? 'right' : 'top'}>
+      <IconButton
+        size={collapsed ? 'lg' : 'md'}
+        pressed={usageOpen}
+        onClick={openUsage}
+        aria-label={appCopy.workspace.sidebarAccountBar.usage}
+      >
         <UsageGlyph className={collapsed ? 'size-icon-lg' : 'size-icon-md'} />
       </IconButton>
     </Tooltip>
@@ -505,12 +515,12 @@ export default function SidebarAccountBar({
           size="lg"
           pressed={extensionsOpen}
           onClick={openExtensions}
-          aria-label="Extensions"
+          aria-label={appCopy.workspace.sidebarAccountBar.extensions}
           className="rail-extensions-pill absolute left-0 top-0 z-[var(--z-float)]"
         >
           <AddExtensionsGlyph className="size-icon-lg shrink-0" />
           <span className="rail-extensions-pill-label inline-flex items-center gap-2 text-body font-medium">
-            <span className="pl-2.5">Extensions</span>
+            <span className="pl-2.5">{appCopy.workspace.sidebarAccountBar.extensions}</span>
             <InstalledStack size={18} />
             <span className="w-1" />
           </span>

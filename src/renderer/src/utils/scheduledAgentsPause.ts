@@ -16,6 +16,7 @@ import {
   ownedScheduledMachines,
   type RemoteScheduledMachine,
 } from '../components/workspace/sidebar/useRemoteScheduledAgents'
+import { copy } from '../../../shared/copy'
 
 /** How long "Pause all" holds: an hour, until tomorrow morning, or until the person resumes them. */
 export type PauseAllChoiceId = 'hour' | 'tomorrow' | 'until-resumed'
@@ -38,9 +39,14 @@ export function pauseAllChoices(now: number): PauseAllChoice[] {
   const hour = presets.find((preset) => preset.id === 'hour')!
   const tomorrow = presets.find((preset) => preset.id === 'tomorrow')!
   return [
-    { id: 'hour', label: 'For 1 hour', hint: hour.whenLabel, until: hour.wakeAt },
-    { id: 'tomorrow', label: 'Until tomorrow morning', hint: tomorrow.whenLabel, until: tomorrow.wakeAt },
-    { id: 'until-resumed', label: 'Until I resume them', until: null },
+    { id: 'hour', label: copy.utils.scheduledAgentsPause.for1Hour, hint: hour.whenLabel, until: hour.wakeAt },
+    {
+      id: 'tomorrow',
+      label: copy.utils.scheduledAgentsPause.untilTomorrowMorning,
+      hint: tomorrow.whenLabel,
+      until: tomorrow.wakeAt,
+    },
+    { id: 'until-resumed', label: copy.utils.scheduledAgentsPause.untilIResumeThem, until: null },
   ]
 }
 
@@ -82,21 +88,29 @@ export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused:
     paused ? schedulesApi.pauseScheduledAgent(agent.id) : schedulesApi.resumeScheduledAgent(agent.id)
   ).catch((error: unknown) => ({ ok: false as const, message: errorText(error) }))
   if (!result.ok) {
-    showToast({ tone: 'error', title: paused ? 'Not paused' : 'Not resumed', description: result.message })
+    showToast({
+      tone: 'error',
+      title: paused ? copy.utils.scheduledAgentsPause.notPaused : copy.utils.scheduledAgentsPause.notResumed,
+      description: result.message,
+    })
     return false
   }
   if (paused) {
-    showToast({ tone: 'neutral', title: 'Schedule paused', description: PAUSE_SCHEDULE_HINT })
+    showToast({
+      tone: 'neutral',
+      title: copy.utils.scheduledAgentsPause.schedulePaused,
+      description: PAUSE_SCHEDULE_HINT,
+    })
     return true
   }
   const next = result.agent.nextRunAt
   showToast({
     tone: 'neutral',
-    title: 'Schedule resumed',
+    title: copy.utils.scheduledAgentsPause.scheduleResumed,
     description:
       next !== null
-        ? `Next run ${whenWords(next, Date.now())}. Missed runs aren't made up.`
-        : 'Runs again once scheduled agents are unpaused.',
+        ? copy.utils.scheduledAgentsPause.nextRunMissedRunsAren(whenWords(next, Date.now()))
+        : copy.utils.scheduledAgentsPause.runsAgainOnceScheduledAgents,
   })
   return true
 }
@@ -139,7 +153,7 @@ export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<b
     .pauseAllScheduledAgents(choice.until)
     .catch((error: unknown) => ({ ok: false as const, message: errorText(error) }))
   if (!result.ok) {
-    showToast({ tone: 'error', title: 'Not paused', description: result.message })
+    showToast({ tone: 'error', title: copy.utils.scheduledAgentsPause.notPaused, description: result.message })
     return false
   }
   const machines = await acrossOwnedMachines(ownedScheduledMachines(), choice.until)
@@ -149,7 +163,7 @@ export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<b
     title: scheduledAgentsPauseWords(result.pause, Date.now()),
     description: machines.missed.length
       ? `${where.trim()} Not paused: ${machines.missed.join(' ')} Its schedules keep running there.`.trim()
-      : `No runs until then; running ones carry on.${where}`,
+      : copy.utils.scheduledAgentsPause.noRunsUntilThenRunning(where),
   })
   return true
 }
@@ -164,7 +178,7 @@ export async function resumeAllScheduledAgents(): Promise<boolean> {
     .resumeAllScheduledAgents()
     .catch((error: unknown) => ({ ok: false as const, message: errorText(error) }))
   if (!result.ok) {
-    showToast({ tone: 'error', title: 'Not resumed', description: result.message })
+    showToast({ tone: 'error', title: copy.utils.scheduledAgentsPause.notResumed, description: result.message })
     return false
   }
   const machines = await acrossOwnedMachines(
@@ -173,10 +187,10 @@ export async function resumeAllScheduledAgents(): Promise<boolean> {
   )
   showToast({
     tone: machines.missed.length ? 'warn' : 'neutral',
-    title: 'Scheduled agents resumed',
+    title: copy.utils.scheduledAgentsPause.scheduledAgentsResumed,
     description: machines.missed.length
-      ? `Not resumed: ${machines.missed.join(' ')}`
-      : 'Each runs at its next time. Ones you paused yourself stay paused.',
+      ? copy.utils.scheduledAgentsPause.notResumed2(machines.missed.join(' '))
+      : copy.utils.scheduledAgentsPause.eachRunsAtItsNext,
   })
   return true
 }

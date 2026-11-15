@@ -54,6 +54,7 @@ import {
 import { EditorDiskNotice, overwriteOnDiskConfirmation, type EditorDiskNoticeState } from './editor/EditorDiskNotice'
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The editor's three non-content states, each in its own kit idiom so a failed
 // read never renders like an empty pane (principles.md → Accessibility;
@@ -747,7 +748,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
   }, [activeContent, activeFile?.path, gitBaseContent, showPreview])
 
   if (!filePath) {
-    return <EditorEmpty title="Open a file from the Files pane" />
+    return <EditorEmpty title={appCopy.panels.editorPanel.openAFileFromThe} />
   }
 
   if (contentLoadError?.path === activeFilePath) {
@@ -755,7 +756,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
       <div className="flex h-full items-center justify-center bg-[color:var(--bg-app)] px-4">
         <InlineNotice
           tone="error"
-          title="Couldn't load this file."
+          title={appCopy.panels.editorPanel.couldnTLoadThisFile}
           hint={<span className="break-all font-mono">{activeFilePath}</span>}
           detail={contentLoadError.message}
           className="w-full max-w-[46rem]"
@@ -765,15 +766,15 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
   }
 
   if (restoringFilePath === activeFilePath || canRestoreMissingActiveFile) {
-    return <EditorLoading label="Loading file…" />
+    return <EditorLoading label={appCopy.panels.editorPanel.loadingFile} />
   }
 
   if (!activeFile) {
-    return <EditorEmpty title="This file is no longer open." />
+    return <EditorEmpty title={appCopy.panels.editorPanel.thisFileIsNoLonger} />
   }
 
   if (!activeFileContentReady) {
-    return <EditorLoading label="Loading file…" />
+    return <EditorLoading label={appCopy.panels.editorPanel.loadingFile} />
   }
 
   const markdownModeToggle = isMarkdown ? (
@@ -781,10 +782,10 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
       <Tooltip
         content={
           markdownPreviewTooLarge
-            ? 'Markdown preview disabled for large files'
+            ? appCopy.panels.editorPanel.markdownPreviewDisabledForLarge
             : showPreview
-              ? 'Edit Markdown source'
-              : 'Preview Markdown'
+              ? appCopy.panels.editorPanel.editMarkdownSource
+              : appCopy.panels.editorPanel.previewMarkdown
         }
         placement="bottom"
       >
@@ -795,7 +796,9 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
             with the surface it floats over instead of sitting on it. The
             primitive's own hover fill is what makes it findable. */}
         <IconButton
-          aria-label={showPreview ? 'Edit Markdown source' : 'Preview Markdown'}
+          aria-label={
+            showPreview ? appCopy.panels.editorPanel.editMarkdownSource : appCopy.panels.editorPanel.previewMarkdown
+          }
           onClick={() => setMarkdownMode((mode) => (mode === 'preview' ? 'source' : 'preview'))}
           disabled={markdownPreviewTooLarge}
         >
@@ -827,7 +830,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
 
   if (isImage && activeFilePath) {
     if (!imageDataUrl || imageDataUrl.path !== activeFilePath) {
-      return <EditorLoading label="Loading image…" />
+      return <EditorLoading label={appCopy.panels.editorPanel.loadingImage} />
     }
 
     return (
@@ -909,7 +912,7 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
         <ContextMenu
           x={editorMenu.x}
           y={editorMenu.y}
-          ariaLabel={`Editor actions for ${activeFile.name}`}
+          ariaLabel={appCopy.panels.editorPanel.editorActionsFor(activeFile.name)}
           onClose={() => setEditorMenu(null)}
           surfaceClassName="min-w-[196px]"
         >
@@ -918,25 +921,25 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
             shortcut={`${editorModifier()}X`}
             onClick={() => runEditorAction('editor.action.clipboardCutAction')}
           >
-            Cut
+            {appCopy.panels.editorPanel.cut}
           </MenuItem>
           <MenuItem
             disabled={!editorMenu.hasSelection}
             shortcut={`${editorModifier()}C`}
             onClick={() => runEditorAction('editor.action.clipboardCopyAction')}
           >
-            Copy
+            {appCopy.panels.editorPanel.copy}
           </MenuItem>
           <MenuItem shortcut={`${editorModifier()}V`} onClick={pasteFromClipboard}>
-            Paste
+            {appCopy.panels.editorPanel.paste}
           </MenuItem>
           <MenuDivider />
           <MenuItem shortcut={`${editorModifier()}A`} onClick={() => runEditorAction('editor.action.selectAll')}>
-            Select all
+            {appCopy.panels.editorPanel.selectAll}
           </MenuItem>
           <MenuDivider />
           <MenuItem disabled={!editorMenu.canCloseOtherEditorTabs} onClick={closeOtherEditorTabs}>
-            Close other editor tabs
+            {appCopy.panels.editorPanel.closeOtherEditorTabs}
           </MenuItem>
         </ContextMenu>
       ) : null}

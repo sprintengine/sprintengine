@@ -2,6 +2,7 @@ import type { ConversationImageAttachment } from '../../../../../shared/conversa
 import { attachmentCountLabel } from '../ComposerAttachmentStrip'
 import { MAX_ATTACHMENTS_PER_TURN } from './imageAttachments'
 import type { ComposerDraftMetadata } from './useComposerDraft'
+import { copy } from '../../../../../shared/copy'
 
 // The chat composer's queue and commit rules (AgentChatView): what a message
 // committed while the session is busy becomes, and what the send button says.
@@ -115,7 +116,11 @@ export function composerSendAction(options: {
   busyLabel?: string
 }): { label: string; disabled: boolean } {
   return {
-    label: options.sending ? 'Sending' : options.busy ? (options.busyLabel ?? 'Queue message') : 'Send message',
+    label: options.sending
+      ? copy.panels.agentChat.composerQueue.sending
+      : options.busy
+        ? (options.busyLabel ?? copy.panels.agentChat.composerQueue.queueMessage)
+        : copy.panels.agentChat.composerQueue.sendMessage,
     disabled: !options.ready || (!options.hasText && options.attachmentCount === 0),
   }
 }

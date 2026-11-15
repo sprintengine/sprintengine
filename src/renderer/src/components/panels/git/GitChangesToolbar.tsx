@@ -51,6 +51,7 @@ import {
 import { orderedChangelists, type Changelist } from '../../../../../shared/git/changelists'
 import { menuIconSlot, UNTRACKED_MOVE_REASON } from './changeRowMenu'
 import type { GitChangesGrouping } from './gitChangesModel'
+import { copy } from '../../../../../shared/copy'
 
 const GROUPING_LABELS: Record<GitChangesGrouping, string> = {
   changelist: 'Changelist',
@@ -115,15 +116,19 @@ export function GitChangesToolbar({
   return (
     // Borderless: the view strip above already draws a hairline, and two rules
     // 30px apart is a ladder rather than a structure.
-    <Toolbar ariaLabel="Changed files" className="shrink-0">
-      <Tooltip content="Refresh the working tree" placement="bottom">
-        <ToolbarButton ariaLabel="Refresh the working tree" disabled={busy} onClick={onRefresh}>
+    <Toolbar ariaLabel={copy.panels.git.gitChangesToolbar.changedFiles} className="shrink-0">
+      <Tooltip content={copy.panels.git.gitChangesToolbar.refreshTheWorkingTree} placement="bottom">
+        <ToolbarButton
+          ariaLabel={copy.panels.git.gitChangesToolbar.refreshTheWorkingTree}
+          disabled={busy}
+          onClick={onRefresh}
+        >
           <RefreshIcon />
         </ToolbarButton>
       </Tooltip>
-      <Tooltip content="Discard changes in the selected files" placement="bottom">
+      <Tooltip content={copy.panels.git.gitChangesToolbar.discardChangesInTheSelected} placement="bottom">
         <ToolbarButton
-          ariaLabel="Discard changes in the selected files"
+          ariaLabel={copy.panels.git.gitChangesToolbar.discardChangesInTheSelected}
           disabled={busy || !hasTarget}
           onClick={onDiscard}
         >
@@ -133,11 +138,15 @@ export function GitChangesToolbar({
       {/* Live since T6. It opens a menu rather than acting, because "move" has
           no single destination — the destination IS the question. */}
       <Tooltip
-        content={untrackedOnly ? `Move to another changelist — ${UNTRACKED_MOVE_REASON}` : 'Move to another changelist'}
+        content={
+          untrackedOnly
+            ? copy.panels.git.gitChangesToolbar.moveToAnotherChangelist(UNTRACKED_MOVE_REASON)
+            : copy.panels.git.gitChangesToolbar.moveToAnotherChangelist2
+        }
         placement="bottom"
       >
         <ToolbarButton
-          ariaLabel="Move to another changelist"
+          ariaLabel={copy.panels.git.gitChangesToolbar.moveToAnotherChangelist2}
           menu
           expanded={Boolean(moveMenu)}
           disabled={busy || !hasTarget}
@@ -156,8 +165,8 @@ export function GitChangesToolbar({
       </Tooltip>
       {/* The whole repository, not the selection — the band's other five items
           act on the picked files, so this one says "all" out loud. */}
-      <Tooltip content="Stash all changes…" placement="bottom">
-        <ToolbarButton ariaLabel="Stash all changes" disabled={busy} onClick={onStash}>
+      <Tooltip content={copy.panels.git.gitChangesToolbar.stashAllChanges} placement="bottom">
+        <ToolbarButton ariaLabel={copy.panels.git.gitChangesToolbar.stashAllChanges2} disabled={busy} onClick={onStash}>
           <StashGlyph />
         </ToolbarButton>
       </Tooltip>
@@ -169,8 +178,11 @@ export function GitChangesToolbar({
           a tooltip at all. Hard-disabled only while another git action runs,
           like its neighbours — but never mid-draft, when it is the stop. */}
       {commitMessageDraft.drafting ? (
-        <Tooltip content="Writing a commit message… Press to stop" placement="bottom">
-          <ToolbarButton ariaLabel="Stop writing the commit message" onClick={onStopCommitMessage}>
+        <Tooltip content={copy.panels.git.gitChangesToolbar.writingACommitMessagePress} placement="bottom">
+          <ToolbarButton
+            ariaLabel={copy.panels.git.gitChangesToolbar.stopWritingTheCommitMessage}
+            onClick={onStopCommitMessage}
+          >
             {/* The default size is the band glyphs' own `icon-sm`, so the square does not jump. */}
             <Spinner />
           </ToolbarButton>
@@ -179,13 +191,13 @@ export function GitChangesToolbar({
         <Tooltip
           content={
             commitMessageDraft.unavailableReason
-              ? `Write commit message — ${commitMessageDraft.unavailableReason}`
-              : 'Write commit message from the checked files'
+              ? copy.panels.git.gitChangesToolbar.writeCommitMessage(commitMessageDraft.unavailableReason)
+              : copy.panels.git.gitChangesToolbar.writeCommitMessageFromThe
           }
           placement="bottom"
         >
           <ToolbarButton
-            ariaLabel="Write commit message"
+            ariaLabel={copy.panels.git.gitChangesToolbar.writeCommitMessage2}
             disabled={busy}
             ariaDisabled={Boolean(commitMessageDraft.unavailableReason)}
             disabledReason={commitMessageDraft.unavailableReason ?? undefined}
@@ -195,17 +207,24 @@ export function GitChangesToolbar({
           </ToolbarButton>
         </Tooltip>
       )}
-      <Tooltip content="Show diff" placement="bottom">
+      <Tooltip content={copy.panels.git.gitChangesToolbar.showDiff} placement="bottom">
         {/* A diff has one place to show, its own window, so this is a button
             and not a menu of destinations. */}
-        <ToolbarButton ariaLabel="Show diff" disabled={!hasTarget} onClick={onShowDiff}>
+        <ToolbarButton
+          ariaLabel={copy.panels.git.gitChangesToolbar.showDiff}
+          disabled={!hasTarget}
+          onClick={onShowDiff}
+        >
           <ShowDiffGlyph />
         </ToolbarButton>
       </Tooltip>
       <ToolbarDivider />
-      <Tooltip content={`Group by — ${GROUPING_LABELS[grouping].toLowerCase()}`} placement="bottom">
+      <Tooltip
+        content={copy.panels.git.gitChangesToolbar.groupBy(GROUPING_LABELS[grouping].toLowerCase())}
+        placement="bottom"
+      >
         <ToolbarButton
-          ariaLabel={`Group by ${GROUPING_LABELS[grouping].toLowerCase()}`}
+          ariaLabel={copy.panels.git.gitChangesToolbar.groupBy2(GROUPING_LABELS[grouping].toLowerCase())}
           menu
           expanded={Boolean(groupMenu)}
           onClick={(event) => {
@@ -216,13 +235,13 @@ export function GitChangesToolbar({
           <GroupByGlyph />
         </ToolbarButton>
       </Tooltip>
-      <Tooltip content="Expand all groups" placement="bottom">
-        <ToolbarButton ariaLabel="Expand all groups" onClick={onExpandAll}>
+      <Tooltip content={copy.panels.git.gitChangesToolbar.expandAllGroups} placement="bottom">
+        <ToolbarButton ariaLabel={copy.panels.git.gitChangesToolbar.expandAllGroups} onClick={onExpandAll}>
           <ExpandAllGlyph />
         </ToolbarButton>
       </Tooltip>
-      <Tooltip content="Collapse all groups" placement="bottom">
-        <ToolbarButton ariaLabel="Collapse all groups" onClick={onCollapseAll}>
+      <Tooltip content={copy.panels.git.gitChangesToolbar.collapseAllGroups} placement="bottom">
+        <ToolbarButton ariaLabel={copy.panels.git.gitChangesToolbar.collapseAllGroups} onClick={onCollapseAll}>
           <CollapseAllGlyph />
         </ToolbarButton>
       </Tooltip>
@@ -230,7 +249,7 @@ export function GitChangesToolbar({
         <ContextMenu
           x={moveMenu.x}
           y={moveMenu.y}
-          ariaLabel="Move to another changelist"
+          ariaLabel={copy.panels.git.gitChangesToolbar.moveToAnotherChangelist2}
           onClose={() => setMoveMenu(null)}
           surfaceClassName="min-w-[220px]"
         >
@@ -256,7 +275,7 @@ export function GitChangesToolbar({
               onMoveToNewChangelist()
             }}
           >
-            New changelist…
+            {copy.panels.git.gitChangesToolbar.newChangelist}
           </MenuItem>
         </ContextMenu>
       ) : null}
@@ -264,7 +283,7 @@ export function GitChangesToolbar({
         <ContextMenu
           x={groupMenu.x}
           y={groupMenu.y}
-          ariaLabel="Group by"
+          ariaLabel={copy.panels.git.gitChangesToolbar.groupBy3}
           onClose={() => setGroupMenu(null)}
           surfaceClassName="min-w-[180px]"
         >

@@ -4,6 +4,7 @@ import { LifecycleGlyph, RowButton, Section, WorkingMark } from '../../../ui'
 import { useRelativeNow } from '../../../../hooks/useRelativeNow'
 import { formatRelativeMsAgo } from '../../../../utils/relativeTime'
 import type { ScheduledRunEntry } from '../../../../utils/scheduledAgentRuns'
+import { copy } from '../../../../../../shared/copy'
 
 /**
  * A scheduled agent's recent runs, under its editor: each one the chat it
@@ -26,16 +27,20 @@ export function ScheduledRuns({
   const now = useRelativeNow()
   if (runs.length === 0) return null
   return (
-    <Section title="Recent runs" inset="flush" className="mt-6">
-      <ul className="flex flex-col" aria-label="Recent runs">
+    <Section title={copy.workspace.agentComposer.schedule.scheduledRuns.recentRuns} inset="flush" className="mt-6">
+      <ul className="flex flex-col" aria-label={copy.workspace.agentComposer.schedule.scheduledRuns.recentRuns}>
         {runs.map((run) => (
           <li key={run.workspaceId}>
             <RowButton data-scheduled-run-row={run.workspaceId} onClick={() => onOpen(run.workspaceId)}>
               <span className="flex size-icon-sm shrink-0 items-center justify-center">
                 {run.activity === 'working' ? (
-                  <WorkingMark label="Working" />
+                  <WorkingMark label={copy.workspace.agentComposer.schedule.scheduledRuns.working} />
                 ) : run.activity === 'needs-input' ? (
-                  <LifecycleGlyph state="needs_input" live={false} label="Waiting on you" />
+                  <LifecycleGlyph
+                    state="needs_input"
+                    live={false}
+                    label={copy.workspace.agentComposer.schedule.scheduledRuns.waitingOnYou}
+                  />
                 ) : null}
               </span>
               <span className="min-w-0 flex-1 truncate text-body">{run.title}</span>

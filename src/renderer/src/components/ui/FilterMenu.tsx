@@ -4,6 +4,7 @@ import { Popover } from './Popover'
 import type { SelectItem } from './Select'
 import { MENU_GROUP_LABEL_CLASS, MENU_ITEM_CLASS, MENU_LIST_CLASS } from './menuClasses'
 import { FOCUS_RING_CLASS } from './tokens'
+import { copy } from '../../../../shared/copy'
 
 // The shared filter/sort affordance: axis controls collapse behind a single
 // glyph (progressive disclosure) so search stays the only at-rest control in a
@@ -101,7 +102,7 @@ export function FilterMenu({ ariaLabel, groups, className, size = 'sm' }: Filter
           aria-haspopup="menu"
           aria-expanded={triggerProps['aria-expanded']}
           aria-controls={triggerProps['aria-controls']}
-          aria-label={active ? `${ariaLabel} — filters active` : ariaLabel}
+          aria-label={active ? copy.ui.filterMenu.filtersActive(ariaLabel) : ariaLabel}
           onClick={togglePopover}
           className={[
             'interactive relative inline-flex items-center justify-center rounded-sm',

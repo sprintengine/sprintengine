@@ -4,6 +4,7 @@ import type { MeshPairRequestView } from '../../../../shared/tailnet-mesh'
 import { OutlineButton, StatusDot } from '../ui'
 import { showToast } from '../../store/toastStore'
 import { tailnetApi } from '../../studio/tailnet'
+import { copy } from '../../../../shared/copy'
 
 // A request THIS machine made, while it waits (pair-from-the-scan-and-stay-
 // paired, phases 2–3). The code is shown large because the person at the
@@ -45,7 +46,7 @@ export function OutboundPairRequestCard({
     } catch (error) {
       showToast({
         tone: 'error',
-        title: 'Could not stop waiting',
+        title: copy.remote.outboundPairRequestCard.couldNotStopWaiting,
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -61,15 +62,16 @@ export function OutboundPairRequestCard({
   return (
     <div className={frame} data-outbound-request={request.requestId}>
       <div className="flex items-center gap-2 text-meta">
-        <StatusDot tone="warn" pulse={!lapsed} label="Waiting" />
+        <StatusDot tone="warn" pulse={!lapsed} label={copy.remote.outboundPairRequestCard.waiting} />
         <span className="min-w-0 flex-1 truncate font-medium text-[color:var(--text-default)]">
-          Waiting for {request.machineName}
+          {copy.remote.outboundPairRequestCard.waitingFor}
+          {request.machineName}
         </span>
       </div>
       <div className="my-2 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] py-1.5 text-center">
         <div
           className="font-mono text-title tracking-[0.3em] text-[color:var(--text-strong)]"
-          aria-label={`Code ${request.comparisonCode}`}
+          aria-label={copy.remote.outboundPairRequestCard.code(request.comparisonCode)}
         >
           {displayCode(request.comparisonCode)}
         </div>
@@ -77,7 +79,9 @@ export function OutboundPairRequestCard({
       </div>
       {request.reverseOffered ? (
         <p className="mb-2 text-micro text-[color:var(--text-subtle)]">
-          Allowing it also lets {request.machineName} drive this device.
+          {copy.remote.outboundPairRequestCard.allowingItAlsoLets}
+          {request.machineName}
+          {copy.remote.outboundPairRequestCard.driveThisDevice}
         </p>
       ) : null}
       <div className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import { SubagentTypesProvider } from '../../components/panels/agentChat/subagen
 import { TimelineRow, type TimelineChrome } from '../../components/panels/agentChat/timelineRows'
 import { useConversationSession } from '../../components/panels/agentChat/useConversationSession'
 import { hostPlatform } from '../../clientCapabilities'
+import { copy } from '../../../../shared/copy'
 
 // One conversation, read-only, as an embed shows it (phase 9 spec, 5.1, 5.4).
 // The rows are the app's own, so a row fixed in the chat is fixed here; the
@@ -45,7 +46,7 @@ function readOnlyCapabilities(client: StudioClient): ConversationTransportCapabi
   })
 }
 
-const refused = async () => ({ ok: false as const, message: 'This view is read-only.' })
+const refused = async () => ({ ok: false as const, message: copy.web.embed.embeddedConversation.thisViewIsReadOnly })
 
 function embedTransport(client: StudioClient): ConversationTransport {
   let said: { welcome: object; capabilities: ConversationTransportCapabilities } | null = null
@@ -134,10 +135,16 @@ function EmbeddedTimeline({
   useEffect(() => onState?.({ turns, working: projection.activeTurn }), [onState, turns, projection.activeTurn])
 
   if (session.error) return <InlineNotice tone="error" title={session.error} className="m-4" />
-  if (session.hydrated && rows.length === 0) return <EmptyState title="This conversation has no messages yet." />
+  if (session.hydrated && rows.length === 0)
+    return <EmptyState title={copy.web.embed.embeddedConversation.thisConversationHasNoMessages} />
   return (
     <SubagentTypesProvider value={projection.agentTypes}>
-      <div role="log" aria-label="Conversation" aria-live="polite" className="chat-column-gutter space-y-1 py-4">
+      <div
+        role="log"
+        aria-label={copy.web.embed.embeddedConversation.conversation}
+        aria-live="polite"
+        className="chat-column-gutter space-y-1 py-4"
+      >
         {rows.map((row) => (
           <div key={row.id} data-embed-turn={row.kind === 'user' ? row.id : undefined}>
             <TimelineRow row={row} chrome={chrome} />

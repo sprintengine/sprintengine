@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { AgentNotificationMode } from '../../../../shared/agent-notifications'
 import { SegmentedControl } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → General: the OS banner a chat raises when it finishes or waits on
 // the person while they are in another app. Main owns the value and raises
@@ -11,9 +12,9 @@ import { SettingsRow } from './SettingsAtoms'
 // banners of its own (a browser tab) shows nothing.
 
 const ITEMS: Array<{ value: AgentNotificationMode; label: string }> = [
-  { value: 'off', label: 'Off' },
-  { value: 'banner', label: 'Banner' },
-  { value: 'banner-sound', label: 'Banner and sound' },
+  { value: 'off', label: copy.settings.agentNotificationsSetting.off },
+  { value: 'banner', label: copy.settings.agentNotificationsSetting.banner },
+  { value: 'banner-sound', label: copy.settings.agentNotificationsSetting.bannerAndSound },
 ]
 
 export function AgentNotificationsSetting() {
@@ -34,11 +35,11 @@ export function AgentNotificationsSetting() {
   if (mode === null) return null
   return (
     <SettingsRow
-      label="Notify when a chat finishes or needs you"
+      label={copy.settings.agentNotificationsSetting.notifyWhenAChatFinishes}
       help="While you are in another app. Click the notification to open the chat."
     >
       <SegmentedControl<AgentNotificationMode>
-        ariaLabel="Notify when a chat finishes or needs you"
+        ariaLabel={copy.settings.agentNotificationsSetting.notifyWhenAChatFinishes}
         items={ITEMS}
         value={mode}
         onChange={(next) => {

@@ -13,6 +13,7 @@ import type {
 import { capabilityAccess, partitionCapabilityAccess } from '../../../../shared/modules/permissions'
 import type { ThirdPartyRendererLoadState } from '../../modules/third-party-loader'
 import type { AccessItem } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -64,11 +65,11 @@ export function moduleProblem(
   }
   if (module.trust !== 'trusted') return null
   if (module.launch.status === 'launch_error') {
-    return { kind: 'error', message: module.launch.message ?? 'Its main entry failed at the last launch.' }
+    return { kind: 'error', message: module.launch.message ?? copy.settings.extensionsModel.itsMainEntryFailedAt }
   }
   const renderer = module.launch.rendererEntry
   if (renderer?.availability === 'error') {
-    return { kind: 'error', message: renderer.message ?? 'Its window code could not be read.' }
+    return { kind: 'error', message: renderer.message ?? copy.settings.extensionsModel.itsWindowCodeCouldNot }
   }
   if (rendererLoadState?.status === 'error') return { kind: 'error', message: rendererLoadState.message }
   if (contributionError) return { kind: 'error', message: contributionError }

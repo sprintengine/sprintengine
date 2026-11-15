@@ -4,6 +4,7 @@ import { GhostButton, PrimaryButton } from './Buttons'
 import { Spinner } from './Spinner'
 import { StatusDot } from './StatusDot'
 import type { Tone } from './tokens'
+import { copy } from '../../../../shared/copy'
 
 const TOAST_ROLE: Record<Tone, 'status' | 'alert'> = {
   neutral: 'status',
@@ -163,7 +164,7 @@ export function Toast({
             onDismissPressed?.()
             onDismiss()
           }}
-          aria-label="Dismiss"
+          aria-label={copy.ui.toast.dismiss}
           // The floor is the token, not a typed box: the target used to be
           // `h-5 w-5` — 20px, under `--sem-size-hit-target-min` (24px), which
           // the component spec names as one of the two things that must survive

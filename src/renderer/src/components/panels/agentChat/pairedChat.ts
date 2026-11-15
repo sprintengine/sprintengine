@@ -15,6 +15,7 @@ import type { ChatEnvironment, ConversationTransport, ConversationTransportCapab
 import { environmentConversationTransport } from './environmentChat'
 import { studioPullRequestHost } from './pullRequestHost'
 import { ask, askUntilAnswered, commanded, createStudioConversationParts, outcome, upload } from './studioChat'
+import { copy } from '../../../../../shared/copy'
 
 // A chat on a paired desktop, as this window's chat view follows and drives
 // it: over this window's own client of that machine's Studio (the route
@@ -225,7 +226,7 @@ export function createPairedChatTransport(input: {
       if (asked.action === 'sign-in')
         return {
           ok: false,
-          message: `Sign in to ${asked.serverId} on ${machineName}.`,
+          message: copy.panels.agentChat.pairedChat.signInToOn(asked.serverId, machineName),
         }
       const done = await command('conversation.mcpServerAction', {
         serverId: asked.serverId,

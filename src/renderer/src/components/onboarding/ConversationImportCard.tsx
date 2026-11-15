@@ -3,6 +3,7 @@ import { useHoldCliUpdateToasts } from '../workspace/manager/cliUpdateToast'
 import { describeFound, importableCount } from './conversationImport'
 import { ConversationImportPicker, useConversationImportSelection } from './ConversationImportPicker'
 import type { ConversationImportScan } from './useConversationImportScan'
+import { copy } from '../../../../shared/copy'
 
 // The first-run offer of the conversations this person already had in Claude
 // Code or Codex. The same plain centred card as the CLI question beside it,
@@ -27,11 +28,14 @@ export default function ConversationImportCard({
     <div className="pointer-events-none absolute inset-0 z-[var(--z-float)] grid place-items-center p-8">
       <div className="pointer-events-auto flex max-h-full w-full max-w-[520px] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--border-default)] bg-[color:var(--bg-surface)]">
         <div className="px-5 pb-2 pt-4">
-          <h2 className="text-title font-semibold text-[color:var(--text-strong)]">Bring your conversations</h2>
+          <h2 className="text-title font-semibold text-[color:var(--text-strong)]">
+            {copy.onboarding.conversationImportCard.bringYourConversations}
+          </h2>
           <p className="mt-0.5 text-meta leading-5 text-[color:var(--text-muted)]">
-            {found === 1 ? 'Found 1 session' : `Found ${found} sessions`} you ran in the terminal (
+            {found === 1 ? 'Found 1 session' : `Found ${found} sessions`}
+            {copy.onboarding.conversationImportCard.youRanInTheTerminal}
             {describeFound(scan.folders)}
-            ). Each becomes a chat with its history and continues the same session.
+            {copy.onboarding.conversationImportCard.eachBecomesAChatWith}
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
@@ -44,7 +48,7 @@ export default function ConversationImportCard({
         </div>
         <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2">
           <GhostButton size="sm" disabled={importing} onClick={onDone}>
-            Not now
+            {copy.onboarding.conversationImportCard.notNow}
           </GhostButton>
           <PrimaryButton
             size="sm"

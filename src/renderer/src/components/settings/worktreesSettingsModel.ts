@@ -8,6 +8,7 @@ import type {
 } from '../../../../shared/ipc/worktree-pool'
 import { workspaceProjectRootOf } from '../../../../shared/worktree-paths'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
+import { copy } from '../../../../shared/copy'
 
 /**
  * Settings ▸ Worktrees, as data: every worktree of every project the window
@@ -251,12 +252,12 @@ function slotRow(
     state,
     stateLabel:
       state === 'in-use'
-        ? 'In use'
+        ? copy.settings.worktreesSettingsModel.inUse
         : state === 'held'
-          ? 'Holding work'
+          ? copy.settings.worktreesSettingsModel.holdingWork
           : state === 'ready'
-            ? 'Ready'
-            : (BUSY_LABEL[slot.state] ?? 'Busy'),
+            ? copy.settings.worktreesSettingsModel.ready
+            : (BUSY_LABEL[slot.state] ?? copy.settings.worktreesSettingsModel.busy),
     slot,
     entry,
     branch: state === 'ready' ? null : branch,
@@ -300,7 +301,7 @@ function otherRow(
       path: entry.path,
       name: baseName(entry.path),
       state: 'missing',
-      stateLabel: 'Missing',
+      stateLabel: copy.settings.worktreesSettingsModel.missing,
       slot: null,
       entry,
       branch: entry.branch,
@@ -328,7 +329,12 @@ function otherRow(
     path: entry.path,
     name: baseName(entry.path),
     state: 'other',
-    stateLabel: entry.merged === true ? 'Merged' : entry.merged === false ? 'Not merged' : 'Not in the pool',
+    stateLabel:
+      entry.merged === true
+        ? copy.settings.worktreesSettingsModel.merged
+        : entry.merged === false
+          ? copy.settings.worktreesSettingsModel.notMerged
+          : copy.settings.worktreesSettingsModel.notInThePool,
     slot: null,
     entry,
     branch: entry.branch,

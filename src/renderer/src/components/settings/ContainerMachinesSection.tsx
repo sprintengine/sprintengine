@@ -4,6 +4,7 @@ import type { ContainerHost, ContainerImagePlan, ContainerUnpushed, DockerStatus
 import type { SshEnvironmentSummary } from '../../../../shared/ssh-environments'
 import { GhostButton, InlineNotice, Input, OutlineButton, Select, useConfirmDialog, WorkingMark } from '../ui'
 import { SettingsRow } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Containers in Settings › Machines and New chat (docs/design/container-chats.md).
 // A container is a machine: its row is the machine list's, as an SSH
@@ -174,33 +175,48 @@ export function NewContainerForm({
   return (
     <div data-new-container="true" className="space-y-3">
       <div className="divide-y divide-[color:var(--border-subtle)]">
-        <SettingsRow label="Runs on" help="This computer, or an SSH machine with Docker.">
+        <SettingsRow
+          label={copy.settings.containerMachinesSection.runsOn}
+          help="This computer, or an SSH machine with Docker."
+        >
           {hosts.length > 0 ? (
             <Select
-              ariaLabel="Where the container runs"
+              ariaLabel={copy.settings.containerMachinesSection.whereTheContainerRuns}
               items={hosts}
               value={hostValue}
               onChange={(value) => setHostValue(value)}
               disabled={making}
             />
           ) : (
-            <span className={MUTED}>Add an SSH machine with Docker first.</span>
+            <span className={MUTED}>{copy.settings.containerMachinesSection.addAnSSHMachineWith}</span>
           )}
         </SettingsRow>
-        <SettingsRow label="Docker">
+        <SettingsRow label={copy.settings.containerMachinesSection.docker}>
           <span data-container-docker={status?.state ?? 'checking'} className="flex flex-col items-end gap-1.5">
             <span className="inline-flex items-center gap-1.5 text-body text-[color:var(--text-muted)]">
-              {!status || starting ? <WorkingMark label={starting ? 'Starting Colima' : 'Looking for Docker'} /> : null}
+              {!status || starting ? (
+                <WorkingMark
+                  label={
+                    starting
+                      ? copy.settings.containerMachinesSection.startingColima
+                      : copy.settings.containerMachinesSection.lookingForDocker
+                  }
+                />
+              ) : null}
               <span>{dockerWords}</span>
             </span>
             {status?.canStart === 'colima' && !starting ? (
               <OutlineButton size="xs" onClick={() => void startDocker()}>
-                Start Colima
+                {copy.settings.containerMachinesSection.startColima}
               </OutlineButton>
             ) : null}
           </span>
         </SettingsRow>
-        <SettingsRow label="Name" help="How it reads in the machine picker." htmlFor={nameId}>
+        <SettingsRow
+          label={copy.settings.containerMachinesSection.name}
+          help="How it reads in the machine picker."
+          htmlFor={nameId}
+        >
           <Input
             id={nameId}
             value={label}
@@ -214,7 +230,7 @@ export function NewContainerForm({
           />
         </SettingsRow>
         <SettingsRow
-          label="Clone"
+          label={copy.settings.containerMachinesSection.clone}
           help="A repository to clone into it, if any: owner/repo on GitHub, or its address."
           htmlFor={cloneId}
         >
@@ -234,7 +250,11 @@ export function NewContainerForm({
       {status?.image ? <ImageAgents plan={status.image} /> : null}
       {status?.imageProblem ? <InlineNotice tone="warn" title={status.imageProblem} /> : null}
       {status?.state === 'ready' && !status.imageReady ? (
-        <p className={MUTED}>The first container on {where} builds Studio’s image, which takes a few minutes.</p>
+        <p className={MUTED}>
+          {copy.settings.containerMachinesSection.theFirstContainerOn}
+          {where}
+          {copy.settings.containerMachinesSection.buildsStudioSImageWhich}
+        </p>
       ) : null}
       {problem ? <InlineNotice tone="warn" title={problem} /> : null}
       {note ? <InlineNotice tone="warn" title={note} /> : null}
@@ -244,11 +264,11 @@ export function NewContainerForm({
           disabled={making || status?.state !== 'ready' || !label.trim() || Boolean(status.imageProblem)}
           onClick={() => void make()}
         >
-          Make container
+          {copy.settings.containerMachinesSection.makeContainer}
         </OutlineButton>
         {making ? (
           <span className="inline-flex min-w-0 items-center gap-1.5 text-meta text-[color:var(--text-muted)]">
-            <WorkingMark label="Making the container" />
+            <WorkingMark label={copy.settings.containerMachinesSection.makingTheContainer} />
             <span className="min-w-0 truncate">{step ?? `Making the container on ${where}…`}</span>
           </span>
         ) : null}
@@ -265,8 +285,11 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
   if (!work.ok)
     return (
       <>
-        <p>Studio could not look inside it for work that exists only there: {work.message}</p>
-        <p className="mt-2">Deleting it removes its repositories and everything else in it.</p>
+        <p>
+          {copy.settings.containerMachinesSection.studioCouldNotLookInside}
+          {work.message}
+        </p>
+        <p className="mt-2">{copy.settings.containerMachinesSection.deletingItRemovesItsRepositories}</p>
       </>
     )
   const found = [
@@ -275,7 +298,8 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
       what: (
         <>
           <span className="font-mono">{each.branch}</span> in <span className="font-mono">{homePath(each.repo)}</span>:{' '}
-          {plural(each.commits, 'commit', 'commits')} on no remote
+          {plural(each.commits, 'commit', 'commits')}
+          {copy.settings.containerMachinesSection.onNoRemote}
         </>
       ),
     })),
@@ -283,8 +307,8 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
       key: `d:${each.worktree}`,
       what: (
         <>
-          <span className="font-mono">{homePath(each.worktree)}</span>: {plural(each.files, 'file', 'files')} changed
-          and not committed
+          <span className="font-mono">{homePath(each.worktree)}</span>: {plural(each.files, 'file', 'files')}
+          {copy.settings.containerMachinesSection.changedAndNotCommitted}
         </>
       ),
     })),
@@ -292,8 +316,8 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
       key: `h:${each.worktree}`,
       what: (
         <>
-          <span className="font-mono">{homePath(each.worktree)}</span>: {plural(each.commits, 'commit', 'commits')} on a
-          detached HEAD, on no branch or remote
+          <span className="font-mono">{homePath(each.worktree)}</span>: {plural(each.commits, 'commit', 'commits')}
+          {copy.settings.containerMachinesSection.onADetachedHEADOn}
         </>
       ),
     })),
@@ -316,7 +340,7 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
     <>
       {found.length > 0 ? (
         <>
-          <p>This exists only in the container, and goes with it:</p>
+          <p>{copy.settings.containerMachinesSection.thisExistsOnlyInThe}</p>
           <ul data-unpushed-work="true" className="mt-2 list-disc space-y-0.5 pl-5">
             {found.map((each) => (
               <li key={each.key}>{each.what}</li>
@@ -324,16 +348,10 @@ function ContainerWorkWords({ work }: { work: ContainerUnpushed }): React.JSX.El
           </ul>
         </>
       ) : (
-        <p>
-          In its repositories (in the home, four folders deep) and their worktrees, Studio found no commit on no remote,
-          no uncommitted change and no stash. Anything else in it is removed too.
-        </p>
+        <p>{copy.settings.containerMachinesSection.inItsRepositoriesInThe}</p>
       )}
       <p className="mt-2">{chats}</p>
-      <p className="mt-2">
-        What stays is on this machine's logins volume, which every container here shares: each agent's sign-in, history,
-        sessions and settings, and git's and the GitHub CLI's configuration.
-      </p>
+      <p className="mt-2">{copy.settings.containerMachinesSection.whatStaysIsOnThis}</p>
     </>
   )
 }
@@ -353,18 +371,18 @@ export async function deleteContainer(
     message: error instanceof Error ? error.message : String(error),
   }))
   const yes = await askFirst({
-    title: `Delete ${machine.label}?`,
+    title: copy.settings.containerMachinesSection.delete(machine.label),
     body: <ContainerWorkWords work={work} />,
-    confirmLabel: 'Delete container',
+    confirmLabel: copy.settings.containerMachinesSection.deleteContainer,
     tone: 'danger',
   })
   if (!yes) return { deleted: false, message: null }
   const forgotten = await api.sshEnvironmentForget(machine.id)
   if (forgotten.ok) return { deleted: true, message: null }
   const recordOnly = await askFirst({
-    title: `Forget only ${machine.label}'s record?`,
-    body: `${forgotten.message} Forgetting its record leaves whatever Docker has untouched, and Studio stops listing it.`,
-    confirmLabel: 'Forget its record',
+    title: copy.settings.containerMachinesSection.forgetOnlySRecord(machine.label),
+    body: copy.settings.containerMachinesSection.forgettingItsRecordLeavesWhatever(forgotten.message),
+    confirmLabel: copy.settings.containerMachinesSection.forgetItsRecord,
     tone: 'danger',
   })
   if (!recordOnly) return { deleted: false, message: forgotten.message }
@@ -416,15 +434,19 @@ export function ContainerMachineDetail({
       const work = await api.containerUnpushed(machine.id).catch(() => null)
       const running = work?.ok ? work.chatsRunning : null
       const yes = await askFirst({
-        title: `Rebuild ${machine.label}?`,
-        body: `${
+        title: copy.settings.containerMachinesSection.rebuild(machine.label),
+        body: copy.settings.containerMachinesSection.itsRepositoriesWorktreesStudioS(
           running === null
-            ? 'Studio could not ask its server whether a chat is running in it.'
+            ? copy.settings.containerMachinesSection.studioCouldNotAskIts
             : running > 0
-              ? `${running === 1 ? '1 chat is' : `${running} chats are`} running in it now, and stop when it is made again.`
-              : 'No chat is running in it.'
-        } Its repositories, worktrees, Studio's server and the logins are kept; anything installed outside its home goes with the old container.`,
-        confirmLabel: 'Rebuild',
+              ? copy.settings.containerMachinesSection.runningInItNowAnd(
+                  running === 1
+                    ? copy.settings.containerMachinesSection.n1ChatIs
+                    : copy.settings.containerMachinesSection.chatsAre(running),
+                )
+              : copy.settings.containerMachinesSection.noChatIsRunningIn,
+        ),
+        confirmLabel: copy.settings.containerMachinesSection.rebuild2,
       })
       if (!yes) return
       const rebuilt = await api.containerRebuild(machine.id)
@@ -470,17 +492,17 @@ export function ContainerMachineDetail({
   return (
     <div className="space-y-4">
       <div className="divide-y divide-[color:var(--border-subtle)]">
-        <SettingsRow label="Runs on" help="Reached with docker exec there.">
+        <SettingsRow label={copy.settings.containerMachinesSection.runsOn} help="Reached with docker exec there.">
           <span className="text-body text-[color:var(--text-default)]">
             {containerHostWords(container.host, machines)}
           </span>
         </SettingsRow>
-        <SettingsRow label="Docker name" help={`Image ${container.image}`}>
+        <SettingsRow label={copy.settings.containerMachinesSection.dockerName} help={`Image ${container.image}`}>
           <span className="font-mono text-body text-[color:var(--text-default)]">{container.name}</span>
         </SettingsRow>
         {outdated ? (
           <SettingsRow
-            label="Image"
+            label={copy.settings.containerMachinesSection.image}
             help="The agents set up in Studio, or their versions, changed since it was made. Rebuild makes it again on the new image and keeps its repositories, worktrees and logins."
           >
             <OutlineButton size="sm" disabled={busy !== null} onClick={() => void rebuild()}>
@@ -489,7 +511,7 @@ export function ContainerMachineDetail({
           </SettingsRow>
         ) : null}
         <SettingsRow
-          label="Sign in"
+          label={copy.settings.containerMachinesSection.signIn}
           help="Each agent's own login, and GitHub's for git and pull requests, kept on this machine's logins: every container here shares them."
           stacked
         >
@@ -509,17 +531,20 @@ export function ContainerMachineDetail({
               disabled={busy !== null || machine.state !== 'connected'}
               onClick={() => void signIn('github', 'GitHub')}
             >
-              GitHub
+              {copy.settings.containerMachinesSection.gitHub}
             </OutlineButton>
           </span>
         </SettingsRow>
         {machine.server ? (
-          <SettingsRow label="Studio server" help="Installed in the container, and kept running there.">
+          <SettingsRow
+            label={copy.settings.containerMachinesSection.studioServer}
+            help="Installed in the container, and kept running there."
+          >
             <span className="font-mono text-body text-[color:var(--text-default)]">{machine.server.version}</span>
           </SettingsRow>
         ) : null}
         <SettingsRow
-          label="Clone a repository"
+          label={copy.settings.containerMachinesSection.cloneARepository}
           help="Into ~/work in the container: owner/repo on GitHub, or its address."
           htmlFor={cloneId}
         >
@@ -552,7 +577,7 @@ export function ContainerMachineDetail({
               .then((result) => setDiagnostics(result.ok ? result.text : result.message))
           }
         >
-          Diagnostics
+          {copy.settings.containerMachinesSection.diagnostics}
         </GhostButton>
         <GhostButton
           size="sm"

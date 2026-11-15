@@ -15,6 +15,7 @@ import { getHighlightSwatch } from '../../utils/highlight'
 import { CRITICALITY_LABEL, DIFFICULTY_LABEL, DIFFICULTY_WORD } from '../../utils/backlogTriage'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
 import { useRelativeNowFor } from '../../hooks/useRelativeNow'
+import { copy } from '../../../../shared/copy'
 
 // Backlog readiness → the shared lifecycle vocabulary. The pre-work states
 // (idea / ready) are calm, not blockers; only `needs_input` — an agent working
@@ -208,14 +209,14 @@ export const BacklogRowContent = memo(function BacklogRowContent({
           <LifecycleGlyph state={lifecycle} live={false} />
         </Tooltip>
         {item.isEpic ? (
-          <Tooltip content="Epic" placement="top" wrapperClassName="inline-flex shrink-0">
+          <Tooltip content={copy.backlog.backlogRow.epic} placement="top" wrapperClassName="inline-flex shrink-0">
             <span
               className="inline-flex shrink-0"
               style={epicMeta?.color ? { color: getHighlightSwatch(epicMeta.color).hex } : undefined}
             >
               <BacklogTypeGlyph
                 type="epic"
-                label="Epic"
+                label={copy.backlog.backlogRow.epic}
                 className={`icon-sm ${epicMeta?.color ? '' : 'text-[color:var(--text-muted)]'}`}
               />
             </span>
@@ -237,7 +238,11 @@ export const BacklogRowContent = memo(function BacklogRowContent({
               outline on idle rows, same rule as the status dot. Matches the
               sidebar's starred-workspace glyph (color, size, name). */}
           {item.highlight?.starred ? (
-            <StarGlyph filled className="icon-xs shrink-0 text-[color:var(--tone-warn)]" label="Starred" />
+            <StarGlyph
+              filled
+              className="icon-xs shrink-0 text-[color:var(--tone-warn)]"
+              label={copy.backlog.backlogRow.starred}
+            />
           ) : null}
         </span>
         {blocked ? <BlockedBadge /> : dependencyState != null ? <WaitingBadge /> : null}
@@ -319,7 +324,7 @@ export function EpicProgressMeter({
   return (
     <span
       role="img"
-      aria-label={`${done} of ${total} complete`}
+      aria-label={copy.backlog.backlogRow.ofComplete(done, total)}
       // No min-w-0 here: the meter's floor is its min-content — the fraction
       // text — so a squeezed panel collapses the BAR (min-w-0, down to nothing)
       // and the numbers never paint over the right-aligned time.
@@ -355,14 +360,14 @@ function BlockedBadge(): JSX.Element {
   return (
     <span
       role="img"
-      aria-label="Blocked by prerequisites"
+      aria-label={copy.backlog.backlogRow.blockedByPrerequisites}
       className="inline-flex shrink-0 items-center gap-1 text-micro font-medium text-[color:var(--text-muted)]"
     >
       <svg viewBox="0 0 16 16" fill="none" className="icon-xs shrink-0" aria-hidden="true">
         <circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.3" />
         <path d="M5.6 8h4.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
-      Blocked
+      {copy.backlog.backlogRow.blocked}
     </span>
   )
 }
@@ -375,7 +380,11 @@ function EpicBlockedCount({ rollup }: { rollup: BacklogEpicBlockedRollup }): JSX
   return (
     <span
       role="img"
-      aria-label={`${rollup.blocked} of ${rollup.remaining} remaining ${rollup.remaining === 1 ? 'item' : 'items'} blocked by prerequisites`}
+      aria-label={copy.backlog.backlogRow.ofRemainingBlockedByPrerequisites(
+        rollup.blocked,
+        rollup.remaining,
+        rollup.remaining === 1 ? 'item' : 'items',
+      )}
       className="inline-flex shrink-0 items-center gap-1 text-micro text-[color:var(--text-muted)]"
     >
       <svg viewBox="0 0 16 16" fill="none" className="icon-xs shrink-0" aria-hidden="true">
@@ -469,7 +478,7 @@ function WaitingBadge(): JSX.Element {
   return (
     <span
       role="img"
-      aria-label="Waiting on prerequisites"
+      aria-label={copy.backlog.backlogRow.waitingOnPrerequisites}
       className="inline-flex shrink-0 items-center gap-1 text-micro font-medium text-[color:var(--text-muted)]"
     >
       <svg viewBox="0 0 16 16" fill="none" className="icon-xs shrink-0" aria-hidden="true">
@@ -481,7 +490,7 @@ function WaitingBadge(): JSX.Element {
           strokeLinejoin="round"
         />
       </svg>
-      Waiting
+      {copy.backlog.backlogRow.waiting}
     </span>
   )
 }
@@ -513,7 +522,7 @@ function EpicPill({ epic, onOpen }: { epic: BacklogEpicMeta; onOpen?: () => void
   )
   return (
     <Tooltip
-      content={onOpen ? `Open epic: ${epic.title}` : epic.title}
+      content={onOpen ? copy.backlog.backlogRow.openEpic(epic.title) : epic.title}
       placement="top"
       wrapperClassName="inline-flex min-w-0 shrink"
     >
@@ -522,7 +531,7 @@ function EpicPill({ epic, onOpen }: { epic: BacklogEpicMeta; onOpen?: () => void
         // click (stopPropagation) so opening the epic never also re-selects the
         // member row underneath it.
         <ChipButton
-          aria-label={`Open epic ${epic.title}`}
+          aria-label={copy.backlog.backlogRow.openEpic2(epic.title)}
           // The epic's hue as the kit's IDENTITY tint: its own ink over a 12% mix
           // of itself, which is the weight every other identity mark in the
           // system carries. The display-only form below keeps its own pill.
@@ -536,7 +545,7 @@ function EpicPill({ epic, onOpen }: { epic: BacklogEpicMeta; onOpen?: () => void
           {body}
         </ChipButton>
       ) : (
-        <span role="img" aria-label={`Epic: ${epic.title}`} className={pillClass} style={pillStyle}>
+        <span role="img" aria-label={copy.backlog.backlogRow.epic2(epic.title)} className={pillClass} style={pillStyle}>
           {body}
         </span>
       )}
@@ -551,13 +560,19 @@ function EpicPill({ epic, onOpen }: { epic: BacklogEpicMeta; onOpen?: () => void
 export function DifficultyIndicator({ difficulty }: { difficulty?: BacklogDifficulty }): JSX.Element {
   return (
     <Tooltip
-      content={difficulty ? `Size: ${DIFFICULTY_WORD[difficulty]}` : 'Size unestimated'}
+      content={
+        difficulty ? copy.backlog.backlogRow.size(DIFFICULTY_WORD[difficulty]) : copy.backlog.backlogRow.sizeUnestimated
+      }
       placement="top"
       wrapperClassName="inline-flex shrink-0"
     >
       <span
         role="img"
-        aria-label={difficulty ? `Size ${DIFFICULTY_WORD[difficulty]}` : 'Size unestimated'}
+        aria-label={
+          difficulty
+            ? copy.backlog.backlogRow.size2(DIFFICULTY_WORD[difficulty])
+            : copy.backlog.backlogRow.sizeUnestimated
+        }
         className={`w-[2.25ch] shrink-0 text-right font-mono text-micro tabular-nums ${
           difficulty ? 'text-[color:var(--text-muted)]' : 'text-[color:var(--text-disabled)]'
         }`}
@@ -575,10 +590,10 @@ export function DifficultyIndicator({ difficulty }: { difficulty?: BacklogDiffic
 export function CriticalityIndicator({ criticality }: { criticality?: BacklogCriticality }): JSX.Element {
   if (!criticality) {
     return (
-      <Tooltip content="No priority set" placement="top" wrapperClassName="inline-flex shrink-0">
+      <Tooltip content={copy.backlog.backlogRow.noPrioritySet} placement="top" wrapperClassName="inline-flex shrink-0">
         <span
           role="img"
-          aria-label="No priority set"
+          aria-label={copy.backlog.backlogRow.noPrioritySet}
           className="w-4 shrink-0 text-right text-micro text-[color:var(--text-disabled)]"
         >
           –
@@ -589,13 +604,13 @@ export function CriticalityIndicator({ criticality }: { criticality?: BacklogCri
   const urgent = criticality === 'high' || criticality === 'critical'
   return (
     <Tooltip
-      content={`Priority: ${CRITICALITY_LABEL[criticality]}`}
+      content={copy.backlog.backlogRow.priority(CRITICALITY_LABEL[criticality])}
       placement="top"
       wrapperClassName="inline-flex shrink-0"
     >
       <span
         role="img"
-        aria-label={`Priority ${CRITICALITY_LABEL[criticality]}`}
+        aria-label={copy.backlog.backlogRow.priority2(CRITICALITY_LABEL[criticality])}
         className={`inline-flex w-4 shrink-0 items-center justify-end ${
           urgent ? 'text-[color:var(--text-default)]' : 'text-[color:var(--text-subtle)]'
         }`}
@@ -689,7 +704,9 @@ export function BacklogEpicHeaderContent({
         // Enter/Arrow handler. stopPropagation keeps a click here from also
         // selecting the row.
         tabIndex={-1}
-        aria-label={collapsed ? `Expand ${group.title}` : `Collapse ${group.title}`}
+        aria-label={
+          collapsed ? copy.backlog.backlogRow.expand(group.title) : copy.backlog.backlogRow.collapse(group.title)
+        }
         aria-expanded={!collapsed}
         onClick={(event) => {
           event.stopPropagation()
@@ -724,7 +741,7 @@ export function BacklogEpicHeaderContent({
       ) : (
         <span
           className="shrink-0 tabular-nums text-micro text-[color:var(--text-subtle)]"
-          aria-label={`${done} of ${total} complete`}
+          aria-label={copy.backlog.backlogRow.ofComplete(done, total)}
         >
           {done}/{total}
         </span>

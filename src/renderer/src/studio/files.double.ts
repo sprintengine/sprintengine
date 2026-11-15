@@ -1,4 +1,5 @@
 import type * as Files from './files'
+import { copy } from '../../../shared/copy'
 
 // A stand-in for the window's files (`files.ts`), for tests of what calls
 // them. Every suite gets it (`tests/setup.ts` mocks the module with this one);
@@ -42,7 +43,7 @@ function blank(): Api {
       status: 'missing',
       path,
       checkedPath: path,
-      message: 'Nothing is there.',
+      message: copy.studio.filesDouble.nothingIsThere,
     }),
     detectProjectLogo: async () => null,
     readProjectIconFile: async () => null,

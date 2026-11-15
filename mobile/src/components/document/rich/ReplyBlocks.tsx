@@ -9,6 +9,7 @@ import { diagramNote, diagramRefusal, diagramTheme, mathNote } from "./diagramSo
 import { fenceKind, replyBlockReady } from "./replyMarkup";
 import { fitDrawing, renderKey, richRenderer, type RenderJob, type RenderResult } from "./richRenderer";
 import { VisualBlock } from "./VisualBlock";
+import { copy as appCopy } from "../../../../../src/shared/copy";
 
 /**
  * Set by `MarkdownDocument` around an agent's reply, and only there: a
@@ -108,7 +109,7 @@ function DiagramBlock({ source, language, ready }: { source: string; language: s
   if (showSource) {
     return (
       <SourceBlock
-        action={{ label: "Diagram", accessibilityLabel: "Show the diagram", onPress: () => setShowSource(false) }}
+        action={{ label: appCopy.phone.components.document.rich.replyBlocks.diagram, accessibilityLabel: appCopy.phone.components.document.rich.replyBlocks.showTheDiagram, onPress: () => setShowSource(false) }}
         content={source}
         header={header}
         language="mermaid"
@@ -123,12 +124,12 @@ function DiagramBlock({ source, language, ready }: { source: string; language: s
   return (
     <View style={styles.well}>
       <WellHeader
-        action={{ label: "Source", accessibilityLabel: "Show the diagram's source", onPress: () => setShowSource(true) }}
+        action={{ label: appCopy.phone.components.document.rich.replyBlocks.source, accessibilityLabel: appCopy.phone.components.document.rich.replyBlocks.showTheDiagramSSource, onPress: () => setShowSource(true) }}
         copy={source}
         label={header}
       />
       <View
-        accessibilityLabel={`Diagram: ${source.trim().split("\n", 1)[0]}`}
+        accessibilityLabel={appCopy.phone.components.document.rich.replyBlocks.diagram2(source.trim().split("\n", 1)[0])}
         accessibilityRole="image"
         onLayout={onLayout}
         style={styles.diagram}

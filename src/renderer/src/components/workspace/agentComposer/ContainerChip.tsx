@@ -4,6 +4,7 @@ import type { SshEnvironmentSummary } from '../../../../../shared/ssh-environmen
 import { containerHostWords, NewContainerForm, type ContainerApi } from '../../settings/ContainerMachinesSection'
 import { ChipButton, ContainerGlyph, GhostButton, MenuOption, Popover } from '../../ui'
 import { ChipCaretGlyph } from './agentSpawnShared'
+import { copy } from '../../../../../shared/copy'
 
 /**
  * The cube, in the New chat composer's context strip beside Worktree
@@ -56,7 +57,7 @@ export function ContainerChip({
           setOpen(next)
           if (!next) setMaking(false)
         }}
-        ariaLabel="Where this chat runs"
+        ariaLabel={copy.workspace.agentComposer.containerChip.whereThisChatRuns}
         popupRole="dialog"
         placement="bottom-start"
         surfaceClassName={`${making ? 'w-[440px]' : 'w-[300px]'} max-w-[calc(100vw-16px)]`}
@@ -71,7 +72,11 @@ export function ContainerChip({
             ref={ref}
             variant="raised"
             pressed={Boolean(selected)}
-            aria-label={selected ? `Container: ${selected.label}` : 'No container'}
+            aria-label={
+              selected
+                ? copy.workspace.agentComposer.containerChip.container(selected.label)
+                : copy.workspace.agentComposer.containerChip.noContainer
+            }
             onClick={togglePopover}
             data-container-trigger="true"
             {...triggerProps}
@@ -86,9 +91,13 @@ export function ContainerChip({
       >
         <div data-container-card="true" className="flex flex-col gap-1 p-1.5 text-body">
           <div className="px-2 pb-1 pt-1 text-meta font-medium text-[color:var(--text-subtle)]">
-            Where this chat runs
+            {copy.workspace.agentComposer.containerChip.whereThisChatRuns}
           </div>
-          <div role="radiogroup" aria-label="Where this chat runs" className="flex flex-col">
+          <div
+            role="radiogroup"
+            aria-label={copy.workspace.agentComposer.containerChip.whereThisChatRuns}
+            className="flex flex-col"
+          >
             <MenuOption
               role="radio"
               selected={!selected}
@@ -131,7 +140,7 @@ export function ContainerChip({
             </div>
           ) : (
             <GhostButton size="sm" className="justify-start" onClick={() => setMaking(true)}>
-              New container…
+              {copy.workspace.agentComposer.containerChip.newContainer}
             </GhostButton>
           )}
         </div>

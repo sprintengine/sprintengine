@@ -10,6 +10,7 @@ import type { WorkspaceId, WorkspacePaneTab, WorkspacePaneTabKind } from '../../
 import { openFileSurface } from '../../../../utils/openFileSurface'
 import { readAuxWindowBounds } from '../../../auxWindows/auxWindowPlacement'
 import type { PaneKindDefinition } from '../paneKinds'
+import { copy } from '../../../../../../shared/copy'
 
 // The owner window's half of the pane pop-out (shared/ipc/pane-popout.ts has
 // the protocol). This window's store stays the one record of every tab: a
@@ -94,7 +95,11 @@ export async function popOutPaneTabs(
   }
   if (failure !== null) {
     popOuts.delete(popOutId)
-    showToast({ tone: 'error', title: 'The pane did not open in a window', description: failure })
+    showToast({
+      tone: 'error',
+      title: copy.workspace.pane.popout.panePopOutHost.thePaneDidNotOpen,
+      description: failure,
+    })
     return false
   }
   const store = useWorkspaceStore.getState()

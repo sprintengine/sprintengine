@@ -1,4 +1,5 @@
 import { MainOwnedSettingToggle } from './MainOwnedSettingToggle'
+import { copy } from '../../../../shared/copy'
 
 // Settings → General: "Ask before quitting while agents are working". Main
 // owns the value (the quit dialog's "Don't ask again" turns it off), so it is
@@ -7,8 +8,8 @@ import { MainOwnedSettingToggle } from './MainOwnedSettingToggle'
 export function QuitConfirmationSetting() {
   return (
     <MainOwnedSettingToggle
-      label="Ask before quitting while agents are working"
-      description="Quitting stops running agents, schedules and pull request watches until you reopen."
+      label={copy.settings.quitConfirmationSetting.askBeforeQuittingWhileAgents}
+      description={copy.settings.quitConfirmationSetting.quittingStopsRunningAgentsSchedules}
       read={window.api?.getQuitConfirmation}
       write={(enabled) => window.api.setQuitConfirmation(enabled)}
     />

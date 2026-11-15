@@ -12,6 +12,7 @@ import { Input, Textarea } from '../../ui/Input'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../../ui/Modal'
 import { copyToClipboardWithToast } from '../../../utils/copyToClipboardWithToast'
 import type { PullRequestHost } from './pullRequestHost'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // The chat's "Create PR" (owner ruling 2026-10-04), in the same slot on the
 // panel's Pull request row as "#123", and never beside it. The slot shows:
@@ -358,17 +359,21 @@ export function CreatePullRequestControl({ slot }: { slot: CreatePullRequestSlot
           tone="subtle"
           // Read: the slot goes back to what the checkout says.
           onClick={flow.dismiss}
-          aria-label={progress?.step === 'noted' ? 'Dismiss this note' : 'Dismiss this Create PR failure'}
+          aria-label={
+            progress?.step === 'noted'
+              ? appCopy.panels.agentChat.createPullRequest.dismissThisNote
+              : appCopy.panels.agentChat.createPullRequest.dismissThisCreatePRFailure
+          }
           className="shrink-0 whitespace-nowrap"
         >
-          Dismiss
+          {appCopy.panels.agentChat.createPullRequest.dismiss}
         </GhostButton>
       ) : (
         <GhostButton
           size="xs"
           tone="subtle"
           onClick={flow.openDialog}
-          aria-label={`Create a ${noun} from this branch`}
+          aria-label={appCopy.panels.agentChat.createPullRequest.createAFromThisBranch(noun)}
           className="shrink-0 gap-1.5 whitespace-nowrap"
         >
           <PullRequestGlyph state="open" className="icon-xs" />
@@ -488,12 +493,16 @@ function CreatePullRequestDialog({
   return (
     <Modal open onClose={onCancel} labelledBy={titleId} size="wide">
       <form onSubmit={submit}>
-        <ModalHeader title={`Create a ${noun}`} titleId={titleId} onClose={onCancel} />
+        <ModalHeader
+          title={appCopy.panels.agentChat.createPullRequest.createA(noun)}
+          titleId={titleId}
+          onClose={onCancel}
+        />
         <ModalBody className="flex flex-col gap-3">
           {drafting ? (
             <p role="status" className="inline-flex items-center gap-2 text-body text-[color:var(--text-muted)]">
               <Spinner size={14} />
-              Writing title and description from commits…
+              {appCopy.panels.agentChat.createPullRequest.writingTitleAndDescriptionFrom}
             </p>
           ) : null}
           {draftError ? (
@@ -506,7 +515,7 @@ function CreatePullRequestDialog({
               {uncommittedNote(uncommitted)}
             </p>
           ) : null}
-          <Field label="Title" htmlFor={titleFieldId}>
+          <Field label={appCopy.panels.agentChat.createPullRequest.title} htmlFor={titleFieldId}>
             <Input
               id={titleFieldId}
               value={title}
@@ -515,7 +524,7 @@ function CreatePullRequestDialog({
               maxLength={300}
             />
           </Field>
-          <Field label="Description" htmlFor={bodyFieldId}>
+          <Field label={appCopy.panels.agentChat.createPullRequest.description} htmlFor={bodyFieldId}>
             <Textarea
               id={bodyFieldId}
               value={body}
@@ -528,10 +537,10 @@ function CreatePullRequestDialog({
         </ModalBody>
         <ModalFooter>
           <ModalButton type="button" onClick={onCancel}>
-            Cancel
+            {appCopy.panels.agentChat.createPullRequest.cancel}
           </ModalButton>
           <ModalButton type="submit" variant="primary" disabled={drafting || !title.trim()}>
-            Create
+            {appCopy.panels.agentChat.createPullRequest.create}
           </ModalButton>
         </ModalFooter>
       </form>

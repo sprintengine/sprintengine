@@ -55,6 +55,7 @@ import {
 } from './ThirdPartyModuleList'
 import { TrustReviewDialog } from './TrustReviewDialog'
 import { useThirdPartyExtensions } from './useThirdPartyExtensions'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Settings → Extensions (route id `modules`, kept so every deep link still
 // lands): everything that plugs into the app, on one page.
@@ -95,7 +96,7 @@ function InstallMenu({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Install"
+      ariaLabel={appCopy.settings.modulesSettingsTab.install}
       popupRole="menu"
       placement="bottom-end"
       surfaceClassName={`min-w-[200px] ${MENU_LIST_CLASS}`}
@@ -105,19 +106,19 @@ function InstallMenu({
       }}
       renderTrigger={({ ref, togglePopover, triggerProps }) => (
         <OutlineButton ref={ref} {...triggerProps} busy={installing} onClick={togglePopover}>
-          Install
+          {appCopy.settings.modulesSettingsTab.install}
           <ChevronDownIcon className="icon-xs shrink-0" />
         </OutlineButton>
       )}
     >
       <MenuItem icon={<FolderPlusIcon className="icon-sm" />} onClick={pick(onFromFolder)} onKeyDown={rove}>
-        From a folder
+        {appCopy.settings.modulesSettingsTab.fromAFolder}
       </MenuItem>
       <MenuItem icon={<GithubSettingsIcon className="icon-sm" />} onClick={pick(onFromGitHub)} onKeyDown={rove}>
-        From GitHub
+        {appCopy.settings.modulesSettingsTab.fromGitHub}
       </MenuItem>
       <MenuItem icon={<PluginsGlyph className="icon-sm" />} onClick={pick(onBrowse)} onKeyDown={rove}>
-        Browse marketplace
+        {appCopy.settings.modulesSettingsTab.browseMarketplace}
       </MenuItem>
     </Popover>
   )
@@ -194,11 +195,19 @@ function BuiltInRow({
         ) : null}
       </div>
       {comingSoon ? (
-        <span className="text-meta text-[color:var(--text-subtle)]">Coming soon</span>
+        <span className="text-meta text-[color:var(--text-subtle)]">
+          {appCopy.settings.modulesSettingsTab.comingSoon}
+        </span>
       ) : manifest.core ? (
-        <span className="text-meta text-[color:var(--text-subtle)]">Always on</span>
+        <span className="text-meta text-[color:var(--text-subtle)]">
+          {appCopy.settings.modulesSettingsTab.alwaysOn}
+        </span>
       ) : (
-        <Switch checked={enabled} onChange={onToggle} ariaLabel={`Enable ${manifest.displayName}`} />
+        <Switch
+          checked={enabled}
+          onChange={onToggle}
+          ariaLabel={appCopy.settings.modulesSettingsTab.enable(manifest.displayName)}
+        />
       )}
     </li>
   )
@@ -289,7 +298,9 @@ export function ModulesSettingsTab(): JSX.Element {
     onCopyId: (module) => {
       void window.api
         .clipboardWriteText(module.manifest.id)
-        .then(() => showToast({ tone: 'neutral', title: `Copied ${module.manifest.id}` }))
+        .then(() =>
+          showToast({ tone: 'neutral', title: appCopy.settings.modulesSettingsTab.copied(module.manifest.id) }),
+        )
     },
   }
 
@@ -313,11 +324,11 @@ export function ModulesSettingsTab(): JSX.Element {
   return (
     <div role="tabpanel" id="settings-panel-modules" aria-labelledby="settings-tab-modules" className="space-y-5">
       <SettingsPageHeader
-        title="Extensions"
+        title={appCopy.settings.modulesSettingsTab.extensions}
         actions={
           <>
             <GhostButton onClick={() => openSettingsOverlay({ initialTab: EXTENSIONS_BROWSE_DEEPLINK })}>
-              Browse marketplace
+              {appCopy.settings.modulesSettingsTab.browseMarketplace}
             </GhostButton>
             <InstallMenu
               installing={extensions.installing}
@@ -348,23 +359,29 @@ export function ModulesSettingsTab(): JSX.Element {
         <InboxSearchInput
           value={query}
           onChange={setQuery}
-          ariaLabel="Search extensions"
-          placeholder="Search extensions"
+          ariaLabel={appCopy.settings.modulesSettingsTab.searchExtensions}
+          placeholder={appCopy.settings.modulesSettingsTab.searchExtensions}
         />
         <SegmentedControl<ExtensionFilter>
-          ariaLabel="Show"
+          ariaLabel={appCopy.settings.modulesSettingsTab.show}
           value={filter}
           onChange={setFilter}
           items={[
-            { value: 'all', label: 'All' },
+            { value: 'all', label: appCopy.settings.modulesSettingsTab.all },
             {
               value: 'review',
-              label: 'Needs review',
+              label: appCopy.settings.modulesSettingsTab.needsReview,
               badge:
-                reviewCount > 0 ? { count: reviewCount, label: `${reviewCount} to review`, tone: 'neutral' } : null,
+                reviewCount > 0
+                  ? {
+                      count: reviewCount,
+                      label: appCopy.settings.modulesSettingsTab.toReview(reviewCount),
+                      tone: 'neutral',
+                    }
+                  : null,
             },
-            { value: 'on', label: 'On' },
-            { value: 'off', label: 'Off' },
+            { value: 'on', label: appCopy.settings.modulesSettingsTab.on },
+            { value: 'off', label: appCopy.settings.modulesSettingsTab.off },
           ]}
         />
       </div>
@@ -374,20 +391,39 @@ export function ModulesSettingsTab(): JSX.Element {
 
       {nothingMatches ? (
         <p className="text-body leading-5 text-[color:var(--text-muted)]">
-          {searching ? <>Nothing matches &ldquo;{query.trim()}&rdquo;.</> : 'Nothing here.'}
+          {searching ? (
+            <>
+              {appCopy.settings.modulesSettingsTab.nothingMatches}
+              {query.trim()}&rdquo;.
+            </>
+          ) : (
+            'Nothing here.'
+          )}
         </p>
       ) : null}
 
       {visibleReview.length > 0 ? (
-        <ExtensionGroup id={ids.review} title="Needs review" count={visibleReview.length}>
-          <ExtensionRows label="Needs review">{visibleReview.map(row)}</ExtensionRows>
+        <ExtensionGroup
+          id={ids.review}
+          title={appCopy.settings.modulesSettingsTab.needsReview}
+          count={visibleReview.length}
+        >
+          <ExtensionRows label={appCopy.settings.modulesSettingsTab.needsReview}>
+            {visibleReview.map(row)}
+          </ExtensionRows>
         </ExtensionGroup>
       ) : null}
 
       {showInstalledGroup ? (
-        <ExtensionGroup id={ids.installed} title="Installed" count={visibleInstalled.length}>
+        <ExtensionGroup
+          id={ids.installed}
+          title={appCopy.settings.modulesSettingsTab.installed}
+          count={visibleInstalled.length}
+        >
           {visibleInstalled.length > 0 ? (
-            <ExtensionRows label="Installed">{visibleInstalled.map(row)}</ExtensionRows>
+            <ExtensionRows label={appCopy.settings.modulesSettingsTab.installed}>
+              {visibleInstalled.map(row)}
+            </ExtensionRows>
           ) : (
             <NoExtensionsInstalled />
           )}
@@ -410,11 +446,11 @@ export function ModulesSettingsTab(): JSX.Element {
               <ChevronDownIcon
                 className={`icon-sm mr-1 inline-block align-middle text-[color:var(--text-subtle)] ${builtInOpen ? '' : '-rotate-90'}`}
               />
-              Built in
+              {appCopy.settings.modulesSettingsTab.builtIn}
             </LinkButton>
           </SettingsSectionTitle>
           <div id={ids.builtInList} hidden={!builtInOpen}>
-            <SettingCard as="ul" ariaLabel="Built in">
+            <SettingCard as="ul" ariaLabel={appCopy.settings.modulesSettingsTab.builtIn}>
               {builtInVisible.map((manifest) => (
                 <BuiltInRow
                   key={manifest.id}
@@ -454,9 +490,16 @@ export function ModulesSettingsTab(): JSX.Element {
       />
 
       {pause ? (
-        <Modal open onClose={extensions.cancelUpdateTrust} label={`Update ${pause.module.manifest.displayName}`}>
+        <Modal
+          open
+          onClose={extensions.cancelUpdateTrust}
+          label={appCopy.settings.modulesSettingsTab.update(pause.module.manifest.displayName)}
+        >
           <ModalHeader
-            title={`Update ${pause.module.manifest.displayName} to v${pause.update.latestVersion}?`}
+            title={appCopy.settings.modulesSettingsTab.updateToV(
+              pause.module.manifest.displayName,
+              pause.update.latestVersion,
+            )}
             leading={<ExtensionMark module={pause.module} doorIcon={null} size={40} />}
           />
           <ModalBody>
@@ -464,10 +507,10 @@ export function ModulesSettingsTab(): JSX.Element {
           </ModalBody>
           <ModalFooter>
             <ModalButton variant="ghost" onClick={extensions.cancelUpdateTrust}>
-              Cancel
+              {appCopy.settings.modulesSettingsTab.cancel}
             </ModalButton>
             <ModalButton variant="primary" onClick={() => void extensions.confirmUpdateTrust()}>
-              Trust and update
+              {appCopy.settings.modulesSettingsTab.trustAndUpdate}
             </ModalButton>
           </ModalFooter>
         </Modal>

@@ -4,6 +4,7 @@ import { clientPlatform } from '../../clientCapabilities'
 import { keydownMatchesKeybindings } from '../../commands/commandDispatcher'
 import type { KeybindingPlatform } from '../../commands/keybindings'
 import { CloseIconButton, IconButton, Input } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 /**
  * The find strip a surface floats over its own top-right corner: a terminal's
@@ -89,7 +90,7 @@ export function FindBar({
         variant="quiet"
         fullWidth={false}
         aria-label={label}
-        placeholder="Find"
+        placeholder={copy.find.findBar.find}
         spellCheck={false}
         autoComplete="off"
         className="w-[11rem]"
@@ -127,13 +128,13 @@ export function FindBar({
       >
         {status}
       </span>
-      <IconButton aria-label="Previous match" size="xs" disabled={!hasMatches} onClick={onPrevious}>
+      <IconButton aria-label={copy.find.findBar.previousMatch} size="xs" disabled={!hasMatches} onClick={onPrevious}>
         <ChevronIcon direction="up" />
       </IconButton>
-      <IconButton aria-label="Next match" size="xs" disabled={!hasMatches} onClick={onNext}>
+      <IconButton aria-label={copy.find.findBar.nextMatch} size="xs" disabled={!hasMatches} onClick={onNext}>
         <ChevronIcon direction="down" />
       </IconButton>
-      <CloseIconButton aria-label="Close find" size="xs" onClick={onClose} />
+      <CloseIconButton aria-label={copy.find.findBar.closeFind} size="xs" onClick={onClose} />
     </div>
   )
 }

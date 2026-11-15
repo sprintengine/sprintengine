@@ -6,6 +6,7 @@ import {
   type ThemeSwatches,
 } from '../../../../shared/app-theme'
 import { CardButton, TruncatedText } from '../ui'
+import { copy } from '../../../../shared/copy'
 
 type AppThemePickerProps = {
   value: AppTheme
@@ -72,7 +73,11 @@ function AppThemePicker({ value, onChange }: AppThemePickerProps) {
   )
 
   return (
-    <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+    <div
+      role="radiogroup"
+      aria-label={copy.settings.appThemePicker.theme}
+      className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
+    >
       {themes.map((theme, index) => {
         const isSelected = value === theme.id
         const scheme = theme.resolved ? colorSchemeForResolvedTheme(theme.resolved) : null

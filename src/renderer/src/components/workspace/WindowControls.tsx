@@ -6,6 +6,7 @@
 import React from 'react'
 import { CaptionButton } from '../ui/Buttons'
 import { Tooltip } from '../ui/Tooltip'
+import { copy } from '../../../../shared/copy'
 
 // The three caption buttons are `w-10` each, so this is the width of the strip
 // they occupy. They float at the window's absolute top-right corner over
@@ -63,17 +64,25 @@ export function WindowControls({ isMaximized }: { isMaximized: boolean }) {
   }
 
   return (
-    <div className="app-no-drag flex shrink-0 items-stretch" aria-label="Window controls">
-      <Tooltip content="Minimize" placement="bottom">
-        <CaptionButton onClick={minimizeWindow} aria-label="Minimize window">
+    <div className="app-no-drag flex shrink-0 items-stretch" aria-label={copy.workspace.windowControls.windowControls}>
+      <Tooltip content={copy.workspace.windowControls.minimize} placement="bottom">
+        <CaptionButton onClick={minimizeWindow} aria-label={copy.workspace.windowControls.minimizeWindow}>
           <svg className="icon-sm" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M3.5 8H12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
         </CaptionButton>
       </Tooltip>
 
-      <Tooltip content={isMaximized ? 'Restore' : 'Maximize'} placement="bottom">
-        <CaptionButton onClick={toggleWindowSize} aria-label={isMaximized ? 'Restore window' : 'Maximize window'}>
+      <Tooltip
+        content={isMaximized ? copy.workspace.windowControls.restore : copy.workspace.windowControls.maximize}
+        placement="bottom"
+      >
+        <CaptionButton
+          onClick={toggleWindowSize}
+          aria-label={
+            isMaximized ? copy.workspace.windowControls.restoreWindow : copy.workspace.windowControls.maximizeWindow
+          }
+        >
           {isMaximized ? (
             <svg className="icon-sm" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M5.5 6.5H11.5V12.5H5.5V6.5Z" stroke="currentColor" strokeWidth="1.2" />
@@ -109,8 +118,8 @@ export function WindowCloseButton({ onClick }: { onClick: () => void }) {
   return (
     // `tone="close"` carries the Windows-native hover red, which now lives in
     // the kit with its own design-tokens-allow.
-    <Tooltip content="Close" placement="bottom">
-      <CaptionButton tone="close" onClick={onClick} aria-label="Close window">
+    <Tooltip content={copy.workspace.windowControls.close} placement="bottom">
+      <CaptionButton tone="close" onClick={onClick} aria-label={copy.workspace.windowControls.closeWindow}>
         <svg className="icon-sm" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path
             d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5"

@@ -1,5 +1,6 @@
 import type { TerminalPromptUndelivered } from '../../../shared/electron-api'
 import type { DiagnosticLogEntry } from '../../../shared/workspace'
+import { copy } from '../../../shared/copy'
 
 // A first message main could not type into its agent CLI
 // (src/main/deferred-prompt-delivery.ts), turned into what the person sees: a
@@ -36,9 +37,9 @@ export function undeliveredPromptNotice(
   const cliName = event.cli ? cliDisplayName(event.cli) : 'The agent'
   const who = event.agentName?.trim() || cliName
   return {
-    title: `${who} did not get your first message`,
-    message: `${reasonSentence(event, cliName)} Copy message gets it back.`,
-    toastDescription: 'Your message is saved in Notifications.',
+    title: copy.utils.undeliveredPrompt.didNotGetYourFirst(who),
+    message: copy.utils.undeliveredPrompt.copyMessageGetsItBack(reasonSentence(event, cliName)),
+    toastDescription: copy.utils.undeliveredPrompt.yourMessageIsSavedIn,
   }
 }
 

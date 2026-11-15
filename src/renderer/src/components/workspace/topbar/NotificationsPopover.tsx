@@ -22,6 +22,7 @@ import {
 } from '../../ui'
 import { formatTimeOfDay } from '../../../utils/clockFormat'
 import { copyToClipboardWithToast } from '../../../utils/copyToClipboardWithToast'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 // Severity reads by shape, not a colored dot (StatusDot is deprecated). Error
 // maps to the `failed` glyph (ring + "×", error tone) and warning to the
@@ -38,9 +39,9 @@ const LEVEL_GLYPH: Partial<Record<DiagnosticLevel, LifecycleState>> = {
 // width on a control most visits never touch.
 type LevelFilter = 'all' | 'error' | 'warning'
 const LEVEL_FILTER_ITEMS: ReadonlyArray<{ value: LevelFilter; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'error', label: 'Errors' },
-  { value: 'warning', label: 'Warnings' },
+  { value: 'all', label: appCopy.workspace.topbar.notificationsPopover.all },
+  { value: 'error', label: appCopy.workspace.topbar.notificationsPopover.errors },
+  { value: 'warning', label: appCopy.workspace.topbar.notificationsPopover.warnings },
 ]
 
 const LEVEL_NOUN: Record<DiagnosticLevel, string> = {
@@ -148,8 +149,19 @@ export function NotificationsPopover({
   // clearing the list are visits of their own, not the reason the popover was
   // opened, so they do not each take a word in the header.
   const overflowItems: OverflowMenuItem[] = [
-    ...(onOpenLogs ? [{ id: 'logs', label: 'Open logs folder', onSelect: onOpenLogs }] : []),
-    ...(notifications.length > 0 ? [{ id: 'clear', label: 'Clear all', onSelect: onClear, destructive: true }] : []),
+    ...(onOpenLogs
+      ? [{ id: 'logs', label: appCopy.workspace.topbar.notificationsPopover.openLogsFolder, onSelect: onOpenLogs }]
+      : []),
+    ...(notifications.length > 0
+      ? [
+          {
+            id: 'clear',
+            label: appCopy.workspace.topbar.notificationsPopover.clearAll,
+            onSelect: onClear,
+            destructive: true,
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -159,12 +171,12 @@ export function NotificationsPopover({
           scroll beneath it. One action — Mark all read, while anything is
           unread — then the filter glyph and the kebab. */}
       <PanelHeader
-        title="Notifications"
+        title={appCopy.workspace.topbar.notificationsPopover.notifications}
         count={visibleNotifications.length > 0 ? visibleNotifications.length : undefined}
         primaryAction={
           hasUnread ? (
             <GhostButton size="xs" onClick={onMarkAllRead}>
-              Mark all read
+              {appCopy.workspace.topbar.notificationsPopover.markAllRead}
             </GhostButton>
           ) : undefined
         }
@@ -173,10 +185,10 @@ export function NotificationsPopover({
             <>
               {notifications.length > 0 ? (
                 <FilterMenu
-                  ariaLabel="Filter notifications"
+                  ariaLabel={appCopy.workspace.topbar.notificationsPopover.filterNotifications}
                   groups={[
                     {
-                      label: 'Show',
+                      label: appCopy.workspace.topbar.notificationsPopover.show,
                       items: LEVEL_FILTER_ITEMS,
                       value: levelFilter,
                       defaultValue: 'all',
@@ -186,7 +198,11 @@ export function NotificationsPopover({
                 />
               ) : null}
               {overflowItems.length > 0 ? (
-                <OverflowMenu ariaLabel="More notification actions" triggerTooltip="More" items={overflowItems} />
+                <OverflowMenu
+                  ariaLabel={appCopy.workspace.topbar.notificationsPopover.moreNotificationActions}
+                  triggerTooltip={appCopy.workspace.topbar.notificationsPopover.more}
+                  items={overflowItems}
+                />
               ) : null}
             </>
           ) : undefined
@@ -271,7 +287,7 @@ function NotificationRow({
   }
   const copyItem: OverflowMenuItem = {
     id: 'copy',
-    label: 'Copy details',
+    label: appCopy.workspace.topbar.notificationsPopover.copyDetails,
     onSelect: () => {
       void copyToClipboardWithToast(() => notificationCopyText(notification)).then((copied) => {
         if (copied) onMarkRead(notification.id)
@@ -285,7 +301,7 @@ function NotificationRow({
       ? [
           {
             id: 'open-logs',
-            label: 'Open logs',
+            label: appCopy.workspace.topbar.notificationsPopover.openLogs,
             onSelect: () => {
               onMarkRead(notification.id)
               onOpenLogs()
@@ -345,13 +361,17 @@ function NotificationRow({
         ) : (
           <CopyGlyphButton
             size="xs"
-            label="Copy details"
+            label={appCopy.workspace.topbar.notificationsPopover.copyDetails}
             text={() => notificationCopyText(notification)}
             onCopied={() => onMarkRead(notification.id)}
           />
         )}
         {menuItems.length > 0 ? (
-          <OverflowMenu ariaLabel={`More actions for ${notification.title}`} triggerTooltip="More" items={menuItems} />
+          <OverflowMenu
+            ariaLabel={appCopy.workspace.topbar.notificationsPopover.moreActionsFor(notification.title)}
+            triggerTooltip={appCopy.workspace.topbar.notificationsPopover.more}
+            items={menuItems}
+          />
         ) : null}
       </div>
     </div>

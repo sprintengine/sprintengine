@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react'
 import { MenuItem, Popover, Tooltip, ToolbarButton, TourGlyph, roveMenuFocus } from '../../ui'
 import { MENU_LIST_CLASS } from '../../ui/menuClasses'
 import { useRecentTours } from './useTourSession'
+import { copy } from '../../../../../shared/copy'
 
 // The toolbar's way back into a tour: this workspace's recent tours, newest
 // first. Read when the menu opens and not before — a diff opened for a file
@@ -35,7 +36,7 @@ export function TourMenu({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Recent tours"
+      ariaLabel={copy.auxWindows.tours.tourMenu.recentTours}
       popupRole="menu"
       placement="bottom-end"
       onOpenAutoFocus={(surface) => {
@@ -44,8 +45,14 @@ export function TourMenu({
       }}
       surfaceClassName={`min-w-[20rem] max-w-[26rem] ${MENU_LIST_CLASS}`}
       renderTrigger={({ ref, togglePopover }) => (
-        <Tooltip content="Tours" placement="bottom">
-          <ToolbarButton ref={ref} ariaLabel="Tours" menu expanded={open} onClick={togglePopover}>
+        <Tooltip content={copy.auxWindows.tours.tourMenu.tours} placement="bottom">
+          <ToolbarButton
+            ref={ref}
+            ariaLabel={copy.auxWindows.tours.tourMenu.tours}
+            menu
+            expanded={open}
+            onClick={togglePopover}
+          >
             <TourGlyph />
           </ToolbarButton>
         </Tooltip>
@@ -53,7 +60,7 @@ export function TourMenu({
     >
       {tours.length === 0 ? (
         <MenuItem disabled onClick={() => {}}>
-          No tours yet
+          {copy.auxWindows.tours.tourMenu.noToursYet}
         </MenuItem>
       ) : (
         tours.map((tour) => (
@@ -61,7 +68,7 @@ export function TourMenu({
             key={tour.id}
             checked={tour.id === currentTourId}
             selection="one-of"
-            hint={`${tour.stepCount} ${tour.stepCount === 1 ? 'step' : 'steps'}${tour.authorName ? ` · ${tour.authorName}` : ''} · ${ago(tour.updatedAt, now)}${tour.closed ? ' · closed' : ''}`}
+            hint={`${tour.stepCount} ${tour.stepCount === 1 ? 'step' : 'steps'}${tour.authorName ? ` · ${tour.authorName}` : ''} · ${ago(tour.updatedAt, now)}${tour.closed ? copy.auxWindows.tours.tourMenu.closed : ''}`}
             onClick={() => {
               setOpen(false)
               onOpen(tour.id)

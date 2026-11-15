@@ -20,6 +20,7 @@ import { ChevronRightGlyph, ToolKindGlyph } from './toolRows/ToolKindGlyph'
 import { ComposerTrayRow } from './composerTray'
 import { useConversationLinkContext } from './conversationLinks'
 import { useConversationDisclosure } from './conversationViewState'
+import { copy } from '../../../../../shared/copy'
 
 export function BackgroundTasksTrayRow({
   tasks,
@@ -63,7 +64,7 @@ export function BackgroundTasksTrayRow({
       }
       glyph={
         waiting ? (
-          <WorkingMark label="Waiting on background work" />
+          <WorkingMark label={copy.panels.agentChat.backgroundTasksRow.waitingOnBackgroundWork} />
         ) : (
           <ToolKindGlyph kind="command" className="icon-sm shrink-0 text-[color:var(--text-subtle)]" />
         )

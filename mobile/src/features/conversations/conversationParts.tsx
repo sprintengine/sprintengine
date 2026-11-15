@@ -40,6 +40,7 @@ import {
 } from "./subagentLogic";
 import { cliForChatProvider } from "./launchLogic";
 import type { usePhoneConversation } from "./usePhoneConversation";
+import { copy } from "../../../../src/shared/copy";
 
 // The pieces the chat and its agent screens draw alike: a quiet tool step, a
 // run of steps that rests collapsed once settled, an agent's lane card and its
@@ -169,7 +170,7 @@ export function ToolGroup({ tools, source }: { tools: RowTool[]; source: StepDet
         <>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={group.failed ? `${summary}, ${group.failed} failed` : summary}
+            accessibilityLabel={group.failed ? copy.phone.conversations.conversationParts.failed(summary, group.failed) : summary}
             accessibilityState={{ expanded: open }}
             hitSlop={space.xs}
             onPress={() => setOpen(!open)}
@@ -292,7 +293,7 @@ export function SideQuestionRow({
     <View style={styles.steps}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Side question: ${question}`}
+        accessibilityLabel={copy.phone.conversations.conversationParts.sideQuestion(question)}
         accessibilityState={{ expanded: open }}
         hitSlop={space.xs}
         onPress={() => setOpen(!open)}
@@ -300,7 +301,7 @@ export function SideQuestionRow({
       >
         <SideQuestionGlyph color={colors.toneWarn} />
         <Text numberOfLines={1} style={styles.groupHead}>
-          <Text style={styles.sideQuestionLabel}>Side question</Text> · {question}
+          <Text style={styles.sideQuestionLabel}>{copy.phone.conversations.conversationParts.sideQuestion2}</Text> · {question}
         </Text>
         <View style={styles.end}>
           <DisclosureGlyph open={open} color={colors.textDisabled} />
@@ -315,7 +316,7 @@ export function SideQuestionRow({
             <MarkdownDocument body={answer} variant="chat" reply onLinkBlocked={onLinkBlocked} />
           </View>
           {truncated ? (
-            <Text style={styles.thoughtPreview}>Answer too long to keep; showing the start.</Text>
+            <Text style={styles.thoughtPreview}>{copy.phone.conversations.conversationParts.answerTooLongToKeep}</Text>
           ) : null}
         </View>
       ) : null}
@@ -370,7 +371,7 @@ export function AgentNoticeRow({
       {reply ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${title}. Its reply`}
+          accessibilityLabel={copy.phone.conversations.conversationParts.itsReply(title)}
           accessibilityState={{ expanded: open }}
           hitSlop={space.xs}
           onPress={() => setOpen(!open)}
@@ -386,7 +387,7 @@ export function AgentNoticeRow({
       {open && reply ? (
         <View style={styles.rail}>
           {notice.replyTruncated ? (
-            <Text style={styles.thoughtPreview}>Its start was cut to fit; the agent&apos;s own chat has the whole reply.</Text>
+            <Text style={styles.thoughtPreview}>{copy.phone.conversations.conversationParts.itsStartWasCutTo}</Text>
           ) : null}
           <View style={styles.prose}>
             <MarkdownDocument body={reply} variant="chat" reply onLinkBlocked={onLinkBlocked} />
@@ -435,7 +436,7 @@ export function TurnFold({
     <View style={styles.steps}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={failed ? `${label}, ${failed} failed` : label}
+        accessibilityLabel={failed ? copy.phone.conversations.conversationParts.failed2(label, failed) : label}
         accessibilityState={{ expanded: open }}
         hitSlop={space.xs}
         onPress={() => setOpen(!open)}

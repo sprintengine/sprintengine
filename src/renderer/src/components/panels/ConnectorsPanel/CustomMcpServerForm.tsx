@@ -12,6 +12,7 @@ import { useCallback, useState, type ReactNode } from 'react'
 
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { Field, GhostButton, Input, OutlineButton, PrimaryButton, Select, type SelectItem } from '../../ui'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 const MCP_TRANSPORT_ITEMS: SelectItem<'stdio' | 'http'>[] = [
   { value: 'stdio', label: 'stdio' },
@@ -93,12 +94,12 @@ export function CustomMcpServerForm({ activeWorkspaceRoot }: { activeWorkspaceRo
     <section className="space-y-3 border-t border-[color:var(--border-subtle)] pt-5">
       {!addMcpOpen ? (
         <OutlineButton size="sm" onClick={() => setAddMcpOpen(true)}>
-          Add a custom MCP
+          {appCopy.panels.connectorsPanel.customMcpServerForm.addACustomMCP}
         </OutlineButton>
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Server id" htmlFor="custom-mcp-id">
+            <Field label={appCopy.panels.connectorsPanel.customMcpServerForm.serverId} htmlFor="custom-mcp-id">
               <Input
                 value={customMcpId}
                 onChange={(event) => setCustomMcpId(event.target.value)}
@@ -107,29 +108,36 @@ export function CustomMcpServerForm({ activeWorkspaceRoot }: { activeWorkspaceRo
                 className="font-mono"
               />
             </Field>
-            <Field label="Display name" htmlFor="custom-mcp-name">
+            <Field label={appCopy.panels.connectorsPanel.customMcpServerForm.displayName} htmlFor="custom-mcp-name">
               <Input
                 value={customMcpName}
                 onChange={(event) => setCustomMcpName(event.target.value)}
-                placeholder="Display name"
+                placeholder={appCopy.panels.connectorsPanel.customMcpServerForm.displayName}
                 size="md"
               />
             </Field>
-            <Field label="Transport" htmlFor="custom-mcp-transport">
+            <Field label={appCopy.panels.connectorsPanel.customMcpServerForm.transport} htmlFor="custom-mcp-transport">
               <Select
-                ariaLabel="Transport"
+                ariaLabel={appCopy.panels.connectorsPanel.customMcpServerForm.transport}
                 items={MCP_TRANSPORT_ITEMS}
                 value={customMcpTransport}
                 onChange={setCustomMcpTransport}
                 className="h-control-md w-full"
               />
             </Field>
-            <Field label={customMcpTransport === 'stdio' ? 'Command' : 'URL'} htmlFor="custom-mcp-endpoint">
+            <Field
+              label={
+                customMcpTransport === 'stdio'
+                  ? appCopy.panels.connectorsPanel.customMcpServerForm.command
+                  : appCopy.panels.connectorsPanel.customMcpServerForm.uRL
+              }
+              htmlFor="custom-mcp-endpoint"
+            >
               {customMcpTransport === 'stdio' ? (
                 <Input
                   value={customMcpCommand}
                   onChange={(event) => setCustomMcpCommand(event.target.value)}
-                  placeholder="e.g. npx"
+                  placeholder={appCopy.panels.connectorsPanel.customMcpServerForm.eGNpx}
                   size="md"
                   className="font-mono"
                 />
@@ -144,22 +152,28 @@ export function CustomMcpServerForm({ activeWorkspaceRoot }: { activeWorkspaceRo
               )}
             </Field>
             <div className="sm:col-span-2">
-              <Field label="Args (space separated)" htmlFor="custom-mcp-args">
+              <Field
+                label={appCopy.panels.connectorsPanel.customMcpServerForm.argsSpaceSeparated}
+                htmlFor="custom-mcp-args"
+              >
                 <Input
                   value={customMcpArgs}
                   onChange={(event) => setCustomMcpArgs(event.target.value)}
-                  placeholder="e.g. -y @vendor/server"
+                  placeholder={appCopy.panels.connectorsPanel.customMcpServerForm.eGYVendorServer}
                   size="md"
                   className="font-mono"
                 />
               </Field>
             </div>
             <div className="sm:col-span-2">
-              <Field label="Required env vars (comma separated)" htmlFor="custom-mcp-env">
+              <Field
+                label={appCopy.panels.connectorsPanel.customMcpServerForm.requiredEnvVarsCommaSeparated}
+                htmlFor="custom-mcp-env"
+              >
                 <Input
                   value={customMcpEnv}
                   onChange={(event) => setCustomMcpEnv(event.target.value)}
-                  placeholder="API_KEY, ANOTHER_VAR"
+                  placeholder={appCopy.panels.connectorsPanel.customMcpServerForm.aPIKEYANOTHERVAR}
                   size="md"
                   className="font-mono"
                 />
@@ -174,10 +188,10 @@ export function CustomMcpServerForm({ activeWorkspaceRoot }: { activeWorkspaceRo
                 setMcpMessage(null)
               }}
             >
-              Cancel
+              {appCopy.panels.connectorsPanel.customMcpServerForm.cancel}
             </GhostButton>
             <PrimaryButton size="sm" onClick={addCustomMcp}>
-              Add server
+              {appCopy.panels.connectorsPanel.customMcpServerForm.addServer}
             </PrimaryButton>
           </div>
         </>

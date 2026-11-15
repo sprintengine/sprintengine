@@ -1,3 +1,5 @@
+import { copy } from "../../../../src/shared/copy";
+
 export type PairingParseResult =
   | {
       ok: true;
@@ -36,7 +38,7 @@ export function parsePairingPayload(payload: string): PairingParseResult {
   if (!normalizedPayload) {
     return {
       ok: false,
-      message: "Paste the pairing link from Sprint Engine Studio.",
+      message: copy.phone.pairing.pairingPayload.pasteThePairingLinkFrom,
     };
   }
 
@@ -82,14 +84,14 @@ function parseTailnetUrlPayload(url: URL): PairingParseResult {
   const endpoint = readParam(url, "endpoint");
   const pairingToken = readParam(url, "token");
   if (!endpoint) {
-    return { ok: false, message: "The pairing link has no endpoint." };
+    return { ok: false, message: copy.phone.pairing.pairingPayload.thePairingLinkHasNo };
   }
   if (!pairingToken) {
-    return { ok: false, message: "The pairing link has no pairing code." };
+    return { ok: false, message: copy.phone.pairing.pairingPayload.thePairingLinkHasNo2 };
   }
   const baseUrl = tailnetEndpointBaseUrl(endpoint);
   if (!baseUrl) {
-    return { ok: false, message: "The pairing link's endpoint isn't a valid host and port." };
+    return { ok: false, message: copy.phone.pairing.pairingPayload.thePairingLinkSEndpoint };
   }
   return { ok: true, tailnet: { endpoint, baseUrl, pairingToken } };
 }

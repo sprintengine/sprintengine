@@ -12,6 +12,7 @@ import { monoFontFamily } from "../../theme/fonts";
 import { radius, space, type Theme, typography } from "../../theme/tokens";
 import { createMobileSessionFromTailnetPairing } from "./pairingSession";
 import { isPairingDeepLink, parsePairingPayload, type TailnetPairingPayload } from "./pairingPayload";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 interface PairingScreenProps {
   onCancel: () => void;
@@ -141,16 +142,14 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
         {/* A task screen, not a brand moment: one title, one line of where the
             link comes from, the link field in a card. */}
         <View style={styles.header}>
-          <Text accessibilityRole="header" style={styles.title}>Pair this phone</Text>
-          <Text style={styles.subtitle}>
-            Scan the square in Studio → Settings → Remote, or tap or paste its link. Both devices need Tailscale.
-          </Text>
+          <Text accessibilityRole="header" style={styles.title}>{appCopy.phone.pairing.pairingScreen.pairThisPhone}</Text>
+          <Text style={styles.subtitle}>{appCopy.phone.pairing.pairingScreen.scanTheSquareInStudio}</Text>
         </View>
 
         <Card>
         <TextInput
           ref={payloadInputRef}
-          accessibilityLabel="Pairing link"
+          accessibilityLabel={appCopy.phone.pairing.pairingScreen.pairingLink}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
@@ -159,7 +158,7 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
             setPairingInput(value);
             if (errorMessage) setErrorMessage(null);
           }}
-          placeholder="sprintengine-tailnet://pair?…"
+          placeholder={appCopy.phone.pairing.pairingScreen.sprintengineTailnetPair}
           placeholderTextColor={colors.textSubtle}
           style={styles.pairingInput}
           value={pairingInput}
@@ -175,7 +174,7 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
           {/* The camera leads: the desktop is usually in front of you, and a
               scanned link lands in the field above like a pasted one. */}
           <PrimaryButton
-            label="Scan Studio’s code"
+            label={appCopy.phone.pairing.pairingScreen.scanStudioSCode}
             onPress={() => {
               setErrorMessage(null);
               setScanning(true);
@@ -183,12 +182,12 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
             disabled={isPairing}
           />
           <PrimaryButton
-            label={isPairing ? "Pairing…" : "Pair phone"}
+            label={isPairing ? appCopy.phone.pairing.pairingScreen.pairing : appCopy.phone.pairing.pairingScreen.pairPhone}
             onPress={handleConnect}
             variant="secondary"
             disabled={!canConnect}
           />
-          <PrimaryButton label="Cancel" onPress={onCancel} variant="ghost" disabled={isPairing} />
+          <PrimaryButton label={appCopy.phone.pairing.pairingScreen.cancel} onPress={onCancel} variant="ghost" disabled={isPairing} />
         </View>
         </Card>
       </View>
@@ -197,17 +196,15 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
           and takes over the screen until the user answers. */}
       <BottomSheet
         onClose={() => setPendingConfirmation(null)}
-        title="Pair over your tailnet?"
+        title={appCopy.phone.pairing.pairingScreen.pairOverYourTailnet}
         visible={pendingConfirmation !== null}
       >
-        <Text style={styles.confirmBody}>
-          Pairs directly with a desktop on your tailnet. Confirm only if it&apos;s yours.
-        </Text>
-        <Text accessibilityLabel="Tailnet endpoint" style={styles.confirmOrigin} numberOfLines={1}>
+        <Text style={styles.confirmBody}>{appCopy.phone.pairing.pairingScreen.pairsDirectlyWithADesktop}</Text>
+        <Text accessibilityLabel={appCopy.phone.pairing.pairingScreen.tailnetEndpoint} style={styles.confirmOrigin} numberOfLines={1}>
           {pendingConfirmation?.endpoint}
         </Text>
         <PrimaryButton
-          label={isPairing ? "Pairing…" : "Confirm desktop"}
+          label={isPairing ? appCopy.phone.pairing.pairingScreen.pairing : appCopy.phone.pairing.pairingScreen.confirmDesktop}
           onPress={async () => {
             setPendingConfirmation(null);
             if (!parsed.ok) {
@@ -218,7 +215,7 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
           disabled={isPairing}
         />
         <PrimaryButton
-          label="Cancel"
+          label={appCopy.phone.pairing.pairingScreen.cancel}
           variant="secondary"
           onPress={() => setPendingConfirmation(null)}
           disabled={isPairing}

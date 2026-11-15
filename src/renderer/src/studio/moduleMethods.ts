@@ -15,6 +15,7 @@ import {
   type ModuleServiceParams,
 } from '../modules/renderer-host'
 import { windowStudioClient } from './windowStudioClient'
+import { copy } from '../../../shared/copy'
 
 // A module's renderer half calls its own declared methods over the window's
 // Studio connection: `module.read` for a read, `module.operate` for an
@@ -49,7 +50,7 @@ function refusal(error: unknown): Answer {
 /** One call over a client: the protocol's entry for its access, the module's answer as it came. */
 export async function callModuleMethod(client: StudioClient, call: ModuleMethodCall): Promise<Answer> {
   if (!client.supports(STUDIO_MODULES_CAPABILITY))
-    return { ok: false, code: 'unavailable', message: 'This Studio does not serve module methods.' }
+    return { ok: false, code: 'unavailable', message: copy.studio.moduleMethods.thisStudioDoesNotServe }
   const named = {
     moduleId: call.moduleId,
     method: call.method,
@@ -69,7 +70,7 @@ export function windowModuleMethodCaller(api?: Parameters<typeof windowStudioCli
   return async (call) => {
     const windowApi = api ?? (typeof window === 'undefined' ? undefined : window.api)
     if (typeof windowApi?.studioWindowTicket !== 'function')
-      return { ok: false, code: 'unavailable', message: 'This window has no Studio connection.' }
+      return { ok: false, code: 'unavailable', message: copy.studio.moduleMethods.thisWindowHasNoStudio }
     let client: StudioClient
     try {
       client = await windowStudioClient(windowApi)

@@ -37,6 +37,7 @@ import { SkillsDiscover } from './SkillsDiscover'
 import { pluralSkills } from './skillsSurfaceModel'
 import { isImeKey } from '../../../../../utils/imeKey'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 type AddPhase =
   | { kind: 'idle' }
@@ -57,8 +58,8 @@ type AddPhase =
  */
 export function mergedIntoBuiltinNotice(source: SkillSource): { title: string; hint: string } {
   return {
-    title: `That is already the ${source.name} tab.`,
-    hint: `${source.repo} is built in, so nothing was added. Its list was refreshed.`,
+    title: appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.thatIsAlreadyTheTab(source.name),
+    hint: appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.isBuiltInSoNothing(source.repo),
   }
 }
 
@@ -104,7 +105,10 @@ export function AddSkillSourceModal({
     const value = repo.trim()
     if (value.length === 0) return
     if (typeof agentSkillsApi.skillsAddSource !== 'function') {
-      setPhase({ kind: 'failed', message: 'Restart the app to use skills.' })
+      setPhase({
+        kind: 'failed',
+        message: appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.restartTheAppToUse,
+      })
       return
     }
     setPhase({ kind: 'scanning' })
@@ -143,7 +147,11 @@ export function AddSkillSourceModal({
 
   return (
     <Modal open={open} onClose={onClose} labelledBy="add-skill-source-title" size="standard">
-      <ModalHeader titleId="add-skill-source-title" title="Add a source from a git repository" onClose={onClose} />
+      <ModalHeader
+        titleId="add-skill-source-title"
+        title={appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.addASourceFromA}
+        onClose={onClose}
+      />
       <ModalBody className="flex flex-col gap-4">
         <Input
           value={repo}
@@ -156,8 +164,8 @@ export function AddSkillSourceModal({
           }}
           // `owner/repo` is github.com; any other git host is named by the
           // address its Clone button gives, https or ssh.
-          placeholder="owner/repo, or any git clone address"
-          aria-label="Repository"
+          placeholder={appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.ownerRepoOrAnyGit}
+          aria-label={appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.repository}
           className="font-mono"
         />
 
@@ -169,7 +177,11 @@ export function AddSkillSourceModal({
         ) : null}
 
         {phase.kind === 'failed' ? (
-          <InlineNotice tone="error" title="That repository was not added." hint={phase.message} />
+          <InlineNotice
+            tone="error"
+            title={appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.thatRepositoryWasNotAdded}
+            hint={phase.message}
+          />
         ) : null}
 
         {phase.kind === 'added' && phase.mergedIntoBuiltin ? (
@@ -219,13 +231,13 @@ export function AddSkillSourceModal({
               </GhostButton>
             )}
             <PrimaryButton size="md" onClick={onClose}>
-              Done
+              {appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.done}
             </PrimaryButton>
           </>
         ) : (
           <>
             <GhostButton size="md" onClick={onClose}>
-              Cancel
+              {appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.cancel}
             </GhostButton>
             <PrimaryButton
               size="md"
@@ -255,22 +267,30 @@ function ScanSummary({ scan }: { scan: ScanResult }): JSX.Element {
       : pluralSkills(scan.skills.length)
   return (
     <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-meta">
-      <dt className="text-[color:var(--text-muted)]">Found</dt>
+      <dt className="text-[color:var(--text-muted)]">
+        {appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.found}
+      </dt>
       <dd className="text-[color:var(--text-strong)]">{SOURCE_SHAPE_LABEL[scanShape(scan)]}</dd>
       {plugins.length > 0 ? (
         <>
-          <dt className="text-[color:var(--text-muted)]">Plugins</dt>
+          <dt className="text-[color:var(--text-muted)]">
+            {appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.plugins}
+          </dt>
           <dd className="text-[color:var(--text-strong)]">
             {plugins.length}
             {linked > 0 ? ` · ${linked} of them link to other repositories, read when opened` : ''}
           </dd>
         </>
       ) : null}
-      <dt className="text-[color:var(--text-muted)]">Skills</dt>
+      <dt className="text-[color:var(--text-muted)]">
+        {appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.skills}
+      </dt>
       <dd className="text-[color:var(--text-strong)]">{skills}</dd>
       {servers > 0 ? (
         <>
-          <dt className="text-[color:var(--text-muted)]">MCP servers</dt>
+          <dt className="text-[color:var(--text-muted)]">
+            {appCopy.workspace.globalSurface.extensions.skills.addSkillSourceModal.mCPServers}
+          </dt>
           <dd className="text-[color:var(--text-strong)]">{servers}</dd>
         </>
       ) : null}

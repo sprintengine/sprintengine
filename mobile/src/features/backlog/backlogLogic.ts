@@ -5,6 +5,7 @@ import {
   StudioBacklogItemStatus,
   StudioBacklogItemType,
 } from "../../../../packages/studio-protocol/src/public";
+import { copy } from "../../../../src/shared/copy";
 
 export interface BacklogRowItem extends StudioBacklogItem {
   workspacePath: string;
@@ -648,26 +649,26 @@ export function selectBacklogEmptyState({
   hasBacklogGroup?: boolean;
 }): { title: string; body: string } {
   if (errorMessage) {
-    return { title: "Backlog unavailable", body: errorMessage };
+    return { title: copy.phone.backlog.backlogLogic.backlogUnavailable, body: errorMessage };
   }
   if (isLoading) {
-    return { title: "Loading backlog", body: "Fetching backlog items from your desktop." };
+    return { title: copy.phone.backlog.backlogLogic.loadingBacklog, body: copy.phone.backlog.backlogLogic.fetchingBacklogItemsFromYour };
   }
   if (projectName && !hasBacklogGroup) {
     return {
-      title: "No backlog for this project",
-      body: `The desktop sent no backlog for ${projectName}. Try another project in the header.`,
+      title: copy.phone.backlog.backlogLogic.noBacklogForThisProject,
+      body: copy.phone.backlog.backlogLogic.theDesktopSentNoBacklog(projectName),
     };
   }
   if (projectName) {
     return {
-      title: "No backlog items",
-      body: `${projectName} has none yet. Add them under backlog/ on the desktop, or switch project.`,
+      title: copy.phone.backlog.backlogLogic.noBacklogItems,
+      body: copy.phone.backlog.backlogLogic.hasNoneYetAddThem(projectName),
     };
   }
   return {
-    title: "No backlog items",
-    body: "Add items under backlog/ on the desktop and they'll show here.",
+    title: copy.phone.backlog.backlogLogic.noBacklogItems,
+    body: copy.phone.backlog.backlogLogic.addItemsUnderBacklogOn,
   };
 }
 

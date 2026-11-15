@@ -1,4 +1,5 @@
 import { showToast } from '../store/toastStore'
+import { copy as appCopy } from '../../../shared/copy'
 
 /** What to copy: the text itself, or a function that builds it at click time. */
 export type ClipboardTextSource = string | (() => string | Promise<string>)
@@ -80,10 +81,10 @@ export async function copyToClipboardWithToast(
     const text = typeof source === 'function' ? await source() : source
     const html = typeof options.html === 'function' ? options.html() : options.html
     if (html === undefined || !(await writeRichText(text, html))) await writePlainText(text)
-    if (options.success !== 'silent') showToast({ tone: 'good', title: 'Copied' })
+    if (options.success !== 'silent') showToast({ tone: 'good', title: appCopy.utils.copyToClipboardWithToast.copied })
     return true
   } catch {
-    showToast({ tone: 'error', title: 'Could not copy to clipboard' })
+    showToast({ tone: 'error', title: appCopy.utils.copyToClipboardWithToast.couldNotCopyToClipboard })
     return false
   }
 }

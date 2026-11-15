@@ -10,6 +10,7 @@ import {
 import { SubagentIcon } from '../../../panels/agentChat/subagentIcon'
 import { LaneGlyph } from '../../../panels/agentChat/subagentStatus'
 import { PanelCard, PanelRow } from './PanelRow'
+import { copy } from '../../../../../../shared/copy'
 
 // The panel's way around a family: a card up to the parent of the agent in view,
 // and Subagents, its own children, nothing at all when it has none. It reads
@@ -46,8 +47,12 @@ function SubagentRow({ member }: { member: SubagentFamilyMember }) {
       meta={
         <>
           {member.source.kind === 'chat' && member.source.subagent.readOnly ? (
-            <Badge tone="neutral" ariaLabel="Read-only: it cannot change anything" className="whitespace-nowrap">
-              Read-only
+            <Badge
+              tone="neutral"
+              ariaLabel={copy.workspace.pane.panel.chatPanelSubagents.readOnlyItCannotChange}
+              className="whitespace-nowrap"
+            >
+              {copy.workspace.pane.panel.chatPanelSubagents.readOnly}
             </Badge>
           ) : null}
           <ChevronGlyph className="icon-xs" />
@@ -85,7 +90,7 @@ export function ChatPanelSubagents({ family }: { family: SubagentFamily }) {
   // to find out.
   if (family.children.length === 0) return family.hasMore ? <LoadEarlier family={family} /> : null
   return (
-    <Section title="Subagents" inset="flush">
+    <Section title={copy.workspace.pane.panel.chatPanelSubagents.subagents} inset="flush">
       <PanelCard>
         {subagentsInOrder(family.children).map((member) => (
           <SubagentRow key={member.key} member={member} />
@@ -113,7 +118,9 @@ export function ChatPanelParentLink({ parent }: { parent: SubagentFamilyParent }
           label={<TruncatedText as="span" text={title} />}
           detail={<TruncatedText as="span" text={main ? parent.name : parent.relation} />}
           onClick={parent.open}
-          ariaLabel={`Back to ${main ? `the main chat, ${parent.name}` : parent.name}`}
+          ariaLabel={copy.workspace.pane.panel.chatPanelSubagents.backTo(
+            main ? copy.workspace.pane.panel.chatPanelSubagents.theMainChat(parent.name) : parent.name,
+          )}
         />
       </PanelCard>
     </div>

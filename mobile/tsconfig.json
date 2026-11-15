@@ -14,6 +14,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "../packages/client-runtime/src/public.ts",
-    "../packages/conversation-timeline/src/public.ts"
+    "../packages/conversation-timeline/src/public.ts",
+    "../src/shared/copy/*.ts"
   ]
 }

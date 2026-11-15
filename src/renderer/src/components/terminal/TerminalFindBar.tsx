@@ -3,6 +3,7 @@ import React from 'react'
 import { TERMINAL_CHROME_ATTRIBUTE } from '../../utils/keyboard'
 import { FindBar } from '../find/FindBar'
 import type { TerminalFind } from '../../hooks/useTerminalFind'
+import { copy as appCopy } from '../../../../shared/copy'
 
 /**
  * Find in this pane.
@@ -24,7 +25,7 @@ export function TerminalFindBar({ find }: { find: TerminalFind }) {
 
   return (
     <FindBar
-      label="Find in terminal"
+      label={appCopy.terminal.terminalFindBar.findInTerminal}
       query={find.query}
       onQueryChange={find.setQuery}
       status={status}

@@ -49,6 +49,7 @@ import {
 } from '../../ui'
 import { DEFAULT_CHANGELIST_ID, orderedChangelists, type Changelist } from '../../../../../shared/git/changelists'
 import type { GitChangeGroup, GitChangeRow } from './gitChangesModel'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 export type ChangeRowMenuEntry =
   | { kind: 'divider'; id: string }
@@ -160,7 +161,7 @@ function changelistEntries(
     {
       kind: 'item',
       id: 'new-changelist',
-      label: 'New changelist…',
+      label: appCopy.panels.git.changeRowMenu.newChangelist,
       icon: <NewChangelistGlyph className="icon-xs" />,
       disabled: busy,
       onSelect: context.onNewChangelist,
@@ -171,7 +172,9 @@ function changelistEntries(
       // The default list is not deletable, and the item says so by being
       // disabled rather than by vanishing: a menu whose length changes with the
       // row is a menu nobody learns the shape of.
-      label: isDefault ? 'Delete changelist' : `Delete changelist “${current?.name ?? ''}”`,
+      label: isDefault
+        ? appCopy.panels.git.changeRowMenu.deleteChangelist
+        : appCopy.panels.git.changeRowMenu.deleteChangelist2(current?.name ?? ''),
       icon: <DeleteChangelistGlyph className="icon-xs" />,
       danger: !isDefault,
       disabled: busy || isDefault || !current,
@@ -180,7 +183,7 @@ function changelistEntries(
     {
       kind: 'item',
       id: 'edit-changelist',
-      label: 'Edit changelist…',
+      label: appCopy.panels.git.changeRowMenu.editChangelist,
       icon: <EditChangelistGlyph className="icon-xs" />,
       ...(options.showEditHint ? { shortcut: 'F2' } : {}),
       disabled: busy || !current,
@@ -190,13 +193,13 @@ function changelistEntries(
       ? {
           kind: 'submenu',
           id: 'set-active-changelist',
-          label: 'Set active changelist',
+          label: appCopy.panels.git.changeRowMenu.setActiveChangelist,
           icon: menuIconSlot(),
           disabled: busy,
           items: lists.map((list) => ({
             kind: 'item' as const,
             id: `set-active-${list.id}`,
-            label: list.active ? `${list.name} (active)` : list.name,
+            label: list.active ? appCopy.panels.git.changeRowMenu.active(list.name) : list.name,
             icon: menuIconSlot(),
             disabled: busy || list.active,
             onSelect: () => context.onSetActiveChangelist(list.id),
@@ -205,7 +208,7 @@ function changelistEntries(
       : {
           kind: 'item',
           id: 'set-active-changelist',
-          label: 'Set active changelist',
+          label: appCopy.panels.git.changeRowMenu.setActiveChangelist,
           icon: menuIconSlot(),
           disabled: true,
           onSelect: () => {},
@@ -258,7 +261,7 @@ function moveEntry(context: ChangelistActions, busy: boolean, label: string, una
       ...lists.map((list) => ({
         kind: 'item' as const,
         id: `move-to-${list.id}`,
-        label: list.active ? `${list.name} (active)` : list.name,
+        label: list.active ? appCopy.panels.git.changeRowMenu.active(list.name) : list.name,
         icon: menuIconSlot(),
         disabled: busy || list.id === context.currentChangelistId,
         onSelect: () => context.onMoveToChangelist(list.id),
@@ -267,7 +270,7 @@ function moveEntry(context: ChangelistActions, busy: boolean, label: string, una
       {
         kind: 'item' as const,
         id: 'move-to-new-changelist',
-        label: 'New changelist…',
+        label: appCopy.panels.git.changeRowMenu.newChangelist,
         icon: <NewChangelistGlyph className="icon-xs" />,
         disabled: busy,
         onSelect: context.onMoveToNewChangelist,
@@ -283,7 +286,9 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'item',
       id: 'commit-files',
-      label: many ? `Commit ${context.selectedCount} selected files…` : 'Commit file…',
+      label: many
+        ? appCopy.panels.git.changeRowMenu.commitSelectedFiles(context.selectedCount)
+        : appCopy.panels.git.changeRowMenu.commitFile,
       icon: menuIconSlot(),
       disabled: context.busy,
       onSelect: context.onCommitFiles,
@@ -292,10 +297,10 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
       kind: 'item',
       id: 'discard',
       label: context.partialOnly
-        ? `Discard changes — ${PARTIAL_ROW_REASON}`
+        ? appCopy.panels.git.changeRowMenu.discardChanges(PARTIAL_ROW_REASON)
         : many
-          ? `Discard changes in ${context.selectedCount} selected files…`
-          : 'Discard changes…',
+          ? appCopy.panels.git.changeRowMenu.discardChangesInSelectedFiles(context.selectedCount)
+          : appCopy.panels.git.changeRowMenu.discardChanges2,
       icon: <RollbackGlyph className="icon-xs" />,
       ...(context.partialOnly ? {} : { shortcut: '⌥⌘Z' }),
       danger: !context.partialOnly,
@@ -311,7 +316,7 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'item',
       id: 'show-diff',
-      label: 'Show diff',
+      label: appCopy.panels.git.changeRowMenu.showDiff,
       icon: <ShowDiffGlyph className="icon-xs" />,
       shortcut: '⌘D',
       onSelect: context.onShowDiff,
@@ -319,7 +324,7 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'item',
       id: 'open-in-editor',
-      label: 'Open in editor',
+      label: appCopy.panels.git.changeRowMenu.openInEditor,
       icon: <OpenInEditorGlyph className="icon-xs" />,
       shortcut: '⌘↓',
       onSelect: context.onOpenInEditor,
@@ -327,27 +332,31 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'submenu',
       id: 'copy-path',
-      label: many ? `Copy ${context.selectedCount} paths / references` : 'Copy path / reference',
+      label: many
+        ? appCopy.panels.git.changeRowMenu.copyPathsReferences(context.selectedCount)
+        : appCopy.panels.git.changeRowMenu.copyPathReference,
       icon: menuIconSlot(),
       items: [
         {
           kind: 'item',
           id: 'copy-absolute',
-          label: many ? 'Absolute paths' : 'Absolute path',
+          label: many ? appCopy.panels.git.changeRowMenu.absolutePaths : appCopy.panels.git.changeRowMenu.absolutePath,
           icon: menuIconSlot(),
           onSelect: () => context.onCopyPath('absolute'),
         },
         {
           kind: 'item',
           id: 'copy-relative',
-          label: many ? 'Paths from repository root' : 'Path from repository root',
+          label: many
+            ? appCopy.panels.git.changeRowMenu.pathsFromRepositoryRoot
+            : appCopy.panels.git.changeRowMenu.pathFromRepositoryRoot,
           icon: menuIconSlot(),
           onSelect: () => context.onCopyPath('relative'),
         },
         {
           kind: 'item',
           id: 'copy-filename',
-          label: many ? 'File names' : 'File name',
+          label: many ? appCopy.panels.git.changeRowMenu.fileNames : appCopy.panels.git.changeRowMenu.fileName,
           icon: menuIconSlot(),
           onSelect: () => context.onCopyPath('filename'),
         },
@@ -358,10 +367,10 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
       kind: 'item',
       id: 'delete-files',
       label: context.partialOnly
-        ? `Delete — ${PARTIAL_ROW_REASON}`
+        ? appCopy.panels.git.changeRowMenu.delete(PARTIAL_ROW_REASON)
         : many
-          ? `Delete ${context.selectedCount} selected files…`
-          : 'Delete…',
+          ? appCopy.panels.git.changeRowMenu.deleteSelectedFiles(context.selectedCount)
+          : appCopy.panels.git.changeRowMenu.delete2,
       icon: menuIconSlot(),
       ...(context.partialOnly ? {} : { shortcut: '⌫' }),
       danger: !context.partialOnly,
@@ -375,7 +384,9 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
           {
             kind: 'item' as const,
             id: 'add-to-git',
-            label: many ? `Add ${context.selectedCount} selected files to git` : 'Add to git',
+            label: many
+              ? appCopy.panels.git.changeRowMenu.addSelectedFilesToGit(context.selectedCount)
+              : appCopy.panels.git.changeRowMenu.addToGit,
             icon: menuIconSlot(),
             shortcut: '⌥⌘A',
             disabled: context.busy,
@@ -388,7 +399,9 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'item',
       id: 'create-patch',
-      label: many ? `Create patch from ${context.selectedCount} selected files…` : 'Create patch from changes…',
+      label: many
+        ? appCopy.panels.git.changeRowMenu.createPatchFromSelectedFiles(context.selectedCount)
+        : appCopy.panels.git.changeRowMenu.createPatchFromChanges,
       icon: <CreatePatchGlyph className="icon-xs" />,
       disabled: context.busy,
       onSelect: context.onCreatePatch,
@@ -396,7 +409,7 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'item',
       id: 'copy-as-patch',
-      label: 'Copy as patch',
+      label: appCopy.panels.git.changeRowMenu.copyAsPatch,
       icon: menuIconSlot(),
       disabled: context.busy,
       onSelect: context.onCopyAsPatch,
@@ -407,7 +420,7 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
       // "all", because it is `git stash push` on the WHOLE repository — not on
       // the row the menu was opened on, and not on the selection the items
       // above it name. The label was the only thing that said otherwise.
-      label: 'Stash all changes…',
+      label: appCopy.panels.git.changeRowMenu.stashAllChanges,
       icon: <StashGlyph className="icon-xs" />,
       disabled: context.busy,
       onSelect: context.onStash,
@@ -416,7 +429,7 @@ export function buildChangeRowMenu(context: ChangeRowMenuContext): ChangeRowMenu
     {
       kind: 'item',
       id: 'refresh',
-      label: 'Refresh',
+      label: appCopy.panels.git.changeRowMenu.refresh,
       icon: <RefreshIcon className="icon-xs" />,
       disabled: context.busy,
       onSelect: context.onRefresh,
@@ -462,7 +475,7 @@ export function buildChangeGroupMenu(context: ChangeGroupMenuContext): ChangeRow
           {
             kind: 'item' as const,
             id: 'commit-changelist',
-            label: `Commit ${context.group.title}…`,
+            label: appCopy.panels.git.changeRowMenu.commit(context.group.title),
             icon: menuIconSlot(),
             disabled: context.busy || empty,
             onSelect: context.onCommitChangelist,
@@ -470,7 +483,7 @@ export function buildChangeGroupMenu(context: ChangeGroupMenuContext): ChangeRow
           {
             kind: 'item' as const,
             id: 'show-changelist-diff',
-            label: `Show diff for ${context.group.title}`,
+            label: appCopy.panels.git.changeRowMenu.showDiffFor(context.group.title),
             icon: <ShowDiffGlyph className="icon-xs" />,
             // The hint is legal here for the same reason the row menu's is: ⌘D
             // works with this menu CLOSED, on a focused group band, and the
@@ -487,7 +500,7 @@ export function buildChangeGroupMenu(context: ChangeGroupMenuContext): ChangeRow
     {
       kind: 'item',
       id: 'stage-all',
-      label: `Stage all in ${context.group.title}`,
+      label: appCopy.panels.git.changeRowMenu.stageAllIn(context.group.title),
       icon: menuIconSlot(),
       disabled: context.busy || empty,
       onSelect: context.onStageAll,
@@ -495,7 +508,7 @@ export function buildChangeGroupMenu(context: ChangeGroupMenuContext): ChangeRow
     {
       kind: 'item',
       id: 'unstage-all',
-      label: `Unstage all in ${context.group.title}`,
+      label: appCopy.panels.git.changeRowMenu.unstageAllIn(context.group.title),
       icon: menuIconSlot(),
       disabled: context.busy || empty,
       onSelect: context.onUnstageAll,
@@ -503,7 +516,7 @@ export function buildChangeGroupMenu(context: ChangeGroupMenuContext): ChangeRow
     {
       kind: 'item',
       id: 'discard-all',
-      label: `Discard all in ${context.group.title}…`,
+      label: appCopy.panels.git.changeRowMenu.discardAllIn(context.group.title),
       icon: <RollbackGlyph className="icon-xs" />,
       danger: true,
       disabled: context.busy || empty,
@@ -514,7 +527,7 @@ export function buildChangeGroupMenu(context: ChangeGroupMenuContext): ChangeRow
     {
       kind: 'item',
       id: 'refresh',
-      label: 'Refresh',
+      label: appCopy.panels.git.changeRowMenu.refresh,
       icon: <RefreshIcon className="icon-xs" />,
       disabled: context.busy,
       onSelect: context.onRefresh,

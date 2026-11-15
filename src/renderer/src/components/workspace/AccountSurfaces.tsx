@@ -8,6 +8,7 @@ import { SessionsPopover, type SessionGroup, type SessionItem } from './topbar/S
 import { useTailnetPresence } from './topbar/useTailnetPresence'
 import { useEnvironments } from '../../hooks/useEnvironments'
 import type { AccountMenuRow, AccountBadge } from './SidebarAccountBar'
+import { copy } from '../../../../shared/copy'
 
 // Remote and Sessions, behind the avatar (owner ruling 2026-11-07). The account
 // menu closes as a row is pressed, so what the row opens cannot hang off the
@@ -93,13 +94,19 @@ export function useAccountSurfaces({
       ? {
           count: remoteState.requestCount,
           tone: 'warn',
-          label: remoteState.requestCount === 1 ? '1 pair request' : `${remoteState.requestCount} pair requests`,
+          label:
+            remoteState.requestCount === 1
+              ? copy.workspace.accountSurfaces.n1PairRequest
+              : copy.workspace.accountSurfaces.pairRequests(remoteState.requestCount),
         }
       : sessions.length > 0
         ? {
             count: sessions.length,
             tone: sessionsTone,
-            label: sessions.length === 1 ? '1 session running' : `${sessions.length} sessions running`,
+            label:
+              sessions.length === 1
+                ? copy.workspace.accountSurfaces.n1SessionRunning
+                : copy.workspace.accountSurfaces.sessionsRunning(sessions.length),
           }
         : null
 
@@ -137,7 +144,12 @@ export function AccountSurfaces({
   return (
     <>
       {sessionsOpen && anchor ? (
-        <PointerPopover {...anchor} ariaLabel="Sessions" popupRole="dialog" onClose={onCloseSessions}>
+        <PointerPopover
+          {...anchor}
+          ariaLabel={copy.workspace.accountSurfaces.sessions}
+          popupRole="dialog"
+          onClose={onCloseSessions}
+        >
           <SessionsPopover
             items={sessions}
             workspaceOrder={workspaceOrder}
@@ -150,7 +162,12 @@ export function AccountSurfaces({
       ) : null}
       {remoteOpen && anchor ? (
         // Rows carry their own buttons (Revoke, Review): a dialog, not a menu.
-        <PointerPopover {...anchor} ariaLabel="Remote" popupRole="dialog" onClose={onCloseRemote}>
+        <PointerPopover
+          {...anchor}
+          ariaLabel={copy.workspace.accountSurfaces.remote}
+          popupRole="dialog"
+          onClose={onCloseRemote}
+        >
           <React.Suspense fallback={null}>
             <RemotePopover
               presence={presence}

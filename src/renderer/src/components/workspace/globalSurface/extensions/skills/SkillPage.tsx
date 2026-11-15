@@ -32,6 +32,7 @@ import { extensionIconProps, skillArtwork } from '../catalogue/pluginArtwork'
 import { SkillReader } from './SkillReader'
 import { UseSkillInAgentAction } from '../UseSkillInAgentAction'
 import { sourceDisplayName, skillPluginFolder, type SkillInstallAvailability } from './skillsSurfaceModel'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 const TITLE_ID = 'skill-detail-title'
 
@@ -109,10 +110,12 @@ export function SkillPage({
       <div>
         <ModalFooter>
           <p className="mr-auto min-w-0 text-meta leading-5 text-[color:var(--text-subtle)]">
-            Installs to your home folder, for every agent CLI in every chat and project.
+            {appCopy.workspace.globalSurface.extensions.skills.skillPage.installsToYourHomeFolder}
           </p>
           {installed ? (
-            <span className="text-meta font-medium text-[color:var(--accent-primary)]">Installed</span>
+            <span className="text-meta font-medium text-[color:var(--accent-primary)]">
+              {appCopy.workspace.globalSurface.extensions.skills.skillPage.installed}
+            </span>
           ) : null}
           {installed && onRemove ? (
             <OutlineButton size="md" onClick={onRemove} disabled={installing}>
@@ -127,7 +130,7 @@ export function SkillPage({
               because the default is what almost everyone wants. */}
           {!installed && onInstallInWorkspace ? (
             <LinkButton onClick={onInstallInWorkspace} disabled={!availability.enabled || installing}>
-              This project only
+              {appCopy.workspace.globalSurface.extensions.skills.skillPage.thisProjectOnly}
             </LinkButton>
           ) : null}
           {installed ? (
@@ -202,7 +205,9 @@ function SkillFacts({
           ) : null}
         </div>
       ) : (
-        <p className="text-body text-[color:var(--text-subtle)]">No description</p>
+        <p className="text-body text-[color:var(--text-subtle)]">
+          {appCopy.workspace.globalSurface.extensions.skills.skillPage.noDescription}
+        </p>
       )}
 
       {/* A name the specification would reject is a fact about the skill, not
@@ -221,7 +226,9 @@ function SkillFacts({
       {declared.length > 0 ? <DefinitionList items={declared} layout="stack" /> : null}
 
       <section>
-        <h4 className="text-meta font-medium text-[color:var(--text-muted)]">What it may run</h4>
+        <h4 className="text-meta font-medium text-[color:var(--text-muted)]">
+          {appCopy.workspace.globalSurface.extensions.skills.skillPage.whatItMayRun}
+        </h4>
         {skill.allowedTools.length > 0 ? (
           <ul role="list" className="mt-1.5 flex flex-wrap gap-1">
             {skill.allowedTools.map((tool) => (

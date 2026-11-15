@@ -13,6 +13,7 @@ import { BranchChip, RowTooltip, WorkingElapsed } from './rowParts'
 import { ROW_SEAT_CLASS } from './rowStyle'
 import { PromptCacheMark } from '../PromptCacheMark'
 import { formatDiffCount } from '../../../utils/diffCount'
+import { copy } from '../../../../../shared/copy'
 
 /**
  * One terminal's line under a row's title (sidebar-lists-every-terminal):
@@ -151,8 +152,16 @@ export function TerminalLineView({
       {line.machineName ? (
         // The glyph alone (owner ruling 2026-09-05): the machine's full name
         // is the tooltip's, not the line's.
-        <Tooltip content={`On ${line.machineName}`} placement="bottom" wrapperClassName="flex shrink-0 items-center">
-          <span role="img" aria-label={`Remote: ${line.machineName}`} className="flex shrink-0 items-center">
+        <Tooltip
+          content={copy.workspace.sidebar.terminalLineView.on(line.machineName)}
+          placement="bottom"
+          wrapperClassName="flex shrink-0 items-center"
+        >
+          <span
+            role="img"
+            aria-label={copy.workspace.sidebar.terminalLineView.remote(line.machineName)}
+            className="flex shrink-0 items-center"
+          >
             <RemoteMachineGlyph className="icon-xs shrink-0" />
           </span>
         </Tooltip>
@@ -161,10 +170,16 @@ export function TerminalLineView({
         <BranchChip branch={line.branch} worktree={line.worktree} cwd={line.cwd} dim={dim} />
       ) : line.removed ? (
         <Tooltip
-          content={line.cwd ? `Directory removed — ${line.cwd}` : 'Directory removed'}
+          content={
+            line.cwd
+              ? copy.workspace.sidebar.terminalLineView.directoryRemoved(line.cwd)
+              : copy.workspace.sidebar.terminalLineView.directoryRemoved2
+          }
           wrapperClassName="flex shrink-0 items-center"
         >
-          <span className="shrink-0 text-micro text-[color:var(--tone-error)]">Removed</span>
+          <span className="shrink-0 text-micro text-[color:var(--tone-error)]">
+            {copy.workspace.sidebar.terminalLineView.removed}
+          </span>
         </Tooltip>
       ) : null}
       {/* Immediately after the branch and before the ±lines, because it belongs
@@ -200,7 +215,7 @@ export function TerminalLineView({
               underline="never"
               size="inherit"
               ink="quiet"
-              aria-label={`Open this agent\u2019s diff. ${diffCopy.srText}`}
+              aria-label={copy.workspace.sidebar.terminalLineView.openThisAgentSDiff(diffCopy.srText)}
               className={`shrink-0 font-mono text-micro tabular-nums ${diffCopy.dim ? 'opacity-60' : ''}`}
               onClick={(event) => {
                 event.stopPropagation()
@@ -241,27 +256,27 @@ export function TerminalLineView({
             // not what it will cost.
             line.needsInput ? (
               disambiguate ? (
-                <StatusDot tone="warn" pulse label="Needs your input" />
+                <StatusDot tone="warn" pulse label={copy.workspace.sidebar.terminalLineView.needsYourInput} />
               ) : (
-                <span className="sr-only">Needs your input</span>
+                <span className="sr-only">{copy.workspace.sidebar.terminalLineView.needsYourInput}</span>
               )
             ) : (
               <PromptCacheMark reading={line.promptCache} working={line.working} includeCold={false} />
             )
           ) : line.working ? (
             <>
-              <WorkingMark label="Agent working" />
+              <WorkingMark label={copy.workspace.sidebar.terminalLineView.agentWorking} />
               {line.workingSince !== null ? <WorkingElapsed since={line.workingSince} /> : null}
             </>
           ) : line.failed ? (
-            <StatusDot tone="error" label="Agent failed" />
+            <StatusDot tone="error" label={copy.workspace.sidebar.terminalLineView.agentFailed} />
           ) : line.needsInput ? (
             disambiguate ? (
-              <StatusDot tone="warn" pulse label="Needs your input" />
+              <StatusDot tone="warn" pulse label={copy.workspace.sidebar.terminalLineView.needsYourInput} />
             ) : (
               // The row's gold surface is the mark; a dot beside it would say
               // the same thing twice (status-dot's reject-on-sight).
-              <span className="sr-only">Needs your input</span>
+              <span className="sr-only">{copy.workspace.sidebar.terminalLineView.needsYourInput}</span>
             )
           ) : idleText ? (
             <>

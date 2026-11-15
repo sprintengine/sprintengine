@@ -21,6 +21,7 @@ import { publishDiagnosticSync } from '../../../utils/diagnostics'
 import { appUpdateKey, type AppUpdateStage } from '../../../utils/settingsUpdateBadges'
 import { useNotificationStore } from '../../../store/notificationStore'
 import { showToast, useToastStore } from '../../../store/toastStore'
+import { copy } from '../../../../../shared/copy'
 
 export const APP_UPDATE_TOAST_ID = 'app-update:ready'
 // How the last update went: its own toast, so it never replaces another the
@@ -56,7 +57,7 @@ function later(version: string | null, stage: AppUpdateStage) {
   const notNow = dismissUpdate(version, stage)
   return {
     id: 'later',
-    label: 'Later',
+    label: copy.workspace.manager.appUpdateToast.later,
     run: () => {
       notNow()
       dismiss()
@@ -92,7 +93,7 @@ function showDownloadFailed(version: string | null, message: string): void {
   showToast({
     id: APP_UPDATE_TOAST_ID,
     tone: 'warn',
-    title: 'The update did not download',
+    title: copy.workspace.manager.appUpdateToast.theUpdateDidNotDownload,
     description: message,
     onDismissPressed: dismissUpdate(version, 'offer'),
   })
@@ -101,7 +102,9 @@ function showDownloadFailed(version: string | null, message: string): void {
 function restartAction(busy: boolean) {
   return {
     id: 'restart',
-    label: busy ? 'Restarting…' : 'Restart to update',
+    label: busy
+      ? copy.workspace.manager.appUpdateToast.restarting
+      : copy.workspace.manager.appUpdateToast.restartToUpdate,
     primary: true,
     busy,
     run: () => {
@@ -123,16 +126,16 @@ export function showAppUpdateReadyToast(state: Pick<AppUpdateState, 'updateVersi
   showToast({
     id: APP_UPDATE_TOAST_ID,
     tone: 'good',
-    title: 'Update downloaded',
+    title: copy.workspace.manager.appUpdateToast.updateDownloaded,
     description: state.updateVersion
-      ? `Version ${state.updateVersion} is ready. Restart from the update button on the rail.`
-      : 'Restart from the update button on the rail.',
+      ? copy.workspace.manager.appUpdateToast.versionIsReadyRestartFrom(state.updateVersion)
+      : copy.workspace.manager.appUpdateToast.restartFromTheUpdateButton,
     onDismissPressed: dismissUpdate(state.updateVersion, 'ready'),
     actions: opensNotes
       ? [
           {
             id: 'release-notes',
-            label: 'Release notes',
+            label: copy.workspace.manager.appUpdateToast.releaseNotes,
             run: () => {
               void window.api.updateOpenReleaseNotes().catch(() => undefined)
             },
@@ -158,10 +161,10 @@ export async function restartToUpdateFromToast(
   showToast({
     id: APP_UPDATE_TOAST_ID,
     tone: 'neutral',
-    title: 'Installing update',
+    title: copy.workspace.manager.appUpdateToast.installingUpdate,
     description: installNeedsAdmin
-      ? 'Windows asks for admin permission, then Studio restarts.'
-      : 'Studio will restart in a moment…',
+      ? copy.workspace.manager.appUpdateToast.windowsAsksForAdminPermission
+      : copy.workspace.manager.appUpdateToast.studioWillRestartInA,
     autoDismissMs: false,
     actions: [restartAction(true)],
   })
@@ -180,7 +183,7 @@ function showRestartRefused(message: string): void {
   showToast({
     id: APP_UPDATE_TOAST_ID,
     tone: 'warn',
-    title: 'Update not installed',
+    title: copy.workspace.manager.appUpdateToast.updateNotInstalled,
     description: message,
     onDismissPressed: dismissUpdate(readyVersion, 'ready'),
     actions: [later(readyVersion, 'ready'), restartAction(false)],

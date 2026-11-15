@@ -19,6 +19,7 @@ import type {
 } from '../../../../shared/modules/manifest'
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
 import type { McpServerConfig } from '../../../../shared/workspace'
+import { copy as appCopy } from '../../../../shared/copy'
 
 export type ExtensionKind = 'mcp' | 'skill' | 'module'
 
@@ -213,7 +214,7 @@ function sourceNotice(kind: ExtensionKind, source: LoadedSource<unknown>): Sourc
       return {
         kind,
         tone: 'warn',
-        message: `${EXTENSION_KIND_LABEL[kind]} listing needs a newer app. Update and restart.`,
+        message: appCopy.settings.extensionsInstalled.listingNeedsANewerApp(EXTENSION_KIND_LABEL[kind]),
       }
     case 'unavailable':
       return { kind, tone: 'warn', message: source.reason }
@@ -258,7 +259,7 @@ export function deriveInstalledExtensions(input: ExtensionsInstalledInput): Exte
     notices.push({
       kind: 'module',
       tone: 'warn',
-      message: `Couldn't load ${count} module folder${count === 1 ? '' : 's'}.`,
+      message: appCopy.settings.extensionsInstalled.couldnTLoadModuleFolder(count, count === 1 ? '' : 's'),
     })
   }
 

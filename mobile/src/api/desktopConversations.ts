@@ -31,6 +31,7 @@ import {
   type DesktopStudioOptions,
   type DesktopTarget,
 } from "./desktopStudio";
+import { copy } from "../../../src/shared/copy";
 
 // The phone's chats on a paired desktop, over the desktop's Studio protocol:
 // the one connection per desktop the shared client runtime keeps
@@ -221,7 +222,7 @@ function refusalOf(error: unknown): { code?: string; message: string; retryAfter
       message: error.message,
       ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
     };
-  return { message: error instanceof Error && error.message ? error.message : "The desktop could not answer." };
+  return { message: error instanceof Error && error.message ? error.message : copy.phone.api.desktopConversations.theDesktopCouldNotAnswer };
 }
 
 /** Refused because the connection that carried it is gone for good: the request never reached an answer. */
@@ -370,7 +371,7 @@ function openStream(input: {
     const { kind: _kind, ...members } = command;
     const using = clientGeneration;
     if (!method) {
-      answered(commandId, { ok: false, code: "unsupported_command", message: "This desktop does not take that." }, using);
+      answered(commandId, { ok: false, code: "unsupported_command", message: copy.phone.api.desktopConversations.thisDesktopDoesNotTake }, using);
       return true;
     }
     client

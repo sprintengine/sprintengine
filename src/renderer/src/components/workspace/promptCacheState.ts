@@ -6,6 +6,7 @@
 import { formatRelativeMs } from '../../utils/relativeTime'
 import { formatTokenCount } from '../../utils/tokenFormat'
 import type { PromptCacheReading, PromptCacheTtl } from '../../../../shared/prompt-cache'
+import { copy } from '../../../../shared/copy'
 
 export type PromptCacheState =
   | { kind: 'warm'; remainingMs: number; recacheTokens: number | null }
@@ -88,22 +89,22 @@ export function promptCacheCopy(state: PromptCacheState, now: number): { label: 
     state.recacheTokens !== null ? `~${formatTokenCount(state.recacheTokens)} tokens` : 'the whole conversation'
   if (state.kind === 'warm') {
     return {
-      label: `Cache warm · ${span(state.remainingMs)} left`,
-      detail: `The next message reads from cache for ${span(state.remainingMs)} more.`,
+      label: copy.workspace.promptCacheState.cacheWarmLeft(span(state.remainingMs)),
+      detail: copy.workspace.promptCacheState.theNextMessageReadsFrom(span(state.remainingMs)),
     }
   }
   if (state.kind === 'expiring') {
     return {
-      label: `Cache expires in ${span(state.remainingMs)}`,
-      detail: `Then the next message re-sends ${tokens} uncached. Compacting now is cheap.`,
+      label: copy.workspace.promptCacheState.cacheExpiresIn(span(state.remainingMs)),
+      detail: copy.workspace.promptCacheState.thenTheNextMessageRe(tokens),
     }
   }
   const ago = state.expiredAt !== null ? formatRelativeMs(state.expiredAt, now) : ''
   return {
-    label: ago ? `Cache expired ${ago} ago` : 'Cache cold',
+    label: ago ? copy.workspace.promptCacheState.cacheExpiredAgo(ago) : copy.workspace.promptCacheState.cacheCold,
     // Compacting a cold cache re-reads the conversation uncached too; what it
     // buys is every message after it.
-    detail: `The next message re-sends ${tokens} uncached, a compaction included. Compacting shrinks later messages.`,
+    detail: copy.workspace.promptCacheState.theNextMessageReSends(tokens),
   }
 }
 

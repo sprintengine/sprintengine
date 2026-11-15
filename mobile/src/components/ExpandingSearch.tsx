@@ -4,6 +4,7 @@ import { Animated, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { CloseIcon, iconSize, SearchIcon } from "./glyphs";
 import { useTheme, useThemedStyles } from "../theme/ThemeProvider";
 import { space, typography, type Theme } from "../theme/tokens";
+import { copy } from "../../../src/shared/copy";
 
 /** The top bar's round buttons, which the field grows out of. */
 const DISC = 40;
@@ -78,7 +79,7 @@ export const ExpandingSearch = forwardRef<
               value={value}
             />
             <Pressable
-              accessibilityLabel="Close search"
+              accessibilityLabel={copy.phone.components.expandingSearch.closeSearch}
               accessibilityRole="button"
               hitSlop={space.md}
               onPress={onClose}

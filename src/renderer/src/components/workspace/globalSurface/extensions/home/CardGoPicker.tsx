@@ -72,6 +72,7 @@ import { DEFAULT_AGENT_SPAWN_PERMISSION_PRESET, normalizeSelectedCli } from '../
 import { useWorkspaceStore } from '../../../../../store/workspaceStore'
 import type { AgentCli, CliPermissionPreset } from '../../../../../../../shared/workspace'
 import type { HostedCard } from '../../../../../../../shared/hosted-card-feed'
+import { copy } from '../../../../../../../shared/copy'
 
 /**
  * The row the person chose, as the run carries it.
@@ -187,7 +188,7 @@ export function CardGoPicker({
   const required = cardRequiredCli(card)
   return (
     <LaunchModelPicker
-      ariaLabel={`Run ${card.title}`}
+      ariaLabel={copy.workspace.globalSurface.extensions.home.cardGoPicker.run(card.title)}
       selection={CARD_SELECTION}
       required={required ? { cli: required, missing: `This card runs on ${required}, which is not installed.` } : null}
       onChoose={onChoose}
@@ -329,7 +330,7 @@ export function LaunchModelPicker({
       effectiveReasoningFor={(cli) => effortFor(cli)}
       onSelectReasoning={(cli, next) => setEffort((held) => ({ ...held, [cli]: next }))}
       showReasoning
-      reasoningAriaLabel="Reasoning effort"
+      reasoningAriaLabel={copy.workspace.globalSurface.extensions.home.cardGoPicker.reasoningEffort}
       onSelectCli={(cli) => choose(cli, null)}
       onSelectModel={(cli, model) => choose(cli, model)}
       // The quiet line Frame 4 draws on the group heading of the runtime the

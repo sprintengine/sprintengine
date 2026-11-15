@@ -15,6 +15,7 @@ import {
   type ConversationListedThread as ConversationThread,
 } from "../../../../packages/conversation-protocol/src/public";
 import { chatWorkspaceKey, type ChatListRow } from "./conversationListLogic";
+import { copy } from "../../../../src/shared/copy";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -63,21 +64,21 @@ function addDays(base: number, days: number): number {
  */
 export function resolveSnoozePresets(now: number): SnoozePreset[] {
   const presets: SnoozePreset[] = [
-    { id: "hour", label: "In 1 hour", whenLabel: timeOfDay(now + HOUR_MS), wakeAt: now + HOUR_MS },
-    { id: "three-hours", label: "In 3 hours", whenLabel: timeOfDay(now + 3 * HOUR_MS), wakeAt: now + 3 * HOUR_MS },
+    { id: "hour", label: copy.phone.conversations.snoozeLogic.in1Hour, whenLabel: timeOfDay(now + HOUR_MS), wakeAt: now + HOUR_MS },
+    { id: "three-hours", label: copy.phone.conversations.snoozeLogic.in3Hours, whenLabel: timeOfDay(now + 3 * HOUR_MS), wakeAt: now + 3 * HOUR_MS },
   ];
   const evening = atHour(now, EVENING_HOUR);
   if (evening - now > HOUR_MS)
-    presets.push({ id: "evening", label: "This evening", whenLabel: timeOfDay(evening), wakeAt: evening });
+    presets.push({ id: "evening", label: copy.phone.conversations.snoozeLogic.thisEvening, whenLabel: timeOfDay(evening), wakeAt: evening });
   const tomorrow = atHour(addDays(now, 1), MORNING_HOUR);
-  presets.push({ id: "tomorrow", label: "Tomorrow", whenLabel: timeOfDay(tomorrow), wakeAt: tomorrow });
+  presets.push({ id: "tomorrow", label: copy.phone.conversations.snoozeLogic.tomorrow, whenLabel: timeOfDay(tomorrow), wakeAt: tomorrow });
   // The coming Monday; on a Monday, the one after.
   const daysUntilMonday = (1 - new Date(now).getDay() + 7) % 7 || 7;
   const nextWeek = atHour(addDays(now, daysUntilMonday), MORNING_HOUR);
   if (nextWeek !== tomorrow)
     presets.push({
       id: "next-week",
-      label: "Next week",
+      label: copy.phone.conversations.snoozeLogic.nextWeek,
       whenLabel: `${WEEKDAY_SHORT[new Date(nextWeek).getDay()]} ${timeOfDay(nextWeek)}`,
       wakeAt: nextWeek,
     });

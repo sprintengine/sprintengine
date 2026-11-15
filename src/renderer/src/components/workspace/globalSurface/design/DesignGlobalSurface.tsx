@@ -33,6 +33,7 @@ import {
 } from './designRailState'
 import { agentSkillsApi } from '../../../../studio/agentSkills'
 import { filesApi } from '../../../../studio/files'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The Design door (epic `design-door`, item 2002): design is a first-class
 // surface beside Extensions, Backlog and Automations. The
@@ -555,7 +556,11 @@ export default function DesignGlobalSurface(): JSX.Element {
       newCounts={newCounts}
       projectScope={
         <ProjectScopePicker
-          label={projectPath ? basenameOfPath(projectPath) : 'Choose a project'}
+          label={
+            projectPath
+              ? basenameOfPath(projectPath)
+              : appCopy.workspace.globalSurface.design.designGlobalSurface.chooseAProject
+          }
           branch={null}
           options={projectOptions}
           selectedPath={projectPath}
@@ -565,7 +570,7 @@ export default function DesignGlobalSurface(): JSX.Element {
           // folder that already exists on this disk, and cloning one would be a
           // second source the epic explicitly cut.
           importFromGit={false}
-          ariaLabel="Project this door is showing"
+          ariaLabel={appCopy.workspace.globalSurface.design.designGlobalSurface.projectThisDoorIsShowing}
         />
       }
       search={search}
@@ -595,16 +600,18 @@ export default function DesignGlobalSurface(): JSX.Element {
     !newSelected && !pointError && loadState === 'ready' && selectedEntry !== null && !selectedEntry.failure
   const bar = useMemo(
     () => ({
-      title: selectedEntry?.identity?.name ?? 'Design',
+      title: selectedEntry?.identity?.name ?? appCopy.workspace.globalSurface.design.designGlobalSurface.design,
       actions: newSelected ? (
         // The one accent-filled control on the create screen (owner ruling
         // 2026-07-30: "it will always just be pointing at a folder").
         <PrimaryButton onClick={() => void pointAtFolder()} disabled={creatingFrom !== null}>
-          Point at a folder
+          {appCopy.workspace.globalSurface.design.designGlobalSurface.pointAtAFolder}
         </PrimaryButton>
       ) : canvasShowing && selectedEntry ? (
         <>
-          <GhostButton onClick={() => void window.api.showItemInFolder(selectedEntry.path)}>Reveal</GhostButton>
+          <GhostButton onClick={() => void window.api.showItemInFolder(selectedEntry.path)}>
+            {appCopy.workspace.globalSurface.design.designGlobalSurface.reveal}
+          </GhostButton>
           <GhostButton onClick={() => void reloadBundle(selectedEntry.path)} disabled={reloadingPath !== null}>
             {reloadingPath !== null ? 'Reloading…' : 'Reload'}
           </GhostButton>
@@ -616,7 +623,7 @@ export default function DesignGlobalSurface(): JSX.Element {
 
   return (
     <GlobalSurfaceShell
-      ariaLabel="Design"
+      ariaLabel={appCopy.workspace.globalSurface.design.designGlobalSurface.design}
       bar={bar}
       controlTabContext="extensions"
       onBack={back.onBack}
@@ -714,23 +721,28 @@ function DesignSurfaceBody({
     return (
       <SurfaceCanvasState
         kind="error"
-        title="That folder is not a design system."
-        hint="Point at the folder that holds design-system.json."
+        title={appCopy.workspace.globalSurface.design.designGlobalSurface.thatFolderIsNotA}
+        hint={appCopy.workspace.globalSurface.design.designGlobalSurface.pointAtTheFolderThat}
         detail={pointError}
         onRetry={onPointAtFolder}
-        retryLabel="Choose another folder"
+        retryLabel={appCopy.workspace.globalSurface.design.designGlobalSurface.chooseAnotherFolder}
       />
     )
   }
   if (loadState === 'loading') {
-    return <SurfaceCanvasState kind="loading" label="Reading your design systems…" />
+    return (
+      <SurfaceCanvasState
+        kind="loading"
+        label={appCopy.workspace.globalSurface.design.designGlobalSurface.readingYourDesignSystems}
+      />
+    )
   }
   if (loadState === 'error') {
     return (
       <SurfaceCanvasState
         kind="error"
-        title="Couldn’t read your design system library."
-        hint="This is usually temporary."
+        title={appCopy.workspace.globalSurface.design.designGlobalSurface.couldnTReadYourDesign}
+        hint={appCopy.workspace.globalSurface.design.designGlobalSurface.thisIsUsuallyTemporary}
         detail={loadError ?? undefined}
         onRetry={onRetry}
       />
@@ -742,16 +754,26 @@ function DesignSurfaceBody({
         kind="empty"
         firstRun
         glyph={<DesignGlyph />}
-        title="No design systems yet"
-        body="Clone a design system’s Git repo, then point at its folder to see it here."
-        action={<PrimaryButton onClick={onPointAtFolder}>Point at a folder</PrimaryButton>}
+        title={appCopy.workspace.globalSurface.design.designGlobalSurface.noDesignSystemsYet}
+        body={appCopy.workspace.globalSurface.design.designGlobalSurface.cloneADesignSystemS}
+        action={
+          <PrimaryButton onClick={onPointAtFolder}>
+            {appCopy.workspace.globalSurface.design.designGlobalSurface.pointAtAFolder}
+          </PrimaryButton>
+        }
       />
     )
   }
   if (!selectedEntry) {
     // Nothing selected, not nothing there: the quiet kit state, never a bare
     // line of copy in a third dialect (the empty-state ruling).
-    return <EmptyState density="pane" glyph={<DesignGlyph />} title="Select a design system to see it." />
+    return (
+      <EmptyState
+        density="pane"
+        glyph={<DesignGlyph />}
+        title={appCopy.workspace.globalSurface.design.designGlobalSurface.selectADesignSystemTo}
+      />
+    )
   }
   if (selectedEntry.failure) {
     // A broken row keeps its place in the rail and says which way it is broken,
@@ -765,12 +787,16 @@ function DesignSurfaceBody({
         hint={brokenHint(selectedEntry.failure)}
         detail={designFailureLine(selectedEntry.failure, selectedEntry.path)}
         onRetry={onRetry}
-        retryLabel="Read it again"
+        retryLabel={appCopy.workspace.globalSurface.design.designGlobalSurface.readItAgain}
         extraAction={
           selectedEntry.registrationId ? (
             <>
-              <GhostButton onClick={onRepoint}>Re-point…</GhostButton>
-              <GhostButton onClick={onForget}>Forget</GhostButton>
+              <GhostButton onClick={onRepoint}>
+                {appCopy.workspace.globalSurface.design.designGlobalSurface.rePoint}
+              </GhostButton>
+              <GhostButton onClick={onForget}>
+                {appCopy.workspace.globalSurface.design.designGlobalSurface.forget}
+              </GhostButton>
             </>
           ) : undefined
         }
@@ -780,7 +806,12 @@ function DesignSurfaceBody({
   if (!selectedView) {
     // Selected, readable, but its read has not landed yet. A spinner here rather
     // than an empty canvas that reads as "this system has nothing in it".
-    return <SurfaceCanvasState kind="loading" label={`Reading ${selectedEntry.path}…`} />
+    return (
+      <SurfaceCanvasState
+        kind="loading"
+        label={appCopy.workspace.globalSurface.design.designGlobalSurface.reading(selectedEntry.path)}
+      />
+    )
   }
   return (
     <DesignCanvas

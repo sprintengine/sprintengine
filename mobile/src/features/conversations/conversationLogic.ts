@@ -29,6 +29,7 @@ import { formatDuration, isSubagentStart } from "./subagentLogic";
 import { formatTokenCount } from "./promptCache";
 import { parseSentImages } from "./sentPhotos";
 import { withoutStudioNoticePrefix } from "./studioNotice";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * How long the composer's button stays Send after a send, before an empty box
@@ -496,7 +497,7 @@ export function modelControl(
   if (!catalog || !offers.modelSwitch) return null;
   const current = thread.modelId || DEFAULT_MODEL_ID;
   const choices: ModelChoice[] = [
-    { id: DEFAULT_MODEL_ID, label: `${catalog.cliLabel || catalog.cli} default`, current: current === DEFAULT_MODEL_ID },
+    { id: DEFAULT_MODEL_ID, label: copy.phone.conversations.conversationLogic.default(catalog.cliLabel || catalog.cli), current: current === DEFAULT_MODEL_ID },
     ...catalog.options.map((option) => ({
       id: option.id,
       label: option.label || option.id,

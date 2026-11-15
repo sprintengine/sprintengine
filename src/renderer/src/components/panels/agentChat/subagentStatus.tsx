@@ -14,6 +14,7 @@ import { subagentResultPreview, subagentRunsOn } from './subagentResult'
 import { openSubagentList, useOpenSubagent } from './subagentViewStack'
 import { ToolKindGlyph } from './toolRows/ToolKindGlyph'
 import { formatTokenCount } from '../../../utils/tokenFormat'
+import { copy } from '../../../../../shared/copy'
 
 /** The glyph state of the agent a lane spawned. */
 export function laneAgentState(tool: TranscriptToolEntry): AgentGlyphState {
@@ -158,7 +159,12 @@ export function AgentCardContent({ tool, running }: { tool: TranscriptToolEntry;
       </span>
       {task ? <span className="block text-[color:var(--text-default)]">{task}</span> : null}
       {description ? <span className="block">{description}</span> : null}
-      {running && now ? <span className="block">Now: {now}</span> : null}
+      {running && now ? (
+        <span className="block">
+          {copy.panels.agentChat.subagentStatus.now}
+          {now}
+        </span>
+      ) : null}
       {!running && tool.agent?.error ? (
         <span className="block text-[color:var(--tone-error)]">{tool.agent.error}</span>
       ) : null}
@@ -180,7 +186,8 @@ export function LaneStatus({ lane }: { lane: TranscriptToolEntry }): JSX.Element
   if (lane.status === 'running')
     return (
       <span className="text-[color:var(--accent-primary)]">
-        Working{lane.startedAt !== undefined ? ' · ' : ''}
+        {copy.panels.agentChat.subagentStatus.working}
+        {lane.startedAt !== undefined ? ' · ' : ''}
         {lane.startedAt !== undefined ? <LiveElapsed startedAt={lane.startedAt} /> : null}
       </span>
     )

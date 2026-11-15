@@ -4,6 +4,7 @@ import type {
   ConversationImportSession,
   ConversationImportSource,
 } from '../../../../shared/electron-api'
+import { copy } from '../../../../shared/copy'
 
 // The import picker's model: which sessions are ticked, what a folder's box
 // shows, and what the screen says about what it found and what it did. Pure,
@@ -88,10 +89,11 @@ export function describeImportResult(result: ConversationImportResult): {
   title: string
   description?: string
 } {
-  if (!result.ok) return { tone: 'error', title: `Couldn't import: ${result.message}` }
+  if (!result.ok) return { tone: 'error', title: copy.onboarding.conversationImport.couldnTImport(result.message) }
   const made = result.imported.length
   const failed = result.failed.length
-  if (made === 0 && failed === 0) return { tone: 'neutral', title: 'Those conversations are already chats here.' }
+  if (made === 0 && failed === 0)
+    return { tone: 'neutral', title: copy.onboarding.conversationImport.thoseConversationsAreAlreadyChats }
   const title =
     made > 0 ? `Imported ${countNoun(made, 'conversation')}.` : `Couldn't import ${countNoun(failed, 'conversation')}.`
   if (failed === 0) return { tone: 'neutral', title }
@@ -99,6 +101,6 @@ export function describeImportResult(result: ConversationImportResult): {
   return {
     tone: made > 0 ? 'neutral' : 'error',
     title,
-    description: `${made > 0 ? `${countNoun(failed, 'conversation')} failed. ` : ''}${first.title}: ${first.message}`,
+    description: `${made > 0 ? copy.onboarding.conversationImport.failed(countNoun(failed, 'conversation')) : ''}${first.title}: ${first.message}`,
   }
 }

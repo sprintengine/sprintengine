@@ -32,6 +32,7 @@ import { prefersReducedMotion } from './reducedMotion'
 import { SubagentTypesProvider } from './subagentStatus'
 import { TimelineRow, type TimelineChrome } from './timelineRows'
 import { hostPlatform } from '../../../clientCapabilities'
+import { copy } from '../../../../../shared/copy'
 
 // The replay, drawn over the chat it replays. The live chat stays mounted and
 // running beneath it (inert while the replay is up), so leaving puts the person
@@ -74,7 +75,7 @@ export function ConversationReplayView({
       ref={rootRef}
       tabIndex={-1}
       role="region"
-      aria-label={`Replay of ${title}`}
+      aria-label={copy.panels.agentChat.conversationReplayView.replayOf(title)}
       data-conversation-replay=""
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented) {
@@ -94,13 +95,17 @@ export function ConversationReplayView({
             {source.status === 'loading' ? (
               <span className="flex items-center gap-2 text-meta text-[color:var(--text-muted)]">
                 <Spinner size={14} />
-                Reading the whole conversation…
+                {copy.panels.agentChat.conversationReplayView.readingTheWholeConversation}
               </span>
             ) : (
               <div className="flex max-w-[420px] flex-col items-center gap-3">
-                <InlineNotice tone="error" title="The conversation could not be read." detail={source.message} />
+                <InlineNotice
+                  tone="error"
+                  title={copy.panels.agentChat.conversationReplayView.theConversationCouldNotBe}
+                  detail={source.message}
+                />
                 <OutlineButton size="xs" onClick={onLeave}>
-                  Leave replay
+                  {copy.panels.agentChat.conversationReplayView.leaveReplay}
                 </OutlineButton>
               </div>
             )}
@@ -134,8 +139,8 @@ function ReplayBand({
       </span>
       {children ?? <span className="flex-1" />}
       <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-[color:var(--border-subtle)]" />
-      <Tooltip content="Leave replay (Esc)" placement="bottom">
-        <CloseIconButton aria-label="Leave replay" onClick={onLeave} />
+      <Tooltip content={copy.panels.agentChat.conversationReplayView.leaveReplayEsc} placement="bottom">
+        <CloseIconButton aria-label={copy.panels.agentChat.conversationReplayView.leaveReplay} onClick={onLeave} />
       </Tooltip>
       {progress ? <TourProgress marks={progress} /> : null}
     </div>
@@ -269,7 +274,10 @@ function ReplayPlayer({
     return (
       <>
         <ReplayBand title={title} onLeave={onLeave} />
-        <EmptyState title="Nothing to replay" body="This chat has no messages yet." />
+        <EmptyState
+          title={copy.panels.agentChat.conversationReplayView.nothingToReplay}
+          body={copy.panels.agentChat.conversationReplayView.thisChatHasNoMessages}
+        />
       </>
     )
 
@@ -294,15 +302,15 @@ function ReplayPlayer({
           inlineNoun={promptCount === 1 ? 'message' : 'messages'}
           page={promptIndex}
           pageCount={promptCount}
-          rangeLabel={`Message ${promptIndex} of ${promptCount}`}
+          rangeLabel={copy.panels.agentChat.conversationReplayView.messageOf(promptIndex, promptCount)}
           stepHint="← / →"
-          ariaLabel="Messages in the replay"
+          ariaLabel={copy.panels.agentChat.conversationReplayView.messagesInTheReplay}
           onPageChange={(page) => act({ type: page < promptIndex ? 'previous' : 'next' })}
         />
         <span className="flex-1" />
         <SegmentedControl
           size="sm"
-          ariaLabel="Replay speed"
+          ariaLabel={copy.panels.agentChat.conversationReplayView.replaySpeed}
           items={SPEED_ITEMS}
           value={String(state.speed)}
           onChange={(value) => act({ type: 'speed', speed: Number(value) as ReplaySpeed })}
@@ -314,17 +322,25 @@ function ReplayPlayer({
             ariaLabelledBy={continuousId}
           />
           <span id={continuousId} className="whitespace-nowrap text-meta text-[color:var(--text-muted)]">
-            Don’t stop at messages
+            {copy.panels.agentChat.conversationReplayView.donTStopAtMessages}
           </span>
         </span>
         <Tooltip
           content={
-            state.playing ? 'Pause (Space)' : atEnd ? 'The replay has ended' : 'Play to the next message (Space)'
+            state.playing
+              ? copy.panels.agentChat.conversationReplayView.pauseSpace
+              : atEnd
+                ? copy.panels.agentChat.conversationReplayView.theReplayHasEnded
+                : copy.panels.agentChat.conversationReplayView.playToTheNextMessage
           }
           placement="bottom"
         >
           <IconButton
-            aria-label={state.playing ? 'Pause replay' : 'Play replay'}
+            aria-label={
+              state.playing
+                ? copy.panels.agentChat.conversationReplayView.pauseReplay
+                : copy.panels.agentChat.conversationReplayView.playReplay
+            }
             pressed={state.playing}
             disabled={atEnd}
             onClick={() => act({ type: 'toggle' })}
@@ -342,7 +358,7 @@ function ReplayPlayer({
           ref={scrollerRef}
           role="log"
           tabIndex={0}
-          aria-label={`${title} conversation, replayed`}
+          aria-label={copy.panels.agentChat.conversationReplayView.conversationReplayed(title)}
           aria-live="off"
           onScroll={onScroll}
           onWheel={onManualScroll}
@@ -352,7 +368,7 @@ function ReplayPlayer({
           {windowStart > 0 ? (
             <div className="flex justify-center pb-3">
               <OutlineButton size="xs" onClick={() => setWindowTurns((turns) => turns + REPLAY_WINDOW_TURNS)}>
-                Show earlier messages
+                {copy.panels.agentChat.conversationReplayView.showEarlierMessages}
               </OutlineButton>
             </div>
           ) : null}
@@ -496,12 +512,33 @@ function useReplayFollow(rows: readonly { id: string; kind: string }[]) {
 function ReplayFoot({ playing, atEnd }: { playing: boolean; atEnd: boolean }) {
   return (
     <div className="chat-column-gutter flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 pb-4 pt-2 text-meta text-[color:var(--text-muted)]">
-      {atEnd ? <span className="text-[color:var(--text-default)]">End of the conversation</span> : null}
-      <ReplayKeyHint keys={['Space']} label={playing ? 'Pause' : 'Play'} />
-      <ReplayKeyHint keys={['→']} ariaLabel="Right arrow" label="Next message" />
-      <ReplayKeyHint keys={['←']} ariaLabel="Left arrow" label="Previous message" />
-      {atEnd ? <ReplayKeyHint keys={['Home']} label="From the start" /> : null}
-      <ReplayKeyHint keys={['Esc']} label="Leave" />
+      {atEnd ? (
+        <span className="text-[color:var(--text-default)]">
+          {copy.panels.agentChat.conversationReplayView.endOfTheConversation}
+        </span>
+      ) : null}
+      <ReplayKeyHint
+        keys={['Space']}
+        label={
+          playing
+            ? copy.panels.agentChat.conversationReplayView.pause
+            : copy.panels.agentChat.conversationReplayView.play
+        }
+      />
+      <ReplayKeyHint
+        keys={['→']}
+        ariaLabel={copy.panels.agentChat.conversationReplayView.rightArrow}
+        label={copy.panels.agentChat.conversationReplayView.nextMessage}
+      />
+      <ReplayKeyHint
+        keys={['←']}
+        ariaLabel={copy.panels.agentChat.conversationReplayView.leftArrow}
+        label={copy.panels.agentChat.conversationReplayView.previousMessage}
+      />
+      {atEnd ? (
+        <ReplayKeyHint keys={['Home']} label={copy.panels.agentChat.conversationReplayView.fromTheStart} />
+      ) : null}
+      <ReplayKeyHint keys={['Esc']} label={copy.panels.agentChat.conversationReplayView.leave} />
     </div>
   )
 }

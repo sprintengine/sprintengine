@@ -25,6 +25,7 @@ import type { AgentCli, WorkspaceId } from '../../../shared/workspace'
 import { useWorkspaceStore } from './workspaceStore'
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
 import { agentSettingsApi } from '../studio/agentSettings'
+import { copy } from '../../../shared/copy'
 
 export type GeneratedTitleRequesterDeps = {
   /** The heuristic half. Returns the title it applied, or null. */
@@ -154,10 +155,10 @@ export async function regenerateWorkspaceTitle(
   if (!engine)
     return {
       ok: false,
-      message: 'Model titles are off, or no installed CLI can write them.',
+      message: copy.store.generatedWorkspaceTitle.modelTitlesAreOffOr,
     }
   const prompt = (await deps.firstPrompt(id).catch(() => null))?.trim()
-  if (!prompt) return { ok: false, message: 'No message of yours to title this chat from.' }
+  if (!prompt) return { ok: false, message: copy.store.generatedWorkspaceTitle.noMessageOfYoursTo }
   const result = await deps
     .generate({ prompt, engine, cliRuntimes: deps.cliRuntimes() })
     .catch((error: unknown): TextGenerationResult => ({
@@ -167,7 +168,7 @@ export async function regenerateWorkspaceTitle(
     }))
   if (!result.ok) return { ok: false, message: result.message }
   const title = result.value.trim()
-  if (!title) return { ok: false, message: 'The model answered with no title.' }
+  if (!title) return { ok: false, message: copy.store.generatedWorkspaceTitle.theModelAnsweredWithNo }
   deps.rename(id, title)
   return { ok: true, title }
 }

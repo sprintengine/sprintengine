@@ -10,6 +10,7 @@
 
 import { CANVAS_FILE_EXTENSION } from '../../../../../../shared/canvas/paths'
 import type { CanvasExportImages } from '../../../../../../shared/canvas/types'
+import { copy } from '../../../../../../shared/copy'
 
 /** The pictures the person asked for beside the board file. */
 export type CanvasExportFormats = { png: boolean; svg: boolean }
@@ -51,8 +52,11 @@ export function canvasExportedToast(result: { directory: string; files: readonly
   return {
     title:
       names.length === 1
-        ? 'Board exported'
-        : `Board exported with ${names.length - 1} image${names.length === 2 ? '' : 's'}`,
-    description: `${names.join(', ')} in ${result.directory}`,
+        ? copy.workspace.pane.canvas.canvasExport.boardExported
+        : copy.workspace.pane.canvas.canvasExport.boardExportedWithImage(
+            names.length - 1,
+            names.length === 2 ? '' : 's',
+          ),
+    description: copy.workspace.pane.canvas.canvasExport.in(names.join(', '), result.directory),
   }
 }

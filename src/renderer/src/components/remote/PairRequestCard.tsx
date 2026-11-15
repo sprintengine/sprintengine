@@ -11,6 +11,7 @@ import { pairRequestAnswerable } from '../settings/tailnetPanelModel'
 import { ScopePicker } from './ScopePicker'
 import { usePairRequestAnswer } from './pairRequestAnswer'
 import { clampToRequested, signInDefaultScopes } from './scopePickerModel'
+import { copy } from '../../../../shared/copy'
 
 // The ACTING surface for a request from another machine, shared by the
 // Remote popover and Settings → Remote (pair-from-the-scan-and-stay-paired,
@@ -84,7 +85,11 @@ export function PairRequestCard({
   return (
     <div className={frame} data-pair-request={request.id}>
       <div className="flex items-center gap-2 text-meta">
-        <StatusDot tone="warn" pulse label={signIn ? 'Sign-in request' : 'Pair request'} />
+        <StatusDot
+          tone="warn"
+          pulse
+          label={signIn ? copy.remote.pairRequestCard.signInRequest : copy.remote.pairRequestCard.pairRequest}
+        />
         <span className="min-w-0 flex-1 truncate font-medium text-[color:var(--text-default)]">
           {signIn ? signIn.clientName : asker}{' '}
           <span className="font-normal text-[color:var(--text-subtle)]">
@@ -106,7 +111,7 @@ export function PairRequestCard({
         </dd>
         {signIn ? (
           <>
-            <dt className="text-[color:var(--text-subtle)]">Access goes to</dt>
+            <dt className="text-[color:var(--text-subtle)]">{copy.remote.pairRequestCard.accessGoesTo}</dt>
             <dd className="truncate text-[color:var(--text-default)]">
               {signIn.redirectKind === 'loopback'
                 ? `An MCP client on ${asker} (${signIn.redirectHost})`
@@ -115,19 +120,20 @@ export function PairRequestCard({
           </>
         ) : (
           <>
-            <dt className="text-[color:var(--text-subtle)]">Calls itself</dt>
+            <dt className="text-[color:var(--text-subtle)]">{copy.remote.pairRequestCard.callsItself}</dt>
             <dd className="truncate text-[color:var(--text-default)]">{request.deviceName}</dd>
           </>
         )}
       </dl>
       {signIn ? (
         <p className="mt-1 text-micro text-[color:var(--text-subtle)]">
-          Only allow a sign-in you just started. It lasts 30 days.
+          {copy.remote.pairRequestCard.onlyAllowASignIn}
         </p>
       ) : null}
       <div className="my-2">
         <label htmlFor={inputId} className="mb-1 block text-meta text-[color:var(--text-muted)]">
-          Enter the code shown on {codeSource}
+          {copy.remote.pairRequestCard.enterTheCodeShownOn}
+          {codeSource}
         </label>
         <Input
           id={inputId}
@@ -142,7 +148,7 @@ export function PairRequestCard({
           autoComplete="one-time-code"
           maxLength={6}
           placeholder="000000"
-          aria-label={`Code shown on ${codeSource}`}
+          aria-label={copy.remote.pairRequestCard.codeShownOn(codeSource)}
           aria-describedby={helpId}
           aria-invalid={codeError ? true : undefined}
           disabled={disabled}

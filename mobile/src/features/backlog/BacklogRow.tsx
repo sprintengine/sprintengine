@@ -23,6 +23,7 @@ import {
   type BacklogRowItem,
 } from "./backlogLogic";
 import type { StudioBacklogItemStatus } from "../../../../packages/studio-protocol/src/public";
+import { copy } from "../../../../src/shared/copy";
 
 // Backlog readiness maps onto the shared lifecycle vocabulary: `completed`
 // becomes the `done` check, the rest are named identically.
@@ -64,7 +65,7 @@ function BacklogRowImpl({ item, onPress, banded, leading, epicMeta }: BacklogRow
 
   return (
     <Pressable
-      accessibilityHint="Opens the item"
+      accessibilityHint={copy.phone.backlog.backlogRow.opensTheItem}
       accessibilityLabel={`${item.title}, ${backlogStatusLabel[item.status]}${triage ? `, ${triage}` : ""}`}
       accessibilityRole="button"
       onPress={onPress}

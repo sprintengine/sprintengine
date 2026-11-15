@@ -12,6 +12,7 @@ import { DRAWER_ROWS, EXTENSIONS_CATALOGUE_SURFACE_ID } from './extensionsDrawer
 import { extensionContributionRows } from './extensionContributionRows'
 import { BacklogGlyph } from './pane/paneKinds'
 import { useSurfaceView } from './surfaceView'
+import { copy } from '../../../../shared/copy'
 
 // The drawer's six fixed rows plus installed door contributions, RESOLVED
 // (Extensions drawer ruling, 2026-09-05, Stage 3; module-door completion,
@@ -195,7 +196,7 @@ export function useExtensionsDrawerRows(): ExtensionsDrawerRowView[] {
             rowId: null,
             surfaceId: 'pane:backlog',
             moduleId: 'backlog',
-            label: 'Backlog',
+            label: copy.workspace.extensionsDrawerRows.backlog,
             Icon: BacklogGlyph,
             active: false,
             open: () => {

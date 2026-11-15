@@ -7,6 +7,7 @@ import { showToast } from '../../../../store/toastStore'
 import { EmptyState, GhostButton, PrimaryButton } from '../../../ui'
 import { SuspenseFallback } from '../../../ui/SuspenseFallback'
 import { canvasPictureUrl, continueBoardInNewChat, type CanvasBoardSource } from './canvasBoardSource'
+import { copy } from '../../../../../../shared/copy'
 
 // A board on a paired machine whose Studio cannot carry it here.
 //
@@ -56,11 +57,17 @@ export function CanvasFarBoard({
         else
           setPicture({
             kind: 'error',
-            message: answer.ok ? `${source.machineName} sent no picture of this board.` : answer.message,
+            message: answer.ok
+              ? copy.workspace.pane.canvas.canvasFarBoard.sentNoPictureOfThis(source.machineName)
+              : answer.message,
           })
       },
       () => {
-        if (!cancelled) setPicture({ kind: 'error', message: `${source.machineName} could not be reached.` })
+        if (!cancelled)
+          setPicture({
+            kind: 'error',
+            message: copy.workspace.pane.canvas.canvasFarBoard.couldNotBeReached(source.machineName),
+          })
       },
     )
     return () => {
@@ -85,7 +92,7 @@ export function CanvasFarBoard({
       if (!started.ok) {
         showToast({
           tone: 'error',
-          title: `Could not start a chat on ${source.machineName}`,
+          title: copy.workspace.pane.canvas.canvasFarBoard.couldNotStartAChat(source.machineName),
           description: started.error.message,
         })
       }
@@ -97,27 +104,38 @@ export function CanvasFarBoard({
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--border-subtle)] px-3 py-2">
         {/* A line of its own: a docked pane has no room for it beside the actions. */}
         <p className="w-full text-meta text-[color:var(--text-muted)]">
-          {reason ?? `A picture of this board on ${source.machineName}.`} To change it, continue in a new chat there.
+          {reason ?? `A picture of this board on ${source.machineName}.`}
+          {copy.workspace.pane.canvas.canvasFarBoard.toChangeItContinueIn}
         </p>
         <GhostButton onClick={onSwitchBoard} className="ml-auto">
-          Boards
+          {copy.workspace.pane.canvas.canvasFarBoard.boards}
         </GhostButton>
-        <GhostButton onClick={() => setAttempt((n) => n + 1)}>Refresh</GhostButton>
+        <GhostButton onClick={() => setAttempt((n) => n + 1)}>
+          {copy.workspace.pane.canvas.canvasFarBoard.refresh}
+        </GhostButton>
         <PrimaryButton onClick={continueHere} disabled={starting}>
-          Continue in a new chat
+          {copy.workspace.pane.canvas.canvasFarBoard.continueInANewChat}
         </PrimaryButton>
       </div>
       <div className="relative min-h-0 flex-1 overflow-auto bg-[color:var(--bg-app)]">
         {picture.kind === 'loading' ? (
-          <SuspenseFallback label={`Asking ${source.machineName} for this board`} />
+          <SuspenseFallback label={copy.workspace.pane.canvas.canvasFarBoard.askingForThisBoard(source.machineName)} />
         ) : picture.kind === 'error' ? (
           <EmptyState
-            title="This board could not be shown"
+            title={copy.workspace.pane.canvas.canvasFarBoard.thisBoardCouldNotBe}
             body={picture.message}
-            action={<PrimaryButton onClick={() => setAttempt((n) => n + 1)}>Try again</PrimaryButton>}
+            action={
+              <PrimaryButton onClick={() => setAttempt((n) => n + 1)}>
+                {copy.workspace.pane.canvas.canvasFarBoard.tryAgain}
+              </PrimaryButton>
+            }
           />
         ) : (
-          <img src={picture.url} alt={`The board ${name}`} className="mx-auto block max-w-full" />
+          <img
+            src={picture.url}
+            alt={copy.workspace.pane.canvas.canvasFarBoard.theBoard(name)}
+            className="mx-auto block max-w-full"
+          />
         )}
       </div>
     </div>

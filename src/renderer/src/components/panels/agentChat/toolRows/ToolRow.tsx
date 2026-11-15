@@ -47,6 +47,7 @@ import {
   stepWentWrong,
   toolPresentationInput,
 } from '../../../../../../../packages/conversation-timeline/src/stepOutcome'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // How a step reads, and whether it went wrong, are the timeline package's:
 // the turn fold counts what went wrong without drawing a row.
@@ -80,7 +81,12 @@ export function ToolPanel({
     <div className="group/tool-panel relative rounded-sm border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)]">
       {copyText ? (
         <div className="absolute right-1 top-1 opacity-0 group-hover/tool-panel:opacity-100 focus-within:opacity-100">
-          <CopyGlyphButton text={copyText} html={copyHtml} label="Copy output" size="xs" />
+          <CopyGlyphButton
+            text={copyText}
+            html={copyHtml}
+            label={appCopy.panels.agentChat.toolRows.toolRow.copyOutput}
+            size="xs"
+          />
         </div>
       ) : null}
       <div
@@ -191,7 +197,7 @@ function CommandPanel({
         {command ? (
           <CopyGlyphButton
             text={command}
-            label="Copy command"
+            label={appCopy.panels.agentChat.toolRows.toolRow.copyCommand}
             size="xs"
             className="opacity-0 group-hover/tool-panel:opacity-100 focus-within:opacity-100"
           />
@@ -200,7 +206,7 @@ function CommandPanel({
       {output ? (
         <div className="group/tool-output relative border-t border-[color:var(--border-subtle)]">
           <div className="absolute right-1 top-1 opacity-0 group-hover/tool-output:opacity-100 focus-within:opacity-100">
-            <CopyGlyphButton text={output} label="Copy output" size="xs" />
+            <CopyGlyphButton text={output} label={appCopy.panels.agentChat.toolRows.toolRow.copyOutput} size="xs" />
           </div>
           <div className="max-h-72 overflow-auto px-3 py-2">
             <AnsiOutput lines={lines} />
@@ -242,7 +248,10 @@ export function ToolBody({ tool, detail }: { tool: TranscriptToolEntry; detail?:
   }
   if (tool.name === 'GenerateImage' && status !== 'error') {
     const prompt = String(input.prompt ?? '')
-    if (!path) return <p className="text-[color:var(--text-muted)]">Codex did not return a picture to show.</p>
+    if (!path)
+      return (
+        <p className="text-[color:var(--text-muted)]">{appCopy.panels.agentChat.toolRows.toolRow.codexDidNotReturnA}</p>
+      )
     return (
       <>
         {prompt ? <p className="text-[color:var(--text-muted)]">{prompt}</p> : null}
@@ -283,7 +292,11 @@ export function ToolBody({ tool, detail }: { tool: TranscriptToolEntry; detail?:
             return (
               <li key={index} data-todo-status={String(todo.status ?? 'pending')} className="flex items-start gap-2">
                 <span className="flex h-5 shrink-0 items-center">
-                  <Checkbox readOnly checked={done} ariaLabel={text || 'Task'} />
+                  <Checkbox
+                    readOnly
+                    checked={done}
+                    ariaLabel={text || appCopy.panels.agentChat.toolRows.toolRow.task}
+                  />
                 </span>
                 <span
                   className={`min-w-0 leading-5 ${
@@ -295,7 +308,9 @@ export function ToolBody({ tool, detail }: { tool: TranscriptToolEntry; detail?:
                   }`}
                 >
                   <InlineMarkdown text={text} />
-                  {active ? <span className="sr-only"> (in progress)</span> : null}
+                  {active ? (
+                    <span className="sr-only">{appCopy.panels.agentChat.toolRows.toolRow.inProgress}</span>
+                  ) : null}
                 </span>
               </li>
             )
@@ -344,8 +359,8 @@ function ToolImages({ images, toolUseId }: { images: readonly string[] | undefin
   if (!openDocument)
     return (
       <p className="mt-2 text-[color:var(--text-muted)]">
-        {images.length === 1 ? 'This step returned a picture' : `This step returned ${images.length} pictures`}, on the
-        machine that ran it.
+        {images.length === 1 ? 'This step returned a picture' : `This step returned ${images.length} pictures`}
+        {appCopy.panels.agentChat.toolRows.toolRow.onTheMachineThatRan}
       </p>
     )
   return (
@@ -363,12 +378,17 @@ function ToolImages({ images, toolUseId }: { images: readonly string[] | undefin
 // machine by the step, where the machine serves pictures at all.
 function ImagePreview({ path, toolUseId }: { path: string; toolUseId: string }) {
   const current = useToolImage(toolUseId, path)
-  if (!current.resolved) return <p className="text-[color:var(--text-muted)]">This image is on another machine.</p>
+  if (!current.resolved)
+    return (
+      <p className="text-[color:var(--text-muted)]">{appCopy.panels.agentChat.toolRows.toolRow.thisImageIsOnAnother}</p>
+    )
   if (current.failed)
     // Screenshots in particular are often read from a temporary folder the
     // system empties minutes later, so a missing file is the expected case.
-    return <p className="text-[color:var(--text-muted)]">This image is no longer available to preview.</p>
-  if (!current.src) return <Spinner label="Loading image" />
+    return (
+      <p className="text-[color:var(--text-muted)]">{appCopy.panels.agentChat.toolRows.toolRow.thisImageIsNoLonger}</p>
+    )
+  if (!current.src) return <Spinner label={appCopy.panels.agentChat.toolRows.toolRow.loadingImage} />
   return (
     <img
       src={current.src}
@@ -387,20 +407,20 @@ function ImagePreview({ path, toolUseId }: { path: string; toolUseId: string }) 
 function GeneratedImage({ path, prompt, toolUseId }: { path: string; prompt?: string; toolUseId: string }) {
   const current = useToolImage(toolUseId, path)
   if (!current.resolved || current.failed) return null
-  if (!current.src) return <Spinner label="Loading image" />
+  if (!current.src) return <Spinner label={appCopy.panels.agentChat.toolRows.toolRow.loadingImage} />
   const src = current.src
   const [, mediaType = 'image/png', dataBase64 = ''] = /^data:([^;]+);base64,(.*)$/s.exec(src) ?? []
   const label = prompt || 'Generated image'
   return (
     <figure data-generated-image="" className="mb-1.5 ml-6 mt-1 flex flex-col items-start gap-1">
       <MediaButton
-        aria-label={`Open ${label}`}
+        aria-label={appCopy.panels.agentChat.toolRows.toolRow.open(label)}
         className="max-w-full"
         onClick={() =>
           void window.api.openImageAttachment({ mediaType, dataBase64 }).catch((error: unknown) =>
             showToast({
               tone: 'error',
-              title: 'Could not open that image',
+              title: appCopy.panels.agentChat.toolRows.toolRow.couldNotOpenThatImage,
               description: error instanceof Error ? error.message : String(error),
             }),
           )
@@ -857,15 +877,15 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
         >
           <ToolBody tool={tool} detail={detail} />
           {detail?.clipped ? (
-            <InlineNotice tone="warn">Output too long; showing the beginning and end.</InlineNotice>
+            <InlineNotice tone="warn">{appCopy.panels.agentChat.toolRows.toolRow.outputTooLongShowingThe}</InlineNotice>
           ) : null}
-          {loading ? <Spinner label="Loading tool output" /> : null}
+          {loading ? <Spinner label={appCopy.panels.agentChat.toolRows.toolRow.loadingToolOutput} /> : null}
           {error ? (
             <InlineNotice
               tone="error"
               action={
                 <GhostButton size="inline" onClick={() => void fetchDetail()}>
-                  Retry
+                  {appCopy.panels.agentChat.toolRows.toolRow.retry}
                 </GhostButton>
               }
             >
@@ -874,7 +894,7 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
           ) : null}
           {!detail && !loading && (tool.truncated || tool.inputTruncated) ? (
             <GhostButton size="inline" onClick={() => void fetchDetail()}>
-              Show full output
+              {appCopy.panels.agentChat.toolRows.toolRow.showFullOutput}
             </GhostButton>
           ) : null}
           {detail && partial && !loading ? (

@@ -5,6 +5,7 @@
 import { commandMatchesQuery } from '../commandPaletteSearch'
 import type { PaletteCommand, PaletteResultProvider } from '../palette/paletteProvider'
 import { openBuildExtension } from './buildExtensionHost'
+import { copy } from '../../../../shared/copy'
 
 export const BUILD_EXTENSION_PALETTE_ROW_ID = 'build-own-extension'
 
@@ -15,8 +16,8 @@ export function createBuildExtensionPaletteProvider(): PaletteResultProvider {
     load: (query, context) => {
       const command: PaletteCommand = {
         id: BUILD_EXTENSION_PALETTE_ROW_ID,
-        label: 'Build your own extension',
-        description: 'An agent builds it with you in a chat',
+        label: copy.extensions.buildExtensionPaletteProvider.buildYourOwnExtension,
+        description: copy.extensions.buildExtensionPaletteProvider.anAgentBuildsItWith,
         keywords: 'new extension, create extension, make an extension, write a module, plugin, sdk, template, scaffold',
         group: 'extensions',
         run: () => {

@@ -32,6 +32,7 @@ import {
   type ContextSegment,
 } from './contextBreakdownShape'
 import { ConversationFileLink } from './conversationLinks'
+import { copy } from '../../../../../shared/copy'
 
 // What fills the context window, opened from the composer strip's ring. The
 // ring says how full; this says with what — the system prompt, the tools, the
@@ -105,7 +106,7 @@ export function useContextBreakdown(
       .catch((error: unknown): ConversationContextBreakdownResult => ({
         ok: false,
         reason: 'failed',
-        message: error instanceof Error ? error.message : 'The breakdown could not be read.',
+        message: error instanceof Error ? error.message : copy.panels.agentChat.contextBreakdown.theBreakdownCouldNotBe,
       }))
       .then((result) => {
         if (generation.current !== mine) return
@@ -387,8 +388,12 @@ export function ContextBreakdownView({ breakdown }: { breakdown: ConversationCon
   const unplaced = (['mcp', 'skills', 'memory', 'agents'] as const).filter((group) => !placed.has(group))
   return (
     <div className="flex flex-col gap-3">
-      <ContextBar segments={segments} label={`What fills the window: ${barLabel}`} total={window} />
-      <ul className="-mx-1 flex flex-col" aria-label="By category">
+      <ContextBar
+        segments={segments}
+        label={copy.panels.agentChat.contextBreakdown.whatFillsTheWindow(barLabel)}
+        total={window}
+      />
+      <ul className="-mx-1 flex flex-col" aria-label={copy.panels.agentChat.contextBreakdown.byCategory}>
         {rows}
         {unplaced.map((group) => {
           const opens = groupRows(group, breakdown, 1)
@@ -415,7 +420,8 @@ export function ContextBreakdownView({ breakdown }: { breakdown: ConversationCon
       </ul>
       {deferred.length > 0 ? (
         <p className="px-1 text-micro text-[color:var(--text-subtle)]" data-context-deferred="">
-          Loaded only when used: {deferredLabel(deferred)}
+          {copy.panels.agentChat.contextBreakdown.loadedOnlyWhenUsed}
+          {deferredLabel(deferred)}
         </p>
       ) : null}
     </div>
@@ -454,7 +460,7 @@ export function ContextBreakdownPanel({
     <section aria-labelledby={headingId} className="flex flex-col gap-3" data-context-breakdown="">
       <div className="flex items-center gap-3">
         <h3 id={headingId} className="text-meta font-medium text-[color:var(--text-strong)]">
-          Context window
+          {copy.panels.agentChat.contextBreakdown.contextWindow}
         </h3>
         <span className="ml-auto shrink-0 tabular-nums text-meta text-[color:var(--text-subtle)]">
           <span className="font-medium text-[color:var(--text-strong)]">{percent}%</span> · {formatTokenCount(used)} of{' '}
@@ -464,8 +470,14 @@ export function ContextBreakdownPanel({
             answers: the one control the dialog is sure to hold, so focus
             has somewhere to land as it opens. */}
         {source?.load ? (
-          <Tooltip content="Read again" placement="top">
-            <IconButton size="xs" tone="subtle" aria-label="Read again" busy={reading.loading} onClick={onRefresh}>
+          <Tooltip content={copy.panels.agentChat.contextBreakdown.readAgain} placement="top">
+            <IconButton
+              size="xs"
+              tone="subtle"
+              aria-label={copy.panels.agentChat.contextBreakdown.readAgain}
+              busy={reading.loading}
+              onClick={onRefresh}
+            >
               <RefreshIcon className="icon-xs" />
             </IconButton>
           </Tooltip>
@@ -479,7 +491,7 @@ export function ContextBreakdownPanel({
             value={percent}
             warn={percent >= CONTEXT_RING_WARN_PERCENTAGE}
             ariaLabelledBy={headingId}
-            ariaValueText={`${percent}% used`}
+            ariaValueText={copy.panels.agentChat.contextBreakdown.used(percent)}
           />
           <p className="text-meta text-[color:var(--text-subtle)]" data-context-breakdown-note="">
             {!source?.load
@@ -533,7 +545,7 @@ export function ContextComposerButton({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Context window"
+      ariaLabel={copy.panels.agentChat.contextBreakdown.contextWindow}
       popupRole="dialog"
       placement="top-end"
       surfaceClassName="w-[360px] max-h-[min(560px,70vh)] overflow-y-auto p-3"
@@ -548,7 +560,7 @@ export function ContextComposerButton({
             tone="subtle"
             onClick={togglePopover}
             {...triggerProps}
-            aria-label={`${label} — show what fills it`}
+            aria-label={copy.panels.agentChat.contextBreakdown.showWhatFillsIt(label)}
             data-composer-context=""
           >
             <ContextRing usedPercentage={percentage} decorative />

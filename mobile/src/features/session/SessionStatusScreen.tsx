@@ -6,6 +6,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Screen } from "../../components/Screen";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 interface SessionStatusScreenProps {
   session: MobileSession;
@@ -25,24 +26,24 @@ const statusCopy: Record<
   }
 > = {
   online: {
-    title: "Desktop connected",
-    body: "Paired over your tailnet.",
-    primaryLabel: "Continue",
+    title: appCopy.phone.session.sessionStatusScreen.desktopConnected,
+    body: appCopy.phone.session.sessionStatusScreen.pairedOverYourTailnet,
+    primaryLabel: appCopy.phone.session.sessionStatusScreen.continue,
   },
   offline: {
-    title: "Reconnect desktop",
-    body: "Pair again to keep driving it from this phone.",
-    primaryLabel: "Pair again",
+    title: appCopy.phone.session.sessionStatusScreen.reconnectDesktop,
+    body: appCopy.phone.session.sessionStatusScreen.pairAgainToKeepDriving,
+    primaryLabel: appCopy.phone.session.sessionStatusScreen.pairAgain,
   },
   stale: {
-    title: "Reconnect desktop",
-    body: "Session expired. Pair again to refresh it.",
-    primaryLabel: "Pair again",
+    title: appCopy.phone.session.sessionStatusScreen.reconnectDesktop,
+    body: appCopy.phone.session.sessionStatusScreen.sessionExpiredPairAgainTo,
+    primaryLabel: appCopy.phone.session.sessionStatusScreen.pairAgain,
   },
   revoked: {
-    title: "Pair desktop",
-    body: "The desktop revoked this phone. Pair again.",
-    primaryLabel: "Pair again",
+    title: appCopy.phone.session.sessionStatusScreen.pairDesktop,
+    body: appCopy.phone.session.sessionStatusScreen.theDesktopRevokedThisPhone,
+    primaryLabel: appCopy.phone.session.sessionStatusScreen.pairAgain,
   },
 };
 
@@ -74,14 +75,14 @@ export function SessionStatusScreen({
         <View style={styles.actions}>
           <PrimaryButton label={copy.primaryLabel} onPress={shouldPair ? onStartPairing : onOpenSettings} />
           <PrimaryButton
-            label={desktopCount > 1 ? "Switch desktop" : "Connection details"}
+            label={desktopCount > 1 ? appCopy.phone.session.sessionStatusScreen.switchDesktop : appCopy.phone.session.sessionStatusScreen.connectionDetails}
             onPress={onOpenSettings}
             variant="secondary"
           />
         </View>
       </Card>
       <View style={styles.footer}>
-        <PrimaryButton label="Remove pairing" onPress={onDisconnect} variant="danger" />
+        <PrimaryButton label={appCopy.phone.session.sessionStatusScreen.removePairing} onPress={onDisconnect} variant="danger" />
       </View>
     </Screen>
   );

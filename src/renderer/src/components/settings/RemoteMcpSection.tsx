@@ -7,6 +7,7 @@ import { MachineList } from '../remote/MachineRow'
 import { ScopePicker } from '../remote/ScopePicker'
 import { SettingCard, SettingsRow, SettingsSectionTitle, SettingToggle } from './SettingsAtoms'
 import { mcpHttpsHelp, mcpUrlHelp, signInEnds } from './tailnetPanelModel'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Remote's MCP section: the URL to give an outside MCP client, the
 // HTTPS front door clients sign in through, and the clients a person has let
@@ -44,20 +45,20 @@ export function RemoteMcpSection({
 
   return (
     <section className="space-y-2">
-      <SettingsSectionTitle count={clients.length}>MCP clients</SettingsSectionTitle>
+      <SettingsSectionTitle count={clients.length}>{copy.settings.remoteMcpSection.mCPClients}</SettingsSectionTitle>
       <SettingCard>
-        <SettingsRow label="MCP URL" help={mcpUrlHelp(mcp)} stacked>
+        <SettingsRow label={copy.settings.remoteMcpSection.mCPURL} help={mcpUrlHelp(mcp)} stacked>
           {url ? (
             <div className="flex min-w-0 items-center gap-1.5">
               <code className="min-w-0 flex-1 select-all truncate font-mono text-meta text-[color:var(--text-default)]">
                 {url}
               </code>
-              <CopyGlyphButton text={url} label="Copy the MCP URL" />
+              <CopyGlyphButton text={url} label={copy.settings.remoteMcpSection.copyTheMCPURL} />
             </div>
           ) : null}
         </SettingsRow>
         <SettingToggle
-          label="HTTPS with Tailscale Serve"
+          label={copy.settings.remoteMcpSection.hTTPSWithTailscaleServe}
           description={mcpHttpsHelp(https)}
           enabled={https?.enabled ?? false}
           onChange={onSetHttps}
@@ -68,16 +69,16 @@ export function RemoteMcpSection({
             here, so the only way to take them back is to stop honouring all
             of them. Signed-in clients are revoked on their own rows. */}
         <SettingsRow
-          label="Client registrations"
+          label={copy.settings.remoteMcpSection.clientRegistrations}
           help="Every client that registered can ask to sign in. Reset makes each one register again first; signed-in clients keep working."
         >
           <OutlineButton size="sm" disabled={busy || !status?.running} onClick={onResetRegistrations}>
-            Reset
+            {copy.settings.remoteMcpSection.reset}
           </OutlineButton>
         </SettingsRow>
       </SettingCard>
       {clients.length > 0 ? (
-        <MachineList ariaLabel="MCP clients">
+        <MachineList ariaLabel={copy.settings.remoteMcpSection.mCPClients}>
           {clients.map((device) => (
             <McpClientRow
               key={device.id}
@@ -120,7 +121,7 @@ function McpClientRow({
       key="scopes"
       open={open}
       onOpenChange={setOpen}
-      ariaLabel={`What ${device.name} may do`}
+      ariaLabel={copy.settings.remoteMcpSection.whatMayDo(device.name)}
       popupRole="dialog"
       placement="bottom-start"
       className="align-baseline"
@@ -134,7 +135,7 @@ function McpClientRow({
         <ScopePicker value={draft} onChange={setDraft} disabled={busy} idPrefix={`mcp-client-${device.id}`} />
         <div className="flex justify-end gap-1.5">
           <GhostButton size="sm" onClick={() => setOpen(false)}>
-            Cancel
+            {copy.settings.remoteMcpSection.cancel}
           </GhostButton>
           <PrimaryButton
             size="sm"
@@ -144,7 +145,7 @@ function McpClientRow({
               setOpen(false)
             }}
           >
-            Save
+            {copy.settings.remoteMcpSection.save}
           </PrimaryButton>
         </div>
       </div>
@@ -176,7 +177,7 @@ function McpClientRow({
         </div>
       </div>
       <GhostButton size="xs" tone="danger" disabled={busy} onClick={onRevoke}>
-        Revoke
+        {copy.settings.remoteMcpSection.revoke}
       </GhostButton>
     </li>
   )

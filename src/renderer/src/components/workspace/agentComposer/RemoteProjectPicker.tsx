@@ -8,6 +8,7 @@ import { ChipButton, Input, MENU_DIVIDER_CLASS, MENU_LIST_CLASS, MenuOption, Pop
 import { ChipCaretGlyph } from './agentSpawnShared'
 import { focusProjectSearch } from './ProjectSourceMenu'
 import { isRemoteNoProject, REMOTE_NO_PROJECT, type RemoteProject } from './remoteProjects'
+import { copy } from '../../../../../shared/copy'
 
 /** A paired machine New chat is aimed at, and what it has said so far. */
 export type RemoteTargetState = {
@@ -89,7 +90,7 @@ export function RemoteProjectPicker({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel={`Project on ${target.connection.machineName}`}
+      ariaLabel={copy.workspace.agentComposer.remoteProjectPicker.projectOn(target.connection.machineName)}
       popupRole="menu"
       placement="bottom-start"
       surfaceClassName={`w-[280px] ${MENU_LIST_CLASS}`}
@@ -121,8 +122,10 @@ export function RemoteProjectPicker({
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search projects…"
-              aria-label={`Search projects on ${target.connection.machineName}`}
+              placeholder={copy.workspace.agentComposer.remoteProjectPicker.searchProjects}
+              aria-label={copy.workspace.agentComposer.remoteProjectPicker.searchProjectsOn(
+                target.connection.machineName,
+              )}
             />
           </div>
         ) : null}
@@ -141,7 +144,9 @@ export function RemoteProjectPicker({
               icon={<NoProjectGlyph className="mt-0.5 icon-xs shrink-0" />}
             >
               <span className="block text-body font-medium">{REMOTE_NO_PROJECT.name}</span>
-              <span className="block text-meta text-[color:var(--text-subtle)]">Chat in a folder of its own</span>
+              <span className="block text-meta text-[color:var(--text-subtle)]">
+                {copy.workspace.agentComposer.remoteProjectPicker.chatInAFolderOf}
+              </span>
             </MenuOption>
             <div className={MENU_DIVIDER_CLASS} role="separator" />
           </>
@@ -149,7 +154,9 @@ export function RemoteProjectPicker({
         {target.error ? (
           <div className="px-2.5 py-1.5 text-meta text-[color:var(--tone-error)]">{target.error}</div>
         ) : visibleProjects === null ? (
-          <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">Loading projects…</div>
+          <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">
+            {copy.workspace.agentComposer.remoteProjectPicker.loadingProjects}
+          </div>
         ) : visibleProjects.length === 0 ? (
           <div className="px-2.5 py-1.5 text-meta text-[color:var(--text-muted)]">
             {needle ? 'No matching projects.' : 'No projects open on that machine.'}

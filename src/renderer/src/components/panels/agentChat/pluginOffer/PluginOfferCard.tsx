@@ -25,6 +25,7 @@ import {
   type PluginOfferIds,
 } from './pluginOfferModel'
 import { agentSkillsApi } from '../../../../studio/agentSkills'
+import { copy as appCopy } from '../../../../../../shared/copy'
 
 // The plugin an agent offered with Studio's `plugin.offer`: its icon, its
 // name, one line, and one button (owner ruling 2026-11-02). Install opens the
@@ -63,7 +64,11 @@ async function readOffer(ids: PluginOfferIds, workspaceRoot: string, cli: string
   const scan = await agentSkillsApi.skillsGetScan({ sourceId: ids.sourceId })
   if (!scan.ok) return { status: 'missing', message: scan.message }
   const plugin = scanPlugins(scan.scan).find((candidate) => candidate.id === ids.pluginId)
-  if (!plugin) return { status: 'missing', message: `No longer in ${scan.source.name}` }
+  if (!plugin)
+    return {
+      status: 'missing',
+      message: appCopy.panels.agentChat.pluginOffer.pluginOfferCard.noLongerIn(scan.source.name),
+    }
   const installed = workspaceRoot
     ? await agentSkillsApi.skillsListInstalledPlugins({ workspaceRoot }).catch(() => null)
     : null
@@ -159,7 +164,11 @@ export const PluginOfferCard = memo(function PluginOfferCard({
     try {
       const result = await chat.signIn(signInServerId)
       if (!result.ok) {
-        showToast({ tone: 'error', title: `Could not sign in to ${plugin.name}`, description: result.message })
+        showToast({
+          tone: 'error',
+          title: appCopy.panels.agentChat.pluginOffer.pluginOfferCard.couldNotSignInTo(plugin.name),
+          description: result.message,
+        })
         return
       }
       if (result.authUrl) void window.api.openExternal(result.authUrl)
@@ -179,21 +188,29 @@ export const PluginOfferCard = memo(function PluginOfferCard({
         />
         <OfferText name={plugin.name} line={line} />
         {action === 'install' ? (
-          <PrimaryButton size="sm" aria-label={`Install ${plugin.name}`} onClick={() => setInstalling(true)}>
-            Install
+          <PrimaryButton
+            size="sm"
+            aria-label={appCopy.panels.agentChat.pluginOffer.pluginOfferCard.install(plugin.name)}
+            onClick={() => setInstalling(true)}
+          >
+            {appCopy.panels.agentChat.pluginOffer.pluginOfferCard.install2}
           </PrimaryButton>
         ) : action === 'sign-in' ? (
           <PrimaryButton
             size="sm"
-            aria-label={`Sign in to ${plugin.name}`}
+            aria-label={appCopy.panels.agentChat.pluginOffer.pluginOfferCard.signInTo(plugin.name)}
             disabled={signingIn}
             onClick={() => void signIn()}
           >
-            Sign in
+            {appCopy.panels.agentChat.pluginOffer.pluginOfferCard.signIn}
           </PrimaryButton>
         ) : (
-          <OutlineButton size="sm" aria-label={`Manage ${plugin.name}`} onClick={manage}>
-            Manage
+          <OutlineButton
+            size="sm"
+            aria-label={appCopy.panels.agentChat.pluginOffer.pluginOfferCard.manage(plugin.name)}
+            onClick={manage}
+          >
+            {appCopy.panels.agentChat.pluginOffer.pluginOfferCard.manage2}
           </OutlineButton>
         )}
       </OfferFrame>

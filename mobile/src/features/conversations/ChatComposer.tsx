@@ -25,6 +25,7 @@ import { composerOptionsLabel, type AttachSource, type ComposerOption } from "./
 import { QueueGlyph, SendGlyph, SteerGlyph, StopGlyph } from "./toolGlyphs";
 import { DictationButton } from "../dictation/DictationButton";
 import type { DictationState } from "../dictation/useDictation";
+import { copy } from "../../../../src/shared/copy";
 
 // The composer's small controls, drawn under the touch floor and padded out
 // to it with `touchSlop`: the "+" and the model, and a picture's remove cross.
@@ -164,8 +165,8 @@ export function ChatComposer({
         />
         {expandable ? (
           <Pressable
-            accessibilityHint="Opens the message full screen to read and edit it."
-            accessibilityLabel="Expand the message"
+            accessibilityHint={copy.phone.conversations.chatComposer.opensTheMessageFullScreen}
+            accessibilityLabel={copy.phone.conversations.chatComposer.expandTheMessage}
             accessibilityRole="button"
             hitSlop={touchSlop(CONTROL_SIZE, CONTROL_SIZE)}
             onPress={() => setExpanded(true)}
@@ -183,7 +184,7 @@ export function ChatComposer({
                 <View key={attachment.key} accessibilityLabel={attachment.name} style={styles.thumb}>
                   <Image source={{ uri: attachment.uri }} style={styles.thumbImage} resizeMode="cover" />
                   <Pressable
-                    accessibilityLabel={`Remove ${attachment.name}`}
+                    accessibilityLabel={copy.phone.conversations.chatComposer.remove(attachment.name)}
                     accessibilityRole="button"
                     disabled={attachmentsLocked}
                     hitSlop={touchSlop(TAG_REMOVE_SIZE, TAG_REMOVE_SIZE)}
@@ -196,7 +197,7 @@ export function ChatComposer({
               ) : (
                 <View
                   key={attachment.key}
-                  accessibilityLabel={attachment.file ? `File ${attachment.name}` : undefined}
+                  accessibilityLabel={attachment.file ? copy.phone.conversations.chatComposer.file(attachment.name) : undefined}
                   style={styles.tag}
                 >
                   {attachment.file ? <FileTypeGlyph kind={attachedFileType(attachment.name).kind} size={iconSize.xs} /> : null}
@@ -204,7 +205,7 @@ export function ChatComposer({
                     {attachment.file ? middleTruncateFileName(attachment.name) : attachment.name}
                   </Text>
                   <Pressable
-                    accessibilityLabel={`Remove ${attachment.name}`}
+                    accessibilityLabel={copy.phone.conversations.chatComposer.remove(attachment.name)}
                     accessibilityRole="button"
                     disabled={attachmentsLocked}
                     hitSlop={touchSlop(TAG_REMOVE_SIZE, TAG_REMOVE_SIZE)}
@@ -222,7 +223,7 @@ export function ChatComposer({
         <View style={styles.controls}>
           {rows.length && options ? (
             <Pressable
-              accessibilityLabel={options.busy ? "Adding a picture" : composerOptionsLabel(rows)}
+              accessibilityLabel={options.busy ? copy.phone.conversations.chatComposer.addingAPicture : composerOptionsLabel(rows)}
               accessibilityRole="button"
               accessibilityState={{ disabled: options.disabled }}
               disabled={options.disabled}
@@ -350,7 +351,7 @@ function ComposerEditor({
           <View style={styles.editorBar}>
             <IconButton
               icon={<CollapseIcon size={iconSize.md} tone="textPrimary" />}
-              label="Collapse the message"
+              label={copy.phone.conversations.chatComposer.collapseTheMessage}
               onPress={onCollapse}
             />
             <View style={styles.grow} />

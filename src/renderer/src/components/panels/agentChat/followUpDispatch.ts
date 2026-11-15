@@ -1,4 +1,5 @@
 import type { FollowUpBehavior } from '../../../../../shared/workspace'
+import { copy } from '../../../../../shared/copy'
 
 // What a message committed while the chat's agent is working does, and what
 // the send button says it will do (Settings ▸ Agents, "When I send while an
@@ -97,9 +98,18 @@ export function followUpSendPresentation(input: {
     action,
     alternate,
     labels: LABELS,
-    tooltip: `${LABELS[action]}; ${input.clickModifier}-click or ${input.shortcutLabel} to ${VERBS[alternate]}`,
+    tooltip: copy.panels.agentChat.followUpDispatch.clickOrTo(
+      LABELS[action],
+      input.clickModifier,
+      input.shortcutLabel,
+      VERBS[alternate],
+    ),
     // The key is down: a click now does the other, and letting go undoes it.
-    heldTooltip: `${input.clickModifier}-click to ${VERBS[alternate]}; release to ${VERBS[action]}`,
+    heldTooltip: copy.panels.agentChat.followUpDispatch.clickToReleaseTo(
+      input.clickModifier,
+      VERBS[alternate],
+      VERBS[action],
+    ),
   }
 }
 

@@ -22,6 +22,7 @@ import {
 import { newHomeCardSlugs } from '../components/extensions/homeCards'
 import type { HostedCard } from '../../../shared/hosted-card-feed'
 import type { AppNotification, DiagnosticSource } from '../../../shared/workspace'
+import { copy } from '../../../shared/copy'
 
 // Which bell notifications belong under which drawer row. A source that is
 // not in the set (a git failure, a terminal crash, an auth problem) is a
@@ -168,7 +169,11 @@ export function homeRailBadge(input: { needsInput: number; failed: number; finis
   const count = input.needsInput + input.failed + input.finished
   if (count <= 0) return null
   const tone = input.needsInput > 0 ? 'warn' : input.failed > 0 ? 'error' : 'good'
-  return { count, tone, label: count === 1 ? '1 chat wants you' : `${count} chats want you` }
+  return {
+    count,
+    tone,
+    label: count === 1 ? copy.utils.railBadges.n1ChatWantsYou : copy.utils.railBadges.chatsWantYou(count),
+  }
 }
 
 /**
@@ -224,5 +229,9 @@ export function extensionsRailBadge(input: {
   const count = rows.reduce((sum, row) => sum + row.count, 0) + input.unseenCards
   if (count <= 0) return null
   const tone = loudestTone(rows.map((row) => row.tone))
-  return { count, tone, label: count === 1 ? '1 new in Extensions' : `${count} new in Extensions` }
+  return {
+    count,
+    tone,
+    label: count === 1 ? copy.utils.railBadges.n1NewInExtensions : copy.utils.railBadges.newInExtensions(count),
+  }
 }

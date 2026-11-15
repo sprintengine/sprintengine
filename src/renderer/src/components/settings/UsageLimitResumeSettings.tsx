@@ -6,6 +6,7 @@ import {
   useUsageLimitResumeStore,
 } from '../../store/usageLimitResumeStore'
 import { SettingToggle } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Agents' switch for resuming a chat a usage limit stopped. Main
 // keeps it, beside the resumes it schedules (src/main/usage-limits/resume.ts);
@@ -16,8 +17,8 @@ export function UsageLimitResumeSettings() {
   // A row; Settings ▸ Agents sets it in the card of chat behaviour.
   return (
     <SettingToggle
-      label="Resume after usage limits"
-      description="Claude and Codex chats carry on once their usage limit resets. Off: you choose."
+      label={copy.settings.usageLimitResumeSettings.resumeAfterUsageLimits}
+      description={copy.settings.usageLimitResumeSettings.claudeAndCodexChatsCarry}
       enabled={autoResume}
       onChange={(enabled) => void updateUsageLimitResume({ kind: 'auto', enabled })}
     />

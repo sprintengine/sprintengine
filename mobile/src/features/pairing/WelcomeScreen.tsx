@@ -5,6 +5,7 @@ import { SprintEngineWordmark } from "../../components/SprintEngineWordmark";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { space, type Theme, typography } from "../../theme/tokens";
+import { copy } from "../../../../src/shared/copy";
 
 /**
  * The first screen a phone with no paired desktop sees: the mark centred in the
@@ -25,7 +26,7 @@ export function WelcomeScreen({ onStartPairing }: { onStartPairing: () => void }
             master by scripts/generate-brand-icons.mjs. It is the same dark
             card in both themes, as the icon is. The wordmark under it is the
             name, live text as everywhere else. */}
-        <View accessibilityLabel="Sprint Engine" accessible style={styles.markGroup}>
+        <View accessibilityLabel={copy.phone.pairing.welcomeScreen.sprintEngine} accessible style={styles.markGroup}>
           <Image source={seMark} style={styles.mark} accessibilityIgnoresInvertColors />
           <View style={styles.wordmarkRow}>
             <SprintEngineWordmark size="header" />
@@ -34,8 +35,8 @@ export function WelcomeScreen({ onStartPairing }: { onStartPairing: () => void }
       </View>
 
       <View style={styles.actions}>
-        <Text style={styles.lead}>Pair with Studio on a desktop in your tailnet.</Text>
-        <PrimaryButton label="Pair with a desktop" onPress={onStartPairing} />
+        <Text style={styles.lead}>{copy.phone.pairing.welcomeScreen.pairWithStudioOnA}</Text>
+        <PrimaryButton label={copy.phone.pairing.welcomeScreen.pairWithADesktop} onPress={onStartPairing} />
       </View>
     </View>
   );

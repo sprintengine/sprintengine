@@ -5,6 +5,7 @@ import {
   type UsageReportMachine,
   type UsageReportTokens,
 } from '../../../../shared/usage-report'
+import { copy } from '../../../../shared/copy'
 
 // The usage dashboard's arithmetic, apart from its drawing so it can be tested
 // as plain functions: the window a range covers, the periods the chart and the
@@ -17,10 +18,10 @@ export type UsageRange = '24h' | '7d' | '30d' | '90d'
 export type UsageMetric = 'cost' | 'tokens'
 
 export const USAGE_RANGES: ReadonlyArray<{ value: UsageRange; label: string }> = [
-  { value: '24h', label: 'Past 24h' },
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-  { value: '90d', label: '90 days' },
+  { value: '24h', label: copy.usage.usageDashboardModel.past24h },
+  { value: '7d', label: copy.usage.usageDashboardModel.n7Days },
+  { value: '30d', label: copy.usage.usageDashboardModel.n30Days },
+  { value: '90d', label: copy.usage.usageDashboardModel.n90Days },
 ]
 
 const HOUR_MS = 3_600_000
@@ -192,11 +193,11 @@ export function usageHeadline(report: UsageReport, metric: UsageMetric): number 
 /** Every token, by kind, for the totals row. */
 export function usageTotalsRow(tokens: UsageReportTokens): Array<{ label: string; value: number }> {
   return [
-    { label: 'Processed tokens', value: usageTokenTotal(tokens) },
-    { label: 'Cached input', value: tokens.cacheRead },
-    { label: 'Uncached input', value: tokens.input },
-    { label: 'Cache writes', value: tokens.cacheWrite },
-    { label: 'Output', value: tokens.output },
+    { label: copy.usage.usageDashboardModel.processedTokens, value: usageTokenTotal(tokens) },
+    { label: copy.usage.usageDashboardModel.cachedInput, value: tokens.cacheRead },
+    { label: copy.usage.usageDashboardModel.uncachedInput, value: tokens.input },
+    { label: copy.usage.usageDashboardModel.cacheWrites, value: tokens.cacheWrite },
+    { label: copy.usage.usageDashboardModel.output, value: tokens.output },
   ]
 }
 

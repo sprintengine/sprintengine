@@ -7,6 +7,7 @@ import type {
 } from "../../../packages/studio-protocol/src/public";
 import { desktopStudio, studioFailure, type DesktopStudioOptions } from "./desktopStudio";
 import type { ApiResult } from "./types";
+import { copy } from "../../../src/shared/copy";
 
 // A desktop's scheduled agents, from the phone: the desktop's `schedules.*`
 // on its Studio protocol (desktopStudio.ts), answered by the same service its
@@ -160,7 +161,7 @@ export function readScheduledAgent(value: unknown): PhoneScheduledAgent | null {
       : null;
   return {
     id: value.id,
-    title: name || firstLine || "Scheduled agent",
+    title: name || firstLine || copy.phone.api.scheduledAgents.scheduledAgent,
     prompt: value.prompt,
     scheduleWords: typeof value.scheduleWords === "string" && value.scheduleWords ? value.scheduleWords : schedule.cron,
     projectName: folder.split(/[\\/]/u).filter(Boolean).pop() ?? folder,
@@ -238,7 +239,7 @@ export function createScheduledAgentsApi(
       const agent = readScheduledAgent(made.data?.schedule);
       return agent
         ? { ok: true as const, data: agent }
-        : { ok: false as const, errorCode: "invalid_payload" as const, message: "The desktop did not confirm the schedule." };
+        : { ok: false as const, errorCode: "invalid_payload" as const, message: copy.phone.api.scheduledAgents.theDesktopDidNotConfirm };
     },
   };
 }

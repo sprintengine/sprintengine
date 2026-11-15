@@ -20,6 +20,7 @@ import type { TranscriptEntry } from './conversationProjection'
 import { useConversationLinkContext } from './conversationLinks'
 import { useConversationTransport, type ConversationTransport } from './conversationTransport'
 import { formatDiffCount } from '../../../utils/diffCount'
+import { copy } from '../../../../../shared/copy'
 
 type UserEntry = Extract<TranscriptEntry, { kind: 'user' }>
 
@@ -78,9 +79,9 @@ function EditFromHereButton({ entry, running, canRestoreFiles, onRestoreDraft, c
       }
       const choice = { restoreFiles: false }
       const accepted = await dialog.confirm({
-        title: 'Edit from here?',
+        title: copy.panels.agentChat.editFromHere.editFromHere,
         tone: 'danger',
-        confirmLabel: 'Edit from here',
+        confirmLabel: copy.panels.agentChat.editFromHere.editFromHere2,
         body: <EditFromHereBody files={files} onRestoreFilesChange={(value) => (choice.restoreFiles = value)} />,
       })
       if (!accepted) return
@@ -97,20 +98,28 @@ function EditFromHereButton({ entry, running, canRestoreFiles, onRestoreDraft, c
         if (restoreError)
           showToast({
             tone: 'error',
-            title: `Chat rewound, but files weren't restored: ${restoreError}`,
+            title: copy.panels.agentChat.editFromHere.chatRewoundButFilesWeren(restoreError),
           })
       }
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Couldn't edit from here: ${error instanceof Error ? error.message : String(error)}`,
+        title: copy.panels.agentChat.editFromHere.couldnTEditFromHere(
+          error instanceof Error ? error.message : String(error),
+        ),
       })
     } finally {
       setPending(false)
     }
   }
   return (
-    <Tooltip content={running ? 'Stop the running turn to edit' : 'Go back to before this message and edit it'}>
+    <Tooltip
+      content={
+        running
+          ? copy.panels.agentChat.editFromHere.stopTheRunningTurnTo
+          : copy.panels.agentChat.editFromHere.goBackToBeforeThis
+      }
+    >
       <span className={className}>
         <GhostButton size="inline" disabled={running || pending} onClick={() => void editFromHere()}>
           {pending ? 'Preparing…' : 'Edit from here'}
@@ -156,10 +165,7 @@ function EditFromHereBody({
   const [restoreFiles, setRestoreFiles] = useState(false)
   return (
     <>
-      <p>
-        This message and everything after it are removed, and the agent forgets them. The message returns to the
-        composer to edit.
-      </p>
+      <p>{copy.panels.agentChat.editFromHere.thisMessageAndEverythingAfter}</p>
       {files.length > 0 ? (
         <div className="mt-3">
           <Checkbox
@@ -168,7 +174,11 @@ function EditFromHereBody({
               setRestoreFiles(value)
               onRestoreFilesChange(value)
             }}
-            label={`Also restore ${files.length === 1 ? '1 file' : `${files.length} files`} to before this message`}
+            label={copy.panels.agentChat.editFromHere.alsoRestoreToBeforeThis(
+              files.length === 1
+                ? copy.panels.agentChat.editFromHere.n1File
+                : copy.panels.agentChat.editFromHere.files(files.length),
+            )}
             size="body"
           />
           {restoreFiles ? (
@@ -182,7 +192,7 @@ function EditFromHereBody({
           ) : null}
         </div>
       ) : (
-        <p className="mt-2 text-[color:var(--text-muted)]">Files are left as they are.</p>
+        <p className="mt-2 text-[color:var(--text-muted)]">{copy.panels.agentChat.editFromHere.filesAreLeftAsThey}</p>
       )}
     </>
   )

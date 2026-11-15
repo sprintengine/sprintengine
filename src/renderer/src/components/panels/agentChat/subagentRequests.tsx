@@ -16,6 +16,7 @@ import { ConversationPendingDock } from './pendingDock'
 import { SubagentIcon } from './subagentIcon'
 import { useRemoteChat } from './remoteChatRegistry'
 import { useConversationSession } from './useConversationSession'
+import { copy } from '../../../../../shared/copy'
 
 // What a sub-agent Studio started is waiting on the person for, above its
 // parent's box. A sub-agent is a chat of its own, so its parent's transcript
@@ -52,7 +53,10 @@ function ChildRequests({
     <div data-subagent-request={subagent.id} className="mb-2">
       <p className="mb-1 flex min-w-0 items-center gap-1.5 text-meta text-[color:var(--text-muted)]">
         <SubagentIcon cli={subagent.cli} />
-        <span className="min-w-0 truncate">{subagent.name} is asking</span>
+        <span className="min-w-0 truncate">
+          {subagent.name}
+          {copy.panels.agentChat.subagentRequests.isAsking}
+        </span>
       </p>
       <ConversationPendingDock
         pendingApprovals={pending}
@@ -60,7 +64,14 @@ function ChildRequests({
         // A pairing that may only follow sees what is asked, and cannot answer.
         busy={responding || !operate}
       />
-      {refusal ? <InlineNotice tone="error" title="The answer did not go." detail={refusal} className="mt-2" /> : null}
+      {refusal ? (
+        <InlineNotice
+          tone="error"
+          title={copy.panels.agentChat.subagentRequests.theAnswerDidNotGo}
+          detail={refusal}
+          className="mt-2"
+        />
+      ) : null}
     </div>
   )
 }

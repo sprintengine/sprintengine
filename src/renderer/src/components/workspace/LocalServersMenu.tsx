@@ -12,6 +12,7 @@ import { openUrlInPane } from './pane/browser/openInPane'
 import { isLocalServerRunConfirmed, rememberLocalServerRun, type LocalServerRun } from './localServerRunConfirmations'
 import { removeLocalServer, runLocalServer, stopLocalServer, type LocalServerActionResult } from './useLocalServers'
 import { tailnetApi } from '../../studio/tailnet'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The one menu for the local servers a conversation's agents started, opened
 // from the open chat's composer strip and from the sidebar row's mark, so the
@@ -119,30 +120,33 @@ export function localServerActions(
     if (localServerListensOnlyThere(server.url))
       actions.push({
         id: 'open',
-        label: 'Open',
+        label: appCopy.workspace.localServersMenu.open,
         disabled: true,
         reason: onlyThereReason(context.elsewhere.machineName),
       })
     else {
-      if (context.canOpenInPane) actions.push({ id: 'open', label: 'Open' })
-      actions.push({ id: 'open-external', label: 'Open in browser' })
+      if (context.canOpenInPane) actions.push({ id: 'open', label: appCopy.workspace.localServersMenu.open })
+      actions.push({ id: 'open-external', label: appCopy.workspace.localServersMenu.openInBrowser })
     }
-    actions.push({ id: 'copy-link', label: 'Copy link' })
+    actions.push({ id: 'copy-link', label: appCopy.workspace.localServersMenu.copyLink })
     return actions
   }
-  if (context.canOpenInPane) actions.push({ id: 'open', label: 'Open' })
-  actions.push({ id: 'open-external', label: 'Open in browser' }, { id: 'copy-link', label: 'Copy link' })
+  if (context.canOpenInPane) actions.push({ id: 'open', label: appCopy.workspace.localServersMenu.open })
+  actions.push(
+    { id: 'open-external', label: appCopy.workspace.localServersMenu.openInBrowser },
+    { id: 'copy-link', label: appCopy.workspace.localServersMenu.copyLink },
+  )
   if (context.tailnet?.available && isLoopbackUrl(server.url)) {
     const shared = context.tailnet.shares.some((share) => share.localPort === server.port)
-    if (shared) actions.push({ id: 'copy-tailnet-link', label: 'Copy tailnet link' })
+    if (shared) actions.push({ id: 'copy-tailnet-link', label: appCopy.workspace.localServersMenu.copyTailnetLink })
     else if (context.tailnet.ladderFull)
       actions.push({
         id: 'share-tailnet',
-        label: 'Share on tailnet',
+        label: appCopy.workspace.localServersMenu.shareOnTailnet,
         disabled: true,
         reason: 'Every tailnet port Studio can publish on is taken. Stop sharing another server first.',
       })
-    else actions.push({ id: 'share-tailnet', label: 'Share on tailnet' })
+    else actions.push({ id: 'share-tailnet', label: appCopy.workspace.localServersMenu.shareOnTailnet })
   }
   // A run the Studio started is stoppable for as long as its process lives,
   // whatever its port says: one that listens somewhere else, or takes longer
@@ -151,12 +155,12 @@ export function localServerActions(
   if (server.state === 'stopped' && !server.startedByStudio) {
     actions.push(
       server.command
-        ? { id: 'run', label: 'Run again' }
-        : { id: 'run', label: 'Run again', disabled: true, reason: NO_COMMAND_REASON },
+        ? { id: 'run', label: appCopy.workspace.localServersMenu.runAgain }
+        : { id: 'run', label: appCopy.workspace.localServersMenu.runAgain, disabled: true, reason: NO_COMMAND_REASON },
     )
   }
-  if (server.startedByStudio) actions.push({ id: 'stop', label: 'Stop' })
-  actions.push({ id: 'remove', label: 'Remove', destructive: true })
+  if (server.startedByStudio) actions.push({ id: 'stop', label: appCopy.workspace.localServersMenu.stop })
+  actions.push({ id: 'remove', label: appCopy.workspace.localServersMenu.remove, destructive: true })
   return actions
 }
 
@@ -185,7 +189,7 @@ async function copy(text: string, title: string): Promise<void> {
   } catch (error) {
     showToast({
       tone: 'error',
-      title: 'Could not copy the link',
+      title: appCopy.workspace.localServersMenu.couldNotCopyTheLink,
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -195,11 +199,15 @@ async function openExternal(url: string): Promise<void> {
   try {
     const result = await window.api.openExternal(url)
     if (result && !result.ok)
-      showToast({ tone: 'error', title: 'Could not open the link', description: result.message })
+      showToast({
+        tone: 'error',
+        title: appCopy.workspace.localServersMenu.couldNotOpenTheLink,
+        description: result.message,
+      })
   } catch (error) {
     showToast({
       tone: 'error',
-      title: 'Could not open the link',
+      title: appCopy.workspace.localServersMenu.couldNotOpenTheLink,
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -208,20 +216,20 @@ async function openExternal(url: string): Promise<void> {
 /** What the person is shown before an agent's command runs as them: the command, and the folder. */
 export function localServerRunQuestion(server: StudioLocalServer): ConfirmDialogOptions {
   return {
-    title: `Run ${server.title}?`,
+    title: appCopy.workspace.localServersMenu.run(server.title),
     body: (
       <div className="flex flex-col gap-2">
-        <span>An agent suggested this command. It runs as you, in this folder.</span>
+        <span>{appCopy.workspace.localServersMenu.anAgentSuggestedThisCommand}</span>
         <span className="break-all font-mono text-meta text-[color:var(--text-strong)]" data-local-server-confirm="">
           $ {server.command}
           <span className="block break-all text-[color:var(--text-subtle)]">
             in {server.cwd ?? 'the conversation’s folder'}
           </span>
         </span>
-        <span className="text-[color:var(--text-subtle)]">You are asked again if the agent changes it.</span>
+        <span className="text-[color:var(--text-subtle)]">{appCopy.workspace.localServersMenu.youAreAskedAgainIf}</span>
       </div>
     ),
-    confirmLabel: 'Run',
+    confirmLabel: appCopy.workspace.localServersMenu.run2,
   }
 }
 
@@ -282,19 +290,23 @@ async function runAction(
           // The link is what the person shares it for, so it is on the
           // clipboard already.
           await window.api.clipboardWriteText(result.share.url).catch(() => undefined)
-          showToast({ tone: 'good', title: 'Shared on your tailnet — link copied', description: result.share.url })
+          showToast({
+            tone: 'good',
+            title: appCopy.workspace.localServersMenu.sharedOnYourTailnetLink,
+            description: result.share.url,
+          })
         } else {
           showToast({
             tone: 'error',
-            title: 'Could not share this server',
-            description: result.ok ? 'Tailscale did not say where it is published.' : result.message,
+            title: appCopy.workspace.localServersMenu.couldNotShareThisServer,
+            description: result.ok ? appCopy.workspace.localServersMenu.tailscaleDidNotSayWhere : result.message,
           })
         }
       } catch {
         showToast({
           tone: 'error',
-          title: 'Could not share this server',
-          description: 'Studio could not reach Tailscale on this machine.',
+          title: appCopy.workspace.localServersMenu.couldNotShareThisServer,
+          description: appCopy.workspace.localServersMenu.studioCouldNotReachTailscale,
         })
       }
       return
@@ -361,8 +373,8 @@ export function LocalServersMenu({
       if (dialog) return dialog.confirm(options)
       showToast({
         tone: 'error',
-        title: 'Could not ask before running it',
-        description: 'Run it again from the Studio window.',
+        title: appCopy.workspace.localServersMenu.couldNotAskBeforeRunning,
+        description: appCopy.workspace.localServersMenu.runItAgainFromThe,
       })
       return false
     },
@@ -482,7 +494,8 @@ function ServerSection({
         ) : null}
         {context.elsewhere ? (
           <span className="text-micro text-[color:var(--text-subtle)]" data-local-server-elsewhere="">
-            On {context.elsewhere.machineName}
+            {appCopy.workspace.localServersMenu.on}
+            {context.elsewhere.machineName}
           </span>
         ) : null}
         {server.command ? (

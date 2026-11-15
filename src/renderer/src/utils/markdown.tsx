@@ -14,6 +14,7 @@ import { remarkFencedCodeValue, singleFencedCode } from './markdownFence'
 import { isMarkdownFragmentHref, MARKDOWN_FRAGMENT_PREFIX, markdownFragmentTarget } from './markdownHeadingIds'
 import { DisplayMath, InlineMath, isMathLanguage } from './markdownMath'
 import { MARKDOWN_PLUGINS, MATH_PLUGINS, repairReplyMarkdown, USER_TEXT_PLUGINS } from './markdownPlugins'
+import { copy as appCopy } from '../../../shared/copy'
 
 /**
  * A document renders at `document` scale; a document read inside a dense
@@ -392,15 +393,31 @@ function changedBlockClass(node: MarkdownNode, lineChanges: GitLineChange[] | un
 // failure waiting to happen. Important has no tone of its own, so it takes the
 // merged violet GitHub gives it on a neutral ground.
 const ALERTS: Record<MarkdownAlertKind, { label: string; ink: string; ground: string }> = {
-  note: { label: 'Note', ink: 'text-[color:var(--accent-primary)]', ground: 'bg-[color:var(--tone-accent-soft)]' },
-  tip: { label: 'Tip', ink: 'text-[color:var(--tone-good)]', ground: 'bg-[color:var(--tone-good-soft)]' },
+  note: {
+    label: appCopy.utils.markdown.note,
+    ink: 'text-[color:var(--accent-primary)]',
+    ground: 'bg-[color:var(--tone-accent-soft)]',
+  },
+  tip: {
+    label: appCopy.utils.markdown.tip,
+    ink: 'text-[color:var(--tone-good)]',
+    ground: 'bg-[color:var(--tone-good-soft)]',
+  },
   important: {
-    label: 'Important',
+    label: appCopy.utils.markdown.important,
     ink: 'text-[color:var(--tone-merged)]',
     ground: 'bg-[color:var(--tone-neutral-soft)]',
   },
-  warning: { label: 'Warning', ink: 'text-[color:var(--tone-warn)]', ground: 'bg-[color:var(--tone-warn-soft)]' },
-  caution: { label: 'Caution', ink: 'text-[color:var(--tone-error)]', ground: 'bg-[color:var(--tone-error-soft)]' },
+  warning: {
+    label: appCopy.utils.markdown.warning,
+    ink: 'text-[color:var(--tone-warn)]',
+    ground: 'bg-[color:var(--tone-warn-soft)]',
+  },
+  caution: {
+    label: appCopy.utils.markdown.caution,
+    ink: 'text-[color:var(--tone-error)]',
+    ground: 'bg-[color:var(--tone-error-soft)]',
+  },
 }
 
 function alertKind(node: MarkdownNode): MarkdownAlertKind | null {
@@ -521,20 +538,29 @@ function MarkdownTable({
       </div>
       {node ? (
         <div data-copy-exclude="" className="mt-0.5 flex items-center justify-end gap-0.5">
-          <CopyGlyphButton size="xs" label="Copy table" text={() => tableMarkdown(node)} html={() => tableHtml(node)} />
+          <CopyGlyphButton
+            size="xs"
+            label={appCopy.utils.markdown.copyTable}
+            text={() => tableMarkdown(node)}
+            html={() => tableHtml(node)}
+          />
           <OverflowMenu
-            ariaLabel="Copy table as"
-            triggerTooltip="Copy as"
+            ariaLabel={appCopy.utils.markdown.copyTableAs}
+            triggerTooltip={appCopy.utils.markdown.copyAs}
             items={[
               {
                 id: 'markdown',
-                label: 'Copy as Markdown',
+                label: appCopy.utils.markdown.copyAsMarkdown,
                 onSelect: () => void copyToClipboardWithToast(tableMarkdown(node), { html: () => tableHtml(node) }),
               },
-              { id: 'csv', label: 'Copy as CSV', onSelect: () => void copyToClipboardWithToast(tableCsv(node)) },
+              {
+                id: 'csv',
+                label: appCopy.utils.markdown.copyAsCSV,
+                onSelect: () => void copyToClipboardWithToast(tableCsv(node)),
+              },
               {
                 id: 'tsv',
-                label: 'Copy for a spreadsheet (TSV)',
+                label: appCopy.utils.markdown.copyForASpreadsheetTSV,
                 onSelect: () => void copyToClipboardWithToast(tableTsv(node)),
               },
             ]}

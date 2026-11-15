@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { test } from 'vitest'
+import { readSourceWithCopy } from '../../../../../tests/source-with-copy'
 
 test('accessibility-contracts', async () => {
   const root = process.cwd()
 
   function read(path: string): string {
-    return readFileSync(join(root, path), 'utf8')
+    return readSourceWithCopy(join(root, path), 'utf8')
   }
 
   function collectSources(dir: string, out: string[] = []): string[] {
@@ -624,7 +625,7 @@ test('accessibility-contracts', async () => {
       const privateTerminalRing = collectSources(join(root, 'src/renderer/src')).filter((path) => {
         if (/\.test\.tsx?$/.test(path)) return false
         if (/ui[\\/]tokens\.ts$/.test(path)) return false
-        return /'terminal-focus-ring'|"terminal-focus-ring"|terminal-focus-ring /.test(readFileSync(path, 'utf8'))
+        return /'terminal-focus-ring'|"terminal-focus-ring"|terminal-focus-ring /.test(readSourceWithCopy(path, 'utf8'))
       })
       assert.deepEqual(
         privateTerminalRing.map((path) => relative(root, path)),
@@ -646,7 +647,7 @@ test('accessibility-contracts', async () => {
     const componentSources = collectSources(join(root, 'src/renderer/src'))
     const offenders = componentSources.filter((path) => {
       if (/\.test\.tsx?$/.test(path)) return false
-      return HAND_ROLLED_FOCUS.test(withoutComments(readFileSync(path, 'utf8')))
+      return HAND_ROLLED_FOCUS.test(withoutComments(readSourceWithCopy(path, 'utf8')))
     })
     assert.deepEqual(
       offenders.map((path) => relative(root, path)),
@@ -690,7 +691,7 @@ test('accessibility-contracts', async () => {
   {
     const modalityHosts = collectSources(join(root, 'src/renderer/src')).filter((path) => {
       if (/\.test\.tsx?$/.test(path)) return false
-      const code = withoutComments(readFileSync(path, 'utf8'))
+      const code = withoutComments(readSourceWithCopy(path, 'utf8'))
       return CLAIMS_MODALITY.test(code) && !MOUNTS_FOCUS_TRAP.test(code)
     })
     assert.deepEqual(

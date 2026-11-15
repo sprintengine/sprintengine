@@ -20,6 +20,7 @@ import {
   type VersionControlProviderProbe,
 } from '../../../../shared/version-control'
 import type { StatusTone } from '../ui/tokens'
+import { copy } from '../../../../shared/copy'
 
 // Two genuinely different groups, which is what earns them titles: the version
 // control system itself, then the hosting provider it pushes to.
@@ -50,7 +51,7 @@ export type VersionControlProviderSpec = {
 const PROVIDER_SPECS: Record<VersionControlProviderId, VersionControlProviderSpec> = {
   git: {
     id: 'git',
-    label: 'Git',
+    label: copy.settings.versionControlProviders.git,
     binary: 'git',
     monogram: 'git',
     section: 'vcs',
@@ -58,7 +59,7 @@ const PROVIDER_SPECS: Record<VersionControlProviderId, VersionControlProviderSpe
   },
   gh: {
     id: 'gh',
-    label: 'GitHub',
+    label: copy.settings.versionControlProviders.gitHub,
     binary: 'gh',
     monogram: 'gh',
     section: 'forge',
@@ -67,7 +68,7 @@ const PROVIDER_SPECS: Record<VersionControlProviderId, VersionControlProviderSpe
   },
   glab: {
     id: 'glab',
-    label: 'GitLab',
+    label: copy.settings.versionControlProviders.gitLab,
     binary: 'glab',
     monogram: 'gl',
     section: 'forge',
@@ -78,7 +79,7 @@ const PROVIDER_SPECS: Record<VersionControlProviderId, VersionControlProviderSpe
   // Windows command: tea ships there as a download, not a package.
   tea: {
     id: 'tea',
-    label: 'Gitea and Forgejo',
+    label: copy.settings.versionControlProviders.giteaAndForgejo,
     binary: 'tea',
     monogram: 'tea',
     section: 'forge',

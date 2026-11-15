@@ -8,6 +8,7 @@
 
 import type { ConversationTimelineRow } from './conversationTimeline'
 import { STARTING_WORKING_LABEL } from './pendingFirstMessage'
+import { copy } from '../../../../../shared/copy'
 
 type WorkingRow = Extract<ConversationTimelineRow, { kind: 'working' }>
 
@@ -41,7 +42,7 @@ export function withRequestedTurn(
       kind: 'working',
       id: 'working-indicator-row',
       stage: 'thinking',
-      label: `Waiting for ${waitingOn}…`,
+      label: copy.panels.agentChat.requestedTurnRow.waitingFor(waitingOn),
     } satisfies WorkingRow
     cache.current = null
     return [...rows, row]

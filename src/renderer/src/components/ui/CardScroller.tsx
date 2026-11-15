@@ -3,6 +3,7 @@ import React from 'react'
 import { IconButton } from './Buttons'
 import { ChevronDownIcon } from '../AppIcons'
 import { useFadingScroll } from './useFadingScroll'
+import { copy } from '../../../../shared/copy'
 
 // A heading over a row of tiles that scrolls sideways
 // (design-system/components/card-scroller): more choices than a column holds,
@@ -37,10 +38,20 @@ export function CardScroller({
         <h2 className="min-w-0 flex-1 truncate text-meta font-medium text-[color:var(--text-muted)]">{title}</h2>
         {overflowing ? (
           <>
-            <IconButton tone="quiet" aria-label="Scroll back" disabled={!edges.start} onClick={() => page(-1)}>
+            <IconButton
+              tone="quiet"
+              aria-label={copy.ui.cardScroller.scrollBack}
+              disabled={!edges.start}
+              onClick={() => page(-1)}
+            >
               <ChevronDownIcon className="icon-xs rotate-90" />
             </IconButton>
-            <IconButton tone="quiet" aria-label="Scroll on" disabled={!edges.end} onClick={() => page(1)}>
+            <IconButton
+              tone="quiet"
+              aria-label={copy.ui.cardScroller.scrollOn}
+              disabled={!edges.end}
+              onClick={() => page(1)}
+            >
               <ChevronDownIcon className="icon-xs -rotate-90" />
             </IconButton>
           </>

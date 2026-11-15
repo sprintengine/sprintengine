@@ -35,6 +35,7 @@ import { useTailnetPresence } from '../workspace/topbar/useTailnetPresence'
 import { hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
 import { tailnetApi } from '../../studio/tailnet'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Settings → Remote (remote-settings-rebuild): one switch and one list of
 // machines.
@@ -263,7 +264,7 @@ export function RemoteTailnetSettingsTab() {
       setStatus(await tailnetApi.tailnetResetMcpRegistrations())
       setAction({
         tone: 'idle',
-        message: 'MCP registrations reset. Clients register again at next sign-in.',
+        message: appCopy.settings.remoteTailnetSettingsTab.mCPRegistrationsResetClientsRegister,
       })
     })
 
@@ -290,16 +291,22 @@ export function RemoteTailnetSettingsTab() {
       }
       setPairingLink('')
       setPasteOpen(false)
-      setAction({ tone: 'idle', message: `Paired with ${result.connection.machineName}.` })
+      setAction({
+        tone: 'idle',
+        message: appCopy.settings.remoteTailnetSettingsTab.pairedWith(result.connection.machineName),
+      })
     })
   }
 
   const copy = async (value: string, label: string): Promise<void> => {
     try {
       await window.api.clipboardWriteText(value)
-      setAction({ tone: 'idle', message: `${label} copied.` })
+      setAction({ tone: 'idle', message: appCopy.settings.remoteTailnetSettingsTab.copied(label) })
     } catch {
-      setAction({ tone: 'error', message: `Could not copy the ${label.toLowerCase()}.` })
+      setAction({
+        tone: 'error',
+        message: appCopy.settings.remoteTailnetSettingsTab.couldNotCopyThe(label.toLowerCase()),
+      })
     }
   }
 
@@ -311,7 +318,7 @@ export function RemoteTailnetSettingsTab() {
           the dot: it sits beside text saying the same thing, which is exactly
           when the primitive asks to stay decorative. */}
       <SettingsPageHeader
-        title="Remote"
+        title={appCopy.settings.remoteTailnetSettingsTab.remote}
         meta={
           <span className="inline-flex items-center gap-1.5">
             <StatusDot tone={readiness.tone} />
@@ -332,7 +339,7 @@ export function RemoteTailnetSettingsTab() {
 
       <SettingCard>
         <SettingToggle
-          label="Remote control over your tailnet"
+          label={appCopy.settings.remoteTailnetSettingsTab.remoteControlOverYourTailnet}
           enabled={enabled}
           onChange={(next) => void toggleEnabled(next)}
           // Turning it OFF stays available whatever the state; only turning it
@@ -351,11 +358,11 @@ export function RemoteTailnetSettingsTab() {
             <SettingsSectionTitle
               action={
                 <GhostButton size="xs" onClick={() => void cancelPairing()} disabled={busy}>
-                  Cancel
+                  {appCopy.settings.remoteTailnetSettingsTab.cancel}
                 </GhostButton>
               }
             >
-              Pair a device
+              {appCopy.settings.remoteTailnetSettingsTab.pairADevice}
             </SettingsSectionTitle>
             <PairingCodeCard
               offer={offer}
@@ -369,9 +376,9 @@ export function RemoteTailnetSettingsTab() {
             count={machines.length}
             action={
               <SplitButton
-                label="Pair a device"
-                primaryAriaLabel="Pair a device"
-                menuAriaLabel="More ways to pair"
+                label={appCopy.settings.remoteTailnetSettingsTab.pairADevice}
+                primaryAriaLabel={appCopy.settings.remoteTailnetSettingsTab.pairADevice}
+                menuAriaLabel={appCopy.settings.remoteTailnetSettingsTab.moreWaysToPair}
                 // One row, and it still earns the caret: "Paste a pairing link"
                 // is another ROUTE to the same pairing, never another target,
                 // so it can never become the primary (split-button, 2026-09-10).
@@ -379,7 +386,7 @@ export function RemoteTailnetSettingsTab() {
                 items={[
                   {
                     id: 'paste',
-                    label: 'Paste a pairing link',
+                    label: appCopy.settings.remoteTailnetSettingsTab.pasteAPairingLink,
                     onSelect: () => setPasteOpen(true),
                   },
                 ]}
@@ -389,7 +396,7 @@ export function RemoteTailnetSettingsTab() {
               />
             }
           >
-            Machines
+            {appCopy.settings.remoteTailnetSettingsTab.machines}
           </SettingsSectionTitle>
         )}
 
@@ -398,8 +405,8 @@ export function RemoteTailnetSettingsTab() {
             <Input
               value={pairingLink}
               onChange={(event) => setPairingLink(event.target.value)}
-              placeholder="sprintengine-tailnet://pair?…"
-              aria-label="Pairing link"
+              placeholder={appCopy.settings.remoteTailnetSettingsTab.sprintengineTailnetPair}
+              aria-label={appCopy.settings.remoteTailnetSettingsTab.pairingLink}
               autoFocus
               onKeyDown={(event) => {
                 if (isImeKey(event)) return
@@ -408,7 +415,7 @@ export function RemoteTailnetSettingsTab() {
               }}
             />
             <PrimaryButton size="md" onClick={() => void pairByLink()} disabled={!pairingLink.trim() || busy}>
-              Pair
+              {appCopy.settings.remoteTailnetSettingsTab.pair}
             </PrimaryButton>
           </div>
         ) : null}
@@ -422,7 +429,7 @@ export function RemoteTailnetSettingsTab() {
         ) : null}
 
         {machines.length > 0 ? (
-          <MachineList ariaLabel="Machines">
+          <MachineList ariaLabel={appCopy.settings.remoteTailnetSettingsTab.machines}>
             {machines.map((machine) => (
               <MachineRow
                 key={machine.key}
@@ -457,7 +464,7 @@ export function RemoteTailnetSettingsTab() {
       {pairRequests.length > 0 ? (
         <section>
           <SettingsSectionTitle className="mb-1.5" count={pairRequests.length}>
-            Waiting to be answered
+            {appCopy.settings.remoteTailnetSettingsTab.waitingToBeAnswered}
           </SettingsSectionTitle>
           <SettingCard>
             {pairRequests.map((request) => (
@@ -474,7 +481,7 @@ export function RemoteTailnetSettingsTab() {
               other machine is waiting to be told, and someone who has walked
               to that machine needs to find them by the heading alone. */}
           <SettingsSectionTitle className="mb-1.5" count={presence.meshRequests.length}>
-            Codes to type on other machines
+            {appCopy.settings.remoteTailnetSettingsTab.codesToTypeOnOther}
           </SettingsSectionTitle>
           <SettingCard>
             {presence.meshRequests.map((request) => (
@@ -537,7 +544,7 @@ function PairingCodeCard({
 
   return (
     <div className="flex flex-wrap items-start gap-6 rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] p-4">
-      {matrix ? <QrSquare matrix={matrix} label="Pairing code" /> : null}
+      {matrix ? <QrSquare matrix={matrix} label={appCopy.settings.remoteTailnetSettingsTab.pairingCode} /> : null}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         {offer ? (
           url ? (
@@ -547,12 +554,14 @@ function PairingCodeCard({
               underline="never"
               onClick={() => onCopy(url, 'Pairing link')}
               className="break-all font-mono"
-              aria-label="Copy the pairing link"
+              aria-label={appCopy.settings.remoteTailnetSettingsTab.copyThePairingLink}
             >
               {url}
             </LinkButton>
           ) : (
-            <p className="text-body leading-5 text-[color:var(--text-muted)]">The listener is not running.</p>
+            <p className="text-body leading-5 text-[color:var(--text-muted)]">
+              {appCopy.settings.remoteTailnetSettingsTab.theListenerIsNotRunning}
+            </p>
           )
         ) : (
           // The token is returned once and never re-readable, so a panel
@@ -566,10 +575,10 @@ function PairingCodeCard({
           <div className="text-meta text-[color:var(--text-muted)]">{pairingExpiry(expiresAt, now)}</div>
         ) : null}
         <p className="text-micro leading-4 text-[color:var(--text-subtle)]">
-          Asked for a six-digit code? It's shown on the machine that asked, not here.
+          {appCopy.settings.remoteTailnetSettingsTab.askedForASixDigit}
         </p>
         {scopes.length > 0 ? (
-          <ScopePillSet ariaLabel="Scopes in this code">
+          <ScopePillSet ariaLabel={appCopy.settings.remoteTailnetSettingsTab.scopesInThisCode}>
             {scopes.map((scope) => (
               <ScopePill key={scope} scope={scope} />
             ))}
@@ -578,7 +587,7 @@ function PairingCodeCard({
         {url ? (
           <div>
             <OutlineButton size="sm" onClick={() => onCopy(url, 'Pairing link')}>
-              Copy link
+              {appCopy.settings.remoteTailnetSettingsTab.copyLink}
             </OutlineButton>
           </div>
         ) : null}

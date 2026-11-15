@@ -28,6 +28,7 @@ import type { NewProjectRequest } from '../newWorkspace/NewProjectStep'
 import type { NewProjectResult } from '../../../../../shared/electron-api'
 import { filesApi } from '../../../studio/files'
 import { gitApi } from '../../../studio/git'
+import { copy } from '../../../../../shared/copy'
 
 // "Which project is this about?", as one chip.
 //
@@ -228,10 +229,17 @@ export function ProjectScopePicker({
       if (onClone) return onClone(request)
       const cloned = await gitApi.cloneRepository(request).catch((caught: unknown): ProjectCloneResult => ({
         ok: false,
-        message: caught instanceof Error ? caught.message : 'Could not clone the repository.',
+        message:
+          caught instanceof Error
+            ? caught.message
+            : copy.workspace.agentComposer.projectScopePicker.couldNotCloneTheRepository,
       }))
       if (!cloned.ok) return cloned
-      showToast({ tone: 'good', title: `Cloned ${basename(cloned.path) || cloned.path}`, description: cloned.path })
+      showToast({
+        tone: 'good',
+        title: copy.workspace.agentComposer.projectScopePicker.cloned(basename(cloned.path) || cloned.path),
+        description: cloned.path,
+      })
       onSelect(cloned.path)
       return { ok: true, path: cloned.path }
     },
@@ -245,16 +253,25 @@ export function ProjectScopePicker({
       const made = await gitApi.createNewProject(request).catch((caught: unknown): NewProjectResult => ({
         ok: false,
         reason: 'failed',
-        message: caught instanceof Error ? caught.message : 'Could not create the project.',
+        message:
+          caught instanceof Error
+            ? caught.message
+            : copy.workspace.agentComposer.projectScopePicker.couldNotCreateTheProject,
       }))
       if (!made.ok) return made
       const label = basename(made.path) || made.path
       showToast(
         made.warning
-          ? { tone: 'warn', title: `Created ${label}`, description: made.warning }
+          ? {
+              tone: 'warn',
+              title: copy.workspace.agentComposer.projectScopePicker.created(label),
+              description: made.warning,
+            }
           : {
               tone: 'good',
-              title: made.repository ? `Created ${label} and published it` : `Created ${label}`,
+              title: made.repository
+                ? copy.workspace.agentComposer.projectScopePicker.createdAndPublishedIt(label)
+                : copy.workspace.agentComposer.projectScopePicker.created(label),
               description: made.repository ? made.repository.htmlUrl : made.path,
             },
       )

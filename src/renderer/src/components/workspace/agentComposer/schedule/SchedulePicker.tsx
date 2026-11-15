@@ -19,6 +19,7 @@ import {
 import { SendTimeEditor } from './SendTimeEditor'
 import { defaultSendAt, sendTimeWords } from './sendTime'
 import { TimeField } from './TimeField'
+import { copy } from '../../../../../../shared/copy'
 
 /**
  * What the picker holds: a repeating schedule's cron, or one time to run at.
@@ -28,11 +29,11 @@ import { TimeField } from './TimeField'
 export type PickedSchedule = { cron: string; once: number | null }
 
 const TABS: { value: ScheduleTab | 'once'; label: string }[] = [
-  { value: 'once', label: 'Once' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'cron', label: 'Cron' },
+  { value: 'once', label: copy.workspace.agentComposer.schedule.schedulePicker.once },
+  { value: 'daily', label: copy.workspace.agentComposer.schedule.schedulePicker.daily },
+  { value: 'weekly', label: copy.workspace.agentComposer.schedule.schedulePicker.weekly },
+  { value: 'monthly', label: copy.workspace.agentComposer.schedule.schedulePicker.monthly },
+  { value: 'cron', label: copy.workspace.agentComposer.schedule.schedulePicker.cron },
 ]
 
 // Monday first, the way a working week is read; the values are cron's.
@@ -65,7 +66,8 @@ export function readSchedule(
   const parsed = parseCronSchedule(cron)
   if (!parsed.ok) return { ok: false, message: parsed.error, ...(parsed.field ? { field: parsed.field } : {}) }
   const runs = nextScheduledAgentRuns({ cron, timezone }, now, PREVIEW_RUNS)
-  if (runs.length === 0) return { ok: false, message: 'No such date, so it never runs' }
+  if (runs.length === 0)
+    return { ok: false, message: copy.workspace.agentComposer.schedule.schedulePicker.noSuchDateSoIt }
   return { ok: true, words: describeCronSchedule(parsed.schedule), next: formatRunTimes(runs, timezone, now) }
 }
 
@@ -76,7 +78,8 @@ export function readPickedSchedule(
   now: number,
 ): ReturnType<typeof readSchedule> {
   if (schedule.once === null) return readSchedule(schedule.cron, timezone, now)
-  if (schedule.once <= now) return { ok: false, message: 'That time has passed' }
+  if (schedule.once <= now)
+    return { ok: false, message: copy.workspace.agentComposer.schedule.schedulePicker.thatTimeHasPassed }
   const when = sendTimeWords(schedule.once, now)
   return { ok: true, words: `Once, ${when}`, next: [when] }
 }
@@ -107,7 +110,7 @@ export function ScheduleTag({
     <Popover
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Schedule"
+      ariaLabel={copy.workspace.agentComposer.schedule.schedulePicker.schedule}
       popupRole="dialog"
       placement="bottom-start"
       surfaceClassName="w-[380px] p-3"
@@ -118,8 +121,12 @@ export function ScheduleTag({
           size="inherit"
           onClick={togglePopover}
           // The words name the schedule; the accessible name says what a press does.
-          aria-label={read.ok ? `Change schedule: ${read.words}, next ${read.next[0]}` : 'Change the schedule'}
-          title={read.ok ? `Next ${read.next[0]}` : read.message}
+          aria-label={
+            read.ok
+              ? copy.workspace.agentComposer.schedule.schedulePicker.changeScheduleNext(read.words, read.next[0])
+              : copy.workspace.agentComposer.schedule.schedulePicker.changeTheSchedule
+          }
+          title={read.ok ? copy.workspace.agentComposer.schedule.schedulePicker.next(read.next[0]) : read.message}
           data-schedule-tag="true"
           {...triggerProps}
         >
@@ -133,7 +140,12 @@ export function ScheduleTag({
   const glyph = <ScheduleGlyph className="icon-xs shrink-0 text-[color:var(--accent-primary)]" />
   if (onRemove) {
     return (
-      <AttachmentChip glyph={glyph} label={words} removeLabel="Stop scheduling" onRemove={onRemove}>
+      <AttachmentChip
+        glyph={glyph}
+        label={words}
+        removeLabel={copy.workspace.agentComposer.schedule.schedulePicker.stopScheduling}
+        onRemove={onRemove}
+      >
         {editor}
       </AttachmentChip>
     )
@@ -152,7 +164,8 @@ export function ScheduleFailureTray({ failure, onDismiss }: { failure: string; o
   return (
     <ComposerTray>
       <ComposerTrayRow tone="error" onDismiss={onDismiss}>
-        The last run did not start: {failure}
+        {copy.workspace.agentComposer.schedule.schedulePicker.theLastRunDidNot}
+        {failure}
       </ComposerTrayRow>
     </ComposerTray>
   )
@@ -190,7 +203,7 @@ export function SchedulePausedTray({
         actions={
           pausedAt !== undefined ? (
             <GhostButton size="xs" onClick={onResume}>
-              Resume
+              {copy.workspace.agentComposer.schedule.schedulePicker.resume}
             </GhostButton>
           ) : undefined
         }
@@ -230,7 +243,7 @@ export function ScheduleEditor({
 
   const tabs = (
     <SegmentedControl
-      ariaLabel="How often"
+      ariaLabel={copy.workspace.agentComposer.schedule.schedulePicker.howOften}
       size="sm"
       items={TABS}
       value={schedule.once !== null ? 'once' : state.tab}
@@ -270,8 +283,12 @@ export function ScheduleEditor({
       {tabs}
 
       {state.tab === 'weekly' ? (
-        <ScheduleSection label="On">
-          <div className="grid grid-cols-7 gap-1" role="group" aria-label="Days of the week">
+        <ScheduleSection label={copy.workspace.agentComposer.schedule.schedulePicker.on}>
+          <div
+            className="grid grid-cols-7 gap-1"
+            role="group"
+            aria-label={copy.workspace.agentComposer.schedule.schedulePicker.daysOfTheWeek}
+          >
             {WEEKDAYS.map((day) => {
               const on = state.weekdays.includes(day.value)
               return (
@@ -299,8 +316,12 @@ export function ScheduleEditor({
       ) : null}
 
       {state.tab === 'monthly' ? (
-        <ScheduleSection label="On day">
-          <div className="grid grid-cols-7 gap-1" role="group" aria-label="Days of the month">
+        <ScheduleSection label={copy.workspace.agentComposer.schedule.schedulePicker.onDay}>
+          <div
+            className="grid grid-cols-7 gap-1"
+            role="group"
+            aria-label={copy.workspace.agentComposer.schedule.schedulePicker.daysOfTheMonth}
+          >
             {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => {
               const on = state.monthDays.includes(day)
               return (
@@ -331,7 +352,7 @@ export function ScheduleEditor({
           onChange={(cronText) => update({ ...state, cronText })}
         />
       ) : (
-        <ScheduleSection label="At">
+        <ScheduleSection label={copy.workspace.agentComposer.schedule.schedulePicker.at}>
           <div className="flex flex-wrap items-center gap-1.5">
             {state.times.map((time, index) => (
               <TimeField
@@ -349,7 +370,7 @@ export function ScheduleEditor({
               onClick={() => update({ ...state, times: [...state.times, nextFreeTime(state.times)] })}
               className="h-control-sm"
             >
-              + Time
+              {copy.workspace.agentComposer.schedule.schedulePicker.time}
             </ChipButton>
           </div>
         </ScheduleSection>
@@ -359,26 +380,32 @@ export function ScheduleEditor({
         className="rounded-md bg-[color:var(--bg-surface)] px-3 py-2"
         role="status"
         aria-live="polite"
-        aria-label="What this schedule does"
+        aria-label={copy.workspace.agentComposer.schedule.schedulePicker.whatThisScheduleDoes}
       >
         {read.ok ? (
           <>
             <p className="text-heading font-medium text-[color:var(--text-strong)]">{read.words}</p>
             <p className="mt-0.5 text-meta tabular-nums text-[color:var(--text-subtle)]">
-              Next {read.next.join(' · ')}
+              {copy.workspace.agentComposer.schedule.schedulePicker.next2}
+              {read.next.join(' · ')}
             </p>
           </>
         ) : (
           <>
             <p className="text-body text-[color:var(--tone-error)]">{read.message}</p>
-            <p className="mt-0.5 text-meta text-[color:var(--text-subtle)]">Keeping the last valid schedule</p>
+            <p className="mt-0.5 text-meta text-[color:var(--text-subtle)]">
+              {copy.workspace.agentComposer.schedule.schedulePicker.keepingTheLastValidSchedule}
+            </p>
           </>
         )}
       </div>
 
       <div className="flex items-center gap-2 text-meta text-[color:var(--text-subtle)]">
         <ScheduleGlyph className="icon-xs shrink-0" />
-        <span className="min-w-0 flex-1 truncate">Your time · {timezone}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {copy.workspace.agentComposer.schedule.schedulePicker.yourTime}
+          {timezone}
+        </span>
         {state.tab !== 'cron' && written ? (
           <code className="rounded-xs bg-[color:var(--bg-surface)] px-1 font-mono text-micro text-[color:var(--text-muted)]">
             {written}
@@ -421,7 +448,7 @@ function CronField({
         size="md"
         value={text}
         onChange={(event) => onChange(event.currentTarget.value)}
-        aria-label="Cron schedule"
+        aria-label={copy.workspace.agentComposer.schedule.schedulePicker.cronSchedule}
         aria-invalid={badField !== null || undefined}
         spellCheck={false}
         autoFocus

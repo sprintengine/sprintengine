@@ -4,6 +4,7 @@ import { copyToClipboardWithToast } from '../../utils/copyToClipboardWithToast'
 import { markdownRootProps, renderMarkdown } from '../../utils/markdown'
 import { LinkButton } from './LinkButton'
 import { FOCUS_RING_CLASS } from './tokens'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Agent-written Markdown, drawn the way a chat reply is drawn and never able to
 // reach outside its box. The text is untrusted by definition — a model wrote
@@ -64,7 +65,7 @@ function renderSafeLink(links: SafeMarkdownLinks, href: string, label: React.Rea
         ink="accent"
         underline="always"
         size="inherit"
-        aria-label={`Copy link: ${url}`}
+        aria-label={appCopy.ui.safeMarkdown.copyLink(url)}
         onClick={() => void copyToClipboardWithToast(url)}
       >
         {label}

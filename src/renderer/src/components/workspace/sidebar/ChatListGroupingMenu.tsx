@@ -3,12 +3,13 @@ import React from 'react'
 import { FilterMenu, Tooltip } from '../../ui'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { selectChatListView, type ChatListView } from '../../../store/slices/settingsSlice'
+import { copy } from '../../../../../shared/copy'
 
 const CHAT_LIST_VIEW_ITEMS: ReadonlyArray<{ value: ChatListView; label: string }> = [
-  { value: 'projects', label: 'By project' },
-  { value: 'status', label: 'By status' },
-  { value: 'date', label: 'By date' },
-  { value: 'all', label: 'All chats' },
+  { value: 'projects', label: copy.workspace.sidebar.chatListGroupingMenu.byProject },
+  { value: 'status', label: copy.workspace.sidebar.chatListGroupingMenu.byStatus },
+  { value: 'date', label: copy.workspace.sidebar.chatListGroupingMenu.byDate },
+  { value: 'all', label: copy.workspace.sidebar.chatListGroupingMenu.allChats },
 ]
 
 /**
@@ -28,14 +29,14 @@ export const ChatListGroupingMenu = React.memo(function ChatListGroupingMenu() {
   const defaultView = useWorkspaceStore((s) => s.chatListView)
   const setOverride = useWorkspaceStore((s) => s.setChatListViewOverride)
   return (
-    <Tooltip content="Group chats" placement="right">
+    <Tooltip content={copy.workspace.sidebar.chatListGroupingMenu.groupChats} placement="right">
       <FilterMenu
-        ariaLabel="Group chats"
+        ariaLabel={copy.workspace.sidebar.chatListGroupingMenu.groupChats}
         size="md"
         className="shrink-0"
         groups={[
           {
-            label: 'Group chats',
+            label: copy.workspace.sidebar.chatListGroupingMenu.groupChats,
             items: CHAT_LIST_VIEW_ITEMS,
             value: view,
             defaultValue: defaultView,

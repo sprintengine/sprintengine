@@ -14,6 +14,7 @@ import { cliRuntimeOnMachine } from '../newWorkspace/cliRuntimeOptions'
 import { hostPlatform } from '../../../clientCapabilities'
 import { createCliOutputLatestLineReader, withLastOutputLine } from './cliUpdateProgress'
 import { agentSettingsApi } from '../../../studio/agentSettings'
+import { copy } from '../../../../../shared/copy'
 
 // The CLI-update toast (owner ruling 2026-09-04): the CLI's glyph,
 // "Update available: Codex 0.153.3", and two buttons — Settings, and Update,
@@ -118,7 +119,7 @@ function presentCliUpdateToast(advisory: CliVersionAdvisory): void {
     actions: [
       {
         id: 'settings',
-        label: 'Settings',
+        label: copy.workspace.manager.cliUpdateToast.settings,
         run: () => {
           dismiss()
           // The Agents tab opens on the machine the update is for, even when
@@ -128,7 +129,7 @@ function presentCliUpdateToast(advisory: CliVersionAdvisory): void {
       },
       {
         id: 'update',
-        label: 'Update',
+        label: copy.workspace.manager.cliUpdateToast.update,
         primary: true,
         run: () => {
           void runCliUpdateFromToast(advisory, machine ? `${name} (${machine})` : name, id)
@@ -149,7 +150,14 @@ export async function runCliUpdateFromToast(
   const runtime = cliRuntimeOnMachine(cli, hostId, store.appSettings)
   const before = (hostId === LOCAL_HOST_ID ? store.cliAvailability[cli]?.version : advisory.currentVersion) ?? null
   const showUpdating = (description?: string): void => {
-    showToast({ id, tone: 'neutral', cli, title: `Updating ${name}…`, description, autoDismissMs: false })
+    showToast({
+      id,
+      tone: 'neutral',
+      cli,
+      title: copy.workspace.manager.cliUpdateToast.updating(name),
+      description,
+      autoDismissMs: false,
+    })
   }
   showUpdating()
   // The updater's newest line rides under the title while it runs: an npm
@@ -187,13 +195,18 @@ export async function runCliUpdateFromToast(
   try {
     const result = await api.cliUpdate(cli, runtime)
     if (result.ok && result.version && result.version.trim() !== (before ?? '').trim()) {
-      showToast({ id, tone: 'good', cli, title: `${name} updated to ${result.version.trim()}` })
+      showToast({
+        id,
+        tone: 'good',
+        cli,
+        title: copy.workspace.manager.cliUpdateToast.updatedTo(name, result.version.trim()),
+      })
     } else if (result.ok) {
       showToast({
         id,
         tone: 'warn',
         cli,
-        title: `${name} did not update`,
+        title: copy.workspace.manager.cliUpdateToast.didNotUpdate(name),
         description: failure(
           `The update finished but the version is still ${before ?? 'the same'}. Settings › Agents has the command to run by hand.`,
         ),
@@ -203,7 +216,7 @@ export async function runCliUpdateFromToast(
         id,
         tone: 'warn',
         cli,
-        title: `${name} did not update`,
+        title: copy.workspace.manager.cliUpdateToast.didNotUpdate(name),
         description: failure(result.error ?? 'The update did not finish.'),
       })
     }
@@ -212,7 +225,7 @@ export async function runCliUpdateFromToast(
       id,
       tone: 'warn',
       cli,
-      title: `${name} did not update`,
+      title: copy.workspace.manager.cliUpdateToast.didNotUpdate(name),
       description: failure(error instanceof Error ? error.message : String(error)),
     })
   } finally {

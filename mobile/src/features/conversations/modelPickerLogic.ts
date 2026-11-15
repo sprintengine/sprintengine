@@ -21,6 +21,7 @@ import {
   type ConversationListedThread as ConversationThread,
 } from "../../../../packages/conversation-protocol/src/public";
 import type { CliCatalogModel, CliReasoningLevel, CliRuntime } from "./launchLogic";
+import { copy } from "../../../../src/shared/copy";
 
 /** One catalog id as the picker reads it; the catalog's grouping fields where the desktop sent them. */
 export type PickerModel = {
@@ -132,7 +133,7 @@ export function modelFamilies(models: readonly PickerModel[]): PickerFamily[] {
     if (family.variants.some((variant) => variant.id === id)) continue;
     family.variants.push({
       id,
-      label: model.contextLabel?.trim() || (window ? window.toUpperCase() : "Standard"),
+      label: model.contextLabel?.trim() || (window ? window.toUpperCase() : copy.phone.conversations.modelPickerLogic.standard),
       base: !window,
     });
     if (model.familyDefault === true && family.named !== "catalog") {

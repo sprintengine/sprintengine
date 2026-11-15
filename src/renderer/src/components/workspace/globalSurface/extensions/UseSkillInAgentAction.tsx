@@ -29,6 +29,7 @@ import {
   type LiveAgentSession,
 } from '../../../../utils/useSkillInAgent'
 import { getExtensionsSurfaceHost } from './extensionsSurfaceHost'
+import { copy } from '../../../../../../shared/copy'
 
 /** `onInstallFirst` said no; its host has already said why on its own surface. */
 export const INSTALL_DID_NOT_FINISH_MESSAGE = 'The install did not finish, so there is nothing to use yet.'
@@ -119,7 +120,12 @@ export function UseSkillInAgentAction({
       workspaceId={activeWorkspaceId}
       preferred={{ agentId: focusedAgentId ?? null }}
       directWhenSingle
-      label={label ?? (onInstallFirst ? 'Install and use' : 'Use in agent')}
+      label={
+        label ??
+        (onInstallFirst
+          ? copy.workspace.globalSurface.extensions.useSkillInAgentAction.installAndUse
+          : copy.workspace.globalSurface.extensions.useSkillInAgentAction.useInAgent)
+      }
       emphasis={emphasis}
       size={size}
       disabled={disabled}

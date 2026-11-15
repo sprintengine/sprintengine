@@ -3,6 +3,7 @@ import React from 'react'
 import type { BrowserTabState } from '../../../../../../shared/browser'
 import type { BrowserColorScheme } from '../../../../../../shared/browser-devices'
 import { MenuItem, OverflowMenu, type OverflowMenuItem } from '../../../ui'
+import { copy } from '../../../../../../shared/copy'
 
 // The browser tab's ⋮ menu: the view actions that are not worth a glyph of
 // their own. Rows are the shared menu vocabulary; the shortcut column carries
@@ -27,9 +28,9 @@ type BrowserViewMenuProps = {
 }
 
 const SCHEMES: { value: BrowserColorScheme; label: string }[] = [
-  { value: 'system', label: 'System' },
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: copy.workspace.pane.browser.browserViewMenu.system },
+  { value: 'light', label: copy.workspace.pane.browser.browserViewMenu.light },
+  { value: 'dark', label: copy.workspace.pane.browser.browserViewMenu.dark },
 ]
 
 function Tick() {
@@ -66,35 +67,51 @@ export function BrowserViewMenu({
   const scheme = state?.colorScheme ?? 'system'
 
   const items: OverflowMenuItem[] = [
-    { id: 'hard-reload', label: 'Hard reload', onSelect: onHardReload, disabled: !hasPage },
+    {
+      id: 'hard-reload',
+      label: copy.workspace.pane.browser.browserViewMenu.hardReload,
+      onSelect: onHardReload,
+      disabled: !hasPage,
+    },
     {
       id: 'devtools',
-      label: state?.devToolsOpen ? 'Focus DevTools' : 'Open DevTools',
+      label: state?.devToolsOpen
+        ? copy.workspace.pane.browser.browserViewMenu.focusDevTools
+        : copy.workspace.pane.browser.browserViewMenu.openDevTools,
       onSelect: onOpenDevTools,
       disabled: !hasPage,
     },
-    { id: 'window', label: 'Open separate window', onSelect: onOpenWindow, disabled: !hasPage },
+    {
+      id: 'window',
+      label: copy.workspace.pane.browser.browserViewMenu.openSeparateWindow,
+      onSelect: onOpenWindow,
+      disabled: !hasPage,
+    },
     ...(onToggleFloating
       ? [
           {
             id: 'float',
             // One item, two labels — the same control both ways, the way the
             // device toolbar's show/hide reads.
-            label: floating ? 'Dock in pane' : 'Float over workspace',
+            label: floating
+              ? copy.workspace.pane.browser.browserViewMenu.dockInPane
+              : copy.workspace.pane.browser.browserViewMenu.floatOverWorkspace,
             onSelect: onToggleFloating,
           },
         ]
       : []),
     {
       id: 'device-toolbar',
-      label: deviceToolbarOn ? 'Hide device toolbar' : 'Show device toolbar',
+      label: deviceToolbarOn
+        ? copy.workspace.pane.browser.browserViewMenu.hideDeviceToolbar
+        : copy.workspace.pane.browser.browserViewMenu.showDeviceToolbar,
       onSelect: onToggleDeviceToolbar,
     },
     {
       kind: 'flyout',
       id: 'appearance',
-      label: 'Appearance',
-      ariaLabel: 'Appearance',
+      label: copy.workspace.pane.browser.browserViewMenu.appearance,
+      ariaLabel: copy.workspace.pane.browser.browserViewMenu.appearance,
       surfaceClassName: 'min-w-[140px]',
       render: (close) => (
         <>
@@ -118,19 +135,35 @@ export function BrowserViewMenu({
       ),
     },
     { kind: 'separator', id: 'zoom-separator' },
-    { id: 'zoom-in', label: 'Zoom in', shortcut: `${primary}=`, onSelect: () => onZoom(1) },
-    { id: 'zoom-out', label: 'Zoom out', shortcut: `${primary}-`, onSelect: () => onZoom(-1) },
+    {
+      id: 'zoom-in',
+      label: copy.workspace.pane.browser.browserViewMenu.zoomIn,
+      shortcut: `${primary}=`,
+      onSelect: () => onZoom(1),
+    },
+    {
+      id: 'zoom-out',
+      label: copy.workspace.pane.browser.browserViewMenu.zoomOut,
+      shortcut: `${primary}-`,
+      onSelect: () => onZoom(-1),
+    },
     {
       id: 'zoom-reset',
-      label: `Reset zoom · ${zoomPercent}%`,
+      label: copy.workspace.pane.browser.browserViewMenu.resetZoom(zoomPercent),
       shortcut: `${primary}0`,
       onSelect: () => onZoom(0),
       disabled: zoomPercent === 100,
     },
     { kind: 'separator', id: 'storage-separator' },
-    { id: 'clear-cookies', label: 'Clear cookies', onSelect: onClearCookies },
-    { id: 'clear-cache', label: 'Clear cache', onSelect: onClearCache },
+    { id: 'clear-cookies', label: copy.workspace.pane.browser.browserViewMenu.clearCookies, onSelect: onClearCookies },
+    { id: 'clear-cache', label: copy.workspace.pane.browser.browserViewMenu.clearCache, onSelect: onClearCache },
   ]
 
-  return <OverflowMenu ariaLabel="Browser view" triggerTooltip="More" items={items} />
+  return (
+    <OverflowMenu
+      ariaLabel={copy.workspace.pane.browser.browserViewMenu.browserView}
+      triggerTooltip={copy.workspace.pane.browser.browserViewMenu.more}
+      items={items}
+    />
+  )
 }

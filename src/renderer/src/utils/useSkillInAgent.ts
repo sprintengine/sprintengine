@@ -26,6 +26,7 @@ import { bracketedPaste } from './terminalDrop'
 import { listTerminals, writeTerminal } from '../studio/terminals'
 import { agentSetupApi } from '../studio/agentSetup'
 import { agentSkillsApi } from '../studio/agentSkills'
+import { copy as appCopy } from '../../../shared/copy'
 
 /**
  * The little a CLI entry has to tell this flow: who it is, what to call it, and
@@ -248,7 +249,7 @@ export async function useSkillInAgent(input: UseSkillInAgentInput): Promise<UseS
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : 'The agent terminal did not take the invocation.',
+      message: error instanceof Error ? error.message : appCopy.utils.useSkillInAgent.theAgentTerminalDidNot,
     }
   }
 
@@ -317,8 +318,11 @@ export function skillRestartToast(result: UseSkillInAgentResult, skillName: stri
   if (names.length === 0) return null
   return {
     tone: 'warn',
-    title: `Installed for ${formatList(names)}`,
-    description: `${skillName} is ready. ${names.length === 1 ? 'That CLI' : 'Those CLIs'} may need a restart.`,
+    title: appCopy.utils.useSkillInAgent.installedFor(formatList(names)),
+    description: appCopy.utils.useSkillInAgent.isReadyMayNeedA(
+      skillName,
+      names.length === 1 ? appCopy.utils.useSkillInAgent.thatCLI : appCopy.utils.useSkillInAgent.thoseCLIs,
+    ),
   }
 }
 

@@ -25,6 +25,7 @@ import {
   type SkillSource,
   skillRepoLabel,
 } from '../../../../../../../shared/skills'
+import { copy as appCopy } from '../../../../../../../shared/copy'
 
 /** The views of the Extensions door, which are its catalogues. */
 export type CatalogueKind = 'plugins' | 'skills'
@@ -145,7 +146,7 @@ export function deriveCatalogueTabs(input: {
 }): CatalogueTab[] {
   const installed: CatalogueTab = {
     id: INSTALLED_TAB_ID,
-    label: 'Installed',
+    label: appCopy.workspace.globalSurface.extensions.catalogue.catalogueTabs.installed,
     count: input.installedCount,
     state: input.installedCount === null ? { status: 'loading' } : { status: 'ready', count: input.installedCount },
     source: null,

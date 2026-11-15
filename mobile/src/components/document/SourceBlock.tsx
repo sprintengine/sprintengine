@@ -6,6 +6,7 @@ import { CopyButton } from "../CopyButton";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { radius, space, type Theme } from "../../theme/tokens";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 interface SourceBlockProps {
   content: string;
@@ -78,7 +79,7 @@ export function WellHeader({
       </Text>
       {copy ? (
         <View style={[styles.copy, action ? null : styles.copyLast]}>
-          <CopyButton label="Copy code" text={copy} />
+          <CopyButton label={appCopy.phone.components.document.sourceBlock.copyCode} text={copy} />
         </View>
       ) : null}
       {action ? (

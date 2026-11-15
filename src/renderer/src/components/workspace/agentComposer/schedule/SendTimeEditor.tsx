@@ -14,6 +14,7 @@ import {
   withDay,
   withMinutesOfDay,
 } from './sendTime'
+import { copy } from '../../../../../../shared/copy'
 
 // One moment to send at: the Once tab of a scheduled agent, and the time a
 // message scheduled into an open chat goes out. The everyday times are one
@@ -44,7 +45,11 @@ export function SendTimeEditor({
   const fromNow = sendTimeFromNow(at, now)
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-1" role="group" aria-label="Quick times">
+      <div
+        className="flex flex-wrap gap-1"
+        role="group"
+        aria-label={copy.workspace.agentComposer.schedule.sendTimeEditor.quickTimes}
+      >
         {quickSendTimes(now).map((choice) => (
           <ChipButton
             key={choice.label}
@@ -64,14 +69,16 @@ export function SendTimeEditor({
             className="h-control-sm"
             data-send-at-limit-reset="true"
           >
-            When my limit resets
+            {copy.workspace.agentComposer.schedule.sendTimeEditor.whenMyLimitResets}
           </ChipButton>
         ) : null}
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-meta font-medium text-[color:var(--text-subtle)]">On</span>
+          <span className="text-meta font-medium text-[color:var(--text-subtle)]">
+            {copy.workspace.agentComposer.schedule.sendTimeEditor.on}
+          </span>
           <Input
             type="date"
             size="sm"
@@ -82,12 +89,14 @@ export function SendTimeEditor({
               const next = withDay(at, event.currentTarget.value)
               if (next !== null) onChange(next)
             }}
-            aria-label="Day"
+            aria-label={copy.workspace.agentComposer.schedule.sendTimeEditor.day}
             className="tabular-nums"
           />
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-meta font-medium text-[color:var(--text-subtle)]">At</span>
+          <span className="text-meta font-medium text-[color:var(--text-subtle)]">
+            {copy.workspace.agentComposer.schedule.sendTimeEditor.at}
+          </span>
           <TimeField time={minutesOfDay(at)} onChange={(minutes) => onChange(withMinutesOfDay(at, minutes))} />
         </div>
       </div>
@@ -96,10 +105,12 @@ export function SendTimeEditor({
         className="rounded-md bg-[color:var(--bg-surface)] px-3 py-2"
         role="status"
         aria-live="polite"
-        aria-label="When it sends"
+        aria-label={copy.workspace.agentComposer.schedule.sendTimeEditor.whenItSends}
       >
         {passed ? (
-          <p className="text-body text-[color:var(--tone-error)]">That time has passed — pick one ahead.</p>
+          <p className="text-body text-[color:var(--tone-error)]">
+            {copy.workspace.agentComposer.schedule.sendTimeEditor.thatTimeHasPassedPick}
+          </p>
         ) : (
           <>
             <p className="text-heading font-medium text-[color:var(--text-strong)]">
@@ -115,7 +126,10 @@ export function SendTimeEditor({
       {timezone ? (
         <div className="flex items-center gap-2 text-meta text-[color:var(--text-subtle)]">
           <ScheduleGlyph className="icon-xs shrink-0" />
-          <span className="min-w-0 flex-1 truncate">Your time · {timezone}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {copy.workspace.agentComposer.schedule.sendTimeEditor.yourTime}
+            {timezone}
+          </span>
         </div>
       ) : null}
     </div>
@@ -147,13 +161,13 @@ export function SendTimeTag({
     <AttachmentChip
       glyph={<ScheduleGlyph className="icon-xs shrink-0 text-[color:var(--accent-primary)]" />}
       label={words}
-      removeLabel="Don't schedule — send as usual"
+      removeLabel={copy.workspace.agentComposer.schedule.sendTimeEditor.donTScheduleSendAs}
       onRemove={onRemove}
     >
       <Popover
         open={open}
         onOpenChange={setOpen}
-        ariaLabel="Send at"
+        ariaLabel={copy.workspace.agentComposer.schedule.sendTimeEditor.sendAt}
         popupRole="dialog"
         placement="top-start"
         surfaceClassName="w-[340px] p-3"
@@ -163,7 +177,7 @@ export function SendTimeTag({
             ink="quiet"
             size="inherit"
             onClick={togglePopover}
-            aria-label={`Sends ${spoken}. Change the time`}
+            aria-label={copy.workspace.agentComposer.schedule.sendTimeEditor.sendsChangeTheTime(spoken)}
             data-send-time-tag="true"
             {...triggerProps}
           >

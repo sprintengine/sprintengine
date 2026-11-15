@@ -6,6 +6,7 @@ import { IconButton, Section, Tooltip, type TabItem } from '../../../ui'
 import { paneKindDefinition } from '../paneKinds'
 import { paneTabLabel } from '../paneTabItem'
 import { PanelCard, PanelRow } from './PanelRow'
+import { copy } from '../../../../../../shared/copy'
 
 // What is open now: the pane's tabs, each with the marks the strip's tab wears
 // (`paneTabItem`), and with what the strip's tab offered: pressed it comes
@@ -90,8 +91,12 @@ function OpenTabRow({
         buttonProps={current ? { 'aria-current': 'true' } : undefined}
       />
       <span className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/open:opacity-100">
-        <Tooltip content={item.closeLabel ?? 'Close'} placement="left">
-          <IconButton size="xs" aria-label={item.closeLabel ?? 'Close'} onClick={onClose}>
+        <Tooltip content={item.closeLabel ?? copy.workspace.pane.panel.chatPanelOpenNow.close} placement="left">
+          <IconButton
+            size="xs"
+            aria-label={item.closeLabel ?? copy.workspace.pane.panel.chatPanelOpenNow.close}
+            onClick={onClose}
+          >
             <CloseGlyph className="icon-xs" />
           </IconButton>
         </Tooltip>
@@ -115,7 +120,7 @@ export function ChatPanelOpenNow({
   )
   const Row = lapsed.length + tabs.length > 0 ? PanelCard : React.Fragment
   return (
-    <Section title="Open now" inset="flush" action={addControl}>
+    <Section title={copy.workspace.pane.panel.chatPanelOpenNow.openNow} inset="flush" action={addControl}>
       <Row>
         {tabs.map((tab, index) => (
           <OpenTabRow

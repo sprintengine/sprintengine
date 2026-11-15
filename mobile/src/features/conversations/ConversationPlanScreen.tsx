@@ -7,6 +7,7 @@ import { useThemedStyles } from "../../theme/ThemeProvider";
 import { typography, type Theme } from "../../theme/tokens";
 import { planBody, planTitle } from "./conversationLogic";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";
+import { copy } from "../../../../src/shared/copy";
 
 const STATUS: Record<"approved" | "denied" | "cancelled", string> = {
   approved: "You approved this plan.",
@@ -38,7 +39,7 @@ export function ConversationPlanScreen({
     [setNotice],
   );
   return (
-    <Screen title={(plan && planTitle(plan.plan)) || "Plan"} subtitle={live ? <Text numberOfLines={1} style={styles.meta}>{live.effectiveThread.title}</Text> : undefined} onBack={onBack}>
+    <Screen title={(plan && planTitle(plan.plan)) || copy.phone.conversations.conversationPlanScreen.plan} subtitle={live ? <Text numberOfLines={1} style={styles.meta}>{live.effectiveThread.title}</Text> : undefined} onBack={onBack}>
       {!plan ? (
         <Text style={styles.meta}>
           {live ? "This plan is in an earlier part of the chat." : "Open the chat to read its plan."}

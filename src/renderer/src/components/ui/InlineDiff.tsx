@@ -10,6 +10,7 @@ import { loadCodeLanguage, normalizeCodeLanguage } from '../../lib/highlight/cod
 import { GhostButton } from './Buttons'
 import { formatDiffCount } from '../../utils/diffCount'
 import '../../../../../design-system/components/inline-diff/component.css'
+import { copy } from '../../../../shared/copy'
 
 export function InlineDiff({ edit, onOpen }: { edit: ConversationEdit; onOpen?: () => void }) {
   const [all, setAll] = useState(false)
@@ -57,14 +58,14 @@ export function InlineDiff({ edit, onOpen }: { edit: ConversationEdit; onOpen?: 
     }
   }, [edit.path, sourceHunks])
   return (
-    <section aria-label={`Changes in ${edit.path}`}>
+    <section aria-label={copy.ui.inlineDiff.changesIn(edit.path)}>
       <div className="flex items-center gap-2 text-meta">
         <span>
           +{formatDiffCount(edit.added)} −{formatDiffCount(edit.removed)}
         </span>
         {onOpen ? (
           <GhostButton size="inline" onClick={onOpen}>
-            Open in diff viewer
+            {copy.ui.inlineDiff.openInDiffViewer}
           </GhostButton>
         ) : null}
       </div>
@@ -94,13 +95,13 @@ export function InlineDiff({ edit, onOpen }: { edit: ConversationEdit; onOpen?: 
           </div>
         ))}
       </div>
-      {edit.contentsOnly ? <p>Wrote the whole file; previous contents not recorded.</p> : null}
+      {edit.contentsOnly ? <p>{copy.ui.inlineDiff.wroteTheWholeFilePrevious}</p> : null}
       {((wholeFile && edit.added > 40) || limited) && !all ? (
         <GhostButton size="inline" onClick={() => (onOpen ? onOpen() : setAll(true))}>
-          Open full diff
+          {copy.ui.inlineDiff.openFullDiff}
         </GhostButton>
       ) : null}
-      {edit.limited ? <p>Preview timed out. Open the full diff to see this change.</p> : null}
+      {edit.limited ? <p>{copy.ui.inlineDiff.previewTimedOutOpenThe}</p> : null}
     </section>
   )
 }

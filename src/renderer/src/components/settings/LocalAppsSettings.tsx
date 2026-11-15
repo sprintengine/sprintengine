@@ -27,6 +27,7 @@ import {
 } from '../ui'
 import { AGENT_SPAWN_PERMISSION_OPTIONS, PRESET_CHIP_LABEL } from '../workspace/agentComposer/agentSpawnShared'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
+import { copy } from '../../../../shared/copy'
 
 // Settings → Agents, under the MCP gateway: the applications on this machine
 // paired with Studio's owner socket (the Studio RPC that @sprintengine/agent-sdk
@@ -38,49 +39,49 @@ import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string }> = [
   {
     scope: 'conversation:read',
-    title: 'Read chats',
-    description: 'See this machine’s chats as they run.',
+    title: copy.settings.localAppsSettings.readChats,
+    description: copy.settings.localAppsSettings.seeThisMachineSChats,
   },
   {
     scope: 'conversation:operate',
-    title: 'Drive chats',
-    description: 'Send messages, answer approvals, change model or preset, and stop.',
+    title: copy.settings.localAppsSettings.driveChats,
+    description: copy.settings.localAppsSettings.sendMessagesAnswerApprovalsChange,
   },
   {
     scope: 'conversation:create',
-    title: 'Start chats',
-    description: 'Start new chats with a prompt and skills.',
+    title: copy.settings.localAppsSettings.startChats,
+    description: copy.settings.localAppsSettings.startNewChatsWithA,
   },
   {
     scope: 'tools:offer',
-    title: 'Give agents tools from this app',
-    description: 'Offer tools that run in the app. Each call follows the chat’s permissions.',
+    title: copy.settings.localAppsSettings.giveAgentsToolsFromThis,
+    description: copy.settings.localAppsSettings.offerToolsThatRunIn,
   },
   {
     scope: 'environment:maintain',
-    title: 'Update Studio',
-    description: 'Install updates and restart. Running turns finish first.',
+    title: copy.settings.localAppsSettings.updateStudio,
+    description: copy.settings.localAppsSettings.installUpdatesAndRestartRunning,
   },
   {
     scope: 'settings:write',
-    title: 'Change settings',
-    description: 'Set or remove API keys, and revoke auto-approve rules.',
+    title: copy.settings.localAppsSettings.changeSettings,
+    description: copy.settings.localAppsSettings.setOrRemoveAPIKeys,
   },
   {
     scope: 'modules:read',
-    title: 'Hear extensions',
-    description: 'Receive extensions’ events and notifications, and run their read-only actions.',
+    title: copy.settings.localAppsSettings.hearExtensions,
+    description: copy.settings.localAppsSettings.receiveExtensionsEventsAndNotificati,
   },
   {
     scope: 'modules:operate',
-    title: 'Use extensions',
-    description: 'Run extensions’ actions that change things, within the permissions you gave each.',
+    title: copy.settings.localAppsSettings.useExtensions,
+    description: copy.settings.localAppsSettings.runExtensionsActionsThatChange,
   },
 ]
 
 const REACH_ITEMS: Array<{ value: StudioLocalAppToolReach; label: string }> = [
-  { value: 'own', label: 'The chats it starts' },
-  { value: 'all', label: 'Every chat and terminal agent here' },
+  { value: 'own', label: copy.settings.localAppsSettings.theChatsItStarts },
+  { value: 'all', label: copy.settings.localAppsSettings.everyChatAndTerminalAgent },
 ]
 
 const TOOLSET_STATE: Record<StudioLocalAppToolset['state'], string> = {
@@ -164,9 +165,9 @@ export function LocalAppsSettings() {
 
   const revoke = async (id: string, name: string) => {
     const confirmed = await dialog.confirm({
-      title: `Revoke ${name}?`,
-      body: 'It’s disconnected at once. Pair it again to let it back in.',
-      confirmLabel: 'Revoke',
+      title: copy.settings.localAppsSettings.revoke(name),
+      body: copy.settings.localAppsSettings.itSDisconnectedAtOnce,
+      confirmLabel: copy.settings.localAppsSettings.revoke2,
       tone: 'danger',
     })
     if (!confirmed) return
@@ -191,7 +192,7 @@ export function LocalAppsSettings() {
 
   return (
     <section className="space-y-3 pt-2">
-      <SettingsSectionTitle>Local apps</SettingsSectionTitle>
+      <SettingsSectionTitle>{copy.settings.localAppsSettings.localApps}</SettingsSectionTitle>
       <SettingCard>
         {status.apps.map((app) => {
           const seen = app.connected
@@ -207,13 +208,13 @@ export function LocalAppsSettings() {
               stacked
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <ScopePillSet ariaLabel={`What ${app.name} may do`}>
+                <ScopePillSet ariaLabel={copy.settings.localAppsSettings.whatMayDo(app.name)}>
                   {app.scopes.map((scope) => (
                     <ScopePill key={scope} scope={scope} />
                   ))}
                 </ScopePillSet>
                 <GhostButton tone="danger" disabled={!status.running} onClick={() => void revoke(app.id, app.name)}>
-                  Revoke
+                  {copy.settings.localAppsSettings.revoke2}
                 </GhostButton>
               </div>
               {app.scopes.includes('tools:offer') ? (
@@ -221,9 +222,9 @@ export function LocalAppsSettings() {
                   <p className="whitespace-pre-line text-meta text-[color:var(--text-muted)]">
                     {app.toolsets.length > 0 ? toolsetsLine(app.toolsets) : 'Has not offered any tools yet.'}
                   </p>
-                  <Field label="Its tools reach">
+                  <Field label={copy.settings.localAppsSettings.itsToolsReach}>
                     <Select
-                      ariaLabel={`Which agents ${app.name}'s tools reach`}
+                      ariaLabel={copy.settings.localAppsSettings.whichAgentsSToolsReach(app.name)}
                       items={REACH_ITEMS}
                       value={app.toolReach}
                       disabled={!status.running}
@@ -242,13 +243,13 @@ export function LocalAppsSettings() {
             help={`Waiting to pair · the code expires ${relativeFromNow(Date.parse(offer.expiresAt), now)}`}
           >
             <GhostButton onClick={() => void accessApi.studioLocalAppsCancelOffer(offer.id).then(setStatus)}>
-              Cancel
+              {copy.settings.localAppsSettings.cancel}
             </GhostButton>
           </SettingsRow>
         ))}
         {empty ? (
           <SettingsRow
-            label="No apps are paired"
+            label={copy.settings.localAppsSettings.noAppsArePaired}
             help="Scripts and apps built with @sprintengine/agent-sdk can start and drive chats here once paired."
           >
             <span className="text-body text-[color:var(--text-muted)]">{status.running ? 'Ready' : 'Off'}</span>
@@ -259,13 +260,13 @@ export function LocalAppsSettings() {
       {minted ? (
         <SettingCard>
           <SettingsRow
-            label={`Pairing code for ${minted.offer.name}`}
+            label={copy.settings.localAppsSettings.pairingCodeFor(minted.offer.name)}
             help="Give it to the app as its pairing code. It works once, for ten minutes, and is not shown again."
             stacked
           >
             <div className="flex items-center gap-2">
               <span className="break-all font-mono text-meta">{minted.code}</span>
-              <CopyGlyphButton text={minted.code} label="Copy the pairing code" />
+              <CopyGlyphButton text={minted.code} label={copy.settings.localAppsSettings.copyThePairingCode} />
             </div>
           </SettingsRow>
         </SettingCard>
@@ -273,16 +274,20 @@ export function LocalAppsSettings() {
 
       {draft ? (
         <SettingCard>
-          <SettingsRow label="Pair an app" help="Name it, and choose what it may do." stacked>
+          <SettingsRow
+            label={copy.settings.localAppsSettings.pairAnApp}
+            help="Name it, and choose what it may do."
+            stacked
+          >
             <div className="space-y-3">
-              <Field label="Name" htmlFor={nameId}>
+              <Field label={copy.settings.localAppsSettings.name} htmlFor={nameId}>
                 <Input
                   value={draft.name}
                   placeholder="release-bot"
                   onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 />
               </Field>
-              <DescribedCheckRowList ariaLabel="What the app may do">
+              <DescribedCheckRowList ariaLabel={copy.settings.localAppsSettings.whatTheAppMayDo}>
                 {SCOPE_ROWS.map((row) => (
                   <DescribedCheckRow
                     key={row.scope}
@@ -296,18 +301,18 @@ export function LocalAppsSettings() {
                 ))}
               </DescribedCheckRowList>
               {draft.scopes.includes('tools:offer') ? (
-                <Field label="Its tools reach">
+                <Field label={copy.settings.localAppsSettings.itsToolsReach}>
                   <Select
-                    ariaLabel="Which agents its tools reach"
+                    ariaLabel={copy.settings.localAppsSettings.whichAgentsItsToolsReach}
                     items={REACH_ITEMS}
                     value={draft.toolReach}
                     onChange={(toolReach) => setDraft({ ...draft, toolReach })}
                   />
                 </Field>
               ) : null}
-              <Field label="Loosest preset its chats may run on">
+              <Field label={copy.settings.localAppsSettings.loosestPresetItsChatsMay}>
                 <Select
-                  ariaLabel="Loosest preset its chats may run on"
+                  ariaLabel={copy.settings.localAppsSettings.loosestPresetItsChatsMay}
                   items={CEILING_ITEMS}
                   value={draft.ceiling}
                   onChange={(ceiling) => setDraft({ ...draft, ceiling })}
@@ -315,9 +320,9 @@ export function LocalAppsSettings() {
               </Field>
               <div className="flex items-center gap-2">
                 <PrimaryButton disabled={!draft.name.trim() || draft.scopes.length === 0} onClick={() => void pair()}>
-                  Make pairing code
+                  {copy.settings.localAppsSettings.makePairingCode}
                 </PrimaryButton>
-                <GhostButton onClick={() => setDraft(null)}>Cancel</GhostButton>
+                <GhostButton onClick={() => setDraft(null)}>{copy.settings.localAppsSettings.cancel}</GhostButton>
               </div>
             </div>
           </SettingsRow>
@@ -330,7 +335,7 @@ export function LocalAppsSettings() {
             setDraft(EMPTY_DRAFT)
           }}
         >
-          Pair an app
+          {copy.settings.localAppsSettings.pairAnApp}
         </OutlineButton>
       )}
 

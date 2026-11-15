@@ -21,6 +21,7 @@ import type {
   WorkspaceWindowId,
 } from '../../../shared/workspace'
 import { workspaceSyncApi, workspaceSyncReachable, type WorkspaceSyncApi } from '../studio/workspaceSync'
+import { copy } from '../../../shared/copy'
 
 // Defined locally (matching WorkspaceManager/workspacesSlice) so this adapter
 // does not import a store slice, keeping the module dependency graph acyclic.
@@ -415,7 +416,9 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     if (entry.sends > MAX_UNANSWERED_SENDS)
       settle(entry, {
         ok: false,
-        message: `Studio didn't answer: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        message: copy.store.workspaceSyncClient.studioDidnTAnswer(
+          error instanceof Error ? error.message : copy.store.workspaceSyncClient.unknownError,
+        ),
       })
   }
   // A new workspace goes as this window holds it now, with what was done to
@@ -560,7 +563,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'replay',
         reason: 'replay_failed',
-        message: 'Failed to replay missed workspace sync events after a sequence gap.',
+        message: copy.store.workspaceSyncClient.failedToReplayMissedWorkspace,
       })
       await recoverSnapshotBaseline(api)
       return
@@ -584,7 +587,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     log({
       phase: 'replay',
       reason: 'incomplete_replay',
-      message: `Workspace sync replay after sequence ${previousSequence} did not include a contiguous path to event ${event.sequence}.`,
+      message: copy.store.workspaceSyncClient.workspaceSyncReplayAfterSequence(previousSequence, event.sequence),
     })
     await recoverSnapshotBaseline(api)
   }
@@ -609,7 +612,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'snapshot',
         reason: 'snapshot_failed',
-        message: 'Failed to read the workspace sync snapshot after replay recovery.',
+        message: copy.store.workspaceSyncClient.failedToReadTheWorkspace,
       })
     }
   }
@@ -625,7 +628,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'replay',
         reason: 'api_unavailable',
-        message: 'Workspace sync API is unavailable; skipped noncontiguous workspace sync event.',
+        message: copy.store.workspaceSyncClient.workspaceSyncAPIIsUnavailable,
       })
       return
     }
@@ -658,7 +661,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
         log({
           phase: 'snapshot',
           reason: 'snapshot_failed',
-          message: 'Failed to read the workspace sync snapshot after a reconnect.',
+          message: copy.store.workspaceSyncClient.failedToReadTheWorkspace2,
         })
       })
     return eventQueue
@@ -668,7 +671,11 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     eventQueue = eventQueue
       .then(() => processEvent(event))
       .catch(() => {
-        log({ phase: 'listener', reason: 'event_apply_failed', message: 'Workspace sync event application failed.' })
+        log({
+          phase: 'listener',
+          reason: 'event_apply_failed',
+          message: copy.store.workspaceSyncClient.workspaceSyncEventApplicationFailed,
+        })
       })
     return eventQueue
   }
@@ -681,7 +688,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'listener',
         reason: 'api_unavailable',
-        message: 'Workspace sync API is unavailable; multi-window selection events are disabled.',
+        message: copy.store.workspaceSyncClient.workspaceSyncAPIIsUnavailable2,
       })
       return () => stop()
     }
@@ -694,7 +701,11 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
         () => void resync(),
       )
     } catch {
-      log({ phase: 'listener', reason: 'subscribe_failed', message: 'Failed to subscribe to workspace sync events.' })
+      log({
+        phase: 'listener',
+        reason: 'subscribe_failed',
+        message: copy.store.workspaceSyncClient.failedToSubscribeToWorkspace,
+      })
       unsubscribe = null
     }
 
@@ -731,7 +742,11 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
         lastAppliedSequence = Math.max(lastAppliedSequence, snapshot.sequence)
       })
       .catch(() => {
-        log({ phase: 'snapshot', reason: 'snapshot_failed', message: 'Failed to read the workspace sync snapshot.' })
+        log({
+          phase: 'snapshot',
+          reason: 'snapshot_failed',
+          message: copy.store.workspaceSyncClient.failedToReadTheWorkspace3,
+        })
       })
 
     return () => stop()
@@ -759,7 +774,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'dispatch',
         reason: 'api_unavailable',
-        message: `Workspace sync API is unavailable; ${command.type} stays local-only.`,
+        message: copy.store.workspaceSyncClient.workspaceSyncAPIIsUnavailable3(command.type),
       })
       return
     }
@@ -771,7 +786,9 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'dispatch',
         reason: 'dispatch_threw',
-        message: `Workspace sync dispatch threw: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        message: copy.store.workspaceSyncClient.workspaceSyncDispatchThrew(
+          error instanceof Error ? error.message : copy.store.workspaceSyncClient.unknownError,
+        ),
       })
       // Its outcome is unknown (the connection went with it, or Studio
       // restarted): it goes again, before the registry is read once more.
@@ -790,7 +807,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'dispatch',
         reason: result.reason,
-        message: `Workspace sync rejected ${command.type} (${result.reason}): ${result.message}`,
+        message: copy.store.workspaceSyncClient.workspaceSyncRejected(command.type, result.reason, result.message),
       })
       return
     }
@@ -900,7 +917,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
   // not bring back a chat the person closed.
   const dispatchRemoveWorkspace = (workspaceId: WorkspaceId): Promise<void> => {
     for (const entry of unanswered.filter((candidate) => commandWorkspaceId(candidate.command) === workspaceId))
-      settle(entry, { ok: false, message: 'The chat was removed.' }, { quiet: true })
+      settle(entry, { ok: false, message: copy.store.workspaceSyncClient.theChatWasRemoved }, { quiet: true })
     return dispatchCommand({ type: 'workspace.remove', payload: { workspaceId } })
   }
 
@@ -936,9 +953,9 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       log({
         phase: 'dispatch',
         reason: 'api_unavailable',
-        message: `Workspace sync API is unavailable; a ${request.intent.kind} stays local-only.`,
+        message: copy.store.workspaceSyncClient.workspaceSyncAPIIsUnavailable4(request.intent.kind),
       })
-      return { ok: false, code: 'unavailable', message: 'This window has no main process to ask.' }
+      return { ok: false, code: 'unavailable', message: copy.store.workspaceSyncClient.thisWindowHasNoMain }
     }
     const answerMs = deps.lifecycleAnswerMs ?? LIFECYCLE_ANSWER_MS
     let lastError: unknown = null
@@ -952,7 +969,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
           log({
             phase: 'dispatch',
             reason: result.code,
-            message: `Main refused a ${request.intent.kind} (${result.code}): ${result.message}`,
+            message: copy.store.workspaceSyncClient.mainRefusedA(request.intent.kind, result.code, result.message),
           })
         return result
       } catch (error) {
@@ -962,9 +979,12 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     log({
       phase: 'dispatch',
       reason: 'dispatch_threw',
-      message: `A ${request.intent.kind} got no answer: ${lastError instanceof Error ? lastError.message : 'unknown error'}.`,
+      message: copy.store.workspaceSyncClient.aGotNoAnswer(
+        request.intent.kind,
+        lastError instanceof Error ? lastError.message : copy.store.workspaceSyncClient.unknownError,
+      ),
     })
-    return { ok: false, code: 'unreachable', message: "Couldn't reach Studio. Try again." }
+    return { ok: false, code: 'unreachable', message: copy.store.workspaceSyncClient.couldnTReachStudioTry }
   }
 
   const reset = (): void => {

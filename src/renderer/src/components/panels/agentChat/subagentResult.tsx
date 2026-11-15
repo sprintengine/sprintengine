@@ -13,6 +13,7 @@ import { useConversationDisclosure } from './conversationViewState'
 import { useConversationTransport } from './conversationTransport'
 import { ChevronRightGlyph } from './toolRows/ToolKindGlyph'
 import { ToolPanel } from './toolRows/ToolRow'
+import { copy } from '../../../../../shared/copy'
 
 /** The report's first line of prose, with the markdown that opens it dropped. */
 export function subagentResultPreview(output: string | undefined): string {
@@ -121,7 +122,7 @@ export function SubagentLaneResult({ tool }: { tool: TranscriptToolEntry }) {
           density="flush"
           className="min-w-0 gap-1 text-meta"
           aria-expanded={open}
-          aria-label={`${failed ? 'Error' : 'Report'}: ${preview}`}
+          aria-label={`${failed ? copy.panels.agentChat.subagentResult.error : copy.panels.agentChat.subagentResult.report}: ${preview}`}
           onClick={() => setOpen(!open)}
         >
           {open ? (
@@ -139,13 +140,13 @@ export function SubagentLaneResult({ tool }: { tool: TranscriptToolEntry }) {
           <ToolPanel mono={false} copyText={report} copyHtml={() => markdownClipboardHtml(report)}>
             <ConversationMarkdown text={report} />
           </ToolPanel>
-          {loading ? <Spinner label="Loading the full report" /> : null}
+          {loading ? <Spinner label={copy.panels.agentChat.subagentResult.loadingTheFullReport} /> : null}
           {error ? (
             <InlineNotice
               tone="error"
               action={
                 <GhostButton size="inline" onClick={() => void fetchFull()}>
-                  Retry
+                  {copy.panels.agentChat.subagentResult.retry}
                 </GhostButton>
               }
             >
@@ -154,7 +155,7 @@ export function SubagentLaneResult({ tool }: { tool: TranscriptToolEntry }) {
           ) : null}
           {tool.truncated && full === undefined && !loading && !error && context?.agentId ? (
             <GhostButton size="inline" align="start" onClick={() => void fetchFull()}>
-              Show full report
+              {copy.panels.agentChat.subagentResult.showFullReport}
             </GhostButton>
           ) : null}
         </div>

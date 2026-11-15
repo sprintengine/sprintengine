@@ -6,6 +6,7 @@ import { LockGlyph, PresetDialGlyph, RuleShieldGlyph, SparkGlyph, UnlockedGlyph 
 import { EditChangelistGlyph } from '../../ui/GitActionGlyphs'
 import type { CliPermissionPreset } from '../../../../../shared/workspace'
 import type { CliPermissionModeSpec } from '../../../../../shared/cli-permission-mode'
+import { copy } from '../../../../../shared/copy'
 
 // Shared, presentation-only pieces of the agent spawn surfaces (the compact
 // SpawnPicker and the New Chat panel). Kept in one hookless module so every
@@ -39,30 +40,30 @@ export const AGENT_SPAWN_PERMISSION_OPTIONS: PermissionModeOption[] = [
   {
     id: 'manual',
     value: 'manual',
-    label: 'Manual',
+    label: copy.workspace.agentComposer.agentSpawnShared.manual,
     summary: 'Asks before every edit and command.',
-    title: 'Asks before edits, commands, web and MCP tools',
+    title: copy.workspace.agentComposer.agentSpawnShared.asksBeforeEditsCommandsWeb,
   },
   {
     id: 'auto',
     value: 'auto',
-    label: 'Auto',
+    label: copy.workspace.agentComposer.agentSpawnShared.auto,
     summary: 'Edits go through; commands and the rest ask.',
-    title: 'Edits the workspace freely; commands and web ask first',
+    title: copy.workspace.agentComposer.agentSpawnShared.editsTheWorkspaceFreelyCommands,
   },
   {
     id: 'bypass',
     value: 'bypass',
-    label: 'Bypass permissions',
+    label: copy.workspace.agentComposer.agentSpawnShared.bypassPermissions,
     summary: 'Skip every prompt. Trusted repos only.',
-    title: 'Never asks. Use only in repos you trust',
+    title: copy.workspace.agentComposer.agentSpawnShared.neverAsksUseOnlyIn,
   },
   {
     id: 'none',
     value: 'none',
-    label: 'No flag',
+    label: copy.workspace.agentComposer.agentSpawnShared.noFlag,
     summary: 'The CLI’s default — no permission flag is passed.',
-    title: 'Uses the CLI’s configured permissions',
+    title: copy.workspace.agentComposer.agentSpawnShared.usesTheCLISConfigured,
   },
 ]
 

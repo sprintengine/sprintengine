@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { ConversationCommand } from '../../../../../shared/conversation/commands'
 import { MenuOption, Popover, ScrollArea, Spinner, TruncatedText } from '../../ui'
 import { renderChatSkillMention } from '../../../utils/skillInvocation'
+import { copy } from '../../../../../shared/copy'
 
 // The `/` menu: the commands the chat's CLI said it runs in this folder, with
 // Studio's own few first. Focus never leaves the composer — the field is the
@@ -129,20 +130,24 @@ export function SlashCommandMenu({
   const trimmed = query.trim()
   const notice = status.error ? (
     <p role="status" className="px-2.5 py-2 text-meta text-[color:var(--tone-error)]">
-      Couldn’t list {status.cliLabel} commands: {status.error}
+      {copy.panels.agentChat.slashCommandMenu.couldnTList}
+      {status.cliLabel} commands: {status.error}
     </p>
   ) : status.loading ? (
     <p role="status" className="flex items-center gap-2 px-2.5 py-2 text-meta text-[color:var(--text-muted)]">
       <Spinner />
-      Loading commands…
+      {copy.panels.agentChat.slashCommandMenu.loadingCommands}
     </p>
   ) : rows.length === 0 && trimmed ? (
     <p role="status" className="px-2.5 py-2 text-meta text-[color:var(--text-muted)]">
-      No command matches “/{trimmed}”. ⏎ sends it as typed.
+      {copy.panels.agentChat.slashCommandMenu.noCommandMatches}
+      {trimmed}
+      {copy.panels.agentChat.slashCommandMenu.sendsItAsTyped}
     </p>
   ) : status.answered && status.reportedCount === 0 && !trimmed ? (
     <p role="status" className="px-2.5 py-2 text-meta text-[color:var(--text-muted)]">
-      {status.cliLabel} reported no commands
+      {status.cliLabel}
+      {copy.panels.agentChat.slashCommandMenu.reportedNoCommands}
     </p>
   ) : null
   return (
@@ -156,7 +161,7 @@ export function SlashCommandMenu({
         onOpenChange={(open) => {
           if (!open) onDismiss()
         }}
-        ariaLabel="Commands"
+        ariaLabel={copy.panels.agentChat.slashCommandMenu.commands}
         popupRole="dialog"
         placement="top-start"
         material="glass"
@@ -171,7 +176,7 @@ export function SlashCommandMenu({
         <ScrollArea ref={listRef} className="max-h-72 py-1 [contain:inline-size]">
           {/* The listbox the field points into holds the rows alone: a status
               line or the key hints inside it would be read as options. */}
-          <div role="listbox" id={listId} aria-label="Commands">
+          <div role="listbox" id={listId} aria-label={copy.panels.agentChat.slashCommandMenu.commands}>
             {rows.map((command, index) => (
               <MenuOption
                 key={`${command.source}:${command.name}`}
@@ -213,8 +218,10 @@ export function SlashCommandMenu({
           {notice}
         </ScrollArea>
         <div className="flex items-center gap-2 px-2.5 py-1.5 text-micro text-[color:var(--text-subtle)]">
-          <span>↑↓ choose · ⏎ or tab insert · esc dismiss</span>
-          {skillsHint ? <span className="ml-auto">$ for Studio skills</span> : null}
+          <span>{copy.panels.agentChat.slashCommandMenu.chooseOrTabInsertEsc}</span>
+          {skillsHint ? (
+            <span className="ml-auto">{copy.panels.agentChat.slashCommandMenu.forStudioSkills}</span>
+          ) : null}
         </div>
       </Popover>
     </div>

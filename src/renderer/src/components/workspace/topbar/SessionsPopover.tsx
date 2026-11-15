@@ -18,6 +18,7 @@ import { getWorkspaceAccentHex, isStarred } from '../../../utils/highlight'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../../utils/relativeTime'
 import { TerminalSessionIcon } from '../agentComposer/agentSpawnShared'
 import { groupSessionItems } from '../workspaceManagerHelpers'
+import { copy } from '../../../../../shared/copy'
 
 // Every running session in this window, by workspace: opened from the account
 // menu. A session is the app's, not any one workspace's, so it lives with the
@@ -157,10 +158,13 @@ export function SessionsPopover({
 
   return (
     <div className="w-[420px] overflow-hidden">
-      <PanelHeader title="Sessions" count={items.length > 0 ? items.length : undefined} />
+      <PanelHeader
+        title={copy.workspace.topbar.sessionsPopover.sessions}
+        count={items.length > 0 ? items.length : undefined}
+      />
 
       {groups.length === 0 ? (
-        <EmptyState density="list" title="No sessions" />
+        <EmptyState density="list" title={copy.workspace.topbar.sessionsPopover.noSessions} />
       ) : (
         <div className="max-h-[420px] overflow-y-auto p-1">
           {groups.map((group) => {
@@ -185,7 +189,7 @@ export function SessionsPopover({
                     <StarGlyph
                       filled
                       className="icon-xs shrink-0 text-[color:var(--tone-warn)]"
-                      label="Starred workspace"
+                      label={copy.workspace.topbar.sessionsPopover.starredWorkspace}
                     />
                   ) : null}
                   {group.items.length > 1 ? (
@@ -197,10 +201,13 @@ export function SessionsPopover({
                       tone="danger"
                       onClick={() => void onStopGroup(group.group, group.items)}
                       className="ml-auto shrink-0"
-                      aria-label={`Stop all ${group.items.length} sessions in ${group.group.label}`}
+                      aria-label={copy.workspace.topbar.sessionsPopover.stopAllSessionsIn(
+                        group.items.length,
+                        group.group.label,
+                      )}
                     >
                       <StopIcon className="icon-xs" />
-                      Stop all
+                      {copy.workspace.topbar.sessionsPopover.stopAll}
                     </OutlineButton>
                   ) : null}
                 </div>
@@ -247,7 +254,7 @@ export function SessionsPopover({
                             Pause and Stop act on the process and still work. */}
                           {item.group.kind === 'workspace' ? (
                             <OutlineButton size="xs" onClick={() => void onOpen(item)}>
-                              Open
+                              {copy.workspace.topbar.sessionsPopover.open}
                             </OutlineButton>
                           ) : null}
 
@@ -255,8 +262,11 @@ export function SessionsPopover({
                             so the control is absent for those rows instead of
                             failing quietly against the terminal runtime. */}
                           {item.kind === 'agent' && item.transport === 'terminal' && item.status !== 'failed' ? (
-                            <Tooltip content="Pause to free memory; reopen to resume">
-                              <IconButton onClick={() => onPause(item)} aria-label={`Pause ${item.label}`}>
+                            <Tooltip content={copy.workspace.topbar.sessionsPopover.pauseToFreeMemoryReopen}>
+                              <IconButton
+                                onClick={() => onPause(item)}
+                                aria-label={copy.workspace.topbar.sessionsPopover.pause(item.label)}
+                              >
                                 <PauseIcon className="icon-sm" />
                               </IconButton>
                             </Tooltip>
@@ -267,10 +277,16 @@ export function SessionsPopover({
                             Neutral ink at rest: the tooltip and name say what it
                             does, and a status hue as a button ground is not a
                             button variant the system has. */}
-                          <Tooltip content={item.status === 'failed' ? 'Dismiss' : 'Stop'}>
+                          <Tooltip
+                            content={
+                              item.status === 'failed'
+                                ? copy.workspace.topbar.sessionsPopover.dismiss
+                                : copy.workspace.topbar.sessionsPopover.stop
+                            }
+                          >
                             <IconButton
                               onClick={() => onStop(item)}
-                              aria-label={`${item.status === 'failed' ? 'Dismiss' : 'Stop'} ${item.label}`}
+                              aria-label={`${item.status === 'failed' ? copy.workspace.topbar.sessionsPopover.dismiss : copy.workspace.topbar.sessionsPopover.stop} ${item.label}`}
                             >
                               <StopIcon className="icon-sm" />
                             </IconButton>

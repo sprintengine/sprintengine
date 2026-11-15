@@ -6,6 +6,7 @@ import { GhostButton, Input } from '../ui'
 import { OVERLAY_SURFACE_CLASS } from '../ui/tokens'
 import { placeQuoteToolbar, type SelectionAnchor } from '../panels/agentChat/quoteSelection'
 import type { DiffChatSelection } from './diffToChat'
+import { copy } from '../../../../shared/copy'
 
 // "Add to chat" over a selection in the diff: lines selected on either side
 // raise a small toolbar under them, with a field for what to ask about them
@@ -175,7 +176,7 @@ export function DiffChatToolbar({
     <div
       ref={toolbarRef}
       role="toolbar"
-      aria-label="Selected lines"
+      aria-label={copy.auxWindows.diffChatToolbar.selectedLines}
       data-diff-chat-toolbar=""
       className={`fixed z-[var(--z-popover)] flex items-center gap-1 p-1 ${OVERLAY_SURFACE_CLASS}`}
       style={{ left: shown.anchor.right, top: shown.anchor.bottom }}
@@ -186,8 +187,8 @@ export function DiffChatToolbar({
         variant="quiet"
         fullWidth={false}
         className="w-[16rem]"
-        aria-label="Ask the agent about these lines"
-        placeholder="Ask the agent about this…"
+        aria-label={copy.auxWindows.diffChatToolbar.askTheAgentAboutThese}
+        placeholder={copy.auxWindows.diffChatToolbar.askTheAgentAboutThis}
         value={note}
         onChange={(event) => setNote(event.target.value)}
         onKeyDown={(event) => {
@@ -209,7 +210,7 @@ export function DiffChatToolbar({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => void send()}
       >
-        Add to chat
+        {copy.auxWindows.diffChatToolbar.addToChat}
       </GhostButton>
     </div>,
     document.body,

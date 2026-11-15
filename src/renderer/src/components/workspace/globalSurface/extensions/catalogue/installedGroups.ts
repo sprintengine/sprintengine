@@ -16,6 +16,7 @@ import type { InstalledPluginRecord } from '../../../../../../../shared/electron
 import type { SkillSource } from '../../../../../../../shared/skills'
 import type { InstalledExtension } from '../../../../settings/extensionsInstalled'
 import { catalogueTabLabel, orderCatalogueSources } from './catalogueTabs'
+import { copy } from '../../../../../../../shared/copy'
 
 export type InstalledSourceGroup = {
   key: string
@@ -89,7 +90,11 @@ export function groupInstalledBySource(input: {
   // still installed, so they keep a heading rather than vanishing.
   for (const [key, items] of bySource) {
     if (groups.some((group) => group.key === key)) continue
-    groups.push({ key, label: 'From a source that is no longer in your list', items })
+    groups.push({
+      key,
+      label: copy.workspace.globalSurface.extensions.catalogue.installedGroups.fromASourceThatIs,
+      items,
+    })
   }
   for (const [key, items] of byProvenance) {
     groups.push({ key, label: key.slice('provenance:'.length), items })

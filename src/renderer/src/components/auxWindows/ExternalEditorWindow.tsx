@@ -73,6 +73,7 @@ import {
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'
 import { isPathOrChild } from '../../utils/paths'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // Match EditorPanel: above this size the rendered preview is disabled and the
 // file falls back to the Monaco source view so a huge document can't hang the
@@ -534,12 +535,12 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
     const unsaved = tabsRef.current.filter((tab) => isDirty(buffersRef.current[tab.path]))
     if (unsaved.length > 0) {
       const confirmed = await confirmDialog({
-        title: 'Close the editor window?',
+        title: appCopy.auxWindows.externalEditorWindow.closeTheEditorWindow,
         body:
           unsaved.length === 1
-            ? `${unsaved[0].name} has unsaved changes. Closing discards them.`
-            : `${unsaved.length} files have unsaved changes. Closing discards them.`,
-        confirmLabel: 'Discard and close',
+            ? appCopy.auxWindows.externalEditorWindow.hasUnsavedChangesClosingDiscards(unsaved[0].name)
+            : appCopy.auxWindows.externalEditorWindow.filesHaveUnsavedChangesClosing(unsaved.length),
+        confirmLabel: appCopy.auxWindows.externalEditorWindow.discardAndClose,
         tone: 'danger',
       })
       if (!confirmed) return
@@ -582,11 +583,22 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
       >
         {/* The tree's switch sits first in the strip, over the column it
             opens — the same mark and the same place as the app sidebar's. */}
-        <Tooltip content={treePrefs.visible ? 'Hide files' : 'Show files'} placement="bottom">
+        <Tooltip
+          content={
+            treePrefs.visible
+              ? appCopy.auxWindows.externalEditorWindow.hideFiles
+              : appCopy.auxWindows.externalEditorWindow.showFiles
+          }
+          placement="bottom"
+        >
           <IconButton
             tone={treePrefs.visible ? 'strong' : 'subtle'}
             onClick={() => updateTreePrefs({ ...treePrefs, visible: !treePrefs.visible })}
-            aria-label={treePrefs.visible ? 'Hide files' : 'Show files'}
+            aria-label={
+              treePrefs.visible
+                ? appCopy.auxWindows.externalEditorWindow.hideFiles
+                : appCopy.auxWindows.externalEditorWindow.showFiles
+            }
             aria-pressed={treePrefs.visible}
             aria-controls={treePrefs.visible ? 'editor-window-files' : undefined}
             className="app-no-drag shrink-0"
@@ -620,7 +632,9 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
                     density="flush"
                     onClick={() => setActivePath(tab.path)}
                     className="max-w-[200px]"
-                    aria-label={agent ? `${tab.name}: an agent is using this` : undefined}
+                    aria-label={
+                      agent ? appCopy.auxWindows.externalEditorWindow.anAgentIsUsingThis(tab.name) : undefined
+                    }
                   >
                     <span className="min-w-0 truncate">{tab.name}</span>
                   </RowButton>
@@ -636,11 +650,19 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
                   }`}
                 >
                   {isDirty(buffers[tab.path]) ? (
-                    <span className="text-[color:var(--tone-warn)]" role="img" aria-label="Unsaved changes">
+                    <span
+                      className="text-[color:var(--tone-warn)]"
+                      role="img"
+                      aria-label={appCopy.auxWindows.externalEditorWindow.unsavedChanges}
+                    >
                       •
                     </span>
                   ) : (
-                    <CloseIconButton size="2xs" onClick={() => closeTab(tab.path)} aria-label={`Close ${tab.name}`} />
+                    <CloseIconButton
+                      size="2xs"
+                      onClick={() => closeTab(tab.path)}
+                      aria-label={appCopy.auxWindows.externalEditorWindow.close(tab.name)}
+                    />
                   )}
                 </span>
               </div>
@@ -651,14 +673,14 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
           size="xs"
           onClick={() => void dockActive()}
           disabled={!activeTab}
-          aria-label="Dock current file back into the workspace"
+          aria-label={appCopy.auxWindows.externalEditorWindow.dockCurrentFileBackInto}
           className="app-no-drag shrink-0"
         >
           <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
             <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
             <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
           </svg>
-          Dock into workspace
+          {appCopy.auxWindows.externalEditorWindow.dockIntoWorkspace}
         </GhostButton>
         {/* The window is frameless on win/linux, so it draws its own way out;
             macOS keeps its native traffic lights on the left. */}
@@ -674,7 +696,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
           <aside
             ref={treeColumnRef}
             id="editor-window-files"
-            aria-label="Files"
+            aria-label={appCopy.auxWindows.externalEditorWindow.files}
             onKeyDown={(event) => {
               if (event.key !== 'Escape' || event.defaultPrevented) return
               event.preventDefault()
@@ -687,7 +709,11 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
             <EditorFileTree
               rootPath={treeRoot}
               workspaceId={activeTab?.workspaceId ?? null}
-              outsideLabel={activeTab?.rootPath ? 'Outside this workspace' : 'Outside this folder'}
+              outsideLabel={
+                activeTab?.rootPath
+                  ? appCopy.auxWindows.externalEditorWindow.outsideThisWorkspace
+                  : appCopy.auxWindows.externalEditorWindow.outsideThisFolder
+              }
               activePath={activePath}
               onOpenFile={openFromTree}
               onReturnFocus={returnFocusToEditor}
@@ -715,7 +741,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-label="Resize files"
+              aria-label={appCopy.auxWindows.externalEditorWindow.resizeFiles}
               aria-valuemin={EDITOR_TREE_MIN_WIDTH}
               aria-valuemax={EDITOR_TREE_MAX_WIDTH}
               aria-valuenow={treePrefs.width}
@@ -767,15 +793,19 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
                 <Tooltip
                   content={
                     markdownPreviewTooLarge
-                      ? 'Markdown preview disabled for large files'
+                      ? appCopy.auxWindows.externalEditorWindow.markdownPreviewDisabledForLarge
                       : showPreview
-                        ? 'Edit Markdown source'
-                        : 'Preview Markdown'
+                        ? appCopy.auxWindows.externalEditorWindow.editMarkdownSource
+                        : appCopy.auxWindows.externalEditorWindow.previewMarkdown
                   }
                   placement="bottom"
                 >
                   <IconButton
-                    aria-label={showPreview ? 'Edit Markdown source' : 'Preview Markdown'}
+                    aria-label={
+                      showPreview
+                        ? appCopy.auxWindows.externalEditorWindow.editMarkdownSource
+                        : appCopy.auxWindows.externalEditorWindow.previewMarkdown
+                    }
                     onClick={() => setMarkdownMode((mode) => (mode === 'preview' ? 'source' : 'preview'))}
                     disabled={markdownPreviewTooLarge}
                     className="border border-[color:var(--border-default)] bg-[color:var(--bg-surface-raised)]"
@@ -855,10 +885,10 @@ function renderBody(
   // reads are `EmptyState` copy rather than `--text-disabled` mono, and a read
   // failure is the kit's notice.
   if (!activeTab || !activePath) {
-    return <EmptyState title="No file open." />
+    return <EmptyState title={appCopy.auxWindows.externalEditorWindow.noFileOpen} />
   }
   if (!buffer || buffer.loading) {
-    return <AuxLoadingState label="Loading…" />
+    return <AuxLoadingState label={appCopy.auxWindows.externalEditorWindow.loading} />
   }
   if (buffer.error) {
     return (
@@ -871,7 +901,7 @@ function renderBody(
   }
   if (buffer.kind === 'image') {
     if (!buffer.dataUrl) {
-      return <AuxLoadingState label="Loading image…" />
+      return <AuxLoadingState label={appCopy.auxWindows.externalEditorWindow.loadingImage} />
     }
     return (
       <div className="flex h-full flex-col bg-[color:var(--bg-app)]">

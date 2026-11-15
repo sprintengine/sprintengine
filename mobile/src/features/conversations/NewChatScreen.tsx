@@ -64,6 +64,7 @@ import {
 import { dictatedDraft, dictationPlaceholder, joinDictation, messageWithDictation } from "../dictation/dictationLogic";
 import { useDictation } from "../dictation/useDictation";
 import { studioTargetOf } from "../../api/desktopStudio";
+import { copy as appCopy } from "../../../../src/shared/copy";
 
 /**
  * How long the list may take to answer after a launch before the chat opens
@@ -357,7 +358,7 @@ export function NewChatScreen({
 
   const scheduleRun = async (paired: MobileSession, draft: string, picked: PickedSchedule, options: { worktree: boolean }) => {
     if (picked.once !== null && picked.once <= Date.now()) {
-      setState({ status: "error", message: "That time has passed. Pick one ahead." });
+      setState({ status: "error", message: appCopy.phone.conversations.newChatScreen.thatTimeHasPassedPick });
       return;
     }
     const api = createScheduledAgentsApi(studioTargetOf(paired));
@@ -374,7 +375,7 @@ export function NewChatScreen({
     });
     if (!result.ok) {
       // Nothing was scheduled, so the words stay where they are.
-      setState({ status: "error", message: result.message ?? `${target.desktopName} did not schedule it.` });
+      setState({ status: "error", message: result.message ?? appCopy.phone.conversations.newChatScreen.didNotScheduleIt(target.desktopName) });
       return;
     }
     setState({ status: "editing" });
@@ -491,7 +492,7 @@ export function NewChatScreen({
       if (scheduled) await scheduleRun(session, draft, scheduled, { worktree: worktreeChosen });
       else await startChat(session, draft, { worktree: worktreeChosen });
     } catch (error) {
-      setState({ status: "error", message: error instanceof Error ? error.message : "The chat did not start." });
+      setState({ status: "error", message: error instanceof Error ? error.message : appCopy.phone.conversations.newChatScreen.theChatDidNotStart });
     } finally {
       launching.current = false;
     }
@@ -524,7 +525,7 @@ export function NewChatScreen({
     } catch (error) {
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : source === "file" ? "The file could not be added." : "The picture could not be added.",
+        message: error instanceof Error ? error.message : source === "file" ? appCopy.phone.conversations.newChatScreen.theFileCouldNotBe : appCopy.phone.conversations.newChatScreen.thePictureCouldNotBe,
       });
     } finally {
       setPicking(false);
@@ -547,8 +548,8 @@ export function NewChatScreen({
       setMachineState({
         status: "error",
         message: result?.ok
-          ? `${target.projectName} isn't open on ${next.name}. Open it there, or pick another machine.`
-          : `${next.name} didn't answer. Is Tailscale up on both devices?`,
+          ? appCopy.phone.conversations.newChatScreen.isnTOpenOnOpen(target.projectName, next.name)
+          : appCopy.phone.conversations.newChatScreen.didnTAnswerIsTailscale(next.name),
       });
       return;
     }
@@ -587,14 +588,14 @@ export function NewChatScreen({
     {
       id: "machine",
       drop: STRIP_DROP_ORDER.machine,
-      overflowLabel: `Runs on ${target.desktopName}`,
+      overflowLabel: appCopy.phone.conversations.newChatScreen.runsOn(target.desktopName),
       overflowIcon: <DesktopGlyph desktop={desktop} size={iconSize.sm} />,
       onOverflowPress: machines.length > 1 ? pickMachine : undefined,
       render: () =>
         machines.length > 1 ? (
           <Pressable
-            accessibilityHint="Choose the machine it runs on."
-            accessibilityLabel={`Runs on ${target.desktopName}`}
+            accessibilityHint={appCopy.phone.conversations.newChatScreen.chooseTheMachineItRuns}
+            accessibilityLabel={appCopy.phone.conversations.newChatScreen.runsOn(target.desktopName)}
             accessibilityRole="button"
             hitSlop={touchSlop(STRIP_ITEM_HEIGHT)}
             onPress={pickMachine}
@@ -607,7 +608,7 @@ export function NewChatScreen({
             <ChevronIcon direction="down" size={iconSize.xs - 2} tone="textSubtle" />
           </Pressable>
         ) : (
-          <View accessible accessibilityLabel={`Runs on ${target.desktopName}`} style={styles.stripItem}>
+          <View accessible accessibilityLabel={appCopy.phone.conversations.newChatScreen.runsOn(target.desktopName)} style={styles.stripItem}>
             <DesktopGlyph desktop={desktop} />
             <Text numberOfLines={1} style={styles.stripText}>
               {target.desktopName}
@@ -618,10 +619,10 @@ export function NewChatScreen({
     {
       id: "project",
       drop: STRIP_DROP_ORDER.diff,
-      overflowLabel: `Project ${target.projectName}`,
+      overflowLabel: appCopy.phone.conversations.newChatScreen.project(target.projectName),
       overflowIcon: <FolderGlyph ink={projectInk} size={iconSize.sm} />,
       render: () => (
-        <View accessible accessibilityLabel={`Project ${target.projectName}`} style={styles.stripItem}>
+        <View accessible accessibilityLabel={appCopy.phone.conversations.newChatScreen.project(target.projectName)} style={styles.stripItem}>
           <FolderGlyph ink={projectInk} size={iconSize.xs} />
           <Text numberOfLines={1} style={styles.stripText}>
             {target.projectName}
@@ -634,7 +635,7 @@ export function NewChatScreen({
           {
             id: "worktree",
             drop: STRIP_DROP_ORDER.worktree,
-            overflowLabel: worktreeOn ? "Worktree" : "No worktree",
+            overflowLabel: worktreeOn ? appCopy.phone.conversations.newChatScreen.worktree : appCopy.phone.conversations.newChatScreen.noWorktree,
             overflowIcon: <WorktreeGlyph size={iconSize.sm} tone="textMuted" />,
             onOverflowPress: toggleWorktree,
             // The desktop's switch, in its words: "Worktree" while the chat is
@@ -642,9 +643,9 @@ export function NewChatScreen({
             render: () => (
               <Pressable
                 accessibilityHint={
-                  worktreeOn ? "Runs in its own worktree. Turn off to use the project folder." : "Run in its own worktree."
+                  worktreeOn ? appCopy.phone.conversations.newChatScreen.runsInItsOwnWorktree : appCopy.phone.conversations.newChatScreen.runInItsOwnWorktree
                 }
-                accessibilityLabel="Worktree"
+                accessibilityLabel={appCopy.phone.conversations.newChatScreen.worktree}
                 accessibilityRole="switch"
                 accessibilityState={{ checked: worktreeOn }}
                 hitSlop={touchSlop(STRIP_ITEM_HEIGHT)}
@@ -671,9 +672,9 @@ export function NewChatScreen({
               id: "branch",
               drop: STRIP_DROP_ORDER.branch,
               branch: fromBranch,
-              overflowLabel: `From ${fromBranch}`,
+              overflowLabel: appCopy.phone.conversations.newChatScreen.from(fromBranch),
               render: (label: string) => (
-                <View accessible accessibilityLabel={`A new worktree from ${fromBranch}`} style={styles.stripItem}>
+                <View accessible accessibilityLabel={appCopy.phone.conversations.newChatScreen.aNewWorktreeFrom(fromBranch)} style={styles.stripItem}>
                   <Text style={styles.stripText}>from</Text>
                   <Text ellipsizeMode="head" numberOfLines={1} style={[styles.stripText, styles.mono]}>
                     {label}
@@ -689,11 +690,11 @@ export function NewChatScreen({
             id: "branch",
             drop: STRIP_DROP_ORDER.branch,
             branch,
-            overflowLabel: worktree ? `Branch ${branch} · worktree ${worktree}` : `Branch ${branch}`,
+            overflowLabel: worktree ? appCopy.phone.conversations.newChatScreen.branchWorktree(branch, worktree) : appCopy.phone.conversations.newChatScreen.branch(branch),
             render: (label: string) => (
               <View
                 accessible
-                accessibilityLabel={worktree ? `Branch ${branch}, in worktree ${worktree}` : `Branch ${branch}`}
+                accessibilityLabel={worktree ? appCopy.phone.conversations.newChatScreen.branchInWorktree(branch, worktree) : appCopy.phone.conversations.newChatScreen.branch(branch)}
                 style={styles.stripItem}
               >
                 {worktree ? <WorktreeGlyph size={iconSize.xs} tone="textSubtle" /> : null}
@@ -711,7 +712,7 @@ export function NewChatScreen({
 
   return (
     <View style={styles.root}>
-      <ScreenHeader backLabel="Back to projects" ground="agent" onBack={onCancel} title="New" />
+      <ScreenHeader backLabel={appCopy.phone.conversations.newChatScreen.backToProjects} ground="agent" onBack={onCancel} title={appCopy.phone.conversations.newChatScreen.new} />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.body}>
         <View style={styles.composerWrap}>
@@ -725,7 +726,7 @@ export function NewChatScreen({
                   folder cannot have a worktree, and this is the way on. */}
               {state.code === "worktree_unavailable" ? (
                 <PrimaryButton
-                  label="Start without a worktree"
+                  label={appCopy.phone.conversations.newChatScreen.startWithoutAWorktree}
                   onPress={() => {
                     setWorktreeOn(false);
                     void start({ worktree: false });
@@ -747,14 +748,14 @@ export function NewChatScreen({
             action={{
               kind: "send",
               label: finishingDictation
-                ? "Finishing dictation"
+                ? appCopy.phone.conversations.newChatScreen.finishingDictation
                 : state.status === "pending"
                   ? scheduled
-                    ? "Scheduling"
-                    : "Starting the chat"
+                    ? appCopy.phone.conversations.newChatScreen.scheduling
+                    : appCopy.phone.conversations.newChatScreen.startingTheChat
                   : scheduled
-                    ? "Schedule"
-                    : "Start chat",
+                    ? appCopy.phone.conversations.newChatScreen.schedule
+                    : appCopy.phone.conversations.newChatScreen.startChat,
               disabled: !canSend,
               onPress: () => void start(),
               schedule: scheduled !== null,
@@ -772,14 +773,14 @@ export function NewChatScreen({
               // Dictation types into the box as it hears, so there is no
               // second copy of the words above it; the box holds still while
               // the microphone does the typing.
-              accessibilityLabel: `Describe a task in ${target.projectName}`,
+              accessibilityLabel: appCopy.phone.conversations.newChatScreen.describeATaskIn(target.projectName),
               autoFocus: true,
               editable: state.status !== "pending" && dictation.state === "idle",
               onChangeText: (value) => {
                 setPrompt(value);
                 if (state.status === "error") setState({ status: "editing" });
               },
-              placeholder: dictationPlaceholder(dictation.state, dictation.source) ?? `Describe a task in ${target.projectName}`,
+              placeholder: dictationPlaceholder(dictation.state, dictation.source) ?? appCopy.phone.conversations.newChatScreen.describeATaskIn(target.projectName),
               value: dictatedDraft(prompt, dictation.interim),
             }}
             options={{
@@ -818,7 +819,7 @@ export function NewChatScreen({
               ) : null}
               {presetMeta ? (
                 <Pressable
-                  accessibilityLabel={`Access, ${presetMeta.label}`}
+                  accessibilityLabel={appCopy.phone.conversations.newChatScreen.access(presetMeta.label)}
                   accessibilityRole="button"
                   hitSlop={touchSlop(TAG_BUTTON_HEIGHT)}
                   onPress={() => {
@@ -842,7 +843,7 @@ export function NewChatScreen({
 
       <ModelPickerSheet
         access={{
-          label: presetMeta?.label ?? "Desktop default",
+          label: presetMeta?.label ?? appCopy.phone.conversations.newChatScreen.desktopDefault,
           onPress: () => {
             setAccessReturn("model");
             setSheet(null);
@@ -856,7 +857,7 @@ export function NewChatScreen({
         }
         footer={
           <View style={styles.done}>
-            <PrimaryButton label="Done" onPress={() => setSheet(null)} />
+            <PrimaryButton label={appCopy.phone.conversations.newChatScreen.done} onPress={() => setSheet(null)} />
           </View>
         }
         leading={
@@ -880,13 +881,13 @@ export function NewChatScreen({
         }}
         providers={providers}
         selection={selection}
-        title="Agent and model"
+        title={appCopy.phone.conversations.newChatScreen.agentAndModel}
         visible={sheet === "model"}
       />
 
-      <BottomSheet onClose={closeAccess} onDismiss={sheetHandoff.onDismiss} title="Access" visible={sheet === "access"}>
+      <BottomSheet onClose={closeAccess} onDismiss={sheetHandoff.onDismiss} title={appCopy.phone.conversations.newChatScreen.access2} visible={sheet === "access"}>
         <SheetOption
-          label="Desktop default"
+          label={appCopy.phone.conversations.newChatScreen.desktopDefault}
           onPress={() => {
             setPreset(null);
             closeAccess();
@@ -919,8 +920,8 @@ export function NewChatScreen({
         />
       ) : null}
 
-      <BottomSheet onClose={() => setSheet(null)} title="Run on" visible={sheet === "machine"}>
-        <Text style={styles.sheetLede}>The chat&apos;s agent runs on this machine.</Text>
+      <BottomSheet onClose={() => setSheet(null)} title={appCopy.phone.conversations.newChatScreen.runOn} visible={sheet === "machine"}>
+        <Text style={styles.sheetLede}>{appCopy.phone.conversations.newChatScreen.theChatSAgentRuns}</Text>
         {machines.map((candidate) => {
           const paired = sessions.find((entry) => entry.deviceId === candidate.deviceId) ?? null;
           const offline = paired?.status === "offline" || paired?.status === "stale";
@@ -936,7 +937,7 @@ export function NewChatScreen({
           );
         })}
         {machineState.status === "finding" ? (
-          <Text style={styles.kvNote}>Looking for {target.projectName} there…</Text>
+          <Text style={styles.kvNote}>{appCopy.phone.conversations.newChatScreen.lookingFor}{target.projectName}{appCopy.phone.conversations.newChatScreen.there}</Text>
         ) : machineState.status === "error" ? (
           <Text accessibilityRole="alert" style={styles.sheetError}>
             {machineState.message}

@@ -1,4 +1,5 @@
 import type { BrowserLoadError } from '../../../../../../shared/browser'
+import { copy } from '../../../../../../shared/copy'
 
 // One friendly line per Chromium net error the pane is likely to meet; the raw
 // ERR_* name stays on the page beneath it. Anything not listed keeps the
@@ -39,10 +40,14 @@ export function describeBrowserError(error: BrowserLoadError): BrowserErrorCopy 
   const code = error.description || `ERR_${error.code}`
   const friendly = FRIENDLY[code]
   if (code.startsWith('RENDERER_')) {
-    return { heading: 'The page stopped responding', line: 'Reload to start it again.', code }
+    return {
+      heading: copy.workspace.pane.browser.browserErrors.thePageStoppedResponding,
+      line: 'Reload to start it again.',
+      code,
+    }
   }
   return {
-    heading: "This site can't be reached",
+    heading: copy.workspace.pane.browser.browserErrors.thisSiteCanTBe,
     line: friendly ? `${host || 'The server'} ${friendly}` : host ? `${host} did not load.` : 'The page did not load.',
     code,
   }

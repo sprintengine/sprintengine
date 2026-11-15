@@ -27,6 +27,7 @@ import {
   type InstallFlowState,
 } from './installFlow'
 import { extensionsApi, windowHasStudio } from '../../studio/extensions'
+import { copy as appCopy } from '../../../../shared/copy'
 
 // The registry plugin detail panel + trust-gate install flow, rendered by the
 // Connectors surface next to its browse rows. The detail data comes from the
@@ -116,7 +117,7 @@ export function PluginDetailPanel({
       } catch (error) {
         setFlow({
           status: 'error',
-          message: error instanceof Error ? error.message : 'The install could not be completed.',
+          message: error instanceof Error ? error.message : appCopy.settings.browseStorefront.theInstallCouldNotBe,
         })
       }
     },
@@ -129,7 +130,7 @@ export function PluginDetailPanel({
     // would be written, and issues the token — they are executable config, so
     // they always route through the explicit trust prompt.
     if (!windowHasStudio()) {
-      setFlow({ status: 'error', message: 'Update and restart to install extensions.' })
+      setFlow({ status: 'error', message: appCopy.settings.browseStorefront.updateAndRestartToInstall })
       return
     }
     setFlow({ status: 'verifying' })
@@ -137,7 +138,10 @@ export function PluginDetailPanel({
     try {
       verify = await extensionsApi.verifyMarketplacePlugin({ id: plugin.id })
     } catch (error) {
-      setFlow({ status: 'error', message: error instanceof Error ? error.message : 'Could not verify this extension.' })
+      setFlow({
+        status: 'error',
+        message: error instanceof Error ? error.message : appCopy.settings.browseStorefront.couldNotVerifyThisExtension,
+      })
       return
     }
     const outcome = classifyVerification(verify, plugin.provides)
@@ -180,7 +184,9 @@ export function PluginDetailPanel({
         ) : null}
 
         <div className="mt-3">
-          <div className="text-meta font-semibold text-[color:var(--text-muted)]">Provides</div>
+          <div className="text-meta font-semibold text-[color:var(--text-muted)]">
+            {appCopy.settings.browseStorefront.provides}
+          </div>
           <ul className="mt-1 space-y-1 text-body text-[color:var(--text-muted)]">
             {/* Inline-MCP entries name the actual servers the trust grant adds;
               bundle entries list their component kinds (their bundled skills,
@@ -240,7 +246,7 @@ export function PluginDetailPanel({
 
           {workspaceBlocked && !installView.busy ? (
             <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-              Open a workspace to install this extension.
+              {appCopy.settings.browseStorefront.openAWorkspaceToInstall}
             </p>
           ) : null}
 
@@ -253,7 +259,7 @@ export function PluginDetailPanel({
 
           {claudePlugin && installView.action?.kind === 'install' ? (
             <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-              Adds its skills to this workspace for your agent CLIs. Slash commands work in Claude only.
+              {appCopy.settings.browseStorefront.addsItsSkillsToThis}
             </p>
           ) : null}
         </div>
@@ -269,12 +275,12 @@ export function PluginDetailPanel({
               rel="noreferrer"
               className={`mr-auto inline-flex text-body font-medium text-[color:var(--accent-primary)] hover:text-[color:var(--accent-primary-hover)] ${FOCUS_RING_CLASS}`}
             >
-              View source
+              {appCopy.settings.browseStorefront.viewSource}
             </a>
           ) : null}
           {installView.trustPrompt ? (
             <GhostButton size="md" onClick={() => setFlow({ status: 'idle' })}>
-              Cancel
+              {appCopy.settings.browseStorefront.cancel}
             </GhostButton>
           ) : null}
           {installView.action ? (
@@ -312,7 +318,10 @@ function PluginSkillsList({ skills }: { skills: NonNullable<MarketplacePluginEnt
   const hiddenCount = skills.length - visible.length
   return (
     <div className="mt-3">
-      <div className="text-meta font-semibold text-[color:var(--text-muted)]">Skills · {skills.length}</div>
+      <div className="text-meta font-semibold text-[color:var(--text-muted)]">
+        {appCopy.settings.browseStorefront.skills}
+        {skills.length}
+      </div>
       <ul className="mt-1 space-y-1.5">
         {/* The validator does not guarantee name/path uniqueness, so the index
             rides the key; the list is display-only and never reorders. */}
@@ -352,11 +361,11 @@ export type PluginTrust = { tier: PluginTrustTier; tone: 'good' | 'neutral'; lab
 // untrusted until the user grants trust at install (D3). Verified is the quiet
 // default (no dot); the rest surface the neutral dot to earn attention.
 export function pluginTrust(plugin: MarketplacePluginEntry): PluginTrust {
-  if (plugin.mcp) return { tier: 'inline', tone: 'neutral', label: 'Inline MCP' }
-  if (!plugin.signature) return { tier: 'unsigned', tone: 'neutral', label: 'Unsigned' }
+  if (plugin.mcp) return { tier: 'inline', tone: 'neutral', label: appCopy.settings.browseStorefront.inlineMCP }
+  if (!plugin.signature) return { tier: 'unsigned', tone: 'neutral', label: appCopy.settings.browseStorefront.unsigned }
   return plugin.publisher.verified
-    ? { tier: 'verified', tone: 'good', label: 'Verified' }
-    : { tier: 'community', tone: 'neutral', label: 'Community' }
+    ? { tier: 'verified', tone: 'good', label: appCopy.settings.browseStorefront.verified }
+    : { tier: 'community', tone: 'neutral', label: appCopy.settings.browseStorefront.community }
 }
 
 export function resolveIconUrl(registryUrl: string | null, icon: string): string | null {

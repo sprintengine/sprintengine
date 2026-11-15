@@ -8,6 +8,8 @@
 // again.
 
 /** The default for a message sent while an agent is working. */
+import { copy } from "../../../../src/shared/copy";
+
 export type FollowUpBehavior = "queue" | "steer";
 
 /** What the send does now: a plain send, or one of the two mid-turn kinds. */
@@ -65,9 +67,9 @@ export function followUpSendLabel(input: {
   steerable: boolean;
   behavior: FollowUpBehavior;
 }): { label: string; hint?: string } {
-  if (input.action === "send") return { label: "Send" };
-  if (!input.steerable) return { label: "Queue", hint: "Sends when this turn ends." };
+  if (input.action === "send") return { label: copy.phone.conversations.followUp.send };
+  if (!input.steerable) return { label: copy.phone.conversations.followUp.queue, hint: copy.phone.conversations.followUp.sendsWhenThisTurnEnds };
   return input.behavior === "steer"
-    ? { label: "Steer", hint: "Goes into this turn now. Long-press to queue instead." }
-    : { label: "Queue", hint: "Sends when this turn ends. Long-press to steer now." };
+    ? { label: copy.phone.conversations.followUp.steer, hint: copy.phone.conversations.followUp.goesIntoThisTurnNow }
+    : { label: copy.phone.conversations.followUp.queue, hint: copy.phone.conversations.followUp.sendsWhenThisTurnEnds2 };
 }

@@ -14,6 +14,7 @@
 import React from 'react'
 
 import { GhostButton } from '../../ui/Buttons'
+import { copy as appCopy } from '../../../../../shared/copy'
 
 const SurfaceCanvasState = React.lazy(() =>
   import('./surfaceSubstrate').then((m) => ({ default: m.SurfaceCanvasState })),
@@ -64,11 +65,15 @@ export class GlobalSurfaceErrorBoundary extends React.Component<
         <React.Suspense fallback={null}>
           <SurfaceCanvasState
             kind="error"
-            title={`${this.props.surfaceLabel} hit a problem and stopped.`}
-            hint="The rest of the app is fine. Reload or close it."
+            title={appCopy.workspace.globalSurface.surfaceErrorBoundary.hitAProblemAndStopped(this.props.surfaceLabel)}
+            hint={appCopy.workspace.globalSurface.surfaceErrorBoundary.theRestOfTheApp}
             onRetry={() => this.setState({ failed: false })}
-            retryLabel="Reload surface"
-            extraAction={<GhostButton onClick={this.props.onClose}>Close</GhostButton>}
+            retryLabel={appCopy.workspace.globalSurface.surfaceErrorBoundary.reloadSurface}
+            extraAction={
+              <GhostButton onClick={this.props.onClose}>
+                {appCopy.workspace.globalSurface.surfaceErrorBoundary.close}
+              </GhostButton>
+            }
           />
         </React.Suspense>
       )

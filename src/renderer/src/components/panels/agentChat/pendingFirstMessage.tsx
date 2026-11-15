@@ -14,6 +14,7 @@ import { CheckIcon } from '../../AppIcons'
 import { Spinner } from '../../ui'
 import { UserTimelineRow, WorkingTimelineRow } from './timelineRows'
 import { useWorktreeInstallOnBranch } from './worktreeInstallRow'
+import { copy } from '../../../../../shared/copy'
 
 /** The label every turn's working line opens on, so the line reads the same before and after the agent starts. */
 export const STARTING_WORKING_LABEL = 'Thinking…'
@@ -37,7 +38,9 @@ export function chatSetupSteps(input: {
   if (input.hadWorktree) {
     steps.push({
       id: 'worktree',
-      label: input.branch ? `Worktree on ${input.branch}` : 'Worktree',
+      label: input.branch
+        ? copy.panels.agentChat.pendingFirstMessage.worktreeOn(input.branch)
+        : copy.panels.agentChat.pendingFirstMessage.worktree,
       // Main answers the worktree once its install has run, so an install
       // running means the worktree itself is made.
       done: !input.preparingWorktree || input.install !== null,
@@ -47,12 +50,13 @@ export function chatSetupSteps(input: {
   if (command) {
     steps.push({
       id: 'install',
-      label: `Dependencies (${command})`,
+      label: copy.panels.agentChat.pendingFirstMessage.dependencies(command),
       detail: input.install?.lastLine ?? null,
       done: input.install === null,
     })
   }
-  if (!input.preparingWorktree) steps.push({ id: 'agent', label: `Starting ${input.agentName}`, done: false })
+  if (!input.preparingWorktree)
+    steps.push({ id: 'agent', label: copy.panels.agentChat.pendingFirstMessage.starting(input.agentName), done: false })
   return steps
 }
 

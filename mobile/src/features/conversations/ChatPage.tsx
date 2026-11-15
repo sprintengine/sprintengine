@@ -19,6 +19,7 @@ import { iconSize, radius, space, typography, type Theme } from "../../theme/tok
 import { urlHost, type ChatActivity, type ChatActivityKind } from "./chatActivity";
 import { ConversationPicture, type ChatImages, type SentImages } from "./ConversationImage";
 import { SentPhotoSquares } from "./SentPhotoSquares";
+import { copy } from "../../../../src/shared/copy";
 
 // The chat's own page: what the title pill at the top of a chat opens, in
 // place of the header bar the chat screen no longer has. Who and where the
@@ -132,7 +133,7 @@ export function ChatPage({
     switch (kind) {
       case "changes":
         return {
-          label: "Changes",
+          label: copy.phone.conversations.chatPage.changes,
           meta: diff
             ? diff.added !== null && diff.removed !== null
               ? `+${diff.added} −${diff.removed}`
@@ -144,7 +145,7 @@ export function ChatPage({
       case "agents": {
         const agents = subagents ?? activity.agents ?? { total: 0, working: 0 };
         return {
-          label: "Subagents",
+          label: copy.phone.conversations.chatPage.subagents,
           meta: agents.working ? `${agents.working} working` : "All done",
           live: agents.working > 0,
           ...(onOpenAgents ? { onPress: leaveFor(onOpenAgents) } : {}),
@@ -152,14 +153,14 @@ export function ChatPage({
       }
       case "browser":
         return {
-          label: "Browser",
+          label: copy.phone.conversations.chatPage.browser,
           meta: activity.browser?.live ? "Agent here" : urlHost(activity.browser?.url ?? null),
           live: activity.browser?.live ?? false,
           onPress: () => setView("browser"),
         };
       case "canvas":
         return {
-          label: "Canvas",
+          label: copy.phone.conversations.chatPage.canvas,
           meta: activity.canvas?.live ? "Drawing" : (activity.canvas?.board ?? null),
           live: activity.canvas?.live ?? false,
           // The board the agent named opens as its picture; otherwise this
@@ -168,7 +169,7 @@ export function ChatPage({
         };
       case "library":
         return {
-          label: "Library",
+          label: copy.phone.conversations.chatPage.library,
           meta: plural(activity.sent.length + activity.steps.length, "picture"),
           live: false,
           onPress: () => setView("library"),
@@ -227,7 +228,7 @@ export function ChatPage({
                     );
                   })
                 ) : (
-                  <Text style={styles.quiet}>What the agent touches shows up here.</Text>
+                  <Text style={styles.quiet}>{copy.phone.conversations.chatPage.whatTheAgentTouchesShows}</Text>
                 )}
               </Group>
 
@@ -282,18 +283,16 @@ export function ChatPage({
             </>
           ) : view === "library" ? (
             <>
-              <Text accessibilityRole="header" style={styles.viewTitle}>
-                Library
-              </Text>
+              <Text accessibilityRole="header" style={styles.viewTitle}>{copy.phone.conversations.chatPage.library}</Text>
               {activity.sent.length ? (
                 <>
-                  <Text style={styles.section}>From you</Text>
+                  <Text style={styles.section}>{copy.phone.conversations.chatPage.fromYou}</Text>
                   <SentPhotoSquares images={activity.sent} sent={sent} />
                 </>
               ) : null}
               {activity.steps.length ? (
                 <>
-                  <Text style={styles.section}>From the agent</Text>
+                  <Text style={styles.section}>{copy.phone.conversations.chatPage.fromTheAgent}</Text>
                   {images ? (
                     activity.steps.map(({ tool, picture }) => (
                       <View key={tool.id} style={styles.picture}>
@@ -304,16 +303,14 @@ export function ChatPage({
                       </View>
                     ))
                   ) : (
-                    <Text style={styles.quiet}>This desktop doesn&apos;t send pictures yet.</Text>
+                    <Text style={styles.quiet}>{copy.phone.conversations.chatPage.thisDesktopDoesnTSend}</Text>
                   )}
                 </>
               ) : null}
             </>
           ) : view === "usage" ? (
             <>
-              <Text accessibilityRole="header" style={styles.viewTitle}>
-                Usage
-              </Text>
+              <Text accessibilityRole="header" style={styles.viewTitle}>{copy.phone.conversations.chatPage.usage}</Text>
               {usage.map((plan) => (
                 <View key={plan.plan}>
                   <Text style={styles.section}>{plan.plan}</Text>
@@ -331,53 +328,45 @@ export function ChatPage({
                   </Group>
                 </View>
               ))}
-              <Text style={styles.note}>As the agent last reported it to the desktop.</Text>
+              <Text style={styles.note}>{copy.phone.conversations.chatPage.asTheAgentLastReported}</Text>
             </>
           ) : view === "browser" ? (
             <>
-              <Text accessibilityRole="header" style={styles.viewTitle}>
-                Browser
-              </Text>
+              <Text accessibilityRole="header" style={styles.viewTitle}>{copy.phone.conversations.chatPage.browser}</Text>
               <Group>
                 <GroupRow
                   first
                   glyph={<BrowserGlyph size={iconSize.md} tone={activity.browser?.live ? "markViolet" : "textMuted"} />}
-                  label={activity.browser?.url ?? "A page in the desktop's browser"}
+                  label={activity.browser?.url ?? copy.phone.conversations.chatPage.aPageInTheDesktop}
                   meta={activity.browser?.live ? "Agent here" : null}
                   metaTone="live"
                 />
               </Group>
-              <Text style={styles.note}>
-                Driven in the desktop&apos;s browser. A localhost page opens there, or here under Web pages once shared.
-              </Text>
+              <Text style={styles.note}>{copy.phone.conversations.chatPage.drivenInTheDesktopS}</Text>
             </>
           ) : (
             <>
-              <Text accessibilityRole="header" style={styles.viewTitle}>
-                Canvas
-              </Text>
+              <Text accessibilityRole="header" style={styles.viewTitle}>{copy.phone.conversations.chatPage.canvas}</Text>
               <Group>
                 <GroupRow
                   first
                   glyph={<CanvasGlyph size={iconSize.md} tone={activity.canvas?.live ? "markViolet" : "textMuted"} />}
-                  label={activity.canvas?.board ?? "A board on the desktop"}
+                  label={activity.canvas?.board ?? copy.phone.conversations.chatPage.aBoardOnTheDesktop}
                   meta={activity.canvas?.live ? "Drawing" : null}
                   metaTone="live"
                 />
               </Group>
               {onOpenCanvases ? (
                 <>
-                  <Text style={styles.note}>
-                    The agent didn&apos;t name the board. Its picture is among the desktop&apos;s boards.
-                  </Text>
+                  <Text style={styles.note}>{copy.phone.conversations.chatPage.theAgentDidnTName}</Text>
                   <View style={styles.after}>
                     <Group>
-                      <GroupRow first label="The desktop's boards" onPress={leaveFor(onOpenCanvases)} />
+                      <GroupRow first label={copy.phone.conversations.chatPage.theDesktopSBoards} onPress={leaveFor(onOpenCanvases)} />
                     </Group>
                   </View>
                 </>
               ) : (
-                <Text style={styles.note}>Drawn on a desktop board. Open its Canvas there to see it.</Text>
+                <Text style={styles.note}>{copy.phone.conversations.chatPage.drawnOnADesktopBoard}</Text>
               )}
             </>
           )}
@@ -385,7 +374,7 @@ export function ChatPage({
         <View style={[styles.float, { top: insets.top + space.xs }]}>
           <CircleButton
             icon={<ChevronIcon direction="left" size={iconSize.md} tone="textPrimary" />}
-            label={view === "page" ? "Back to the chat" : "Back"}
+            label={view === "page" ? copy.phone.conversations.chatPage.backToTheChat : copy.phone.conversations.chatPage.back}
             onPress={back}
           />
         </View>
