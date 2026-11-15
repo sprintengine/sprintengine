@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { WorkspaceSyncCommand, WorkspaceSyncEvent, WorkspaceSyncSnapshot } from '../../../shared/workspace-sync'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { createWorkspaceSyncClient, type WorkspaceSyncClientApi } from './workspaceSyncClient'
 
 // A window whose Studio restarted out of process while it stayed open: the new

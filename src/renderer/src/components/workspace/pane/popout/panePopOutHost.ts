@@ -6,7 +6,7 @@ import type { PanePopOutAction, PanePopOutState } from '../../../../../../shared
 import { clientSupports } from '../../../../clientCapabilities'
 import { showToast } from '../../../../store/toastStore'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
-import type { WorkspaceId, WorkspacePaneTab, WorkspacePaneTabKind } from '../../../../types/workspace'
+import type { WorkspaceId, WorkspacePaneTab, WorkspacePaneTabKind } from '../../../../../../shared/workspace'
 import { openFileSurface } from '../../../../utils/openFileSurface'
 import { readAuxWindowBounds } from '../../../auxWindows/auxWindowPlacement'
 import type { PaneKindDefinition } from '../paneKinds'

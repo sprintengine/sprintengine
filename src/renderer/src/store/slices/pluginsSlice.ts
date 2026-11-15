@@ -1,6 +1,6 @@
 import { isDraft, original } from 'immer'
 
-import type { PluginCatalogEntry, PluginCatalogStatus } from '../../types/workspace'
+import type { PluginCatalogEntry, PluginCatalogStatus } from '../../../../shared/workspace'
 import { reuseUnchanged } from '../../utils/reuseUnchanged'
 import { extensionsApi, type ExtensionsApi, windowHasStudio } from '../../studio/extensions'
 

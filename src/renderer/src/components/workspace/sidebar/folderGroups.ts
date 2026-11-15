@@ -1,7 +1,7 @@
 // How the sidebar files workspaces: folder groups, remote groups, the
 // All chats shelves, and reordering within and between them.
 
-import { type Workspace, type WorkspaceId } from '../../../types/workspace'
+import { type Workspace, type WorkspaceId } from '../../../../../shared/workspace'
 import type { RepositoryIdentity } from '../../../../../shared/repository-identity'
 import { type RemoteConversation } from '../remoteBand/remoteSessionsModel'
 import { type FolderIdentityMap, folderIdentityKey } from '../useFolderRepositoryIdentities'

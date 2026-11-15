@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 import type { BrowserTabState } from '../../../../../../shared/browser'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
-import type { WorkspaceId } from '../../../../types/workspace'
+import type { WorkspaceId } from '../../../../../../shared/workspace'
 import { agentBrowserTracker, shouldFloatForAgent } from './agentBrowserFloat'
 import { canvasPushMatchesBoard } from '../canvas/canvasSync'
 

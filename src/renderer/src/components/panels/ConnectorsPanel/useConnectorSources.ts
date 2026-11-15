@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/manifest'
-import type { McpServerConfig, McpSettings } from '../../../types/workspace'
+import type { McpServerConfig, McpSettings } from '../../../../../shared/workspace'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { SourceLoad } from './connectorsFacets'
 import { agentSetupApi } from '../../../studio/agentSetup'

@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 
-import type { AppNotification } from '../../../types/workspace'
+import type { AppNotification } from '../../../../../shared/workspace'
 import { OverlaySurfaceContext } from '../../ui'
 import { NotificationsPopover, type NotificationRowAction } from './NotificationsPopover'
 

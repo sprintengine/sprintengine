@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { APP_THEMES } from '../../../src/renderer/src/types/appTheme'
+import { APP_THEMES } from '../../../src/shared/app-theme'
 import { THEME_TOKENS } from '../src/index'
 import { test } from 'vitest'
 

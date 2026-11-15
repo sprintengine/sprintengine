@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import type { Workspace } from '../../../../types/workspace'
+import type { Workspace } from '../../../../../../shared/workspace'
 import { canvasBoardSourceOf, listCanvasBoards } from '../canvas/canvasBoardSource'
 
 /**

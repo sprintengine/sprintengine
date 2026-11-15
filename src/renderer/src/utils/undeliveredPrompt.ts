@@ -1,5 +1,5 @@
 import type { TerminalPromptUndelivered } from '../../../shared/electron-api'
-import type { DiagnosticLogEntry } from '../types/workspace'
+import type { DiagnosticLogEntry } from '../../../shared/workspace'
 
 // A first message main could not type into its agent CLI
 // (src/main/deferred-prompt-delivery.ts), turned into what the person sees: a

@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, test } from 'vitest'
 
-import type { LayoutTemplate } from '../../types/workspace'
+import type { LayoutTemplate } from '../../../../shared/workspace'
 
 // The Files pane reveals when asked — on mount, from the toolbar, from a
 // terminal link — and NOT every time the editor's active file changes. The

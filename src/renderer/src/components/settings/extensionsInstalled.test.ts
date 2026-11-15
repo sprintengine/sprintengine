@@ -7,7 +7,7 @@ import type {
   ThirdPartyModuleView,
 } from '../../../../shared/modules/manifest'
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
-import type { McpServerConfig } from '../../types/workspace'
+import type { McpServerConfig } from '../../../../shared/workspace'
 import {
   deriveInstalledExtensions,
   mcpToInstalled,

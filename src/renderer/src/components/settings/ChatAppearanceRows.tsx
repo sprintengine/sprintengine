@@ -8,7 +8,7 @@ import {
   type ChatWidth,
   type ClockFormat,
   type ReplyStreaming,
-} from '../../types/appTheme'
+} from '../../../../shared/app-theme'
 import { ResetIcon } from '../AppIcons'
 import { IconButton, SegmentedControl, SettingRow, Tooltip } from '../ui'
 import { Slider, type SliderStop } from '../ui/Slider'

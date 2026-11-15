@@ -2,8 +2,8 @@
 // for a paired device that drives the chat over the tailnet.
 //
 // A chat agent runs on one CLI, and its picker offers that CLI's catalog: what
-// the CLI reported about itself (the manifest's seed until it has), then the
-// ids the person added in Settings, less the ids the person took off the list. The renderer builds that list from the
+// the CLI reported about itself, then the ids the person added in Settings,
+// less the ids the person took off the list. The renderer builds that list from the
 // plugin catalog, the discovered catalogs and the CLI runtimes it holds; this
 // builds the same list in main from the same three sources — the plugin
 // registry, the discovery cache main keeps under userData, and the launch

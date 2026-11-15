@@ -1,5 +1,5 @@
 import type { WorkspaceSkill } from '../../../../shared/electron-api'
-import type { AgentConversationRuntime, AgentState, CliPermissionPreset } from '../../types/workspace'
+import type { AgentConversationRuntime, AgentState, CliPermissionPreset } from '../../../../shared/workspace'
 import { conversationAgentRuntimePatch } from '../../../../shared/agent-state'
 
 // The fields that make a fresh agent a conversation-runtime agent live beside

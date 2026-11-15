@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import type { HostedCard } from '../../../shared/hosted-card-feed'
-import type { AppNotification } from '../types/workspace'
+import type { AppNotification } from '../../../shared/workspace'
 import {
   bellBadge,
   CORE_NOTIFICATION_SOURCE_ROWS,

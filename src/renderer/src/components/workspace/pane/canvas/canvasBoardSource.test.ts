@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import { StudioError } from '../../../../../../../packages/client-runtime/src/public'
 import { fakePairedStudios } from '../../../../studio/environmentStudio.double'
-import type { Workspace } from '../../../../types/workspace'
+import type { Workspace } from '../../../../../../shared/workspace'
 
 const state = vi.hoisted(() => ({
   workspaces: [] as Array<Pick<Workspace, 'id' | 'remoteOrigin'>>,

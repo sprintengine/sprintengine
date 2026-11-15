@@ -20,7 +20,7 @@
 import type { LifecycleState } from '../../../shared/lifecycle-state'
 import { onThirdPartyRendererModulesLoaded } from '../modules'
 import { useWorkspaceStore } from '../store/workspaceStore'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { deriveWorkspaceRunGlyph } from './workspaceRunGlyph'
 import { workspaceSyncApi, workspaceSyncReachable } from '../studio/workspaceSync'
 

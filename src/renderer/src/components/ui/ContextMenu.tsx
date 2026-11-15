@@ -11,7 +11,7 @@ import {
   type ProjectColor,
   type ProjectColorSetting,
 } from '../../utils/projectColor'
-import type { HighlightColor } from '../../types/workspace'
+import type { HighlightColor } from '../../../../shared/workspace'
 
 // Pointer-positioned context menu. Unlike Popover (anchored to a trigger
 // element), this surface opens at viewport coordinates — a right-click point

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed (a CLI's models come only from the CLI)
+
+- **`PluginRegistryListEntry.modelSelection`** (`cliPlugins.list`) is a
+  `PluginModelSelection`, `{ allowCustomId }`. It no longer carries `options`,
+  the model list a CLI's manifest declared: the manifests name no models. A
+  picker's rows are what the CLI reported (`cliModels.*`) and the ids added in
+  Settings, merged as before.
+
 ### Changed (a version refusal says which side is behind)
 
 - **`bye unsupported_protocol_version`** names Studio's own window

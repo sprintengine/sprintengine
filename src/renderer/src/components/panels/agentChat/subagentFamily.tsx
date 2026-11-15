@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo, useRef, type JSX, type ReactNode } from 'react'
 import { subagentEnded } from '../../../../../shared/conversation/subagentStatus'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import { studioSubagentsOf, SubagentStatusWords, useStudioSubagents, type StudioSubagent } from './chatSubagents'
 import { useChatSource, type ChatSource } from './chatSource'
 import { projectConversation, type TranscriptEntry, type TranscriptToolEntry } from './conversationProjection'

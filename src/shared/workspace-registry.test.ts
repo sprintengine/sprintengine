@@ -22,7 +22,7 @@ import {
   type WorkspaceRegistryFile,
   type WorkspaceRegistryTombstone,
 } from './workspace-registry'
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from './workspace'
 import { isRetiredWorkspaceMode, RETIRED_WORKSPACE_MODES } from './workspace-mode'
 
 function workspace(overrides: Partial<Workspace> = {}): Workspace {

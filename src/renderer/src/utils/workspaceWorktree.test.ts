@@ -17,7 +17,7 @@ import {
   type WorktreeScopeCandidate,
 } from './workspaceWorktree'
 import { resolveSkillInvocation } from '../../../shared/skill-invocation'
-import type { McpServerConfig, Workspace } from '../types/workspace'
+import type { McpServerConfig, Workspace } from '../../../shared/workspace'
 import type { PluginSkillCatalog } from '../../../shared/plugin-manifest'
 import { test } from 'vitest'
 

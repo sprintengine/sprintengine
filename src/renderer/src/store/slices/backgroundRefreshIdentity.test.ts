@@ -4,7 +4,7 @@ import { produce } from 'immer'
 import { test } from 'vitest'
 
 import type { AgentCliAvailabilityMap } from '../../../../shared/electron-api'
-import type { PluginCatalogEntry } from '../../types/workspace'
+import type { PluginCatalogEntry } from '../../../../shared/workspace'
 import { createCliAvailabilitySlice, type CliAvailabilitySliceState } from './cliAvailabilitySlice'
 import { createPluginsSlice, type PluginsSliceState } from './pluginsSlice'
 

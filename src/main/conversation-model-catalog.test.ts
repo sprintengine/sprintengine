@@ -8,13 +8,7 @@ import { createConversationModelCatalog, type ConversationModelCatalogDeps } fro
 const claude = {
   id: 'claude-code',
   displayName: 'Claude Code',
-  modelSelection: {
-    options: [
-      { id: 'seed-a', label: 'Seed A' },
-      { id: 'seed-b', label: 'Seed B' },
-    ],
-    allowCustomId: true,
-  },
+  modelSelection: { allowCustomId: true },
 }
 
 function catalogWith(overrides: Partial<ConversationModelCatalogDeps> = {}) {
@@ -33,16 +27,21 @@ const discovered = (ids: Array<{ id: string; displayName?: string }>): Discovere
   source: 'agent-sdk',
 })
 
-test("a chat's catalog is its CLI's manifest seed until the CLI has reported, then the ids the person added", async () => {
-  const catalog = catalogWith({ userModels: (cli) => (cli === 'claude-code' ? ['my-model', 'seed-a'] : undefined) })
+test("until the CLI has reported, a chat's catalog is the ids the person added and nothing else", async () => {
+  const catalog = catalogWith({ userModels: (cli) => (cli === 'claude-code' ? ['my-model'] : undefined) })
   assert.deepEqual(await catalog('claude-agent'), {
     cli: 'claude-code',
     cliLabel: 'Claude Code',
-    options: [{ id: 'seed-a', label: 'Seed A' }, { id: 'seed-b', label: 'Seed B' }, { id: 'my-model' }],
+    options: [{ id: 'my-model' }],
   })
+  assert.deepEqual(
+    (await catalogWith()('claude-agent'))?.options,
+    [],
+    "with none added the list is empty: the CLI's own default is its own row",
+  )
 })
 
-test("once the CLI has reported its models they replace the seed, as this machine's picker shows them", async () => {
+test("once the CLI has reported, its models are the catalog, as this machine's picker shows them", async () => {
   const catalog = catalogWith({
     readDiscovered: async () => ({
       'claude-code': discovered([
@@ -69,7 +68,7 @@ test('a provider that is not a CLI, a CLI this app does not hold, or one with no
 
 test('an unreadable discovery cache reads as none, and a long catalog is cut to the wire bound', async () => {
   const unreadable = catalogWith({ readDiscovered: async () => Promise.reject(new Error('EACCES')) })
-  assert.equal((await unreadable('claude-agent'))?.options.length, 2)
+  assert.deepEqual((await unreadable('claude-agent'))?.options, [])
   const long = catalogWith({
     readDiscovered: async () => ({
       'claude-code': discovered([
@@ -110,16 +109,12 @@ test('a paired device is not offered what the person removed, and is offered wha
   assert.deepEqual((await catalog('claude-agent'))?.options, [{ id: 'opus' }, { id: 'typed-by-hand' }])
 })
 
-test('with discovery failing, the typed ids still reach a paired device beside the seed', async () => {
+test('with discovery failing, the typed ids still reach a paired device', async () => {
   const catalog = catalogWith({
     readDiscovered: async () => {
       throw new Error('unreadable')
     },
     userModels: () => ['typed-by-hand'],
-    removedModels: () => ['seed-b'],
   })
-  assert.deepEqual((await catalog('claude-agent'))?.options, [
-    { id: 'seed-a', label: 'Seed A' },
-    { id: 'typed-by-hand' },
-  ])
+  assert.deepEqual((await catalog('claude-agent'))?.options, [{ id: 'typed-by-hand' }])
 })

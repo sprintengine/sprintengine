@@ -8,7 +8,7 @@ import {
   WORKTREE_CONTAINER_DIR,
   worktreeContainerPath,
 } from '../../../shared/worktree-paths'
-import type { AgentExecutionMode, Workspace } from '../types/workspace'
+import type { AgentExecutionMode, Workspace } from '../../../shared/workspace'
 
 // Pure worktree path/branch derivation now lives in the node-free shared module
 // so the main process can reuse it (agent-at-launch worktrees over the App

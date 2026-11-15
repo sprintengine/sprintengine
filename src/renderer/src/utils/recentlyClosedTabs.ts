@@ -1,4 +1,4 @@
-import type { WorkspacePaneTab } from '../types/workspace'
+import type { WorkspacePaneTab } from '../../../shared/workspace'
 import type { WorkspacePaneOpenInput } from '../store/slices/workspacePaneSlice'
 
 // Reopen a closed tab (`layout.tab.reopen`, ⌘⇧T): the tabs closed in this

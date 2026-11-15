@@ -23,7 +23,7 @@ import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/m
 import type { ExtensionTrustReviewData } from '../../extensions/ExtensionTrustReview'
 import type { AgentComposerConnector } from '../../workspace/agentComposer/useAgentComposer'
 import type { PluginRegistryListEntry } from '../../../../../shared/plugin-manifest'
-import type { McpServerConfig, McpSettings } from '../../../types/workspace'
+import type { McpServerConfig, McpSettings } from '../../../../../shared/workspace'
 import {
   CloseIconButton,
   EmptyState,

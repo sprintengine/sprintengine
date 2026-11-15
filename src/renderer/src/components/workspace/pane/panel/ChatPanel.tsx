@@ -2,7 +2,7 @@ import React from 'react'
 
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
 import { selectModuleEnabled } from '../../../../modules'
-import type { WorkspacePaneTab } from '../../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../../shared/workspace'
 import { GitBranchGlyph } from '../../../AppIcons'
 import CliIcon from '../../../CliIcon'
 import { shortMachineName } from '../../../remote/machineRowModel'

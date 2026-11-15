@@ -4,7 +4,7 @@ import type {
   MemoryGraphFiltersConfig,
   MemoryGraphForcesConfig,
   MemoryGraphSettings,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 
 type SidebarTab = 'filters' | 'groups' | 'display' | 'forces'
 

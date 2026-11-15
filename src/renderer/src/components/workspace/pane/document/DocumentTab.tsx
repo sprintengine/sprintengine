@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import type { WorkspacePaneTab } from '../../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../../shared/workspace'
 import { renderMarkdown } from '../../../../utils/markdown'
 import { maskMarkdownFrontmatter } from '../../../../utils/markdownFrontmatter'
 import { basename } from '../../../../utils/paths'

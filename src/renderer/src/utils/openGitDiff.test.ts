@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { WorkspaceId } from '../types/workspace'
+import type { WorkspaceId } from '../../../shared/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { openGitDiff } from './openGitDiff'
 import { test } from 'vitest'

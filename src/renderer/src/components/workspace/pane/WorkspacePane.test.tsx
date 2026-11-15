@@ -18,7 +18,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, test, vi } from 'vitest'
 
-import type { Workspace, WorkspacePaneState } from '../../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../../shared/workspace'
 
 vi.mock('./WorkspacePaneBody', () => ({
   WorkspacePaneBody: () => null,

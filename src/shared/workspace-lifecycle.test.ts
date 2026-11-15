@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from './workspace'
 import {
   lifecycleSnapshotIsStale,
   parseWorkspaceLifecycleRequest,

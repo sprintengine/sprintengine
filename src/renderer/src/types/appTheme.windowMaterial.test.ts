@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { effectiveWindowMaterial, isWindowMaterial } from './appTheme'
+import { effectiveWindowMaterial, isWindowMaterial } from '../../../shared/app-theme'
 
 test('tinted is a window material beside solid and glass', () => {
   assert.equal(isWindowMaterial('tinted'), true)

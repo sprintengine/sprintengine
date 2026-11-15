@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { STATIC_PANE_KINDS } from '../../components/workspace/pane/paneKinds'
-import type { Workspace, WorkspacePaneState } from '../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../shared/workspace'
 import { healRetiredRailLayout } from './layoutSlice'
 import { normalizeWorkspacePaneState } from './workspacePaneSlice'
 

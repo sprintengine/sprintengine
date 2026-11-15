@@ -1,7 +1,7 @@
 import React from 'react'
 
 import { browserTabLabel } from '../../../../../shared/browser'
-import type { WorkspacePaneTab } from '../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../shared/workspace'
 import { OpenInWindowGlyph, TourGlyph, type TabItem } from '../../ui'
 import { paneKindDefinition } from './paneKinds'
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { rowAccent } from './WorkspaceSidebar'
 import { test } from 'vitest'
 

@@ -1,5 +1,5 @@
 import type { ConversationSearchHit } from '../../../../shared/conversation-index'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { workspaceSwitchRowId } from '../commandPaletteSearch'
 import { openConversationMatch } from '../../utils/conversationHistoryNavigation'
 import { bestConversationHit } from './conversationSnippet'

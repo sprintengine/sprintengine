@@ -25,7 +25,7 @@ import {
   type KeybindingPlatform,
 } from '../../commands'
 import { getRendererHost, onThirdPartyRendererModulesLoaded, selectModuleEnabled } from '../../modules'
-import type { KeybindingSettings } from '../../types/workspace'
+import type { KeybindingSettings } from '../../../../shared/workspace'
 import { SettingCard, SettingsPageHeader, SettingsSectionTitle } from './SettingsAtoms'
 import { GhostButton, IconButton, InboxSearchInput, KbdChord, StatusDot, Tooltip } from '../ui'
 import { ResetIcon } from '../AppIcons'

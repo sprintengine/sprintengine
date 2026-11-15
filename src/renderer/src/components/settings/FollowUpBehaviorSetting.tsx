@@ -1,5 +1,5 @@
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { FollowUpBehavior } from '../../types/workspace'
+import type { FollowUpBehavior } from '../../../../shared/workspace'
 import { renderKeybinding } from '../../commands/keybindings'
 import { SegmentedControl, SettingRow } from '../ui'
 

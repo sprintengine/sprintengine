@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { STANDARD_WORKSPACE_MODE, type BundledWorkspaceMode } from '../types/workspace'
+import { STANDARD_WORKSPACE_MODE, type BundledWorkspaceMode } from '../../../shared/workspace'
 import { isHiddenFromRail, isRailHiddenModuleWorkspace } from './workspaceVisibility'
 import { getRendererHost } from '../modules'
 import { test } from 'vitest'

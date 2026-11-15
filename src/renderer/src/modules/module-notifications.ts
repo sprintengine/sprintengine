@@ -1,5 +1,5 @@
 import type { ModuleNotificationDelivery } from '../../../shared/modules/notifications'
-import type { DiagnosticLevel, DiagnosticLogEntry } from '../types/workspace'
+import type { DiagnosticLevel, DiagnosticLogEntry } from '../../../shared/workspace'
 
 // A capability module's `MainHost.notify`, filed into this window's bell
 // (shared/modules/notifications.ts has the delivery contract). Pure apart from

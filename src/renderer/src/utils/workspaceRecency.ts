@@ -1,4 +1,4 @@
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { MONOTONIC_WORKSPACE_CLOCKS, visitRewindApplies, workspaceFieldMayApply } from '../../../shared/workspace-sync'
 import {
   workspaceLastActiveAt,

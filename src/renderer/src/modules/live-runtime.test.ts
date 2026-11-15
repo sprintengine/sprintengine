@@ -4,7 +4,7 @@ import { createWorkspaceFileWatcher } from './workspace-file-watch'
 import { createModuleTabFocuser, toModuleChatRuntimeOptions } from './workspace-tabs'
 import { createRendererHost } from './renderer-host'
 import { workspaceWorkingRoot } from '../utils/workspaceWorktree'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { test } from 'vitest'
 
 test('live-runtime', async () => {

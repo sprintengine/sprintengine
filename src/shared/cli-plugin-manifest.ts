@@ -123,14 +123,10 @@ export type CliCapabilities = {
   chatHistoryFile?: string
 }
 
-export type CliModelOption = {
-  id: string
-  label?: string
-}
-
+// The manifest names no models: a picker lists what the CLI reports about
+// itself and the ids the person adds in Settings (`allowCustomId`).
 export type CliModelSelectionSpec = {
   args: string[]
-  options?: CliModelOption[]
   allowCustomId?: boolean
 }
 
@@ -1097,22 +1093,6 @@ function validateModelSelection(value: unknown, issues: CliManifestIssue[]): voi
       path: 'modelSelection.args',
       message: 'modelSelection.args must be a non-empty array of string templates.',
     })
-  }
-  if (value.options !== undefined) {
-    if (!Array.isArray(value.options)) {
-      issues.push({ path: 'modelSelection.options', message: 'modelSelection.options must be an array.' })
-    } else {
-      value.options.forEach((option, index) => {
-        const path = `modelSelection.options[${index}]`
-        if (!isRecord(option)) {
-          issues.push({ path, message: 'Model option must be an object.' })
-          return
-        }
-        requireString(option, 'id', issues, undefined, path)
-        // Present ⇒ non-empty string (matches the app's requireString).
-        if (option.label !== undefined) requireString(option, 'label', issues, undefined, path)
-      })
-    }
   }
   if (value.allowCustomId !== undefined && typeof value.allowCustomId !== 'boolean') {
     issues.push({

@@ -1,7 +1,7 @@
 import type { AgentWorktreeCleanupReport } from '../../../shared/electron-api'
 import { agentLeaseKey } from '../../../shared/ipc/worktree-pool'
 import { workspaceProjectRootOf } from '../../../shared/worktree-paths'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { samePath } from './paths'
 import { isSettledWorkspace } from './workspaceSettle'
 

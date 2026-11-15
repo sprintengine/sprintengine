@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { WorkspaceBackupPayload } from '../../../shared/electron-api'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 
 // A pane pop-out window (`?aux=pane`) mounts the pane's own tab bodies, so the
 // store's setters run in it — against settings that are a snapshot of when it

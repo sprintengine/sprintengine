@@ -122,10 +122,12 @@ say so in your reply for the person to do in the app.
 one's model ids and reasoning-effort levels. Read it before naming a `cli` or
 `model` anywhere — those are otherwise blind strings. Only rows with
 `agentSelectable: true` may be launched; a false row is registry-held for
-install and detection only, and every launch door refuses it. A row whose
-`allowCustomModelId` is true accepts model ids outside its listed options, which
-are a seed rather than a closed set. This reports what the registry holds, not
-what is installed on this machine — it never probes for binaries.
+install and detection only, and every launch door refuses it. A row's model ids
+are in its `catalog.models`: what the CLI reported about itself, then the ids
+the person added in Settings. A row whose `allowCustomModelId` is true also
+accepts ids the catalog does not list; leave `model` out for the CLI's own
+default. This reports what the registry holds, not what is installed on this
+machine — it never probes for binaries.
 
 `module_list` reports the capability modules this app has, as the user sees
 them: bundled and third-party, each with its source, version, whether it is

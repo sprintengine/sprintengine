@@ -19,7 +19,7 @@ import type {
   PanePopOutClosedEvent,
   PanePopOutState,
 } from '../../../../../../shared/ipc/pane-popout'
-import type { Workspace, WorkspacePaneState } from '../../../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../../../shared/workspace'
 
 const WS = 'ws-owner'
 const OTHER = 'ws-other'

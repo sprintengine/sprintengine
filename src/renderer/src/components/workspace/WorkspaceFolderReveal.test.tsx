@@ -7,7 +7,7 @@ import { afterEach, beforeEach, test, vi } from 'vitest'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { PANEL_COMMAND_EVENT } from '../../utils/panelCommands'
 import { WorkspaceFolderReveal } from './WorkspaceFolderReveal'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 
 // `Primary+O` outlived the header that used to host it: it answers from a host
 // with no chrome, on the folder the followed checkout names.

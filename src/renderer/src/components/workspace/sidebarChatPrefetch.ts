@@ -4,7 +4,7 @@ import { conversationWorkingRoot } from '../../../../shared/agent-state'
 import type { ConversationKey } from '../../../../shared/conversation-runtime'
 import { normalizeAgentRuntime } from '../../store/slices/agentsSlice'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 
 /**
  * Reading a chat while its sidebar row is pointed at, so a click on it finds

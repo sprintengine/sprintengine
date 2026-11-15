@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
-import type { AppSettings, CliRuntimeSettings } from '../../types/workspace'
-import type { Workspace } from '../../types/workspace'
+import type { AppSettings, CliRuntimeSettings } from '../../../../shared/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { LEGACY_COMMAND_ID_ALIASES } from '../../commands/keybindings'
 import { useWorkspaceStore } from '../workspaceStore'
 import type { ChatListView, DiffViewMode, SettingsOverlayState, SidebarSection } from './settingsSlice'

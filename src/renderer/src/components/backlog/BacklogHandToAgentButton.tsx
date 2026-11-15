@@ -14,7 +14,7 @@ import {
   hasAgentLink,
   openAgentBacklogLink,
 } from '../../utils/agentBacklogLinks'
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 import type { BacklogItem } from '../../utils/backlog'
 
 // ── "Hand to agent" on a Backlog item ────────────────────────────────────────

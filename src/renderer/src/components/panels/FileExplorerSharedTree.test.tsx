@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, test } from 'vitest'
 
-import type { LayoutTemplate } from '../../types/workspace'
+import type { LayoutTemplate } from '../../../../shared/workspace'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 // One Files tree, three hosts. The editor window's column is the workspace's

@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceId } from '../../types/workspace'
+import type { Workspace, WorkspaceId } from '../../../../shared/workspace'
 import type { ModuleEnablementOverrides } from '../../../../shared/modules/manifest'
 import { isSettledWorkspace } from '../../utils/workspaceSettle'
 import { isHiddenFromRail } from '../../utils/workspaceVisibility'

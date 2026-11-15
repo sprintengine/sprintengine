@@ -56,7 +56,7 @@ import {
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from '../shared/workspace'
 import { createStaticAppIdentity } from '../server/platform/app-identity'
 import { createGatewayAuditStore } from '../main/automation/gateway-audit'
 import { createConversationGatewayHost } from '../server/core/conversation-host'

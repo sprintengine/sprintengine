@@ -1,4 +1,4 @@
-import type { WorkspaceModuleStateBag } from '../../types/workspace'
+import type { WorkspaceModuleStateBag } from '../../../../shared/workspace'
 
 /**
  * The bag as persisted: every module's entry persists verbatim, and an empty

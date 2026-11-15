@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceId } from '../../renderer/src/types/workspace'
+import type { Workspace, WorkspaceId } from '../../shared/workspace'
 import { comparablePath } from '../../shared/host-paths'
 import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
 import type { WorkspaceSyncService } from '../workspace-sync-service'

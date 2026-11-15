@@ -18,7 +18,7 @@ test('ids that differ only by a window suffix are one family, base window first'
 })
 
 test('a family the catalog ships only suffixed keeps its own id as the row it selects', () => {
-  const models = cliPickerModels([{ id: 'sonnet[1m]', label: 'Sonnet (1M)', origin: 'manifest' }])
+  const models = cliPickerModels([{ id: 'sonnet[1m]', label: 'Sonnet (1M)', origin: 'discovered' }])
   assert.deepEqual(models, [
     {
       id: 'sonnet[1m]',
@@ -26,7 +26,7 @@ test('a family the catalog ships only suffixed keeps its own id as the row it se
       family: 'sonnet',
       familyDefault: true,
       contextLabel: '1M',
-      origin: 'manifest',
+      origin: 'discovered',
     },
   ])
 })

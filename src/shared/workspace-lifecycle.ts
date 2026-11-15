@@ -1,4 +1,4 @@
-import type { HighlightColor, Workspace, WorkspaceHighlight } from '../renderer/src/types/workspace'
+import type { HighlightColor, Workspace, WorkspaceHighlight } from './workspace'
 import type { WorkspaceFieldsPatch } from './workspace-sync'
 
 // A chat's rest and its ordering key, as pure functions of the registry

@@ -5,8 +5,8 @@ import type {
   CliRuntimeSettings,
   PluginCatalogEntry,
   PluginCatalogStatus,
-} from '../../../types/workspace'
-import type { PluginModelCatalog, PluginReasoningCatalog } from '../../../../../shared/plugin-manifest'
+} from '../../../../../shared/workspace'
+import type { PluginModelSelection, PluginReasoningCatalog } from '../../../../../shared/plugin-manifest'
 import {
   mergeCliModelCatalog,
   type DiscoveredCliModelCatalog,
@@ -88,57 +88,34 @@ export function isSelectableAgentCli(cli: AgentCli): boolean {
   return !AGENT_PICKER_HIDDEN_CLI_IDS.has(cli)
 }
 
-// Fallback model catalogs for the bundled CLIs, used only while the plugin
+// Fallback model selection for the bundled CLIs, used only while the plugin
 // registry is loading or errored (legacyCliRuntimeOptions / the `null`-plugins
 // path). The registry path reads each plugin manifest's own `modelSelection`.
 //
-// Policy: ship NO seeded model ids. Any baked-in list is a guess about the
-// user's entitlements — offering a model the account can't run turns selection
-// into a trap (the user picks it and the launch fails or silently falls back).
+// Policy: ship NO model ids, here or in a manifest. Any baked-in list is a
+// guess about the user's entitlements — offering a model the account can't run
+// turns selection into a trap (the user picks it and the launch fails or
+// silently falls back).
 // The rows come from what the installed CLI reports (see mergeCliModelCatalog);
 // until it has, the bare CLI row launches with the CLI's own default (no
 // `--model` flag) and the user adds the ids they actually have access to via
 // Settings → the model list persists per CLI in `cliRuntimes[id].models`.
 // `allowCustomId` stays true so that add-your-own flow (and the picker
 // passthrough) keeps working.
-const BUNDLED_AGENT_MODEL_CATALOGS: Record<AgentCli, PluginModelCatalog> = {
-  codex: {
-    options: [],
-    allowCustomId: true,
-  },
-  [CLAUDE_CODE_PLUGIN_ID]: {
-    options: [],
-    allowCustomId: true,
-  },
-  opencode: {
-    options: [],
-    allowCustomId: true,
-  },
+const BUNDLED_AGENT_MODEL_CATALOGS: Record<AgentCli, PluginModelSelection> = {
+  codex: { allowCustomId: true },
+  [CLAUDE_CODE_PLUGIN_ID]: { allowCustomId: true },
+  opencode: { allowCustomId: true },
   // Z.AI runs the claude binary against Z.AI's endpoint; model tier is driven by
-  // the manifest's ANTHROPIC_DEFAULT_*_MODEL env, so the picker seeds no models.
-  zai: {
-    options: [],
-    allowCustomId: true,
-  },
-  grok: {
-    options: [],
-    allowCustomId: true,
-  },
-  'kimi-code': {
-    options: [],
-    allowCustomId: true,
-  },
+  // the manifest's ANTHROPIC_DEFAULT_*_MODEL env.
+  zai: { allowCustomId: true },
+  grok: { allowCustomId: true },
+  'kimi-code': { allowCustomId: true },
   // Kimi K3 via Claude Code runs the claude binary against Moonshot's endpoint;
-  // model tier is driven by the manifest's ANTHROPIC_DEFAULT_*_MODEL env, so
-  // the picker seeds no models (same as zai).
-  'kimi-claude': {
-    options: [],
-    allowCustomId: true,
-  },
-  cursor: {
-    options: [],
-    allowCustomId: true,
-  },
+  // model tier is driven by the manifest's ANTHROPIC_DEFAULT_*_MODEL env
+  // (same as zai).
+  'kimi-claude': { allowCustomId: true },
+  cursor: { allowCustomId: true },
 }
 
 export function labelForCliRuntime(cli: AgentCli): string {

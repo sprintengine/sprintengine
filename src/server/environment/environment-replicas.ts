@@ -10,7 +10,7 @@ import { STUDIO_WORKSPACE_SYNC_CAPABILITY } from '../../../packages/studio-proto
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import { parseEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { WorkspaceSyncService } from '../../main/workspace-sync-service'
-import type { AgentState, Workspace } from '../../renderer/src/types/workspace'
+import type { AgentState, Workspace } from '../../shared/workspace'
 import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
 import type { WorkspaceFieldsPatch, WorkspaceSyncEvent } from '../../shared/workspace-sync'
 

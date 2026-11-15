@@ -20,7 +20,7 @@ import {
   selectedPermissionOption,
   type PermissionModeOption,
 } from './agentSpawnShared'
-import type { AgentCli, CliPermissionPreset } from '../../../types/workspace'
+import type { AgentCli, CliPermissionPreset } from '../../../../../shared/workspace'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import {
   conversationPermissionModes,

@@ -1,25 +1,23 @@
 // Models an agent CLI reported about itself, and the merged catalog the pickers
 // render. Node-free on purpose: `src/shared` cannot import `src/main` (TS6307),
 // and the discovery probes that populate this shape live in the main process.
-import type { PluginModelCatalog, PluginModelOption } from './plugin-manifest'
+import type { PluginModelOption, PluginModelSelection } from './plugin-manifest'
 import { NEW_FOR_MS } from './new-for-days'
 import type { DiscoveredCliModel, DiscoveredCliModelCatalog } from '../../packages/studio-protocol/src/public'
 
 // One model and one CLI's catalog, as the Studio protocol carries them (`cliModels.*`).
 export type { DiscoveredCliModel, DiscoveredCliModelCatalog }
 
-// Which layer a merged row came from. A row present in several layers reports
-// the strongest claim: user > discovered > manifest. Never rendered as words —
-// it drives the user-added glyph in the Settings CLI detail. Manifest and
-// discovered rows never meet: once a probe has answered, the manifest seed is
-// not shown at all (mergeCliModelCatalog below).
-export type CliModelOrigin = 'manifest' | 'discovered' | 'user'
+// Which layer a merged row came from. A row present in both reports the
+// stronger claim: user > discovered. Never rendered as words — it drives the
+// user-added glyph in the Settings CLI detail.
+export type CliModelOrigin = 'discovered' | 'user'
 
 export type MergedCliModelOption = PluginModelOption & {
   origin: CliModelOrigin
   // Set on a discovered row whose `firstSeenAt` falls within NEW_FOR_DAYS of
   // the merge's clock: what the picker's "New" chip reads. A row the CLI did
-  // not list (a manifest seed row, a user id alone) is never new.
+  // not list (a user id alone) is never new.
   isNew?: true
 }
 
@@ -31,12 +29,12 @@ export type MergedCliModelCatalog = {
   allowCustomId: boolean
 }
 
-// The rows a CLI's model picker offers, from three sources:
+// The rows a CLI's model picker offers, from two sources:
 //
-//   what the CLI reported (else the manifest seed)  +  the user's own ids
+//   what the CLI reported  +  the user's own ids
 //
 // The CLI's list is the list (owner ruling 2026-09-22). This replaced a union
-// of the manifest seed, a hosted model list and the discovered rows, which was
+// of a manifest seed, a hosted model list and the discovered rows, which was
 // kept because discovery once under-reported and a replacement would have hidden
 // working models. The union's cost turned out higher: a model the CLI stopped
 // accepting stayed in the picker forever, a label nobody maintained outlived
@@ -44,17 +42,19 @@ export type MergedCliModelCatalog = {
 // case the union protected — an id the CLI runs but does not advertise — is
 // what the user's own ids are for.
 //
-//   - When a probe has succeeded for this CLI, the rows are exactly the
-//     discovered rows in the CLI's own order, followed by the user's ids that
-//     the CLI did not list. No manifest row is shown: a model the CLI stops
-//     listing disappears on the next refresh. Hidden rows (Codex
-//     `visibility: "hide"`) never reach the catalog; the probe drops them, so
-//     this function trusts the list it is given.
-//   - Until then — fresh install, CLI not installed, every probe failing — the
-//     manifest seed stands in, followed by the user's ids. A discovered catalog
-//     with zero rows counts as "until then": every probe here returns at least
-//     one row when it works, so an empty answer is a CLI that told us nothing,
-//     and an empty picker would be the worst reading of it.
+// The rows are the discovered rows in the CLI's own order, followed by the
+// user's ids that the CLI did not list. A model the CLI stops listing
+// disappears on the next refresh. Hidden rows (Codex `visibility: "hide"`)
+// never reach the catalog; the probe drops them, so this function trusts the
+// list it is given.
+//
+// Until a probe has answered — fresh install, CLI not installed, a CLI with no
+// probe (Kimi Code), every probe failing — there are no discovered rows, and
+// the list is the user's ids alone. The picker always has the CLI's own row
+// above them, which launches with the CLI's default model, so an empty list is
+// not an empty picker. The manifest names no models to stand in (owner ruling
+// 2026-11-15): a baked-in list is a guess about the person's account and goes
+// stale with every release.
 //
 // Dedupe is by exact `id` and nothing else. An alias the CLI reports (`opus`,
 // `default`, `opus[1m]`) is an ordinary row with the CLI's own label, and is
@@ -76,13 +76,11 @@ export type MergedCliModelCatalog = {
 // declared args the launch path could not pass the model anyway.
 //
 // `removedModels` are ids the person took off this CLI's list in Settings. They
-// are dropped from the CLI's own rows and from the seed, so a refresh that
-// lists them again does not bring them back; an id the person also typed is
-// still offered, because typing it is the newer word on the matter. They keep
-// counting as an answer: removing every row the CLI listed leaves an empty
-// list, not the manifest seed standing in for it.
+// are dropped from the CLI's own rows, so a refresh that lists them again does
+// not bring them back; an id the person also typed is still offered, because
+// typing it is the newer word on the matter.
 export function mergeCliModelCatalog(
-  declared: PluginModelCatalog | undefined,
+  declared: PluginModelSelection | undefined,
   userModels: string[] | undefined,
   discovered: DiscoveredCliModelCatalog | undefined,
   now: number,
@@ -106,22 +104,18 @@ export function mergeCliModelCatalog(
   }
   // Tolerate a catalog that never went through the settings normalizer (a raw
   // IPC payload, a hand-edited profile): a bad discovered layer reads as no
-  // answer, and the manifest seed renders exactly as it would have.
+  // answer, and only the user's ids are listed.
   const discoveredModels = (Array.isArray(discovered?.models) ? discovered.models : []).filter(
     (model) => model && typeof model.id === 'string' && model.id.trim(),
   )
-  if (discoveredModels.length > 0) {
-    for (const model of discoveredModels) {
-      const label = typeof model.displayName === 'string' ? model.displayName.trim() : ''
-      add({
-        id: model.id,
-        ...(label ? { label } : {}),
-        origin: 'discovered',
-        ...(isRecentlyFirstSeen(model.firstSeenAt, now) ? { isNew: true as const } : {}),
-      })
-    }
-  } else {
-    for (const option of declared.options) add({ ...option, origin: 'manifest' })
+  for (const model of discoveredModels) {
+    const label = typeof model.displayName === 'string' ? model.displayName.trim() : ''
+    add({
+      id: model.id,
+      ...(label ? { label } : {}),
+      origin: 'discovered',
+      ...(isRecentlyFirstSeen(model.firstSeenAt, now) ? { isNew: true as const } : {}),
+    })
   }
   for (const entry of userModels ?? []) {
     if (typeof entry === 'string') add({ id: entry, origin: 'user' })
@@ -133,9 +127,9 @@ export function mergeCliModelCatalog(
 export type CliModelListing = {
   /** What the pickers offer, in their order. */
   listed: MergedCliModelOption[]
-  /** What the CLI or the seed still offers that the person took off the list. */
+  /** What the CLI still offers that the person took off the list. */
   removed: Array<{ id: string; label?: string }>
-  /** Every id the CLI or the seed offers, removed or not: what a removal has to remember. */
+  /** Every id the CLI offers, removed or not: what a removal has to remember. */
   reportedIds: ReadonlySet<string>
 }
 
@@ -144,7 +138,7 @@ export type CliModelListing = {
 // no longer reports has nothing to restore and is not shown; it stays stored,
 // so it stays gone if the CLI lists it again.
 export function cliModelListing(
-  declared: PluginModelCatalog | undefined,
+  declared: PluginModelSelection | undefined,
   userModels: string[] | undefined,
   discovered: DiscoveredCliModelCatalog | undefined,
   now: number,

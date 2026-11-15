@@ -360,7 +360,6 @@ test('plugin-render', async () => {
     const manifest = baseManifest({
       modelSelection: {
         args: ['--model', '{{model}}'],
-        options: [{ id: 'opus', label: 'Opus' }],
         allowCustomId: true,
       },
       launch: {

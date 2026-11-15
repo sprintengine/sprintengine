@@ -1,4 +1,4 @@
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { isSettledWorkspace } from '../../utils/workspaceSettle'
 
 // What `chat.settle` does to the chat on screen, the same toggle as Settle in

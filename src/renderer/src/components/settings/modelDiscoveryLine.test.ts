@@ -30,8 +30,8 @@ test('a version line that names the CLI again does not stutter', () => {
   )
 })
 
-test('no answer yet, or an empty one, is the built-in list', () => {
-  const words = 'Built-in list. Codex has not reported its own.'
+test('no answer yet, or an empty one, says the CLI has not reported', () => {
+  const words = 'Codex has not reported its models.'
   assert.equal(modelDiscoveryLine({ name: 'Codex', catalog: undefined, now }), words)
   assert.equal(modelDiscoveryLine({ name: 'Codex', catalog: catalog([]), now }), words)
 })

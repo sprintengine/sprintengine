@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { WorkspacePaneState } from '../../../../types/workspace'
+import type { WorkspacePaneState } from '../../../../../../shared/workspace'
 import {
   AGENT_DRIVING_GRACE_MS,
   AGENT_SESSION_QUIET_MS,

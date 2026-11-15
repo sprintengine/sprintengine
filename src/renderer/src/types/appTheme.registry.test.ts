@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
-import { APP_THEMES, LIGHT_SURFACE_THEMES, type ThemeSwatches } from './appTheme'
+import { APP_THEMES, LIGHT_SURFACE_THEMES, type ThemeSwatches } from '../../../shared/app-theme'
 
 // A theme lives in three places that cannot import each other: its row in
 // APP_THEMES, its `:root[data-theme="<id>"]` block in index.css, and — for a

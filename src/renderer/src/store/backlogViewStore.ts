@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
 
-import type { BacklogGroup, BacklogSort, BacklogView } from '../types/workspace'
+import type { BacklogGroup, BacklogSort, BacklogView } from '../../../shared/workspace'
 import { normalizeProjectRootKey } from '../utils/projectKnowledge'
 import { normalizeWorkspaceBacklogState } from './slices/workspacesSlice'
 

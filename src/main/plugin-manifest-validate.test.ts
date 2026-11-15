@@ -54,8 +54,8 @@ const INVALID_CASES: Array<{ name: string; manifest: unknown }> = [
   { name: 'provider-only field present', manifest: { ...VALID_CLI, providerType: 'model-provider' } },
   { name: 'bad variable type', manifest: { ...VALID_CLI, variables: { x: { type: 'nope', label: 'X' } } } },
   {
-    name: 'empty model option label',
-    manifest: { ...VALID_CLI, modelSelection: { args: ['--model', '{{model}}'], options: [{ id: 'm', label: '' }] } },
+    name: 'model selection without args',
+    manifest: { ...VALID_CLI, modelSelection: { allowCustomId: true } },
   },
   {
     name: 'native skill without install targets',

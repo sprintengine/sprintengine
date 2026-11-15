@@ -20,7 +20,7 @@ test('modelCatalogEffortSeam', async () => {
   //      written by the PREVIOUS build must hydrate with its catalog AND its level
   //      intact, and the load after that must re-run neither rung.
   //   2. The discovered catalog under repetition, through the real store setter —
-  //      each pass replaces the manifest seed, and the user's own id survives all three.
+  //      each pass is the whole list, and the user's own id survives all three.
   //   3. Effort picker × effort level — the level clicked in the real picker must reach the
   //      LAUNCHED COMMAND, not merely the store.
   //   4. Seat × effort level — a seat's level must reach the launched agent's
@@ -101,9 +101,10 @@ test('modelCatalogEffortSeam', async () => {
     reasoningSelection?: unknown
   }
 
-  // The real bundled manifests, read from disk. Every model id, level id and flag
-  // asserted below is therefore the one the CLI actually documents, not one this
-  // suite invented.
+  // The real bundled manifests, read from disk. Every level id and flag asserted
+  // below is therefore the one the CLI actually documents, not one this suite
+  // invented. A manifest names no models; those come from `reported` below, in
+  // the shape a CLI reports them.
   function bundledCatalogEntries(ids: string[]): CatalogEntry[] {
     return ids.map((id) => {
       const manifest = JSON.parse(readFileSync(join(BUNDLED_ROOT, id, 'plugin.json'), 'utf8')) as {
@@ -119,6 +120,11 @@ test('modelCatalogEffortSeam', async () => {
         ...(manifest.reasoningSelection ? { reasoningSelection: manifest.reasoningSelection } : {}),
       }
     })
+  }
+
+  // What a CLI reported about its models, as the discovery cache holds it.
+  function reported(cli: string, models: Array<{ id: string; displayName?: string }>): Record<string, unknown> {
+    return { [cli]: { models, fetchedAt: '2026-07-28T00:00:00Z', source: 'agent-sdk' } }
   }
 
   async function main(): Promise<void> {
@@ -335,66 +341,65 @@ test('modelCatalogEffortSeam', async () => {
 
     // ── Seam 2: the CLI's list is the list, through the store setter ───────────
 
-    await check(
-      "SEAM: each discovery pass replaces the manifest seed, and the user's own id survives all three",
-      () => {
-        const store = useWorkspaceStore.getState()
-        const plugins = bundledCatalogEntries(['claude-code'])
-        const claudeModels = (): Array<{ id: string; origin?: string }> => {
-          const catalog = useWorkspaceStore.getState().appSettings.cliModelCatalog
-          const option = buildAgentCliCatalog(
-            plugins as never,
-            { 'claude-code': { models: ['my-own-pin'] } } as never,
-            catalog as never,
-          ).find((entry) => entry.value === 'claude-code')
-          assert.ok(option?.modelSelection, 'claude-code renders a model list')
-          return option.modelSelection.options as never
-        }
+    await check("SEAM: each discovery pass is the whole list, and the user's own id survives all three", () => {
+      const store = useWorkspaceStore.getState()
+      const plugins = bundledCatalogEntries(['claude-code'])
+      const claudeModels = (): Array<{ id: string; origin?: string }> => {
+        const catalog = useWorkspaceStore.getState().appSettings.cliModelCatalog
+        const option = buildAgentCliCatalog(
+          plugins as never,
+          { 'claude-code': { models: ['my-own-pin'] } } as never,
+          catalog as never,
+        ).find((entry) => entry.value === 'claude-code')
+        assert.ok(option?.modelSelection, 'claude-code renders a model list')
+        return option.modelSelection.options as never
+      }
 
-        // Before any probe the bundled manifest seed stands in (owner ruling
-        // 2026-09-22): the picker is never empty on a fresh install.
-        store.setCliModelCatalog('claude-code' as never, null)
-        const seeded = claudeModels()
-        assert.ok(
-          seeded.some((model) => model.origin === 'manifest'),
-          'with no probe answer the manifest seed is offered',
+      // Before any probe the list is the person's own id alone: nothing built
+      // in stands in for the CLI's list, and the CLI's own row launches with
+      // its default model.
+      store.setCliModelCatalog('claude-code' as never, null)
+      const before = claudeModels()
+      assert.deepEqual(
+        before.map((model) => [model.id, model.origin]),
+        [['my-own-pin', 'user']],
+        'with no probe answer only the user id is offered',
+      )
+
+      // Each pass is exactly what the CLI listed, in its order, then the
+      // person's own id. A model the CLI stops listing is gone on the next pass.
+      const passes = [
+        [{ id: 'opus[1m]', displayName: 'Opus (1M)' }, { id: 'claude-fable-5' }],
+        [{ id: 'opus[1m]', displayName: 'Opus (1M)' }],
+        [{ id: 'claude-sonnet-5' }],
+      ]
+      passes.forEach((models, index) => {
+        store.setCliModelCatalog(
+          'claude-code' as never,
+          {
+            models,
+            fetchedAt: `2026-07-2${7 + index}T00:00:00Z`,
+            source: 'agent-sdk',
+          } as never,
         )
-
-        // Each pass is exactly what the CLI listed, in its order, then the
-        // person's own id. A model the CLI stops listing is gone on the next pass.
-        const passes = [
-          [{ id: 'opus[1m]', displayName: 'Opus (1M)' }, { id: 'claude-fable-5' }],
-          [{ id: 'opus[1m]', displayName: 'Opus (1M)' }],
-          [{ id: 'claude-sonnet-5' }],
-        ]
-        passes.forEach((models, index) => {
-          store.setCliModelCatalog(
-            'claude-code' as never,
-            {
-              models,
-              fetchedAt: `2026-07-2${7 + index}T00:00:00Z`,
-              source: 'agent-sdk',
-            } as never,
-          )
-          assert.deepEqual(
-            claudeModels().map((model) => [model.id, model.origin]),
-            [...models.map((model) => [model.id, 'discovered']), ['my-own-pin', 'user']],
-            `pass ${index + 1} shows the CLI's rows and the user's own id, and no manifest row`,
-          )
-        })
-
-        // Clearing the catalog (no answer again) brings the seed back rather than
-        // an empty picker, and the discovered rows go with the catalog.
-        store.setCliModelCatalog('claude-code' as never, null)
-        const cleared = claudeModels()
         assert.deepEqual(
-          cleared.map((model) => model.id),
-          seeded.map((model) => model.id),
-          'clearing the catalog restores exactly the seeded list',
+          claudeModels().map((model) => [model.id, model.origin]),
+          [...models.map((model) => [model.id, 'discovered']), ['my-own-pin', 'user']],
+          `pass ${index + 1} shows the CLI's rows and the user's own id, and nothing else`,
         )
-        assert.ok(!cleared.some((model) => model.id === 'claude-sonnet-5'), 'and the discovered rows are gone')
-      },
-    )
+      })
+
+      // Clearing the catalog (no answer again) takes the discovered rows with
+      // it, and the user's own id stays.
+      store.setCliModelCatalog('claude-code' as never, null)
+      const cleared = claudeModels()
+      assert.deepEqual(
+        cleared.map((model) => model.id),
+        before.map((model) => model.id),
+        'clearing the catalog leaves exactly the list before any probe',
+      )
+      assert.ok(!cleared.some((model) => model.id === 'claude-sonnet-5'), 'and the discovered rows are gone')
+    })
 
     // ── Seam 3: the effort picker × the effort-level launch ────────────────────────────
 
@@ -402,7 +407,14 @@ test('modelCatalogEffortSeam', async () => {
       const store = () => useWorkspaceStore.getState()
       store().setLastSelectedAgentModel({ cli: 'claude-code', model: 'claude-opus-5' })
 
-      const options = buildAgentCliCatalog(bundledCatalogEntries(['claude-code']) as never)
+      const options = buildAgentCliCatalog(
+        bundledCatalogEntries(['claude-code']) as never,
+        undefined,
+        reported('claude-code', [
+          { id: 'claude-opus-5', displayName: 'Opus 5' },
+          { id: 'claude-opus-5[1m]', displayName: 'Opus 5 (1M context)' },
+        ]) as never,
+      )
       const view = mountListbox({
         options: options as never,
         currentCli: 'claude-code' as never,
@@ -521,7 +533,11 @@ test('modelCatalogEffortSeam', async () => {
 
     await check('SEAM: a CLI declaring no levels renders no picker — absent, not disabled, not empty', () => {
       // Grok's real manifest declares modelSelection and no reasoningSelection.
-      const options = buildAgentCliCatalog(bundledCatalogEntries(['grok']) as never)
+      const options = buildAgentCliCatalog(
+        bundledCatalogEntries(['grok']) as never,
+        undefined,
+        reported('grok', [{ id: 'grok-4.5' }]) as never,
+      )
       assert.equal(options[0]?.reasoningSelection, undefined, 'the real manifest declares no levels')
 
       const view = mountListbox({

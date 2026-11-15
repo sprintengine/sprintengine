@@ -1,5 +1,10 @@
 import React, { useCallback, useRef } from 'react'
-import { APP_THEMES, colorSchemeForResolvedTheme, type AppTheme, type ThemeSwatches } from '../../types/appTheme'
+import {
+  APP_THEMES,
+  colorSchemeForResolvedTheme,
+  type AppTheme,
+  type ThemeSwatches,
+} from '../../../../shared/app-theme'
 import { CardButton, TruncatedText } from '../ui'
 
 type AppThemePickerProps = {
@@ -113,7 +118,7 @@ function AppThemePicker({ value, onChange }: AppThemePickerProps) {
 // sits on the ring's upper right, clear of the glyph on the lower right that
 // used to cover it. Solid
 // fills, no gradient — the ramp reads as two concentric surfaces, which is
-// what it is. The hex values are the theme's own (types/appTheme.ts): the
+// what it is. The hex values are the theme's own (shared/app-theme.ts): the
 // picker paints every theme while the document wears one of them, so it
 // cannot read the others off :root.
 function ThemeSwatch({ swatches, scheme }: { swatches: ThemeSwatches; scheme: 'light' | 'dark' }) {

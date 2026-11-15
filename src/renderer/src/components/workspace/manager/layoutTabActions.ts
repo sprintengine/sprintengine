@@ -2,7 +2,7 @@
 // and where a tab dropped outside the window opens.
 
 import { convertNewAgentTabToAgent, addAgentTabAfter, addAgentTabTiled, getModel } from '../../../utils/modelRegistry'
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import { TabNode, Actions, type Model, TabSetNode } from 'flexlayout-react'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { rememberClosedLayoutTab } from '../../../utils/recentlyClosedTabs'

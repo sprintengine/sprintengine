@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import type { AgentState, SessionActivity, TerminalSessionSnapshot } from '../../../../shared/electron-api'
 import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import {
   buildSidebarWorkspaceOrder,
   compareSessionItemsByAttention,

@@ -7,7 +7,7 @@ vi.mock('../panels/agentChat/useConversationSession', () => ({
 vi.mock('../panels/agentChat/conversationTransport', () => ({ localConversationTransport: {} }))
 
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import {
   cancelOpenIntent,
   intendToOpenWorkspace,

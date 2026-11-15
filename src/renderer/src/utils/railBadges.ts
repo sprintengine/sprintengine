@@ -21,7 +21,7 @@ import {
 } from '../components/workspace/extensionsDrawer'
 import { newHomeCardSlugs } from '../components/extensions/homeCards'
 import type { HostedCard } from '../../../shared/hosted-card-feed'
-import type { AppNotification, DiagnosticSource } from '../types/workspace'
+import type { AppNotification, DiagnosticSource } from '../../../shared/workspace'
 
 // Which bell notifications belong under which drawer row. A source that is
 // not in the set (a git failure, a terminal crash, an auth problem) is a

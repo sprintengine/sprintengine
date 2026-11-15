@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import type { LayoutTemplate } from '../../../types/workspace'
+import type { LayoutTemplate } from '../../../../../shared/workspace'
 
 // What a chat on an SSH machine holds there (its scheduled and held
 // messages) is that machine's to say. Once the machine is forgotten in

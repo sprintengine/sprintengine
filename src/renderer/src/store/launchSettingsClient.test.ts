@@ -15,7 +15,7 @@ import { test, vi } from 'vitest'
 
 vi.mock('../studio/agentSettings', () => import('../studio/agentSettings.double'))
 import type { AgentLaunchSettingsRecord } from '../../../shared/launch-settings'
-import type { McpServerConfig } from '../types/workspace'
+import type { McpServerConfig } from '../../../shared/workspace'
 import { createFakeLaunchSettingsMain, installFakeWindow, settleIpc } from './launchSettingsFakeMain.test-helper'
 import { createLaunchSettingsClient } from './launchSettingsClient'
 import { LAUNCH_SETTINGS_KEYS } from './launchSettingsReadModel'

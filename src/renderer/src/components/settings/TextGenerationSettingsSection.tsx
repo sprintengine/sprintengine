@@ -27,7 +27,7 @@ import {
   type WritingStyleMode,
 } from '../../../../shared/text-generation/writing-style'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 import { CliModelPickerButton, Select, Textarea, type SelectItem } from '../ui'
 import { selectAgentCliCatalog } from '../workspace/newWorkspace/cliRuntimeOptions'
 import { SettingCard, SettingsRow, SettingsSectionTitle, SettingToggle } from './SettingsAtoms'

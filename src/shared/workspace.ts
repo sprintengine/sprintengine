@@ -1,16 +1,16 @@
-import type { EditorRange } from '../../../shared/editor-reveal'
-import type { ProjectIconSetting } from '../../../shared/project-icon'
-import type { BranchStepSelection } from '../../../shared/electron-api'
+import type { EditorRange } from './editor-reveal'
+import type { ProjectIconSetting } from './project-icon'
+import type { BranchStepSelection } from './electron-api'
 import type { IJsonModel } from 'flexlayout-react'
-import type { BrowserViewport } from '../../../shared/browser-devices'
-import type { CliPermissionPreset } from '../../../shared/cli-permission-preset'
-import type { ProjectUsageMap } from '../../../shared/project-frecency'
+import type { BrowserViewport } from './browser-devices'
+import type { CliPermissionPreset } from './cli-permission-preset'
+import type { ProjectUsageMap } from './project-frecency'
 // The `AgentState` record is shared with the main process, which composes agent
 // launches with no window open. Canonical definitions — including all field
 // documentation — live in `src/shared/agent-state.ts`; the imports pull in the
 // names this module still references and the re-export block below keeps every
 // existing renderer import site working unchanged.
-import type { AgentCli, AgentId, AgentConversationRuntime, AgentState, McpSettings } from '../../../shared/agent-state'
+import type { AgentCli, AgentId, AgentConversationRuntime, AgentState, McpSettings } from './agent-state'
 
 export type {
   AgentCli,
@@ -22,8 +22,8 @@ export type {
   AgentState,
   McpServerConfig,
   McpSettings,
-} from '../../../shared/agent-state'
-export type { CliPermissionPreset } from '../../../shared/cli-permission-preset'
+} from './agent-state'
+export type { CliPermissionPreset } from './cli-permission-preset'
 export type WorkspaceId = string
 export type WorkspaceWindowId = string
 export const STANDARD_WORKSPACE_MODE = 'standard'
@@ -36,7 +36,7 @@ export type BundledWorkspaceMode = typeof STANDARD_WORKSPACE_MODE
 // `WorkspaceTypeDefinition.hiddenFromRail`. Imported here (so this module's own
 // references resolve) and re-exported so every existing import site keeps
 // resolving here.
-import type { WorkspaceMode } from '../../../shared/workspace-mode'
+import type { WorkspaceMode } from './workspace-mode'
 export type { WorkspaceMode }
 
 export type HighlightColor = 'red' | 'orange' | 'amber' | 'green' | 'blue' | 'purple' | 'pink'
@@ -199,12 +199,12 @@ export type WorkspaceWindowState = {
 // AppearanceSettings is imported here so AppSettings (below) can reference it;
 // every other theme symbol (AppTheme, ResolvedAppTheme, the picker option list,
 // the normalizer) imports directly from appTheme.ts.
-import type { AppearanceSettings } from './appTheme'
-import type { ModuleEnablementOverrides } from '../../../shared/modules/manifest'
-import type { PluginRegistryListEntry } from '../../../shared/plugin-manifest'
-import type { DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
-import type { FolderOpenTargetId } from '../../../shared/folder-open-targets'
-import type { TextGenerationSettings } from '../../../shared/text-generation/contract'
+import type { AppearanceSettings } from './app-theme'
+import type { ModuleEnablementOverrides } from './modules/manifest'
+import type { PluginRegistryListEntry } from './plugin-manifest'
+import type { DiscoveredCliModelCatalog } from './cli-model-catalog'
+import type { FolderOpenTargetId } from './folder-open-targets'
+import type { TextGenerationSettings } from './text-generation/contract'
 
 export type PluginCatalogStatus = 'loading' | 'ready' | 'error'
 
@@ -262,27 +262,21 @@ export type AppSettings = {
    * machine for new chats, its own CLI commands, environment and shell. A read
    * model of main's launch settings, like `cliRuntimes`.
    */
-  hosts?: Partial<
-    Record<
-      import('../../../shared/execution-host').ExecutionHostId,
-      import('../../../shared/execution-host').ExecutionHostSettings
-    >
-  >
+  hosts?: Partial<Record<import('./execution-host').ExecutionHostId, import('./execution-host').ExecutionHostSettings>>
   /**
    * The kind and colour a person chose for each machine (Settings › Machines),
    * keyed by machine id (`shared/machine-identity`). A read model of main's
    * launch settings, like `hosts`; a machine with no entry wears its defaults.
    */
-  machineMarks?: import('../../../shared/machine-identity').MachineMarkSettings
+  machineMarks?: import('./machine-identity').MachineMarkSettings
   /**
    * What each agent CLI last reported about its own models, keyed by plugin id.
    * A sibling of `cliRuntimes[id].models`, never the same store: that list is
    * the user's own escape hatch and must survive a refresh, while this one is
    * replaced wholesale every time the CLI is re-probed. No code path writes
-   * both. Pickers show this, else the manifest seed, then the user's list
-   * (mergeCliModelCatalog); absent means "never probed", and an entry with no
-   * models means "probed and the CLI listed nothing", which the picker shows
-   * as the seed.
+   * both. Pickers show this, then the user's list (mergeCliModelCatalog);
+   * absent means "never probed", and an entry with no models means "probed and
+   * the CLI listed nothing", which the picker shows as no answer.
    */
   cliModelCatalog?: Partial<Record<AgentCli, DiscoveredCliModelCatalog>>
   keybindings: KeybindingSettings
@@ -883,7 +877,7 @@ export type WorkspaceRemoteOrigin = {
    * files the row under a local clone of the same repository when one is
    * open. Null when the remote had no identity to give.
    */
-  repository?: import('../../../shared/repository-identity').RepositoryIdentity | null
+  repository?: import('./repository-identity').RepositoryIdentity | null
 }
 
 /** Another machine a workspace lives on: today an SSH machine, by its saved id. */
@@ -905,7 +899,7 @@ export type Workspace = {
   // absent or `local` is this machine; `wsl:<distro>` is a WSL distribution,
   // where its agents, terminals and git all run. Set when the workspace is
   // created and never changed after — a chat does not move machines.
-  hostId?: import('../../../shared/execution-host').ExecutionHostId | null
+  hostId?: import('./execution-host').ExecutionHostId | null
   // The SSH machine the workspace is on (phase 8): its folder is that
   // machine's path, and its chats run on that machine's Studio server, reached
   // over the SSH connection the desktop holds. Absent for every workspace on

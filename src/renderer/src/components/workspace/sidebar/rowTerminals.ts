@@ -2,7 +2,7 @@
 // their completions the user has not seen yet.
 
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
-import { type Workspace } from '../../../types/workspace'
+import { type Workspace } from '../../../../../shared/workspace'
 import { meshPanesOf, meshMachineNamesOf } from './folderGroups'
 
 /**

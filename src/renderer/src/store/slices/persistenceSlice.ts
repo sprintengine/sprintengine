@@ -5,7 +5,7 @@ import type {
   WorkspaceId,
   WorkspaceWindowId,
   WorkspaceWindowState,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 import { defaultEditorState, normalizeAgentCli, normalizeAgentState } from './agentsSlice'
 import { hideNavRailTabStrip, healRetiredRailLayout, stripSettingsTabsFromLayout } from './layoutSlice'
 import { normalizeWorkspaceMemoryConfig } from './memorySlice'
@@ -37,7 +37,7 @@ export type WorkspaceMigrationState = {
   }
   sidebarCollapsed?: boolean
   openFilesInExternalWindow?: boolean
-  workspaceRegistryEmptyState?: import('../../types/workspace').WorkspaceRegistryEmptyState | null
+  workspaceRegistryEmptyState?: import('../../../../shared/workspace').WorkspaceRegistryEmptyState | null
 }
 
 export function normalizeWorkspaceWindows(

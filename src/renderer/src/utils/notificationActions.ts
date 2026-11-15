@@ -1,4 +1,4 @@
-import type { AppNotification } from '../types/workspace'
+import type { AppNotification } from '../../../shared/workspace'
 import type {
   NotificationAction,
   NotificationActionContext,

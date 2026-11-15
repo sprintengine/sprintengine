@@ -1,5 +1,5 @@
 import { primaryPullRequest, type BranchPullRequest } from '../../../../shared/git/pull-request'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { workspaceProjectRoot } from '../../utils/workspaceWorktree'
 import { folderDisplayName, remoteGroupDisplayName } from '../workspace/sidebar/folderGroups'
 

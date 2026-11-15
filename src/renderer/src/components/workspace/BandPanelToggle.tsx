@@ -10,7 +10,7 @@
 import { IconButton, Tooltip } from '../ui'
 import { useNarrowViewport } from '../../hooks/useNarrowViewport'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { WorkspaceId } from '../../types/workspace'
+import type { WorkspaceId } from '../../../../shared/workspace'
 import { getEffectiveKeybindingLabel, platformKeybindingsFromApiPlatform } from '../../commands/effectiveKeybindings'
 
 export function BandPanelToggle({ activeWorkspaceId }: { activeWorkspaceId: WorkspaceId | null }) {

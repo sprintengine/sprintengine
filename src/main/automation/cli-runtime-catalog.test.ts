@@ -33,7 +33,6 @@ function plugin(id: string, manifest: Record<string, unknown> = {}): LoadedPlugi
 const CLAUDE = plugin('claude-code', {
   modelSelection: {
     args: ['--model', '{{model}}'],
-    options: [{ id: 'opus', label: 'Opus' }],
     allowCustomId: true,
   },
   reasoningSelection: { args: ['--effort', '{{reasoning}}'], levels: [{ id: 'low' }, { id: 'high' }] },
@@ -42,7 +41,7 @@ const CLAUDE = plugin('claude-code', {
 const ZAI = plugin('zai', {
   binary: 'claude',
   launch: { args: [], env: { ANTHROPIC_BASE_URL: 'https://api.example.com/anthropic' } },
-  modelSelection: { args: ['--model', '{{model}}'], options: [{ id: 'glm-5', label: 'GLM-5' }] },
+  modelSelection: { args: ['--model', '{{model}}'] },
 })
 const PLAIN = plugin('plain-cli')
 
@@ -124,13 +123,9 @@ test('only a model first listed here recently is new, and an id the person added
   })
 })
 
-test("a CLI that has not reported a list answers its manifest's seed", async () => {
+test('a CLI that has not reported a list answers no models, and nothing stands in for them', async () => {
   const clis = await list({ readCliModelSources: async () => SOURCES })
-  const models = catalogOf(clis, 'zai').models as Array<{ id: string; origin: string }>
-  assert.deepEqual(
-    models.map((model) => [model.id, model.origin]),
-    [['glm-5', 'manifest']],
-  )
+  assert.deepEqual(catalogOf(clis, 'zai').models, [])
 })
 
 test('a CLI with a chat runtime is conversational, and one without is not', async () => {
@@ -155,9 +150,9 @@ test('a CLI that offers no model choice has an empty catalog that takes no custo
   assert.equal(catalogOf(clis, 'claude-code').allowCustomModelId, true)
 })
 
-test("the manifest's own models stay as they were beside the catalog", async () => {
+test('a row names its models only in its catalog', async () => {
   const clis = await list({ readCliModelSources: async () => SOURCES })
-  assert.deepEqual(clis.find((entry) => entry.id === 'claude-code')!.models, [{ id: 'opus', label: 'Opus' }])
+  for (const entry of clis) assert.equal('models' in entry, false)
 })
 
 test('a gateway with no model sources answers without a catalog, as before it had one', async () => {

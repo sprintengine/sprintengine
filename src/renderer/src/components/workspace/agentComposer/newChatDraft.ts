@@ -1,6 +1,6 @@
 import type { WorkspaceSkill } from '../../../../../shared/electron-api'
 import type { ConversationImageAttachment } from '../../../../../shared/conversation-runtime'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import type { AgentComposerConnector, AgentComposerSelection } from './useAgentComposer'
 import { indexedDbImageVault, memoryImageVault, type PromptStashImageVault } from '../../panels/agentChat/promptStash'
 

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { publishChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
-import type { Workspace } from '../../../../types/workspace'
+import type { Workspace } from '../../../../../../shared/workspace'
 import { ChatPanel } from './ChatPanel'
 import { panelFacts } from './panelFactsFixture'
 import { publishRemoteChat } from '../../../panels/agentChat/remoteChatRegistry'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { describe, test } from 'vitest'
 
-import type { AgentState } from '../../../types/workspace'
+import type { AgentState } from '../../../../../shared/workspace'
 import { createWorkspaceChatOpener, type WorkspaceChatOpenerDeps } from './workspaceChatOpener'
 
 type Recorded = {

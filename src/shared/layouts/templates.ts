@@ -1,4 +1,4 @@
-import type { LayoutTemplate, PreviewSlot } from '../../renderer/src/types/workspace'
+import type { LayoutTemplate, PreviewSlot } from '../workspace'
 
 // Layout templates live in `shared` because main mints workspaces
 // now: a headless `workspace.create` — the gateway, a scheduled agent's run,

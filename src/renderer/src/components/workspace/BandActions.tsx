@@ -19,7 +19,7 @@ import {
   Tooltip,
   TriggerButton,
 } from '../ui'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { hasComponentTab, toggleComponentTab } from '../../utils/modelRegistry'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { getRendererHost, selectModuleEnabled } from '../../modules'

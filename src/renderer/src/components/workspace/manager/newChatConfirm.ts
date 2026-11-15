@@ -1,7 +1,7 @@
 import type { ExecutionHostId } from '../../../../../shared/execution-host'
 import { workspaceProjectRootOf } from '../../../../../shared/worktree-paths'
 import { isProjectlessChatsRoot } from '../../../../../shared/projectless-chats'
-import type { WorkspaceId, WorkspaceWorktree } from '../../../types/workspace'
+import type { WorkspaceId, WorkspaceWorktree } from '../../../../../shared/workspace'
 import type { NewChatWorktreeResult, PendingNewChatWorktree } from '../../../utils/newChatWorktree'
 import type { AgentComposerConfirm } from '../agentComposer/useAgentComposer'
 

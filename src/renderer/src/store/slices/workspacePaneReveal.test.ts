@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { WorkspaceId } from '../../types/workspace'
+import type { WorkspaceId } from '../../../../shared/workspace'
 import { openGitDiff } from '../../utils/openGitDiff'
 import { useWorkspaceStore } from '../workspaceStore'
 import { normalizeWorkspacePaneState, partializeWorkspacePaneState } from './workspacePaneSlice'

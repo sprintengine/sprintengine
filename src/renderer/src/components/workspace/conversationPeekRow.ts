@@ -3,7 +3,7 @@ import { formatRelativeMs } from '../../utils/relativeTime'
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
 import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
 import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
-import type { AgentState, Workspace } from '../../types/workspace'
+import type { AgentState, Workspace } from '../../../../shared/workspace'
 import type {
   ConversationPeekIdentity,
   ConversationPeekMachine,

@@ -74,7 +74,12 @@ import { ExtensionsRail } from './ExtensionsRail'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { selectChatListView } from '../../store/slices/settingsSlice'
 import { ChatListGroupingMenu } from './sidebar/ChatListGroupingMenu'
-import { type HighlightColor, type LayoutTemplate, type Workspace, type WorkspaceId } from '../../types/workspace'
+import {
+  type HighlightColor,
+  type LayoutTemplate,
+  type Workspace,
+  type WorkspaceId,
+} from '../../../../shared/workspace'
 import type { MeshConnection, MeshConversationChange } from '../../../../shared/tailnet-mesh'
 import { usePendingEditorReveal } from '../../utils/agentEditorReveal'
 import { hasHighlightOverride, isStarred } from '../../utils/highlight'

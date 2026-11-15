@@ -9,7 +9,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, test, vi } from 'vitest'
 
-import type { WorkspacePaneTab } from '../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../shared/workspace'
 
 const calls: string[] = []
 vi.mock('../../../store/workspaceStore', () => {

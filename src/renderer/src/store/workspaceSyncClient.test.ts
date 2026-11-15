@@ -18,7 +18,7 @@ import {
   type WorkspaceSyncDiagnostic,
 } from './workspaceSyncClient'
 import type { WorkspaceSyncCommand, WorkspaceSyncEvent, WorkspaceSyncSnapshot } from '../../../shared/workspace-sync'
-import type { AgentState, Workspace, WorkspaceId, WorkspaceWindowState } from '../types/workspace'
+import type { AgentState, Workspace, WorkspaceId, WorkspaceWindowState } from '../../../shared/workspace'
 import { test } from 'vitest'
 
 test('workspaceSyncClient', async () => {

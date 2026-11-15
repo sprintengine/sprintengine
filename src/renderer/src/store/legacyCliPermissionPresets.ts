@@ -12,7 +12,7 @@
  * boot offers it again.
  */
 import { normalizeCliPermissionPresets, type AgentLaunchSettingsPatch } from '../../../shared/launch-settings'
-import type { CliPermissionPreset } from '../types/workspace'
+import type { CliPermissionPreset } from '../../../shared/workspace'
 
 export const LEGACY_CLI_PERMISSION_PRESETS_KEY = 'sprintengine.cli-permission-presets'
 

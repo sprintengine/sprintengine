@@ -791,7 +791,15 @@ test('ExtensionsHomeSurface', async () => {
     // The catalogue answers: two runtimes, one of them with an effort axis and a
     // model this test can name.
     act(() => {
-      useWorkspaceStore.setState(() => ({
+      useWorkspaceStore.setState((state) => ({
+        // What each CLI reported about its models: a manifest names none.
+        appSettings: {
+          ...state.appSettings,
+          cliModelCatalog: {
+            'claude-code': { models: [{ id: MODEL }], fetchedAt: '2026-01-01T00:00:00Z', source: 'agent-sdk' },
+            codex: { models: [{ id: 'gpt-6-astra' }], fetchedAt: '2026-01-01T00:00:00Z', source: 'argv-probe' },
+          },
+        },
         pluginCatalogEntries: [
           {
             id: 'claude-code',
@@ -799,7 +807,7 @@ test('ExtensionsHomeSurface', async () => {
             source: 'bundled',
             version: 1,
             binary: 'claude',
-            modelSelection: { options: [{ id: MODEL }], allowCustomId: true },
+            modelSelection: { allowCustomId: true },
             reasoningSelection: { levels: [{ id: 'low' }, { id: 'high' }] },
           },
           {
@@ -808,7 +816,7 @@ test('ExtensionsHomeSurface', async () => {
             source: 'bundled',
             version: 1,
             binary: 'codex',
-            modelSelection: { options: [{ id: 'gpt-6-astra' }], allowCustomId: true },
+            modelSelection: { allowCustomId: true },
           },
         ] as never,
         pluginCatalogStatus: 'ready' as never,

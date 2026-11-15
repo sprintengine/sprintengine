@@ -8,7 +8,7 @@ import {
   type MeshConversation,
   type MeshMachineReachability,
 } from '../../../../../shared/tailnet-mesh'
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import type { EnvironmentConnectionState, EnvironmentEntry } from '../../../../../shared/environments'
 import {
   chatManageOf,
