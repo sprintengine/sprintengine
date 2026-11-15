@@ -1709,6 +1709,9 @@ export function createAppServices(
         // windows and agents use, and the same tools that list and draw them,
         // each held to where a board's file really is.
         canvas: canvasRemoteSubscribers.host(canvasService, canvasToolsOver),
+        // Chats' containers on the hosts this desktop drives, where the SSH
+        // machines preview is on (docs/design/container-chats.md).
+        ...(ssh ? { containers: ssh.containersDomain } : {}),
       })
     : null
   // Where the person's attention is, for routing a call to the window in

@@ -51,9 +51,6 @@ const ENVIRONMENTS = shell(
   "The machines this desktop knows and how each stands: this client's own saved list, kept like its windows.",
 )
 const SSH_SETUP = shell('It sets up an SSH machine from this computer.')
-const CONTAINER_SETUP = shell(
-  "It runs Docker on a machine this computer drives, to make, list, push from and remove a chat's container.",
-)
 const ACCOUNT = shell(
   "This install's account sign-in: its tokens in this computer's keychain, through the system browser.",
 )
@@ -230,16 +227,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'environments:list': ENVIRONMENTS('invoke'),
   'environments:retry': ENVIRONMENTS('invoke'),
   'environments:ticket': ENVIRONMENTS('invoke'),
-  'environments:container:changed': CONTAINER_SETUP('push'),
-  'environments:container:create': CONTAINER_SETUP('invoke'),
-  'environments:container:list': CONTAINER_SETUP('invoke'),
-  'environments:container:push': CONTAINER_SETUP('invoke'),
-  'environments:container:remove': CONTAINER_SETUP('invoke'),
-  'environments:container:start-docker': CONTAINER_SETUP('invoke'),
-  'environments:container:status': CONTAINER_SETUP('invoke'),
-  'environments:container:token-clear': CONTAINER_SETUP('invoke'),
-  'environments:container:token-set': CONTAINER_SETUP('invoke'),
-  'environments:container:token-status': CONTAINER_SETUP('invoke'),
   'environments:ssh:add': SSH_SETUP('invoke'),
   'environments:ssh:changed': SSH_SETUP('push'),
   'environments:ssh:connect': SSH_SETUP('invoke'),

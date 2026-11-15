@@ -106,6 +106,7 @@ import { drawSuggestions, newSuggestionSeed } from './suggestionBank'
 import { WorktreeChip } from './WorktreeChip'
 import { ContainerChip } from './ContainerChip'
 import type { ContainerHost } from '../../../../../shared/containers'
+import { containersApi } from '../../../studio/containers'
 import { useNewChatWorktreeReservation } from './useNewChatWorktreeReservation'
 import { ScheduleFailureTray, SchedulePausedTray, ScheduleTag } from './schedule/SchedulePicker'
 import { useScheduledAgentsPause } from '../../../store/scheduledAgentsStore'
@@ -1468,8 +1469,8 @@ export default function NewAgentPanel({
   // and the chat then starts on it as on a machine.
   const [containerOn, setContainerOn] = React.useState(false)
   const containerPreparing = useContainerLaunchInFlight()
-  const containerApi =
-    window.api?.sshMachinesEnabled && typeof window.api.containerCreate === 'function' ? window.api : null
+  // Served by this desktop's own Studio (`containers.*`), where its SSH machines preview is on.
+  const containerApi = window.api?.sshMachinesEnabled ? containersApi : null
   const containerOffered =
     Boolean(containerApi) && hostChoosable && !editing && !extensionMode && isChatLaunch && !scheduled
   // Where the container runs and what is copied into it. The project in hand

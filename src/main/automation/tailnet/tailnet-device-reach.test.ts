@@ -470,6 +470,21 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['hosts.list', 'hosts.changed'],
       ],
       [
+        'chats’ containers on this computer and its SSH machines: an owner’s; a container’s chat runs on a machine of its own, which no device reaches through this desktop, so a device is offered neither the making nor the push (with this computer’s git credentials), the removal or the list (folders here and on the SSH machines); Claude Code’s token for them is Studio’s own windows’ only',
+        [
+          'containers.status',
+          'containers.startDocker',
+          'containers.create',
+          'containers.list',
+          'containers.push',
+          'containers.remove',
+          'containers.tokenStatus',
+          'containers.setToken',
+          'containers.clearToken',
+          'containers.changed',
+        ],
+      ],
+      [
         'the browsers paired with the web listener: listing, removing and letting one in, an owner’s (an owner’s web tab administers them); a device that could let a browser in would manufacture the next grant',
         ['webDevices.status', 'webDevices.revoke', 'webDevices.approve', 'webDevices.decline', 'webDevices.changed'],
       ],

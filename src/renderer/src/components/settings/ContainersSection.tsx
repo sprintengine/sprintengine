@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 
 import type { ContainerResult, ContainerSummary, ContainerTokenStatus } from '../../../../shared/containers'
+import type { ContainersApi } from '../../studio/containers'
 import { showToast } from '../../store/toastStore'
 import { ContainerGlyph, InlineNotice, Input, OutlineButton, ProviderRow } from '../ui'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
@@ -12,7 +13,7 @@ import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 // its record of, and a chat's branch can be pushed from the machine it runs on.
 
 type Api = Pick<
-  Window['api'],
+  ContainersApi,
   | 'containersList'
   | 'containerRemove'
   | 'containerPush'
