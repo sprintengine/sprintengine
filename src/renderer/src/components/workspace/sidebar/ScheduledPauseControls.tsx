@@ -16,7 +16,7 @@ import {
 export function PauseAllScheduledAgentsControl({ pause }: { pause: ScheduledAgentsPause | null }) {
   if (pause) {
     return (
-      <Tooltip content="Resume scheduled agents — each runs next at its next time" placement="right">
+      <Tooltip content="Resume scheduled agents" placement="right">
         <IconButton
           tone="quiet"
           aria-label="Resume scheduled agents"

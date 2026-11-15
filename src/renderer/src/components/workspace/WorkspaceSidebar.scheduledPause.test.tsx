@@ -317,7 +317,7 @@ test('the Scheduled section pauses them all for a while, says so, and resumes th
   assert.ok(notice)
   assert.match(notice.textContent ?? '', /^Scheduled agents paused until /u)
   assert.equal(view.row('sa-1').dataset.paused, 'true')
-  assert.match(view.row('sa-1').getAttribute('aria-label') ?? '', /Paused with every scheduled agent/u)
+  assert.match(view.row('sa-1').getAttribute('aria-label') ?? '', /All scheduled agents paused/u)
 
   // Resume, from the line or beside the fold; each schedule's own pause is main's to keep.
   const resume = [...section().querySelectorAll<HTMLElement>('button')].find(

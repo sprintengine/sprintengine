@@ -57,7 +57,7 @@ export function StudioSkillSuggestion({
       ].join(' ')}
     >
       <span className="min-w-0">
-        {skill.gives} Install the {skill.name} skill for every workspace, or turn it on later in Settings.
+        {skill.gives} Install the {skill.name} skill for every workspace, or later in Settings.
       </span>
       <span className="flex shrink-0 items-baseline gap-3">
         <LinkButton disabled={pending} onClick={() => answer(() => setStudioAreaSkillEnabled(skillId, true))}>
@@ -67,7 +67,7 @@ export function StudioSkillSuggestion({
           Not now
         </LinkButton>
       </span>
-      {failed ? <span className="w-full">That did not save. Try again, or use Settings › Agents.</span> : null}
+      {failed ? <span className="w-full">Didn't save. Try again, or use Settings › Agents.</span> : null}
     </div>
   )
 }

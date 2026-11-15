@@ -259,7 +259,7 @@ export async function linkPullRequestToConversation(
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const client = await pullRequestClient()
   if (!client?.supports(STUDIO_PULL_REQUEST_LINK_CAPABILITY)) {
-    return { ok: false, message: `The pull request is open (${url}), but this Studio cannot record it.` }
+    return { ok: false, message: `Pull request opened (${url}), but this Studio can't record it.` }
   }
   try {
     await client.request('pullRequests.link', { conversation, url, title })
@@ -267,7 +267,7 @@ export async function linkPullRequestToConversation(
   } catch (error) {
     return {
       ok: false,
-      message: `The pull request is open (${url}), but it could not be recorded: ${error instanceof Error ? error.message : String(error)}`,
+      message: `Pull request opened (${url}), but couldn't record it: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
 }

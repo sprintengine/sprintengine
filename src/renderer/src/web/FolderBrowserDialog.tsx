@@ -109,7 +109,7 @@ export function FolderBrowserDialog({
           ) : null}
           {listing?.truncated ? (
             <p className="px-2 py-3 text-meta text-[color:var(--text-muted)]">
-              Only the first thousand folders are listed. Type a path to go further.
+              Showing the first 1,000 folders. Type a path to go further.
             </p>
           ) : null}
         </div>

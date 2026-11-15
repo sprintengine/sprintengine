@@ -90,15 +90,9 @@ function RevertTurnButton({
                   before all of that, so it says so rather than reading as the
                   harmless undo of a moment ago. */}
               {replacesLaterWork ? (
-                <p>
-                  Files have changed since this revert, in later turns or another revert. Undoing it puts back the files
-                  as they were before it, replacing those later changes in the files below.
-                </p>
+                <p>Files changed since this revert. Undoing it overwrites those later changes in the files below.</p>
               ) : null}
-              <p>
-                The following files will be restored. Your staged changes are left as they are. Your conversation stays
-                in history. A recovery checkpoint is kept before reverting.
-              </p>
+              <p>These files will be restored. Staged changes and the conversation are kept.</p>
               <ul className="max-h-60 overflow-auto">
                 {shown.map((file) => (
                   <li key={file.path}>
@@ -125,7 +119,7 @@ function RevertTurnButton({
         if (!result.ok) throw new Error(result.message)
         showToast({
           tone: 'good',
-          title: reverted ? 'Revert undone' : 'Files reverted. Undo revert can restore the previous state.',
+          title: reverted ? 'Revert undone' : 'Files reverted',
         })
         // A new file git ignores most likely existed, ignored, before the turn,
         // so the runtime keeps it; say so rather than leave it unexplained.
@@ -133,14 +127,14 @@ function RevertTurnButton({
           showToast({
             tone: 'warn',
             title: 'Some new files were left in place',
-            description: `Git ignores them, so they may predate this turn: ${result.kept.join(', ')}`,
+            description: `Git-ignored, so they may predate this turn: ${result.kept.join(', ')}`,
           })
         return
       }
     } catch (error) {
       showToast({
         tone: 'error',
-        title: `Could not restore files: ${error instanceof Error ? error.message : String(error)}`,
+        title: `Couldn't restore files: ${error instanceof Error ? error.message : String(error)}`,
       })
     } finally {
       setPending(false)
@@ -451,7 +445,7 @@ async function openTurnInDiffViewer(
   } catch (failure) {
     showToast({
       tone: 'error',
-      title: `Could not open the diff: ${failure instanceof Error ? failure.message : String(failure)}`,
+      title: `Couldn't open diff: ${failure instanceof Error ? failure.message : String(failure)}`,
     })
   }
 }
@@ -527,11 +521,11 @@ export function ChangedFilesCard({
       }
       const first = firstChangedFile(changeTree(list.filter((file) => !file.binary)))
       if (first) openDiff?.(first.path, list)
-      else showToast({ tone: 'warn', title: 'This turn changed only binary files; there is no text diff to show' })
+      else showToast({ tone: 'warn', title: 'Only binary files changed; no diff to show' })
     } catch (failure) {
       showToast({
         tone: 'error',
-        title: `Could not open the diff: ${failure instanceof Error ? failure.message : String(failure)}`,
+        title: `Couldn't open diff: ${failure instanceof Error ? failure.message : String(failure)}`,
       })
     }
   }

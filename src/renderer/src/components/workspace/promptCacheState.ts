@@ -89,13 +89,13 @@ export function promptCacheCopy(state: PromptCacheState, now: number): { label: 
   if (state.kind === 'warm') {
     return {
       label: `Cache warm · ${span(state.remainingMs)} left`,
-      detail: `The next message re-reads the conversation from the prompt cache for ${span(state.remainingMs)} more.`,
+      detail: `The next message reads from cache for ${span(state.remainingMs)} more.`,
     }
   }
   if (state.kind === 'expiring') {
     return {
       label: `Cache expires in ${span(state.remainingMs)}`,
-      detail: `After that, the next message re-sends ${tokens} uncached. Compacting now, while the cache is warm, is cheap.`,
+      detail: `Then the next message re-sends ${tokens} uncached. Compacting now is cheap.`,
     }
   }
   const ago = state.expiredAt !== null ? formatRelativeMs(state.expiredAt, now) : ''
@@ -103,7 +103,7 @@ export function promptCacheCopy(state: PromptCacheState, now: number): { label: 
     label: ago ? `Cache expired ${ago} ago` : 'Cache cold',
     // Compacting a cold cache re-reads the conversation uncached too; what it
     // buys is every message after it.
-    detail: `The next message re-sends ${tokens} uncached, a compaction included. Compacting first makes every message after it smaller.`,
+    detail: `The next message re-sends ${tokens} uncached, a compaction included. Compacting shrinks later messages.`,
   }
 }
 

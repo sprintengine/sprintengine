@@ -109,7 +109,7 @@ test('pasted paths are read into image files at paste time, or not at all', asyn
   }
   assert.deepEqual(await readPastedImagePaths(['/Users/dev/a.png', '/Users/dev/gone.png'], read), {
     ok: false,
-    message: 'Could not attach gone.png: the file no longer exists.',
+    message: "Couldn't attach gone.png: the file no longer exists.",
   })
 })
 

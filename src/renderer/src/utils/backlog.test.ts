@@ -773,7 +773,7 @@ test('backlog', async () => {
     assert.match(backlogPanelSource, /backlogApi\.removeBacklogLink\(/, 'unlink persists through the backlog methods')
     assert.match(
       backlogPanelSource,
-      /The linked work itself is not deleted/,
+      /The linked work isn't deleted/,
       'manual status override explains that unlinking preserves the linked work',
     )
   })

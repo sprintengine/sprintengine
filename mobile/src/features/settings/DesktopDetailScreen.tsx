@@ -126,7 +126,7 @@ export function DesktopDetailScreen({
           <PrimaryButton label="Pair another desktop" onPress={onStartPairing} variant="secondary" />
           <PrimaryButton label="Forget this desktop" onPress={forget} variant="danger" />
         </View>
-        <Text style={styles.foot}>Forgetting removes this desktop from this phone. To end the pairing on the desktop too, revoke this phone in its Settings.</Text>
+        <Text style={styles.foot}>Removes this desktop from this phone only. To end pairing on the desktop, revoke this phone there.</Text>
       </ScrollView>
     </ScreenFrame>
   );

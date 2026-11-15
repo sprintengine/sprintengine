@@ -241,8 +241,7 @@ export function MachinesSettingsTab({
         <section className="space-y-2">
           <SettingsSectionTitle count={offDistros.length}>WSL distributions not turned on</SettingsSectionTitle>
           <p className={MUTED}>
-            Turn one on to run chats and terminals in it. A workspace whose folder is inside a distribution runs there
-            either way; this only decides what New chat offers.
+            Turn one on to offer it in New chat. Workspaces inside a distribution run there anyway.
           </p>
           <SettingCard as="ul" ariaLabel="WSL distributions not turned on">
             {offDistros.map((host) => (
@@ -263,7 +262,7 @@ export function MachinesSettingsTab({
         </section>
       ) : listing?.wsl?.available && !(listing.hosts ?? []).some((host) => host.kind === 'wsl') ? (
         <p className={MUTED}>
-          No WSL distributions are installed. Install one with <ProviderStateId>wsl --install</ProviderStateId>.
+          No WSL distributions. Install one with <ProviderStateId>wsl --install</ProviderStateId>.
         </p>
       ) : null}
 
@@ -282,8 +281,7 @@ export function MachinesSettingsTab({
         <section className="space-y-2">
           <SettingsSectionTitle>Add an SSH machine</SettingsSectionTitle>
           <p className={MUTED}>
-            A machine you reach over SSH runs its own Studio server, which Studio installs and starts for you. Your SSH
-            config, keys and agent are used as they are; Studio keeps no password or passphrase.
+            Studio installs and runs its server on the machine. Uses your SSH config and keys; stores no passwords.
           </p>
           <AddSshMachine api={window.api} />
         </section>
@@ -318,9 +316,7 @@ function RouteDetail({
   if (route.kind === 'tailnet')
     return (
       <div className="flex items-center gap-3">
-        <p className={`${MUTED} min-w-0 flex-1`}>
-          Paired over the tailnet. Pairing again and forgetting it are in Remote.
-        </p>
+        <p className={`${MUTED} min-w-0 flex-1`}>Paired over the tailnet. Manage it in Remote.</p>
         {onOpenRemoteSettings ? (
           <OutlineButton size="xs" onClick={onOpenRemoteSettings}>
             Remote settings
@@ -450,7 +446,7 @@ function ServerRow({
   return (
     <SettingsRow label="Studio server" help={serverWords(server)}>
       <Select
-        ariaLabel={`How Windows reaches the Studio server in ${host.label}`}
+        ariaLabel={`Server connection, ${host.label}`}
         items={SERVER_TRANSPORT_ITEMS}
         value={settings.serverTransport ?? 'auto'}
         onChange={(value) => onChange({ serverTransport: value })}

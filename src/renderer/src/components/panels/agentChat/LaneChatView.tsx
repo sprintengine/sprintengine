@@ -335,7 +335,7 @@ function SentNote({
     return <InlineNotice tone="error" title="It did not reach the agent." detail={outcome.why} className="mb-4" />
   return (
     <p data-lane-sent-note="" className="-mt-4 mb-4 text-right text-micro text-[color:var(--text-subtle)]">
-      Passed on through the main chat. It reads this at its next step.
+      Sent via the main chat. Read at its next step.
     </p>
   )
 }

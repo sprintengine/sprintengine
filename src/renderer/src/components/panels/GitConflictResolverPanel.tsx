@@ -108,7 +108,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath, onFinishe
     if (hasGitConflictMarkers(state.content)) {
       const confirmed = await dialog.confirm({
         title: 'Conflict markers remain',
-        body: 'This file still has <<<<<<<, =======, or >>>>>>> markers. Mark it resolved anyway?',
+        body: 'The file still has conflict markers. Mark it resolved anyway?',
         confirmLabel: 'Mark resolved',
         tone: 'danger',
       })

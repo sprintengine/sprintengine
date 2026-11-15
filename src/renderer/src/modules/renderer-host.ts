@@ -2248,7 +2248,7 @@ export function createRendererHost(): RendererKernel {
               return Promise.resolve({
                 ok: false as const,
                 code: 'unavailable' as const,
-                message: 'This window has no Studio connection to call a module method over.',
+                message: 'This window has no Studio connection for module calls.',
               })
             return moduleMethodCaller({
               moduleId,

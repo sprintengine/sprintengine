@@ -75,7 +75,7 @@ export async function recordBacklogAgentHandoff(input: {
       level: 'warning',
       source: 'terminal',
       title: 'Could not link Backlog item to agent',
-      message: `The handoff to ${agent.name} succeeded, but recording the Backlog link failed.`,
+      message: `Handed off to ${agent.name}, but the Backlog link wasn't saved.`,
       details: [input.relativePath, error instanceof Error ? error.message : String(error)].join('\n'),
       workspaceId: input.workspaceId,
       agentId: input.agentId,

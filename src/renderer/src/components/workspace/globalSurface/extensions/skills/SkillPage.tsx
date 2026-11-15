@@ -109,8 +109,7 @@ export function SkillPage({
       <div>
         <ModalFooter>
           <p className="mr-auto min-w-0 text-meta leading-5 text-[color:var(--text-subtle)]">
-            Installing copies this skill&apos;s files into your home folder, where every agent CLI on this machine reads
-            it — in every chat and project, with or without a folder.
+            Installs to your home folder, for every agent CLI in every chat and project.
           </p>
           {installed ? (
             <span className="text-meta font-medium text-[color:var(--accent-primary)]">Installed</span>
@@ -203,9 +202,7 @@ function SkillFacts({
           ) : null}
         </div>
       ) : (
-        <p className="text-body text-[color:var(--text-subtle)]">
-          This skill&apos;s entry document declares no description.
-        </p>
+        <p className="text-body text-[color:var(--text-subtle)]">No description</p>
       )}
 
       {/* A name the specification would reject is a fact about the skill, not

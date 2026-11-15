@@ -211,7 +211,7 @@ function UsageSpend({
           body={
             anyLogs
               ? 'Pick a longer period to see earlier sessions.'
-              : 'Usage appears once Claude Code, Codex, OpenCode, Gemini or Grok has run here, in a chat or a terminal.'
+              : 'Usage appears once Claude Code, Codex, OpenCode, Gemini or Grok runs here.'
           }
         />
         {machines}
@@ -356,11 +356,7 @@ function EstimateNote({ report }: { report: UsageReport }): JSX.Element {
 /** "3 sessions counted once across machines", with why on hover or focus. */
 function SharedSessionsNote({ count }: { count: number }): JSX.Element {
   return (
-    <Tooltip
-      content="Found on more than one machine: a home folder synced between them, a restored backup, or a folder Windows and WSL share. Each is counted once, on this machine when it has it."
-      multiline
-      placement="bottom"
-    >
+    <Tooltip content="From a synced folder, restored backup or WSL share" multiline placement="bottom">
       <span
         tabIndex={0}
         className="self-start rounded-sm text-meta tabular-nums text-[color:var(--text-muted)] underline decoration-dotted underline-offset-2 focus-visible:focus-ring"

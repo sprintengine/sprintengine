@@ -158,7 +158,7 @@ export async function openAgentBacklogLink(
       level: 'warning',
       source: 'workspace',
       title: 'Agent unavailable',
-      message: 'Could not open the agent terminal for this Backlog item — it may have been closed.',
+      message: "Couldn't open this item's agent terminal. It may be closed.",
       details: parsed.agentId,
       workspaceId: input.workspaceId,
     })

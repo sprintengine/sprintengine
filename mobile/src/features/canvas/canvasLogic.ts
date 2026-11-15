@@ -37,7 +37,7 @@ export function canvasRefusalWords(
 ): string {
   // A Studio that runs no canvas service (a server with no desktop open) serves no boards.
   if (failure.code === "unavailable" && /does not serve canvas/u.test(failure.message))
-    return `${machine} is not offering its boards right now. Open SprintEngine Studio there and try again.`;
+    return `${machine} isn't sharing boards right now. Open Studio there and try again.`;
   if (failure.errorCode === "unauthorized")
     return `This phone may not read ${machine}'s projects, so not its boards. Pair again with project access.`;
   if (failure.code === "no_picture") return `${machine} sent no picture of this board.`;
@@ -145,7 +145,7 @@ export function canvasContinueTarget(
   if (input.noProject) return { kind: "no-project" };
   return {
     kind: "refused",
-    message: `This board's project is gone from ${input.machine}, and ${input.machine} cannot start a chat without one. Update SprintEngine Studio there, or continue it from a chat on ${input.machine}.`,
+    message: `This board's project is gone from ${input.machine}. Update Studio there, or continue from a chat on ${input.machine}.`,
   };
 }
 

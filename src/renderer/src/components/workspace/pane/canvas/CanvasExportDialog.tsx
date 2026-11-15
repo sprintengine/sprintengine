@@ -46,7 +46,7 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
       <ModalHeader
         title={`Export ${boardName}`}
         titleId={titleId}
-        subtitle="Write a copy of this board into a folder you choose — the way to add it to the repository. The board itself stays where the app keeps it."
+        subtitle="Save a copy to a folder, e.g. to add it to the repo. The original stays in the app."
         onClose={pending ? undefined : onCancel}
       />
       <ModalBody className="flex flex-col gap-3">
@@ -55,7 +55,7 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
             id={`${rowId}-board`}
             title="Board file"
             code={files[0]}
-            description="The editable board, readable by the Canvas and by any editor for the format."
+            description="The editable board, for the Canvas or any compatible editor."
             checked
             disabled
             onChange={() => {}}
@@ -64,7 +64,7 @@ export function CanvasExportDialog({ open, boardName, pending, error, onCancel, 
             id={`${rowId}-png`}
             title="PNG image"
             code={`${boardName}.png`}
-            description="A picture of the board, for a README or a pull request."
+            description="A picture for a README or pull request."
             checked={formats.png}
             disabled={pending}
             onChange={(png) => setFormats((current) => ({ ...current, png }))}

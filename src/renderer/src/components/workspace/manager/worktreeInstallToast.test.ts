@@ -36,7 +36,7 @@ beforeEach(() => {
 test('a running install is one toast that stays, and its progress does not bring it back once dismissed', () => {
   showWorktreeInstallToast(RUNNING, { report: true })
   assert.equal(toast()?.title, 'Installing dependencies')
-  assert.equal(toast()?.description, 'npm ci in pool-03: the lockfile changed. The agent starts when it finishes.')
+  assert.equal(toast()?.description, 'npm ci in pool-03: the lockfile changed. The agent starts after.')
   assert.equal(toast()?.autoDismissMs, false)
 
   useToastStore.getState().dismissToast('worktree-install:install-1')

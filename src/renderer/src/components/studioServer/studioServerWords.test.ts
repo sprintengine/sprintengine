@@ -46,7 +46,7 @@ test('a stopped server says why and can be recovered; a fallback says why it run
     { ...base, mode: 'in-process', phase: 'in-process', fellBack: 'The data directory is not writable.' },
     { showStarting: false },
   )
-  assert.match(fellBack?.message ?? '', /runs inside the app this time\. The data directory is not writable\./)
+  assert.match(fellBack?.message ?? '', /runs inside the app\. The data directory is not writable\./)
 })
 
 test('uptime in words', () => {

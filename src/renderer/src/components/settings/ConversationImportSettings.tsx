@@ -38,7 +38,7 @@ function ConversationImportDialog({ onClose }: { onClose: () => void }) {
       <ModalHeader
         titleId={titleId}
         title="Import conversations"
-        subtitle="Sessions from the last 30 days are picked. A session that is already a chat here stays as it is."
+        subtitle="Picks sessions from the last 30 days. Ones already imported are left as is."
         onClose={onClose}
       />
       {scan.status === 'ready' ? (

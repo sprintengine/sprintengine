@@ -213,7 +213,7 @@ function sourceNotice(kind: ExtensionKind, source: LoadedSource<unknown>): Sourc
       return {
         kind,
         tone: 'warn',
-        message: `${EXTENSION_KIND_LABEL[kind]} listing needs a newer app build — restart after updating.`,
+        message: `${EXTENSION_KIND_LABEL[kind]} listing needs a newer app. Update and restart.`,
       }
     case 'unavailable':
       return { kind, tone: 'warn', message: source.reason }
@@ -258,7 +258,7 @@ export function deriveInstalledExtensions(input: ExtensionsInstalledInput): Exte
     notices.push({
       kind: 'module',
       tone: 'warn',
-      message: `${count} module folder${count === 1 ? '' : 's'} could not be loaded.`,
+      message: `Couldn't load ${count} module folder${count === 1 ? '' : 's'}.`,
     })
   }
 

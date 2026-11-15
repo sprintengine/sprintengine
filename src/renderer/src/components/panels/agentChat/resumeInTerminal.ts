@@ -36,7 +36,7 @@ export async function resumeChatInTerminal(input: {
   // has, and main would start the session in a folder that is not there (or,
   // for a pool slot, someone else's).
   if (!(await ensureChatWorktree(input.workspaceId)))
-    return { ok: false, message: 'This chat’s worktree could not be brought back, so nothing can run in it.' }
+    return { ok: false, message: 'Couldn’t restore this chat’s worktree.' }
   // By the chat's identity: main hands over the session it is running, or,
   // for a chat not sent anything since the app started, starts one to read
   // the CLI session from its transcript.

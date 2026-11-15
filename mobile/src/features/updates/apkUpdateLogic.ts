@@ -251,21 +251,21 @@ export type UpdateProblem =
 export function updateProblemMessage(problem: UpdateProblem): { title: string; description: string } {
   switch (problem) {
     case "offline":
-      return { title: "Couldn't download the update", description: "The phone looks offline. Try again once it's connected." };
+      return { title: "Couldn't download the update", description: "The phone looks offline. Try again once connected." };
     case "download":
-      return { title: "Couldn't download the update", description: "The download stopped before it finished. Try again." };
+      return { title: "Couldn't download the update", description: "The download stopped early. Try again." };
     case "size":
     case "hash":
       return {
         title: "The update didn't match its checksum",
-        description: "The download was damaged or changed on the way, so it was deleted. Try again.",
+        description: "The download was damaged or altered, so it was deleted. Try again.",
       };
     case "not_apk":
     case "package":
     case "version":
       return {
         title: "The update wasn't the build it said it was",
-        description: "It was deleted without being opened. Try again later.",
+        description: "Deleted without opening it. Try again later.",
       };
     case "signer":
       return {
@@ -318,12 +318,12 @@ export function appUpdateView(state: {
   received: number;
   total: number;
 }): AppUpdateView | null {
-  const name = state.versionName ? `${APP_NAME} ${state.versionName}` : `A new ${APP_NAME}`;
+  const name = state.versionName ? `update ${state.versionName}` : "the update";
   switch (state.phase) {
     case "none":
       return null;
     case "available":
-      return { phase: "available", pressable: true, percent: null, label: `${name} is available. Tap to download and install.` };
+      return { phase: "available", pressable: true, percent: null, label: `Download ${name}` };
     case "downloading": {
       const percent = state.total > 0 ? Math.max(0, Math.min(100, Math.floor((state.received / state.total) * 100))) : 0;
       return { phase: "downloading", pressable: false, percent, label: `Downloading the update (${percent}%)` };
@@ -331,11 +331,11 @@ export function appUpdateView(state: {
     case "verifying":
       return { phase: "verifying", pressable: false, percent: 100, label: "Checking the update" };
     case "ready":
-      return { phase: "ready", pressable: true, percent: null, label: `${name} is downloaded. Tap to install.` };
+      return { phase: "ready", pressable: true, percent: null, label: `Install ${name}` };
     case "installing":
       return { phase: "installing", pressable: false, percent: null, label: "Opening the installer" };
     case "reinstall":
-      return { phase: "reinstall", pressable: true, percent: null, label: `${name} needs a one-time reinstall. Tap for details.` };
+      return { phase: "reinstall", pressable: true, percent: null, label: "One-time reinstall needed" };
   }
 }
 

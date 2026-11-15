@@ -58,7 +58,7 @@ type AddPhase =
 export function mergedIntoBuiltinNotice(source: SkillSource): { title: string; hint: string } {
   return {
     title: `That is already the ${source.name} tab.`,
-    hint: `${source.repo} comes with the studio, so nothing was added to your sources — its listing has just been re-read.`,
+    hint: `${source.repo} is built in, so nothing was added. Its list was refreshed.`,
   }
 }
 
@@ -104,7 +104,7 @@ export function AddSkillSourceModal({
     const value = repo.trim()
     if (value.length === 0) return
     if (typeof agentSkillsApi.skillsAddSource !== 'function') {
-      setPhase({ kind: 'failed', message: 'Skills need an app restart before they are available.' })
+      setPhase({ kind: 'failed', message: 'Restart the app to use skills.' })
       return
     }
     setPhase({ kind: 'scanning' })

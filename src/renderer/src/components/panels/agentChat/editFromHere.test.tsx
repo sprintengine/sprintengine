@@ -165,7 +165,7 @@ test('a refused rewind restores no files', async () => {
     await confirmWithFiles(view)
     expect(view.calls.order).toEqual(['rewind'])
     expect(view.calls.drafts).toEqual([])
-    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toEqual(['Could not edit from here: refused'])
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toEqual(["Couldn't edit from here: refused"])
   } finally {
     await view.close()
   }
@@ -180,7 +180,7 @@ test('files that cannot be restored after the rewind are reported as exactly tha
     expect(view.calls.order).toEqual(['rewind', 'restore files'])
     expect(view.calls.drafts, 'the message is back in the composer all the same').toHaveLength(1)
     expect(useToastStore.getState().toasts.map((toast) => toast.title)).toEqual([
-      'The conversation went back to before this message, but its files were not restored: src/app.ts is locked.',
+      "Chat rewound, but files weren't restored: src/app.ts is locked.",
     ])
   } finally {
     await view.close()

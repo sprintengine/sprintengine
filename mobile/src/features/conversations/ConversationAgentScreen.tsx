@@ -204,7 +204,7 @@ export function ConversationAgentScreen({
       {lane.sent?.map((message) => (
         <View key={message.at} style={styles.sent}>
           <Text style={styles.sentText}>{message.text}</Text>
-          <Text style={styles.meta}>Passed on through the main chat. It reads this at its next step.</Text>
+          <Text style={styles.meta}>Sent via the main chat. Read at its next step.</Text>
         </View>
       ))}
       {children.length ? (

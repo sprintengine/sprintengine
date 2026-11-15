@@ -415,7 +415,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     if (entry.sends > MAX_UNANSWERED_SENDS)
       settle(entry, {
         ok: false,
-        message: `Studio did not answer: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        message: `Studio didn't answer: ${error instanceof Error ? error.message : 'unknown error'}.`,
       })
   }
   // A new workspace goes as this window holds it now, with what was done to
@@ -964,7 +964,7 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
       reason: 'dispatch_threw',
       message: `A ${request.intent.kind} got no answer: ${lastError instanceof Error ? lastError.message : 'unknown error'}.`,
     })
-    return { ok: false, code: 'unreachable', message: 'Studio could not be reached. Try again in a moment.' }
+    return { ok: false, code: 'unreachable', message: "Couldn't reach Studio. Try again." }
   }
 
   const reset = (): void => {

@@ -154,10 +154,10 @@ export async function regenerateWorkspaceTitle(
   if (!engine)
     return {
       ok: false,
-      message: 'Model-written titles are off in Settings, or no agent CLI that writes them is installed.',
+      message: 'Model titles are off, or no installed CLI can write them.',
     }
   const prompt = (await deps.firstPrompt(id).catch(() => null))?.trim()
-  if (!prompt) return { ok: false, message: 'This chat has no message of yours to title it from.' }
+  if (!prompt) return { ok: false, message: 'No message of yours to title this chat from.' }
   const result = await deps
     .generate({ prompt, engine, cliRuntimes: deps.cliRuntimes() })
     .catch((error: unknown): TextGenerationResult => ({

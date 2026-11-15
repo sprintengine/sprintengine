@@ -68,6 +68,6 @@ export function followUpSendLabel(input: {
   if (input.action === "send") return { label: "Send" };
   if (!input.steerable) return { label: "Queue", hint: "Sends when this turn ends." };
   return input.behavior === "steer"
-    ? { label: "Steer", hint: "Goes into this turn now. Long-press to queue it for when the turn ends." }
-    : { label: "Queue", hint: "Sends when this turn ends. Long-press to steer it into this turn now." };
+    ? { label: "Steer", hint: "Goes into this turn now. Long-press to queue instead." }
+    : { label: "Queue", hint: "Sends when this turn ends. Long-press to steer now." };
 }

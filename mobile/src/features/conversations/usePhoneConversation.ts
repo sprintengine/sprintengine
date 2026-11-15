@@ -741,12 +741,12 @@ export function usePhoneConversation(
                 // As may a message taken back: the list the desktop sends
                 // after the redial says whether it still holds it.
                 for (const settle of takingBack.values())
-                  settle({ ok: false, message: "The desktop disconnected before answering. Check the queue once it reconnects." });
+                  settle({ ok: false, message: "The desktop disconnected. Check the queue once it's back." });
                 takingBack.clear();
                 // The list the desktop sends after the redial says whether a
                 // schedule, a send-now or a take-back landed.
                 for (const settle of scheduling.values())
-                  settle({ ok: false, message: "The desktop disconnected before answering. Check the scheduled messages once it reconnects." });
+                  settle({ ok: false, message: "The desktop disconnected. Check scheduled messages once it's back." });
                 scheduling.clear();
                 // A Stop sent before the drop may still have landed; the
                 // agent's lane says so once the transcript catches up.
@@ -1021,7 +1021,7 @@ export function usePhoneConversation(
                 settle({
                   ok: false,
                   message: conversationSessionWasLost(frame)
-                    ? "The server running this chat restarted, and its agents ended with it."
+                    ? "The chat's server restarted and its agents stopped."
                     : (frame.message ?? refusalText(frame.code, "The desktop could not stop this agent.")),
                 });
               }
@@ -1045,7 +1045,7 @@ export function usePhoneConversation(
                 pending.settle({
                   ok: false,
                   message: conversationSessionWasLost(frame)
-                    ? "The server running this chat restarted before the change landed. Try again."
+                    ? "The chat's server restarted before the change landed. Try again."
                     : (frame.message ?? refusalText(frame.code, pending.refused)),
                 });
             } else if (frame.type === "commandResult") {

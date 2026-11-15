@@ -776,7 +776,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     confirmReplace: () =>
       dialog.confirm({
         title: 'Replace your commit message?',
-        body: 'Your agent writes a new message from the checked files, in place of the one in the box. You can edit it before you commit.',
+        body: 'Your agent writes a new one from the checked files. You can edit it before committing.',
         confirmLabel: 'Replace message',
       }),
     report: setMessage,
@@ -914,17 +914,17 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: many ? `Discard changes in ${unique.length} files?` : `Discard changes to ${unique[0].relativePath}?`,
       body: (
         <>
-          This throws away every change to {many ? `these ${unique.length} files` : unique[0].relativePath} in{' '}
-          {activeScopeLabel}. The action cannot be undone from here.
+          Throws away every change to {many ? `these ${unique.length} files` : unique[0].relativePath} in{' '}
+          {activeScopeLabel}. This can’t be undone.
           {/* There is no per-hunk revert in the git layer, and `git checkout --`
               takes the whole file — so a file this list only owns a piece of is
               LEFT ALONE rather than discarded on another list's behalf, and the
               dialog says so before the person agrees to anything. */}
           {skippedPartial > 0 ? (
             <div className="mt-2">
-              {skippedPartial === 1 ? '1 file is' : `${skippedPartial} files are`} skipped: this changelist owns only
-              part of {skippedPartial === 1 ? 'it' : 'them'}, and discarding would throw away another list’s lines too.
-              Discard {skippedPartial === 1 ? 'it' : 'them'} from the file’s own row.
+              {skippedPartial === 1 ? '1 file is' : `${skippedPartial} files are`} skipped: this list owns only part of{' '}
+              {skippedPartial === 1 ? 'it' : 'them'}. Discard {skippedPartial === 1 ? 'it' : 'them'} from the file’s own
+              row.
             </div>
           ) : null}
           <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
@@ -1334,8 +1334,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `Delete the changelist “${list.name}”?`,
       body: (
         <>
-          The list goes; the {shownCount === 1 ? 'file' : `${shownCount} files`} in it{' '}
-          {shownCount === 1 ? 'returns' : 'return'} to Changes. Nothing on disk is touched and nothing is unstaged.
+          The {shownCount === 1 ? 'file' : `${shownCount} files`} in it {shownCount === 1 ? 'returns' : 'return'} to
+          Changes. Files and staging are untouched.
         </>
       ),
       confirmLabel: 'Delete changelist',
@@ -1435,8 +1435,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: many ? `Delete ${rows.length} files?` : `Delete ${rows[0].relativePath}?`,
       body: (
         <>
-          This removes {many ? `these ${rows.length} files` : 'the file'} from disk in {activeScopeLabel}. It is not a
-          git operation and it cannot be undone from here.
+          Removes {many ? `these ${rows.length} files` : 'the file'} from disk in {activeScopeLabel}. This can’t be
+          undone.
           <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
         </>
       ),
@@ -1719,8 +1719,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `Merge into ${currentBranch}?`,
       body: (
         <>
-          This merges {subject} into <span className="font-mono">{currentBranch}</span> in {activeScopeLabel}. If Git
-          reports conflicts, the merge state is left in the working tree for you to resolve.
+          Merges {subject} into <span className="font-mono">{currentBranch}</span> in {activeScopeLabel}. Conflicts are
+          left for you to resolve.
           <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
         </>
       ),
@@ -1758,9 +1758,9 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `Rebase ${currentBranch} onto ${subjectLabel}?`,
       body: (
         <>
-          This replays the commits of <span className="font-mono">{currentBranch}</span> on top of{' '}
-          <span className="font-mono">{subjectLabel}</span> in {activeScopeLabel}, rewriting their hashes. If Git
-          reports conflicts, the rebase pauses for you to resolve and continue.
+          Replays <span className="font-mono">{currentBranch}</span> onto{' '}
+          <span className="font-mono">{subjectLabel}</span> in {activeScopeLabel}, rewriting its commit hashes.
+          Conflicts pause it for you to resolve.
           <div className="mt-2 font-mono text-meta text-[color:var(--text-muted)]">Scope path: {activeScopePath}</div>
         </>
       ),
@@ -1787,8 +1787,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `Cherry-pick ${commit.shortHash} into ${currentBranch}?`,
       body: (
         <>
-          This applies “{commit.subject}” onto <span className="font-mono">{currentBranch}</span> as a new commit. If
-          Git reports conflicts, the cherry-pick pauses for you to resolve and continue.
+          Applies “{commit.subject}” onto <span className="font-mono">{currentBranch}</span> as a new commit. Conflicts
+          pause it for you to resolve.
         </>
       ),
       confirmLabel: 'Cherry-pick',
@@ -1828,7 +1828,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     const consequence =
       mode === 'hard'
-        ? 'Commits after it are dropped from this branch and every uncommitted change is discarded. The action cannot be undone from here.'
+        ? 'Drops later commits and discards every uncommitted change. This can’t be undone.'
         : mode === 'soft'
           ? 'Commits after it stay in the working tree as staged changes.'
           : 'Commits after it stay in the working tree as unstaged changes.'
@@ -1859,8 +1859,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `Delete branch ${branchName}?`,
       body: (
         <>
-          This deletes the local branch <span className="font-mono">{branchName}</span>. Its commits stay reachable from
-          other refs; a branch with unmerged commits is refused unless you force-delete it.
+          Deletes the local branch <span className="font-mono">{branchName}</span>. Unmerged branches need a force
+          delete.
         </>
       ),
       confirmLabel: 'Delete branch',
@@ -1884,8 +1884,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `${branchName} is not fully merged`,
       body: (
         <>
-          Branch <span className="font-mono">{branchName}</span> has commits that are not merged anywhere else.
-          Force-deleting it makes those commits unreachable.
+          <span className="font-mono">{branchName}</span> has commits not merged anywhere else. Force-deleting makes
+          them unreachable.
         </>
       ),
       confirmLabel: 'Force delete',
@@ -1934,7 +1934,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     const label = operationInProgress.replace('-', ' ')
     const confirmed = await dialog.confirm({
       title: `Abort the ${label}?`,
-      body: <>This rolls the working tree back to the state before the {label} started.</>,
+      body: <>Rolls the working tree back to before the {label}.</>,
       confirmLabel: 'Abort',
       tone: 'danger',
     })
@@ -1946,7 +1946,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot || !requireApi(gitApi.pushGitStash, 'Git stash')) return
     const stashMessage = await dialog.prompt({
       title: 'Stash changes',
-      body: <>Sets every local change aside (staged, unstaged, and untracked files) and cleans the working tree.</>,
+      body: <>Sets aside all local changes, including untracked files.</>,
       inputLabel: 'Message (optional)',
       placeholder: 'What is in this stash?',
       confirmLabel: 'Stash',
@@ -1969,7 +1969,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     if (!repoRoot || !requireApi(gitApi.dropGitStash, 'Git stash drop')) return
     const confirmed = await dialog.confirm({
       title: `Drop ${entry.ref}?`,
-      body: <>This deletes the stash entry “{entry.message}”. The action cannot be undone from here.</>,
+      body: <>Deletes the stash “{entry.message}”. This can’t be undone.</>,
       confirmLabel: 'Drop stash',
       tone: 'danger',
     })
@@ -1987,8 +1987,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       title: `Checkout ${commit.shortHash}?`,
       body: (
         <>
-          This detaches HEAD onto <span className="font-mono">{commit.shortHash}</span> — “{commit.subject}”. Your
-          branch pointer stays put; commits made here are easy to lose until you create a branch from them.
+          Detaches HEAD at <span className="font-mono">{commit.shortHash}</span> — “{commit.subject}”. Commits made here
+          are easy to lose without a branch.
         </>
       ),
       confirmLabel: 'Checkout commit',
@@ -2325,18 +2325,10 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 where the Pull/Push buttons beside it are absent, so it is
                 already next to the thing it explains. */}
           <Tooltip
-            content={
-              syncSummary
-                ? `Fetch remotes and refresh Git status \u00b7 ${syncSummary}`
-                : 'Fetch remotes and refresh Git status'
-            }
+            content={syncSummary ? `Fetch and refresh \u00b7 ${syncSummary}` : 'Fetch and refresh'}
             placement="bottom"
           >
-            <IconButton
-              aria-label="Fetch remotes and refresh Git status"
-              onClick={() => void handleFetch()}
-              disabled={Boolean(busy)}
-            >
+            <IconButton aria-label="Fetch and refresh" onClick={() => void handleFetch()} disabled={Boolean(busy)}>
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -2352,7 +2344,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           <InlineNotice tone="warn">
             <span className="font-medium">{scopeHealth.label}</span>
             {' \u2014 '}
-            <span>this worktree cannot be worked in until it is restored.</span>
+            <span>restore this worktree to work in it.</span>
           </InlineNotice>
         </div>
       ) : null}
@@ -2403,7 +2395,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
               triggerMinWidthClassName="min-w-0"
             />
             {activeScope?.kind === 'worktree' ? (
-              <Tooltip content={`Review this branch's changes against ${reviewDiffTarget.baseRef}`} placement="bottom">
+              <Tooltip content={`Review changes against ${reviewDiffTarget.baseRef}`} placement="bottom">
                 {/* Outlined to stand level with the scope picker it sits beside:
                     a flat label next to a bordered field read as a caption. */}
                 <OutlineButton size="xs" onClick={() => void handleReviewDiff()} disabled={Boolean(busy) || !repoRoot}>
@@ -2434,7 +2426,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           >
             <span className="font-medium">{OPERATION_LABELS[operationInProgress]} in progress</span>
             {' — '}
-            <span>resolve any conflicts, then continue. Abort rolls the working tree back.</span>
+            <span>resolve conflicts, then continue, or abort to roll back.</span>
           </InlineNotice>
         </div>
       ) : null}

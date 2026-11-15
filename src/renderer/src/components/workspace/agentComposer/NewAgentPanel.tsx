@@ -1655,7 +1655,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Choose a project',
-        description: `A scheduled agent starts its chats in a project on ${target.connection.machineName}.`,
+        description: `Schedules on ${target.connection.machineName} run in a project.`,
       })
       return
     }
@@ -1665,7 +1665,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Not scheduled',
-        description: `A schedule on ${target.connection.machineName} starts from its prompt alone; remove the attachments.`,
+        description: `Schedules on ${target.connection.machineName} can’t take attachments. Remove them.`,
       })
       return
     }
@@ -1674,7 +1674,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Say what it should do',
-        description: 'Each run starts with this prompt, so a scheduled agent needs one.',
+        description: 'Each run starts from this prompt.',
       })
       promptRef.current?.focus()
       return
@@ -1734,7 +1734,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Not scheduled',
-        description: `A schedule on ${machineName} starts from its prompt alone; remove the attachments.`,
+        description: `Schedules on ${machineName} can’t take attachments. Remove them.`,
       })
       return
     }
@@ -1743,7 +1743,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Say what it should do',
-        description: 'Each run starts with this prompt, so a scheduled agent needs one.',
+        description: 'Each run starts from this prompt.',
       })
       promptRef.current?.focus()
       return
@@ -1803,7 +1803,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Not saved',
-        description: `A schedule on ${machineName} starts from its prompt alone; remove the attachments.`,
+        description: `Schedules on ${machineName} can’t take attachments. Remove them.`,
       })
       return
     }
@@ -1812,7 +1812,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Say what it should do',
-        description: 'Each run starts with this prompt, so a scheduled agent needs one.',
+        description: 'Each run starts from this prompt.',
       })
       promptRef.current?.focus()
       return
@@ -1894,7 +1894,7 @@ export default function NewAgentPanel({
       showToast({
         tone: 'warn',
         title: 'Say what it should do',
-        description: 'Each run starts with this prompt, so a scheduled agent needs one.',
+        description: 'Each run starts from this prompt.',
       })
       promptRef.current?.focus()
       return
@@ -2079,7 +2079,7 @@ export default function NewAgentPanel({
         showToast({
           tone: 'warn',
           title: 'That chat cannot travel yet',
-          description: `Remove the attached files to start on ${remoteTarget.connection.machineName}, or start it on This device.`,
+          description: `Remove the attached files, or start it on This device.`,
         })
         return
       }
@@ -2707,11 +2707,7 @@ export default function NewAgentPanel({
                 ? 'No agent CLI on this machine can run as a chat.'
                 : 'No agent CLI is installed on this machine.'
             }
-            body={
-              chatUnavailable
-                ? 'Install one with a chat runtime to start a chat agent here.'
-                : 'Install one to start an agent here.'
-            }
+            body={chatUnavailable ? 'Install one that can run as a chat.' : 'Install one to start an agent here.'}
             action={<CliInstallCta />}
           />
         ) : null}
@@ -2978,8 +2974,8 @@ export default function NewAgentPanel({
                 <Tooltip
                   content={
                     editing.pausedAt !== undefined
-                      ? 'Runs next at its next time; times missed while paused are not made up'
-                      : 'No runs at its times until resumed; a run already going carries on'
+                      ? 'Missed runs won’t be made up'
+                      : 'Stops future runs; a running one carries on'
                   }
                   placement="top"
                 >
@@ -3007,9 +3003,9 @@ export default function NewAgentPanel({
                   editing ? (
                     'Save the prompt, schedule and settings'
                   ) : once !== null ? (
-                    `Starts a new ${engineNames.cliLabel} chat with this prompt once, ${sendTimeWords(once, Date.now())}`
+                    `Starts a ${engineNames.cliLabel} chat once, ${sendTimeWords(once, Date.now())}`
                   ) : (
-                    `Starts a new ${engineNames.cliLabel} chat with this prompt each time the schedule comes round`
+                    `Starts a ${engineNames.cliLabel} chat on each run`
                   )
                 ) : launchInBackgroundHint ? (
                   <>
@@ -3190,7 +3186,7 @@ export default function NewAgentPanel({
           </p>
         ) : extensionMode && extensionTargetState === 'extension' ? (
           <p role="status" className="mt-1.5 text-meta leading-5 text-[color:var(--text-muted)]">
-            {extensionName} is already an extension there: the chat opens it to carry on.
+            {extensionName} already exists there; the chat picks it up.
           </p>
         ) : null}
 

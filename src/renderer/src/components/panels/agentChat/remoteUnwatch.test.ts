@@ -31,7 +31,5 @@ test('Stop watching asks the machine the chat runs on', async () => {
   studio.capabilities.clear()
   const refused = await transport.unwatchPullRequest!({ key, url })
   expect(refused.ok).toBe(false)
-  expect(refused.ok ? '' : refused.message).toMatch(
-    /mac-mini cannot stop watching .* Update SprintEngine Studio there/u,
-  )
+  expect(refused.ok ? '' : refused.message).toMatch(/mac-mini can’t stop watching .* Update Studio there/u)
 })

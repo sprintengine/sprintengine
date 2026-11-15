@@ -135,7 +135,7 @@ test('a fork opens where its Studio says it is, beside the chat it came from, wi
   const tabs = tabsOf(t.model)
   expect(tabs.agents).toEqual(['parent', asked.newAgentId, 'other'])
   expect(tabs.selected).toBe(1)
-  expect(useToastStore.getState().toasts.at(-1)?.title).toContain('Both chats work in the same files')
+  expect(useToastStore.getState().toasts.at(-1)?.title).toContain('Both share the same files')
 })
 
 test('a message forked before goes to the fork’s composer with its images, handed over once', async () => {
@@ -236,7 +236,7 @@ test('a fork answered without where it is opens nothing, rather than a tab onto 
         providerId: t.providerId,
         target: { side: 'assistant', turnId: 'turn_1' },
       }),
-    ).rejects.toThrow('did not say where it is')
+    ).rejects.toThrow('couldn’t find it')
     expect(tabsOf(t.model).agents).toEqual(['parent', 'other'])
     unregisterModel(WS)
   }

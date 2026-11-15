@@ -553,7 +553,7 @@ function WorkspaceSidebar({
         const failure = !result.ok ? result.message : !result.run.ok ? result.run.message : null
         showToast(
           failure === null
-            ? { tone: 'good', title: 'Started', description: 'Its chat is in the list, with the schedule’s clock.' }
+            ? { tone: 'good', title: 'Started', description: 'Its chat is in the list.' }
             : { tone: 'error', title: 'Did not run', description: failure },
         )
       })
@@ -2610,8 +2610,8 @@ function WorkspaceSidebar({
         tone: 'neutral',
         title: `${workspace.name} was not renamed`,
         description: workspace.remoteOrigin
-          ? 'A chat from a paired machine is named on that machine.'
-          : 'There is no conversation in it to name it from yet.',
+          ? 'Chats from a paired machine are named there.'
+          : "There's nothing in it to name it from yet.",
       })
       return
     }
@@ -2945,7 +2945,7 @@ function WorkspaceSidebar({
         showToast({
           tone: 'error',
           title: 'Agent not moved',
-          description: `${workspace.name} already has an agent with the same id. Drop it on New chat to give it a chat of its own.`,
+          description: `${workspace.name} already has this agent. Drop it on New chat instead.`,
         })
         return
       }
@@ -4274,11 +4274,7 @@ function WorkspaceSidebar({
                 door of its own. */}
             {onNewScheduledAgent && scheduledAgentsEnabled ? (
               <Tooltip
-                content={
-                  scheduledPausedAll
-                    ? 'New scheduled agent — scheduled agents are paused for now'
-                    : 'New scheduled agent'
-                }
+                content={scheduledPausedAll ? 'New scheduled agent (all paused)' : 'New scheduled agent'}
                 placement="right"
               >
                 <IconButton
@@ -4891,7 +4887,7 @@ function WorkspaceSidebar({
                   <ModalHeader
                     titleId="ws-forget-title"
                     title={`Forget folder “${folderDisplayName(confirmForget)}”?`}
-                    subtitle={`Closes ${count} workspace${count === 1 ? '' : 's'} under this folder and removes the folder from recents. Files on disk are kept.`}
+                    subtitle={`Closes ${count} workspace${count === 1 ? '' : 's'} and removes it from recents. Files on disk are kept.`}
                     onClose={() => setConfirmForget(null)}
                   />
                   <ModalFooter>
@@ -5910,11 +5906,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
               worktree
               cwd={workspace.folderPath ?? null}
               dim={emphasis === 'quiet'}
-              tooltip={
-                worktreeReclaimed
-                  ? 'Worktree given back once its work was merged · checked out again from this branch when you open the chat'
-                  : undefined
-              }
+              tooltip={worktreeReclaimed ? 'Worktree freed after merge · restored when you open the chat' : undefined}
             />
           ) : null}
           {/* After the branch, where a live line puts it, so the two rows

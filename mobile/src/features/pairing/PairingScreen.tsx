@@ -143,7 +143,7 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
         <View style={styles.header}>
           <Text accessibilityRole="header" style={styles.title}>Pair this phone</Text>
           <Text style={styles.subtitle}>
-            Scan the square in Studio → Settings → Remote, or tap or paste its pairing link. Both devices need Tailscale.
+            Scan the square in Studio → Settings → Remote, or tap or paste its link. Both devices need Tailscale.
           </Text>
         </View>
 
@@ -201,7 +201,7 @@ export function PairingScreen({ onCancel, onConnected, initialPairingLink }: Pai
         visible={pendingConfirmation !== null}
       >
         <Text style={styles.confirmBody}>
-          Pairs directly with a desktop on your tailnet. Confirm only if this is your desktop.
+          Pairs directly with a desktop on your tailnet. Confirm only if it&apos;s yours.
         </Text>
         <Text accessibilityLabel="Tailnet endpoint" style={styles.confirmOrigin} numberOfLines={1}>
           {pendingConfirmation?.endpoint}

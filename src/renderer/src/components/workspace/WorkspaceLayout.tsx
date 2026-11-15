@@ -212,7 +212,7 @@ const DISABLED_SURFACE = (
   >
     <p className="text-meta font-medium text-[color:var(--text-strong)]">Panel unavailable</p>
     <p className="max-w-xs text-micro leading-5 text-[color:var(--text-muted)]">
-      This view isn’t available right now. Its feature may be disabled, or the tab may be out of date.
+      Its feature may be off, or the tab is out of date.
     </p>
   </div>
 )

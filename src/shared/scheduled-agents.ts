@@ -223,7 +223,7 @@ export function validateScheduledAgentDraft(
   const parsed = parseCronSchedule(cron)
   if (!parsed.ok) return { ok: false, message: parsed.error }
   if (once === undefined && nextCronRun(parsed.schedule, timezone, now) === null) {
-    return { ok: false, message: 'That schedule never comes round — no calendar has that day.' }
+    return { ok: false, message: 'No such date, so it never runs' }
   }
 
   const hostId = input.hostId === null || input.hostId === undefined ? null : normalizeExecutionHostId(input.hostId)

@@ -81,8 +81,7 @@ export function BacklogDependenciesSection({
       <div className="flex flex-col gap-2 px-3">
         {inCycle ? (
           <InlineNotice tone="warn">
-            This item is part of a dependency cycle. Break the loop — remove one prerequisite — so the chain can be
-            ordered.
+            This item is in a dependency cycle. Remove a prerequisite to break it.
           </InlineNotice>
         ) : null}
 
@@ -165,14 +164,14 @@ function PrerequisiteRow({
         <NavigateButton displayId={target.displayId} title={target.title} onNavigate={() => onNavigate(target.id)} />
       ) : (
         <Tooltip
-          content={`No backlog item matches “${prerequisite.slug}”. Remove the stale prerequisite or create the item.`}
+          content={`No item matches “${prerequisite.slug}” — remove or create it`}
           placement="top"
           wrapperClassName="inline-flex min-w-0 flex-1"
         >
           <span
             tabIndex={0}
             role="note"
-            aria-label={`${prerequisite.slug}: unknown prerequisite, no matching item`}
+            aria-label={`${prerequisite.slug}: no matching item`}
             // Readable ink: the slug is what a person reads to clear the row, so
             // it is never disabled ink — the "Unknown" word beside it carries state.
             className="min-w-0 flex-1 truncate rounded-sm px-1.5 py-1 font-mono text-meta text-[color:var(--text-muted)] outline-none focus-visible:focus-ring"

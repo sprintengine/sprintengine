@@ -206,7 +206,7 @@ export const PERMISSION_PRESET_OPTIONS: readonly {
   { id: "manual", label: "Manual", chip: "Manual", hint: "Asks before every edit and command." },
   { id: "auto", label: "Auto", chip: "Auto", hint: "Edits go through; commands and the rest ask." },
   { id: "bypass", label: "Bypass permissions", chip: "Bypass", hint: "Skips every prompt. Trusted repos only." },
-  { id: "none", label: "No flag", chip: "No flag", hint: "No permission flag is passed; the CLI's own settings decide." },
+  { id: "none", label: "No flag", chip: "No flag", hint: "No flag; the CLI's own settings decide." },
 ];
 
 /**

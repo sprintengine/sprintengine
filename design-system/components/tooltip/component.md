@@ -27,7 +27,8 @@ every scroll container and stacking context on the page. Position comes from
 two custom properties the consumer writes in viewport coordinates:
 `--ds-tooltip-top` and `--ds-tooltip-left`.
 
-Content is one short description — at most a couple of lines. A tooltip that
+Content is one short description — at most a couple of lines. The surface caps
+its width and wraps past it, so a long label never runs off the screen. A tooltip that
 needs a heading, a list, or a link is the wrong component.
 
 ## Variants

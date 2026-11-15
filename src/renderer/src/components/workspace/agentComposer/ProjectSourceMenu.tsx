@@ -283,7 +283,7 @@ export function ProjectSourceMenu({
           ) : null}
           {source?.insecure ? (
             <p className="col-start-2 -mt-1 px-0.5 text-micro leading-4 text-[color:var(--tone-warn)]">
-              Not encrypted: this address sends the code, and any sign-in, in the clear.
+              Not encrypted: code and any sign-in are sent in the clear.
             </p>
           ) : null}
           <label htmlFor={`${fieldId}-branch`} className="text-meta text-[color:var(--text-muted)]">

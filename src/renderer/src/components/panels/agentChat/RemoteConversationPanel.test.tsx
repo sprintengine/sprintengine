@@ -1614,7 +1614,7 @@ test('a pairing that may only follow sees the conversation with every action clo
   const chat = await mountRemote({ access: 'read' })
   try {
     expect(chat.host.textContent).toContain('Let me run it.')
-    expect(chat.host.textContent).toContain('may follow this conversation on mac-mini but not drive it')
+    expect(chat.host.textContent).toContain("View only: this pairing can't drive chats on mac-mini.")
     expect(chat.composer().getAttribute('contenteditable')).toBe('false')
     expect(chat.button('Deny')?.disabled).toBe(true)
     expect(chat.button('Allow once')?.disabled).toBe(true)
@@ -1896,10 +1896,7 @@ test('a machine that does not restart sessions is not asked, and the toast says 
     await restartSession(chat)
     expect(chat.far['conversation.restartSession']).not.toHaveBeenCalled()
     expect(useToastStore.getState().toasts.map((toast) => [toast.title, toast.description])).toEqual([
-      [
-        'This chat cannot be restarted from here',
-        'Update SprintEngine Studio on mac-mini to restart its chats from here.',
-      ],
+      ['This chat cannot be restarted from here', 'Update Studio on mac-mini to restart its chats.'],
     ])
   } finally {
     await chat.unmount()
@@ -2102,7 +2099,7 @@ test('a link that drops does not list the machine; one that comes back live does
     await chat.act(async () => chat.studio.setState(key.connectionId, 'parked'))
     expect(reads()).toBe(before)
     // What it last said stays on screen, and says so.
-    expect(chat.host.textContent).toContain('mac-mini is not answering. This shows what it last said.')
+    expect(chat.host.textContent).toContain("mac-mini isn't answering. Showing what it last said.")
     expect(chat.host.textContent).toContain('Let me run it.')
     await chat.act(async () => chat.studio.setState(key.connectionId, 'open'))
     await chat.settleReads()
@@ -2123,9 +2120,7 @@ test('a paired desktop on a build that speaks only the older lane is told to upd
     refused: new StudioError('outdated', 'mac-mini runs a SprintEngine Studio from before this one.'),
   })
   try {
-    expect(chat.host.textContent).toContain(
-      'Update SprintEngine Studio on mac-mini to follow and drive its chats from here.',
-    )
+    expect(chat.host.textContent).toContain('Update Studio on mac-mini to drive its chats.')
     expect(chat.host.textContent).not.toContain('Connecting to mac-mini.')
     expect(chat.composer().getAttribute('contenteditable')).toBe('false')
     // Nothing is asked of it, and no chat is followed there.

@@ -380,7 +380,7 @@ const END_FOLLOW_TRIGGERS = { dataChange: true, itemLayout: true, layout: true }
 
 // Said on the composer when a settled chat's worktree could not be checked out
 // again; the toast that came with it says why (chatWorktreeRestore.ts).
-const WORKTREE_NOT_BACK = 'This chat’s worktree could not be brought back, so nothing can run in it.'
+const WORKTREE_NOT_BACK = 'Couldn’t restore this chat’s worktree.'
 
 // What Retry sends when the failed turn answered news Studio brought the chat:
 // the person asking the agent to carry on, in their own words, rather than the
@@ -1721,12 +1721,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (given.attachments.length > 0) setAttachments((current) => (current.length > 0 ? current : given.attachments))
     const lostPictures =
       given.picturesNotKept > 0
-        ? ` ${given.picturesNotKept === 1 ? 'Its picture was' : `${given.picturesNotKept} of its pictures were`} too large to keep: attach ${given.picturesNotKept === 1 ? 'it' : 'them'} again.`
+        ? ` ${given.picturesNotKept === 1 ? 'Its picture was' : `${given.picturesNotKept} of its pictures were`} too big to keep; attach ${given.picturesNotKept === 1 ? 'it' : 'them'} again.`
         : ''
     showToast({
       tone: 'warn',
       title: 'Your last message may not have been sent',
-      description: `Studio stopped before it answered. The message is back in the composer: send it again.${lostPictures}`,
+      description: `It's back in the composer. Send it again.${lostPictures}`,
     })
   }, [pendingSend, hydrated, events, settlePendingSend])
 
@@ -2978,8 +2978,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         description: !transport.capabilities.operate
           ? 'This window may read this chat but not drive it.'
           : environment.label
-            ? `Update SprintEngine Studio on ${environment.label} to restart its chats from here.`
-            : 'Its server does not restart sessions for this window.',
+            ? `Update Studio on ${environment.label} to restart its chats.`
+            : "Its server doesn't support restarts.",
       })
       return
     }
@@ -3011,7 +3011,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         : {
             tone: 'good',
             title: 'Agent session restarted',
-            description: 'Your next message starts it again, with the conversation as it was.',
+            description: 'Your next message starts it again, history intact.',
           },
     )
   }
@@ -3259,7 +3259,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 : async () => ({
                     ok: false,
                     reason: 'not-running',
-                    message: `${assistantName} is not running for this chat now. Send a message and it can say what fills the window.`,
+                    message: `${assistantName} isn't running. Send a message to see what fills the window.`,
                   })
               : null,
             agentName: assistantName,
@@ -4342,7 +4342,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 // first message; a chat with none yet only says so.
                 <div className="flex h-full items-center justify-center">
                   <p className="max-w-[280px] text-center text-meta leading-5 text-[color:var(--text-muted)]">
-                    No messages yet. Send a prompt to start the conversation.
+                    No messages yet
                   </p>
                 </div>
               )
@@ -4630,7 +4630,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   shortcutLabel={sendNowShortcutLabel}
                   onSendNow={() => undefined}
                   status="Queuing"
-                  statusHint={`On its way to ${hostQueue.machineName}, which sends it when this turn ends`}
+                  statusHint={`On its way to ${hostQueue.machineName}; sends after this turn`}
                 />
               ) : null}
               {hostQueue?.messages.map((message) => (
@@ -4641,8 +4641,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   carries={heldMessageCarries(message)}
                   {...(message.images?.length || message.files?.length
                     ? {
-                        editHint:
-                          'Take its words, skills and mentions back into the composer. Its pictures and files are not brought back.',
+                        editHint: 'Take it back into the composer, without pictures or files',
                       }
                     : {})}
                   sendNow={
@@ -4659,8 +4658,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   status={message.failure !== undefined ? `Couldn't send: ${message.failure}` : 'Queued'}
                   statusHint={
                     message.failure !== undefined
-                      ? `${hostQueue.machineName} could not send it when the turn ended`
-                      : `${hostQueue.machineName} holds it and sends it when this turn ends`
+                      ? `${hostQueue.machineName} couldn't send it`
+                      : `${hostQueue.machineName} sends it after this turn`
                   }
                 />
               ))}
@@ -4723,7 +4722,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     </OutlineButton>
                   }
                 >
-                  Part of this chat was too long to send at once, so it is shown cut short.
+                  Part of this chat was too long to send, so it's cut short.
                 </ComposerTrayRow>
               ) : null}
               {composerError && composerError !== dismissedError ? (

@@ -41,8 +41,8 @@ export class RootErrorBoundary extends React.Component<RootErrorBoundaryProps, R
     return (
       <div role="alert" className="h-screen w-screen bg-[color:var(--bg-canvas)]">
         <EmptyState
-          title="Studio hit a problem and stopped drawing this window."
-          body="Your chats and agents keep running. Reload the window to pick up where you were."
+          title="This window stopped drawing"
+          body="Your chats and agents are still running. Reload to pick up where you were."
           action={<PrimaryButton onClick={reload}>Reload window</PrimaryButton>}
         />
       </div>

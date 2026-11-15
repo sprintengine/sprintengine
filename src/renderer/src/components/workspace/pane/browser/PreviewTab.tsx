@@ -190,9 +190,8 @@ export function PreviewTab({ active }: { active: boolean }): React.JSX.Element {
           }
           body={
             <span id={helpId}>
-              A preview opens on an address of its own, so the app cannot reach Studio. An app that calls localhost by
-              an absolute address reaches the machine this browser runs on, not the server; use relative addresses, or
-              the dev server’s own proxy.
+              Previews can’t reach Studio. Calls to localhost hit this browser’s machine, not the server; use relative
+              URLs or the dev server’s proxy.
             </span>
           }
           action={

@@ -359,7 +359,7 @@ export function environmentStudios(given?: EnvironmentApi): EnvironmentStudios {
 
 /** Words for a machine whose Studio is from before the protocol. */
 export function environmentStudioOutdated(name: string): string {
-  return `Update SprintEngine Studio on ${name} to use this from here.`
+  return `Update Studio on ${name} to use this here.`
 }
 
 /**

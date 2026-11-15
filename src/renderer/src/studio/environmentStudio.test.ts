@@ -29,7 +29,7 @@ test('a Studio older than what was asked is still the machine to update, and a m
   assert.deepEqual(environmentRefusal({ name: 'build-box' }, new StudioError('outdated', '')), {
     kind: 'outdated',
     code: 'outdated',
-    message: 'Update SprintEngine Studio on build-box to use this from here.',
+    message: 'Update Studio on build-box to use this here.',
   })
   assert.equal(environmentRefusal({ name: 'build-box' }, new StudioError('unknown_method', 'No.')).kind, 'outdated')
   assert.equal(peerRefusal({ machineName: 'build-box' }, new StudioError('unknown_method', 'No.')).kind, 'outdated')

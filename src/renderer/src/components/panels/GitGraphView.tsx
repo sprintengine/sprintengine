@@ -643,7 +643,7 @@ export function GitGraphView({
           >
             <span className="font-medium">Detached HEAD</span>
             {' — '}
-            <span>this checkout points at a commit, not a branch. New commits here are easy to lose.</span>
+            <span>not on a branch. New commits here are easy to lose.</span>
           </InlineNotice>
         </div>
       ) : null}

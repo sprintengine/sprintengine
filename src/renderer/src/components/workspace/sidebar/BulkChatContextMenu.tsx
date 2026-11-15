@@ -55,7 +55,7 @@ export function BulkChatContextMenu({
       surfaceClassName="min-w-[240px]"
     >
       <DescribedMenuItem
-        tooltip={`${allStarred ? 'Unstar' : 'Star'} ${chats(selected)}.`}
+        tooltip={`${allStarred ? 'Unstar' : 'Star'} ${chats(selected)}`}
         onClick={() => onSelect(allStarred ? 'unstar' : 'star')}
         icon={
           <StarGlyph
@@ -70,7 +70,7 @@ export function BulkChatContextMenu({
       <DescribedMenuItem
         disabled={reach.markUnread === 0}
         hint={reachHint(reach.markUnread, selected)}
-        tooltip="Mark the chats whose agents have finished something as unread, on every device."
+        tooltip="Mark finished chats unread on every device"
         onClick={() => onSelect('mark-unread')}
       >
         Mark unread
@@ -78,7 +78,7 @@ export function BulkChatContextMenu({
       <DescribedMenuItem
         disabled={reach.regenerateTitle === 0}
         hint={reachHint(reach.regenerateTitle, selected)}
-        tooltip="Write each chat's title again from what was said in it."
+        tooltip="Retitle each chat from its messages"
         onClick={() => onSelect('regenerate-titles')}
       >
         Regenerate titles
@@ -87,7 +87,7 @@ export function BulkChatContextMenu({
       <DescribedMenuItem
         disabled={reach.settle === 0}
         hint={reachHint(reach.settle, selected)}
-        tooltip="Put the chats away: their agents stop. A chat still working is left as it is."
+        tooltip="Put away and stop agents; skips busy chats"
         onClick={() => onSelect('settle')}
       >
         Settle
@@ -97,13 +97,13 @@ export function BulkChatContextMenu({
         ariaLabel={`Snooze ${chats(selected)}`}
         disabled={reach.snooze === 0}
         hint={reachHint(reach.snooze, selected)}
-        tooltip="Hide the chats from the list until a time. A chat still working is left as it is."
+        tooltip="Hide until a set time; skips busy chats"
       >
         {resolveSnoozePresets(Date.now()).map((preset) => (
           <DescribedMenuItem
             key={preset.id}
             hint={preset.whenLabel}
-            tooltip={`Snooze until ${preset.label.toLowerCase()}, ${preset.whenLabel}.`}
+            tooltip={`Snooze until ${preset.label.toLowerCase()}, ${preset.whenLabel}`}
             onClick={() => onSelect(`snooze:${preset.id}`)}
           >
             {preset.label}

@@ -177,7 +177,7 @@ test('backlog-reader', async () => {
     })
     await assert.rejects(
       () => reader.list('ws-1'),
-      /could not be read.*EACCES/,
+      /Couldn't read.*EACCES/,
       'an unreadable backlog rejects instead of resolving as empty',
     )
 

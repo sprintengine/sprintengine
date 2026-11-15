@@ -1142,7 +1142,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       runAction(async () => {
         const confirmed = await dialog.confirm({
           title: 'Delete item?',
-          body: `“${item.title}” will be moved to the trash. This affects the file only.`,
+          body: `Moves “${item.title}” to the trash.`,
           confirmLabel: 'Delete',
           tone: 'danger',
         })
@@ -1218,7 +1218,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         if (needsUnlink) {
           const confirmed = await dialog.confirm({
             title: 'Override linked status?',
-            body: `Setting “${BACKLOG_STATUS_LABEL[status]}” will unlink ${executionLinks.length === 1 ? 'the linked execution' : `${executionLinks.length} linked executions`}. The linked work itself is not deleted.`,
+            body: `Setting “${BACKLOG_STATUS_LABEL[status]}” unlinks ${executionLinks.length === 1 ? 'the linked execution' : `${executionLinks.length} linked executions`}. The linked work isn't deleted.`,
             confirmLabel: `Unlink and set ${BACKLOG_STATUS_LABEL[status]}`,
           })
           if (!confirmed) return
@@ -1248,7 +1248,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         if (!folderPath) return
         const confirmed = await dialog.confirm({
           title: `Unlink ${link.label}?`,
-          body: 'This removes only the Backlog association. The linked agent or external target will not be deleted.',
+          body: "Removes the link only. The linked agent or target isn't deleted.",
           confirmLabel: 'Unlink',
         })
         if (!confirmed) return
@@ -1857,8 +1857,8 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       {duplicateIdWarnings ? (
         <div className="shrink-0 px-3 py-2">
           <InlineNotice tone="warn">
-            {duplicateIdWarnings.length === 1 ? 'A duplicate id' : 'Duplicate ids'} from concurrent edits — resolve by
-            re-allocating one side:
+            {duplicateIdWarnings.length === 1 ? 'A duplicate id' : 'Duplicate ids'} from concurrent edits — re-allocate
+            one side:
             {duplicateIdWarnings.map((warning) => (
               <span key={warning.label} className="mt-0.5 block font-mono text-meta tabular-nums">
                 {warning.label}: {warning.paths.join(', ')}
@@ -2383,12 +2383,7 @@ export function BacklogDetail({
   backlogLocation?: BacklogLocationInfo | null
 }): JSX.Element {
   if (!folderPath) {
-    return (
-      <DetailState
-        heading="No workspace folder"
-        body="Backlog reads captured items from a project's backlog/ folder. Open a project folder to use it."
-      />
-    )
+    return <DetailState heading="No workspace folder" body="Open a project folder to use the backlog." />
   }
   if (loading && !scan) {
     return <BacklogDetailSkeleton />
@@ -2404,8 +2399,8 @@ export function BacklogDetail({
         heading={redirected ? 'Backlog folder not found' : 'No backlog folder'}
         body={
           redirected
-            ? `This workspace's backlog is set to ${backlogLocation.root}, which isn't there right now. Nothing has been lost — reconnect the folder, pick a different one, or go back to the default.`
-            : 'This workspace has no backlog folder yet. Create one to start capturing items, or point it at a folder you already keep them in.'
+            ? `${backlogLocation.root} isn't there right now. Nothing is lost: reconnect it, pick another folder, or use the default.`
+            : 'Create one, or point to a folder you already use.'
         }
         cta={
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -2445,7 +2440,7 @@ export function BacklogDetail({
     return (
       <DetailState
         heading="Backlog is empty"
-        body="Nothing under backlog/ yet. Capture a rough idea, note, or feature, or drop a Markdown or HTML file in to get started."
+        body="Capture an idea, or drop in a Markdown or HTML file."
         cta={<PrimaryButton onClick={actions.createPlan}>Capture first item</PrimaryButton>}
       />
     )

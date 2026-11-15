@@ -251,7 +251,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
               // pause glyph as the suspended state (context disambiguates: a
               // button while live, a status indicator once suspended). Hidden
               // while locked — the lock's whole promise is "never paused".
-              <Tooltip content="Suspend agent — free its memory, keep the output to read" placement="bottom">
+              <Tooltip content="Suspend agent to free memory" placement="bottom">
                 <IconButton
                   onClick={suspendThisTerminal}
                   aria-label="Suspend agent to free memory"
@@ -269,11 +269,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
               // pausing. Locked state stays visible as a standing status mark;
               // unlocked is hover-revealed like its neighbors.
               <Tooltip
-                content={
-                  isTerminalLocked
-                    ? 'Locked — never paused automatically. Click to unlock.'
-                    : 'Lock — keep this terminal running, never pause it automatically'
-                }
+                content={isTerminalLocked ? 'Unlock — allow auto-pause' : 'Lock — never auto-pause'}
                 placement="bottom"
               >
                 <IconButton
@@ -359,7 +355,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-5 text-center">
               <div className="max-w-sm text-meta leading-5 text-[color:var(--text-muted)]">
-                Agent CLI "{cli}" is not installed. Install it before launching this agent.
+                Agent CLI "{cli}" isn't installed.
               </div>
               <CliInstallCta />
             </div>

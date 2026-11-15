@@ -190,7 +190,7 @@ export function UnifiedDiff({ patch, bottomInset }: { patch: string; bottomInset
   if (!rows.length)
     return (
       <View style={styles.state}>
-        <Text style={styles.message}>No line changes to show: the file is empty, or only its mode changed.</Text>
+        <Text style={styles.message}>No line changes: the file is empty or only its mode changed.</Text>
       </View>
     );
   return (

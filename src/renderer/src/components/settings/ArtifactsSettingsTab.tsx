@@ -151,12 +151,10 @@ export function ArtifactsSettingsTab(): JSX.Element {
     <div role="tabpanel" id="settings-panel-artifacts" aria-labelledby="settings-tab-artifacts" className="space-y-6">
       <SettingsPageHeader title="Artifacts" />
       <p className={MUTED}>
-        Agents publish the pages they make (mockups, prototypes, reports) with the artifacts tools, to a site you can
-        open from any device, phone included. Every publish keeps the earlier versions, and the site lists them newest
-        first, with search, tags and projects. An agent can also set this up for you; Studio asks you first.
+        Agents publish mockups, prototypes and reports to a site you can open on any device. Earlier versions are kept.
       </p>
       {view === undefined ? null : view === null || !draft ? (
-        <p className={MUTED}>Artifacts are set up in the desktop app, on the machine whose agents publish them.</p>
+        <p className={MUTED}>Set up artifacts in the desktop app on the publishing machine.</p>
       ) : (
         <>
           <section className="space-y-3" aria-labelledby="artifacts-host-title">
@@ -167,9 +165,7 @@ export function ArtifactsSettingsTab(): JSX.Element {
               value={draft.host}
               onChange={(host) => update({ host })}
             />
-            {draft.host === 'off' ? (
-              <p className={MUTED}>Off: the artifacts tools refuse, and say this page is where they are set up.</p>
-            ) : null}
+            {draft.host === 'off' ? <p className={MUTED}>Off: agents can’t publish artifacts.</p> : null}
           </section>
           {draft.host === 'github-pages' ? (
             <GitHubSection view={view} draft={draft} update={update} invalid={failedField} />
@@ -263,8 +259,8 @@ function GitHubSection({
         </SettingsRow>
       </SettingCard>
       <p className={MUTED}>
-        A Pages site is public on the internet even when the repository is private, unless your organization is on
-        GitHub Enterprise Cloud and limits it to members. Pages on a private repository needs a paid plan.
+        The site is public even if the repository is private (unless GitHub Enterprise Cloud limits it). Private
+        repositories need a paid plan.
       </p>
       {saved && view.siteUrl ? <SiteLine url={view.siteUrl} /> : null}
     </section>
@@ -305,7 +301,7 @@ function CloudflareSection({
           htmlFor={tokenInputVisible ? ids.token : undefined}
           help={
             <>
-              A token with the Cloudflare Pages Edit permission, kept in this computer’s secure storage
+              Needs Cloudflare Pages Edit permission. Kept in secure storage
               {view.cloudflareToken.encryptionAvailable ? '' : ' (unavailable now: kept for this session only)'}.{' '}
               <LinkButton size="inherit" onClick={() => void window.api.openExternal(CLOUDFLARE_TOKEN_URL)}>
                 Create a token
@@ -428,10 +424,8 @@ function CloudflareSection({
         </div>
       ) : null}
       <p className={MUTED}>
-        A Pages site is public. To put a sign-in in front of it, add a Cloudflare Access application: in the dashboard’s
-        Zero Trust ▸ Access ▸ Applications, add a self-hosted application for the site’s address (
-        <ProviderStateId>{project}.pages.dev</ProviderStateId> and any custom domain), with a policy that allows your
-        own email address.
+        The site is public. To require sign-in, add a self-hosted app in Zero Trust ▸ Access ▸ Applications for{' '}
+        <ProviderStateId>{project}.pages.dev</ProviderStateId> (and any custom domain) that allows your email.
       </p>
       {savedHere && view.siteUrl ? <SiteLine url={view.siteUrl} /> : null}
     </section>

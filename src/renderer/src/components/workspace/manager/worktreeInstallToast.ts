@@ -45,7 +45,7 @@ export function showWorktreeInstallToast(view: WorktreeDependencyInstallView, op
       id,
       tone: 'accent',
       title: 'Installing dependencies',
-      description: `${where}: ${REASON[view.reason]}. The agent starts when it finishes.`,
+      description: `${where}: ${REASON[view.reason]}. The agent starts after.`,
       autoDismissMs: false,
     })
     return
@@ -60,7 +60,7 @@ export function showWorktreeInstallToast(view: WorktreeDependencyInstallView, op
       id,
       tone: 'neutral',
       title: 'Dependency install cancelled',
-      description: `The agent started without it. The next chat in ${worktreeName(view.path)} tries again.`,
+      description: `The agent started without it. The next chat in ${worktreeName(view.path)} retries.`,
     })
     return
   }
@@ -72,7 +72,7 @@ export function showWorktreeInstallToast(view: WorktreeDependencyInstallView, op
     id,
     tone: 'warn',
     title: 'Dependencies did not install',
-    description: `${what} The agent started anyway; the next chat in it tries again.`,
+    description: `${what} The agent started anyway; the next chat retries.`,
   })
   if (!options.report) return
   publishDiagnosticSync({

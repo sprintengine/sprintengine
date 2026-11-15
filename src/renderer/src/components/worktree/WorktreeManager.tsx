@@ -483,8 +483,8 @@ export default function WorktreeManager({
         title: 'Force remove worktree?',
         body: (
           <>
-            Worktree <span className="font-mono">{branchLabel(row)}</span> has uncommitted changes. Removing it will
-            discard those changes. Type <span className="font-mono">remove</span> to confirm.
+            Worktree <span className="font-mono">{branchLabel(row)}</span> has uncommitted changes that will be lost.
+            Type <span className="font-mono">remove</span> to confirm.
           </>
         ),
         inputLabel: 'Type "remove" to confirm',
@@ -519,8 +519,8 @@ export default function WorktreeManager({
         title: 'Discard the changes?',
         body: (
           <>
-            The uncommitted changes in <span className="font-mono">{slot.held?.branch ?? branchLabel(row)}</span> are
-            deleted, and the worktree goes back to the pool. Commits on the branch are kept.
+            Uncommitted changes in <span className="font-mono">{slot.held?.branch ?? branchLabel(row)}</span> are
+            deleted; commits stay. The worktree returns to the pool.
           </>
         ),
         confirmLabel: 'Discard changes',
@@ -548,10 +548,7 @@ export default function WorktreeManager({
     const confirmed = await dialog.confirm({
       title: `Remove ${slot.id}?`,
       body: (
-        <p>
-          Deletes the folder. It has no uncommitted changes. The next chat gets a new worktree, with no dependencies
-          installed.
-        </p>
+        <p>Deletes the folder; nothing uncommitted is lost. The next chat's worktree starts without dependencies.</p>
       ),
       confirmLabel: 'Remove',
       tone: 'danger',
@@ -574,8 +571,8 @@ export default function WorktreeManager({
       title: 'Release the agent lock?',
       body: (
         <>
-          Worktree <span className="font-mono">{branchLabel(row)}</span> is locked by an agent in another SprintEngine
-          Studio profile. Release it only if that profile no longer uses it: once released, this profile may remove it.
+          Worktree <span className="font-mono">{branchLabel(row)}</span> is locked by an agent in another Studio
+          profile. Release it only if that profile no longer uses it.
         </>
       ),
       confirmLabel: 'Release lock',
@@ -903,7 +900,7 @@ export default function WorktreeManager({
 
           {!loading && onlyMain ? (
             <p className="mt-1 px-1 text-micro text-[color:var(--text-subtle)]">
-              Only the default checkout. Create a worktree to run an agent on a branch in parallel.
+              Only the default checkout. Add a worktree to run agents in parallel.
             </p>
           ) : null}
 

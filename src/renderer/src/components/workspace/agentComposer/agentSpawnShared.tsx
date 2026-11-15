@@ -41,31 +41,28 @@ export const AGENT_SPAWN_PERMISSION_OPTIONS: PermissionModeOption[] = [
     value: 'manual',
     label: 'Manual',
     summary: 'Asks before every edit and command.',
-    title:
-      'Ask before every action that changes something or reaches out: each edit, command, web request and MCP tool. Reading and searching the workspace does not ask.',
+    title: 'Asks before edits, commands, web and MCP tools',
   },
   {
     id: 'auto',
     value: 'auto',
     label: 'Auto',
     summary: 'Edits go through; commands and the rest ask.',
-    title:
-      'Read and edit files in the workspace without asking, and in a chat use your connected MCP tools too. Commands, web access and anything outside the workspace ask first.',
+    title: 'Edits the workspace freely; commands and web ask first',
   },
   {
     id: 'bypass',
     value: 'bypass',
     label: 'Bypass permissions',
     summary: 'Skip every prompt. Trusted repos only.',
-    title: 'Skip CLI permission prompts. Use only in repos and environments you trust.',
+    title: 'Never asks. Use only in repos you trust',
   },
   {
     id: 'none',
     value: 'none',
     label: 'No flag',
     summary: 'The CLI’s default — no permission flag is passed.',
-    title:
-      'Pass no permission flag, so the agent runs on its own configured permissions. That can mean asking for approval, or not.',
+    title: 'Uses the CLI’s configured permissions',
   },
 ]
 

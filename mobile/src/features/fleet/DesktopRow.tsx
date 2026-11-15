@@ -54,7 +54,7 @@ export function DesktopRow({ session, isActive, rowState, onSelect, onRemove }: 
       </Pressable>
       {isRevoked ? (
         <View style={styles.revokedActions}>
-          <Text style={styles.meta}>Desktop revoked this device. Re-pair to restore access.</Text>
+          <Text style={styles.meta}>Revoked by the desktop. Pair again to reconnect.</Text>
           <PrimaryButton
             accessibilityLabel={`Remove ${session.desktopName} from this phone`}
             label="Remove from phone"

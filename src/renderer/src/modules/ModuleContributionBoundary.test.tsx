@@ -109,5 +109,5 @@ test('the fallback names the module and offers a real button', () => {
   act(() => root.render(<ModuleContributionErrorFallback label="Board" moduleId="acme-board" onRetry={() => {}} />))
   const button = container.querySelector('button')
   expect(button?.getAttribute('type')).toBe('button')
-  expect(container.textContent).toContain('The rest of the app is unaffected.')
+  expect(container.textContent).toContain('The rest of the app is fine.')
 })

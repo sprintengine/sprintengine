@@ -595,7 +595,7 @@ function BuildExtensionPlate({ onOpen }: { onOpen: () => void }): JSX.Element {
     <CardButton variant="bordered" onClick={onOpen} className="px-4 py-3">
       <span className="text-body font-semibold text-[color:var(--text-strong)]">Build your own extension</span>
       <span className="mt-0.5 text-meta text-[color:var(--text-muted)]">
-        Describe it, and an agent builds it with you in a chat, with the SDK and the skill that teaches it.
+        Describe it and an agent builds it with you, using the SDK.
       </span>
     </CardButton>
   )

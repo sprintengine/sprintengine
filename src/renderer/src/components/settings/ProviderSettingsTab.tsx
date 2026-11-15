@@ -154,7 +154,7 @@ export function ProviderSettingsTab() {
     async (provider: ConversationProviderListEntry) => {
       const confirmed = await dialog.confirm({
         title: `Remove ${provider.displayName} API key?`,
-        body: 'The stored key is removed from this device. You can add it again at any time.',
+        body: 'Removes the key from this device. You can add it again later.',
         confirmLabel: 'Remove key',
       })
       if (!confirmed) return

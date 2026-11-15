@@ -135,8 +135,8 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
     const removed = await detach({
       title: 'Detach this design system?',
       body: authored
-        ? 'This bundle was created in this project — deleting design-system/ removes its source, not a copy. Agents launched here will no longer be told to conform to it.'
-        : 'Deletes design-system/ from this project, including any local edits. Agents launched here will no longer be told to conform to it.',
+        ? 'Deletes design-system/, the only source of this bundle. Agents here stop following it.'
+        : 'Deletes design-system/ and any local edits. Agents here stop following it.',
       confirmLabel: 'Detach',
     })
     if (removed) reload()
@@ -145,7 +145,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
   const onReplace = useCallback(async () => {
     const removed = await detach({
       title: 'Replace the attached design system?',
-      body: 'Deletes the current design-system/ copy, including any local edits, then lets you choose what to attach instead.',
+      body: 'Deletes design-system/ and any local edits, then you pick a replacement.',
       confirmLabel: 'Remove and choose',
     })
     if (removed) {
@@ -184,7 +184,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
     async (entry: DesignSystemLibraryEntry) => {
       const confirmed = await dialog.confirm({
         title: `Update to v${entry.version}?`,
-        body: 'Replaces design-system/ with the library release. Local edits to the current copy are lost.',
+        body: 'Replaces design-system/ with the library release. Local edits are lost.',
         confirmLabel: 'Update',
         tone: 'danger',
       })
@@ -274,7 +274,7 @@ export function DesignSystemSettings({ workspaceRoot }: { workspaceRoot: string 
       {bundle.kind === 'broken' ? (
         <InlineNotice
           tone="warn"
-          title="design-system/ exists but cannot be read as a bundle"
+          title="design-system/ isn't a readable bundle"
           detail={bundle.message}
           action={
             <OutlineButton size="xs" onClick={() => void onDetach()} disabled={busy}>

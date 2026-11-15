@@ -1112,21 +1112,19 @@ export function TurnErrorBlock({
   ) : !authShaped ? (
     `${refused ?? 'Something went wrong while responding.'} ${kept}`
   ) : onSignIn ? (
-    `The session could not authenticate — usually a sign your sign-in expired. Sign in, then retry.${
-      chrome.platform === 'win32'
-        ? ` This signs in ${chrome.assistantName} for Windows, which keeps its own sign-in apart from WSL’s.`
-        : ''
+    `Sign-in failed or expired. Sign in, then retry.${
+      chrome.platform === 'win32' ? ` This signs in ${chrome.assistantName} for Windows, not WSL.` : ''
     } ${kept}`
   ) : command ? (
     <>
-      The session could not authenticate — usually a sign your sign-in expired. Run{' '}
+      Sign-in failed or expired. Run{' '}
       <code className="rounded-xs border border-[color:var(--border-subtle)] bg-[color:var(--bg-active)] px-[0.3em] py-[0.05em] font-mono text-[0.9em] text-[color:var(--text-strong)] box-decoration-clone">
         {command}
       </code>{' '}
       in a terminal, then retry. {kept}
     </>
   ) : (
-    `The session could not authenticate — usually a sign your sign-in expired. Sign in to ${chrome.assistantName} in a terminal, then retry. ${kept}`
+    `Sign-in failed or expired. Sign in to ${chrome.assistantName} in a terminal, then retry. ${kept}`
   )
   const signIn = () => {
     if (!onSignIn || signingIn) return

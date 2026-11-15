@@ -138,7 +138,7 @@ export function RecommendedSources({
     <section className="space-y-2" aria-label="Recommended sources">
       <ConnectorSectionHeading label="Recommended sources" count={offered.length} />
       <p className="text-meta leading-4 text-[color:var(--text-subtle)]">
-        Places to get skills and plugins. The studio recommends these; it does not publish what is in them.
+        Places to get skills and plugins. Recommended, not published, by Studio.
       </p>
       {failure ? <InlineNotice tone="error" title="That source was not added." hint={failure.message} /> : null}
       {/* The same list card the catalogue groups above it sit in (list-card

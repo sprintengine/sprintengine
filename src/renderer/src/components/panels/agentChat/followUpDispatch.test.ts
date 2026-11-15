@@ -54,12 +54,8 @@ test('the button names its action and the chord for the other', () => {
   assert.equal(shown.action, 'queue')
   assert.equal(shown.alternate, 'steer')
   assert.equal(shown.labels[shown.action], 'Queue message')
-  assert.equal(shown.tooltip, 'Click to queue, Cmd-click or Cmd+Enter to steer')
-  assert.equal(
-    shown.heldTooltip,
-    'Cmd-click to steer, or let go of Cmd to queue',
-    'what a click does with the key down',
-  )
+  assert.equal(shown.tooltip, 'Queue message; Cmd-click or Cmd+Enter to steer')
+  assert.equal(shown.heldTooltip, 'Cmd-click to steer; release to queue', 'what a click does with the key down')
   const steering = followUpSendPresentation({
     behavior: 'steer',
     canSteer: true,
@@ -68,7 +64,7 @@ test('the button names its action and the chord for the other', () => {
     shortcutLabel: 'Ctrl+Enter',
   })
   assert.equal(steering.labels[steering.action], 'Steer message')
-  assert.equal(steering.tooltip, 'Click to steer, Ctrl-click or Ctrl+Enter to queue')
+  assert.equal(steering.tooltip, 'Steer message; Ctrl-click or Ctrl+Enter to queue')
 })
 
 test('a provider that cannot steer is never offered a steer by the button', () => {
@@ -82,7 +78,7 @@ test('a provider that cannot steer is never offered a steer by the button', () =
   assert.equal(shown.action, 'queue')
   assert.equal(shown.alternate, 'stop-and-send')
   assert.doesNotMatch(shown.tooltip, /steer/)
-  assert.equal(shown.tooltip, 'Click to queue, Cmd-click or Cmd+Enter to stop and send')
+  assert.equal(shown.tooltip, 'Queue message; Cmd-click or Cmd+Enter to stop and send')
 })
 
 test('with no choice to make now, the button says the message queues and why', () => {

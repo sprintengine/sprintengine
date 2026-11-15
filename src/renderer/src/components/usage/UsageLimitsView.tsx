@@ -36,7 +36,7 @@ export function UsageLimitsView(): JSX.Element {
     return (
       <EmptyState
         title="No usage limits reported yet"
-        body="They appear once a Claude or Codex chat on a subscription has run a turn, or a Claude terminal has shown its status line."
+        body="They appear after a subscription chat runs a turn, or a Claude terminal shows its status line."
       />
     )
   }

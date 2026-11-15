@@ -38,7 +38,7 @@ test('a render that throws leaves a recovery surface instead of a blank window',
     ),
   )
   const alert = host?.querySelector('[role="alert"]')
-  expect(alert?.textContent).toContain('Studio hit a problem')
+  expect(alert?.textContent).toContain('This window stopped drawing')
   const reload = [...(host?.querySelectorAll('button') ?? [])].find((button) => button.textContent === 'Reload window')
   expect(reload).toBeDefined()
   await act(async () => reload?.click())

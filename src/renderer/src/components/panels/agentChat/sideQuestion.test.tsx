@@ -179,7 +179,7 @@ test('a kept side question is shown where the chat cannot be asked one, without 
   await act(async () => current!.reopen({ ...keptQuestion, truncated: true }))
   await frames()
   expect(drawerText()).toContain('src/parse.ts')
-  expect(drawerText()).toContain('longer than the chat keeps')
+  expect(drawerText()).toContain('showing the start')
   expect(document.querySelector('[data-side-question-input="true"]')).toBeNull()
   expect(document.querySelector('[data-side-question-read-only="true"]')).not.toBeNull()
 })

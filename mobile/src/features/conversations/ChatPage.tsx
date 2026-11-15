@@ -304,7 +304,7 @@ export function ChatPage({
                       </View>
                     ))
                   ) : (
-                    <Text style={styles.quiet}>This desktop does not send pictures to the phone yet.</Text>
+                    <Text style={styles.quiet}>This desktop doesn&apos;t send pictures yet.</Text>
                   )}
                 </>
               ) : null}
@@ -348,8 +348,7 @@ export function ChatPage({
                 />
               </Group>
               <Text style={styles.note}>
-                The agent drove this page in the desktop&apos;s browser. A localhost page is the desktop&apos;s own, so it opens
-                on the desktop, or on this phone from Web pages once the desktop publishes that server.
+                Driven in the desktop&apos;s browser. A localhost page opens there, or here under Web pages once shared.
               </Text>
             </>
           ) : (
@@ -369,8 +368,7 @@ export function ChatPage({
               {onOpenCanvases ? (
                 <>
                   <Text style={styles.note}>
-                    The agent drew on a board on the desktop without naming it. Its picture is among the desktop&apos;s
-                    boards.
+                    The agent didn&apos;t name the board. Its picture is among the desktop&apos;s boards.
                   </Text>
                   <View style={styles.after}>
                     <Group>
@@ -379,7 +377,7 @@ export function ChatPage({
                   </View>
                 </>
               ) : (
-                <Text style={styles.note}>The agent drew on this board on the desktop. Open its Canvas there to see it.</Text>
+                <Text style={styles.note}>Drawn on a desktop board. Open its Canvas there to see it.</Text>
               )}
             </>
           )}

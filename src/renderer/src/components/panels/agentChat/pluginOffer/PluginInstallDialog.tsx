@@ -232,8 +232,7 @@ export function PluginInstallDialog({
             ) : null}
             {servers.length === 0 && skills.length === 0 ? (
               <p className="text-body text-[color:var(--text-muted)]">
-                {offered.name} has no skills or servers to install from here. Open it in Extensions to see what it
-                holds.
+                {offered.name} has no skills or servers to install here. Open it in Extensions.
               </p>
             ) : null}
           </>

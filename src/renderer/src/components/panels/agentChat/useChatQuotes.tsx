@@ -153,8 +153,8 @@ export function useChatQuotes(input: ChatQuotesInput): ChatQuotes {
         title: 'Selection too long to quote',
         description:
           token.length > QUOTE_TOKEN_MAX_CHARS
-            ? 'This passage is too long to carry as a quote. Select a shorter passage.'
-            : 'The message has no room left for this quote. Shorten the message or select a shorter passage.',
+            ? 'Select a shorter passage.'
+            : 'No room left in the message. Shorten it or select less.',
       })
       return
     }
@@ -373,6 +373,6 @@ function sourceGone(): void {
   showToast({
     tone: 'neutral',
     title: 'Reply not found',
-    description: 'The reply this passage was quoted from is no longer in this conversation.',
+    description: 'The quoted reply is no longer in this chat.',
   })
 }

@@ -435,17 +435,13 @@ export function HtmlArtifactFrame({
             </div>
           </div>
         ) : frameState.kind === 'generating' ? (
-          <PreviewState
-            title="Building this page…"
-            body="The preview refreshes automatically as the file is written."
-            skeleton
-          />
+          <PreviewState title="Building this page…" body="Refreshes as the file is written." skeleton />
         ) : frameState.kind === 'deleted' ? (
           <PreviewState
             glyph="deleted"
             title="This file isn’t on disk"
             path={relativePath}
-            body="It may have been removed since you selected it, or not written yet. Pick another file, or reload."
+            body="It may have been removed or not written yet. Pick another file, or reload."
           />
         ) : frameState.kind === 'error' ? (
           <PreviewState glyph="error" tone="warn" title="This file can’t be previewed" body={frameState.reason} />

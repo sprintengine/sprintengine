@@ -77,7 +77,7 @@ export function ChatLinkScreen({
           <SkeletonRows count={2} label="Looking for the chat on your desktops" />
         ) : target.kind === "several" ? (
           <View style={styles.group}>
-            <Text style={styles.lead}>That chat is on more than one of your desktops. Open it on:</Text>
+            <Text style={styles.lead}>This chat is on several desktops. Open it on:</Text>
             <Card variant="list">
               {target.rows.map((row, index) => (
                 <CardRow
@@ -101,7 +101,7 @@ export function ChatLinkScreen({
               </Text>
               <Text style={styles.notice}>
                 {streamingDesktops === 0
-                  ? "None of your paired desktops lists its chats with this phone. Update SprintEngine Studio there, or pair again with chat access."
+                  ? "No paired desktop shares its chats with this phone. Update Studio there, or pair again with chat access."
                   : failures.length
                     ? `${failures.join(", ")} didn't answer, so it may be there.`
                     : "It may have been settled, or it is on a desktop this phone has not paired with."}

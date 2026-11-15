@@ -95,8 +95,8 @@ export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused:
     title: 'Schedule resumed',
     description:
       next !== null
-        ? `Next run ${whenWords(next, Date.now())}. Times missed while it was paused are not made up.`
-        : 'It runs again once scheduled agents are no longer all paused.',
+        ? `Next run ${whenWords(next, Date.now())}. Missed runs aren't made up.`
+        : 'Runs again once scheduled agents are unpaused.',
   })
   return true
 }
@@ -149,7 +149,7 @@ export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<b
     title: scheduledAgentsPauseWords(result.pause, Date.now()),
     description: machines.missed.length
       ? `${where.trim()} Not paused: ${machines.missed.join(' ')} Its schedules keep running there.`.trim()
-      : `None runs at its times until then. Runs already going carry on.${where}`,
+      : `No runs until then; running ones carry on.${where}`,
   })
   return true
 }
@@ -176,7 +176,7 @@ export async function resumeAllScheduledAgents(): Promise<boolean> {
     title: 'Scheduled agents resumed',
     description: machines.missed.length
       ? `Not resumed: ${machines.missed.join(' ')}`
-      : 'Each runs next at its next time. One you paused yourself stays paused.',
+      : 'Each runs at its next time. Ones you paused yourself stay paused.',
   })
   return true
 }

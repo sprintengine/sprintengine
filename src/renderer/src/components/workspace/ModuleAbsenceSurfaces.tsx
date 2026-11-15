@@ -110,8 +110,8 @@ export function ModuleNotInstalledSurface({
         title={installed ? `${label} is turned off` : `${label} isn’t installed`}
         body={
           installed
-            ? `This workspace needs the ${label} module. Your work here is safe on disk — turn the module back on and the workspace opens right where you left it.`
-            : `This workspace needs the ${label} module. Your work here is safe on disk — install the module and the workspace opens right where you left it.`
+            ? `This workspace needs the ${label} module. Your work is safe on disk; turn the module back on to continue.`
+            : `This workspace needs the ${label} module. Your work is safe on disk; install the module to continue.`
         }
         action={
           <PrimaryButton size="sm" onClick={onOpenMarketplace}>
@@ -224,7 +224,7 @@ function DoorModuleInstallControls({
 
   const install = useCallback(async () => {
     if (!windowHasStudio() || !windowHasStudio()) {
-      setFlow({ status: 'error', message: 'Installing extensions needs a newer app build. Update and restart.' })
+      setFlow({ status: 'error', message: 'Update Studio to install extensions.' })
       return
     }
     setFlow({ status: 'verifying' })
@@ -248,7 +248,7 @@ function DoorModuleInstallControls({
     if (outcome.kind === 'needs-trust') {
       setFlow({
         status: 'error',
-        message: `${entry.name} asks you to trust it before it installs. Open it in Plugins, where you can read what it wants first.`,
+        message: `${entry.name} needs your trust first. Review it in Plugins.`,
       })
       return
     }

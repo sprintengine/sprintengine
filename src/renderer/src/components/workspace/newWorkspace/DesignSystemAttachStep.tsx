@@ -26,8 +26,7 @@ type LibraryState =
 // prose is agent-visible instruction data, so attaching an arbitrary folder
 // hands it authorship of agent context. Library releases were authored on this
 // machine and do not carry the warning. Exported for the render-contract test.
-export const FOLDER_ATTACH_TRUST_COPY =
-  'Agents in this workspace will read and use its files — only attach sources you trust.'
+export const FOLDER_ATTACH_TRUST_COPY = 'Agents here will use its files. Only attach sources you trust.'
 
 // Bonus path after a successful attach when the wizard also committed a
 // knowledge root: a pointer note next to the graph, composed from the shared
@@ -142,7 +141,7 @@ export function DesignSystemAttachStep({
     return (
       <p className="text-meta leading-5 text-[color:var(--text-muted)]">
         This folder already has a <span className="font-mono text-[color:var(--text-default)]">design-system/</span>{' '}
-        directory. Attach never overwrites or merges — the existing copy stays as it is.
+        directory. Attaching leaves it as is.
       </p>
     )
   }
@@ -155,8 +154,7 @@ export function DesignSystemAttachStep({
       {variant === 'create' ? (
         <p className="text-meta leading-5 text-[color:var(--text-muted)]">
           Copies a released bundle into{' '}
-          <span className="font-mono text-[color:var(--text-default)]">design-system/</span> when the workspace is
-          created; agents launched here are told to conform to it.
+          <span className="font-mono text-[color:var(--text-default)]">design-system/</span>; agents here follow it.
         </p>
       ) : null}
       <div role="group" aria-label="Design system to attach" className="flex flex-col gap-1.5">
@@ -176,7 +174,7 @@ export function DesignSystemAttachStep({
         ) : null}
         {library.kind === 'ready' && library.entries.length === 0 ? (
           <p className="px-1 text-meta leading-5 text-[color:var(--text-subtle)]">
-            No design systems in your library yet — point the Design door at a bundle folder, or browse to one below.
+            No design systems in your library yet. Browse to a bundle below.
           </p>
         ) : null}
         {library.kind === 'ready'
@@ -200,8 +198,8 @@ export function DesignSystemAttachStep({
           titleMono={folderSelection != null}
           detail={
             folderSelection
-              ? `This folder is validated as a bundle before anything is copied. ${FOLDER_ATTACH_TRUST_COPY}`
-              : `Attach any released bundle from disk. ${FOLDER_ATTACH_TRUST_COPY}`
+              ? `Checked as a bundle before copying. ${FOLDER_ATTACH_TRUST_COPY}`
+              : `Any released bundle on disk. ${FOLDER_ATTACH_TRUST_COPY}`
           }
           detailWraps
           onSelect={() => void chooseFolder()}

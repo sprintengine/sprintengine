@@ -14,7 +14,7 @@ export function studioServerNotice(
   if (status.fellBack) {
     return {
       tone: 'warn',
-      message: `Studio server could not start in its own process, so it runs inside the app this time. ${status.fellBack}`,
+      message: `Studio server couldn't start on its own, so it runs inside the app. ${status.fellBack}`,
       recoverable: false,
     }
   }

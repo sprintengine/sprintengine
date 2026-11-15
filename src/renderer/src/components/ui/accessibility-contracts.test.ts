@@ -409,14 +409,14 @@ test('accessibility-contracts', async () => {
   expectIncludes(tooltip, 'role="tooltip"', 'Tooltip surface uses the tooltip role')
   expectIncludes(tooltip, "'aria-describedby'", 'Tooltip wires aria-describedby on the trigger')
   expectIncludes(tooltip, "event.key === 'Escape'", 'Tooltip closes on Escape')
-  // A sentence-length tooltip (a full prompt, a path, an error) wraps inside a
-  // capped measure instead of running off the screen edge. `multiline` REPLACES
-  // the base `whitespace-nowrap` — appending a competing whitespace utility from
+  // No tooltip runs off the screen edge: a label wraps past the spec's 280px
+  // measure, and a sentence-length one (a full prompt, a path, an error) keeps
+  // its line breaks inside a wider one. `multiline` REPLACES the base — appending a competing whitespace utility from
   // a caller's `className` is resolved by stylesheet order, not attribute order,
   // so the override has to happen where the base is chosen.
   expectMatches(
     tooltip,
-    /multiline\s*\n?\s*\?\s*'max-w-\[[^']*\]\s+whitespace-pre-wrap[^']*'\s*\n?\s*:\s*'whitespace-nowrap'/,
+    /multiline\s*\n?\s*\?\s*'max-w-\[[^']*\]\s+whitespace-pre-wrap[^']*'\s*\n?\s*:\s*'w-max max-w-\[280px\][^']*'/,
     'Tooltip swaps its whitespace base for multiline rather than appending one',
   )
   expectIncludes(tooltip, 'onMouseEnter', 'Tooltip opens on hover')

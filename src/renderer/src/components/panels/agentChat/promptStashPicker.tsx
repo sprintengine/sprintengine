@@ -144,7 +144,7 @@ export function usePromptStash({
       tone: stash.saveFailed() ? 'warn' : 'good',
       title: 'Prompt stashed',
       description: stash.saveFailed()
-        ? 'It could not be saved on this device and lasts until the app closes.'
+        ? "Couldn't save on this device. Kept until the app closes."
         : `${stashLabel} in an empty box brings it back.`,
       actions: [
         {

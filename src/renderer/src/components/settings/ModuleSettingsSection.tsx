@@ -27,7 +27,7 @@ export function ModuleSectionErrorFallback({
   return (
     <InlineNotice
       tone="error"
-      title={`${section.label} failed to render. The rest of Settings is unaffected.`}
+      title={`${section.label} couldn't load. Other settings still work.`}
       hint={`From ${section.moduleId}`}
       action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
     />

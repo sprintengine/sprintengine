@@ -38,7 +38,7 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     id: 'global-surface',
     surface: 'Page + sidebar row',
     title: 'Release dashboard',
-    description: 'A full page listing open PRs and CI status across projects.',
+    description: 'Open PRs and CI status across projects.',
     prompt:
       'A full page with its own sidebar row that shows open pull requests and CI status for every project I have open.',
   },
@@ -46,7 +46,7 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     id: 'backlog-action',
     surface: 'Backlog action',
     title: 'Break it down',
-    description: 'A Backlog item action that splits an item into smaller ones.',
+    description: 'Split a Backlog item into smaller ones.',
     prompt:
       'A Backlog item action that starts a chat to split the item into smaller items, each one a day of work or less.',
   },
@@ -54,7 +54,7 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     id: 'panel',
     surface: 'Panel',
     title: 'Project scratchpad',
-    description: 'A notes panel per project that stays between sessions.',
+    description: 'Per-project notes that persist.',
     prompt:
       'A scratchpad panel for each project that keeps my notes between sessions and lets me paste a note into a chat.',
   },
@@ -62,7 +62,7 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     id: 'file-action',
     surface: 'Files action',
     title: 'Explain this file',
-    description: 'Right-click a file to open a chat that walks through it.',
+    description: 'A chat that walks through any file.',
     prompt:
       'A Files action that opens a chat explaining the selected file: what it does, who calls it and what to watch out for.',
   },
@@ -70,7 +70,7 @@ export const EXTENSION_IDEAS: readonly ExtensionIdea[] = [
     id: 'chat-companion',
     surface: 'Chats',
     title: 'Second-opinion reviewer',
-    description: 'Starts a chat that reviews what another chat changed.',
+    description: 'Reviews what another chat changed.',
     prompt: 'When a chat finishes, start a second chat that reviews the changes it made and reports anything risky.',
   },
   {
