@@ -208,7 +208,7 @@ function useCliIdsWithKey(ids: string): ReadonlySet<string> | null {
 /**
  * The agent CLIs this machine can launch, as every model picker lists them:
  * the plugin catalog, filtered to what is installed, with each CLI's own model
- * list merged over its manifest seed. One hook so the New agent launcher and a
+ * list and the ids the person added. One hook so the New agent launcher and a
  * chat agent's composer read the same rows for the same CLI.
  */
 export function useAgentCliCatalogOptions(availability?: {
@@ -223,7 +223,7 @@ export function useAgentCliCatalogOptions(availability?: {
   const cliAvailability = availability?.map ?? storeCliAvailability
   const cliAvailabilityStatus = availability?.status ?? storeCliAvailabilityStatus
   // What each installed CLI reported about its models. Without it this surface
-  // would offer only the manifest seed while every other picker offers the
+  // would offer only the person's own ids while every other picker offers the
   // CLI's own list.
   const cliModelCatalog = useWorkspaceStore((s) => s.appSettings.cliModelCatalog)
   return React.useMemo(

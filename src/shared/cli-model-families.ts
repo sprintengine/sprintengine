@@ -58,8 +58,8 @@ export type CliModelFamily = {
 }
 
 // Group a CLI's model options into families. Catalog order is preserved by
-// first appearance, so a merged catalog (the CLI's list or the seed, then user, see
-// mergeCliModelCatalog) still reads in the order it was built.
+// first appearance, so a merged catalog (the CLI's list, then the user's ids,
+// see mergeCliModelCatalog) still reads in the order it was built.
 export function buildModelFamilies(
   options: ReadonlyArray<PluginModelOption & { isNew?: boolean }> | undefined,
 ): CliModelFamily[] {
@@ -117,7 +117,7 @@ export type CliPickerModel = {
   contextLabel: string
   /** The picker marks the family's row New: one of its ids was first listed here recently. */
   isNew?: true
-  /** Where the id came from: what the CLI reported, its manifest seed, or the person's own list. */
+  /** Where the id came from: what the CLI reported, or the person's own list. */
   origin: MergedCliModelOption['origin']
 }
 

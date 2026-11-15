@@ -10,6 +10,8 @@ import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { LAUNCH_NOTICE_ORIGIN } from '../../main/agent-launch-notices'
 import { createConversationPullRequestTools } from '../../main/automation/conversation-pull-request-tools'
 import { listPluginRegistryEntries } from '../../main/plugin-registry-instance'
+import { readDiscoveredCliModelCatalogs } from '../../main/model-discovery/service'
+import type { DiscoveredCliModelCatalog } from '../../shared/cli-model-catalog'
 import { sharedGhRunner } from '../../main/github/gh'
 import { createGhHostTokenResolver } from '../../main/github/host-token'
 import {
@@ -141,11 +143,15 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       launch: (request) => core.conversationLaunchService.launch(request),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
       isKnownCli: (cli) => listPluginRegistryEntries().some((entry) => entry.id === cli),
-      displayNames: (cli, modelId) => {
+      displayNames: async (cli, modelId) => {
         const entry = listPluginRegistryEntries().find((candidate) => candidate.id === cli)
-        const option = entry?.modelSelection?.options.find((candidate) => candidate.id === modelId)
+        // The model's name is the one the CLI reported for it, as the pickers show it.
+        const discovered = modelId
+          ? await readDiscoveredCliModelCatalogs().catch((): Record<string, DiscoveredCliModelCatalog> => ({}))
+          : {}
+        const label = discovered[cli]?.models.find((candidate) => candidate.id === modelId)?.displayName?.trim()
         // An ACP model id carries its settings in brackets, which are no name.
-        return { cli: entry?.displayName ?? cli, model: option?.label ?? modelId?.replace(/\[.*$/u, '') ?? null }
+        return { cli: entry?.displayName ?? cli, model: label || (modelId?.replace(/\[.*$/u, '') ?? null) }
       },
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
       ...(options.dismissLaunchNotice ? { dismissNotice: options.dismissLaunchNotice } : {}),

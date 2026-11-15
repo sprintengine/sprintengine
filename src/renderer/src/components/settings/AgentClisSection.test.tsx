@@ -436,19 +436,27 @@ test('the bare shell row shows no version, not the shell banner', async () => {
   expect(host.textContent).not.toContain('GNU bash')
 })
 
-// The model list, against a CLI that declares a model selection.
+// The model list, against a CLI that declares a model selection and has reported one model.
 function withModels(overrides: Record<string, unknown> = {}): void {
   fixtures.state = {
     ...fixtures.state,
     pluginCatalogEntries: [
       {
         ...plugin('codex', 'Codex'),
-        modelSelection: { options: [{ id: 'seed-1', label: 'Seed One' }], allowCustomId: true },
+        modelSelection: { allowCustomId: true },
       },
     ],
     appSettings: {
       ...(fixtures.state.appSettings as Record<string, unknown>),
       cliRuntimes: { codex: { command: 'codex', ...overrides } },
+      // What Codex reported about itself, a while ago.
+      cliModelCatalog: {
+        codex: {
+          models: [{ id: 'listed-1', displayName: 'Listed One' }],
+          fetchedAt: '2026-01-01T00:00:00Z',
+          source: 'argv-probe',
+        },
+      },
     },
   }
 }
@@ -484,8 +492,8 @@ test('a typed model is written to the CLI’s runtime, trimmed', async () => {
 test('a duplicate is refused where it was typed, and writes nothing', async () => {
   withModels()
   const section = await openModels()
-  await typeModel(section, 'seed-1')
-  expect(section.textContent).toContain("seed-1 is already in Codex's list.")
+  await typeModel(section, 'listed-1')
+  expect(section.textContent).toContain("listed-1 is already in Codex's list.")
   expect(runtimeWrites).toEqual([])
 })
 
@@ -493,26 +501,26 @@ test('removing a listed model remembers the removal and retires it as a launch d
   withModels()
   forgotten.length = 0
   const section = await openModels()
-  const remove = section.querySelector<HTMLElement>('button[aria-label="Remove seed-1 from Codex models"]')!
+  const remove = section.querySelector<HTMLElement>('button[aria-label="Remove listed-1 from Codex models"]')!
   await act(async () => remove.click())
-  expect(runtimeWrites).toEqual([['codex', { models: [], removedModels: ['seed-1'] }]])
-  expect(forgotten).toEqual([['codex', ['seed-1']]])
+  expect(runtimeWrites).toEqual([['codex', { models: [], removedModels: ['listed-1'] }]])
+  expect(forgotten).toEqual([['codex', ['listed-1']]])
 })
 
 test('removing the model new chats start with says what they will use instead', async () => {
   withModels()
-  ;(fixtures.state.appSettings as Record<string, unknown>).lastSelectedAgentModel = { cli: 'codex', model: 'seed-1' }
+  ;(fixtures.state.appSettings as Record<string, unknown>).lastSelectedAgentModel = { cli: 'codex', model: 'listed-1' }
   const section = await openModels()
   expect(section.textContent).toContain('New chats')
-  const remove = section.querySelector<HTMLElement>('button[aria-label="Remove seed-1 from Codex models"]')!
+  const remove = section.querySelector<HTMLElement>('button[aria-label="Remove listed-1 from Codex models"]')!
   await act(async () => remove.click())
   expect(section.textContent).toContain("New Codex chats will now use Codex's own default model.")
 })
 
 test('a removed model can be brought back from the list', async () => {
-  withModels({ removedModels: ['seed-1'] })
+  withModels({ removedModels: ['listed-1'] })
   const section = await openModels()
-  expect(section.querySelector('button[aria-label="Remove seed-1 from Codex models"]')).toBe(null)
+  expect(section.querySelector('button[aria-label="Remove listed-1 from Codex models"]')).toBe(null)
   const show = Array.from(section.querySelectorAll('button')).find(
     (button) => button.textContent === 'Show removed (1)',
   )!
@@ -541,8 +549,8 @@ test('a Refresh that fails says so over the list and points at typing, asking on
   expect(section.textContent).toContain('Codex did not list its models.')
   expect(section.textContent).toContain('To use another model, type its id.')
   expect((calls[0] as { clis: string[]; force: boolean }).clis).toEqual(['codex'])
-  // Nothing was lost: the seed is still on the list and the field still takes an id.
-  expect(section.textContent).toContain('Seed One')
+  // Nothing was lost: the CLI's last list is still shown and the field still takes an id.
+  expect(section.textContent).toContain('Listed One')
   expect(section.querySelector('input[aria-label="Add a model id for Codex"]')).toBeTruthy()
 })
 

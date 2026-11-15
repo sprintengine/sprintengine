@@ -8,7 +8,6 @@
 // manifests must never be mixed into the terminal CLI catalog.
 
 import type {
-  PluginModelOption,
   PluginReasoningOption,
   PluginSkillFormat,
   PluginSkillInstallScope,
@@ -28,6 +27,7 @@ import type {
 export type {
   PluginModelCatalog,
   PluginModelOption,
+  PluginModelSelection,
   PluginReasoningCatalog,
   PluginReasoningOption,
   PluginRegistryListEntry,
@@ -199,13 +199,13 @@ export type PluginCapabilities = {
 // passed on its command line. `args` are substituted templates (e.g.
 // ["--model", "{{model}}"]) exposed to launch/resume argv as the `modelArgs`
 // spread; they are only rendered when a model is actually selected, so an
-// unset model never overrides the CLI's own default. `options` is a seed list
-// — terminal CLIs expose no live model catalog, so users can extend it from
-// Settings. Named `modelSelection` (not `models`) because `models` is the
-// provider-manifest model array with a different shape.
+// unset model never overrides the CLI's own default. The manifest names no
+// models: the picker lists what the CLI reports about itself
+// (src/main/model-discovery) and the ids the person adds in Settings, which
+// `allowCustomId` lets them type. Named `modelSelection` (not `models`) because
+// `models` is the provider-manifest model array with a different shape.
 type PluginModelSelectionSpec = {
   args: string[]
-  options?: PluginModelOption[]
   allowCustomId?: boolean
 }
 

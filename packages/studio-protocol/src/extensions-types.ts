@@ -660,6 +660,15 @@ export type PluginSkillInvocation = {
 export type PluginModelOption = { id: string; label?: string }
 export type PluginReasoningOption = { id: string; label?: string }
 
+/**
+ * A CLI that takes a model id at launch, and whether a typed id is allowed. It
+ * names no models: a picker's rows are what the CLI reports about itself and
+ * the ids the person added in Settings.
+ */
+export type PluginModelSelection = {
+  allowCustomId: boolean
+}
+
 /** A CLI's model choices, and whether a free-text id is allowed. */
 export type PluginModelCatalog = {
   options: PluginModelOption[]
@@ -710,7 +719,7 @@ export type PluginRegistryListEntry = {
   sessionIdFromCaller: boolean
   /** Whether the CLI reports its agent state through hooks; a false one is not offered as an agent. */
   agentStateCapable: boolean
-  modelSelection?: PluginModelCatalog
+  modelSelection?: PluginModelSelection
   reasoningSelection?: PluginReasoningCatalog
   /** Another CLI's binary pointed at another provider's endpoint. */
   hostedVia?: 'claude-code'

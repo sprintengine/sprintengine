@@ -46,7 +46,7 @@ export function addTypedModel(
 }
 
 /**
- * Take `id` off the list. An id the CLI or the seed reports is remembered as
+ * Take `id` off the list. An id the CLI reports is remembered as
  * removed, or the next refresh would bring it straight back; one only the
  * person typed just goes.
  */

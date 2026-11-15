@@ -1,7 +1,7 @@
 import React, { useId, useState } from 'react'
 
 import { cliModelListing, type DiscoveredCliModelCatalog } from '../../../../shared/cli-model-catalog'
-import type { PluginModelCatalog } from '../../../../shared/plugin-manifest'
+import type { PluginModelSelection } from '../../../../shared/plugin-manifest'
 import { useRelativeNowFor } from '../../hooks/useRelativeNow'
 import { isImeKey } from '../../utils/imeKey'
 import {
@@ -40,7 +40,7 @@ export function CliModelList({
   onEdit,
 }: {
   name: string
-  declared: PluginModelCatalog | undefined
+  declared: PluginModelSelection | undefined
   catalog: DiscoveredCliModelCatalog | undefined
   userModels: string[] | undefined
   removedModels: string[] | undefined

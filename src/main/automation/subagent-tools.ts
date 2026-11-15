@@ -91,7 +91,10 @@ export type SubagentToolsDeps = {
   /** Whether this machine has the CLI at all. */
   isKnownCli: (cli: string) => boolean
   /** The CLI's and the model's names as the pickers show them, for a sub-agent's default title. */
-  displayNames?: (cli: string, modelId: string | null) => { cli: string; model: string | null }
+  displayNames?: (
+    cli: string,
+    modelId: string | null,
+  ) => { cli: string; model: string | null } | Promise<{ cli: string; model: string | null }>
   /** Tell the parent when the sub-agent ends (agent-launch-notices.ts). Absent where nothing here can. */
   linkLaunchedAgent?: (link: LaunchedAgentLink) => LaunchLinkResult
   /** The parent heard the end from a `wait`, so the notice saying the same is dropped. */
@@ -410,7 +413,7 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
         const parentWorktree =
           parentAgent.execution?.mode === 'worktree' ? parentAgent.execution.cwd?.trim() : undefined
         const cliModel = typeof args.cliModel === 'string' && args.cliModel.trim() ? args.cliModel.trim() : undefined
-        const titles = deps.displayNames?.(cli, cliModel ?? null)
+        const titles = await deps.displayNames?.(cli, cliModel ?? null)
         const title = distinctSubagentTitle(
           name || (titles?.model ? `${titles.cli} · ${titles.model}` : (titles?.cli ?? cli)),
           siblings.map(([, agent]) => agent.name),

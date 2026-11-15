@@ -46,7 +46,6 @@
   },
   "modelSelection": {
     "args": ["--model", "{{model}}"],
-    "options": [],
     "allowCustomId": true
   },
   "launch": {

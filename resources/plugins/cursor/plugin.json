@@ -49,19 +49,8 @@
     }
   },
   "modelSelection": {
-    "$comment": "Headline ids from `cursor-agent --list-models` (verified against CLI 2026.09.10). The CLI already takes `--model`; the picker was empty because this seed listed nothing. Cursor encodes effort and fast in the slug itself (`composer-2.5-fast`, `cursor-grok-4.6-high`), so this is a curated set — Auto, Cursor's own models, and one default-effort slug per major vendor — not the full entitlement-expanded roster. allowCustomId stays true so Settings can add a slug the plan actually has.",
+    "$comment": "The CLI takes `--model`. The picker lists what `cursor-agent --list-models` reports, then the slugs the person adds in Settings. Cursor encodes effort and fast in the slug itself (`composer-2.5-fast`), so allowCustomId stays true for a slug the plan has that the CLI does not list.",
     "args": ["--model", "{{model}}"],
-    "options": [
-      { "id": "auto", "label": "Auto" },
-      { "id": "composer-2.5", "label": "Composer 2.5" },
-      { "id": "composer-2.5-fast", "label": "Composer 2.5 Fast" },
-      { "id": "cursor-grok-4.6-high", "label": "Cursor Grok 4.6" },
-      { "id": "cursor-grok-4.6-high-fast", "label": "Cursor Grok 4.6 Fast" },
-      { "id": "claude-fable-5-1-thinking-high", "label": "Claude Fable 5.1 Thinking" },
-      { "id": "claude-opus-5-thinking-high", "label": "Claude Opus 5 Thinking" },
-      { "id": "gpt-5.6-sol-medium", "label": "GPT-5.6 Sol" },
-      { "id": "gpt-5.3-codex", "label": "Codex 5.3" }
-    ],
     "allowCustomId": true
   },
   "launch": {

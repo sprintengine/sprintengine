@@ -24,10 +24,10 @@ export function modelDiscoveryLine(input: {
 }): string {
   if (input.refreshing) return `Asking ${input.name} for its models…`
   const catalog = input.catalog
-  // An empty answer is shown as the manifest seed (mergeCliModelCatalog), so it
-  // reads as the built-in list here too.
+  // An empty answer lists nothing of the CLI's (mergeCliModelCatalog), so it
+  // reads as no answer here too.
   if (!catalog || !Array.isArray(catalog.models) || catalog.models.length === 0) {
-    return `Built-in list. ${input.name} has not reported its own.`
+    return `${input.name} has not reported its models.`
   }
   const version = bareVersion(catalog.cliVersion, input.name)
   const from = version ? `${input.name} ${version}` : input.name

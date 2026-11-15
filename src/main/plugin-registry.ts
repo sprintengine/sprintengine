@@ -543,18 +543,8 @@ function manifestToListEntry(plugin: LoadedPlugin): PluginRegistryListEntry {
     // Only the label crosses to the renderer; the secret value never does.
     ...(auth ? { auth: { label: auth.label } } : {}),
     ...(hostedVia ? { hostedVia } : {}),
-    // Renderer pickers need the choices, not the arg templates.
-    ...(modelSelection
-      ? {
-          modelSelection: {
-            options: (modelSelection.options ?? []).map((option) => ({
-              id: option.id,
-              ...(option.label ? { label: option.label } : {}),
-            })),
-            allowCustomId: modelSelection.allowCustomId ?? false,
-          },
-        }
-      : {}),
+    // Renderer pickers need whether a model can be chosen, not the arg templates.
+    ...(modelSelection ? { modelSelection: { allowCustomId: modelSelection.allowCustomId ?? false } } : {}),
     // Renderer pickers need the levels + default, not the arg templates.
     ...(reasoningSelection
       ? {
