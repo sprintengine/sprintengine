@@ -432,3 +432,55 @@ test("a window's own New chat in a copy keeps its first message, images and file
   for (const field of ['chatStartupPrompt', 'chatStartupImages', 'chatStartupFiles'])
     assert.equal(cleared[field], undefined, field)
 })
+
+test('a New chat on the machine that waits on its worktree is made there with no folder, then given the worktree there', async () => {
+  const { machine, desktop, replicas } = rig()
+  await replicas.follow(ROUTE)
+  const project = 'ssh://build-box/home/dev/repo'
+  const pending = { name: 'fix-login', projectFolder: project }
+  const created = await replicas.dispatch({
+    type: 'workspace.created',
+    payload: {
+      workspace: workspace('ws-wt', null, {
+        environment: SSH,
+        worktree: { repoRoot: project },
+        agents: { 'chat-1': { ...PLANTED_AGENT, hostId: undefined, chatPendingWorktree: pending } as never },
+      }),
+      windowId: 'primary',
+      insert: { kind: 'folder_head', folderPath: null },
+    },
+  })
+  assert.equal(created?.ok, true, JSON.stringify(created))
+  const there = record(machine.sync, 'ws-wt')
+  assert.equal(there?.folderPath, null)
+  assert.deepEqual(there?.worktree, { repoRoot: '/home/dev/repo' }, 'its project, as the machine spells it')
+  assert.deepEqual((there?.agents['chat-1'] as unknown as { chatPendingWorktree: unknown }).chatPendingWorktree, {
+    name: 'fix-login',
+    projectFolder: '/home/dev/repo',
+  })
+  const copy = record(desktop.sync, 'ws-wt')
+  assert.deepEqual(copy?.environment, SSH)
+  assert.deepEqual(
+    (copy?.agents['chat-1'] as unknown as { chatPendingWorktree: unknown }).chatPendingWorktree,
+    pending,
+    'the copy waits on the same worktree, spelled for this computer',
+  )
+
+  // The machine's own Studio cut it: the chat's folder and marker are set
+  // there first, and the copy reads them back.
+  const slot = 'ssh://build-box/home/dev/.sprintengine-worktrees/repo/repo-01'
+  const given = await replicas.dispatch({
+    type: 'workspace.update_fields',
+    payload: {
+      workspaceId: 'ws-wt',
+      patch: { folderPath: slot, worktree: { branch: 'agent/fix-login', baseRef: 'origin/main', repoRoot: project } },
+      editedAt: 2_000,
+    },
+  })
+  assert.equal(given?.ok, true, JSON.stringify(given))
+  const after = record(machine.sync, 'ws-wt')
+  assert.equal(after?.folderPath, '/home/dev/.sprintengine-worktrees/repo/repo-01')
+  assert.deepEqual(after?.worktree, { branch: 'agent/fix-login', baseRef: 'origin/main', repoRoot: '/home/dev/repo' })
+  assert.equal(record(desktop.sync, 'ws-wt')?.folderPath, slot)
+  assert.deepEqual(record(desktop.sync, 'ws-wt')?.worktree?.repoRoot, project)
+})

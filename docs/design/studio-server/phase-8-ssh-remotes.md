@@ -1475,11 +1475,13 @@ Not built yet:
   chat's worktree is that Studio's `worktrees.*`; agent skills and agent setup
   on a machine still answer "Not available for SSH machines yet", and
   terminals are not reached from another computer.
-- **Worktrees**: Settings ▸ Worktrees and its pool settings are this
-  computer's pool's; a machine's pool is seen and changed through a chat's
-  Worktree manager in the Git pane. The pool's and installs' streams are
-  followed on this computer's Studio only, so a machine's Worktree manager
-  refreshes when asked again.
+- **Worktrees**: Settings ▸ Worktrees lists a machine's projects from that
+  machine and keeps their install choice in its pool's settings, but the
+  pool-wide switches on that page (reuse on or off, the limits) are this
+  computer's pool's. The pool's and installs' streams are followed on this
+  computer's Studio only, so a machine's rows refresh when the page or the
+  Worktree manager reads again, and an install running there shows no
+  progress row in the chat.
 - `auth.sessions.list` for SSH sessions, `server.logs.tail` in Diagnostics
   (they show the bootstrap's steps, the probe and ssh's words), `ssh -W` as a
   diagnostic, the Windows job
