@@ -381,16 +381,6 @@ export const STUDIO_TAILNET_CAPABILITY = 'tailnet' as const
 export const STUDIO_EXECUTION_HOSTS_CAPABILITY = 'execution-hosts' as const
 
 /**
- * Chats in containers (`containers.ts`): Docker on a host in words, a
- * container made for a chat, every container Studio made listed, its branch
- * pushed out and its removal (`containers.*`, with the `containers.changed`
- * stream), and Claude Code's token for them. An owner's; the token Studio's
- * own windows only. Offered by a desktop's Studio where it runs Docker (the
- * SSH machines preview on); a machine's own Studio offers none.
- */
-export const STUDIO_CONTAINERS_CAPABILITY = 'containers' as const
-
-/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -456,7 +446,6 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_WEB_DEVICES_CAPABILITY,
   STUDIO_TAILNET_CAPABILITY,
   STUDIO_EXECUTION_HOSTS_CAPABILITY,
-  STUDIO_CONTAINERS_CAPABILITY,
 ] as const
 
 /**

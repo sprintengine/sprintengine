@@ -1,11 +1,14 @@
 import type { IpcMain } from 'electron'
 
+import { parseContainerHost } from '../../shared/containers'
 import { SSH_ENV_CHANNELS } from '../../shared/ssh-environments'
+import type { ContainerMachines } from '../environments/container/container-machines'
 import type { SshEnvironments } from '../environments/ssh/ssh-environments'
 
-// The renderer's way to the desktop's SSH machines (phase 8). Every payload
-// is checked here: ids and destinations come from a window, which is trusted
-// with nothing more than asking.
+// The renderer's way to the desktop's SSH machines (phase 8) and the
+// containers made as machines beside them (docs/design/container-chats.md).
+// Every payload is checked here: ids, hosts and destinations come from a
+// window, which is trusted with nothing more than asking.
 
 function idOf(payload: unknown): string | null {
   const id = (payload as { id?: unknown } | null)?.id
@@ -14,7 +17,11 @@ function idOf(payload: unknown): string | null {
 
 const unknown = { ok: false as const, message: 'That SSH machine is not one of yours.' }
 
-export function registerSshEnvironmentsIpc(ipcMain: IpcMain, machines: SshEnvironments): () => void {
+export function registerSshEnvironmentsIpc(
+  ipcMain: IpcMain,
+  machines: SshEnvironments,
+  containers: Pick<ContainerMachines, 'status' | 'startDocker' | 'create' | 'rebuild' | 'clone' | 'unpushed'>,
+): () => void {
   const handle = (channel: string, run: (payload: unknown) => unknown) =>
     ipcMain.handle(channel, (_event, payload) => run(payload))
   handle(SSH_ENV_CHANNELS.list, () => machines.list())
@@ -66,10 +73,41 @@ export function registerSshEnvironmentsIpc(ipcMain: IpcMain, machines: SshEnviro
     machines.forget(id, {
       stopServer: payload.stopServer === true,
       clearBrowsingData: payload.clearBrowsingData === true,
-      containers:
-        payload.containers === 'remove' || payload.containers === 'forget-records' ? payload.containers : 'refuse',
+      containers: payload.containers === 'forget-records' ? 'forget-records' : 'refuse',
+      recordOnly: payload.recordOnly === true,
     }),
   )
+  const noHost = { ok: false as const, message: 'That is not a machine Docker can run on.' }
+  handle(SSH_ENV_CHANNELS.dockerStatus, (payload) => {
+    const host = parseContainerHost((payload as { host?: unknown } | null)?.host)
+    return host
+      ? containers.status(host)
+      : { state: 'unreachable', words: noHost.message, imageReady: false, canStart: null }
+  })
+  handle(SSH_ENV_CHANNELS.startDocker, (payload) => {
+    const host = parseContainerHost((payload as { host?: unknown } | null)?.host)
+    return host
+      ? containers.startDocker(host)
+      : { state: 'unreachable', words: noHost.message, imageReady: false, canStart: null }
+  })
+  handle(SSH_ENV_CHANNELS.containerCreate, (payload) => {
+    const record = (payload ?? {}) as { host?: unknown; label?: unknown; clone?: unknown }
+    const host = parseContainerHost(record.host)
+    if (!host) return noHost
+    if (typeof record.label !== 'string') return { ok: false, message: 'Give the container a name.' }
+    return containers.create({
+      host,
+      label: record.label.slice(0, 200),
+      clone: typeof record.clone === 'string' ? record.clone.slice(0, 2048) : null,
+    })
+  })
+  byId(SSH_ENV_CHANNELS.containerClone, (id, payload) =>
+    typeof payload.address === 'string'
+      ? containers.clone(id, payload.address.slice(0, 2048))
+      : { ok: false, message: 'Type the repository to clone.' },
+  )
+  byId(SSH_ENV_CHANNELS.containerUnpushed, (id) => containers.unpushed(id))
+  byId(SSH_ENV_CHANNELS.containerRebuild, (id) => containers.rebuild(id))
   const onAnswer = (_event: unknown, payload: unknown) => {
     const id = (payload as { id?: unknown } | null)?.id
     const answer = (payload as { answer?: unknown } | null)?.answer
@@ -90,6 +128,12 @@ export function registerSshEnvironmentsIpc(ipcMain: IpcMain, machines: SshEnviro
       SSH_ENV_CHANNELS.diagnostics,
       SSH_ENV_CHANNELS.signIn,
       SSH_ENV_CHANNELS.forget,
+      SSH_ENV_CHANNELS.dockerStatus,
+      SSH_ENV_CHANNELS.startDocker,
+      SSH_ENV_CHANNELS.containerCreate,
+      SSH_ENV_CHANNELS.containerClone,
+      SSH_ENV_CHANNELS.containerUnpushed,
+      SSH_ENV_CHANNELS.containerRebuild,
     ])
       ipcMain.removeHandler(channel)
     ipcMain.removeListener(SSH_ENV_CHANNELS.answer, onAnswer)

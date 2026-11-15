@@ -1,17 +1,14 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { PassThrough } from 'node:stream'
-import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
-import type { ContainerHost } from '../../../shared/containers'
-
-// Where a chat's container runs, and how Studio runs a command there
+// Where a container runs, and how Studio runs a command there
 // (docs/design/container-chats.md). A container can run on any machine Studio
 // drives: this computer, or an SSH machine the person saved. Either way the
 // work is a short POSIX shell script run on that machine, which is how one
-// piece of code creates a container, builds its image, copies a repository in
-// and brings a branch out, wherever Docker is:
+// piece of code builds the image, makes, starts and deletes a container, and
+// clones into it, wherever Docker is:
 //
 //   this computer   /bin/sh -c <script>
 //   an SSH machine  ssh … -- <machine> sh -c '<script>'   (the person's own ssh)
@@ -30,12 +27,6 @@ export type HostRunner = (
   script: string,
   options?: {
     interactive?: boolean
-    /**
-     * Variables for the script's own environment on this computer, which
-     * `docker exec -e NAME` passes on by name: a value never in a command
-     * line. An SSH machine's runner does not carry them.
-     */
-    env?: Record<string, string>
     /**
      * A line the script prints once it has read all of itself: what the
      * caller writes to stdin is held until then, so a shell reading its script
@@ -93,8 +84,8 @@ export function localHostRunner(
     searchPath?: boolean
   } = {},
 ): HostRunner {
-  return (script, runOptions = {}) => {
-    const env = { ...(options.env ?? process.env), ...runOptions.env }
+  return (script) => {
+    const env = { ...(options.env ?? process.env) }
     if (options.searchPath !== false)
       env.PATH = dockerSearchPath(env.PATH, { loginPath: options.loginPath?.() ?? null })
     const child = spawn('/bin/sh', ['-c', script], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
@@ -180,16 +171,4 @@ export function runOnHost(
     if (options.input !== undefined) child.stdin.end(options.input)
     else child.stdin.end()
   })
-}
-
-/** Where Docker's command for a host is said in words: "this Mac", or the SSH machine's name. */
-export function hostWords(host: ContainerHost, sshLabel: (id: string) => string | null): string {
-  if (host.kind === 'local') return process.platform === 'darwin' ? 'this Mac' : 'this computer'
-  return sshLabel(host.machine) ?? 'that SSH machine'
-}
-
-/** Whether a path names an executable that exists, for the Colima check. */
-export function anyExists(paths: string[]): string | null {
-  for (const path of paths) if (existsSync(path)) return path
-  return null
 }

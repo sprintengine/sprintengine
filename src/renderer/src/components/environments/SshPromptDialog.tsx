@@ -146,7 +146,15 @@ export function SshPromptDialogBody({
           ) : null}
           {needsInput(request) ? (
             <Field
-              label={request.kind === 'remote' ? 'Answer' : request.kind === 'password' ? 'Password' : 'Passphrase'}
+              label={
+                request.kind === 'remote'
+                  ? 'Answer'
+                  : request.kind === 'password'
+                    ? 'Password'
+                    : request.kind === 'sign-in'
+                      ? 'Code'
+                      : 'Passphrase'
+              }
               htmlFor={inputId}
             >
               <Input

@@ -231,9 +231,7 @@ export type StudioClient = AgentConversations & {
 const DEFAULT_HELLO_TIMEOUT_MS = 15_000
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10_000
-/** How long a read waits for its answer unless the client says otherwise; a service's own budget for a read stays under it. */
-export const STUDIO_DEFAULT_READ_TIMEOUT_MS = 60_000
-const DEFAULT_READ_TIMEOUT_MS = STUDIO_DEFAULT_READ_TIMEOUT_MS
+const DEFAULT_READ_TIMEOUT_MS = 60_000
 // Refusals of the credential: trying again would be refused again, so the
 // client waits to be woken instead of backing off for ever.
 const PARKING_CODES: ReadonlySet<string> = new Set(['unauthorized', 'revoked'])

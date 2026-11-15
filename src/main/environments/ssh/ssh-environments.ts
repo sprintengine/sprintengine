@@ -18,8 +18,7 @@ import {
   type SshResolveResult,
 } from '../../../shared/ssh-environments'
 import { wslProfileId } from '../../hosts/wsl-tree-install'
-import { cliForConversationProvider } from '../../../shared/conversation-harness'
-import { SIGN_IN_FLOWS } from '../../../server/machine/machine-sign-in'
+import { SIGN_IN_FLOWS, signInCli } from '../../../server/machine/machine-sign-in'
 import {
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
@@ -45,6 +44,7 @@ import {
 import { SshEnvironment, type SshServerConnection } from './ssh-environment'
 import type { ContainerHost } from '../../../shared/containers'
 import {
+  dockerCommand,
   EXEC_READY_MARKER,
   execSessionScript,
   removalOutcome,
@@ -91,18 +91,6 @@ export type SshEnvironmentsDeps = {
   sshBinary?: string | null
   /** How a script runs on this computer for a container here; `/bin/sh -c` unless a suite says otherwise. */
   localRunner?: HostRunner
-  /**
-   * What a container's Studio server is started with on this computer: the
-   * agent's own login (container-agent-token.ts), by variable name and value.
-   * Read when a session is spawned; a container on an SSH machine is not given it.
-   */
-  containerEnv?: () => Record<string, string>
-  /**
-   * Resolves once `containerEnv` can answer (the token is read from the
-   * keychain at start): a container's server is never started before, or it
-   * would run without the agent's login for as long as it lives.
-   */
-  containerEnvReady?: () => Promise<void>
   /** A machine was forgotten (its pane forward closes; its browsing data goes when asked). */
   onForget?(saved: SavedSshEnvironment, options: { clearBrowsingData: boolean }): Promise<void> | void
   log?(message: string): void
@@ -171,6 +159,9 @@ const LOGIN_COMMANDS: Readonly<Record<string, string>> = {
   opencode: 'opencode auth login',
   gemini: 'gemini',
   'kimi-code': 'kimi login',
+  grok: 'grok login --device-auth',
+  muse: 'muse login',
+  github: 'gh auth login --web',
 }
 
 /** The words for a CLI Studio cannot sign in without a terminal: the exact command, over the person's own SSH. */
@@ -182,7 +173,7 @@ export function signInOverSsh(
     const login = LOGIN_COMMANDS[cli]
     const where = saved.container.host.kind === 'local' ? 'in a terminal here' : 'on the machine it runs on'
     return login
-      ? `Sign ${cli} in once inside the container, ${where}: docker exec -it ${saved.container.name} ${login}`
+      ? `Sign ${cli} in once inside the container, ${where}: ${dockerCommand(saved.container.context)} exec -it ${saved.container.name} ${login}`
       : `${cli} signs in with an API key: set it for the chat, or sign it in inside the container as its own documentation says.`
   }
   const parsed = parseDestination(saved.destination)
@@ -206,6 +197,8 @@ export class SshEnvironments {
   private readonly prompts = new Map<string, Prompt>()
   private readonly connectedListeners: Array<(connection: SshServerConnection) => void> = []
   private readonly changedListeners = new Set<() => void>()
+  /** What a container being made is doing now, by its id: its row's state until it is done. */
+  private readonly preparing = new Map<string, string>()
   private tree: { dir: string; digest: string } | null | undefined
   private readonly path: string
   private readonly log: (message: string) => void
@@ -294,7 +287,14 @@ export class SshEnvironments {
     this.persist()
   }
 
-  /** Change a saved container's record (its repository, once copied in). */
+  /** What a container being made is doing now, in words; null once it is done. */
+  setPreparing(id: string, words: string | null): void {
+    if (words === null) this.preparing.delete(id)
+    else this.preparing.set(id, words)
+    this.changed()
+  }
+
+  /** Change a saved container's record. */
   updateContainer(id: string, patch: Partial<NonNullable<SavedSshEnvironment['container']>>): void {
     const entry = this.get(id)
     if (!entry?.container) return
@@ -397,13 +397,9 @@ export class SshEnvironments {
         const entry = this.get(id) ?? saved
         // A container's exec channel is a script on its host: `docker exec -i … sh -s`.
         if (entry.container) {
-          const env = entry.container.host.kind === 'local' ? (this.deps.containerEnv?.() ?? {}) : {}
           return this.hostRunner(entry.container.host)(
-            execSessionScript(entry.container.name, {
-              passEnv: Object.keys(env),
-              context: entry.container.context ?? null,
-            }),
-            { interactive, env, holdUntil: EXEC_READY_MARKER },
+            execSessionScript(entry.container.name, { context: entry.container.context ?? null }),
+            { interactive, holdUntil: EXEC_READY_MARKER },
           ) as unknown as SessionProcess
         }
         return spawnSshSession({
@@ -450,6 +446,20 @@ export class SshEnvironments {
   list(): SshEnvironmentSummary[] {
     return this.saved.map((saved) => {
       const view = this.machines.get(saved.id)?.summary()
+      const preparing = this.preparing.get(saved.id)
+      // A container being made says what it is doing; one whose making was cut short says so.
+      if (preparing || (saved.container?.provisioning && !view))
+        return {
+          ...saved,
+          state: preparing ? 'starting' : 'failed',
+          stateText: preparing ?? 'Its making was cut short. Delete it, and make it again.',
+          working: Boolean(preparing),
+          action: null,
+          server: null,
+          protocol: null,
+          notes: [],
+          gh: null,
+        }
       return {
         ...saved,
         state: view?.state ?? 'idle',
@@ -539,15 +549,9 @@ export class SshEnvironments {
     return { ok: true }
   }
 
-  /** A container's first session waits for what its server is started with (`containerEnvReady`). */
-  private async startable(id: string): Promise<void> {
-    if (this.get(id)?.container) await this.deps.containerEnvReady?.().catch(() => undefined)
-  }
-
   async connect(id: string): Promise<SshEnvironmentResult> {
     const machine = this.machine(id)
     if (!machine) return { ok: false, message: 'That SSH machine is no longer saved.' }
-    await this.startable(id)
     // The person asked: ssh may ask them things, so the broker listens first.
     try {
       await this.askpass()
@@ -595,7 +599,6 @@ export class SshEnvironments {
    */
   async openStream(key: string, purpose: 'studio'): Promise<{ stream: Duplex; label: string }> {
     const machine = this.machineFor(key)
-    await this.startable(key.startsWith('ssh:') ? key.slice(4) : key)
     const connection = await machine.connect({ interactive: false })
     return { stream: await connection.open(purpose), label: connection.label }
   }
@@ -728,7 +731,7 @@ export class SshEnvironments {
   async signIn(id: string, providerId: string): Promise<SshEnvironmentResult> {
     const saved = this.get(id)
     if (!saved) return { ok: false, message: 'That SSH machine is no longer saved in Settings › Machines.' }
-    const cli = cliForConversationProvider(providerId)
+    const cli = signInCli(providerId)
     if (!cli) return { ok: false, message: 'This chat has no CLI to sign in.' }
     const over = signInOverSsh(cli, saved)
     if (!SIGN_IN_FLOWS[cli]) return { ok: false, message: over }
@@ -765,7 +768,7 @@ export class SshEnvironments {
       {
         kind: 'sign-in',
         label: saved.label,
-        text: `Sign in to ${SIGN_IN_FLOWS[cli]!.binary} on ${saved.label}.`,
+        text: `Sign in to ${SIGN_IN_FLOWS[cli]!.name} on ${saved.label}.`,
         signIn: { cli, url: started.url, code: started.code, paste: started.paste },
       },
       finished.signal,
@@ -802,7 +805,6 @@ export class SshEnvironments {
     const machine = this.machine(id)
     if (!machine) return false
     if (machine.current()) return true
-    await this.startable(id)
     const timer = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms).unref?.())
     return Promise.race([
       machine.connect({ interactive: false }).then(
@@ -820,30 +822,35 @@ export class SshEnvironments {
       clearBrowsingData?: boolean
       /**
        * The containers Studio made on this machine: by default the machine is
-       * not forgotten while it has any (they would be stranded); `remove`
-       * removes them first, `forget-records` drops only their records here
-       * (for a machine that is gone), leaving them on it.
+       * not forgotten while it has any (they would be stranded: each is
+       * deleted first, as a container is, after its unpushed work is shown);
+       * `forget-records` drops only their records here (for a machine that is
+       * gone), leaving them on it.
        */
-      containers?: 'refuse' | 'remove' | 'forget-records'
+      containers?: 'refuse' | 'forget-records'
+      /**
+       * A container: drop only its record, leaving whatever Docker has (Docker
+       * gone, or the machine it ran on gone). Nothing on its host is touched.
+       */
+      recordOnly?: boolean
     } = {},
   ): Promise<SshEnvironmentResult & { containers?: string[] }> {
     const machine = this.machines.get(id)
     const saved = this.get(id)
+    if (saved?.container && options.recordOnly) {
+      this.dropRecord(id)
+      await this.deps.onForget?.(saved, { clearBrowsingData: options.clearBrowsingData === true })
+      return { ok: true }
+    }
     const hosted = saved && !saved.container ? this.containersOn(id) : []
     if (hosted.length > 0) {
-      const mode = options.containers ?? 'refuse'
-      if (mode === 'refuse')
+      if (options.containers !== 'forget-records')
         return {
           ok: false,
-          containers: hosted.map((entry) => entry.container!.name),
-          message: `${saved!.label} has ${hosted.length === 1 ? 'a container' : `${hosted.length} containers`} Studio made (${hosted.map((entry) => entry.container!.name).join(', ')}). Remove ${hosted.length === 1 ? 'it' : 'them'} first, or forget only ${hosted.length === 1 ? 'its record' : 'their records'} if ${saved!.label} is gone.`,
+          containers: hosted.map((entry) => entry.id),
+          message: `${saved!.label} has ${hosted.length === 1 ? 'a container' : `${hosted.length} containers`} Studio made (${hosted.map((entry) => entry.label).join(', ')}). Delete ${hosted.length === 1 ? 'it' : 'them'} first, or forget only ${hosted.length === 1 ? 'its record' : 'their records'} if ${saved!.label} is gone.`,
         }
-      for (const entry of hosted) {
-        if (mode === 'remove') {
-          const removed = await this.forget(entry.id)
-          if (!removed.ok) return removed
-        } else this.dropRecord(entry.id)
-      }
+      for (const entry of hosted) this.dropRecord(entry.id)
     }
     if (saved?.container) {
       // A container Studio made goes with its record: Docker removes it, and
@@ -878,21 +885,6 @@ export class SshEnvironments {
     this.persist()
     if (saved) await this.deps.onForget?.(saved, { clearBrowsingData: options.clearBrowsingData === true })
     return { ok: true }
-  }
-
-  /**
-   * Stop the Studio server in every container on this computer, so the next
-   * connection starts it again with what `containerEnv` says now (the agent's
-   * login set or forgotten). Best effort, one at a time; a container Docker
-   * cannot reach now starts with the new login whenever it next starts.
-   */
-  async restartContainerServers(): Promise<number> {
-    let restarted = 0
-    for (const entry of this.saved.filter((each) => each.container?.host.kind === 'local')) {
-      const stopped = await this.stopServer(entry.id).catch(() => ({ ok: false }))
-      if (stopped.ok) restarted++
-    }
-    return restarted
   }
 
   /** The saved containers whose host is the SSH machine `id`. */

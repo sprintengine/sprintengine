@@ -31,8 +31,7 @@ import {
 import { MachineMarkPicker, MachineRowMark } from './MachineMarkPicker'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import { AddSshMachine, SshMachineActions, SshMachineDetail, useSshMachines } from './SshMachinesSection'
-import { ContainersSection } from './ContainersSection'
-import { containersApi } from '../../studio/containers'
+import { ContainerMachineDetail, NewContainerForm } from './ContainerMachinesSection'
 
 const ROW_FIELD = 'w-60 max-w-full font-mono'
 
@@ -103,7 +102,8 @@ export function MachinesSettingsTab({
   onOpenRemoteSettings?: () => void
 } = {}): React.JSX.Element {
   const { listing, refresh } = useExecutionHosts({ all: true, refreshOnMount: true })
-  const everyEnvironment = useEnvironments()
+  // A container is a machine, listed with the rest (docs/design/container-chats.md).
+  const environments = useEnvironments()
   const sshOn = window.api?.sshMachinesEnabled === true
   const { machines: sshMachines } = useSshMachines(sshOn ? window.api : null)
   const [refreshing, setRefreshing] = useState(false)
@@ -119,11 +119,6 @@ export function MachinesSettingsTab({
   const hostOf = (id: ExecutionHostId): ExecutionHostSummary | null =>
     listing?.hosts.find((host) => host.id === id) ?? null
   const sshOf = (id: string): SshEnvironmentSummary | null => sshMachines.find((machine) => machine.id === id) ?? null
-  // A chat's container is a machine too, listed under Containers below rather than here.
-  const environments = everyEnvironment.filter((entry) => {
-    const best = entry.routes[0]
-    return !(best?.kind === 'ssh' && sshOf(best.machine)?.container)
-  })
   // The distributions not turned on: not machines yet, so not in the list.
   const offDistros = (listing?.hosts ?? []).filter((host) => host.kind === 'wsl' && !settingsOf(host.id).enabled)
 
@@ -173,6 +168,7 @@ export function MachinesSettingsTab({
                   hostSettings={parts.hostId ? settingsOf(parts.hostId) : null}
                   onHostChange={(patch) => (parts.hostId ? write(parts.hostId, patch) : undefined)}
                   ssh={parts.ssh}
+                  sshMachines={sshMachines}
                   onOpenRemoteSettings={onOpenRemoteSettings}
                 />
               )
@@ -270,7 +266,16 @@ export function MachinesSettingsTab({
         </p>
       ) : null}
 
-      {sshOn ? <ContainersSection api={containersApi} /> : null}
+      {sshOn ? (
+        <section className="space-y-2">
+          <SettingsSectionTitle>New container</SettingsSectionTitle>
+          <p className={MUTED}>
+            A Docker container on this computer or an SSH machine, used as a machine of its own: clone repositories in
+            it and run chats there. It is kept until you delete it.
+          </p>
+          <NewContainerForm api={window.api} machines={sshMachines} />
+        </section>
+      ) : null}
 
       {sshOn ? (
         <section className="space-y-2">
@@ -292,6 +297,7 @@ function RouteDetail({
   hostSettings,
   onHostChange,
   ssh,
+  sshMachines,
   onOpenRemoteSettings,
 }: {
   route: EnvironmentRoute
@@ -299,11 +305,14 @@ function RouteDetail({
   hostSettings: ExecutionHostSettings | null
   onHostChange: (patch: Partial<ExecutionHostSettings>) => void
   ssh: SshEnvironmentSummary | null
+  sshMachines: readonly SshEnvironmentSummary[]
   onOpenRemoteSettings?: () => void
 }): React.JSX.Element | null {
   if (route.kind === 'wsl' && host && hostSettings)
     return <MachineDetail host={host} settings={hostSettings} onChange={onHostChange} />
-  if (route.kind === 'ssh' && ssh) return <SshMachineDetail machine={ssh} api={window.api} />
+  if (route.kind === 'ssh' && ssh?.container)
+    return <ContainerMachineDetail machine={ssh} machines={sshMachines} api={window.api} />
+  if (route.kind === 'ssh' && ssh) return <SshMachineDetail machine={ssh} machines={sshMachines} api={window.api} />
   if (route.kind === 'tailnet')
     return (
       <div className="flex items-center gap-3">

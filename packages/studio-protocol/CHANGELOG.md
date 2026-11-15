@@ -34,20 +34,6 @@
   `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel`,
   `.stop`. `studioResendableAfterRestart(method)` reads it.
 
-### Added (chats' containers)
-
-- **`containers.*` and the `containers.changed` stream** (`containers.ts`,
-  capability `containers`): Docker on a host in words, a container made for a
-  chat with its repository copied in, every container Studio made listed, its
-  branch pushed out from the host, its removal, and Claude Code's token for
-  them. Studio's own desktop windows' only: no paired device, owner's web tab
-  or owner's app reaches any of them. `containers.create`, `.push` and
-  `.remove` are `receipts: 'durable'`. The shapes (`ContainerHost`,
-  `DockerStatus`, `ContainerCreateRequest`, `ContainerCreateResult`,
-  `ContainerSummary`, `ContainerRepo`, `ContainerResult`,
-  `ContainerTokenStatus`, `ContainerRemoveTarget`) move into the package. They
-  replace the window's private `environments:container:*` channels.
-
 ### Added (the machines a desktop's computer offers)
 
 - **`hosts.list` and the `hosts.changed` stream** (`hosts.ts`, capability

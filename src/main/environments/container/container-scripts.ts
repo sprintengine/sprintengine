@@ -3,9 +3,18 @@ import {
   CONTAINER_MACHINE_LABEL,
   CONTAINER_NAME,
   IMAGE_LABEL,
+  type ContainerWork,
   type DockerStatus,
 } from '../../../shared/containers'
 import { shellQuote } from './docker-host'
+import {
+  LOGINS_ENV,
+  LOGINS_HOME_LINKS,
+  LOGINS_LABEL,
+  LOGINS_ROOT,
+  LOGINS_SEEDS,
+  LOGINS_VOLUME,
+} from './container-logins'
 
 // The shell scripts a container's host runs (docs/design/container-chats.md),
 // as pure functions of what they act on, so each is read and tested here.
@@ -16,10 +25,10 @@ import { shellQuote } from './docker-host'
 // Each prints its findings as `@@` lines, the way the SSH bootstrap does, so a
 // login profile's greeting on an SSH machine is never mistaken for an answer.
 
-/** The user every agent runs as inside the image (resources/container/agent.Dockerfile). */
+/** The user every agent runs as inside the image (container-image.ts). */
 export const CONTAINER_USER = 'node'
 export const CONTAINER_HOME = '/home/node'
-/** Where a chat's repository is copied to inside its container. */
+/** Where repositories are cloned inside a container. */
 export const CONTAINER_WORK = '/home/node/work'
 
 function checkName(name: string): string {
@@ -49,8 +58,10 @@ function checkImage(image: string): string {
 }
 
 /** Docker on the host, and whether `image` is there: `@@docker <state> …` and `@@image present|absent`. */
-export function dockerStatusScript(image: string): string {
+export function dockerStatusScript(image: string, context: string | null = null): string {
   const tag = checkImage(image)
+  // The image is looked for under the context asked (a container's own, for Rebuild), else the default.
+  const inContext = dockerCommand(context)
   return [
     'if ! command -v docker >/dev/null 2>&1; then',
     '  if command -v colima >/dev/null 2>&1; then echo "@@docker missing colima"; else echo "@@docker missing"; fi',
@@ -61,7 +72,7 @@ export function dockerStatusScript(image: string): string {
     '  ctx="$(docker context show 2>/dev/null)"',
     '  echo "@@docker ready $v"',
     '  echo "@@context $ctx"',
-    `  if docker image inspect ${tag} >/dev/null 2>&1; then echo "@@image present"; else echo "@@image absent"; fi`,
+    `  if ${inContext} image inspect ${tag} >/dev/null 2>&1; then echo "@@image present"; else echo "@@image absent"; fi`,
     '  exit 0',
     'fi',
     'if command -v colima >/dev/null 2>&1; then',
@@ -148,56 +159,133 @@ export function buildImageScript(image: string, dockerfile: string, context: str
   ].join('\n')
 }
 
+/** The volume that is a container's home: its repositories, worktrees and Studio's server, kept across a rebuild. */
+export function homeVolumeName(name: string): string {
+  return `${checkName(name)}-home`
+}
+
 /**
- * Start a chat's container: idle, labelled as Studio's, on Docker's default
- * (full) network, with every Linux capability dropped and no way to gain one
- * through a setuid program: nothing in it runs as root.
+ * Start a container: idle, labelled as Studio's, on Docker's default (full)
+ * network, with every Linux capability dropped and no way to gain one through
+ * a setuid program: nothing in it runs as root. Its home is a volume of its
+ * own, made first with Studio's label, so a container made again from a new
+ * image keeps its repositories, and deleting it removes only Studio's. The
+ * host's logins volume (container-logins.ts) is mounted too, made the first
+ * time, with each CLI pointed into it.
  */
 export function runContainerScript(input: {
   name: string
   image: string
   machineId: string
   context?: string | null
+  /** The host's logins volume; a suite names one of its own. */
+  loginsVolume?: string
 }): string {
   const name = checkName(input.name)
   if (!/^[a-f0-9]{16}$/u.test(input.machineId)) throw new Error('Not a machine id Studio minted.')
+  const docker = dockerCommand(input.context)
+  const home = homeVolumeName(name)
+  const logins = input.loginsVolume ?? LOGINS_VOLUME
+  if (!/^sprintengine-logins[a-z0-9-]{0,40}$/u.test(logins)) throw new Error('Not a logins volume Studio named.')
   return [
-    `${dockerCommand(input.context)} run -d`,
-    `--name ${name}`,
-    `--hostname ${name}`,
-    `--label ${CONTAINER_LABEL}=1`,
-    `--label ${CONTAINER_MACHINE_LABEL}=${input.machineId}`,
-    '--init',
-    '--cap-drop ALL',
-    '--security-opt no-new-privileges',
-    checkImage(input.image),
-  ].join(' ')
+    `${docker} volume create --label ${CONTAINER_LABEL}=1 --label ${CONTAINER_MACHINE_LABEL}=${input.machineId} ${home} >/dev/null || exit 4`,
+    `${docker} volume create --label ${LOGINS_LABEL}=1 ${logins} >/dev/null || exit 4`,
+    [
+      `${docker} run -d`,
+      `--name ${name}`,
+      `--hostname ${name}`,
+      `--label ${CONTAINER_LABEL}=1`,
+      `--label ${CONTAINER_MACHINE_LABEL}=${input.machineId}`,
+      '--init',
+      '--cap-drop ALL',
+      '--security-opt no-new-privileges',
+      `-v ${home}:${CONTAINER_HOME}`,
+      `-v ${logins}:${LOGINS_ROOT}`,
+      ...Object.entries(LOGINS_ENV).map(([name, value]) => `-e ${name}=${value}`),
+      checkImage(input.image),
+      // A run that fails ends the script with its failure: nothing after it may claim the container runs.
+      '>/dev/null || exit 4',
+    ].join(' '),
+  ].join('\n')
 }
+
+/**
+ * Make a container again from a new image, keeping its volumes: the home
+ * (repositories, worktrees, Studio's server) and the host's logins. The old
+ * container goes only when it carries Studio's label, and only once the new
+ * image is there under the container's own context; one Docker no longer has
+ * is simply made again. Prints `@@replaced` only once the new one runs,
+ * `@@replaced no-image` or `@@replaced not-ours` when nothing was touched.
+ */
+export function replaceContainerScript(input: {
+  name: string
+  image: string
+  machineId: string
+  context?: string | null
+  loginsVolume?: string
+}): string {
+  const name = checkName(input.name)
+  const docker = dockerCommand(input.context)
+  return [
+    `if ! ${docker} image inspect ${checkImage(input.image)} >/dev/null 2>&1; then echo "@@replaced no-image"; exit 5; fi`,
+    `if said="$(${docker} inspect -f '{{index .Config.Labels "${CONTAINER_LABEL}"}}' ${name} 2>&1)"; then`,
+    '  if [ "$said" != "1" ]; then echo "@@replaced not-ours"; exit 3; fi',
+    `  ${docker} rm -f ${name} >/dev/null || exit 4`,
+    'else',
+    '  case "$said" in *"No such object"*|*"No such container"*) ;; *) echo "$said" >&2; exit 4 ;; esac',
+    'fi',
+    runContainerScript(input),
+    'echo "@@replaced"',
+  ].join('\n')
+}
+
+/**
+ * Ready the host's logins volume in a container once it is made or made
+ * again (Rebuild), as the agent's user: every CLI's folder there (`LOGINS_ENV`), the files it starts
+ * with where none is yet (`LOGINS_SEEDS`), and each CLI's login folder in the
+ * home linked into it (`LOGINS_HOME_LINKS`; a folder already there, a login
+ * made before it was linked, is moved in first). Nothing is overwritten.
+ */
+export function prepareLoginsScript(name: string, context: string | null = null): string {
+  const checked = checkName(name)
+  const folders = [
+    ...Object.values(LOGINS_ENV),
+    ...Object.keys(LOGINS_SEEDS).map((file) => `${LOGINS_ROOT}/${file.slice(0, file.lastIndexOf('/'))}`),
+    ...Object.values(LOGINS_HOME_LINKS).map((dir) => `${LOGINS_ROOT}/${dir}`),
+  ]
+  const inside = [
+    `mkdir -p ${[...new Set(folders)].join(' ')}`,
+    ...Object.entries(LOGINS_SEEDS).map(
+      ([file, text]) => `[ -e ${LOGINS_ROOT}/${file} ] || printf '%s' ${shellQuote(text)} > ${LOGINS_ROOT}/${file}`,
+    ),
+    ...Object.entries(LOGINS_HOME_LINKS).map(([home, dir]) =>
+      [
+        `if [ ! -L "$HOME/${home}" ]; then`,
+        `  if [ -d "$HOME/${home}" ]; then cp -an "$HOME/${home}/." ${LOGINS_ROOT}/${dir}/ && rm -rf "$HOME/${home}"; fi`,
+        `  ln -s ${LOGINS_ROOT}/${dir} "$HOME/${home}"`,
+        'fi',
+      ].join('\n'),
+    ),
+  ].join('\n')
+  return `${dockerCommand(context)} exec -u ${CONTAINER_USER} -e HOME=${CONTAINER_HOME} ${checked} sh -c ${shellQuote(inside)}`
+}
+
+/** The line the exec channel prints just before it becomes the container's shell (see `hostRunner`'s `holdUntil`). */
+export const EXEC_READY_MARKER = '@@CONTAINER_EXEC'
 
 /**
  * The container's exec channel, in place of an SSH machine's `sh -s`: started
  * again if Docker stopped it (a restart, Colima stopped overnight), then a
  * shell inside it, as the image's user, reading Studio's script from stdin.
  */
-/** The line the exec channel prints just before it becomes the container's shell (see `hostRunner`'s `holdUntil`). */
-export const EXEC_READY_MARKER = '@@CONTAINER_EXEC'
-
-export function execSessionScript(
-  name: string,
-  options: { passEnv?: readonly string[]; context?: string | null } = {},
-): string {
+export function execSessionScript(name: string, options: { context?: string | null } = {}): string {
   const checked = checkName(name)
   const docker = dockerCommand(options.context)
-  const pass = (options.passEnv ?? []).map((variable) => {
-    if (!/^[A-Z_][A-Z0-9_]{0,63}$/u.test(variable)) throw new Error(`Not a variable name: ${variable}`)
-    // By name only: docker takes the value from its own environment, so it is in no command line.
-    return ` -e ${variable}`
-  })
   return [
     `${docker} start ${checked} >/dev/null || exit 125`,
     // Nothing more is read by this shell: what follows on stdin is the container's.
     `echo ${EXEC_READY_MARKER}`,
-    `exec ${docker} exec -i -u ${CONTAINER_USER} -w ${CONTAINER_HOME} -e HOME=${CONTAINER_HOME}${pass.join('')} ${checked} sh -s`,
+    `exec ${docker} exec -i -u ${CONTAINER_USER} -w ${CONTAINER_HOME} -e HOME=${CONTAINER_HOME} ${checked} sh -s`,
   ].join('\n')
 }
 
@@ -214,141 +302,133 @@ export function removeContainerScript(name: string, context: string | null = nul
     `if ! ${docker} version --format '{{.Server.Version}}' >/dev/null 2>&1; then echo "@@removed no-docker"; exit 4; fi`,
     `if ! said="$(${docker} inspect -f '{{index .Config.Labels "${CONTAINER_LABEL}"}}' ${checked} 2>&1)"; then`,
     '  case "$said" in',
-    '    *"No such object"*|*"No such container"*) echo "@@removed absent"; exit 0 ;;',
+    `    *"No such object"*|*"No such container"*) ${removeHomeVolume(docker, checked)}; echo "@@removed absent"; exit 0 ;;`,
     '  esac',
     '  echo "@@removed failed"; echo "$said" >&2; exit 4',
     'fi',
     'if [ "$said" != "1" ]; then echo "@@removed not-ours"; exit 3; fi',
-    `${docker} rm -f ${checked} >/dev/null && echo "@@removed yes"`,
+    `${docker} rm -f ${checked} >/dev/null || { echo "@@removed failed"; exit 4; }`,
+    removeHomeVolume(docker, checked),
+    'echo "@@removed yes"',
   ].join('\n')
 }
 
-/** Every container carrying Studio's label: `@@c <name>\t<machine id>\t<status>` each. */
-export function listContainersScript(context: string | null = null): string {
-  return `${dockerCommand(context)} ps -a --filter label=${CONTAINER_LABEL}=1 --format '@@c {{.Names}}\t{{.Label "${CONTAINER_MACHINE_LABEL}"}}\t{{.Status}}'`
+/** The container's home volume goes with it, only when it carries Studio's label; one already gone is fine. */
+function removeHomeVolume(docker: string, name: string): string {
+  const home = homeVolumeName(name)
+  return `if [ "$(${docker} volume inspect -f '{{index .Labels "${CONTAINER_LABEL}"}}' ${home} 2>/dev/null)" = "1" ]; then ${docker} volume rm ${home} >/dev/null; fi`
 }
 
-export type ListedContainer = { name: string; machineId: string | null; status: string }
-
-export function parseContainerList(stdout: string): ListedContainer[] {
-  const out: ListedContainer[] = []
-  for (const line of stdout.split('\n')) {
-    if (!line.startsWith('@@c ')) continue
-    const [name = '', machineId = '', status = ''] = line.slice(4).split('\t')
-    if (!CONTAINER_NAME.test(name)) continue
-    out.push({ name, machineId: /^[a-f0-9]{16}$/u.test(machineId) ? machineId : null, status: status.trim() })
-  }
-  return out
+/**
+ * A repository's address as a person types it, checked and spelled as git
+ * takes it: `https://…`, `ssh://…`, `git@host:owner/repo`, or `owner/repo`,
+ * which is GitHub's. Null when it is none of these.
+ */
+export function cloneAddress(typed: string): string | null {
+  const value = typed.trim()
+  if (!value || value.length > 2048 || /[\s\0]/u.test(value)) return null
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(value)) return `https://github.com/${value.replace(/\.git$/u, '')}.git`
+  if (/^(?:https?|ssh|git):\/\/[^/]+\/.+/u.test(value)) return value
+  if (/^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:[^/].*/u.test(value)) return value
+  return null
 }
 
-/** A folder's last part as a directory name inside the container: plain characters only. */
-export function workFolderName(source: string | null): string {
+/** The folder a clone lands in under `CONTAINER_WORK`: the address's last part, plain characters only. */
+export function cloneFolderName(address: string): string {
   const last =
-    (source ?? '')
+    address
       .replace(/[\\/]+$/u, '')
-      .split(/[\\/]/u)
+      .replace(/\.git$/u, '')
+      .split(/[\\/:]/u)
       .pop() ?? ''
   const clean = last.replace(/[^A-Za-z0-9._-]+/gu, '-').replace(/^[.-]+/u, '')
-  return clean.slice(0, 64) || 'project'
-}
-
-/** Whether a folder on the host is a git repository: `@@repo yes` or `@@repo no`. */
-export function isRepositoryScript(source: string): string {
-  return `if git -C ${shellQuote(source)} rev-parse --git-dir >/dev/null 2>&1; then echo "@@repo yes"; else echo "@@repo no"; fi`
+  return clean.slice(0, 64) || 'repo'
 }
 
 /**
- * Copy a repository into the container as a git bundle streamed from the host
- * (never a mount, owner ruling 2026-11-15): HEAD and the branch it is on,
- * with nothing uncommitted. Inside, the copy's `origin` is set back to the
- * host's own remote URL (an address, no credential), its author is the
- * host's, and the chat works on a branch of its own.
- *
- * Prints `@@repo base <branch>` (empty when HEAD was detached), then
- * `@@repo ok`; `@@repo not-a-repo` when the folder is not one, `@@repo copy-failed`
- * when the copy did not arrive.
+ * Clone a repository inside a container, into `CONTAINER_WORK/<folder>`, as
+ * the agent's user, with the container's own credentials (none of the
+ * host's). git never stops to ask for a password: a repository it cannot
+ * reach fails in words. Prints `@@clone ok <path>`, `@@clone exists <path>`
+ * or `@@clone failed`.
  */
-export function copyRepoInScript(input: {
-  source: string
-  name: string
-  path: string
-  branch: string
-  context?: string | null
-}): string {
+export function cloneScript(input: { name: string; address: string; folder: string; context?: string | null }): string {
   const name = checkName(input.name)
   const docker = dockerCommand(input.context)
-  if (!input.path.startsWith(`${CONTAINER_WORK}/`) || /[^A-Za-z0-9._/-]/u.test(input.path))
-    throw new Error('Not a work folder Studio chose.')
-  if (!/^[A-Za-z0-9._/-]{1,100}$/u.test(input.branch)) throw new Error('Not a branch name Studio chose.')
-  // Inside, three lines first (the remote's address, the author's name and
-  // email: on stdin, never in a command line), then the bundle.
+  if (!/^[A-Za-z0-9._-]{1,64}$/u.test(input.folder) || input.folder.startsWith('.'))
+    throw new Error('Not a folder name Studio chose.')
+  const path = `${CONTAINER_WORK}/${input.folder}`
   const inside = [
-    'set -e',
-    'IFS= read -r url',
-    'IFS= read -r who',
-    'IFS= read -r mail',
-    't="$(mktemp)"',
-    'cat > "$t"',
-    `git clone -q "$t" ${input.path}`,
-    'rm -f "$t"',
-    `cd ${input.path}`,
-    'if [ -n "$url" ]; then git remote set-url origin "$url"; else git remote remove origin; fi',
-    'if [ -n "$who" ]; then git config user.name "$who"; fi',
-    'if [ -n "$mail" ]; then git config user.email "$mail"; fi',
-    `git checkout -q -b ${input.branch}`,
+    `mkdir -p ${CONTAINER_WORK}`,
+    `if [ -e ${path} ]; then echo "@@clone exists ${path}"; exit 3; fi`,
+    `GIT_TERMINAL_PROMPT=0 git clone -q -- "$1" ${path} && echo "@@clone ok ${path}"`,
   ].join('\n')
   return [
-    `src=${shellQuote(input.source)}`,
-    'if ! git -C "$src" rev-parse --git-dir >/dev/null 2>&1; then echo "@@repo not-a-repo"; exit 3; fi',
-    'base="$(git -C "$src" symbolic-ref -q --short HEAD || true)"',
-    'echo "@@repo base $base"',
-    'url="$(git -C "$src" remote get-url origin 2>/dev/null || true)"',
-    // An address only. Over http(s) anything before `@` is a credential (`https://TOKEN@host/…`,
-    // `https://user:token@host/…`) and stays here; elsewhere a user name is kept and a password dropped.
-    `url="$(printf '%s' "$url" | sed -E -e 's#^([Hh][Tt][Tt][Pp][Ss]?://)[^/@]*@#\\1#' -e 's#^([A-Za-z][A-Za-z0-9+.-]*://[^/@:]*):[^/@]*@#\\1@#')"`,
-    'who="$(git -C "$src" config user.name || true)"',
-    'mail="$(git -C "$src" config user.email || true)"',
-    // Only what the chat starts from: HEAD and the branch it is on, not every branch and tag here.
-    'if [ -n "$base" ]; then refs="refs/heads/$base"; else refs=""; fi',
-    // The pipeline's status is the container's side, which fails when the clone does (an empty bundle too).
-    `{ printf '%s\\n%s\\n%s\\n' "$url" "$who" "$mail"; git -C "$src" bundle create - HEAD $refs 2>/dev/null; } | ${docker} exec -i -u ${CONTAINER_USER} ${name} sh -c ${shellQuote(inside)} || { echo "@@repo copy-failed"; exit 4; }`,
-    'echo "@@repo ok"',
+    `${docker} start ${name} >/dev/null || exit 125`,
+    `${docker} exec -u ${CONTAINER_USER} -e HOME=${CONTAINER_HOME} -w ${CONTAINER_HOME} ${name} sh -c ${shellQuote(inside)} sh ${shellQuote(input.address)} || echo "@@clone failed"`,
   ].join('\n')
 }
 
 /**
- * Bring the chat's branch out of the container and push it from the host
- * (owner proposal 2026-11-15): the branch travels as a bundle over Docker's
- * own channel into a ref of Studio's in the host's repository, and the host's
- * git pushes it with the host's own credentials. Nothing is written to the
- * person's branches or working tree. Prints `@@push ok <sha>` or `@@push <why>`.
+ * Everything in the container's repositories that exists nowhere else, what
+ * deleting the container would lose. Looks in the home's folders (not its
+ * hidden ones, where Studio's server and the CLIs keep their own), four deep,
+ * and in every worktree of each repository found:
+ *
+ *   @@branch <commits>\t<repo>\t<branch>     a branch with commits no remote has
+ *   @@dirty <files>\t<worktree>              uncommitted or untracked changes
+ *   @@detached <commits>\t<worktree>         a detached HEAD's commits on no branch or remote
+ *   @@stash <count>\t<repo>                  stashed changes
+ *
+ * then `@@done`, so an answer cut short is never read as "nothing".
  */
-export function pushOutScript(input: {
-  source: string
-  name: string
-  path: string
-  branch: string
-  ref: string
-  context?: string | null
-}): string {
-  const name = checkName(input.name)
-  const docker = dockerCommand(input.context)
-  if (!/^[A-Za-z0-9._/-]{1,100}$/u.test(input.branch)) throw new Error('Not a branch name Studio chose.')
-  if (!/^refs\/sprintengine\/containers\/[a-f0-9]{16}$/u.test(input.ref)) throw new Error('Not a ref Studio chose.')
-  if (/[^A-Za-z0-9._/-]/u.test(input.path)) throw new Error('Not a work folder Studio chose.')
-  return [
-    `src=${shellQuote(input.source)}`,
-    'if ! git -C "$src" rev-parse --git-dir >/dev/null 2>&1; then echo "@@push no-source"; exit 3; fi',
-    't="$(mktemp)"',
-    'trap \'rm -f "$t"\' EXIT',
-    `if ! ${docker} exec -u ${CONTAINER_USER} ${name} git -C ${input.path} rev-parse -q --verify refs/heads/${input.branch} >/dev/null; then echo "@@push no-branch"; exit 3; fi`,
-    `${docker} exec -u ${CONTAINER_USER} ${name} git -C ${input.path} bundle create - refs/heads/${input.branch} > "$t" 2>/dev/null || { echo "@@push bundle-failed"; exit 3; }`,
-    // Every object the container sends is checked before it lands in the person's repository.
-    `git -C "$src" -c fetch.fsckObjects=true fetch -q "$t" "+refs/heads/${input.branch}:${input.ref}" || { echo "@@push fetch-failed"; exit 3; }`,
-    `sha="$(git -C "$src" rev-parse ${input.ref})"`,
-    `GIT_TERMINAL_PROMPT=0 git -C "$src" push -q origin "${input.ref}:refs/heads/${input.branch}" || { echo "@@push push-failed"; exit 4; }`,
-    'echo "@@push ok $sha"',
+export function unpushedScript(name: string, context: string | null = null): string {
+  const checked = checkName(name)
+  const docker = dockerCommand(context)
+  const inside = [
+    `find ${CONTAINER_HOME} -maxdepth 4 \\( -name node_modules -o -path '${CONTAINER_HOME}/.*' \\) -prune -o -type d -name .git -print 2>/dev/null |`,
+    'while IFS= read -r g; do',
+    '  r="${g%/.git}"',
+    '  git -C "$r" for-each-ref --format=\'%(refname:short)\' refs/heads | while IFS= read -r b; do',
+    '    n="$(git -C "$r" rev-list --count "refs/heads/$b" --not --remotes 2>/dev/null)"',
+    '    if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@branch %s\\t%s\\t%s\\n\' "$n" "$r" "$b"; fi',
+    '  done',
+    '  n="$(git -C "$r" stash list 2>/dev/null | wc -l | tr -d " ")"',
+    '  if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@stash %s\\t%s\\n\' "$n" "$r"; fi',
+    '  git -C "$r" worktree list --porcelain 2>/dev/null | sed -n \'s/^worktree //p\' | while IFS= read -r w; do',
+    '    [ -d "$w" ] || continue',
+    '    n="$(git -C "$w" status --porcelain 2>/dev/null | wc -l | tr -d " ")"',
+    '    if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@dirty %s\\t%s\\n\' "$n" "$w"; fi',
+    '    if ! git -C "$w" symbolic-ref -q HEAD >/dev/null 2>&1; then',
+    '      n="$(git -C "$w" rev-list --count HEAD --not --branches --remotes 2>/dev/null)"',
+    '      if [ -n "$n" ] && [ "$n" -gt 0 ]; then printf \'@@detached %s\\t%s\\n\' "$n" "$w"; fi',
+    '    fi',
+    '  done',
+    'done',
+    'echo "@@done"',
   ].join('\n')
+  return [
+    `${docker} start ${checked} >/dev/null || exit 125`,
+    `${docker} exec -u ${CONTAINER_USER} -e HOME=${CONTAINER_HOME} ${checked} sh -c ${shellQuote(inside)}`,
+  ].join('\n')
+}
+
+/** What `unpushedScript` printed: null when it did not finish (Docker did not answer). */
+export function parseUnpushed(stdout: string): Omit<ContainerWork, 'chatsRunning'> | null {
+  if (!/^@@done$/mu.test(stdout)) return null
+  const work: Omit<ContainerWork, 'chatsRunning'> = { branches: [], dirty: [], detached: [], stashes: [] }
+  for (const line of stdout.split('\n')) {
+    const said = /^@@(branch|dirty|detached|stash) (\d+)\t([^\t]+)(?:\t(.+))?$/u.exec(line.trimEnd())
+    if (!said) continue
+    const count = Number.parseInt(said[2]!, 10)
+    if (!(count > 0)) continue
+    const path = said[3]!
+    if (said[1] === 'branch' && said[4]) work.branches.push({ repo: path, branch: said[4], commits: count })
+    if (said[1] === 'dirty') work.dirty.push({ worktree: path, files: count })
+    if (said[1] === 'detached') work.detached.push({ worktree: path, commits: count })
+    if (said[1] === 'stash') work.stashes.push({ repo: path, count })
+  }
+  return work
 }
 
 /** What `removeContainerScript` said, in words: `ok` only when the container is gone. */
@@ -361,12 +441,12 @@ export function removalOutcome(
   if (said === 'yes' || said === 'absent') return { ok: true }
   if (said === 'not-ours')
     return { ok: false, message: `${name} is not a container Studio made, so it was left alone.` }
+  // Nothing removes it later: the person deletes it again once Docker answers, or forgets its record.
+  const after = `Delete it again once Docker answers there, or forget only its record.`
   if (said === 'no-docker')
-    return {
-      ok: false,
-      message: `Docker is not running on ${where}, so ${name} is still there. Studio removes it once Docker answers again.`,
-    }
+    return { ok: false, message: `Docker is not running on ${where}, so ${name} is still there. ${after}` }
   const last = result.stderr.trim().split('\n').filter(Boolean).pop()?.trim()
-  if (result.code === null) return { ok: false, message: `${where} did not answer in time, so ${name} is still there.` }
-  return { ok: false, message: `${name} could not be removed on ${where}${last ? `: ${last}` : '.'}` }
+  if (result.code === null)
+    return { ok: false, message: `${where} did not answer in time, so ${name} is still there. ${after}` }
+  return { ok: false, message: `${name} could not be removed on ${where}${last ? `: ${last}` : '.'} ${after}` }
 }

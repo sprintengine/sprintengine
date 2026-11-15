@@ -35,10 +35,9 @@ import type {
   StudioEnvironmentWork,
   StudioLaunchTokenChange,
 } from '../../../packages/studio-protocol/src/environment-access'
-import type { SignIns } from '../machine/machine-sign-in'
+import { signInCli, type SignIns } from '../machine/machine-sign-in'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
-import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -83,7 +82,6 @@ import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
 import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
 import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
-import { createStudioContainersHandlers, type StudioContainersDomain } from './studio-containers'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -237,8 +235,6 @@ export type StudioRpcRouterOptions = {
   webDevices?: () => StudioWebDevicesDomain | null
   /** The tailnet listener and the machines this one drives; without it, `tailnet.*` and `mesh.*` are answered `unavailable`. */
   tailnet?: StudioTailnetDomain
-  /** Chats' containers on the hosts this desktop drives; without it, `containers.*` is answered `unavailable`. */
-  containers?: StudioContainersDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
@@ -1059,11 +1055,6 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const tailnetRouting = createStudioTailnetHandlers({
     ...(options.tailnet ? { tailnet: options.tailnet } : {}),
-    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
-    runtimeId,
-  })
-  const containersRouting = createStudioContainersHandlers({
-    ...(options.containers ? { containers: options.containers } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2194,10 +2185,6 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── Who reaches this machine over the tailnet, and the machines it drives ──
 
     ...tailnetRouting,
-
-    // ── Chats' containers on the hosts this desktop drives ─────────────────
-
-    ...containersRouting,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
@@ -2323,10 +2310,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'environment.adopt',
       )
     },
-    // A CLI's login here: the provider names a flow this server knows, never a command line.
+    // A CLI's login here: the provider (a chat's, a CLI's own id, or GitHub's)
+    // names a flow this server knows, never a command line.
     'providers.signInStart': ({ commandId, providerId }, { grant, voice }) =>
       signInOnce('providers.signInStart', grant, commandId, voice, async (table) => {
-        const cli = cliForConversationProvider(providerId)
+        const cli = signInCli(providerId)
         return cli ? table.start(cli) : { ok: false as const, message: 'This chat has no CLI to sign in.' }
       }),
     'providers.signInPaste': ({ commandId, id, code }, { grant, voice }) =>

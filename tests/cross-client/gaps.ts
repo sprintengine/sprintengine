@@ -21,7 +21,6 @@ export const SCENARIOS = [
   'launch',
   'machine',
   'unreachable',
-  'container',
 ] as const
 export type ScenarioId = (typeof SCENARIOS)[number]
 
@@ -40,17 +39,15 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
     "a terminal agent's MCP bridge reaches the machine's gateway, proven by the launch token the desktop told it; revoked, it proves nothing",
   machine:
     'git, the home, CLI detection and a git-directory watch by the environment methods, and the files the window reads there',
-  container:
-    "chats' containers on the protocol: the window makes one (Docker stood in), sees it listed and told, pushes and removes it; the phone and a paired desktop are refused every method in words",
   unreachable:
     'the phone and a paired desktop cannot reach it: no method lists or tickets it, and no path through the desktop serves it',
 }
 
 /** Which rows each client is held to. A read-only embed is not asked to write. */
 export const ROWS: Record<ClientId, readonly ScenarioId[]> = {
-  desktop: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'container'],
-  peer: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'container'],
-  phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart', 'container'],
+  desktop: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
+  peer: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
+  phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
   embed: ['stream', 'resume', 'restart', 'isolation'],
   ssh: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
   wsl: ['create', 'stream', 'approval', 'schedule', 'restart', 'launch', 'machine', 'unreachable'],

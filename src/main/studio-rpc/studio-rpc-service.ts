@@ -13,7 +13,6 @@ import type { StudioWebDevicesDomain } from '../../server/rpc/studio-web-devices
 import type { AppIdentity } from '../../server/platform/app-identity'
 import type { StudioAccessDomain } from '../../server/rpc/studio-access'
 import type { StudioTailnetDomain } from '../../server/rpc/studio-tailnet'
-import type { StudioContainersDomain } from '../../server/rpc/studio-containers'
 import { studioPlatform } from '../../server/platform/platform'
 import { readStudioEnvironmentId } from '../../server/environment/environment-id'
 import type { StudioPaths } from '../../server/platform/studio-paths'
@@ -192,8 +191,6 @@ export type StudioRpcServiceOptions = {
   gatewayAccess?: Pick<StudioAccessDomain, 'gatewayStatus' | 'mcpHttpStatus' | 'createMcpHttp' | 'revokeMcpHttp'>
   /** The gateway's tailnet listener and the machines it drives, served as `tailnet`. Absent, the family is not offered. */
   tailnet?: StudioTailnetDomain
-  /** Chats' containers on the hosts this desktop drives, served as `containers`. Absent, the family is not offered. */
-  containers?: StudioContainersDomain
   /** Where this Studio runs, as its welcome says: `local` unless its server was started in WSL or over SSH. */
   hostKind?: StudioRpcServerOptions['hostKind']
   /** Built on first start: the conversation host it wraps is constructed late in the app's composition. */
@@ -541,7 +538,6 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.modules ? { modules: options.modules } : {}),
       ...(options.gatewayAccess ? { access: accessDomain(options.gatewayAccess) } : {}),
       ...(options.tailnet ? { tailnet: options.tailnet } : {}),
-      ...(options.containers ? { containers: options.containers } : {}),
       resyncRetryAfterMs: createResyncBackoff(),
       onConnectionsChanged: () => announce(),
       ...(options.socketPath ? { socketPath: options.socketPath } : {}),

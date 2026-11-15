@@ -33,6 +33,18 @@ export const SSH_ENV_CHANNELS = {
   forget: 'environments:ssh:forget',
   /** renderer → main: sign a chat's CLI in on the machine `{ id, providerId }` (decision R34). */
   signIn: 'environments:ssh:sign-in',
+  /** renderer → main: Docker on a host, in words `{ host }` (docs/design/container-chats.md). */
+  dockerStatus: 'environments:ssh:docker-status',
+  /** renderer → main: start Colima on a host where it is installed and stopped `{ host }`. */
+  startDocker: 'environments:ssh:start-docker',
+  /** renderer → main: New container `{ host, label, clone }`, saved as a machine. */
+  containerCreate: 'environments:ssh:container-create',
+  /** renderer → main: make a container again on the image a container gets now, keeping its volumes `{ id }`. */
+  containerRebuild: 'environments:ssh:container-rebuild',
+  /** renderer → main: clone a repository into a container `{ id, address }`. */
+  containerClone: 'environments:ssh:container-clone',
+  /** renderer → main: the branches in a container with commits no remote has `{ id }`, before it is deleted. */
+  containerUnpushed: 'environments:ssh:container-unpushed',
   /** renderer → main: the diagnostics for one machine `{ id }`, redacted for copying. */
   diagnostics: 'environments:ssh:diagnostics',
   /** main → renderer: the list changed; carries nothing, a window asks again. */
@@ -78,7 +90,7 @@ export type SavedSshEnvironment = {
   settings: SshEnvironmentSettings
   addedAt: number
   /**
-   * Set when this machine is a container Studio made for a chat
+   * Set when this machine is a container Studio made
    * (docs/design/container-chats.md): reached by `docker exec` on its host
    * rather than by ssh, and `destination` is the container's name.
    */

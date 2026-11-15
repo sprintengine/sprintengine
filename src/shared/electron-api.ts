@@ -11,6 +11,13 @@ import type {
   SshResolveResult,
 } from './ssh-environments'
 import type { EnvironmentEntry, EnvironmentTicketResult } from './environments'
+import type {
+  ContainerCreateRequest,
+  ContainerCreateResult,
+  ContainerHost,
+  ContainerUnpushed,
+  DockerStatus,
+} from './containers'
 import type { SshPreviewStatus } from './ssh-preview'
 import type { ServerMode } from './server-mode'
 import type { ChatExportInput, ChatExportResult } from './chat-export'
@@ -541,13 +548,30 @@ export type ElectronApi = {
     options?: {
       stopServer?: boolean
       clearBrowsingData?: boolean
-      /** Containers Studio made on the machine: refused by default, removed first, or only their records dropped. */
-      containers?: 'refuse' | 'remove' | 'forget-records'
+      /** Containers Studio made on the machine: refused by default (each is deleted first), or only their records dropped. */
+      containers?: 'refuse' | 'forget-records'
+      /** A container: forget only its record, touching nothing in Docker (Docker or its machine gone). */
+      recordOnly?: boolean
     },
   ) => Promise<SshEnvironmentResult & { containers?: string[] }>
   sshEnvironmentDiagnostics: (id: string) => Promise<{ ok: true; text: string } | { ok: false; message: string }>
   /** Sign a chat's CLI in on an SSH machine, with no terminal (decision R34). */
   sshSignIn: (id: string, providerId: string) => Promise<SshEnvironmentResult>
+  /** Docker on this computer or an SSH machine, in words (docs/design/container-chats.md). */
+  containerDockerStatus: (host: ContainerHost) => Promise<DockerStatus>
+  /** Start Colima where it is installed and stopped. */
+  containerStartDocker: (host: ContainerHost) => Promise<DockerStatus>
+  /** New container: made, saved as a machine and connected; may take minutes (a first image build). */
+  containerCreate: (request: ContainerCreateRequest) => Promise<ContainerCreateResult>
+  /** Clone a repository into a container, with the container's own credentials. */
+  containerClone: (
+    id: string,
+    address: string,
+  ) => Promise<{ ok: true; folder: string } | { ok: false; message: string }>
+  /** Make a container again on the image a container gets now, keeping its repositories and logins. */
+  containerRebuild: (id: string) => Promise<SshEnvironmentResult>
+  /** What deleting a container would lose: its branches with commits no remote has. */
+  containerUnpushed: (id: string) => Promise<ContainerUnpushed>
   onSshEnvironmentsChanged: (cb: () => void) => () => void
   /** ssh asks something; answer with `sshPromptAnswer`. */
   onSshPrompt: (cb: (request: SshPromptRequest) => void) => () => void

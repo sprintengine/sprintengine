@@ -279,6 +279,12 @@ test('adding an SSH machine shows only with their preview on', async () => {
   api.sshEnvironmentsList = async () => []
   api.sshEnvironmentSuggestions = async () => []
   api.onSshEnvironmentsChanged = () => () => {}
+  api.containerDockerStatus = async () => ({
+    state: 'stopped',
+    words: 'Colima is installed on this Mac, but it is stopped.',
+    imageReady: false,
+    canStart: 'colima',
+  })
   await act(async () =>
     root.render(
       <ConfirmDialogProvider>
@@ -288,6 +294,10 @@ test('adding an SSH machine shows only with their preview on', async () => {
   )
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
   expect(host.textContent).toContain('Add an SSH machine')
+  // New container sits beside it, with Docker there in words.
+  expect(host.textContent).toContain('New container')
+  expect(host.textContent).toContain('Colima is installed on this Mac, but it is stopped.')
+  expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Start Colima')).toBe(true)
 })
 
 test('every machine but this one wears its mark, and Change sets its kind and colour', async () => {

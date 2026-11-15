@@ -16,6 +16,7 @@ import {
   Select,
   useConfirmDialog,
 } from '../ui'
+import { deleteContainer, type ContainerApi } from './ContainerMachinesSection'
 import { MachineGhRow } from './MachineGhRow'
 import { SettingCard, SettingsRow, SettingToggle } from './SettingsAtoms'
 import { isImeKey } from '../../utils/imeKey'
@@ -126,7 +127,16 @@ export function SshMachineActions({
   return null
 }
 
-export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSummary; api: Api }): React.JSX.Element {
+export function SshMachineDetail({
+  machine,
+  machines,
+  api,
+}: {
+  machine: SshEnvironmentSummary
+  /** Every saved machine: the containers on this one are deleted, each as a container is, before it is forgotten. */
+  machines: readonly SshEnvironmentSummary[]
+  api: Api & ContainerApi
+}): React.JSX.Element {
   const { confirm: confirmDialog } = useConfirmDialog()
   const installId = useId()
   const [installDir, setInstallDir] = useState(machine.settings.installDir ?? '')
@@ -260,18 +270,28 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
                 if (!forgotten.ok) setDiagnostics(forgotten.message)
                 return
               }
-              // Containers Studio made there would be stranded: removed first, or (the machine
-              // being gone) only their records dropped, as the person says.
+              // Containers Studio made there would be stranded: each is deleted first, as a
+              // container is (what exists only in it said before it goes), or, the machine
+              // being gone, only their records are dropped, as the person says.
               const remove = await confirmDialog({
-                title: `Remove the containers on ${machine.label} first?`,
-                body: forgotten.message,
-                confirmLabel: 'Remove them, then forget',
+                title: `Delete the containers on ${machine.label} first?`,
+                body: `${forgotten.message} Each is shown with what exists only in it before it is deleted.`,
+                confirmLabel: 'Delete them, then forget',
                 tone: 'danger',
               })
               if (remove) {
-                const removed = await api.sshEnvironmentForget(machine.id, { containers: 'remove' })
-                if (removed.ok) return
-                setDiagnostics(removed.message)
+                for (const id of forgotten.containers) {
+                  const hosted = machines.find((each) => each.id === id)
+                  if (!hosted) continue
+                  const outcome = await deleteContainer(hosted, api, confirmDialog)
+                  if (!outcome.deleted) {
+                    if (outcome.message) setDiagnostics(outcome.message)
+                    return
+                  }
+                }
+                const after = await api.sshEnvironmentForget(machine.id)
+                if (!after.ok) setDiagnostics(after.message)
+                return
               }
               const recordsOnly = await confirmDialog({
                 title: `Forget ${machine.label}'s container records only?`,

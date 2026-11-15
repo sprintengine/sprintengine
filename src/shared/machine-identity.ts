@@ -20,6 +20,7 @@
 // This machine has no identity at all: it is the unmarked default, and no
 // surface draws a glyph for it.
 
+import { CONTAINER_NAME } from './containers'
 import { isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from './execution-host'
 import {
   MACHINE_COLOURS,
@@ -161,7 +162,8 @@ export function defaultMachineKind(machine: MachineRef): MachineKind | null {
     case 'wsl':
       return isWslHostId(machine.hostId) ? 'wsl' : null
     case 'ssh':
-      return 'server'
+      // A container Studio made is reached under its Docker name (docs/design/container-chats.md).
+      return CONTAINER_NAME.test(machine.host) ? 'container' : 'server'
     case 'paired': {
       // The pairing record carries no OS and no hardware model, so a Mac is
       // known by its name, as the tailnet's own host names spell it

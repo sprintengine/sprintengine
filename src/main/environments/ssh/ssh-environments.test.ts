@@ -128,7 +128,26 @@ test('a CLI Studio cannot sign in without a terminal is told the exact command, 
     signInOverSsh('opencode', { destination: 'dev@build-box.example.com:2222', label: 'build-box' }),
     'Sign opencode in once on build-box over your own SSH session: ssh -t ssh://dev@build-box.example.com:2222 opencode auth login',
   )
-  assert.match(signInOverSsh('grok', { destination: 'build-box', label: 'build-box' }), /API key/u)
+  assert.match(
+    signInOverSsh('grok', { destination: 'build-box', label: 'build-box' }),
+    /ssh -t build-box grok login --device-auth/u,
+  )
+  assert.match(signInOverSsh('an-api-key-cli', { destination: 'build-box', label: 'build-box' }), /API key/u)
+  // A container's command names the Docker context it is kept on.
+  assert.match(
+    signInOverSsh('opencode', {
+      destination: 'sprintengine-0123456789abcdef',
+      label: 'sandbox',
+      container: {
+        host: { kind: 'local' },
+        name: 'sprintengine-0123456789abcdef',
+        context: 'colima',
+        image: 'sprintengine-studio-agent:0123456789ab',
+        createdAt: 0,
+      },
+    }),
+    /docker --context colima exec -it sprintengine-0123456789abcdef opencode auth login$/u,
+  )
 })
 
 test('an empty pasted code, or one the login would not take, ends the sign-in in words rather than waiting it out', async () => {

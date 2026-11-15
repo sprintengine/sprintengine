@@ -741,7 +741,12 @@ that machine with no terminal (decision R34), named by provider, never by a
 command line. They are an owner's (`settings:write`), and no device reaches them.
 Served where the desktop holds the machine's Studio over its front door. They
 replace the backend wire's `backend.sign-in`. Additive: an older Studio answers
-`unknown_method` and leaves both capabilities out.
+`unknown_method` and leaves both capabilities out. Since 2026-11-15
+`providerId` may also name a CLI by its own id (`grok`, `muse`, …) or
+`github` (the GitHub CLI's login, for a container's git and pull requests);
+no capability marks it. An older Studio answers those in words ("This chat
+has no CLI to sign in"), and a container's Studio is always the desktop's
+own build.
 `chat-stores` (2026-11-12) is what a Studio keeps beside its chats, for every
 chat at once: `usageLimits.get` with `usageLimits.changed`,
 `usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the
@@ -961,23 +966,6 @@ window's `hosts:list`, `hosts:home` and `hosts:changed` channels are gone,
 and with them the last channel the window routed to its server.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
-
-`containers` (2026-11-15) is chats' containers, served by a desktop's Studio
-where it runs Docker (the SSH machines preview on): `containers.status`,
-`.startDocker`, `.create`, `.list`, `.push` and `.remove`, the
-`containers.changed` stream (which carries nothing: the client lists again),
-and Claude Code's token for them (`containers.tokenStatus`, `.setToken`,
-`.clearToken`). Every one is served to Studio's own desktop windows only:
-an owner's web tab and an app holding the owner's credential are refused too.
-A paired device is refused every one (`owner_required`) and keeps the words
-it shows today, that a container chat is started from the desktop itself: the
-chat runs on the container's own Studio, which no device reaches through the
-desktop. Every mutation carries a `commandId`. Create, push and remove are
-`receipts: 'durable'`: the desktop's main keeps what each id did, on disk, so
-one sent again to a restarted server is answered with the first outcome. A desktop
-without the capability is one before this change, or one with the SSH machines
-preview off; a client asks nothing of it. Same build on both ends: the
-window's ten `environments:container:*` channels are gone.
 
 #### Reaching a Studio outside the window
 
