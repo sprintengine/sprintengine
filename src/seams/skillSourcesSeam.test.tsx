@@ -484,7 +484,9 @@ test('skillSourcesSeam', async () => {
       }
     }
 
-    const markup = (): string => container.innerHTML
+    // The page, not the container: a window-wide dialog such as the skill
+    // reader is drawn on the body, outside the tree that opened it.
+    const markup = (): string => dom.window.document.body.innerHTML
     /**
      * Let a real round trip finish — install and sync read and write real
      * files, over the Studio protocol — for up to about five seconds.
@@ -499,7 +501,7 @@ test('skillSourcesSeam', async () => {
       assert.fail(`${what} never finished: ${visibleText(markup())}`)
     }
     const buttons = (): HTMLButtonElement[] =>
-      [...container.querySelectorAll('button')] as unknown as HTMLButtonElement[]
+      [...dom.window.document.body.querySelectorAll('button')] as unknown as HTMLButtonElement[]
     const buttonWith = (text: string): HTMLButtonElement => {
       const found = buttons().find((button) => (button.textContent ?? '').includes(text))
       assert.ok(found, `no button reading "${text}" is on screen`)
@@ -516,14 +518,14 @@ test('skillSourcesSeam', async () => {
      * the More menu the rest fold into (owner ruling 2026-11-03).
      */
     const openSource = async (tabName: string): Promise<void> => {
-      const tab = [...container.querySelectorAll('[role="tab"]')].find((candidate) =>
+      const tab = [...dom.window.document.body.querySelectorAll('[role="tab"]')].find((candidate) =>
         (candidate.textContent ?? '').startsWith(tabName),
       )
       if (tab) {
         await click(tab as unknown as HTMLButtonElement)
         return
       }
-      const more = container.querySelector('button[aria-label="More sources"]')
+      const more = dom.window.document.body.querySelector('button[aria-label="More sources"]')
       assert.ok(more, `no tab for "${tabName}" is on screen, and no More to find it in`)
       await click(more as HTMLButtonElement)
       const item = [...dom.window.document.querySelectorAll('[role="menuitem"]')].find((candidate) =>
@@ -532,7 +534,7 @@ test('skillSourcesSeam', async () => {
       assert.ok(item, `"${tabName}" is in neither the pills nor the More menu`)
       await click(item as unknown as HTMLButtonElement)
       assert.equal(
-        [...container.querySelectorAll('[role="tab"][aria-selected="true"]')].some((candidate) =>
+        [...dom.window.document.body.querySelectorAll('[role="tab"][aria-selected="true"]')].some((candidate) =>
           (candidate.textContent ?? '').startsWith(tabName),
         ),
         true,
@@ -547,7 +549,7 @@ test('skillSourcesSeam', async () => {
      * the section its source heads.
      */
     const sectionOf = (sourceLabel: string): HTMLElement => {
-      const found = [...container.querySelectorAll('section')].find((section) =>
+      const found = [...dom.window.document.body.querySelectorAll('section')].find((section) =>
         (section.textContent ?? '').startsWith(sourceLabel),
       )
       assert.ok(found, `no results section headed "${sourceLabel}" is on screen`)
@@ -567,7 +569,7 @@ test('skillSourcesSeam', async () => {
     }
     /** Narrow the door to one skill name — every source's, grouped by source. */
     const filterTo = async (needle: string): Promise<void> => {
-      const field = container.querySelector('input[type="search"]') as unknown as HTMLInputElement
+      const field = dom.window.document.body.querySelector('input[type="search"]') as unknown as HTMLInputElement
       assert.ok(field, 'the tab has a search field')
       const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')?.set
       await act(async () => {

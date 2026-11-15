@@ -484,7 +484,13 @@ test('designSystemConformance', async () => {
 
     await run('the peek card composes: a corner and one line per fact', () => {
       assert.ok(peekContainer.querySelector('.working-mark'), 'the corner drew the sidebar’s mark')
-      assert.equal(peekContainer.querySelectorAll('li').length, 4, 'machine, branch, model and context')
+      // The facts are the card's unnamed list; the agents and pull requests
+      // below it are lists of their own, each named by its heading.
+      assert.equal(
+        peekContainer.querySelectorAll('ul:not([aria-label]) > li').length,
+        4,
+        'machine, branch, model and context',
+      )
       assert.ok(peekContainer.querySelector('[aria-label="Context: 76k / 200k tokens · 38%"]'), 'the context line drew')
     })
 
