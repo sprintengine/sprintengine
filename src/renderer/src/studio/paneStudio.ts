@@ -10,8 +10,8 @@ import { machineRouteOfPath, machineSpellingOf } from '../../../shared/machine-s
 import { withEnvironmentStudio } from './environmentStudio'
 import { windowStudioClient } from './windowStudioClient'
 
-// Which Studio answers the window's files and git about a folder: the one on
-// the folder's machine (design-wsl-ssh-direct PR 2, PR 3c). A folder on this
+// Which Studio answers the window's files, git and worktrees about a folder:
+// the one on the folder's machine (design-wsl-ssh-direct PR 2, PR 3c). A folder on this
 // computer (a Windows drive included) is the window's own Studio's. A folder
 // on an SSH machine, spelled `ssh://<id>/…` here, or in a WSL distribution,
 // spelled by its share (`\\wsl.localhost\<distro>\…`), is asked of that
@@ -21,8 +21,13 @@ import { windowStudioClient } from './windowStudioClient'
 // (`machine-path-edge.ts`). Nothing here tells the methods apart: each is
 // asked where its folders are.
 
-/** The members of what a pane sends that name a folder or file by path. */
+/**
+ * The members of what a pane sends that name a folder or file by path, and
+ * those that hold such members (a worktree step's `input`, a pool `action`).
+ */
 const PATH_MEMBERS: ReadonlySet<string> = new Set([
+  'input',
+  'action',
   'path',
   'rootPath',
   'parentPath',
@@ -31,6 +36,9 @@ const PATH_MEMBERS: ReadonlySet<string> = new Set([
   'repoRoot',
   'checkoutPath',
   'worktreePath',
+  'containerPath',
+  'destinationPath',
+  'protectedPaths',
   'roots',
   'ref',
 ])
@@ -47,15 +55,15 @@ export const MIXED_MACHINES =
 /** `machine` is the route of the machine an ask's folders are on. */
 type Where = { machine: string } | { machine: null } | { mixed: true }
 
-/** The machine an ask's folders are on, from the members that name one; this computer's for none. */
-export function machineOfAsk(params: unknown): Where {
-  const routes = new Set<string>()
-  let local = false
+/** The machines (by route; '' for an `ssh://` path naming none) and whether this computer, named by what is asked. */
+type Named = { routes: Set<string>; local: boolean }
+
+function namedIn(params: unknown, named: Named = { routes: new Set(), local: false }): Named {
   const look = (value: unknown, depth: number): void => {
     if (typeof value === 'string') {
       const route = machineRouteOfPath(value)
-      if (route !== null) routes.add(route ?? '')
-      else if (ABSOLUTE.test(value)) local = true
+      if (route !== null) named.routes.add(route ?? '')
+      else if (ABSOLUTE.test(value)) named.local = true
       return
     }
     if (depth > 2) return
@@ -65,23 +73,57 @@ export function machineOfAsk(params: unknown): Where {
   }
   if (typeof params === 'object' && params !== null)
     for (const [member, value] of Object.entries(params)) if (PATH_MEMBERS.has(member)) look(value, 0)
+  return named
+}
+
+function whereOf({ routes, local }: Named): Where {
   if (routes.size === 0) return { machine: null }
   const [route] = [...routes]
   if (routes.size > 1 || local || !route) return { mixed: true }
   return { machine: route }
 }
 
+/** The machine an ask's folders are on, from the members that name one; this computer's for none. */
+export function machineOfAsk(params: unknown): Where {
+  return whereOf(namedIn(params))
+}
+
 /**
  * Ask `method` of the Studio whose machine the folders in `params` are on,
  * held to a capability its welcome must name (else `unserved`, in words).
  */
-export async function askStudioOfPaths<M extends StudioMethod>(
+export function askStudioOfPaths<M extends StudioMethod>(
   method: M,
   params: StudioMethodParams<M>,
   capability: StudioCapability,
   unserved: string,
 ): Promise<StudioMethodResult<M>> {
-  const where = machineOfAsk(params)
+  return askStudioWhere(machineOfAsk(params), method, params, capability, unserved)
+}
+
+/**
+ * Ask `method` of the Studio on the machine `path` is on, whatever `params`
+ * name: a pool lease given back or caught up names no folder, only the lease
+ * that machine's pool handed out. Anything `params` names by path must be on
+ * that machine too.
+ */
+export function askStudioAtPath<M extends StudioMethod>(
+  path: string,
+  method: M,
+  params: StudioMethodParams<M>,
+  capability: StudioCapability,
+  unserved: string,
+): Promise<StudioMethodResult<M>> {
+  return askStudioWhere(whereOf(namedIn(params, namedIn({ path }))), method, params, capability, unserved)
+}
+
+async function askStudioWhere<M extends StudioMethod>(
+  where: Where,
+  method: M,
+  params: StudioMethodParams<M>,
+  capability: StudioCapability,
+  unserved: string,
+): Promise<StudioMethodResult<M>> {
   if ('mixed' in where) throw new Error(MIXED_MACHINES)
   if (where.machine === null) {
     const client = await windowStudioClient()

@@ -13,10 +13,11 @@ import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 // table holds who may run what: the pool and the agents' worktrees are an
 // owner's, each with its reason; a settled chat's delete is a chat's, as a
 // paired device's Delete on a chat here is. Every write runs once per
-// command id. An agent worktree step that names a folder on an SSH machine is
-// refused in words, as the window's IPC refused it: that machine's worktrees
-// are its own server's. The inventory leaves such a project out; a pool read
-// for one finds no pool here.
+// command id. A machine's worktrees are its own Studio's, cut from its own
+// pool: a window asks that Studio for them (the window's `studio/worktrees.ts`).
+// A step sent here that names a folder on an SSH machine is refused in words,
+// since this machine's git cannot reach it; the inventory leaves such a
+// project out, and a pool read for one finds no pool here.
 
 /** The steps that run git on the folders they name. */
 const STEPS: ReadonlySet<StudioWorktreesMethod> = new Set([
@@ -69,7 +70,10 @@ export function createStudioWorktreesHandlers(options: StudioWorktreesHandlerOpt
     const { commandId: _commandId, ...asked } = raw
     let params: Record<string, unknown> = asked
     if (STEPS.has(method) && namesMachine(params))
-      return refuse('unavailable', `Not available for SSH machines yet (Studio's ${method}).`)
+      return refuse(
+        'unavailable',
+        `That folder is on an SSH machine: its worktrees are made and removed by that machine's own Studio, not this one (Studio's ${method}).`,
+      )
     if (method === 'worktrees.inventory')
       params = { ...params, repoRoots: (params.repoRoots as string[]).filter((root) => !isMachinePath(root)) }
     const run = worktrees.run[method] as (

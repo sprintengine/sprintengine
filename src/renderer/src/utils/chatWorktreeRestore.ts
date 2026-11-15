@@ -56,8 +56,10 @@ type RestoreCandidate = Workspace & { folderPath: string; worktree: { branch: st
 
 function restoreCandidate(workspace: Workspace | undefined): workspace is RestoreCandidate {
   if (!workspace?.folderPath || !workspace.worktree?.branch) return false
-  // A chat on another machine has its folder there, and its own way back.
-  if (workspace.environment || workspace.remoteOrigin) return false
+  // A paired machine's chat has its folder there, and its own way back. One
+  // on an SSH machine or in a WSL distribution is brought back as a chat here
+  // is, by that machine's own Studio (`studio/worktrees.ts` asks it there).
+  if (workspace.remoteOrigin) return false
   if (workspace.worktree.reclaimedAt !== undefined) return true
   // The branches the agent worktree cleanup may remove a worktree of
   // (agent-worktree-cleanup.ts): a `sprintengine/<slug>` worktree opened as a

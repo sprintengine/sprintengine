@@ -2921,7 +2921,12 @@ export default function WorkspaceManager() {
   // agent's. The prompt rides the seed as the chat's first message.
   // A chat on an SSH machine (phase 8): a solo workspace on that machine, in
   // the folder typed for it there; its chat runs on that machine's server.
-  // Only a chat goes there: the server runs no terminals (ruling a).
+  // Only a chat goes there: the server runs no terminals (ruling a). With
+  // Worktree on, it starts as a chat here does (`confirmNewChatWith`): in the
+  // worktree New chat already made, or at once, waiting on the one that
+  // machine's own Studio is cutting from its pool. Its folders are spelled as
+  // that machine's (`ssh://<id>/…`), so nothing on this computer mistakes one
+  // for its own, and none is a project this computer's pickers offer.
   const confirmSshNewChat = (
     confirm: AgentComposerConfirm,
     environment: NonNullable<NewAgentLaunch['environment']>,
@@ -2931,33 +2936,57 @@ export default function WorkspaceManager() {
     startupImages?: string[],
     // ⌘⏎: started out of sight, and New chat stays up for the next one.
     background?: boolean,
-  ): WorkspaceId | null => {
+  ): Promise<WorkspaceId | null> => {
     if (confirm.kind !== 'conversation') {
       showToast({
         tone: 'warn',
         title: `Only a chat runs on ${environment.label}`,
         description: 'Terminals run on this computer. Pick a chat engine to start on that machine.',
       })
-      return null
+      return Promise.resolve(null)
     }
-    const seed = conversationNewChatSeed(confirm, {
-      prompt: startupPrompt,
-      images: startupImages,
-      permissionPreset: resolveCliPermissionPreset(confirm.cli, agentSpawnPermissionPreset),
-      ...cliPermissionModeLaunch(confirm.cli),
-    })
-    if (!seed) return null
-    setLastNewChatAgent({ kind: 'conversation' })
-    const workspaceId = createSoloChatWorkspace({
-      // Spelled as that machine's (`ssh://<id>/…`): nothing on this computer
-      // mistakes it for one of its own folders.
-      folderPath: machinePath(environment.id, environment.folder),
-      seedAgent: { agentPatch: seed.agentPatch },
-      environment: { kind: 'ssh', id: environment.id, label: environment.label },
-      ...(background ? { background } : {}),
-    })
-    if (!background) closeNewChatPanel()
-    return workspaceId
+    const onlyAChat = () => null
+    return confirmNewChatWith(
+      {
+        makeExtension: async () => null,
+        makeWorktree: (folder, name) => obtainNewChatWorktree(folder, name, null),
+        takeReadyWorktree: (folder, name) => takeReadyNewChatWorktree(folder, name, null),
+        makeProjectlessFolder: async () => null,
+        startTerminal: onlyAChat,
+        startGeneral: onlyAChat,
+        startConversation: (conversation, folderPath, prompt, worktree, images, _files, inBackground, pending) => {
+          const seed = conversationNewChatSeed(conversation, {
+            prompt,
+            images,
+            permissionPreset: resolveCliPermissionPreset(conversation.cli, agentSpawnPermissionPreset),
+            ...cliPermissionModeLaunch(conversation.cli),
+          })
+          if (!seed) return null
+          setLastNewChatAgent({ kind: 'conversation' })
+          return createSoloChatWorkspace({
+            folderPath,
+            seedAgent: {
+              agentPatch: { ...seed.agentPatch, ...(pending ? { chatPendingWorktree: pending } : {}) },
+            },
+            environment: { kind: 'ssh', id: environment.id, label: environment.label },
+            ...(worktree ? { worktree } : {}),
+            ...(inBackground ? { background: inBackground } : {}),
+          })
+        },
+        prepareWorktree: (workspaceId) => void prepareNewChatWorktree(workspaceId),
+        titleFromPrompt: (workspaceId, prompt) =>
+          void generatedWorkspaceTitleRequester().titleFromPrompt(workspaceId, prompt),
+        recordProjectUse: () => undefined,
+        closePanel: closeNewChatPanel,
+      },
+      {
+        confirm,
+        scopedFolder: machinePath(environment.id, environment.folder),
+        startupPrompt,
+        startupImages,
+        background,
+      },
+    )
   }
 
   const openConversationInNewChat = (

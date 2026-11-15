@@ -124,16 +124,24 @@ export const MACHINE_PANE_PATH_MEMBERS: ReadonlySet<string> = new Set([
   'checkedPath',
   'absolutePath',
   'checkoutPath',
+  'containerPath',
 ])
 
-/** What a pane sends the machine, its paths as the machine spells them and its text as written. */
+/**
+ * What a pane sends the machine, its paths as the machine spells them and its
+ * text as written; a map keyed by paths (a pool's install choices, by
+ * project) keyed as the machine spells them, as its answer's keys are
+ * respelled coming back.
+ */
 export function machinePanePathsIn<T>(spelling: MachineSpelling, value: T): T {
   if (typeof value === 'string') return (spelling.toMachine(value) ?? value) as T
   if (Array.isArray(value)) return value.map((entry) => machinePanePathsIn(spelling, entry)) as T
   if (!isPlainObject(value)) return value
   const out: Record<string, unknown> = {}
-  for (const [member, entry] of Object.entries(value))
-    out[member] = PANE_TEXT_MEMBERS.has(member) ? entry : machinePanePathsIn(spelling, entry)
+  for (const [member, entry] of Object.entries(value)) {
+    const key = PANE_TEXT_MEMBERS.has(member) ? member : (spelling.toMachine(member) ?? member)
+    out[key] = PANE_TEXT_MEMBERS.has(member) ? entry : machinePanePathsIn(spelling, entry)
+  }
   return out as T
 }
 

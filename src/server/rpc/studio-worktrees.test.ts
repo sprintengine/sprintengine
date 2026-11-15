@@ -216,7 +216,7 @@ test('a branch the new worktree would take that git would read as an option is r
   )
 })
 
-test('an agent worktree step on an SSH machine is refused in words, and the inventory leaves such a project out', async () => {
+test('an agent worktree step on an SSH machine sent to this Studio is refused in words, and the inventory leaves such a project out', async () => {
   const { started } = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
   const app = 'ssh://build-box/home/dev/app'
@@ -239,7 +239,9 @@ test('an agent worktree step on an SSH machine is refused in words, and the inve
   ] as const) {
     const answer = await owner.request(method, params)
     assert.deepEqual([method, codeOf(answer)], [method, 'unavailable'])
-    assert.match(String((answer as Frame).error?.message), /Not available for SSH machines yet/)
+    // That machine's own Studio makes it; nothing says worktrees are missing there.
+    assert.match(String((answer as Frame).error?.message), /made and removed by that machine's own Studio/)
+    assert.doesNotMatch(String((answer as Frame).error?.message), /not available/i)
   }
   const inventory = resultOf<{ projects: unknown[] }>(await owner.request('worktrees.inventory', { repoRoots: [app] }))
   assert.deepEqual(inventory.projects, [])

@@ -1,4 +1,4 @@
-import { parseMachinePath } from '../../../../../shared/machine-paths'
+import { machinePath, parseMachinePath } from '../../../../../shared/machine-paths'
 import { browsePairedMachine, pairedWorkspaceCheckout } from '../../../studio/pairedDiscovery'
 import { environmentCommandId } from '../../../studio/environmentStudio'
 import {
@@ -454,6 +454,9 @@ const NO_SCHEDULED_RUNS: readonly ScheduledRunEntry[] = []
 /** How long after the door mounts the chat's code is fetched: past its first paint, well before an Enter. */
 const PRELOAD_CHAT_AFTER_MS = 200
 
+/** How long the folder typed for an SSH machine stands still before that machine is asked whether it is a git repository. */
+const MACHINE_FOLDER_SETTLE_MS = 400
+
 /** ⌘⏎ in the prompt: start the chat and stay on New chat (see the registry). */
 const LAUNCH_IN_BACKGROUND_COMMAND = 'chat.new.launchInBackground'
 
@@ -594,6 +597,8 @@ export default function NewAgentPanel({
     pickedSsh && !/^\/[^\0\n]*$/u.test(sshFolder.trim())
       ? `Type the folder's full path on ${pickedSsh.label}, such as /home/dev/repo.`
       : null
+  // The folder typed for the SSH machine, as it is sent: no trailing slash.
+  const sshFolderTyped = sshFolder.trim().replace(/(.)\/+$/u, '$1')
   // Which agent CLIs the chosen WSL machine has: its own probe, one process
   // for the lot, asked when the machine is picked — never on focus. This
   // machine's answer stays the store's, exactly as before.
@@ -1055,7 +1060,9 @@ export default function NewAgentPanel({
   // The hidden file input the "+" menu's Attach files row clicks. The menu
   // and the skills picker it opens over the same "+" are `ComposerPlusMenu`.
   const fileInputRef = React.useRef<HTMLInputElement>(null)
-  const [workspaceIsGitRepo, setWorkspaceIsGitRepo] = React.useState(false)
+  // Whether the folder a worktree would be cut from is in a git repository,
+  // and which folder that answer is for.
+  const [gitRepoOf, setGitRepoOf] = React.useState<{ folder: string; git: boolean } | null>(null)
   // Replacing the static box, the panel draws the cards the box was drawn
   // with: different cards under the same composer would be a visible swap.
   const [seed] = React.useState(() => (bootComposer ? bootComposerSeed() : null) ?? newSuggestionSeed())
@@ -1357,48 +1364,62 @@ export default function NewAgentPanel({
     )
   }, [mentionPrefix])
 
-  // Worktree is offered only inside a git repo: absent, not disabled.
+  // The folder a chat's worktree would be cut from: the project here, or the
+  // folder typed for an SSH machine, spelled as that machine's
+  // (`ssh://<id>/…`), whose own Studio cuts it from its own pool.
+  // "No project" is a folder the app made, not a checkout, even where the
+  // home folder above it happens to be a repository.
+  const worktreeSource = pickedSsh
+    ? sshFolderProblem
+      ? null
+      : machinePath(pickedSsh.id, sshFolderTyped)
+    : projectless
+      ? null
+      : (workspaceRoot ?? null)
+  // Worktree is offered only inside a git repo: absent, not disabled. A
+  // folder typed for a machine is asked about once the typing pauses, of
+  // that machine.
   React.useEffect(() => {
     let cancelled = false
-    if (!workspaceRoot) {
-      setWorkspaceIsGitRepo(false)
-      return
-    }
-    void gitApi
-      .getGitRepoRoot(workspaceRoot)
-      .then((root) => {
-        if (!cancelled) setWorkspaceIsGitRepo(Boolean(root))
-      })
-      .catch(() => {
-        if (!cancelled) setWorkspaceIsGitRepo(false)
-      })
+    if (!worktreeSource) return
+    const ask = () =>
+      void gitApi
+        .getGitRepoRoot(worktreeSource)
+        .then((root) => {
+          if (!cancelled) setGitRepoOf({ folder: worktreeSource, git: Boolean(root) })
+        })
+        .catch(() => {
+          if (!cancelled) setGitRepoOf({ folder: worktreeSource, git: false })
+        })
+    const timer = pickedSsh ? window.setTimeout(ask, MACHINE_FOLDER_SETTLE_MS) : null
+    if (!timer) ask()
     return () => {
       cancelled = true
+      if (timer) window.clearTimeout(timer)
     }
-  }, [workspaceRoot])
+  }, [worktreeSource, pickedSsh])
+  const worktreeSourceIsGitRepo = worktreeSource !== null && gitRepoOf?.folder === worktreeSource && gitRepoOf.git
 
   // A paired machine cuts a chat's worktree itself, from its own checkout of
   // the project, named as asked, where the checkout it served is a git
   // repository.
   const remoteWorktreeOffered = !extensionMode && remoteTarget?.checkout?.git === true
   // Worktree is offered only inside a git repository, for an agent: absent,
-  // not disabled. On this machine, a repository here; on a paired machine,
-  // one there that said it cuts worktrees for a chat started from here. An
-  // SSH machine's chat has no checkout here to fork, and an extension's
-  // folder is new.
-  // "No project" is a folder the app made, not a checkout, even where the
-  // home folder above it happens to be a repository.
+  // not disabled. A repository here, or in the folder typed for an SSH
+  // machine; on a paired machine, one there that said it cuts worktrees for
+  // a chat started from here. An extension's folder is new.
   const worktreeOffered = remoteTarget
     ? remoteWorktreeOffered
-    : !extensionMode && selection.kind !== 'terminal' && !pickedSsh && !projectless && workspaceIsGitRepo
+    : !extensionMode && selection.kind !== 'terminal' && worktreeSourceIsGitRepo
   // The worktree a chat started here will run in is made while the person
   // types, so Enter finds it ready: Worktree on with no name typed (a name is
   // its own branch, made on Enter), for a chat that starts now. A paired
-  // machine cuts its own, so only a chat on this machine reserves one.
+  // machine cuts its own when the chat starts there, so it reserves none; an
+  // SSH machine's Studio is asked for one from its pool, as this computer's is.
   useNewChatWorktreeReservation({
     enabled: worktreeOffered && !remoteTarget && composer.worktreeName === '' && !scheduled && !editing,
-    folderPath: workspaceRoot,
-    hostId: hostChoosable ? hostId : null,
+    folderPath: worktreeSource,
+    hostId: pickedSsh || !hostChoosable ? null : hostId,
   })
   // The chat Enter opens is drawn with code New chat does not use, so it is
   // fetched while the person types: a window's first chat then draws at once
@@ -2017,7 +2038,7 @@ export default function NewAgentPanel({
           modelLabel: engineNames.modelLabel ?? engineNames.cliLabel,
         }
       }
-      const folder = sshFolder.trim().replace(/(.)\/+$/u, '$1')
+      const folder = sshFolderTyped
       lastSshFolders.set(pickedSsh.id, folder)
       // The images go with the first message: they are files on this
       // computer, which the chat reads here and sends as bytes, as it does

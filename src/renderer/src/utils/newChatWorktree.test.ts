@@ -95,3 +95,32 @@ test('no project and no repository are refused before anything is made', async (
     ['Worktree needs a project', 'Worktree needs a git repository'],
   )
 })
+
+test('a folder on an SSH machine or in a WSL share is cut by that machine’s own Studio, naming no machine of this computer', async () => {
+  const creates: GitWorktreeCreateInput[] = []
+  const roots: Array<[string, string | undefined]> = []
+  stubApi({
+    getGitRepoRoot: async (folder: string, hostId?: string) => {
+      roots.push([folder, hostId])
+      return folder
+    },
+    createGitWorktree: async (input: GitWorktreeCreateInput) => {
+      creates.push(input)
+      return { ok: true, data: { path: `${input.repoRoot}-pool/app-01`, branch: input.branchName, baseRef: 'main' } }
+    },
+  })
+  const app = 'ssh://build-box/home/dev/app'
+  const made = await createNewChatWorktree(app, 'fix-login', 'wsl:Ubuntu')
+  assert.equal(made.ok && made.folderPath, `${app}-pool/app-01`)
+  assert.equal(made.ok && made.worktree.repoRoot, app, 'filed under the project on that machine')
+  assert.equal(creates[0]?.repoRoot, app)
+  assert.equal(creates[0]?.containerPath, 'ssh://build-box/home/dev/.sprintengine-worktrees/app')
+  assert.equal(creates[0]?.hostId, undefined)
+  assert.equal(creates[0]?.fromPool, true, 'from that machine’s pool')
+  await createNewChatWorktree('\\\\wsl.localhost\\Ubuntu\\home\\dev\\app', 'fix-login', 'wsl:Ubuntu')
+  assert.equal(creates[1]?.hostId, undefined)
+  assert.deepEqual(
+    roots.map(([, hostId]) => hostId),
+    [undefined, undefined],
+  )
+})
