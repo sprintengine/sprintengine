@@ -20,7 +20,7 @@ import {
   findAgentWorkspaceFollowingMoves,
   findRecordedAgentWorkspace,
 } from './agentLocation'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { test } from 'vitest'
 
 test('agentBacklogLinks', async () => {

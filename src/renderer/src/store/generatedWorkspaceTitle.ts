@@ -21,7 +21,7 @@
 
 import type { ChatTitleRequest, TextGenerationResult } from '../../../shared/text-generation/contract'
 import { resolveTextGenerationEngine } from '../../../shared/text-generation/contract'
-import type { AgentCli, WorkspaceId } from '../types/workspace'
+import type { AgentCli, WorkspaceId } from '../../../shared/workspace'
 import { useWorkspaceStore } from './workspaceStore'
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
 import { agentSettingsApi } from '../studio/agentSettings'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { ModuleNotificationDelivery } from '../../../shared/modules/notifications'
-import type { DiagnosticLogEntry } from '../types/workspace'
+import type { DiagnosticLogEntry } from '../../../shared/workspace'
 import { moduleNotificationEntry, startModuleNotificationIngest } from './module-notifications'
 
 function delivery(over: Partial<ModuleNotificationDelivery> = {}): ModuleNotificationDelivery {

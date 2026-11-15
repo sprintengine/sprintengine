@@ -9,7 +9,7 @@ import type { MeshQueuedMessage, MeshScheduledMessage } from '../../../../../sha
 import type { HostUsageLimits } from './hostUsageLimits'
 import type { StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import {
   newChatWorktreeAttemptRunning,
   pendingNewChatWorktreeFailure,

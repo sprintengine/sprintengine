@@ -15,7 +15,7 @@ import {
   type WorkspaceLifecycleSnapshot,
 } from '../../shared/workspace-lifecycle'
 import { isSnoozeUnexpired } from '../../shared/workspace-snooze'
-import type { HighlightColor } from '../../renderer/src/types/workspace'
+import type { HighlightColor } from '../../shared/workspace'
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { conversationSessionWorking, conversationTurnInProgress } from '../../shared/conversation/phase'
 import { backgroundTasksWakeAgent } from '../../shared/conversation/backgroundTasks'

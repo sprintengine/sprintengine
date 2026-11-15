@@ -25,7 +25,7 @@ import {
   FLOAT_DEFAULT_WIDTH,
   FLOAT_PAGE_WIDTH,
 } from '../../../../store/slices/workspacePaneSlice'
-import type { WorkspacePaneTab } from '../../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../../shared/workspace'
 import type { EmbeddedWebviewElement, WebviewIpcMessageEvent } from '../../../../types/webview'
 import { showToast } from '../../../../store/toastStore'
 import { AgentPill, IconButton, OverflowMenu, Tooltip } from '../../../ui'

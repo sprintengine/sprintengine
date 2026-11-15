@@ -13,7 +13,7 @@ import {
   TruncatedText,
 } from '../../ui'
 import { useRelativeNow } from '../../../hooks/useRelativeNow'
-import type { AgentCli, Workspace } from '../../../types/workspace'
+import type { AgentCli, Workspace } from '../../../../../shared/workspace'
 import { getWorkspaceAccentHex, isStarred } from '../../../utils/highlight'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../../utils/relativeTime'
 import { TerminalSessionIcon } from '../agentComposer/agentSpawnShared'

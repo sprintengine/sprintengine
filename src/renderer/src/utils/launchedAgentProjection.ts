@@ -35,7 +35,7 @@
 // about, and a user-created agent whose terminal exited keeps its tab.
 import type { TerminalSessionSnapshot } from '../../../shared/electron-api'
 import { agentStateFromLaunchRecord } from '../../../shared/launched-agent-state'
-import type { AgentState, Workspace, WorkspaceId } from '../types/workspace'
+import type { AgentState, Workspace, WorkspaceId } from '../../../shared/workspace'
 
 export { agentStateFromLaunchRecord }
 

@@ -1,4 +1,4 @@
-import type { AgentCli } from '../types/workspace'
+import type { AgentCli } from '../../../shared/workspace'
 
 export type CliIconKind =
   'claude-code' | 'codex' | 'opencode' | 'zai' | 'grok' | 'kimi' | 'cursor' | 'muse' | 'terminal'

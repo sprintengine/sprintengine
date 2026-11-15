@@ -1,4 +1,4 @@
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from './workspace'
 import type { WorkspaceFieldsPatch } from './workspace-sync'
 
 // When a chat is asleep, as pure functions of the registry record and a clock.

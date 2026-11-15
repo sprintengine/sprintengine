@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import CliIcon from '../../CliIcon'
 import { useConversationLinkContext } from './conversationLinks'
 

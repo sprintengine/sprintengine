@@ -1,7 +1,7 @@
 import { cliForConversationProvider, CONVERSATION_DEFAULT_MODEL_ID } from '../../../../../shared/conversation-harness'
 import type { AgentState } from '../../../../../shared/agent-state'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 
 /**
  * The engine a chat runs on, for a tab opened beside it: the "+" on a Codex

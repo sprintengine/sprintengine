@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, test, vi } from 'vitest'
 
-import type { AppNotification } from '../types/workspace'
+import type { AppNotification } from '../../../shared/workspace'
 import { agentRuntimeRendererModule } from './agent-runtime-module'
 import type { InternalRendererHost, NotificationActionProvider } from './renderer-host'
 

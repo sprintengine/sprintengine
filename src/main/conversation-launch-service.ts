@@ -64,7 +64,7 @@ import { SOLO_CHAT_TEMPLATE_AGENT_ID, SOLO_CHAT_TEMPLATE_ID } from '../shared/la
 import { deriveWorkspaceTitle, nextNewChatName } from '../shared/workspace-title'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from '../shared/worktree-paths'
 import { firstMessageCommandId, firstMessageSettled, type PendingFirstMessages } from './conversation-first-messages'
-import type { WorkspaceWorktree } from '../renderer/src/types/workspace'
+import type { WorkspaceWorktree } from '../shared/workspace'
 import type { WorkspaceCreateRequest } from './workspace-registry-service'
 import { isMachinePath } from '../shared/machine-paths'
 import {

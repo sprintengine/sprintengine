@@ -4,7 +4,7 @@ import type React from 'react'
 import { MenuOption } from '../../ui/MenuOption'
 import { LockGlyph, PresetDialGlyph, RuleShieldGlyph, SparkGlyph, UnlockedGlyph } from '../../AppIcons'
 import { EditChangelistGlyph } from '../../ui/GitActionGlyphs'
-import type { CliPermissionPreset } from '../../../types/workspace'
+import type { CliPermissionPreset } from '../../../../../shared/workspace'
 import type { CliPermissionModeSpec } from '../../../../../shared/cli-permission-mode'
 
 // Shared, presentation-only pieces of the agent spawn surfaces (the compact

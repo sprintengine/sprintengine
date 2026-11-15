@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { agentPaneMountsTerminal, isStoredAgentCliUnavailable, resolveAgentRuntimeKind } from './AgentPanel'
 import { conversationAgentRuntimePatch } from '../workspace/conversationSpawnOptions'
-import type { AgentState, PluginCatalogEntry } from '../../types/workspace'
+import type { AgentState, PluginCatalogEntry } from '../../../../shared/workspace'
 import { test } from 'vitest'
 
 test('AgentPanel', async () => {

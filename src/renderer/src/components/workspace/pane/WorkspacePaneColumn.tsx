@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 
 import { useNarrowViewport } from '../../../hooks/useNarrowViewport'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { WorkspaceId } from '../../../types/workspace'
+import type { WorkspaceId } from '../../../../../shared/workspace'
 import { WorkspaceAsideColumn } from '../workspaceAsideColumn'
 import WorkspacePane from './WorkspacePane'
 import { openUrlInPane, rewriteUnroutableHost } from './browser/openInPane'

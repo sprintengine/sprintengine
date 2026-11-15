@@ -11,7 +11,7 @@ import {
   toWorkspaceRegistryRecord,
   type WorkspaceRegistryFile,
 } from '../shared/workspace-registry'
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from '../shared/workspace'
 
 const fileWrites = vi.hoisted(() => ({ count: 0 }))
 

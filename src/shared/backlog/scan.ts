@@ -7,7 +7,7 @@ import { stableBacklogObjectId } from './object-id'
 import { isAbsoluteFilePath } from '../paths'
 import { backlogHighlightFromFrontmatter, durableBacklogLinksFromFrontmatter, mergeBacklogLinks } from './durable-links'
 import { parseBacklogMockups } from './mockups'
-import type { HighlightColor } from '../../renderer/src/types/workspace'
+import type { HighlightColor } from '../workspace'
 import {
   joinPath,
   markdownTitle,

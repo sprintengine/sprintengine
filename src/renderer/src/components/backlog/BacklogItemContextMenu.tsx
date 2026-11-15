@@ -12,7 +12,7 @@ import {
 import { groupBacklogModuleActions } from './backlogModuleActions'
 import type { BacklogItemActionCategory } from '../../modules/renderer-host'
 import CliIcon from '../CliIcon'
-import type { AgentState } from '../../types/workspace'
+import type { AgentState } from '../../../../shared/workspace'
 import type {
   BacklogCriticality,
   BacklogDifficulty,

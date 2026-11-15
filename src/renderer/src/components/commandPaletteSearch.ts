@@ -1,5 +1,5 @@
 import { getRendererHost } from '../modules'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { sortWorkspacesByUserMessage } from '../utils/workspaceRecency'
 
 // Pure search logic for the global-search palette (CommandPalette.tsx), split

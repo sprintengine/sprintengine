@@ -3,7 +3,7 @@ import { Model, TabNode, TabSetNode } from 'flexlayout-react'
 
 import type { ChatForkInput, ChatForkResult } from './conversationTransport'
 import { defaultAgent } from '../../../../../shared/agent-state'
-import type { AgentState, Workspace } from '../../../types/workspace'
+import type { AgentState, Workspace } from '../../../../../shared/workspace'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { useToastStore } from '../../../store/toastStore'
 import { addAgentTabAfter, registerModel, unregisterModel } from '../../../utils/modelRegistry'

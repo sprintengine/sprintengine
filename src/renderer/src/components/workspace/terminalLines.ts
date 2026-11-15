@@ -5,7 +5,7 @@ import type {
 } from '../../../../shared/electron-api'
 import { primaryPullRequest, type BranchPullRequest } from '../../../../shared/git/pull-request'
 import { sessionRecencyOf } from '../../hooks/useTerminalSessions'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { resolveWorkspaceWorktree } from '../../utils/workspaceWorktree'
 import { agentCheckoutOf, agentCheckoutProbePath } from './agentCheckout'
 import type { RemoteSessionRow } from './remoteBand/remoteSessionsModel'

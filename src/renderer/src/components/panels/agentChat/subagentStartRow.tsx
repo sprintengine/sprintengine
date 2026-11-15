@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
 import { GhostButton, RowButton, TruncatedText } from '../../ui'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import { studioToolName } from './chatActivity'
 import { ConversationMarkdown, useConversationLinkContext } from './conversationLinks'
 import type { TranscriptToolEntry } from './conversationProjection'

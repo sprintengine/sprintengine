@@ -1,5 +1,5 @@
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { WorkspacePaneTab } from '../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../shared/workspace'
 import { keepFocusOutOfClosedPane } from './paneFocus'
 import { closeTerminal } from '../../../studio/terminals'
 

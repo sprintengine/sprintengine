@@ -156,10 +156,7 @@ import type {
   BacklogItemStatus as AppBacklogItemStatus,
   BacklogResolvedLink as AppBacklogResolvedLink,
 } from '../../../src/renderer/src/utils/backlog'
-import type {
-  LayoutTemplate as AppLayoutTemplate,
-  PreviewSlot as AppPreviewSlot,
-} from '../../../src/renderer/src/types/workspace'
+import type { LayoutTemplate as AppLayoutTemplate, PreviewSlot as AppPreviewSlot } from '../../../src/shared/workspace'
 
 import type {
   BacklogItemAction as SdkBacklogItemAction,

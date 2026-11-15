@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import type { WorkspaceStore } from '../workspaceStore'
 import { __workspaceStorePartializeForTests, useWorkspaceStore } from '../workspaceStore'
-import type { PluginCatalogEntry } from '../../types/workspace'
+import type { PluginCatalogEntry } from '../../../../shared/workspace'
 import {
   createPluginsSlice,
   resumeCapabilitiesForCli,

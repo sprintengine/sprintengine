@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import type { WorkspacePaneTab } from '../../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../../shared/workspace'
 import { DocumentTab } from './DocumentTab'
 
 // The filesystem, standing in for the main process: what each path holds, and

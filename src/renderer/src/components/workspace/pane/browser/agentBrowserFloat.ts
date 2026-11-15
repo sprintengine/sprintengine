@@ -1,6 +1,6 @@
 import type { BrowserController } from '../../../../../../shared/browser'
 import { paneKindFloats } from '../../../../store/slices/workspacePaneSlice'
-import type { WorkspacePaneState } from '../../../../types/workspace'
+import type { WorkspacePaneState } from '../../../../../../shared/workspace'
 
 // When the floating player comes up by itself: an agent opening or driving a
 // page, or drawing on a board, in a pane the person has closed. The pane would take the chat's width;

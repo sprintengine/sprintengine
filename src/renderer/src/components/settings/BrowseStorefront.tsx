@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { installAndActivateRendererModules } from '../../modules'
 
 import { isClaudeCodePluginEntry, type MarketplacePluginEntry } from '../../../../shared/marketplace/manifest'
-import type { McpServerConfig, McpSettings } from '../../types/workspace'
+import type { McpServerConfig, McpSettings } from '../../../../shared/workspace'
 import { ExtensionTrustReview } from '../extensions/ExtensionTrustReview'
 import {
   Badge,

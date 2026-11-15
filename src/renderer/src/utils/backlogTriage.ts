@@ -7,7 +7,7 @@ import type {
   BacklogRisk,
   BacklogType,
 } from './backlog'
-import type { BacklogView, BacklogSort, BacklogGroup } from '../types/workspace'
+import type { BacklogView, BacklogSort, BacklogGroup } from '../../../shared/workspace'
 
 // Triage view + sort logic for the Backlog panel, kept pure so the filtering
 // and ordering rules can be unit-tested without a DOM. The panel owns the

@@ -14,7 +14,7 @@
 //     version: 46,
 //   }
 
-import type { Workspace, WorkspaceId, WorkspaceRegistryEmptyState } from '../../types/workspace'
+import type { Workspace, WorkspaceId, WorkspaceRegistryEmptyState } from '../../../../shared/workspace'
 
 const WORKSPACE_REGISTRY_VERSION = 46
 

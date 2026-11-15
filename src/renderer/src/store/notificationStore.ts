@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
-import type { AppNotification, DiagnosticLevel, DiagnosticLogEntry } from '../types/workspace'
+import type { AppNotification, DiagnosticLevel, DiagnosticLogEntry } from '../../../shared/workspace'
 
 const NOTIFICATION_STORAGE_KEY = 'sprintengine-notifications'
 const MAX_NOTIFICATIONS = 120

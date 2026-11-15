@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import { autoCompactSwitchOf, WorkspaceContextMenu, type ContextMenuAction } from './contextMenus'
 
 // The chat menu's Auto compact switch, beside Auto-settle: on by the chat's

@@ -14,7 +14,7 @@
 import type { DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
 import type { CliModelDiscoveryResult } from '../../../shared/ipc/cli-model-discovery'
 import { windowActivity, type WindowActivity } from '../utils/windowActivity'
-import type { AppSettings } from '../types/workspace'
+import type { AppSettings } from '../../../shared/workspace'
 import { agentSettingsApi, windowHasStudio, type AgentSettingsApi } from '../studio/agentSettings'
 
 type CliModelDiscoveryApi = Pick<AgentSettingsApi, 'cliModelsDiscover' | 'onCliModelsChanged'>

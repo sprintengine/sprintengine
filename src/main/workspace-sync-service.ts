@@ -14,7 +14,7 @@ import type {
   WorkspaceRegistryService,
 } from './workspace-registry-service'
 import type { WorkspaceRegistryActor } from '../shared/workspace-registry'
-import type { AgentState, Workspace, WorkspaceId } from '../renderer/src/types/workspace'
+import type { AgentState, Workspace, WorkspaceId } from '../shared/workspace'
 import { isRecord } from '../shared/records'
 import { isConversationHighlightColor } from '../../packages/conversation-protocol/src/public'
 

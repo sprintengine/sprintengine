@@ -1,5 +1,5 @@
 import { paneTerminalSessionId } from './pane/paneTerminals'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { workspaceIsWorking } from './sidebar/conversationLines'
 import { windowChatServices } from '../panels/agentChat/windowChat'

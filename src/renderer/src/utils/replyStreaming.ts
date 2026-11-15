@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-import { DEFAULT_REPLY_STREAMING, type ReplyStreaming } from '../types/appTheme'
+import { DEFAULT_REPLY_STREAMING, type ReplyStreaming } from '../../../shared/app-theme'
 
 // How a reply streaming in is drawn (Settings → Appearance → Show replies),
 // held here so every message reads one value without each subscribing to the

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { beforeAll, test } from 'vitest'
 
-import type { Workspace, WorkspaceWindowState } from '../types/workspace'
+import type { Workspace, WorkspaceWindowState } from '../../../shared/workspace'
 import type { WorkspaceSyncEvent, WorkspaceSyncSnapshot } from '../../../shared/workspace-sync'
 import type {
   WorkspaceLifecycleRequest,

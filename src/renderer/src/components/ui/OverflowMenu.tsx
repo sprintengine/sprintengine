@@ -6,7 +6,7 @@ import { Tooltip } from './Tooltip'
 import { MENU_GROUP_LABEL_CLASS, MENU_ITEM_CLASS, MENU_LIST_CLASS } from './menuClasses'
 import { FOCUS_RING_CLASS } from './tokens'
 import { TruncatedText } from './TruncatedText'
-import type { HighlightColor } from '../../types/workspace'
+import type { HighlightColor } from '../../../../shared/workspace'
 
 export type OverflowMenuItem =
   | {

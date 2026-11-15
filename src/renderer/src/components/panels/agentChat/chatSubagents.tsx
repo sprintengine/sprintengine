@@ -9,7 +9,7 @@ import {
 import type { MeshSubagent } from '../../../../../shared/tailnet-mesh'
 import { useConversationSessions, type ConversationSessionEntry } from '../../../hooks/conversationSessionsStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import { useConversationTransport } from './conversationTransport'
 import { LiveElapsed } from './liveElapsed'
 import { formatStepDuration } from './stepDuration'

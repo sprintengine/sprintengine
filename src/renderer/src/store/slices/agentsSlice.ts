@@ -41,7 +41,7 @@ import type {
   EditorState,
   Workspace,
   WorkspaceId,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 
 export function normalizeAgentExecution(input: Partial<AgentExecution> | null | undefined): AgentExecution {
   const mode = input?.mode === 'worktree' ? 'worktree' : 'current_workspace'

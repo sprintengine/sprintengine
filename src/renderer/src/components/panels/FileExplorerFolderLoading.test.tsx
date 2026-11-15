@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 
 import { FOLDER_LOADING_DELAY_MS } from '../../hooks/useSlowFolderLoads'
-import type { LayoutTemplate } from '../../types/workspace'
+import type { LayoutTemplate } from '../../../../shared/workspace'
 
 // A folder on an SSH machine can take a second to list. The tree opens a folder
 // only once its listing is in, so until then the click has to be answered some

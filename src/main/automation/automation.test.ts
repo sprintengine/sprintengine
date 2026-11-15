@@ -45,7 +45,7 @@ import {
   type ModuleRegistryEntry,
   type ModuleRegistrySnapshot,
 } from '../../shared/modules/registry-snapshot'
-import type { Workspace } from '../../renderer/src/types/workspace'
+import type { Workspace } from '../../shared/workspace'
 import type {
   ScheduledAgentLastRun,
   ScheduledAgentView,

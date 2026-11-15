@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { commandMatchesQuery } from '../commandPaletteSearch'
 import {
   chatBranch,

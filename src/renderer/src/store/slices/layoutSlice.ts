@@ -2,7 +2,7 @@ import type { IJsonModel } from 'flexlayout-react'
 import { railSideOfComponents } from '../../utils/modelRegistry'
 import { adoptLegacyBacklogTab, dropRetiredPaneTabs, paneStateFromLegacyLayout } from './workspacePaneSlice'
 import { workspaceSyncClient } from '../workspaceSyncClient'
-import type { Workspace, WorkspaceId } from '../../types/workspace'
+import type { Workspace, WorkspaceId } from '../../../../shared/workspace'
 
 export function modelContainsComponent(value: unknown, component: string): boolean {
   if (!value) return false

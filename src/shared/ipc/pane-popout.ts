@@ -13,7 +13,7 @@
 // (`PanePopOutAction`) and renders the owner's answer. When the pop-out window
 // closes, the owner is told, and its tabs dock back into the pane.
 
-import type { WorkspacePaneTab, WorkspacePaneTabKind } from '../../renderer/src/types/workspace'
+import type { WorkspacePaneTab, WorkspacePaneTabKind } from '../workspace'
 import type { WindowBounds } from './window'
 
 export type PanePopOutOpenInput = {

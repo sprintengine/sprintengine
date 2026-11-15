@@ -17,7 +17,7 @@ import {
   toWorkspaceRegistryRecord,
 } from '../shared/workspace-registry'
 import { deriveWorkspaceTitle, isDefaultWorkspaceName } from '../shared/workspace-title'
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from '../shared/workspace'
 import {
   createConversationLaunchService,
   type ConversationLaunchServiceDeps,

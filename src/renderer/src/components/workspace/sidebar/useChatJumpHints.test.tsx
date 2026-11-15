@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import { CHAT_JUMP_HINT_DELAY_MS } from './chatJumpHints'
 import { ChatJumpHint } from './rowParts'
 import { useChatJumpHints } from './useChatJumpHints'

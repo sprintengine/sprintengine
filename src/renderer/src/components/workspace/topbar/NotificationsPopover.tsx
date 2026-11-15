@@ -5,7 +5,7 @@
 // callbacks in, IPC and store mutations stay in the parent.
 
 import React, { useMemo, useState } from 'react'
-import type { AppNotification, DiagnosticLevel } from '../../../types/workspace'
+import type { AppNotification, DiagnosticLevel } from '../../../../../shared/workspace'
 import {
   CopyGlyphButton,
   EmptyState,

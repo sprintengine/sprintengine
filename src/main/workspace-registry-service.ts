@@ -60,7 +60,7 @@ import type {
   WorkspaceMode,
   WorkspaceWindowId,
   WorkspaceWorktree,
-} from '../renderer/src/types/workspace'
+} from '../shared/workspace'
 import { hostIdToRecord, type ExecutionHostId } from '../shared/execution-host'
 import type { WorkspaceRegistryStore } from './workspace-registry-store'
 

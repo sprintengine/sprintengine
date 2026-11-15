@@ -2,7 +2,7 @@ import { agentCliSupportsConversationResume, resumeCapabilitiesForCli } from '..
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import type { PluginRegistryListEntry } from '../../../../../shared/plugin-manifest'
 import { showToast } from '../../../store/toastStore'
-import type { AgentState } from '../../../types/workspace'
+import type { AgentState } from '../../../../../shared/workspace'
 import { clientSupports } from '../../../clientCapabilities'
 import { windowChatServices } from './windowChat'
 import { ensureChatWorktree } from '../../../utils/chatWorktreeRestore'

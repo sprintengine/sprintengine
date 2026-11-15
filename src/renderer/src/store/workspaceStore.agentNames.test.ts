@@ -6,7 +6,7 @@ import { createWorkspaceSyncService } from '../../../main/workspace-sync-service
 import { defaultAgent } from '../../../shared/agent-state'
 import type { TerminalSessionSnapshot } from '../../../shared/electron-api'
 import type { WorkspaceSyncCommand, WorkspaceSyncEvent } from '../../../shared/workspace-sync'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
 

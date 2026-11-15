@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceId, WorkspaceWorktreeState, WorktreeEntry } from '../../types/workspace'
+import type { Workspace, WorkspaceId, WorkspaceWorktreeState, WorktreeEntry } from '../../../../shared/workspace'
 
 export const defaultWorkspaceWorktreeState = (): WorkspaceWorktreeState => ({
   containerPath: null,

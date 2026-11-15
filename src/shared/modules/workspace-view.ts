@@ -1,4 +1,4 @@
-import type { Workspace } from '../../renderer/src/types/workspace'
+import type { Workspace } from '../workspace'
 export type {
   ModuleWorkspaceGitRemote,
   ModuleWorkspaceGitInfoErrorCode,

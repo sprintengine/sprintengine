@@ -9,7 +9,7 @@ import type {
   CliRuntimeSettings,
   PluginCatalogEntry,
   PluginCatalogStatus,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 import { normalizeAgentRuntime } from '../../store/slices/agentsSlice'
 import {
   isAgentCliMissing,

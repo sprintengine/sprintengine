@@ -6,7 +6,7 @@ import type {
   WorkspaceId,
   WorkspaceWindowId,
   WorkspaceWindowState,
-} from '../renderer/src/types/workspace'
+} from './workspace'
 import { workspaceProjectRootOf } from './worktree-paths'
 
 export type WindowPlacement = Pick<WorkspaceWindowState, 'bounds' | 'isMaximized' | 'displayId'>

@@ -20,7 +20,7 @@ import { agentWorktreePaths } from '../../shared/worktree-paths'
 import { worktreeBranchPrefix } from '../worktree-branch-prefix'
 import type { ExecutionHostId } from '../../shared/execution-host'
 import type { ScheduledAgent, ScheduledAgentLastRun } from '../../shared/scheduled-agents'
-import type { WorkspaceWorktree } from '../../renderer/src/types/workspace'
+import type { WorkspaceWorktree } from '../../shared/workspace'
 
 export type ScheduledAgentRunnerDeps = {
   launchConversation: (request: ConversationLaunchRequest) => Promise<ConversationLaunchResult>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { WorktreeEntry } from '../types/workspace'
+import type { WorktreeEntry } from '../../../shared/workspace'
 import { releaseWorktreeEntriesOwnedBy } from '../store/slices/worktreesSlice'
 import { agentWorktreeCleanupPlan, chatsReclaimedBy, entriesRemovedBy } from './agentWorktreeCleanup'
 

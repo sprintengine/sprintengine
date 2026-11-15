@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { isScheduledRunChat, scheduledAgentRunInProgress, scheduledAgentRuns } from './scheduledAgentRuns'
 
 type RunFields = Pick<Workspace, 'id' | 'name' | 'createdAt' | 'scheduledAgentId'>

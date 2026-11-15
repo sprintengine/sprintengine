@@ -5,7 +5,7 @@ import { COMPOSER_SURFACE_CLASS, FOCUS_RING_INSET_CLASS, FOCUS_RING_WITHIN_EDITO
 import { useConversationSessions } from '../../../hooks/conversationSessionsStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { ConversationCliRuntimeOverrides } from '../../../../../shared/conversation-runtime'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import { ConversationLinkProvider } from './conversationLinks'
 import { ConversationRowFrame } from './conversationRowFrame'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { MeshBrowse, MeshConnection, MeshConversation } from '../../../../../shared/tailnet-mesh'
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import {
   buildRemoteBand,
   conversationsOf,

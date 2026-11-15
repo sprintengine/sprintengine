@@ -1,6 +1,6 @@
 import { basename } from 'node:path'
 
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from '../shared/workspace'
 import { conversationWorkingRoot } from '../shared/agent-state'
 import { conversationSessionWorking } from '../shared/conversation/phase'
 import type { ConversationSessionSummary } from '../shared/conversation-runtime'

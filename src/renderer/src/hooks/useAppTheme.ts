@@ -17,7 +17,7 @@ import {
   type ColorScheme,
   type ResolvedAppTheme,
   type WindowMaterial,
-} from '../types/appTheme'
+} from '../../../shared/app-theme'
 
 export type { ResolvedAppTheme }
 

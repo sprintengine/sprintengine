@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from './workspace'
 import {
   WORKSPACE_AUTO_SETTLE_AFTER_MS,
   normalizeAutoSettleAfterDays,

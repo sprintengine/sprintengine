@@ -1,5 +1,5 @@
 import { isMintedAgentId } from '../../../shared/agent-ids'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 
 type AgentHost = Pick<Workspace, 'id' | 'agents'>
 

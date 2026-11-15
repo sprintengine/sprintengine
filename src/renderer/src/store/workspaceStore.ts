@@ -28,7 +28,7 @@ import type {
   MemoryGraphSettings,
   WorkspaceHighlight,
   McpServerConfig,
-} from '../types/workspace'
+} from '../../../shared/workspace'
 import type {
   AppTheme,
   ChatWidth,
@@ -36,7 +36,7 @@ import type {
   ReplyStreaming,
   ResolvedAppTheme,
   WindowMaterial,
-} from '../types/appTheme'
+} from '../../../shared/app-theme'
 import { noteLaunchedAgentArrived, type LaunchedAgentProjection } from '../utils/launchedAgentProjection'
 import type { DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
 import type { WorkspaceLifecycleResult } from '../../../shared/workspace-lifecycle'
@@ -142,7 +142,7 @@ import type {
   WorkspaceFolderRole,
   WorkspaceRegistryEmptyState,
   WorkspaceWorktree,
-} from '../types/workspace'
+} from '../../../shared/workspace'
 import { windowModuleSwitches, type ModuleSwitchStore } from '../studio/moduleSwitches'
 import { windowHasStudio } from '../studio/extensions'
 import { configureTerminals, listTerminals } from '../studio/terminals'
@@ -380,11 +380,11 @@ export interface WorkspaceStore
       name?: string
       folderPath?: string | null
       // Set for a chat created on a paired machine; see Workspace.remoteOrigin.
-      remoteOrigin?: import('../types/workspace').WorkspaceRemoteOrigin | null
+      remoteOrigin?: import('../../../shared/workspace').WorkspaceRemoteOrigin | null
       // The machine on this computer the workspace runs on; see Workspace.hostId.
       hostId?: import('../../../shared/execution-host').ExecutionHostId | null
       // The SSH machine it is on; see Workspace.environment.
-      environment?: import('../types/workspace').WorkspaceEnvironmentRef | null
+      environment?: import('../../../shared/workspace').WorkspaceEnvironmentRef | null
       worktree?: WorkspaceWorktree | null
       templateAgentCli?: AgentCli | null
       seedAgent?: SoloChatSeed | null

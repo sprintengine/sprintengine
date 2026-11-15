@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
-import type { LayoutTemplate, Workspace } from '../../types/workspace'
+import type { LayoutTemplate, Workspace } from '../../../../shared/workspace'
 import { getEditorBuffer } from '../../utils/editorBuffers'
 import { useWorkspaceStore } from '../workspaceStore'
 import {

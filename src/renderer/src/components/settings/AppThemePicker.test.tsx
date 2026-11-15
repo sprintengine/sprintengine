@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, test } from 'vitest'
 
-import { APP_THEMES } from '../../types/appTheme'
+import { APP_THEMES } from '../../../../shared/app-theme'
 import AppThemePicker from './AppThemePicker'
 
 test("a swatch's accent dot sits in a different corner from the scheme glyph", () => {

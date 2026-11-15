@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { Workspace } from '../../renderer/src/types/workspace'
+import type { Workspace } from '../../shared/workspace'
 import { PROJECT_USE_HALF_LIFE_MS, withProjectUse, type ProjectUsageMap } from '../../shared/project-frecency'
 import type { WorkspaceSyncSnapshot } from '../../shared/workspace-sync'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'

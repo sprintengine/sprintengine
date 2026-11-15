@@ -4,7 +4,7 @@ import { getRendererHost, onThirdPartyRendererModulesLoaded, selectModuleEnabled
 import { paneShowsMenu } from '../../../store/slices/workspacePaneSlice'
 import { useNarrowViewport } from '../../../hooks/useNarrowViewport'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
-import type { WorkspacePaneTab, WorkspacePaneTabKind } from '../../../types/workspace'
+import type { WorkspacePaneTab, WorkspacePaneTabKind } from '../../../../../shared/workspace'
 import {
   ContextMenu,
   IconButton,

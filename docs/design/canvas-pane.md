@@ -322,7 +322,7 @@ argument the service never sees answers `invalid`.
 
 ### 3.5 Renderer
 
-- Tab kind `canvas` in `types/workspace.ts`, `workspacePaneSlice.ts` (multi-tab,
+- Tab kind `canvas` in `src/shared/workspace.ts`, `workspacePaneSlice.ts` (multi-tab,
   one tab per board path: opening a path that already has a tab focuses it; tab
   field `canvas?: { path: string }`; `setPaneTabBoard` is how a tab GAINS a
   board, because a board another tab already holds brings that tab forward and

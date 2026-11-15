@@ -11,7 +11,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, test, vi } from 'vitest'
 
-import type { Workspace, WorkspacePaneTab } from '../../../types/workspace'
+import type { Workspace, WorkspacePaneTab } from '../../../../../shared/workspace'
 
 vi.mock('./FloatingPlayer', () => ({
   FloatingPlayerChrome: () => null,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { test } from 'vitest'
 
-import type { Workspace, WorkspacePaneState } from '../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../shared/workspace'
 import { createWorkspacePaneSlice } from './workspacePaneSlice'
 
 // Dragging a pane tab to a new place: the strip keeps the order it was put in,

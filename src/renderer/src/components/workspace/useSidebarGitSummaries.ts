@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { resolveWorkspaceWorktree } from '../../utils/workspaceWorktree'
 import { isWindowVisible, onWindowVisibilityChange } from '../../utils/windowActivity'
 import type { WorkspaceChangeSummary } from '../../../../shared/electron-api'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { gitApi } from '../../studio/git'
 
 // Git facts for the sidebar's rows (remote-sessions-ux / two-line-session-rows):

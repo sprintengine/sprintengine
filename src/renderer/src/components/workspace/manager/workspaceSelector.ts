@@ -1,7 +1,7 @@
 // The workspace store selector WorkspaceManager renders from, and the
 // equality check that keeps it from re-rendering on fields it never reads.
 
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import { workspaceLastUserMessageAt } from '../../../utils/workspaceRecency'
 import { isMeshConversationPane } from '../../../../../shared/tailnet-mesh'
 

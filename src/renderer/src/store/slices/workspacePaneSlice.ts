@@ -15,7 +15,7 @@ import type {
   WorkspacePaneState,
   WorkspacePaneTab,
   WorkspacePaneTabKind,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 
 // The workspace pane's state (browser-pane epic): one record per workspace,
 // persisted with it. Everything that decides what a tab record may contain

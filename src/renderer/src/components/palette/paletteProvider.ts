@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PaletteCommandGroup, PaletteScope } from '../commandPaletteSearch'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { errorMessage } from '../../../../shared/errors'
 
 /**

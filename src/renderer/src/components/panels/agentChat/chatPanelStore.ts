@@ -4,7 +4,7 @@ import type { BranchPullRequest } from '../../../../../shared/git/pull-request'
 import type { MachineIdentity } from '../../../../../shared/machine-identity'
 import type { CliPermissionPreset } from '../../../../../shared/electron-api'
 import type { StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import type { PermissionModeOption } from '../../workspace/agentComposer/agentSpawnShared'
 import type { CreatePullRequestSlot } from './createPullRequest'
 

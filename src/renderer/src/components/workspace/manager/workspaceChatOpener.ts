@@ -2,7 +2,7 @@ import { conversationNewChatSeed } from '../conversationSpawnOptions'
 import { conversationProviderForCli, CONVERSATION_DEFAULT_MODEL_ID } from '../../../../../shared/conversation-harness'
 import type { ModuleOpenChatResult } from '../../../../../shared/modules/conversation-service'
 import type { WorkspaceChatOpener } from '../../../modules/chat-opener'
-import type { AgentState, CliPermissionPreset } from '../../../types/workspace'
+import type { AgentState, CliPermissionPreset } from '../../../../../shared/workspace'
 
 // What `RendererHost.openChat` does once the shell has a store to do it in
 // (see modules/chat-opener.ts): a chat agent seeded into a workspace that is

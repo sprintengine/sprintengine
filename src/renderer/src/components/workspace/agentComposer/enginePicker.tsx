@@ -3,7 +3,7 @@ import React, { type JSX } from 'react'
 import CliIcon from '../../CliIcon'
 import { ChipButton, CliModelPopoverSurface, Popover, Tooltip, TruncatedText } from '../../ui'
 import type { CliRuntimeOption } from '../../ui/CliModelPicker'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import { ChipCaretGlyph } from './agentSpawnShared'
 import { engineNames } from './useAgentComposer'
 

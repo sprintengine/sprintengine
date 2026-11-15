@@ -13,7 +13,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, test, vi } from 'vitest'
 
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 
 vi.mock('./WorkspacePane', () => ({
   default: ({ workspaceId, active }: { workspaceId: string; active: boolean }) =>

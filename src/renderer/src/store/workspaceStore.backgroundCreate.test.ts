@@ -4,7 +4,7 @@ import { createWorkspaceRegistryService } from '../../../main/workspace-registry
 import { createInMemoryWorkspaceRegistryStore } from '../../../main/workspace-registry-store'
 import { createWorkspaceSyncService } from '../../../main/workspace-sync-service'
 import type { WorkspaceSyncCommand, WorkspaceSyncEvent } from '../../../shared/workspace-sync'
-import type { LayoutTemplate, Workspace } from '../types/workspace'
+import type { LayoutTemplate, Workspace } from '../../../shared/workspace'
 import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
 import { terminalsDouble } from '../studio/terminals.double'

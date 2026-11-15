@@ -1,4 +1,4 @@
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { isRetiredWorkspaceMode } from '../../../../shared/workspace-mode'
 import { isPlaceholderAgentName } from '../../utils/agentNames'
 import { normalizeAgentState, pickWorkspaceAgentName } from './agentsSlice'

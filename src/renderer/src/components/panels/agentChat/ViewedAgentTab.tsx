@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import CliIcon from '../../CliIcon'
 import { useChatPanelFacts } from './chatPanelStore'
 import { useSubagentFamily } from './subagentFamilyStore'

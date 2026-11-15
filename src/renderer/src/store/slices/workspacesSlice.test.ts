@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { LayoutTemplate, Workspace, WorkspaceWindowState } from '../../types/workspace'
+import type { LayoutTemplate, Workspace, WorkspaceWindowState } from '../../../../shared/workspace'
 import { getEditorBuffer } from '../../utils/editorBuffers'
 import { useWorkspaceStore } from '../workspaceStore'
 import { isSnoozedWorkspace } from '../../utils/workspaceSnooze'

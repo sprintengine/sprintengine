@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { test } from 'vitest'
 
-import { APP_THEMES, colorSchemeForResolvedTheme } from '../types/appTheme'
+import { APP_THEMES, colorSchemeForResolvedTheme } from '../../../shared/app-theme'
 
 // The categorical chart series (`--chart-1` … `--chart-8`, `--chart-other`) are a
 // mark colour, so each has to clear WCAG's 3:1 non-text floor against the surface

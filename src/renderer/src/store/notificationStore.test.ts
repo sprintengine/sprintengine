@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { AppNotification } from '../types/workspace'
+import type { AppNotification } from '../../../shared/workspace'
 import { test } from 'vitest'
 
 test('notificationStore', async () => {

@@ -26,7 +26,7 @@ import { refuseWorkspaceFolder } from './workspace-folder-guard'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { isMachinePath } from '../../shared/machine-paths'
 import { confineToRoots } from '../studio-rpc/studio-file-confinement'
-import type { Workspace } from '../../renderer/src/types/workspace'
+import type { Workspace } from '../../shared/workspace'
 import type {
   BacklogAddOrUpdateLinkInput,
   BacklogCriticalityPayload,

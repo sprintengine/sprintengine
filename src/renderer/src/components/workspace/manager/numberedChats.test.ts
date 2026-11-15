@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { test } from 'vitest'
 
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import { getNextWorkspaceId } from './layoutTabActions'
 import { drawnSidebarChatIds, numberedChatIds, numberedChatRows } from './numberedChats'
 

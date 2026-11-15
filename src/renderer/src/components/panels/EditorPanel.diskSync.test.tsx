@@ -6,7 +6,7 @@ import { afterEach, beforeEach, test, vi } from 'vitest'
 
 import type { FileWatchEvent } from '../../../../shared/ipc/filesystem'
 import { fakeMonaco as fake, type FakeMonacoEditor as FakeEditor } from '../../../../../tests/fake-monaco-editor'
-import type { LayoutTemplate } from '../../types/workspace'
+import type { LayoutTemplate } from '../../../../shared/workspace'
 
 // The docked editor against a file on disk that something else changes: an
 // agent's edit reloads a clean tab, asks before it touches a dirty one, and

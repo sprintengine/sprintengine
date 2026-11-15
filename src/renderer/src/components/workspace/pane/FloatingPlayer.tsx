@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { FLOAT_DEFAULT_HEIGHT, FLOAT_DEFAULT_WIDTH } from '../../../store/slices/workspacePaneSlice'
-import type { WorkspaceId, WorkspacePaneTab } from '../../../types/workspace'
+import type { WorkspaceId, WorkspacePaneTab } from '../../../../../shared/workspace'
 import { CloseIconButton, FloatingButton, Tooltip } from '../../ui'
 import { agentBrowserTracker } from './browser/agentBrowserFloat'
 

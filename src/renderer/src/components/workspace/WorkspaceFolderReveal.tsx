@@ -2,7 +2,7 @@ import React from 'react'
 
 import { useTerminalSessions } from '../../hooks/useTerminalSessions'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { PANEL_COMMAND_EVENT } from '../../utils/panelCommands'
 import { followedCheckoutOf } from './followedCheckout'
 import { folderOpenTargetLabel } from './openInEditorTargets'

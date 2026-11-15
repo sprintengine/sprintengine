@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { COMMAND_REGISTRY, RendererCommandDispatcher } from '../../commands'
-import type { KeybindingSettings } from '../../types/workspace'
+import type { KeybindingSettings } from '../../../../shared/workspace'
 import {
   buildShortcutRows,
   categoryLabel,

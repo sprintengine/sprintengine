@@ -3,7 +3,7 @@
 
 import { isSubagentRecord } from '../../../../../shared/agent-state'
 import type { ReactNode } from 'react'
-import { type Workspace, type HighlightColor } from '../../../types/workspace'
+import { type Workspace, type HighlightColor } from '../../../../../shared/workspace'
 import { resolveEnabledWorkspaceType } from '../../AppIcons'
 import type { WorkspaceTypeRowAction } from '../../../modules/renderer-host'
 import {

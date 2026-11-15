@@ -8,8 +8,6 @@
     "src/server/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
-    "src/renderer/src/types/appTheme.ts",
-    "src/renderer/src/types/workspace.ts",
     "packages/module-sdk/src/**/*",
     "packages/conversation-timeline/src/**/*",
     "packages/conversation-protocol/src/**/*",

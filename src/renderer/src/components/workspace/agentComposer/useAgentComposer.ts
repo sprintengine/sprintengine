@@ -2,7 +2,7 @@ import React from 'react'
 import type { AgentCliAvailabilityMap } from '../../../../../shared/electron-api'
 import type { ConversationSecretStatusResult } from '../../../../../shared/electron-api'
 import { windowChatServices } from '../../panels/agentChat/windowChat'
-import type { AgentCli } from '../../../types/workspace'
+import type { AgentCli } from '../../../../../shared/workspace'
 import type { WorkspaceSkill } from '../../../../../shared/electron-api'
 import {
   resolveAvailableAgentCli,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { AppSettings, Workspace } from '../../types/workspace'
+import type { AppSettings, Workspace } from '../../../../shared/workspace'
 import { defaultAppSettings } from './settingsSlice'
 import {
   createMemorySlice,

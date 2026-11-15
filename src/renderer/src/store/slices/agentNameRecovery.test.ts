@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test, vi } from 'vitest'
 import { defaultAgent } from '../../../../shared/agent-state'
 import { isPlaceholderAgentName } from '../../../../shared/agent-names'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { nameGenericWorkspaceAgents } from './normalizers'
 
 test('placeholder detection uses exact record identity and preserves custom labels', () => {

@@ -30,7 +30,7 @@ import type {
 } from '../../../../../../shared/canvas/types'
 import { sceneVersionHash } from '../../../../../../shared/canvas/merge'
 import { CANVAS_DEFAULT_BACKGROUND, reduceAppState } from '../../../../../../shared/canvas/scene-file'
-import type { ColorScheme } from '../../../../types/appTheme'
+import type { ColorScheme } from '../../../../../../shared/app-theme'
 import { AgentPill } from '../../../ui'
 import {
   bufferCanvasPush,

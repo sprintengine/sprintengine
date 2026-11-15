@@ -70,7 +70,7 @@ import { SpawnPermissionFooter } from '../../../agentComposer/spawnFooter'
 import { useAgentComposer, type AgentComposerSelection } from '../../../agentComposer/useAgentComposer'
 import { DEFAULT_AGENT_SPAWN_PERMISSION_PRESET, normalizeSelectedCli } from '../../../../../store/slices/settingsSlice'
 import { useWorkspaceStore } from '../../../../../store/workspaceStore'
-import type { AgentCli, CliPermissionPreset } from '../../../../../types/workspace'
+import type { AgentCli, CliPermissionPreset } from '../../../../../../../shared/workspace'
 import type { HostedCard } from '../../../../../../../shared/hosted-card-feed'
 
 /**
