@@ -936,6 +936,112 @@ test('NewAgentPanel launch paths', async () => {
       }
     })
 
+    await check(
+      'Container: off by default, its settings in words, and Enter makes the container before the chat',
+      async () => {
+        seedStore()
+        const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+        const machine = (id: string, label: string, extra: Record<string, unknown> = {}) => ({
+          id,
+          label,
+          destination: id,
+          resolved: null,
+          environmentId: null,
+          settings: {},
+          addedAt: 0,
+          state: 'connected',
+          stateText: 'Connected',
+          working: false,
+          action: null,
+          server: null,
+          notes: [],
+          ...extra,
+        })
+        const created: Array<Record<string, unknown>> = []
+        let answer: Record<string, unknown> = {
+          ok: true,
+          id: '0123456789abcdef',
+          label: 'proj (container)',
+          folder: '/home/node/work/proj',
+        }
+        api.sshMachinesEnabled = true
+        api.sshEnvironmentsList = async () => [
+          machine('ssh-1', 'build-box'),
+          machine('0123456789abcdef', 'older (container)', {
+            container: { host: { kind: 'local' }, name: 'sprintengine-0123456789abcdef' },
+          }),
+        ]
+        api.containerDockerStatus = async () => ({
+          state: 'ready',
+          words: 'Docker 29.2.1 is running on this Mac (Colima).',
+          imageReady: true,
+          canStart: null,
+        })
+        api.containerCreate = async (request: Record<string, unknown>) => {
+          created.push(request)
+          return answer
+        }
+        try {
+          const view = await render(scheduleProps())
+          await settle()
+          const chip = view.container.querySelector<HTMLElement>('[data-container-trigger="true"]')
+          assert.ok(chip, 'the Container chip is in the strip')
+          assert.equal(chip.textContent, 'No container', 'off by default')
+          // A container is picked by its chip, never as a machine.
+          await click(view.container.querySelector('[data-machine-trigger="true"]')!)
+          assert.ok(dom.window.document.querySelector('[data-machine-ssh="ssh-1"]'), 'the SSH machine is offered')
+          assert.equal(dom.window.document.querySelector('[data-machine-ssh="0123456789abcdef"]'), null)
+          await click(view.container.querySelector('[data-machine-trigger="true"]')!)
+          await click(chip)
+          await settle()
+          const settings = dom.window.document.querySelector('[data-container-settings="true"]')
+          assert.ok(settings, 'its settings')
+          assert.match(settings.textContent ?? '', /Docker 29\.2\.1 is running on this Mac \(Colima\)\./u)
+          assert.match(settings.textContent ?? '', /Cloned in; changes leave as a pushed branch/u)
+          assert.match(settings.textContent ?? '', /NetworkFull/u)
+          await click(settings.querySelector('[role="switch"]')!)
+          assert.equal(view.container.querySelector('[data-container-trigger="true"]')?.textContent, 'Container')
+          await typePrompt(view, 'Fix the login.')
+          await click(sendOf(view)!)
+          await settle()
+          assert.deepEqual(created[0], {
+            host: { kind: 'local' },
+            folder: '/proj',
+            label: created[0]?.label,
+            image: { kind: 'studio-default' },
+          })
+          assert.equal(view.launches.length, 1)
+          assert.deepEqual(view.launches[0]?.environment, {
+            kind: 'ssh',
+            id: '0123456789abcdef',
+            label: 'proj (container)',
+            folder: '/home/node/work/proj',
+          })
+          assert.equal(view.launches[0]?.worktree, undefined, 'no worktree inside a container yet')
+          view.unmount()
+
+          // A container that could not be made starts no chat.
+          answer = { ok: false, message: 'Docker was not found on this Mac.' }
+          const again = await render(scheduleProps())
+          await settle()
+          await click(again.container.querySelector('[data-container-trigger="true"]')!)
+          await settle()
+          await click(dom.window.document.querySelector('[data-container-settings="true"] [role="switch"]')!)
+          await typePrompt(again, 'Fix the login.')
+          await click(sendOf(again)!)
+          await settle()
+          assert.equal(again.launches.length, 0)
+          again.unmount()
+        } finally {
+          delete api.sshMachinesEnabled
+          delete api.sshEnvironmentsList
+          delete api.containerDockerStatus
+          delete api.containerCreate
+          resetRememberedMachineForTests()
+        }
+      },
+    )
+
     if (failures > 0) {
       console.error(`NewAgentPanel.launch.test.tsx: ${failures} failing check(s)`)
       process.exit(1)

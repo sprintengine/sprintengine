@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 
 import type { ContainerResult, ContainerSummary } from '../../../../shared/containers'
 import { showToast } from '../../store/toastStore'
-import { ContainerGlyph, InlineNotice, OutlineButton, ProviderRow, ProviderStateId } from '../ui'
+import { ContainerGlyph, InlineNotice, OutlineButton, ProviderRow } from '../ui'
 import { SettingCard, SettingsSectionTitle } from './SettingsAtoms'
 
 // Settings › Machines › Containers (docs/design/container-chats.md): every
@@ -68,7 +68,7 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
               version={container.hostLabel}
               stateLine={
                 container.id
-                  ? container.status
+                  ? `${container.status}${container.repo ? ` · branch ${container.repo.branch} from ${container.repo.source}` : ''}`
                   : `${container.status}. Studio has no record of this one: its chat is gone.`
               }
               actions={
@@ -102,13 +102,7 @@ export function ContainersSection({ api }: { api: Api | null }): React.JSX.Eleme
                   </OutlineButton>
                 </>
               }
-            >
-              {container.repo ? (
-                <p className="text-meta text-[color:var(--text-muted)]">
-                  <ProviderStateId>{container.repo.branch}</ProviderStateId> from {container.repo.source}
-                </p>
-              ) : null}
-            </ProviderRow>
+            />
           )
         })}
       </SettingCard>
