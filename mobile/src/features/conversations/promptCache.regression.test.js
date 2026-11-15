@@ -50,12 +50,12 @@ test("the notice's words are the desktop's", () => {
   const expiring = promptCacheState({ ttl: "1h", expiresAt: 200_000, recacheTokens: 412_000 }, 0);
   assert.deepEqual(promptCacheCopy(expiring, 0), {
     label: "Cache expires in 3m",
-    detail: "After that, the next message re-sends ~412k tokens uncached. Compacting now, while the cache is warm, is cheap.",
+    detail: "Then the next message re-sends ~412k tokens uncached. Compacting now is cheap.",
   });
   const cold = promptCacheState({ ttl: "5m", expiresAt: 100_000, recacheTokens: 412_000 }, 100_000 + 12 * 60_000);
   assert.deepEqual(promptCacheCopy(cold, 100_000 + 12 * 60_000), {
     label: "Cache expired 12m ago",
-    detail: "The next message re-sends ~412k tokens uncached, a compaction included. Compacting first makes every message after it smaller.",
+    detail: "The next message re-sends ~412k tokens uncached, a compaction included. Compacting shrinks later messages.",
   });
   const never = promptCacheState({ ttl: null, expiresAt: null, recacheTokens: 412_000 }, 0);
   assert.equal(promptCacheCopy(never, 0).label, "Cache cold");

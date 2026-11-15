@@ -159,7 +159,7 @@ test("the list draws every provider, the chat's first, each window with a bar an
 
 test('with nothing reported the list says so rather than guess', async () => {
   const panel = await render(<UsageLimitsPanel state={{ snapshots: [] }} />)
-  expect(panel.querySelector('[data-usage-empty]')?.textContent).toMatch(/No usage limits reported yet/)
+  expect(panel.querySelector('[data-usage-empty]')?.textContent).toMatch(/No usage limits yet/)
 })
 
 test('the composer draws the bar, named in words', async () => {

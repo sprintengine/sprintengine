@@ -108,7 +108,7 @@ export function FontFamilyPicker({
       showToast({
         tone: 'warn',
         title: `“${option.family}” isn’t installed`,
-        description: 'Check the name, or install the font. The current font was kept.',
+        description: 'Kept the current font. Check the name or install it.',
       })
       return
     }
@@ -116,7 +116,7 @@ export function FontFamilyPicker({
       showToast({
         tone: 'warn',
         title: `“${option.family}” isn’t monospace`,
-        description: 'Code and the terminal need a fixed-width font, so the current font was kept.',
+        description: 'Code and the terminal need a fixed-width font. Kept the current one.',
       })
       return
     }
@@ -234,7 +234,7 @@ export function FontFamilyPicker({
         </div>
         {list.status === 'unavailable' ? (
           <p className="m-0 px-2.5 pt-2 text-micro text-[color:var(--text-muted)]">
-            This computer didn’t share its list of fonts. Type the name of one that is installed.
+            Couldn’t list fonts. Type an installed font’s name.
           </p>
         ) : null}
         <FontOptionList

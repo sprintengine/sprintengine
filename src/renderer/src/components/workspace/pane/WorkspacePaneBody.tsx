@@ -86,7 +86,7 @@ function PaneUnavailable() {
     >
       <p className="text-meta font-medium text-[color:var(--text-strong)]">Panel unavailable</p>
       <p className="max-w-xs text-micro leading-5 text-[color:var(--text-muted)]">
-        This view isn’t available right now. Its feature may be disabled, or the tab may be out of date.
+        Its feature may be off, or the tab is out of date.
       </p>
     </div>
   )
@@ -110,8 +110,8 @@ function PanePoppedOutPlaceholder({ workspaceId, tab }: { workspaceId: string; t
           // A diff is only ever shown in its window (diffShowsInWindow), so
           // there is nothing to bring back.
           tab.kind === 'diff'
-            ? `${paneTabLabel(tab)} is open in a window of its own.`
-            : `${paneTabLabel(tab)} is open in a window of its own. Bring it back to show it here again.`
+            ? `${paneTabLabel(tab)} is open in its own window.`
+            : `${paneTabLabel(tab)} is open in its own window. Bring it back to show it here.`
         }
         action={
           <>

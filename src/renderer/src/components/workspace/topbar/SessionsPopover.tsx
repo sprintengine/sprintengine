@@ -255,7 +255,7 @@ export function SessionsPopover({
                             so the control is absent for those rows instead of
                             failing quietly against the terminal runtime. */}
                           {item.kind === 'agent' && item.transport === 'terminal' && item.status !== 'failed' ? (
-                            <Tooltip content="Pause — suspends the agent to free memory; reopen resumes it">
+                            <Tooltip content="Pause to free memory; reopen to resume">
                               <IconButton onClick={() => onPause(item)} aria-label={`Pause ${item.label}`}>
                                 <PauseIcon className="icon-sm" />
                               </IconButton>

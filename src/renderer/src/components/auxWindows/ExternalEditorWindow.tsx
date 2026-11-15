@@ -537,8 +537,8 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
         title: 'Close the editor window?',
         body:
           unsaved.length === 1
-            ? `${unsaved[0].name} has unsaved changes. Closing the window discards them.`
-            : `${unsaved.length} files have unsaved changes. Closing the window discards them.`,
+            ? `${unsaved[0].name} has unsaved changes. Closing discards them.`
+            : `${unsaved.length} files have unsaved changes. Closing discards them.`,
         confirmLabel: 'Discard and close',
         tone: 'danger',
       })

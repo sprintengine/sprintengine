@@ -321,7 +321,7 @@ test('useSkillInAgent', async () => {
       const toast = skillRestartToast(result, 'Backlog')
       assert.equal(toast?.tone, 'warn')
       assert.equal(toast?.title, 'Installed for OpenCode', 'only the CLIs that need it are named')
-      assert.match(String(toast?.description), /may need a restart to see new skills/)
+      assert.match(String(toast?.description), /may need a restart/)
     }
     {
       // Nothing to say when every CLI re-reads its skills directory live —

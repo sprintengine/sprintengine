@@ -963,7 +963,7 @@ export function PluginsCatalogue({
       ) : null}
       {sources.installedPluginsRead.status === 'error' ? (
         <InlineNotice tone="warn">
-          {`Installed plugins in this workspace could not be read, so nothing is marked as installed: ${sources.installedPluginsRead.message}`}
+          {`Couldn't read installed plugins, so none are marked: ${sources.installedPluginsRead.message}`}
         </InlineNotice>
       ) : null}
     </>
@@ -974,8 +974,8 @@ export function PluginsCatalogue({
       return (
         <InlineNotice
           tone="error"
-          title="Your sources could not be read."
-          hint="Nothing was changed. Try again, or add a source to start a fresh list."
+          title="Couldn't read your sources"
+          hint="Nothing changed. Try again or add a source."
           detail={sources.sourcesLoad.message}
           action={<GhostButton onClick={sources.refreshSources}>Try again</GhostButton>}
         />
@@ -1023,7 +1023,7 @@ export function PluginsCatalogue({
           <InlineNotice
             tone="error"
             title="The marketplace is unavailable."
-            hint="Its plugins and MCP servers are not listed below — this is not an empty catalogue."
+            hint="Its plugins and MCP servers can't be listed"
             action={<GhostButton onClick={() => void connectors.loadRegistry(true)}>Try again</GhostButton>}
           />
         )
@@ -1037,8 +1037,8 @@ export function PluginsCatalogue({
       return (
         <InlineNotice
           tone="error"
-          title={`${catalogueTabLabel(activeSource)} could not be read.`}
-          hint="Its plugins are not listed below — this is not an empty source."
+          title={`Couldn't read ${catalogueTabLabel(activeSource)}`}
+          hint="Its plugins can't be listed"
           detail={activeScan.message}
           action={<GhostButton onClick={() => sources.refreshScan(activeSource.id)}>Try again</GhostButton>}
         />

@@ -211,7 +211,7 @@ export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
   const goneWords = (connectionId: string): string =>
     `${machineOf(connectionId)} no longer accepts this pairing, so this board cannot be saved there. Pair again to keep drawing.`
   const outdatedWords = (connectionId: string): string =>
-    `${machineOf(connectionId)} runs a Studio that does not serve its boards here. Update SprintEngine Studio there to edit them here.`
+    `${machineOf(connectionId)} can't share its boards here yet. Update Studio there.`
 
   function withTimeout<T>(work: Promise<T>, what: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -994,9 +994,9 @@ function boardsRefused(machine: PairedMachine, error: unknown): { ok: false; cod
     code: refused.code,
     message:
       refused.kind === 'outdated'
-        ? `${machine.machineName} runs a Studio that does not serve its boards here. Update SprintEngine Studio there.`
+        ? `${machine.machineName} can't share its boards here yet. Update Studio there.`
         : refused.code === 'unavailable' && /does not serve canvas/u.test(refused.message)
-          ? `${machine.machineName} is not offering its boards right now. Open SprintEngine Studio there and try again.`
+          ? `${machine.machineName} isn't offering its boards. Open Studio there and try again.`
           : refused.message,
   }
 }

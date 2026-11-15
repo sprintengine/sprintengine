@@ -312,7 +312,7 @@ test('a revert confirms the exact files shown and asks again when they changed',
       )
     })
     await act(async () => button('Revert to before this turn')!.click())
-    expect(dom.window.document.body.textContent).toContain('Your staged changes are left as they are.')
+    expect(dom.window.document.body.textContent).toContain('Staged changes and the conversation are kept.')
     expect(dom.window.document.body.textContent).not.toContain('staged state')
     await act(async () => button('Revert files')!.click())
     // The refused confirmation re-shows the dialog with the new list.
@@ -386,7 +386,7 @@ test('undoing a revert that later work followed says it replaces that work, and 
     })
     await act(async () => button('Undo revert')!.click())
     expect(text()).toContain('Undo this revert and replace later changes?')
-    expect(text()).toContain('replacing those later changes in the files below')
+    expect(text()).toContain('overwrites those later changes in the files below')
     expect(text()).toContain('src/later.ts · +3 −1')
     await act(async () => button('Cancel')!.click())
     expect(calls.filter((call) => call.confirmed)).toEqual([])

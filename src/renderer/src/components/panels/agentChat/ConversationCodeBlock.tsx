@@ -102,7 +102,7 @@ async function pasteInTerminal(context: ConversationLinkContext, command: string
       workspaceId: context.workspaceId,
       terminalId,
     })
-    if (!result.ok) return report('Could not start a terminal', result.message)
+    if (!result.ok) return report("Couldn't start a terminal", result.message)
     const firstLine = command.split('\n', 1)[0]
     focusOrAddTerminalTab(
       context.workspaceId,
@@ -118,11 +118,10 @@ async function pasteInTerminal(context: ConversationLinkContext, command: string
     showToast({
       tone: 'warn',
       title: 'Copied the command instead',
-      description:
-        "This terminal's shell would run a multi-line paste line by line, so the command is on the clipboard to paste where you want it.",
+      description: 'This shell would run a multi-line paste line by line. Paste it yourself.',
     })
   } catch (error) {
-    report('Could not start a terminal', error instanceof Error ? error.message : String(error))
+    report("Couldn't start a terminal", error instanceof Error ? error.message : String(error))
   } finally {
     watch.dispose()
   }

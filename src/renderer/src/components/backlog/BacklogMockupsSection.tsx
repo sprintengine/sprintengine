@@ -162,7 +162,7 @@ function MockupRow({
     return (
       <li className="flex min-w-0 items-center gap-2">
         <Tooltip
-          content={`${entry.path} was not found on disk. Update the path, or remove the attachment.`}
+          content={`${entry.path} not found — update or remove it`}
           placement="top"
           wrapperClassName="inline-flex min-w-0 flex-1"
         >

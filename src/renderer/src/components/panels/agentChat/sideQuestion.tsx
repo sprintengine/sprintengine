@@ -241,11 +241,7 @@ export function SideQuestionDrawer({
   const lastKept = lastAnswered(entries)
   const continueAction =
     continueInChat && lastKept ? (
-      <Tooltip
-        content={
-          continueInChat.disabled ?? 'Open a new chat from the newest reply, with this question ready to send there'
-        }
-      >
+      <Tooltip content={continueInChat.disabled ?? 'New chat from the latest reply, with this question'}>
         <span>
           <GhostButton
             size="sm"
@@ -297,7 +293,7 @@ export function SideQuestionDrawer({
                 <ConversationMarkdown text={entry.answer} size="compact" />
                 {entry.truncated ? (
                   <p className="text-meta text-[color:var(--text-muted)]">
-                    The answer was longer than the chat keeps; this is its beginning.
+                    Answer too long to keep; showing the start.
                   </p>
                 ) : null}
               </div>
@@ -352,7 +348,7 @@ export function SideQuestionDrawer({
         </div>
       ) : (
         <p className="shrink-0 px-3 py-3 text-meta text-[color:var(--text-muted)]" data-side-question-read-only="true">
-          This chat cannot be asked a side question from here now.
+          Side questions aren't available here right now.
         </p>
       )}
     </Drawer>

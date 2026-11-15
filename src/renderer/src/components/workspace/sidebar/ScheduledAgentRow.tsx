@@ -232,7 +232,7 @@ export function ScheduledAgentRow({
       aria-current={selected ? 'true' : undefined}
       aria-label={`Scheduled agent: ${title}, in ${project.name}${machine ? ` on ${machine.name}` : ''}. ${words}.${
         status.text === words ? '' : ` ${status.text}.`
-      }${paused && !ownPause ? ' Paused with every scheduled agent.' : ''}`}
+      }${paused && !ownPause ? ' All scheduled agents paused.' : ''}`}
       data-scheduled-agent={agent.id}
       data-paused={paused ? 'true' : undefined}
       onClick={open}

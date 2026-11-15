@@ -656,18 +656,18 @@ export function selectBacklogEmptyState({
   if (projectName && !hasBacklogGroup) {
     return {
       title: "No backlog for this project",
-      body: `The paired desktop sent no backlog for ${projectName}. It may not have a backlog/ directory — or the backlog may be under another project in the header.`,
+      body: `The desktop sent no backlog for ${projectName}. Try another project in the header.`,
     };
   }
   if (projectName) {
     return {
       title: "No backlog items",
-      body: `${projectName} has no backlog items yet. Capture ideas under backlog/ on the desktop, or switch project from the header.`,
+      body: `${projectName} has none yet. Add them under backlog/ on the desktop, or switch project.`,
     };
   }
   return {
     title: "No backlog items",
-    body: "Workspaces on the paired desktop have no backlog items yet. Capture ideas under backlog/ on the desktop and they will appear here.",
+    body: "Add items under backlog/ on the desktop and they'll show here.",
   };
 }
 

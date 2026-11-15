@@ -7,8 +7,9 @@
 // chat is `remote`, and `marks` says whether that machine keeps the row
 // menu's star, colour, sleep and Auto-settle (`chat-lifecycle`): where it does
 // they are written there, and where it does not a chat opened here keeps them
-// on this computer only. Each item that works differently on a remote chat
-// says how.
+// on this computer only. An item that works differently on a remote chat says
+// so in a few words; the menu is no place for a paragraph (owner ruling
+// 2026-11-15).
 
 import type { HighlightColor } from '../../../../../shared/workspace'
 import { getHighlightSwatch } from '../../../utils/highlight'
@@ -30,9 +31,7 @@ const LOCAL: ChatMenuPlace = { kind: 'local' }
 /** Where a star or colour set from this menu is kept, for a paired machine's chat. */
 function markKept(where: ChatMenuPlace): string {
   if (where.kind === 'local') return ''
-  return where.marks
-    ? ` Saved on ${where.machineName}, so it shows there too.`
-    : ` Saved on this computer only: ${where.machineName} does not take it yet.`
+  return where.marks ? ` (syncs to ${where.machineName})` : ' (this computer only)'
 }
 
 function fileManager(): string {
@@ -44,93 +43,52 @@ function fileManager(): string {
 
 export const chatMenuTooltips = {
   open: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'local'
-      ? 'Show this chat in this window.'
-      : `Follow this chat here. It keeps running on ${where.machineName}.`,
-  markUnread: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'local'
-      ? 'Mark the latest reply as unread, on every device.'
-      : `Mark the latest reply as unread on ${where.machineName}, and on every device that follows it.`,
+    where.kind === 'local' ? 'Open this chat' : `Follow here; it runs on ${where.machineName}`,
+  markUnread: (_where: ChatMenuPlace = LOCAL) => 'Mark latest reply unread on every device',
   rename: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'local'
-      ? 'Rename this chat.'
-      : where.manage?.rename
-        ? `Rename this chat on ${where.machineName}, and on every device that follows it.`
-        : `Rename this chat on this computer. ${where.machineName} keeps its own name for it.`,
-  regenerateTitle: () =>
-    'Ask the model for a new name from the chat’s first message. It replaces the name, even one you typed.',
+    where.kind === 'local' || where.manage?.rename ? 'Rename this chat' : 'Rename on this computer only',
+  regenerateTitle: () => 'Name it again from the first message',
   newChat: (projectless: boolean, where: ChatMenuPlace = LOCAL) =>
     projectless
-      ? 'Start a new chat that has no project, in a folder of its own.'
+      ? 'New chat with no project'
       : where.kind === 'remote'
-        ? `Start a new chat in this chat's project on ${where.machineName}, where it runs.`
-        : "Start a new chat in this chat's project.",
-  reveal: () => `Show this chat's folder in ${fileManager()}.`,
+        ? `New chat in this project on ${where.machineName}`
+        : 'New chat in this project',
+  reveal: () => `Show folder in ${fileManager()}`,
   /** Why Reveal folder is off: the folder is on another machine, or gone. */
   revealUnavailable: (where: ChatMenuPlace) =>
-    where.kind === 'remote'
-      ? `The folder is on ${where.machineName}, so it can't be shown on this computer.`
-      : "This chat's folder is no longer on disk.",
-  copyLink: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'local'
-      ? 'Copy a link that opens this chat.'
-      : `Copy a link that opens this chat, on ${where.machineName} or on any computer that follows it.`,
-  moveToNewWindow: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'local' ? 'Open this chat in a window of its own.' : 'Follow this chat in a window of its own.',
-  moveToMainWindow: (where: ChatMenuPlace = LOCAL) =>
-    where.kind === 'local' ? 'Move this chat back to the main window.' : 'Follow this chat in the main window.',
+    where.kind === 'remote' ? `Folder is on ${where.machineName}` : 'Folder no longer exists',
+  copyLink: (_where: ChatMenuPlace = LOCAL) => 'Copy a link to this chat',
+  moveToNewWindow: (_where: ChatMenuPlace = LOCAL) => 'Open in its own window',
+  moveToMainWindow: (_where: ChatMenuPlace = LOCAL) => 'Move back to the main window',
   star: (starred: boolean, where: ChatMenuPlace = LOCAL) =>
-    (starred
-      ? 'Take this chat out of Starred.'
-      : 'Keep this chat in Starred, at the top of the list. A starred chat never settles by itself.') + markKept(where),
-  stopWatching: (pullRequest: number, where: ChatMenuPlace = LOCAL) =>
-    `Stop watching pull request #${pullRequest} for this chat. The chat stays as it is.` +
-    (where.kind === 'remote' ? ` ${where.machineName} keeps the watch, and stops it.` : ''),
-  schedule: (paused: boolean) =>
-    paused
-      ? 'Let the schedule that started this chat run again.'
-      : 'Stop the schedule that started this chat from running again. This chat carries on.',
-  settle: (working: boolean, where: ChatMenuPlace = LOCAL) =>
-    working
-      ? 'Waits until the agents in this chat finish.'
-      : 'Put this chat away: it leaves the list and its agents stop. A message to it brings it back.' +
-        (where.kind === 'remote'
-          ? ` Where ${where.machineName} keeps its chats' rest, it settles there too and leaves the list on every device.`
-          : ''),
-  unsettle: () => 'Bring this chat back to the list. Auto-settle leaves it alone until it sees new activity.',
-  snooze: (working: boolean, where: ChatMenuPlace = LOCAL) =>
-    working
-      ? 'Waits until the agents in this chat finish.'
-      : 'Hide this chat until a time you pick. Its agents pause, and pick up again when you next write to it.' +
-        (where.kind === 'remote' ? ` ${where.machineName} snoozes it, so it sleeps on every device.` : ''),
-  snoozeUntil: (label: string, whenLabel: string) => `Snooze until ${label.toLowerCase()}, ${whenLabel}.`,
-  wake: (where: ChatMenuPlace = LOCAL) =>
-    'Bring this chat back to the list now.' + (where.kind === 'remote' ? ` It wakes on ${where.machineName} too.` : ''),
+    (starred ? 'Unstar' : 'Pin to the top; never auto-settles') + markKept(where),
+  stopWatching: (pullRequest: number, _where: ChatMenuPlace = LOCAL) => `Stop watching PR #${pullRequest}`,
+  schedule: (paused: boolean) => (paused ? 'Resume the schedule' : 'Pause the schedule; this chat carries on'),
+  settle: (working: boolean, _where: ChatMenuPlace = LOCAL) =>
+    working ? 'Waits for the agents to finish' : 'Put away and stop its agents. A new message brings it back.',
+  unsettle: () => 'Bring back to the list',
+  snooze: (working: boolean, _where: ChatMenuPlace = LOCAL) =>
+    working ? 'Waits for the agents to finish' : 'Hide until a time you pick; agents pause',
+  snoozeUntil: (label: string, whenLabel: string) => `Until ${label.toLowerCase()}, ${whenLabel}`,
+  wake: (_where: ChatMenuPlace = LOCAL) => 'Bring back to the list now',
   // Main's rest sweep (`shouldAutoSettleWorkspace`): its quiet days, counted
   // from a wake, held while a pull request is open; or its pull requests
   // merging; never a starred, snoozed, open, working or waiting chat. The
   // pull request halves are settings, both on by default.
-  autoSettle: (where: ChatMenuPlace = LOCAL, days = 3) =>
-    `Settle this chat by itself after ${days === 1 ? 'a day' : `${days} days`} with no activity, or once its pull requests merge. ` +
-    'It waits while the chat is starred, snoozed, open, working or waiting on you. ' +
-    (where.kind === 'remote'
-      ? `${where.machineName} settles it, by its own Settled chats settings.`
-      : 'The days and the pull request rules are in Settings ▸ Settled chats.'),
+  autoSettle: (_where: ChatMenuPlace = LOCAL, days = 3) =>
+    `Settle after ${days === 1 ? 'a day' : `${days} days`} idle, or when its PRs merge`,
   // Studio's own compaction before a cache expires (conversation-auto-compact.ts):
   // idle, Claude only, at least 100k tokens, a minute or five before expiry.
-  autoCompact: (claude: boolean, where: ChatMenuPlace = LOCAL) =>
-    claude
-      ? 'Compacts this chat by itself while it sits idle, just before its prompt cache expires: 1 minute before on a 5-minute cache, 5 minutes before on a 1-hour cache. Only when it holds at least 100k tokens. Compacting then reads the conversation from the cache cheaply, so coming back later doesn’t re-read all of it at the uncached price. Your visible history stays as it is; a divider marks where it compacted.' +
-        (where.kind === 'remote' ? ` ${where.machineName} runs this chat, so it compacts it and keeps the switch.` : '')
-      : 'Only Claude chats can compact by themselves before their cache expires, for now.',
+  autoCompact: (claude: boolean, _where: ChatMenuPlace = LOCAL) =>
+    claude ? 'Compact while idle, before the cache expires (100k+ tokens)' : 'Claude chats only',
   highlight: (color: HighlightColor | null, where: ChatMenuPlace = LOCAL) =>
-    (color === null
-      ? "Remove this chat's highlight color."
-      : `Tint this chat's row ${getHighlightSwatch(color).label.toLowerCase()}.`) + markKept(where),
-  typeAction: (label: string) => `${label}: an action this chat's workspace type adds.`,
+    (color === null ? 'Remove highlight' : `Highlight ${getHighlightSwatch(color).label.toLowerCase()}`) +
+    markKept(where),
+  typeAction: (label: string) => label,
   // Settings ▸ Settled chats deletes the same way (useDeleteSettledChats).
   deleteSettled: (where: ChatMenuPlace = LOCAL) =>
     where.kind === 'remote'
-      ? `Delete this settled chat and its history on ${where.machineName} for good, for every device that follows it, and this computer's record of it. Its worktree there is removed or goes back to the pool unless it has uncommitted changes, and its branch is kept. You confirm first.`
-      : 'Delete this settled chat and its history for good. Its worktree is removed or goes back to the pool unless it has uncommitted changes, and its branch is kept. You confirm first.',
+      ? `Delete chat and history on ${where.machineName} for good`
+      : 'Delete chat and history for good',
 } as const

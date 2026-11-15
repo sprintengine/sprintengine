@@ -21,11 +21,11 @@ export type UndeliveredPromptNotice = {
 function reasonSentence(event: TerminalPromptUndelivered, cliName: string): string {
   switch (event.reason) {
     case 'exited':
-      return `${cliName} exited before it was ready for input, so nothing was typed into it.`
+      return `${cliName} exited before it was ready; nothing was typed.`
     case 'not-ready':
-      return `${cliName} did not show its message box in time, so nothing was typed into it.`
+      return `${cliName} didn't show its message box in time; nothing was typed.`
     case 'write-failed':
-      return `The terminal stopped taking input before your message could be typed into ${cliName}.`
+      return `The terminal stopped taking input; nothing reached ${cliName}.`
   }
 }
 
@@ -37,8 +37,8 @@ export function undeliveredPromptNotice(
   const who = event.agentName?.trim() || cliName
   return {
     title: `${who} did not get your first message`,
-    message: `${reasonSentence(event, cliName)} Copy message puts it on the clipboard.`,
-    toastDescription: 'Your message is kept in Notifications, where Copy message gives it back.',
+    message: `${reasonSentence(event, cliName)} Copy message gets it back.`,
+    toastDescription: 'Your message is saved in Notifications.',
   }
 }
 

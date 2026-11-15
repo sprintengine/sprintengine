@@ -156,7 +156,7 @@ export function UsageLimitsPanel({
   if (snapshots.length === 0) {
     return (
       <p className="text-meta text-[color:var(--text-subtle)]" data-usage-empty="">
-        No usage limits reported yet. They appear once a Claude or Codex chat on a subscription has run a turn.
+        No usage limits yet. They appear after a Claude or Codex subscription turn.
       </p>
     )
   }
@@ -253,7 +253,7 @@ export function UsageLimitsDialog({ onClose }: { onClose: () => void }): JSX.Ele
     <Modal open onClose={onClose} labelledBy={titleId} size="confirm">
       <ModalHeader
         title="Usage limits"
-        subtitle="Your Claude and Codex subscriptions, as the agents last reported them."
+        subtitle="Claude and Codex subscriptions, as last reported"
         titleId={titleId}
         onClose={onClose}
       />

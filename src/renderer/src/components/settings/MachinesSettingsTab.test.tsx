@@ -258,7 +258,7 @@ test('a distribution says how its Studio server stands, with no switch for where
   const disclosure = host.querySelector<HTMLElement>('[aria-label="WSL: Ubuntu details"]')
   await act(async () => disclosure!.click())
   expect(host.querySelector('[aria-label="Where chats in WSL: Ubuntu run"]')).toBeNull()
-  expect(host.querySelector('[aria-label="How Windows reaches the Studio server in WSL: Ubuntu"]')).toBeTruthy()
+  expect(host.querySelector('[aria-label="Server connection, WSL: Ubuntu"]')).toBeTruthy()
   expect(host.textContent).toContain('Running, reached through the stdio bridge. (loopback did not work)')
 })
 

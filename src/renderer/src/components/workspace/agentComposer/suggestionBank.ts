@@ -45,7 +45,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'review-codebase',
     category: 'review',
     title: 'Review the codebase',
-    description: 'A deep pass over the repo for correctness, dead code, and drift between modules.',
+    description: 'Bugs, dead code, and drift between modules.',
     outcome: 'Files backlog items',
     prompt: [
       'Review this codebase and report what is wrong with it.',
@@ -60,7 +60,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'review-recent-commits',
     category: 'review',
     title: 'Review the last week of commits',
-    description: 'What landed, what it broke, and what it left half-done.',
+    description: 'What landed, what broke, what is half-done.',
     outcome: 'Files backlog items',
     prompt: [
       'Review what landed in this repo over the last seven days.',
@@ -74,7 +74,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'design-system-audit',
     category: 'design',
     title: 'Audit the UI against the design system',
-    description: 'Find where surfaces drift from the design system — tokens, spacing, states.',
+    description: 'Drift in tokens, spacing, and states.',
     outcome: 'Files backlog items',
     prompt: [
       "Audit this app's UI against its design system.",
@@ -89,7 +89,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'copy-voice-audit',
     category: 'design',
     title: 'Check the copy against the voice rules',
-    description: 'Every user-visible string in one surface, judged against the voice guide.',
+    description: 'One surface, judged against the voice guide.',
     outcome: 'Files backlog items',
     prompt: [
       "Check this app's user-visible copy against its documented voice rules.",
@@ -103,7 +103,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'performance-problems',
     category: 'performance',
     title: 'Find performance problems',
-    description: 'Profile the slow paths — render, IPC, startup — and name the cost of each.',
+    description: 'Render, IPC, and startup, with the cost of each.',
     outcome: 'Files backlog items',
     prompt: [
       "Find this application's real performance problems.",
@@ -118,7 +118,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'unused-weight',
     category: 'performance',
     title: 'Find what the app loads and never uses',
-    description: 'Bundle weight, dead imports, and assets that ship without being read.',
+    description: 'Bundle weight, dead imports, unused assets.',
     outcome: 'Files backlog items',
     prompt: [
       'Find what this app pays to load and never uses.',
@@ -132,7 +132,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'security-review',
     category: 'security',
     title: 'Review the app for security holes',
-    description: 'The IPC surface, file access, and credential handling.',
+    description: 'IPC, file access, and credentials.',
     outcome: 'Files backlog items',
     prompt: [
       'Review this application for security weaknesses.',
@@ -147,7 +147,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'untested-paths',
     category: 'tests',
     title: 'Find the untested paths',
-    description: 'What the suite claims to cover, and what it actually runs.',
+    description: 'What the tests claim to cover vs. what runs.',
     outcome: 'Files backlog items',
     prompt: [
       'Find the parts of this codebase the test suite does not actually exercise.',
@@ -176,7 +176,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'triage-backlog',
     category: 'backlog',
     title: 'Triage the backlog',
-    description: 'Read every open item, merge duplicates, and rank what to pick up next.',
+    description: 'Merge duplicates and rank what comes next.',
     outcome: 'Updates backlog items',
     prompt: [
       "Triage this project's backlog.",
@@ -206,7 +206,7 @@ export const SUGGESTION_BANK: readonly SuggestionEntry[] = [
     id: 'dependency-audit',
     category: 'deps',
     title: 'Audit dependencies',
-    description: 'What is outdated, unused, or duplicated across the tree.',
+    description: 'Outdated, unused, or duplicated packages.',
     outcome: 'Files backlog items',
     prompt: [
       "Audit this project's dependencies.",

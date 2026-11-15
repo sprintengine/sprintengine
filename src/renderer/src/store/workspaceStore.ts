@@ -1881,7 +1881,7 @@ function initWorkspaceSyncClient(): void {
       showToast({
         tone: 'error',
         title: `“${workspace.name}” was not saved`,
-        description: firstMessage ? `${message} Its first message was: “${firstMessage}”` : message,
+        description: firstMessage ? `${message} First message: “${firstMessage}”` : message,
         autoDismissMs: false,
       })
     },

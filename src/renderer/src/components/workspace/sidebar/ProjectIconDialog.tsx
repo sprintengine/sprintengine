@@ -160,7 +160,7 @@ function ProjectIconDialogBody({
       <ModalHeader
         titleId="project-icon-title"
         title={`Icon for ${name}`}
-        subtitle="Shown beside the project in the sidebar and the project picker, on this machine."
+        subtitle="Shown in the sidebar and project picker on this machine"
         onClose={onClose}
       />
       <ModalBody className="flex flex-col gap-4">

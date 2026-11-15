@@ -97,9 +97,9 @@ export function followUpSendPresentation(input: {
     action,
     alternate,
     labels: LABELS,
-    tooltip: `Click to ${VERBS[action]}, ${input.clickModifier}-click or ${input.shortcutLabel} to ${VERBS[alternate]}`,
+    tooltip: `${LABELS[action]}; ${input.clickModifier}-click or ${input.shortcutLabel} to ${VERBS[alternate]}`,
     // The key is down: a click now does the other, and letting go undoes it.
-    heldTooltip: `${input.clickModifier}-click to ${VERBS[alternate]}, or let go of ${input.clickModifier} to ${VERBS[action]}`,
+    heldTooltip: `${input.clickModifier}-click to ${VERBS[alternate]}; release to ${VERBS[action]}`,
   }
 }
 

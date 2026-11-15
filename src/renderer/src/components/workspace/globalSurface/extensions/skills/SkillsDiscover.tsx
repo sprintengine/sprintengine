@@ -242,7 +242,7 @@ export function DiscoverRepoList({
     <>
       {tokenOnlyGap ? (
         <p className="mt-3 text-meta text-[color:var(--text-subtle)]">
-          Without a GitHub token this list is stars only — repositories carrying a plugin manifest are not included.
+          Stars only. Add a GitHub token to include plugin repos.
         </p>
       ) : (
         <Condition condition={degraded} onConfigureToken={onConfigureToken} onRetry={onRetry} />
@@ -256,7 +256,7 @@ export function DiscoverRepoList({
         count={results.length}
         action={
           <span className="text-meta text-[color:var(--text-subtle)]">
-            {tokenOnlyGap ? 'Sorted by stars' : 'Repositories carrying a plugin manifest first, then stars'}
+            {tokenOnlyGap ? 'Sorted by stars' : 'Plugin repos first, then stars'}
           </span>
         }
       >
@@ -295,9 +295,7 @@ export function DiscoverSearchResults({
   onConfigureToken: () => void
 }): JSX.Element {
   if (intent.kind === 'empty') {
-    return (
-      <EmptyState title="Code search reads inside SKILL.md, so “extract text from PDFs” finds the skills that do it." />
-    )
+    return <EmptyState title="Search inside skill files, e.g. “extract text from PDFs”" />
   }
   if (intent.kind === 'too_short') {
     return <EmptyState title={`Type at least ${intent.minLength} characters.`} />
@@ -311,7 +309,7 @@ export function DiscoverSearchResults({
         <InlineNotice
           tone="error"
           title="That search did not run."
-          hint="Nothing was returned — this is not an empty result."
+          hint="Not the same as no results"
           detail={load.message}
           action={<GhostButton onClick={onRetry}>Try again</GhostButton>}
         />
@@ -331,11 +329,7 @@ export function DiscoverSearchResults({
           level={4}
           title={`Results for “${load.query}”`}
           count={results.length}
-          action={
-            <span className="text-meta text-[color:var(--text-subtle)]">
-              Skills, not repositories — GitHub&apos;s own relevance order
-            </span>
-          }
+          action={<span className="text-meta text-[color:var(--text-subtle)]">Skills, by GitHub relevance</span>}
         >
           {results.length === 0 ? (
             <EmptyState title={degraded ? 'Nothing was returned for this search.' : skillSearchEmptyLine(load.query)} />
@@ -502,11 +496,7 @@ function Condition({
       <InlineNotice
         tone={discoverNoticeTone(condition)}
         title={condition.message}
-        hint={
-          needsToken
-            ? 'GitHub requires a token to search inside files. The most starred list works without one.'
-            : undefined
-        }
+        hint={needsToken ? 'Needs a GitHub token. Most starred works without one.' : undefined}
         action={
           needsToken ? (
             <GhostButton onClick={onConfigureToken}>Add a GitHub token</GhostButton>

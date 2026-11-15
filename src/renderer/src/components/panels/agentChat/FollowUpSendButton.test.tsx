@@ -62,11 +62,11 @@ test('an open tooltip follows the held key', () => {
     button().dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
     vi.advanceTimersByTime(500)
   })
-  expect(tooltip()).toBe('Click to queue, Cmd-click or Cmd+Enter to steer')
+  expect(tooltip()).toBe('Queue message; Cmd-click or Cmd+Enter to steer')
   key('keydown', true)
-  expect(tooltip()).toBe('Cmd-click to steer, or let go of Cmd to queue')
+  expect(tooltip()).toBe('Cmd-click to steer; release to queue')
   key('keyup', false)
-  expect(tooltip()).toBe('Click to queue, Cmd-click or Cmd+Enter to steer')
+  expect(tooltip()).toBe('Queue message; Cmd-click or Cmd+Enter to steer')
 })
 
 test('a Primary-click sends as the alternate, a plain click as the choice', () => {

@@ -94,13 +94,13 @@ export function InlineDiff({ edit, onOpen }: { edit: ConversationEdit; onOpen?: 
           </div>
         ))}
       </div>
-      {edit.contentsOnly ? <p>Wrote the whole file. Its previous contents were not recorded.</p> : null}
+      {edit.contentsOnly ? <p>Wrote the whole file; previous contents not recorded.</p> : null}
       {((wholeFile && edit.added > 40) || limited) && !all ? (
         <GhostButton size="inline" onClick={() => (onOpen ? onOpen() : setAll(true))}>
           Open full diff
         </GhostButton>
       ) : null}
-      {edit.limited ? <p>Diff preview exceeded its time limit. Open the full diff to inspect this change.</p> : null}
+      {edit.limited ? <p>Preview timed out. Open the full diff to see this change.</p> : null}
     </section>
   )
 }

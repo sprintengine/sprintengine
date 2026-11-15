@@ -329,10 +329,10 @@ export async function readPastedImagePaths(
     const name = path.split(/[\\/]/).pop() || 'image'
     try {
       const file = fileFromDataUrl(await readDataUrl(path), name)
-      if (!file) return { ok: false, message: `Could not read ${name}.` }
+      if (!file) return { ok: false, message: `Couldn't read ${name}.` }
       files.push(file)
     } catch (error) {
-      return { ok: false, message: `Could not attach ${name}: ${pastedPathFailure(error)}` }
+      return { ok: false, message: `Couldn't attach ${name}: ${pastedPathFailure(error)}` }
     }
   }
   return { ok: true, files }

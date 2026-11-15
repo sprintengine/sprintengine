@@ -302,7 +302,7 @@ export function KeyboardShortcutsTab() {
   const handleResetAll = useCallback(async () => {
     const confirmed = await dialog.confirm({
       title: 'Reset all shortcuts?',
-      body: 'Every custom shortcut and disabled command returns to its default. This cannot be undone.',
+      body: 'All shortcuts return to their defaults. This can’t be undone.',
       confirmLabel: 'Reset all',
       tone: 'danger',
     })
@@ -527,7 +527,7 @@ function KeybindingCell({
         aria-describedby={recording ? liveId : undefined}
         aria-label={
           recording
-            ? `Recording a shortcut for ${row.title}. Press a key combination, or Escape to cancel.`
+            ? `Recording ${row.title} shortcut. Escape to cancel`
             : hasBinding
               ? `Change the ${row.title} shortcut`
               : `Add a shortcut for ${row.title}`

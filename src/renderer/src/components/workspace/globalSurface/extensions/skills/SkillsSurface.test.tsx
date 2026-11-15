@@ -536,7 +536,7 @@ test('SkillsSurface', async () => {
       },
     })
     assert.ok(markup.includes('>pbakaus/impeccable<'), 'the stars half answered, so it is shown')
-    assert.ok(markup.includes('this list is stars only'), 'and what is missing from it is stated')
+    assert.ok(markup.includes('Stars only. Add a GitHub token'), 'and what is missing from it is stated')
     assert.equal(markup.includes('role="alert"'), false, 'a working list is not a failure')
   })
 
@@ -555,7 +555,7 @@ test('SkillsSurface', async () => {
     })
     assert.ok(markup.includes('needs a GitHub access token'))
     assert.ok(markup.includes('>Add a GitHub token<'), 'the notice carries the way to fix it')
-    assert.ok(markup.includes('The most starred list works without one.'))
+    assert.ok(markup.includes('Most starred works without one.'))
     assert.equal(markup.includes('Results for'), false, 'no result list is claimed for a search that never ran')
   })
 

@@ -169,19 +169,19 @@ export function SettledChatsSettingsTab({
         <AutoSettleDaysRow />
         <SettingToggle
           label="Settle when its pull requests merge"
-          description="For chats with Auto-settle switched on from their menu: once every pull request is merged or closed, and at least one merged, the chat settles. Not if you wrote to it after the merge, and never while an agent in it is working. A settled chat's worktree is removed once its work is merged and clean, and checked out again from its branch when you come back."
+          description="With Auto-settle on, a chat settles once its pull requests are merged or closed, never mid-run. Its worktree is freed and restored when you return."
           enabled={settleOnMerge}
           onChange={setSettleOnMerge}
         />
         <SettingToggle
           label="Keep chats with an open pull request"
-          description={`For chats with Auto-settle switched on from their menu: a chat whose pull request is still open, waiting on review or still a draft, does not settle after ${quietDays(autoSettleDays)} without activity. Settling when its pull requests merge is the setting above.`}
+          description={`With Auto-settle on, a chat with an open or draft pull request doesn't settle after ${quietDays(autoSettleDays)} without activity.`}
           enabled={keepWithOpenPr}
           onChange={setKeepWithOpenPr}
         />
         <SettingToggle
           label="Auto compact idle chats"
-          description="For Claude chats that leave Auto compact to this default in their menu: a chat holding at least 100k tokens compacts by itself while it sits idle, just before its prompt cache expires, so coming back later doesn't re-read all of it at the uncached price. Your visible history stays as it is; a divider marks where it compacted."
+          description="Idle Claude chats over 100k tokens compact before their prompt cache expires, so coming back costs less. Your history stays visible."
           enabled={autoCompact}
           onChange={setAutoCompact}
         />
@@ -190,7 +190,7 @@ export function SettledChatsSettingsTab({
         <EmptyState
           density="list"
           title="No settled chats."
-          body={`A chat settles when you settle it from its menu. Switch on Auto-settle there and it also settles after ${quietDays(autoSettleDays)} without activity, or when its pull requests merge.`}
+          body={`Settle a chat from its menu, or let Auto-settle do it after ${quietDays(autoSettleDays)} without activity.`}
         />
       ) : (
         <>
@@ -233,10 +233,7 @@ export function SettledChatsSettingsTab({
           <GhostButton size="xs" onClick={() => setSelected(new Set())}>
             Clear selection
           </GhostButton>
-          <Tooltip
-            multiline
-            content="Deletes the selected chats and their history for good. Each one's worktree is removed or goes back to the pool unless it has uncommitted changes, and branches are kept. You confirm first."
-          >
+          <Tooltip multiline content="Delete the selected chats and their history for good">
             <DangerButton
               size="xs"
               disabled={selectedIds.some((id) => deleting.has(id))}

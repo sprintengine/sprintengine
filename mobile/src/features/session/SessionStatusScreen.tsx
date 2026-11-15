@@ -36,12 +36,12 @@ const statusCopy: Record<
   },
   stale: {
     title: "Reconnect desktop",
-    body: "This session has expired. Pair again to refresh it.",
+    body: "Session expired. Pair again to refresh it.",
     primaryLabel: "Pair again",
   },
   revoked: {
     title: "Pair desktop",
-    body: "The desktop revoked this phone. Pair again to continue.",
+    body: "The desktop revoked this phone. Pair again.",
     primaryLabel: "Pair again",
   },
 };

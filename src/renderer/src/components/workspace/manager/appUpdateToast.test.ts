@@ -139,10 +139,7 @@ test('the download landing says so once, points at the rail, and files no bell r
   drive(state({ status: 'downloaded', updateVersion: '0.7.0', downloaded: true }))
   assert.equal(toast()?.tone, 'good')
   assert.equal(toast()?.title, 'Update downloaded')
-  assert.equal(
-    toast()?.description,
-    'SprintEngine Studio 0.7.0 is ready. Restart from the update button on the rail to install it.',
-  )
+  assert.equal(toast()?.description, 'Version 0.7.0 is ready. Restart from the update button on the rail.')
   assert.notEqual(toast()?.autoDismissMs, false, 'the lit glyph keeps saying it; the toast is news')
   assert.deepEqual(diagnostics.published, [], 'an update being ready is the glyph and the toast, not a report')
 
@@ -210,7 +207,7 @@ test('a restart main refuses turns into a warning that says why, and can be pres
       message: 'Windows did not get administrator permission, so the update was not installed.',
     })
   void restartToUpdateFromToast({ installRequiresAdmin: true })
-  assert.equal(toast()?.description, 'Windows will ask for administrator permission, then Studio restarts.')
+  assert.equal(toast()?.description, 'Windows asks for admin permission, then Studio restarts.')
   await settle()
   assert.equal(toast()?.tone, 'warn')
   assert.equal(toast()?.title, 'Update not installed')

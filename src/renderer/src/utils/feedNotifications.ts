@@ -91,6 +91,6 @@ export function sourceUpdatesNotice(check: Pick<SkillSourceUpdateCheck, 'sources
   const list = rest > 0 ? `${named.join(', ')}, and ${rest} more` : joinNames(named)
   return {
     title: fresh.length === 1 ? 'A plugin source has updates' : `${fresh.length} plugin sources have updates`,
-    description: `${list} ${fresh.length === 1 ? 'has' : 'have'} moved on since you scanned. Open Plugins and press Sync to take the changes.`,
+    description: `${list} ${fresh.length === 1 ? 'has' : 'have'} changed since your last scan. Press Sync in Plugins to update.`,
   }
 }

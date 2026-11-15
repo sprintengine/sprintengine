@@ -857,9 +857,7 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
         >
           <ToolBody tool={tool} detail={detail} />
           {detail?.clipped ? (
-            <InlineNotice tone="warn">
-              Output exceeded the stored detail limit; the beginning and end are shown.
-            </InlineNotice>
+            <InlineNotice tone="warn">Output too long; showing the beginning and end.</InlineNotice>
           ) : null}
           {loading ? <Spinner label="Loading tool output" /> : null}
           {error ? (

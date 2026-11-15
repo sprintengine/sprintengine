@@ -55,8 +55,7 @@ export function PairingScanner({
         <View style={styles.notice}>
           <Text style={styles.noticeTitle}>Camera access</Text>
           <Text style={styles.noticeBody}>
-            Scanning reads the square on Studio&rsquo;s Remote settings. The camera is used for that and nothing else —
-            no image leaves this phone.
+            Scans the square in Studio&rsquo;s Remote settings. No image leaves this phone.
           </Text>
         </View>
         <View style={styles.actions}>

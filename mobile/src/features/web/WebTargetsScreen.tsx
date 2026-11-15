@@ -46,8 +46,7 @@ export function WebTargetsScreen({
         {targets.length === 0 ? (
           <Card>
             <Text style={styles.notice}>
-              No web pages are shared yet. On a paired desktop, open a browser tab in the workspace pane and share a
-              running dev server on your tailnet — it will be listed here.
+              No web pages shared yet. Share a dev server from a desktop&apos;s browser tab and it shows here.
             </Text>
           </Card>
         ) : (
@@ -67,8 +66,7 @@ export function WebTargetsScreen({
         )}
         <View style={styles.footer}>
           <Text style={styles.footnote}>
-            These open in your browser. They work only while this phone is on the same tailnet as the desktop sharing
-            them.
+            These open in your browser while this phone is on the desktop&apos;s tailnet.
           </Text>
         </View>
       </ScrollView>

@@ -174,7 +174,7 @@ test('AgentPanel.mount', async () => {
         'no Spawn button remains',
       )
       assert.equal(labels.includes('Resume paused agent — click or type to resume'), false)
-      assert.match(missing.container.textContent ?? '', /is not installed/)
+      assert.match(missing.container.textContent ?? '', /isn't installed/)
     } finally {
       missing.unmount()
     }

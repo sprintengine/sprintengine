@@ -47,12 +47,7 @@ export function ExtensionNameChip({
       }`}
       onClick={() => inputRef.current?.focus()}
     >
-      <Tooltip
-        content={
-          fromFolder ? 'Named after its folder' : "The extension's id, and the name of the new folder made for it"
-        }
-        placement="top"
-      >
+      <Tooltip content={fromFolder ? 'Named after its folder' : 'Extension id and folder name'} placement="top">
         <span className="inline-flex">
           <ExtensionsGlyph className="icon-xs text-[color:var(--extension-ink)]" />
         </span>
@@ -109,15 +104,15 @@ export function ExtensionFolderChip({
       <Tooltip
         content={
           picked
-            ? `The extension is made in ${folder} and named after it. Choose another folder`
-            : `A new folder is made for the extension: ${folder ?? 'in Extensions'}. Choose a folder of your own, and the extension takes its name`
+            ? `Made in ${folder} · Choose another folder`
+            : `New folder ${folder ?? 'in Extensions'} · Choose your own`
         }
         placement="top"
       >
         <ChipButton
           variant="raised"
           onClick={onPick}
-          aria-label={`Extension folder: ${folder ?? 'not chosen'}. Choose a folder`}
+          aria-label={`Extension folder: ${folder ?? 'not chosen'}`}
           className="min-w-0"
         >
           <FolderGlyph className="icon-xs shrink-0 text-[color:var(--extension-ink)]" />

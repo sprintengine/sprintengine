@@ -140,15 +140,11 @@ export function ChatViewErrorFallback({
     <div className="p-3">
       <InlineNotice
         tone="error"
-        title={
-          onReloadWindow
-            ? 'This chat could not load its code. The rest of the app is unaffected.'
-            : 'This chat hit a problem and stopped. The rest of the app is unaffected.'
-        }
+        title={onReloadWindow ? "This chat couldn't load." : 'This chat hit a problem and stopped.'}
         hint={
           onReloadWindow
-            ? 'Reload the chat to try again, or reload the window if it keeps failing; its conversation is kept.'
-            : 'Reload the chat to draw it again; its conversation is kept.'
+            ? 'Reload the chat, or the window if it keeps failing. Your conversation is kept.'
+            : 'Reload the chat to try again. Your conversation is kept.'
         }
         {...(detail ? { detail } : {})}
         action={

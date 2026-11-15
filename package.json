@@ -77,6 +77,7 @@
     "measure:typeable": "node scripts/measure-time-to-typeable.mjs",
     "smoke:server-mode": "node scripts/smoke-server-mode.mjs",
     "report:source-size": "node scripts/report-source-size.mjs",
+    "report:copy": "node scripts/report-copy.mjs",
     "postinstall": "node scripts/fix-node-pty-permissions.js && node node_modules/electron/install.js"
   },
   "build": {
@@ -347,6 +348,7 @@
     "mermaid": "~12.3.0",
     "monaco-editor": "^0.57.0",
     "nanoid": "^6.0.2",
+    "oxc-parser": "^0.155.0",
     "oxlint": "1.90.0",
     "playwright-core": "^1.64.1",
     "prettier": "3.9.10",

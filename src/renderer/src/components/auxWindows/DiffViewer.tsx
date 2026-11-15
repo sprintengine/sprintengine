@@ -2107,8 +2107,8 @@ export function DiffViewer({
             <CenteredMessage>Loading changes\u2026</CenteredMessage>
           ) : !tour.active && filteredEmpty ? (
             <EmptyState
-              title={`${filterList?.name ?? 'This changelist'} has nothing changed here.`}
-              body="Everything it owned has been committed, moved to another list, or discarded."
+              title={`No changes in ${filterList?.name ?? 'this changelist'}`}
+              body="Its changes were committed, moved or discarded."
               action={
                 <OutlineButton size="sm" onClick={showAllChanges}>
                   Show all changes

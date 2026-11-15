@@ -225,7 +225,7 @@ export function createPairedChatTransport(input: {
       if (asked.action === 'sign-in')
         return {
           ok: false,
-          message: `Sign in to ${asked.serverId} on ${machineName}: its agent waits for the sign-in there.`,
+          message: `Sign in to ${asked.serverId} on ${machineName}.`,
         }
       const done = await command('conversation.mcpServerAction', {
         serverId: asked.serverId,

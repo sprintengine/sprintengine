@@ -62,7 +62,7 @@ export type DesktopStudioOptions = {
 };
 
 /** The words a desktop from before the Studio protocol earns. */
-export const DESKTOP_STUDIO_OUTDATED = "Update SprintEngine Studio on the desktop to use this from the phone.";
+export const DESKTOP_STUDIO_OUTDATED = "Update Studio on the desktop to use this here.";
 
 /**
  * A ticket for one connection, refused in the runtime's terms: `unauthorized`

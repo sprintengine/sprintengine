@@ -22,7 +22,7 @@ function event(overrides: Partial<TerminalPromptUndelivered> = {}): TerminalProm
 test('the notice names the agent and says why nothing was typed, for every reason', () => {
   const exited = undeliveredPromptNotice(event(), displayName)
   assert.equal(exited.title, 'Iris did not get your first message')
-  assert.match(exited.message, /^Kimi Code exited before it was ready for input/)
+  assert.match(exited.message, /^Kimi Code exited before it was ready/)
   assert.match(exited.message, /Copy message/)
 
   assert.match(undeliveredPromptNotice(event({ reason: 'not-ready' }), displayName).message, /message box in time/)

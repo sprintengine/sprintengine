@@ -7,7 +7,7 @@ test('addThirdPartyModuleFromFolder', async () => {
   async function run(): Promise<void> {
     assert.deepEqual(
       await addThirdPartyModuleFromFolder({}, null),
-      { status: 'failed', message: 'Installing extension modules is unavailable in this build.' },
+      { status: 'failed', message: "Can't install extensions in this build." },
       'a window without a folder chooser or a Studio connection reports an unavailable action',
     )
 

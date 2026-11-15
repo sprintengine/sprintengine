@@ -493,7 +493,7 @@ function CreatePullRequestDialog({
           {drafting ? (
             <p role="status" className="inline-flex items-center gap-2 text-body text-[color:var(--text-muted)]">
               <Spinner size={14} />
-              Writing a title and description from the branch’s commits…
+              Writing title and description from commits…
             </p>
           ) : null}
           {draftError ? (

@@ -38,7 +38,7 @@ test('no glyph before main answers, or in a build that follows no train', () => 
 
 test('with nothing to take it is quiet, and a press checks', () => {
   assert.deepEqual(view({}), { phase: 'idle', action: 'check', lit: false, percent: null, label: 'Check for updates' })
-  assert.equal(view({ status: 'not_available' })?.label, 'SprintEngine Studio is up to date. Click to check again.')
+  assert.equal(view({ status: 'not_available' })?.label, 'Up to date')
   assert.equal(view({ status: 'error', errorMessage: 'offline' })?.action, 'check')
   assert.deepEqual(view({ status: 'checking' }), {
     phase: 'checking',
@@ -55,7 +55,7 @@ test('a found release lights it, and a press downloads', () => {
     action: 'download',
     lit: true,
     percent: null,
-    label: 'SprintEngine Studio 0.7.0 is available. Click to download.',
+    label: 'Download update 0.7.0',
   })
   // The hourly re-check of the same offer does not darken it.
   assert.equal(view({ status: 'checking', updateVersion: '0.7.0' })?.phase, 'available')
@@ -75,7 +75,7 @@ test('downloading draws the share that has arrived, and a press does nothing', (
   assert.equal(downloading?.action, 'none')
   assert.equal(downloading?.lit, true)
   assert.equal(downloading?.percent, 41)
-  assert.equal(downloading?.label, 'Downloading 0.7.0 (41%)')
+  assert.equal(downloading?.label, 'Downloading update… 41%')
   assert.equal(view({ status: 'downloading', progress: null })?.percent, 0)
 })
 
@@ -85,7 +85,7 @@ test('a downloaded release asks to restart, including after a refused restart', 
     action: 'install',
     lit: true,
     percent: null,
-    label: 'SprintEngine Studio 0.7.0 is downloaded. Restart to install it.',
+    label: 'Restart to update to 0.7.0',
   })
   assert.equal(view({ status: 'checking', downloaded: true, updateVersion: '0.7.0' })?.action, 'install')
   assert.equal(view({ status: 'installing', downloaded: true, updateVersion: '0.7.0' })?.action, 'none')
@@ -93,8 +93,8 @@ test('a downloaded release asks to restart, including after a refused restart', 
 
 test('the restart is asked first, and says Windows will ask when it will', () => {
   assert.deepEqual(appUpdateInstallConfirmation({ updateVersion: '0.7.0', installRequiresAdmin: false }), {
-    title: 'Install SprintEngine Studio 0.7.0?',
-    body: 'SprintEngine Studio quits and reopens on the new version. Agents that are still working are interrupted.',
+    title: 'Update to 0.7.0?',
+    body: 'Studio restarts on the new version, interrupting working agents.',
     confirmLabel: 'Restart to update',
   })
   assert.match(

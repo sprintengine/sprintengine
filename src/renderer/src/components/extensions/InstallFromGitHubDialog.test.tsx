@@ -184,7 +184,7 @@ test('a refused install says why, and a bundle that writes into a project needs 
   await typeUrl('acme/notes-ext')
   await click(button('Review'))
   await click(dialog().querySelector('input[type="checkbox"]') as HTMLElement)
-  expect(dialog().textContent).toContain('Open the project it is for')
+  expect(dialog().textContent).toContain('Open that project')
   expect(button('Trust and install')?.disabled).toBe(true)
 })
 

@@ -105,7 +105,7 @@ export function UsageChart({
           tabIndex={0}
           role="group"
           aria-roledescription="chart"
-          aria-label={`${title}. Use the arrow keys to read each ${window.unit === 'hour' ? 'hour' : 'day'}.`}
+          aria-label={`${title}. Arrow keys move by ${window.unit === 'hour' ? 'hour' : 'day'}.`}
           onPointerMove={pick}
           onPointerLeave={() => setActive(null)}
           onFocus={() => setActive((current) => current ?? count - 1)}

@@ -35,8 +35,7 @@ async function loadDiff(input: ConversationTurnDiffInput | ToolDiffWindowInput):
   if (!('toolUseId' in input)) return transport.turnDiff(input)
   const result = await transport.toolDetail({ ...input.key, toolUseId: input.toolUseId })
   if (!result.ok) return result
-  if (result.detail.clipped)
-    return { ok: false, message: 'The stored tool input was clipped; the complete edit is unavailable.' }
+  if (result.detail.clipped) return { ok: false, message: 'Only part of this edit was saved.' }
   const edit = deriveEditHunks(result.detail.input)[input.editIndex]
   if (!edit || edit.limited) return { ok: false, message: 'The tool edit could not be reconstructed.' }
   return { ok: true, diff: { files: [], submodulesExcluded: true }, ...editPreviewSources(edit) }

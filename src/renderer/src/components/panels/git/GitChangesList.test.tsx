@@ -166,7 +166,7 @@ test('GitChangesList', async () => {
       }),
     ])
     const notice = Array.from(root.querySelectorAll('div')).find((node) =>
-      node.textContent?.includes('more changes are hidden'),
+      node.textContent?.includes('more changes hidden'),
     )
     assert.ok(notice, 'the cap notice renders')
     assert.equal(notice!.closest('[role="listbox"]'), null, 'and it is not a non-option child of the listbox')

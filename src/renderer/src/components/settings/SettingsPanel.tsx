@@ -924,15 +924,13 @@ export default function SettingsPanel({
             <>
               <div>What happens:</div>
               <ul className="mt-1 list-disc pl-5">
-                <li>Claude Code agents you start here get a hook that notes each knowledge file they read or edit</li>
+                <li>Claude Code agents note each knowledge file they read or edit</li>
                 <li>
                   The notes are kept in this project’s folder under{' '}
                   <span className="font-mono">~/.sprintengine/workspaces/</span>
                 </li>
               </ul>
-              <div className="mt-2">
-                Only files under your knowledge folder are recorded. Nothing is written into the project folder.
-              </div>
+              <div className="mt-2">Only knowledge files are recorded. Nothing is written to the project folder.</div>
             </>
           ),
           confirmLabel: 'Enable tracking',
@@ -1296,7 +1294,7 @@ export default function SettingsPanel({
                   keeps them still), so it is the person's to turn on. */}
               <SettingToggle
                 label="Working section"
-                description="While an agent works in a chat, fold it into a Working section at the top of the list, and put it back when the agent finishes or needs you. Starred chats and the chat you are in stay where they are. Grouped by status, working chats always fold away, into a closed section at the foot of the list."
+                description="Move working chats into a section at the top until they finish or need you."
                 enabled={sidebarWorkingSection}
                 onChange={setSidebarWorkingSection}
               />
@@ -1304,7 +1302,7 @@ export default function SettingsPanel({
                   sidebar, for someone who keeps it collapsed. */}
               <SettingToggle
                 label="Show sidebar at the edge"
-                description="With the sidebar collapsed, rest the pointer at the left edge of the window to show it over your work. It hides again when the pointer moves away, and stays collapsed."
+                description="When collapsed, point at the window’s left edge to show the sidebar."
                 enabled={sidebarHoverReveal}
                 onChange={setSidebarHoverReveal}
               />
@@ -1354,19 +1352,19 @@ export default function SettingsPanel({
               </SettingsRow>
               <SettingToggle
                 label="Agent characters"
-                description="Draw an agent at work in the Files tree as a little character that moves while it works, and changes with the seasons."
+                description="Show working agents as little characters in the Files tree."
                 enabled={agentCharacters}
                 onChange={setAppearanceAgentCharacters}
               />
               <SettingToggle
                 label="Show subscription usage limits"
-                description="A small bar on a Claude or Codex chat's composer for how much of your plan's five-hour and weekly limits you have used, read from what the agent reports. Never shown for an API key."
+                description="Show how much of your plan’s 5-hour and weekly limits Claude or Codex has used."
                 enabled={usageLimits}
                 onChange={setAppearanceUsageLimits}
               />
               <SettingToggle
                 label="Quiet project icons"
-                description="Rest each project's folder icon gray in the chat list, colouring it in on the chat you point at or open. Off, every chat shows its project's colour."
+                description="Gray project icons, coloured only on the chat you point at or open."
                 enabled={quietProjectIcons}
                 onChange={setAppearanceQuietProjectIcons}
               />
@@ -1415,7 +1413,7 @@ export default function SettingsPanel({
             {updateState ? (
               <SettingToggle
                 label="Download updates automatically"
-                description="Off: Studio says when an update is out, and downloads it when you press Download."
+                description="Off: you’re told about updates and download them yourself."
                 enabled={updateState.autoDownload}
                 onChange={(enabled) => void setAutoDownload(enabled)}
               />

@@ -263,7 +263,7 @@ export function RemoteTailnetSettingsTab() {
       setStatus(await tailnetApi.tailnetResetMcpRegistrations())
       setAction({
         tone: 'idle',
-        message: 'MCP client registrations reset. Each client registers again before it next signs in.',
+        message: 'MCP registrations reset. Clients register again at next sign-in.',
       })
     })
 
@@ -474,7 +474,7 @@ export function RemoteTailnetSettingsTab() {
               other machine is waiting to be told, and someone who has walked
               to that machine needs to find them by the heading alone. */}
           <SettingsSectionTitle className="mb-1.5" count={presence.meshRequests.length}>
-            Waiting for another machine — with the code to type on it
+            Codes to type on other machines
           </SettingsSectionTitle>
           <SettingCard>
             {presence.meshRequests.map((request) => (
@@ -566,8 +566,7 @@ function PairingCodeCard({
           <div className="text-meta text-[color:var(--text-muted)]">{pairingExpiry(expiresAt, now)}</div>
         ) : null}
         <p className="text-micro leading-4 text-[color:var(--text-subtle)]">
-          Being asked for a six-digit code instead? That code is shown on the machine that asked, not here — read it off
-          that screen and type it there.
+          Asked for a six-digit code? It's shown on the machine that asked, not here.
         </p>
         {scopes.length > 0 ? (
           <ScopePillSet ariaLabel="Scopes in this code">

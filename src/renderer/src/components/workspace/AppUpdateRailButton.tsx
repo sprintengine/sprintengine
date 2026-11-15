@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 
+import { copy } from '../../../../shared/copy'
 import { useAppUpdateStore } from '../../store/appUpdateStore'
 import { showToast } from '../../store/toastStore'
 import { IconButton, Tooltip, TONE_COLOR_VAR, TONE_SOFT_VAR } from '../ui'
@@ -133,7 +134,7 @@ export function AppUpdateRailButton({ placement = 'right' }: { placement?: 'righ
     try {
       if (view.action === 'check') {
         const result = await api.updateCheck()
-        if (!result.ok) warn('Could not check for updates', result.message)
+        if (!result.ok) warn(copy.appUpdate.checkFailedToast, result.message)
       } else if (view.action === 'download') {
         await downloadAppUpdate(state.updateVersion)
       } else if (view.action === 'install') {
@@ -142,7 +143,7 @@ export function AppUpdateRailButton({ placement = 'right' }: { placement?: 'righ
         if (confirmed) await restartToUpdateFromToast(state)
       }
     } catch (error) {
-      warn('Update failed', error instanceof Error ? error.message : String(error))
+      warn(copy.appUpdate.updateFailedToast, error instanceof Error ? error.message : String(error))
     } finally {
       setPending(false)
     }

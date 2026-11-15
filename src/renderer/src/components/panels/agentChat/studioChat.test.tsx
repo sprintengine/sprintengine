@@ -423,7 +423,7 @@ test('a fork is asked only of a Studio that says where its forks are, and an ans
     { ok: true, address: { environmentId: 'env', chatId: 'ws', agentId: 'another' }, name: 'Atlas (fork)' },
   ]) {
     const unsaid = await createStudioConversationParts(studio(['conversation-fork'], answer)).fork!(fork)
-    expect(unsaid).toEqual({ ok: false, message: expect.stringContaining('did not say where it is') })
+    expect(unsaid).toEqual({ ok: false, message: expect.stringContaining("couldn't find it") })
   }
   const address = { environmentId: 'env', chatId: 'ws', agentId: 'agent-2' }
   const made = await createStudioConversationParts(

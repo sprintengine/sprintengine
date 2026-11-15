@@ -55,12 +55,11 @@ export function AppearanceScreen({ onBack }: { onBack: () => void }) {
           title="Agent characters"
         />
         <SettingsNote>
-          Draw each agent Claude sends off as a little character that moves while it works, and changes with the
-          seasons.
+          Draw subagents as little characters that move as they work and change with the seasons.
         </SettingsNote>
         {isPreferenceUnsaved ? (
           <View accessibilityRole="alert">
-            <Text style={styles.unsaved}>Secure storage rejected this choice, so it lasts until you close the app.</Text>
+            <Text style={styles.unsaved}>Couldn&apos;t save this choice; it lasts until you close the app.</Text>
           </View>
         ) : null}
       </ScrollView>

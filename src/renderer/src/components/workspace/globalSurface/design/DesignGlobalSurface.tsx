@@ -743,7 +743,7 @@ function DesignSurfaceBody({
         firstRun
         glyph={<DesignGlyph />}
         title="No design systems yet"
-        body="A design system lives in a Git repo you clone. Point at its folder and it renders here, where the agents that consume it live."
+        body="Clone a design system’s Git repo, then point at its folder to see it here."
         action={<PrimaryButton onClick={onPointAtFolder}>Point at a folder</PrimaryButton>}
       />
     )

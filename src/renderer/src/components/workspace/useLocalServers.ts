@@ -187,7 +187,7 @@ async function act(
   failed: string,
 ): Promise<LocalServerActionResult> {
   const client = await localServersClient()
-  if (!client) return { ok: false, message: `The server ${failed}: this Studio does not manage local servers.` }
+  if (!client) return { ok: false, message: `The server ${failed}: this Studio can't manage local servers.` }
   try {
     await client.request(method, { conversation, id })
     // The new state is not in the answer: it arrives as `localServers.changed`.

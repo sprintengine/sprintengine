@@ -77,8 +77,8 @@ export function SshPromptDialogBody({
           {request.kind === 'host-key' && hostKey ? (
             <>
               <p className={TEXT}>
-                Studio has not connected to {request.label} before. Check this fingerprint with whoever runs the machine
-                before you trust it.
+                Studio hasn't connected to {request.label} before. Check this fingerprint with its owner before trusting
+                it.
               </p>
               <dl className="flex flex-col gap-1">
                 <dt className={MUTED}>Host</dt>
@@ -99,8 +99,8 @@ export function SshPromptDialogBody({
                 </p>
               </div>
               <p className={MUTED}>
-                This computer's OpenSSH is older than 8.4 and does not mark the questions a machine asks, so Studio
-                can't tell whether this one comes from ssh here or from {request.label}. Answer only if you expected it.
+                This computer's OpenSSH is older than 8.4, so Studio can't tell if this comes from ssh here or from{' '}
+                {request.label}. Answer only if you expected it.
               </p>
             </>
           ) : request.kind === 'passphrase' || request.kind === 'password' || request.kind === 'confirm' ? (
@@ -168,7 +168,7 @@ export function SshPromptDialogBody({
             </Field>
           ) : null}
           {request.kind === 'passphrase' ? (
-            <p className={MUTED}>Studio does not keep it. Add the key to ssh-agent to stop being asked.</p>
+            <p className={MUTED}>Studio doesn't keep it. Add the key to ssh-agent to skip this.</p>
           ) : null}
         </ModalBody>
         <ModalFooter>

@@ -393,7 +393,7 @@ test('PullRequestMark', async () => {
       const chevron = many.host.querySelector('[aria-haspopup="menu"]')
       assert.ok(chevron, 'two or more grow the chevron')
       assert.equal(chevron?.getAttribute('aria-expanded'), 'false')
-      assert.equal(chevron?.getAttribute('aria-label'), 'All pull requests from this conversation, 3')
+      assert.equal(chevron?.getAttribute('aria-label'), 'All pull requests in this chat, 3')
       many.unmount()
     })
 

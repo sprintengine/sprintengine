@@ -82,14 +82,14 @@ function parseTailnetUrlPayload(url: URL): PairingParseResult {
   const endpoint = readParam(url, "endpoint");
   const pairingToken = readParam(url, "token");
   if (!endpoint) {
-    return { ok: false, message: "The tailnet pairing link is missing its endpoint." };
+    return { ok: false, message: "The pairing link has no endpoint." };
   }
   if (!pairingToken) {
-    return { ok: false, message: "The tailnet pairing link is missing its pairing code." };
+    return { ok: false, message: "The pairing link has no pairing code." };
   }
   const baseUrl = tailnetEndpointBaseUrl(endpoint);
   if (!baseUrl) {
-    return { ok: false, message: "The tailnet pairing link's endpoint is not a valid host and port." };
+    return { ok: false, message: "The pairing link's endpoint isn't a valid host and port." };
   }
   return { ok: true, tailnet: { endpoint, baseUrl, pairingToken } };
 }

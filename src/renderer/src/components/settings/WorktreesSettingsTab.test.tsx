@@ -261,7 +261,7 @@ test('Free up space keeps what the person unticked when the page reads the workt
   await render()
   await click(button(host, 'Free up space…'))
   const mergedRow = [...document.body.querySelectorAll<HTMLLabelElement>('[role="dialog"] label')].find((label) =>
-    label.textContent?.includes('whose branch is merged'),
+    label.textContent?.includes('Remove merged worktrees'),
   )
   await click(mergedRow!.querySelector('input')!)
   // A slot moves somewhere: the page reads again, a moment later.

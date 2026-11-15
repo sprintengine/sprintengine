@@ -113,7 +113,7 @@ test('a web tab lists and revokes the clients, and is not offered a token', asyn
   await render()
   expect(host.textContent).toContain('editor')
   expect(host.textContent).toContain(
-    'A new MCP URL is made in the desktop app, or on this server’s machine with studio-server mcp-token --name <client>.',
+    'Make a new MCP URL in the desktop app, or on the server with studio-server mcp-token --name <client>.',
   )
   expect(() => button('Copy MCP URL')).toThrow()
   expect(create).not.toHaveBeenCalled()

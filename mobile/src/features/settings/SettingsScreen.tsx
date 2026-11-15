@@ -104,7 +104,7 @@ export function SettingsScreen({
         ) : null}
         {onOpenScheduled ? (
           <SettingsRow
-            accessibilityHint="Agents a desktop starts on a schedule, and their controls."
+            accessibilityHint="Agents desktops run on a schedule"
             chevron
             icon={<RemoteMachineGlyph size={iconSize.md} />}
             onPress={onOpenScheduled}
@@ -113,7 +113,7 @@ export function SettingsScreen({
         ) : null}
         {onOpenCanvases ? (
           <SettingsRow
-            accessibilityHint="Every board an agent drew on a desktop's Canvas, as a picture."
+            accessibilityHint="Boards agents drew on desktop Canvases"
             chevron
             icon={<CanvasGlyph size={iconSize.md} />}
             onPress={onOpenCanvases}

@@ -50,14 +50,14 @@ test('a paired machine’s rules are listed under it, and revoked there', async 
   expect(host.textContent).toContain('On mac-mini')
   expect(host.textContent).toContain('Run npm test')
   expect(host.textContent).toContain('parser')
-  expect(host.textContent).toContain('build-box does not share its chat permissions yet.')
+  expect(host.textContent).toContain('build-box doesn’t share its chat permissions yet. Update Studio there.')
   const revoke = host.querySelector<HTMLButtonElement>('button[aria-label="Revoke Run npm test on mac-mini"]')
   await act(async () => revoke!.click())
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
   expect(studio.writes()).toEqual([
     { connectionId: 'c1', method: 'conversation.revokeApprovalRule', params: { ruleId: 'r1' } },
   ])
-  expect(host.textContent).toContain('No workspace permissions have been remembered there.')
+  expect(host.textContent).toContain('No remembered permissions.')
   await act(async () => root.unmount())
   host.remove()
 })

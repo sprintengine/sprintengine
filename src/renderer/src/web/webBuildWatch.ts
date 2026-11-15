@@ -53,7 +53,7 @@ export function startWebBuildWatch(): () => void {
         id: TOAST_ID,
         tone: 'good',
         title: 'Studio was updated',
-        description: 'Reload this tab to use the new version. Until then it keeps working as it is.',
+        description: 'Reload this tab to use it. Until then, it keeps working.',
         autoDismissMs: false,
         actions: [
           { id: 'later', label: 'Later', run: () => useToastStore.getState().dismissToast(TOAST_ID) },

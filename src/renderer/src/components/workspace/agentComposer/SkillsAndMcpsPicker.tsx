@@ -127,7 +127,7 @@ export function buildMcpRows(
     group: 'mcp',
     id: STUDIO_MCP_SERVER_ID,
     name: STUDIO_MCP_SERVER_ID,
-    description: 'The app’s own tools: backlog, automations, terminals, the pane’s browser.',
+    description: 'Built-in: backlog, automations, terminals, browser',
     state: 'included',
     ...live(STUDIO_MCP_SERVER_ID),
   })

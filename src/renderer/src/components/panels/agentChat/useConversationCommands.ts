@@ -141,7 +141,7 @@ export function studioAppCommands(input: {
       ? [
           {
             name: 'btw',
-            description: 'Ask a side question that stays out of the agent’s conversation',
+            description: 'Ask a side question outside the main chat',
             source: 'app' as const,
           },
         ]

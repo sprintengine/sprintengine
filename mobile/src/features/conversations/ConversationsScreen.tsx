@@ -368,8 +368,7 @@ export function ConversationsScreen({
         ListHeaderComponent={
           failures.length ? (
             <Text accessibilityRole="alert" style={styles.failure}>
-              {failures.length === 1 ? `${failures[0]} is` : `${failures.join(", ")} are`} unavailable. Check the
-              tailnet connection, then refresh.
+              {failures.length === 1 ? `${failures[0]} is` : `${failures.join(", ")} are`} unavailable. Check the tailnet, then refresh.
             </Text>
           ) : null
         }

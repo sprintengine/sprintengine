@@ -251,8 +251,8 @@ export function InstalledExtensionsInventory({
           setUpdateNotice({
             tone: 'error',
             message: entry
-              ? 'Updating extensions needs a newer app build. Update and restart.'
-              : 'The marketplace entry for this update is not available right now.',
+              ? 'Update the app and restart to update extensions.'
+              : "This update isn't in the marketplace right now.",
           })
           if (updated) await settleAfterUpdate()
           return
@@ -446,11 +446,7 @@ function InstalledView({
   }
 
   if (view.status === 'unsupported') {
-    return (
-      <InlineNotice tone="warn">
-        Installed extensions need a newer app build. Update and restart to see them here.
-      </InlineNotice>
-    )
+    return <InlineNotice tone="warn">Update the app and restart to see installed extensions.</InlineNotice>
   }
 
   // Degraded: zero rows but a source failed/was unavailable. Show only the
@@ -493,7 +489,7 @@ function InstalledView({
       <EmptyState
         density="list"
         title="Nothing installed yet."
-        body="Get MCP servers, skills and plugins from a source tab and they appear here."
+        body="MCP servers, skills and plugins you add appear here."
       />
     )
   }

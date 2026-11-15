@@ -1299,7 +1299,7 @@ export function ConversationScreen({
           />
           <View pointerEvents="box-none" style={styles.floatTitle}>
             <Pressable
-              accessibilityHint="Shows the chat's details and what its agent touched."
+              accessibilityHint="Chat details and what its agent touched"
               accessibilityLabel={`${chatTitle}, chat details`}
               accessibilityRole="button"
               onPress={() => setPageOpen(true)}
@@ -1436,7 +1436,7 @@ export function ConversationScreen({
             <>
               {chat.clippedCount > 0 ? (
                 <View>
-                  <Text style={styles.meta}>Part of this chat was too long to send at once, so it is shown cut short.</Text>
+                  <Text style={styles.meta}>Part of this chat was too long to send, so it&apos;s cut short.</Text>
                   <PrimaryButton label="Show in full" variant="ghost" onPress={() => void chat.restoreClipped()} />
                 </View>
               ) : null}
@@ -1800,8 +1800,7 @@ export function ConversationScreen({
           </View>
         ) : (
           <Text style={styles.meta}>
-            Read-only conversation. Grant conversation control when pairing to
-            send or respond.
+            Read-only. Pair with conversation control to send or respond.
           </Text>
         )}
       </View>
@@ -2308,7 +2307,7 @@ function QueuedEntry({
         {stoppable && !failed && bubble.where !== "handing" ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityHint="Stops the reply; the queued message sends as it ends."
+            accessibilityHint="Stops the reply; the queued message then sends"
             disabled={!canAct}
             hitSlop={space.md}
             onPress={onStop}
@@ -2670,7 +2669,7 @@ function PendingCard({
           {onBypass ? (
             <PrimaryButton
               label="Bypass permissions"
-              accessibilityLabel="Allow this, and bypass permissions for the rest of the chat"
+              accessibilityLabel="Allow, then bypass permissions for this chat"
               variant="secondary"
               disabled={!enabled}
               onPress={onBypass}

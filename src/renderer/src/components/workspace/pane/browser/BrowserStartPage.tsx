@@ -89,10 +89,7 @@ export function BrowserStartPage({ workspaceId, active, recentUrls, onOpen }: Br
   if (!hasServers && !hasRecent) {
     return (
       <div className="h-full bg-[color:var(--bg-app)]">
-        <EmptyState
-          title="Nothing to open yet"
-          body="Enter a URL above, or start a dev server in a terminal and it will be listed here."
-        />
+        <EmptyState title="Nothing to open yet" body="Enter a URL above, or start a dev server to see it here." />
       </div>
     )
   }

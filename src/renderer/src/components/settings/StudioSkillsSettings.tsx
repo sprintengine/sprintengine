@@ -33,8 +33,7 @@ export function StudioSkillsSettings(): JSX.Element {
         Studio skills
       </SettingsSectionTitle>
       <p className="text-body text-[color:var(--text-muted)]">
-        Skills that teach agents to use this app. An agent only sees the ones switched on, in every workspace, from its
-        next launch.
+        Skills that teach agents to use this app. Changes apply when an agent next launches.
       </p>
       {error ? (
         <InlineNotice tone="error" title="That change was not saved." hint="Switch it again to retry." detail={error} />

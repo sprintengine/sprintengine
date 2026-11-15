@@ -54,7 +54,7 @@ export function deriveProviderTabState(
   if (!available) {
     return {
       kind: 'unavailable',
-      message: 'Conversation providers need an app restart before this tab is available.',
+      message: 'Restart the app to use this tab.',
     }
   }
   if (result === null) return { kind: 'loading' }

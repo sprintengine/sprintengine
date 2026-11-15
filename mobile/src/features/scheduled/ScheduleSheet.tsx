@@ -252,7 +252,7 @@ function ScheduleEditor({
         ) : (
           <>
             <Text style={styles.readoutError}>{read.message}</Text>
-            <Text style={styles.readoutNext}>The last schedule that read stays until this one does.</Text>
+            <Text style={styles.readoutNext}>The last valid schedule stays until this one is valid.</Text>
           </>
         )}
       </View>

@@ -34,7 +34,7 @@ export function ComposerQuoteChips({
       {quotes.map((quote) => (
         <Pressable
           key={quote.token}
-          accessibilityHint="Shows the quote, to edit its comment or take it out."
+          accessibilityHint="Opens the quote to edit or remove it"
           accessibilityLabel={`Quote ${quote.n}: ${quoteLabel(quote)}`}
           accessibilityRole="button"
           onPress={() => onOpen(quote)}
@@ -195,7 +195,7 @@ export function QuotePicker({
             Quote from this reply
           </Text>
         </View>
-        <Text style={styles.hint}>Select the words to quote, then Quote. Nothing selected quotes the whole reply.</Text>
+        <Text style={styles.hint}>Select words, then Quote. Select nothing to quote the whole reply.</Text>
         <TextInput
           accessibilityHint="Select the words to quote."
           accessibilityLabel="The reply"
@@ -284,7 +284,7 @@ export function QuoteReplyButton({ onPress }: { onPress: () => void }) {
   const styles = useThemedStyles(createButtonStyles);
   return (
     <Pressable
-      accessibilityHint="Pick words from this reply to quote in your next message."
+      accessibilityHint="Quote words from this reply in your next message"
       accessibilityLabel="Quote from this reply"
       accessibilityRole="button"
       hitSlop={touchSlop(QUOTE_BOX, QUOTE_BOX)}

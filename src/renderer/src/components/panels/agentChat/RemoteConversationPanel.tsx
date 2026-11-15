@@ -123,18 +123,14 @@ function remoteConversationReadiness(
   )
     return {
       kind: 'error',
-      message:
-        refusal.kind === 'outdated'
-          ? `Update SprintEngine Studio on ${machineName} to follow and drive its chats from here.`
-          : refusal.message,
+      message: refusal.kind === 'outdated' ? `Update Studio on ${machineName} to drive its chats.` : refusal.message,
     }
   if (link === 'connecting') return { kind: 'error', message: `Connecting to ${machineName}.` }
-  if (link === 'away')
-    return { kind: 'error', message: `${machineName} is not answering. This shows what it last said.` }
+  if (link === 'away') return { kind: 'error', message: `${machineName} isn't answering. Showing what it last said.` }
   if (access !== 'operate')
     return {
       kind: 'error',
-      message: `This pairing may follow this conversation on ${machineName} but not drive it.`,
+      message: `View only: this pairing can't drive chats on ${machineName}.`,
     }
   return { kind: 'ready' }
 }

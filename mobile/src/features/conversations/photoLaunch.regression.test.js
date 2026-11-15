@@ -99,7 +99,7 @@ test("a picture that fails to upload keeps the chat it started, and the retry us
   const failed = await launchWithPhotos({ target, images: [photo(1), photo(2)], progress: null }, first.steps);
   assert.equal(failed.ok, false);
   assert.equal(failed.started, true);
-  assert.match(failed.message, /The chat started on mac-mini, but photo-2\.jpg did not upload: The picture is over the desktop's 5 MB limit\./);
+  assert.match(failed.message, /Chat started on mac-mini, but photo-2\.jpg didn't upload: The picture is over the desktop's 5 MB limit\./);
   assert.match(failed.message, /same chat/);
 
   const second = desktop();

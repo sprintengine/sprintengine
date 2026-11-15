@@ -103,7 +103,7 @@ export function GlyphSheet() {
         </View>
       </Section>
 
-      <Section title="Agent characters" caption="Every drawing in every state; the season's pool picks which one an agent wears.">
+      <Section title="Agent characters" caption="Every drawing in every state; the season picks one per agent.">
         <View style={styles.grid}>
           {(Object.keys(AGENT_CHARACTERS) as AgentCharacterId[]).flatMap((character) =>
             AGENT_STATES.map((state) => (

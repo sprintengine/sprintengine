@@ -52,7 +52,7 @@ export async function completeTailnetPairing(input: {
     return {
       ok: false,
       errorCode: "desktop_unavailable",
-      message: "The desktop's tailnet gateway is unreachable. Is Tailscale up on both devices, and remote control enabled on the desktop?",
+      message: "Can't reach the desktop. Check Tailscale on both devices and remote control on the desktop.",
     };
   }
 
@@ -72,7 +72,7 @@ export async function completeTailnetPairing(input: {
       errorCode: response.status === 400 ? "invalid_payload" : "unauthenticated",
       message: gatewayError
         ? `The desktop refused the pairing: ${gatewayError}.`
-        : "The desktop refused the pairing code. Codes are single-use and expire — generate a fresh one from the desktop.",
+        : "Code refused. Codes are single-use and expire — make a new one on the desktop.",
     };
   }
   if (

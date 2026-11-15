@@ -97,7 +97,7 @@ export function TextGenerationSettingsSection(): JSX.Element {
       <SettingCard>
         <SettingToggle
           label="Name chats with your agent"
-          description="A few words per chat, written by the CLI you already run under its own login. It counts against that subscription. Off, or with no supported CLI installed, the first words of your prompt name the chat."
+          description="Your agent CLI titles each chat, using its subscription. Off: your prompt's first words name it."
           enabled={textGeneration.enabled}
           onChange={setTextGenerationEnabled}
           requirement={noRuntime ? 'Needs Claude Code or Codex' : undefined}
@@ -167,7 +167,7 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
     <>
       <SettingsRow
         label="Commit and pull request style"
-        help="How drafted commit messages and pull request titles are written. Matching the repository uses Conventional Commits when its recent commits do, and their style when they do not."
+        help="How drafted commit messages and pull request titles read. Matching follows the repository's recent commits."
         htmlFor={styleId}
       >
         <Select
@@ -199,7 +199,7 @@ function WritingStyleRows({ disabled }: { disabled: boolean }): JSX.Element {
               pending.current.timer = setTimeout(commitGuide, STYLE_GUIDE_COMMIT_DELAY_MS)
             }}
             onBlur={commitGuide}
-            placeholder="For example: a subject in the past tense, the area it touches first, and a body only when the change needs a reason."
+            placeholder="E.g. past-tense subject, area first, a body only when needed"
             size="md"
             variant="well"
             rows={4}

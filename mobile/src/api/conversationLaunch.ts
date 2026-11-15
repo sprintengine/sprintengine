@@ -159,7 +159,7 @@ export function chatLaunchUnsupported(machine: string): CreateConversationResult
     ok: false,
     failure: "unsupported",
     title: `${machine} cannot start chat agents yet.`,
-    message: "Update SprintEngine Studio there to start one from the phone.",
+    message: "Update Studio there first.",
   };
 }
 
@@ -264,7 +264,7 @@ export async function createConversation(
       return { ok: false, failure: "unavailable", title: `${machine} took too long to start the chat.`, message: "If it started, it is under Chats." };
     const conversation = answer.conversation;
     if (!conversation.workspaceId || !conversation.agentId) {
-      return { ok: false, failure: "refused", title: `${machine} started the chat but did not say which one it is.`, message: "Find it under Chats." };
+      return { ok: false, failure: "refused", title: `${machine} didn't say which chat it started.`, message: "Find it under Chats." };
     }
     return {
       ok: true,

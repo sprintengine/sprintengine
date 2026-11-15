@@ -20,7 +20,7 @@ export async function addThirdPartyModuleFromFolder(
   lifecycle: Pick<ModuleLifecycleClient, 'install'> | null,
 ): Promise<AddThirdPartyModuleOutcome> {
   if (typeof api.openDir !== 'function' || !lifecycle) {
-    return { status: 'failed', message: 'Installing extension modules is unavailable in this build.' }
+    return { status: 'failed', message: "Can't install extensions in this build." }
   }
 
   try {
@@ -31,7 +31,7 @@ export async function addThirdPartyModuleFromFolder(
     if (!result.ok) {
       return {
         status: 'failed',
-        message: result.message || result.issues?.[0]?.message || 'Could not install the extension module.',
+        message: result.message || result.issues?.[0]?.message || "Couldn't install the extension.",
       }
     }
     return {
@@ -42,7 +42,7 @@ export async function addThirdPartyModuleFromFolder(
   } catch (error) {
     return {
       status: 'failed',
-      message: error instanceof Error ? error.message : 'Extension module installation failed.',
+      message: error instanceof Error ? error.message : "Couldn't install the extension.",
     }
   }
 }

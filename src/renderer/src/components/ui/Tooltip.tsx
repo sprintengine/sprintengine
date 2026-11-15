@@ -371,7 +371,10 @@ export function Tooltip({
                 // is neither alive nor arriving, it is the label made visible.
                 'pointer-events-none',
                 layer === 'menu' ? 'z-[var(--z-menu)]' : 'z-[var(--z-popover)]',
-                multiline ? 'max-w-[420px] whitespace-pre-wrap break-words' : 'whitespace-nowrap',
+                // A label stays on one line up to the spec's 280px measure and
+                // wraps past it, so a long one is a few lines on screen instead
+                // of running off it.
+                multiline ? 'max-w-[420px] whitespace-pre-wrap break-words' : 'w-max max-w-[280px] break-words',
                 'rounded-sm border border-[color:var(--border-strong)]',
                 // 10/6px and `meta`, per design-system/components/tooltip.
                 // This shipped at `micro` (11px), which put the

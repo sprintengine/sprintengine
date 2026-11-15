@@ -13,7 +13,7 @@ export function ParentLink({ relation, name, onPress }: { relation: string; name
   const styles = useThemedStyles(createStyles);
   return (
     <Pressable
-      accessibilityHint="Goes to the chat or agent that started this subagent."
+      accessibilityHint="Opens the chat or agent that started it"
       accessibilityLabel={`${relation}: ${name}`}
       accessibilityRole="link"
       onPress={onPress}

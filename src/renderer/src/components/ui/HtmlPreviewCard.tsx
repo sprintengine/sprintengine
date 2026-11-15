@@ -73,7 +73,7 @@ export function HtmlPreviewCard({ absolutePath, relativePath, title, onOpen, tab
       tabIndex={tabIndex}
       onFocus={onFocus}
       onClick={onOpen}
-      aria-label={state.kind === 'error' ? `${title} — the demo will not render; open to see the file` : title}
+      aria-label={state.kind === 'error' ? `${title} — can’t render; open the file` : title}
       className="
         flex w-full flex-col overflow-hidden rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] text-left
         transition-colors hover:border-[color:var(--border-default)] hover:bg-[color:var(--bg-hover)]

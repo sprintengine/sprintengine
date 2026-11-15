@@ -313,7 +313,7 @@ export function SideQuestionRow({
             <MarkdownDocument body={answer} variant="chat" reply onLinkBlocked={onLinkBlocked} />
           </View>
           {truncated ? (
-            <Text style={styles.thoughtPreview}>The answer was longer than the chat keeps; this is its beginning.</Text>
+            <Text style={styles.thoughtPreview}>Answer too long to keep; showing the start.</Text>
           ) : null}
         </View>
       ) : null}

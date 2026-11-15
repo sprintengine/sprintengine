@@ -505,7 +505,7 @@ export function ConversationPermissionCard({
       ) : null}
       {approvalOutsideWorkspace(entry, workspaceRoot) ? (
         <InlineNotice tone="warn" className="mx-3 mt-2">
-          This request references a path outside this workspace.
+          Touches a path outside this workspace.
         </InlineNotice>
       ) : null}
       <ArrivalAnnouncement text={announcement} />

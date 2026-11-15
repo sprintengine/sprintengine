@@ -777,12 +777,10 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
         )}
         {configured && source === 'environment' ? (
           <p className="text-meta leading-5 text-[color:var(--text-subtle)]">
-            Set from the environment. Remove it there to change it.
+            Set by an environment variable. Change it there.
           </p>
         ) : configured && persistence === 'session' ? (
-          <p className="text-meta leading-5 text-[color:var(--tone-warn)]">
-            Stored for this session only — clears when the app quits.
-          </p>
+          <p className="text-meta leading-5 text-[color:var(--tone-warn)]">Kept until the app quits.</p>
         ) : null}
         <div aria-live="polite" className="text-meta leading-5 text-[color:var(--text-muted)] empty:hidden">
           {message}

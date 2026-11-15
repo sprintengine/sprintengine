@@ -285,7 +285,7 @@ test('a machine whose Studio does not keep its chats’ records is told to updat
     const there = machine.machine
     const renamed = await changePairedChat(there, 'ws-1', { kind: 'rename', name: 'A' })
     assert.equal(!renamed.ok && renamed.code, 'row_menu_unsupported')
-    assert.match(!renamed.ok ? renamed.message : '', /Update SprintEngine Studio there/u)
+    assert.match(!renamed.ok ? renamed.message : '', /Update Studio there/u)
     const settled = await settlePairedChat(there, 'ws-1')
     assert.equal(!settled.ok && settled.code, 'lifecycle_unsupported')
     const found = await searchPairedChats(there, 'parser')

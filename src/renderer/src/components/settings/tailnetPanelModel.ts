@@ -56,8 +56,8 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
       label: 'Tailscale not detected',
       tone: status.enabled ? 'error' : 'neutral',
       detail: status.enabled
-        ? 'Remote control is on, but Tailscale is not running on this machine, so nothing is listening. Start Tailscale and sign in.'
-        : 'This machine is not on a Tailscale network. Install Tailscale and sign in, then remote control can be turned on.',
+        ? 'Tailscale isn’t running, so nothing is listening. Start Tailscale and sign in.'
+        : 'Not on a Tailscale network. Install Tailscale and sign in to turn this on.',
       canTurnOn: false,
       canPair: false,
     }
@@ -68,7 +68,7 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
       state: 'off',
       label: 'Off',
       tone: 'neutral',
-      detail: 'Nothing on your tailnet can reach this Studio. Turn it on to pair a device.',
+      detail: 'Unreachable from your tailnet. Turn it on to pair a device.',
       canTurnOn: true,
       canPair: false,
     }
@@ -79,7 +79,7 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
       state: 'not-listening',
       label: 'Not listening',
       tone: 'error',
-      detail: status.lastError ?? 'Remote control is on, but the listener did not start.',
+      detail: status.lastError ?? 'On, but the listener didn’t start.',
       canTurnOn: true,
       canPair: false,
     }
@@ -89,7 +89,7 @@ export function tailnetReadiness(status: TailnetRemoteStatus | null): TailnetRea
     state: 'listening',
     label: 'Listening',
     tone: 'good',
-    detail: `Paired devices can reach this Studio at ${status.endpoint} over your tailnet.`,
+    detail: `Paired devices reach Studio at ${status.endpoint}.`,
     canTurnOn: true,
     canPair: true,
   }

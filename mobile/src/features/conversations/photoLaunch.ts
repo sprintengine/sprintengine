@@ -92,7 +92,7 @@ export async function launchWithPhotos<Picked extends PickedImage>(
     return {
       ok: false,
       started: true,
-      message: `${machine} started the chat but did not name its session, so the pictures cannot go to it. It is under Chats.`,
+      message: `Chat started on ${machine}, but the pictures couldn't be sent. Find it under Chats.`,
       progress: progress(),
     };
   }
@@ -106,7 +106,7 @@ export async function launchWithPhotos<Picked extends PickedImage>(
       return {
         ok: false,
         started: true,
-        message: `The chat started on ${machine}, but ${image.name} did not upload: ${reason} Send again to try the pictures again in the same chat.`,
+        message: `Chat started on ${machine}, but ${image.name} didn't upload: ${reason} Send again to retry in the same chat.`,
         progress: progress(),
       };
     }

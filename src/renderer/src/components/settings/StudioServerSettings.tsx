@@ -180,7 +180,7 @@ export function StudioServerSettings() {
       ) : null}
       {status.fellBack ? (
         <InlineNotice tone="warn">
-          Studio server could not start in its own process, so it runs inside the app this time. {status.fellBack}
+          Studio server couldn't start on its own, so it runs inside the app. {status.fellBack}
         </InlineNotice>
       ) : null}
     </section>

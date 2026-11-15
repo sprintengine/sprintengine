@@ -3520,7 +3520,7 @@ test('NewAgentPanel', async () => {
 
       await paste('/Users/dev/gone.png')
       assert.equal(composerText(textarea), '/Users/dev/gone.png', 'an unreadable path is typed after all')
-      assert.match(view.container.textContent ?? '', /Could not attach gone\.png: the file no longer exists\./)
+      assert.match(view.container.textContent ?? '', /Couldn't attach gone\.png: the file no longer exists\./)
 
       // An image of the project itself is a file the agent can open: the path
       // is what the prompt is about, so it is typed like any other text.
@@ -4159,7 +4159,7 @@ test('NewAgentPanel', async () => {
       await door.setValue(door.nameField()!, 'focus-timer')
       await door.settle()
       assert.ok(!door.view.text().includes('already has'))
-      assert.ok(door.view.text().includes('focus-timer is already an extension'), 'carrying on is said')
+      assert.ok(door.view.text().includes('focus-timer already exists there'), 'carrying on is said')
       await door.enter()
       assert.deepEqual(door.view.launches[0]?.extension, { id: 'focus-timer' })
       door.view.unmount()

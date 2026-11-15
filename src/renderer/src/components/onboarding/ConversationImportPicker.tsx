@@ -42,7 +42,7 @@ export function useConversationImportSelection(folders: readonly ConversationImp
       showToast(describeImportResult(result))
       return result.ok && result.imported.length > 0
     } catch (error) {
-      showToast({ tone: 'error', title: `Could not import: ${error instanceof Error ? error.message : String(error)}` })
+      showToast({ tone: 'error', title: `Couldn’t import: ${error instanceof Error ? error.message : String(error)}` })
       return false
     } finally {
       setImporting(false)
@@ -74,11 +74,7 @@ export function ConversationImportPicker({
   if (scan.status === 'error')
     return <p className="py-6 text-meta text-[color:var(--text-muted)]">Couldn’t read saved sessions: {scan.message}</p>
   if (scan.folders.length === 0)
-    return (
-      <p className="py-6 text-meta text-[color:var(--text-muted)]">
-        No Claude Code or Codex sessions on this machine to import.
-      </p>
-    )
+    return <p className="py-6 text-meta text-[color:var(--text-muted)]">No Claude Code or Codex sessions to import.</p>
   return (
     <ul className="space-y-1" aria-label="Folders with saved sessions">
       {scan.folders.map((folder) => {

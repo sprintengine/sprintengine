@@ -63,7 +63,7 @@ export function FreeSpaceDialog({
     <Modal open onClose={onClose} labelledBy={titleId} size="standard">
       <ModalHeader
         title="Free up space"
-        subtitle="Nothing in use or holding uncommitted work is touched. Branches are kept."
+        subtitle="Skips anything in use or with uncommitted work. Branches are kept."
         titleId={titleId}
         onClose={onClose}
       />
@@ -71,10 +71,10 @@ export function FreeSpaceDialog({
         <DescribedCheckRowList ariaLabel="What to remove">
           <DescribedCheckRow
             id={`${titleId}-extra`}
-            title={`Remove ready worktrees beyond one per project · ${formatBytes(bytesOf(plan.extraReady))}`}
+            title={`Remove extra ready worktrees · ${formatBytes(bytesOf(plan.extraReady))}`}
             description={
               plan.extraReady.length
-                ? `${names(plan.extraReady)}. The most recently used one stays, so the next chat starts quickly.`
+                ? `${names(plan.extraReady)}. The most recent one per project stays.`
                 : 'No project has more than one ready worktree.'
             }
             checked={extra && plan.extraReady.length > 0}
@@ -83,11 +83,11 @@ export function FreeSpaceDialog({
           />
           <DescribedCheckRow
             id={`${titleId}-merged`}
-            title={`Remove worktrees whose branch is merged · ${formatBytes(bytesOf(plan.merged))}`}
+            title={`Remove merged worktrees · ${formatBytes(bytesOf(plan.merged))}`}
             description={
               plan.merged.length
-                ? `${names(plan.merged)}. Worktrees outside the pool with no changes, whose work is on the default branch.`
-                : 'No worktree outside the pool is merged, clean and unused.'
+                ? `${names(plan.merged)}. Clean, outside the pool, already on the default branch.`
+                : 'No clean, merged worktrees outside the pool.'
             }
             checked={merged && plan.merged.length > 0}
             disabled={plan.merged.length === 0}
@@ -98,7 +98,7 @@ export function FreeSpaceDialog({
             title="Clear ignored files in the ready worktrees kept"
             description={
               plan.keptReady.length
-                ? `${names(plan.keptReady)}: installed dependencies and build output. The next agent in each runs the install again.`
+                ? `${names(plan.keptReady)}: dependencies and build output. The next agent reinstalls.`
                 : 'No ready worktree is kept.'
             }
             checked={clear && plan.keptReady.length > 0}
@@ -108,8 +108,8 @@ export function FreeSpaceDialog({
           {plan.unmerged.length > 0 ? (
             <DescribedCheckRow
               id={`${titleId}-unmerged`}
-              title={`Not merged, so not offered · ${formatBytes(bytesOf(plan.unmerged))}`}
-              description={`${names(plan.unmerged)} hold commits the default branch lacks. Remove one from its own row if you mean to; its branch is kept.`}
+              title={`Not merged, not offered · ${formatBytes(bytesOf(plan.unmerged))}`}
+              description={`${names(plan.unmerged)} have unmerged commits. Remove one from its own row; its branch is kept.`}
               checked={false}
               disabled
               onChange={() => {}}

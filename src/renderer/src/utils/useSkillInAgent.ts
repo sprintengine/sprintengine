@@ -318,7 +318,7 @@ export function skillRestartToast(result: UseSkillInAgentResult, skillName: stri
   return {
     tone: 'warn',
     title: `Installed for ${formatList(names)}`,
-    description: `${skillName} is in place. ${names.length === 1 ? 'That CLI' : 'Those CLIs'} may need a restart to see new skills.`,
+    description: `${skillName} is ready. ${names.length === 1 ? 'That CLI' : 'Those CLIs'} may need a restart.`,
   }
 }
 

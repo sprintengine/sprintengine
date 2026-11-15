@@ -65,7 +65,7 @@ export function readSchedule(
   const parsed = parseCronSchedule(cron)
   if (!parsed.ok) return { ok: false, message: parsed.error, ...(parsed.field ? { field: parsed.field } : {}) }
   const runs = nextScheduledAgentRuns({ cron, timezone }, now, PREVIEW_RUNS)
-  if (runs.length === 0) return { ok: false, message: 'That schedule never comes round — no calendar has that day.' }
+  if (runs.length === 0) return { ok: false, message: 'No such date, so it never runs' }
   return { ok: true, words: describeCronSchedule(parsed.schedule), next: formatRunTimes(runs, timezone, now) }
 }
 
@@ -118,7 +118,7 @@ export function ScheduleTag({
           size="inherit"
           onClick={togglePopover}
           // The words name the schedule; the accessible name says what a press does.
-          aria-label={read.ok ? `Schedule: ${read.words}, next ${read.next[0]}. Change it` : 'Change the schedule'}
+          aria-label={read.ok ? `Change schedule: ${read.words}, next ${read.next[0]}` : 'Change the schedule'}
           title={read.ok ? `Next ${read.next[0]}` : read.message}
           data-schedule-tag="true"
           {...triggerProps}
@@ -371,9 +371,7 @@ export function ScheduleEditor({
         ) : (
           <>
             <p className="text-body text-[color:var(--tone-error)]">{read.message}</p>
-            <p className="mt-0.5 text-meta text-[color:var(--text-subtle)]">
-              The last schedule that read stays until this one does.
-            </p>
+            <p className="mt-0.5 text-meta text-[color:var(--text-subtle)]">Keeping the last valid schedule</p>
           </>
         )}
       </div>

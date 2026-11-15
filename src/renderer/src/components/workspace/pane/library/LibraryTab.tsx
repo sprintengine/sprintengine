@@ -47,10 +47,7 @@ export function LibraryTab({ workspaceId, active }: { workspaceId: string; activ
     return (
       <div className="flex h-full min-h-0 flex-col bg-[color:var(--bg-app)]">
         <PanelHeader title="Library" />
-        <EmptyState
-          title="No chat in focus"
-          body="Open a chat, and every picture in it shows up here: the ones you attached and the ones the agent took."
-        />
+        <EmptyState title="No chat in focus" body="Open a chat to see its pictures here." />
       </div>
     )
   }
@@ -108,7 +105,7 @@ function ChatLibrary({
         {session.hydrated && images.length === 0 ? (
           <EmptyState
             title="No pictures yet"
-            body="Pictures you attach, and the screenshots the agent takes of a page or a board, show up here."
+            body="Pictures you attach and screenshots the agent takes show up here."
           />
         ) : null}
         {images.length > 0 ? (
