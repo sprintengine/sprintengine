@@ -232,6 +232,8 @@ export function copyRepoInScript(input: { source: string; name: string; path: st
     'base="$(git -C "$src" symbolic-ref -q --short HEAD || true)"',
     'echo "@@repo base $base"',
     'url="$(git -C "$src" remote get-url origin 2>/dev/null || true)"',
+    // An address only: a password or token written into the URL (`https://user:token@host/…`) stays here.
+    `url="$(printf '%s' "$url" | sed -E 's#^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*:[^/@]*@#\\1#')"`,
     'who="$(git -C "$src" config user.name || true)"',
     'mail="$(git -C "$src" config user.email || true)"',
     // The pipeline's status is the container's side, which fails when the clone does (an empty bundle too).

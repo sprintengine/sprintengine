@@ -89,8 +89,8 @@ Never a bind mount of the host's folder (ruling). On Enter:
 2. `git bundle create - HEAD --branches --tags` on the host is piped into
    `docker exec -i … git clone` inside the container, at
    `/home/node/work/<folder name>`. Uncommitted changes stay on the host.
-3. Inside, `origin` is set back to the host's remote URL (an address only, no
-   credential), the copy's author is the host repository's `user.name` and
+3. Inside, `origin` is set back to the host's remote URL (an address only: a
+   password or token written into the URL is taken out), the copy's author is the host repository's `user.name` and
    `user.email`, and the chat works on a branch of its own,
    `studio/container-<id>`.
 

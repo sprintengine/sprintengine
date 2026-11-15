@@ -217,3 +217,38 @@ test("the agent's login reaches a container's session by name: its value is in n
   assert.doesNotMatch(result.stdout.split('\n')[0]!, /sk-ant-secret/u)
   assert.match(result.stdout, /env: sk-ant-secret/u)
 })
+
+test("a token written into the host's remote URL is not copied into the container", async () => {
+  const urls: Record<string, string> = {
+    'https://dev:ghp_secret@github.com/acme/app.git': 'https://github.com/acme/app.git',
+    'https://dev@github.com/acme/app.git': 'https://dev@github.com/acme/app.git',
+    'git@github.com:acme/app.git': 'git@github.com:acme/app.git',
+    'ssh://git@github.com/acme/app.git': 'ssh://git@github.com/acme/app.git',
+  }
+  for (const [given, copied] of Object.entries(urls)) {
+    const dir = fakeBin(`url-${Object.keys(urls).indexOf(given)}`, {
+      git: [
+        'case "$*" in',
+        '  *rev-parse*) exit 0 ;;',
+        '  *symbolic-ref*) echo main ;;',
+        `  *"remote get-url"*) echo '${given}' ;;`,
+        '  *config*) exit 0 ;;',
+        '  *bundle*) printf bundle ;;',
+        'esac',
+      ].join('\n'),
+      docker: ['cat >/dev/null', 'shift 9', 'echo "url=$1"'].join('\n'),
+    })
+    const run = localHostRunner({ env: { PATH: `${dir}:/usr/bin:/bin` }, searchPath: false })
+    const result = await runOnHost(
+      run,
+      copyRepoInScript({
+        source: '/Users/dev/app',
+        name: 'sprintengine-0123456789abcdef',
+        path: '/home/node/work/app',
+        branch: 'studio/container-01234567',
+      }),
+    )
+    assert.match(result.stdout, new RegExp(`^url=${copied.replace(/[.+]/gu, '\\$&')}$`, 'mu'), given)
+    assert.doesNotMatch(result.stdout, /ghp_secret/u)
+  }
+})
