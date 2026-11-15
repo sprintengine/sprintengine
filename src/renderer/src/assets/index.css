@@ -4814,6 +4814,14 @@ body:has([data-selection-pane]:focus-within)
   scrollbar-gutter: stable;
 }
 
+/* A chat scrolls up under the window's band, and at the band's far right the
+ * panel toggle stands over the scroller's own lane. The bar starts below the
+ * band, so its thumb never runs up under the toggle and crops it, whichever
+ * way the notch at that end is cut. */
+.band-clear .chat-column-gutter::-webkit-scrollbar-track:vertical {
+  margin-top: var(--band-clearance, 0px);
+}
+
 /* The composer tray (agentChat/composerTray.tsx) slides up out from behind the
  * composer when its first row arrives: it starts tucked under the field, which
  * paints over it, so it is never drawn across the text being typed. Its display
