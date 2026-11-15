@@ -217,6 +217,7 @@ export {
   SteerGlyph,
   TerminalAgentGlyph,
   WorktreeGlyph,
+  ContainerGlyph,
 } from './ComposerGlyphs'
 export { GroupHeader, GroupHeaderAction } from './GroupHeader'
 export type { GroupHeaderProps } from './GroupHeader'

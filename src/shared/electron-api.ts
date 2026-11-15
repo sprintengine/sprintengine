@@ -10,6 +10,15 @@ import type {
   SshPromptRequest,
   SshResolveResult,
 } from './ssh-environments'
+import type {
+  ContainerCreateRequest,
+  ContainerCreateResult,
+  ContainerHost,
+  ContainerResult,
+  ContainerSummary,
+  ContainerTokenStatus,
+  DockerStatus,
+} from './containers'
 import type { EnvironmentEntry, EnvironmentTicketResult } from './environments'
 import type { SshPreviewStatus } from './ssh-preview'
 import type { ServerMode } from './server-mode'
@@ -538,8 +547,13 @@ export type ElectronApi = {
   sshEnvironmentUpgradeServer: (id: string) => Promise<SshEnvironmentResult>
   sshEnvironmentForget: (
     id: string,
-    options?: { stopServer?: boolean; clearBrowsingData?: boolean },
-  ) => Promise<SshEnvironmentResult>
+    options?: {
+      stopServer?: boolean
+      clearBrowsingData?: boolean
+      /** Containers Studio made on the machine: refused by default, removed first, or only their records dropped. */
+      containers?: 'refuse' | 'remove' | 'forget-records'
+    },
+  ) => Promise<SshEnvironmentResult & { containers?: string[] }>
   sshEnvironmentDiagnostics: (id: string) => Promise<{ ok: true; text: string } | { ok: false; message: string }>
   /** Sign a chat's CLI in on an SSH machine, with no terminal (decision R34). */
   sshSignIn: (id: string, providerId: string) => Promise<SshEnvironmentResult>
@@ -549,6 +563,25 @@ export type ElectronApi = {
   /** A prompt is over without this window's answer (timed out, answered elsewhere, ssh gave up). */
   onSshPromptClosed: (cb: (id: string) => void) => () => void
   sshPromptAnswer: (id: string, answer: string | null) => void
+  /** Docker on a host, in words (a chat's container, docs/design/container-chats.md). */
+  containerDockerStatus: (host: ContainerHost) => Promise<DockerStatus>
+  /** Start Colima where it is installed and stopped. */
+  containerStartDocker: (host: ContainerHost) => Promise<DockerStatus>
+  /** Make a container for a chat and copy its repository in; the chat then starts on it as on a machine. */
+  containerCreate: (request: ContainerCreateRequest) => Promise<ContainerCreateResult>
+  /** Every container Studio made, so none is left behind unseen. */
+  containersList: () => Promise<ContainerSummary[]>
+  containerRemove: (
+    target: { id: string } | { host: ContainerHost; name: string; context?: string | null },
+  ) => Promise<ContainerResult>
+  /** Bring a container's branch out and push it from its host. */
+  containerPush: (id: string) => Promise<ContainerResult>
+  onContainersChanged: (cb: () => void) => () => void
+  /** Whether Claude Code's token for chats in containers is kept (never the token itself). */
+  containerTokenStatus: () => Promise<ContainerTokenStatus>
+  /** Keep a token from `claude setup-token`, sealed, for containers made from now on. */
+  containerTokenSet: (token: string) => Promise<ContainerResult>
+  containerTokenClear: () => Promise<ContainerResult>
   /** The SSH machines preview switch: this session's, and the next launch's. */
   sshPreviewStatus: () => Promise<SshPreviewStatus>
   sshPreviewSet: (enabled: boolean) => Promise<SshPreviewStatus>

@@ -31,6 +31,7 @@ import {
 import { MachineMarkPicker, MachineRowMark } from './MachineMarkPicker'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import { AddSshMachine, SshMachineActions, SshMachineDetail, useSshMachines } from './SshMachinesSection'
+import { ContainersSection } from './ContainersSection'
 
 const ROW_FIELD = 'w-60 max-w-full font-mono'
 
@@ -101,7 +102,7 @@ export function MachinesSettingsTab({
   onOpenRemoteSettings?: () => void
 } = {}): React.JSX.Element {
   const { listing, refresh } = useExecutionHosts({ all: true, refreshOnMount: true })
-  const environments = useEnvironments()
+  const everyEnvironment = useEnvironments()
   const sshOn = window.api?.sshMachinesEnabled === true
   const { machines: sshMachines } = useSshMachines(sshOn ? window.api : null)
   const [refreshing, setRefreshing] = useState(false)
@@ -117,6 +118,11 @@ export function MachinesSettingsTab({
   const hostOf = (id: ExecutionHostId): ExecutionHostSummary | null =>
     listing?.hosts.find((host) => host.id === id) ?? null
   const sshOf = (id: string): SshEnvironmentSummary | null => sshMachines.find((machine) => machine.id === id) ?? null
+  // A chat's container is a machine too, listed under Containers below rather than here.
+  const environments = everyEnvironment.filter((entry) => {
+    const best = entry.routes[0]
+    return !(best?.kind === 'ssh' && sshOf(best.machine)?.container)
+  })
   // The distributions not turned on: not machines yet, so not in the list.
   const offDistros = (listing?.hosts ?? []).filter((host) => host.kind === 'wsl' && !settingsOf(host.id).enabled)
 
@@ -263,6 +269,8 @@ export function MachinesSettingsTab({
           No WSL distributions are installed. Install one with <ProviderStateId>wsl --install</ProviderStateId>.
         </p>
       ) : null}
+
+      {sshOn && typeof window.api?.containersList === 'function' ? <ContainersSection api={window.api} /> : null}
 
       {sshOn ? (
         <section className="space-y-2">

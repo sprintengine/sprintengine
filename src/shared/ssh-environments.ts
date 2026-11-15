@@ -6,6 +6,7 @@
 // Pure and shared: no fs, no electron.
 
 import type { StudioProtocolWindow } from '../../packages/studio-protocol/src/public'
+import type { SavedContainer } from './containers'
 import type { HostGhStatus } from './host-gh'
 
 /** The channels, all owned by main (it holds the SSH sessions and their prompts). */
@@ -76,6 +77,12 @@ export type SavedSshEnvironment = {
   environmentId: string | null
   settings: SshEnvironmentSettings
   addedAt: number
+  /**
+   * Set when this machine is a container Studio made for a chat
+   * (docs/design/container-chats.md): reached by `docker exec` on its host
+   * rather than by ssh, and `destination` is the container's name.
+   */
+  container?: SavedContainer
 }
 
 export type SshEnvironmentState =

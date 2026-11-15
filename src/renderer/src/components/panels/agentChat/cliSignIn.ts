@@ -3,6 +3,29 @@ import { LOCAL_HOST_ID, normalizeExecutionHostId } from '../../../../../shared/e
 import { windowChatServices } from './windowChat'
 import { focusOrAddTerminalTab } from '../../../utils/modelRegistry'
 import { openTerminal, writeTerminal } from '../../../studio/terminals'
+import { cliForConversationProvider, conversationSignIn } from '../../../../../shared/conversation-harness'
+
+/**
+ * Which provider a chat's failed sign-in offers to sign in, or undefined for
+ * none. A machine's chat (an SSH machine, a container) signs in through this
+ * desktop's own dialog for that machine (`sshSignIn`), whatever its
+ * transport serves, for any CLI it runs: otherwise its words send the person
+ * to a terminal here, which signs in the wrong machine. This machine's chat
+ * signs in only where its transport serves it, for a CLI Studio can open a
+ * sign-in for.
+ */
+export function chatSignInProviderId(input: {
+  providerId: string | null | undefined
+  machineId: string | null
+  sshMachinesOn: boolean
+  providerSignIn: boolean | undefined
+}): string | undefined {
+  const cli = cliForConversationProvider(input.providerId)
+  const offered = input.machineId
+    ? input.sshMachinesOn && Boolean(cli)
+    : Boolean(input.providerSignIn) && Boolean(conversationSignIn(cli))
+  return offered ? (input.providerId ?? undefined) : undefined
+}
 
 /**
  * Opens a terminal tab in the chat's workspace that runs the chat CLI's own

@@ -66,6 +66,8 @@ export function registerSshEnvironmentsIpc(ipcMain: IpcMain, machines: SshEnviro
     machines.forget(id, {
       stopServer: payload.stopServer === true,
       clearBrowsingData: payload.clearBrowsingData === true,
+      containers:
+        payload.containers === 'remove' || payload.containers === 'forget-records' ? payload.containers : 'refuse',
     }),
   )
   const onAnswer = (_event: unknown, payload: unknown) => {

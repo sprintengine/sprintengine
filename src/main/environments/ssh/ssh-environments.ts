@@ -43,6 +43,21 @@ import {
   type SshDestination,
 } from './ssh-command'
 import { SshEnvironment, type SshServerConnection } from './ssh-environment'
+import type { ContainerHost } from '../../../shared/containers'
+import {
+  EXEC_READY_MARKER,
+  execSessionScript,
+  removalOutcome,
+  removeContainerScript,
+} from '../container/container-scripts'
+import {
+  holdStdinUntil,
+  localHostRunner,
+  runOnHost,
+  sshScriptBody,
+  type HostProcess,
+  type HostRunner,
+} from '../container/docker-host'
 import { ensureNodeBinary, serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
 
@@ -74,6 +89,20 @@ export type SshEnvironmentsDeps = {
   /** A `-F` ssh config for every session (the integration suites); null for the person's own. */
   configFile?: string | null
   sshBinary?: string | null
+  /** How a script runs on this computer for a container here; `/bin/sh -c` unless a suite says otherwise. */
+  localRunner?: HostRunner
+  /**
+   * What a container's Studio server is started with on this computer: the
+   * agent's own login (container-agent-token.ts), by variable name and value.
+   * Read when a session is spawned; a container on an SSH machine is not given it.
+   */
+  containerEnv?: () => Record<string, string>
+  /**
+   * Resolves once `containerEnv` can answer (the token is read from the
+   * keychain at start): a container's server is never started before, or it
+   * would run without the agent's login for as long as it lives.
+   */
+  containerEnvReady?: () => Promise<void>
   /** A machine was forgotten (its pane forward closes; its browsing data goes when asked). */
   onForget?(saved: SavedSshEnvironment, options: { clearBrowsingData: boolean }): Promise<void> | void
   log?(message: string): void
@@ -145,7 +174,17 @@ const LOGIN_COMMANDS: Readonly<Record<string, string>> = {
 }
 
 /** The words for a CLI Studio cannot sign in without a terminal: the exact command, over the person's own SSH. */
-export function signInOverSsh(cli: string, saved: Pick<SavedSshEnvironment, 'destination' | 'label'>): string {
+export function signInOverSsh(
+  cli: string,
+  saved: Pick<SavedSshEnvironment, 'destination' | 'label' | 'container'>,
+): string {
+  if (saved.container) {
+    const login = LOGIN_COMMANDS[cli]
+    const where = saved.container.host.kind === 'local' ? 'in a terminal here' : 'on the machine it runs on'
+    return login
+      ? `Sign ${cli} in once inside the container, ${where}: docker exec -it ${saved.container.name} ${login}`
+      : `${cli} signs in with an API key: set it for the chat, or sign it in inside the container as its own documentation says.`
+  }
   const parsed = parseDestination(saved.destination)
   const destination = parsed.ok ? parsed.destination.argv : saved.destination
   const login = LOGIN_COMMANDS[cli]
@@ -217,6 +256,50 @@ export class SshEnvironments {
 
   get(id: string): SavedSshEnvironment | null {
     return this.saved.find((entry) => entry.id === id) ?? null
+  }
+
+  /**
+   * How a script runs on a container's host (container/docker-host.ts): this
+   * computer's shell, or the saved SSH machine's over the person's own ssh,
+   * asking through Studio's dialogs when `interactive`.
+   */
+  hostRunner(host: ContainerHost): HostRunner {
+    if (host.kind === 'local') return this.deps.localRunner ?? localHostRunner()
+    return (script, options = {}) => {
+      const entry = this.get(host.machine)
+      if (!entry || entry.container) throw new Error('That SSH machine is no longer saved in Settings › Machines.')
+      // `sh -s`, the script on stdin (sshScriptBody); what the caller writes after it waits for `holdUntil`.
+      const child = spawnSshSession({
+        ssh: this.ssh(),
+        destination: this.destinationOf(host.machine),
+        label: entry.label,
+        interactive: options.interactive === true,
+        askpass: options.interactive ? this.brokerReady : null,
+        configFile: this.deps.configFile ?? null,
+      }) as unknown as HostProcess
+      child.stdin.write(sshScriptBody(script))
+      return options.holdUntil ? holdStdinUntil(child, options.holdUntil) : child
+    }
+  }
+
+  /** Make sure the dialogs ssh asks through are listening before an interactive host script runs. */
+  async readyToAsk(): Promise<void> {
+    await this.askpass()
+  }
+
+  /** Save a container Studio has just started as a machine, under the id its labels carry. */
+  addContainer(entry: SavedSshEnvironment & { container: NonNullable<SavedSshEnvironment['container']> }): void {
+    this.saved = this.saved.filter((each) => each.id !== entry.id)
+    this.saved.push(entry)
+    this.persist()
+  }
+
+  /** Change a saved container's record (its repository, once copied in). */
+  updateContainer(id: string, patch: Partial<NonNullable<SavedSshEnvironment['container']>>): void {
+    const entry = this.get(id)
+    if (!entry?.container) return
+    entry.container = { ...entry.container, ...patch }
+    this.persist()
   }
 
   private destinationOf(id: string): SshDestination {
@@ -310,15 +393,28 @@ export class SshEnvironments {
       id,
       label: () => this.get(id)?.label ?? saved.label,
       settings: () => this.get(id)?.settings ?? DEFAULT_SSH_ENVIRONMENT_SETTINGS,
-      spawn: ({ interactive }) =>
-        spawnSshSession({
+      spawn: ({ interactive }) => {
+        const entry = this.get(id) ?? saved
+        // A container's exec channel is a script on its host: `docker exec -i … sh -s`.
+        if (entry.container) {
+          const env = entry.container.host.kind === 'local' ? (this.deps.containerEnv?.() ?? {}) : {}
+          return this.hostRunner(entry.container.host)(
+            execSessionScript(entry.container.name, {
+              passEnv: Object.keys(env),
+              context: entry.container.context ?? null,
+            }),
+            { interactive, env, holdUntil: EXEC_READY_MARKER },
+          ) as unknown as SessionProcess
+        }
+        return spawnSshSession({
           ssh: this.ssh(),
           destination: this.destinationOf(id),
-          label: this.get(id)?.label ?? saved.label,
+          label: entry.label,
           interactive,
           askpass: this.brokerReady,
           configFile: this.deps.configFile ?? null,
-        }) as unknown as SessionProcess,
+        }) as unknown as SessionProcess
+      },
       app: this.deps.app,
       dataName: this.dataName(),
       startedBy: this.deps.startedBy,
@@ -443,9 +539,15 @@ export class SshEnvironments {
     return { ok: true }
   }
 
+  /** A container's first session waits for what its server is started with (`containerEnvReady`). */
+  private async startable(id: string): Promise<void> {
+    if (this.get(id)?.container) await this.deps.containerEnvReady?.().catch(() => undefined)
+  }
+
   async connect(id: string): Promise<SshEnvironmentResult> {
     const machine = this.machine(id)
     if (!machine) return { ok: false, message: 'That SSH machine is no longer saved.' }
+    await this.startable(id)
     // The person asked: ssh may ask them things, so the broker listens first.
     try {
       await this.askpass()
@@ -493,6 +595,7 @@ export class SshEnvironments {
    */
   async openStream(key: string, purpose: 'studio'): Promise<{ stream: Duplex; label: string }> {
     const machine = this.machineFor(key)
+    await this.startable(key.startsWith('ssh:') ? key.slice(4) : key)
     const connection = await machine.connect({ interactive: false })
     return { stream: await connection.open(purpose), label: connection.label }
   }
@@ -699,6 +802,7 @@ export class SshEnvironments {
     const machine = this.machine(id)
     if (!machine) return false
     if (machine.current()) return true
+    await this.startable(id)
     const timer = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms).unref?.())
     return Promise.race([
       machine.connect({ interactive: false }).then(
@@ -711,11 +815,58 @@ export class SshEnvironments {
 
   async forget(
     id: string,
-    options: { stopServer?: boolean; clearBrowsingData?: boolean } = {},
-  ): Promise<SshEnvironmentResult> {
+    options: {
+      stopServer?: boolean
+      clearBrowsingData?: boolean
+      /**
+       * The containers Studio made on this machine: by default the machine is
+       * not forgotten while it has any (they would be stranded); `remove`
+       * removes them first, `forget-records` drops only their records here
+       * (for a machine that is gone), leaving them on it.
+       */
+      containers?: 'refuse' | 'remove' | 'forget-records'
+    } = {},
+  ): Promise<SshEnvironmentResult & { containers?: string[] }> {
     const machine = this.machines.get(id)
     const saved = this.get(id)
-    if (options.stopServer) {
+    const hosted = saved && !saved.container ? this.containersOn(id) : []
+    if (hosted.length > 0) {
+      const mode = options.containers ?? 'refuse'
+      if (mode === 'refuse')
+        return {
+          ok: false,
+          containers: hosted.map((entry) => entry.container!.name),
+          message: `${saved!.label} has ${hosted.length === 1 ? 'a container' : `${hosted.length} containers`} Studio made (${hosted.map((entry) => entry.container!.name).join(', ')}). Remove ${hosted.length === 1 ? 'it' : 'them'} first, or forget only ${hosted.length === 1 ? 'its record' : 'their records'} if ${saved!.label} is gone.`,
+        }
+      for (const entry of hosted) {
+        if (mode === 'remove') {
+          const removed = await this.forget(entry.id)
+          if (!removed.ok) return removed
+        } else this.dropRecord(entry.id)
+      }
+    }
+    if (saved?.container) {
+      // A container Studio made goes with its record: Docker removes it, and
+      // only when it carries Studio's label (container-scripts.ts). Docker
+      // not answering keeps the record, so the container is not lost track of.
+      machine?.disconnect()
+      if (saved.container.host.kind === 'ssh') await this.askpass().catch(() => undefined)
+      const where =
+        saved.container.host.kind === 'local'
+          ? 'this computer'
+          : (this.get(saved.container.host.machine)?.label ?? 'its machine')
+      const removed = await runOnHost(
+        this.hostRunner(saved.container.host),
+        removeContainerScript(saved.container.name, saved.container.context ?? null),
+        { timeoutMs: 120_000, interactive: saved.container.host.kind === 'ssh' },
+      ).catch((error: unknown) => ({
+        code: 1,
+        stdout: '',
+        stderr: error instanceof Error ? error.message : String(error),
+      }))
+      const outcome = removalOutcome(removed, saved.container.name, where)
+      if (!outcome.ok) return outcome
+    } else if (options.stopServer) {
       const stopped = await this.stopServer(id)
       if (!stopped.ok) return stopped
     }
@@ -727,6 +878,36 @@ export class SshEnvironments {
     this.persist()
     if (saved) await this.deps.onForget?.(saved, { clearBrowsingData: options.clearBrowsingData === true })
     return { ok: true }
+  }
+
+  /**
+   * Stop the Studio server in every container on this computer, so the next
+   * connection starts it again with what `containerEnv` says now (the agent's
+   * login set or forgotten). Best effort, one at a time; a container Docker
+   * cannot reach now starts with the new login whenever it next starts.
+   */
+  async restartContainerServers(): Promise<number> {
+    let restarted = 0
+    for (const entry of this.saved.filter((each) => each.container?.host.kind === 'local')) {
+      const stopped = await this.stopServer(entry.id).catch(() => ({ ok: false }))
+      if (stopped.ok) restarted++
+    }
+    return restarted
+  }
+
+  /** The saved containers whose host is the SSH machine `id`. */
+  containersOn(id: string): SavedSshEnvironment[] {
+    return this.saved.filter((entry) => entry.container?.host.kind === 'ssh' && entry.container.host.machine === id)
+  }
+
+  /** Forget a record without touching anything on its machine (a container on a machine that is gone). */
+  private dropRecord(id: string): void {
+    this.machines.get(id)?.disconnect()
+    this.machines.delete(id)
+    void this.routes.get(id)?.close()
+    this.routes.delete(id)
+    this.saved = this.saved.filter((entry) => entry.id !== id)
+    this.persist()
   }
 
   diagnostics(id: string): { ok: true; text: string } | { ok: false; message: string } {

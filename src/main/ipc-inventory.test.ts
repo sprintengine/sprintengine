@@ -151,6 +151,7 @@ import { registerSshPreviewIpc } from './environments/ssh/ssh-preview'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import { registerSshEnvironmentsIpc } from './ipc/ssh-environments-ipc'
+import { registerContainersIpc } from './ipc/containers-ipc'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { loadMainModules } from './module-host/load-modules'
 import {
@@ -305,10 +306,10 @@ function linesMatching(files: readonly string[], pattern: RegExp): Map<string, s
 }
 
 // A registration as the source writes it: on `ipcMain` (or a registry or
-// wrapper of it named `ipc`), or through the SSH machines' local `handle`.
+// wrapper of it named `ipc`), or through the SSH machines' and containers' local `handle`.
 // A module registers none: it declares methods, served over the Studio protocol.
 const REGISTRATION =
-  /(?:^|[^\w.])(?:deps\.)?(?:ipcMain|ipc)\.(?:handle|handleOnce|on|once|addListener|prependListener|prependOnceListener)\(|^\s*handle\(SSH_ENV_CHANNELS\./u
+  /(?:^|[^\w.])(?:deps\.)?(?:ipcMain|ipc)\.(?:handle|handleOnce|on|once|addListener|prependListener|prependOnceListener)\(|^\s*handle\((?:SSH_ENV|CONTAINER)_CHANNELS\./u
 
 // A preload call on its router.
 const PRELOAD_CALL = /\b(?:ipcRenderer|ipc)\.(?:invoke|send|sendSync|on|once)\(/u
@@ -325,6 +326,7 @@ test('what main and the server register, and what the preload uses, is the inven
   registerSshPreviewIpc(shell, { enabled: false, fromEnvironment: false }, scratch)
   registerStudioServerIpc(shell, anything())
   registerSshEnvironmentsIpc(shell, anything())
+  registerContainersIpc(shell, anything(), anything())
   registerEnvironmentsIpc(shell, anything())
   registerChatLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
   createHostRecordingEncoder({ ipcMain: shell, tabs: anything() })

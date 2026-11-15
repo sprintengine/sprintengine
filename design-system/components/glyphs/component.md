@@ -231,6 +231,7 @@ The New chat composer's own marks (owner ruling 2026-10-04). Stroke 1.4,
 | `QueueGlyph` | `glyphs/queue.svg` | Three lines of a list with a plus: the round send while the agent works, when it queues the message for the turn's end |
 | `SteerGlyph` | `glyphs/steer.svg` | An arrow that turns up and to the right: the round send while the agent works, when it hands the message to the running turn |
 | `WorktreeGlyph` | `glyphs/worktree.svg` | A folder holding a commit node: the strip's Worktree switch, and the Git panel's Worktrees view |
+| `ContainerGlyph` | `glyphs/container.svg` | A cube in isometric outline, top face shaded .45 and right face .18: the strip's Container switch. Still, never animated (owner ruling 2026-11-15) |
 
 ### Status (16-grid)
 

@@ -81,6 +81,7 @@ export {
   ScheduleIcon,
   SignOutIcon,
   WorktreeGlyph,
+  ContainerGlyph,
   DiffGlyph,
   BrowserGlyph,
   CanvasGlyph,
