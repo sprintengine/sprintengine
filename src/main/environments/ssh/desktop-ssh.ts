@@ -8,7 +8,9 @@ import { writeDiagnosticLog } from '../../diagnostics-service'
 import { allowMachinePartitions } from '../../browser/guest-policy'
 import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
 import { ContainerMachines } from '../container/container-machines'
-import { readAgentImage } from '../container/container-image'
+import { imageForSetUp, type ContainerImage } from '../container/container-image'
+import { detectAgentCliAvailability } from '../../cli-availability'
+import { listPluginRegistryEntries } from '../../plugin-registry-instance'
 import { channelForVersion } from '../../update-channel-store'
 import { readStudioEnv } from '../../../shared/studio-env'
 import type { WorkspaceEnvironmentRef } from '../../../shared/workspace'
@@ -72,14 +74,19 @@ export function createDesktopSsh(deps: {
   })
   // Containers (docs/design/container-chats.md): each one a saved machine of
   // the list above, reached over `docker exec` on its host.
-  const imagePaths = {
-    packaged: app.isPackaged,
-    resourcesDir: app.isPackaged ? process.resourcesPath : null,
-    appRoot: app.getAppPath(),
+  // The image a container gets: the agent CLIs set up on this computer (what
+  // Settings › Agents shows as installed), each by the command it runs.
+  const agentImage = async (): Promise<ContainerImage> => {
+    const installed = await detectAgentCliAvailability().catch((error: unknown) => {
+      throw new Error(
+        `Studio could not tell which agents are set up on this computer (${error instanceof Error ? error.message : String(error)}), so it cannot work out a container's image. Try again in a moment.`,
+      )
+    })
+    return imageForSetUp(listPluginRegistryEntries(), installed)
   }
   const containers = new ContainerMachines({
     machines: sshEnvironments,
-    image: () => readAgentImage(imagePaths),
+    image: agentImage,
     hostLabel: (host) =>
       host.kind === 'local'
         ? process.platform === 'darwin'

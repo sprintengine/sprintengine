@@ -18,8 +18,7 @@ import {
   type SshResolveResult,
 } from '../../../shared/ssh-environments'
 import { wslProfileId } from '../../hosts/wsl-tree-install'
-import { cliForConversationProvider } from '../../../shared/conversation-harness'
-import { SIGN_IN_FLOWS } from '../../../server/machine/machine-sign-in'
+import { SIGN_IN_FLOWS, signInCli } from '../../../server/machine/machine-sign-in'
 import {
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
@@ -45,6 +44,7 @@ import {
 import { SshEnvironment, type SshServerConnection } from './ssh-environment'
 import type { ContainerHost } from '../../../shared/containers'
 import {
+  dockerCommand,
   EXEC_READY_MARKER,
   execSessionScript,
   removalOutcome,
@@ -159,6 +159,9 @@ const LOGIN_COMMANDS: Readonly<Record<string, string>> = {
   opencode: 'opencode auth login',
   gemini: 'gemini',
   'kimi-code': 'kimi login',
+  grok: 'grok login --device-auth',
+  muse: 'muse login',
+  github: 'gh auth login --web',
 }
 
 /** The words for a CLI Studio cannot sign in without a terminal: the exact command, over the person's own SSH. */
@@ -170,7 +173,7 @@ export function signInOverSsh(
     const login = LOGIN_COMMANDS[cli]
     const where = saved.container.host.kind === 'local' ? 'in a terminal here' : 'on the machine it runs on'
     return login
-      ? `Sign ${cli} in once inside the container, ${where}: docker exec -it ${saved.container.name} ${login}`
+      ? `Sign ${cli} in once inside the container, ${where}: ${dockerCommand(saved.container.context)} exec -it ${saved.container.name} ${login}`
       : `${cli} signs in with an API key: set it for the chat, or sign it in inside the container as its own documentation says.`
   }
   const parsed = parseDestination(saved.destination)
@@ -728,7 +731,7 @@ export class SshEnvironments {
   async signIn(id: string, providerId: string): Promise<SshEnvironmentResult> {
     const saved = this.get(id)
     if (!saved) return { ok: false, message: 'That SSH machine is no longer saved in Settings › Machines.' }
-    const cli = cliForConversationProvider(providerId)
+    const cli = signInCli(providerId)
     if (!cli) return { ok: false, message: 'This chat has no CLI to sign in.' }
     const over = signInOverSsh(cli, saved)
     if (!SIGN_IN_FLOWS[cli]) return { ok: false, message: over }
@@ -765,7 +768,7 @@ export class SshEnvironments {
       {
         kind: 'sign-in',
         label: saved.label,
-        text: `Sign in to ${SIGN_IN_FLOWS[cli]!.binary} on ${saved.label}.`,
+        text: `Sign in to ${SIGN_IN_FLOWS[cli]!.name} on ${saved.label}.`,
         signIn: { cli, url: started.url, code: started.code, paste: started.paste },
       },
       finished.signal,

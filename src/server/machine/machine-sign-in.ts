@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 
+import { cliForConversationProvider, conversationClis } from '../../shared/conversation-harness'
+
 // Signing a chat's CLI in on the server's own machine, with no terminal
 // (decision R34; phase 8): the CLI's own login runs here as a plain child,
 // and what it prints is read for the link to open, the one-time code to type
@@ -15,11 +17,21 @@ import { randomBytes } from 'node:crypto'
 //                               browser here); finishes on its own
 //   claude auth login           a link, then "Paste code here if prompted >":
 //                               the code the browser shows is pasted back
+//   grok login --device-auth    a link and a one-time code; finishes on its own
+//   kimi login                  a link and a one-time code; finishes on its own
+//   muse login                  a link and a one-time code; finishes on its own
+//   gh auth login --web         a one-time code, then the link; finishes on its own
+//                               (GitHub, for git and pull requests in a container)
 //
 // A CLI with none of these (opencode's provider picker, an API-key CLI) is not
 // here: the client tells the person the command to run once over SSH.
 
+/** GitHub's sign-in, for git and pull requests on a machine: not a chat's CLI, so named on its own. */
+export const GITHUB_SIGN_IN = 'github'
+
 export type SignInFlow = {
+  /** What is signed in to, in words. */
+  name: string
   /** The command's name on PATH. */
   binary: string
   args: readonly string[]
@@ -28,9 +40,28 @@ export type SignInFlow = {
 }
 
 export const SIGN_IN_FLOWS: Readonly<Record<string, SignInFlow>> = {
-  codex: { binary: 'codex', args: ['login', '--device-auth'], kind: 'device-code' },
-  cursor: { binary: 'cursor-agent', args: ['login'], env: { NO_OPEN_BROWSER: '1' }, kind: 'browser' },
-  'claude-code': { binary: 'claude', args: ['auth', 'login'], kind: 'paste' },
+  codex: { name: 'Codex', binary: 'codex', args: ['login', '--device-auth'], kind: 'device-code' },
+  cursor: { name: 'Cursor', binary: 'cursor-agent', args: ['login'], env: { NO_OPEN_BROWSER: '1' }, kind: 'browser' },
+  'claude-code': { name: 'Claude Code', binary: 'claude', args: ['auth', 'login'], kind: 'paste' },
+  grok: { name: 'Grok', binary: 'grok', args: ['login', '--device-auth'], kind: 'device-code' },
+  'kimi-code': { name: 'Kimi Code', binary: 'kimi', args: ['login'], kind: 'device-code' },
+  muse: { name: 'Muse', binary: 'muse', args: ['login'], kind: 'device-code' },
+  [GITHUB_SIGN_IN]: {
+    name: 'GitHub',
+    binary: 'gh',
+    args: ['auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https', '--web'],
+    kind: 'device-code',
+  },
+}
+
+/**
+ * The flow a sign-in names: a CLI's id or GitHub's (`SIGN_IN_FLOWS`), else a
+ * chat's provider, whose CLI it is. Null when neither has one.
+ */
+export function signInCli(name: string): string | null {
+  // A CLI by its own id: one with a flow here, or a chat's CLI that has none (told its command).
+  if (Object.hasOwn(SIGN_IN_FLOWS, name) || conversationClis().includes(name)) return name
+  return cliForConversationProvider(name)
 }
 
 export type SignInStarted =
@@ -51,7 +82,10 @@ export function readSignInOutput(text: string): { url: string | null; code: stri
   const plain = text.replace(ESCAPES, '')
   const url = URL.exec(plain)?.[0]?.replace(/[).,]+$/u, '') ?? null
   const afterUrl = url ? plain.slice(plain.indexOf(url) + url.length) : plain
-  return { url, code: DEVICE_CODE.exec(afterUrl)?.[0] ?? null, paste: PASTE_PROMPT.test(plain) }
+  // Most print the link, then the code; the GitHub CLI prints the code first.
+  const code =
+    DEVICE_CODE.exec(afterUrl)?.[0] ?? (url ? DEVICE_CODE.exec(plain.slice(0, plain.indexOf(url)))?.[0] : null)
+  return { url, code: code ?? null, paste: PASTE_PROMPT.test(plain) }
 }
 
 type Running = { child: ChildProcessWithoutNullStreams; done: Promise<SignInDone> }

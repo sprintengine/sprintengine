@@ -568,6 +568,8 @@ export type ElectronApi = {
     id: string,
     address: string,
   ) => Promise<{ ok: true; folder: string } | { ok: false; message: string }>
+  /** Make a container again on the image a container gets now, keeping its repositories and logins. */
+  containerRebuild: (id: string) => Promise<SshEnvironmentResult>
   /** What deleting a container would lose: its branches with commits no remote has. */
   containerUnpushed: (id: string) => Promise<ContainerUnpushed>
   onSshEnvironmentsChanged: (cb: () => void) => () => void

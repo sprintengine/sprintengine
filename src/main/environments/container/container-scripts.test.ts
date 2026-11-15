@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
@@ -14,6 +25,8 @@ import {
   dockerStatusScript,
   EXEC_READY_MARKER,
   execSessionScript,
+  prepareLoginsScript,
+  replaceContainerScript,
   parseDockerStatus,
   parseUnpushed,
   removalOutcome,
@@ -158,7 +171,7 @@ test('only names Studio minted are spelled bare in a script', () => {
   assert.ok(script.includes(`'https://example.com/it'\\''s $(here).git'`))
 })
 
-test('a container is made without capabilities, with only its own home as a volume, on the context it was asked under', () => {
+test('a container is made without capabilities, with its home and the host logins as volumes, on the context it was asked under', () => {
   const run = runContainerScript({ name: NAME, image: IMAGE, machineId: '0123456789abcdef', context: 'colima' })
   assert.match(
     run,
@@ -167,8 +180,24 @@ test('a container is made without capabilities, with only its own home as a volu
   assert.match(run, /\ndocker --context colima run -d /u)
   assert.match(run, / --cap-drop ALL --security-opt no-new-privileges /u)
   assert.match(run, /--label sprintengine\.studio\.container=1 /u)
-  // The one volume is Studio's own; nothing of the host's folders is mounted.
-  assert.deepEqual(run.match(/-v \S+/gu), ['-v sprintengine-0123456789abcdef-home:/home/node'])
+  // Its own home and the host's logins, both Studio's volumes; nothing of the host's folders is mounted.
+  assert.deepEqual(run.match(/-v \S+/gu), [
+    '-v sprintengine-0123456789abcdef-home:/home/node',
+    '-v sprintengine-logins:/studio-logins',
+  ])
+  assert.match(
+    run,
+    /docker --context colima volume create --label sprintengine\.studio\.logins=1 sprintengine-logins /u,
+  )
+  // Each CLI is pointed into the logins by name.
+  for (const variable of [
+    'CLAUDE_CONFIG_DIR=/studio-logins/claude',
+    'CODEX_HOME=/studio-logins/codex',
+    'GROK_HOME=/studio-logins/grok',
+    'XDG_CONFIG_HOME=/studio-logins/config',
+    'XDG_DATA_HOME=/studio-logins/data',
+  ])
+    assert.ok(run.includes(` -e ${variable} `), variable)
   assert.doesNotMatch(run, /--mount|--privileged|--cap-add|-v \//u)
   // The host's default context is not named, so DOCKER_HOST still decides it.
   assert.equal(dockerCommand(null), 'docker')
@@ -348,4 +377,88 @@ test("a container's session is a shell inside it, as the agent's user, once Dock
     result.stdout,
     /args: exec -i -u node -w \/home\/node -e HOME=\/home\/node sprintengine-0123456789abcdef sh -s/u,
   )
+})
+
+test('made again on a new image: only a container Studio made is replaced, and one Docker no longer has is made', async () => {
+  const run = (inspect: string) =>
+    fakeBin(`replace-${Math.random().toString(36).slice(2)}`, {
+      docker: ['echo "$*" >> "$HOME/replace-calls"', 'case "$1" in', `  inspect) ${inspect} ;;`, 'esac'].join('\n'),
+    })
+  const input = { name: NAME, image: IMAGE, machineId: '0123456789abcdef' }
+  const ours = await runOnHost(runnerFor(run('echo 1')), replaceContainerScript(input))
+  assert.match(ours.stdout, /^@@replaced$/mu)
+  const theirs = await runOnHost(runnerFor(run('echo ""')), replaceContainerScript(input))
+  assert.match(theirs.stdout, /@@replaced not-ours/u)
+  const gone = await runOnHost(
+    runnerFor(run(`echo "Error: No such object: ${NAME}" >&2; exit 1`)),
+    replaceContainerScript(input),
+  )
+  assert.match(gone.stdout, /^@@replaced$/mu)
+  const calls = execFileSync('cat', [join(scratch, 'replace-calls')], { encoding: 'utf8' })
+  // The home volume is created again (a no-op when it is there) and never removed.
+  assert.doesNotMatch(calls, /volume rm/u)
+  assert.match(calls, /^rm -f sprintengine-0123456789abcdef$/mu)
+})
+
+test('a Rebuild touches nothing until the new image is there, and never says it ran a container that did not start', async () => {
+  const docker = (image: string, run: string) =>
+    fakeBin(`replace-${Math.random().toString(36).slice(2)}`, {
+      docker: [
+        'echo "$*" >> "$HOME/replace-fail-calls"',
+        'case "$1" in',
+        `  image) ${image} ;;`,
+        '  inspect) echo 1 ;;',
+        `  run) ${run} ;;`,
+        'esac',
+      ].join('\n'),
+    })
+  const input = { name: NAME, image: IMAGE, machineId: '0123456789abcdef' }
+  const noImage = await runOnHost(runnerFor(docker('exit 1', 'exit 0')), replaceContainerScript(input))
+  assert.match(noImage.stdout, /^@@replaced no-image$/mu)
+  assert.doesNotMatch(
+    execFileSync('cat', [join(scratch, 'replace-fail-calls')], { encoding: 'utf8' }),
+    /rm -f/u,
+    'the old container is left',
+  )
+  const runFails = await runOnHost(
+    runnerFor(docker('exit 0', 'echo "no space left" >&2; exit 125')),
+    replaceContainerScript(input),
+  )
+  assert.doesNotMatch(runFails.stdout, /@@replaced/u)
+  assert.notEqual(runFails.code, 0)
+  assert.match(runFails.stderr, /no space left/u)
+  // Making one fails the same way.
+  const made = await runOnHost(runnerFor(docker('exit 0', 'exit 125')), runContainerScript(input))
+  assert.notEqual(made.code, 0)
+})
+
+test('the logins volume is readied once a container is made: every folder, first files only where none is, the home linked', () => {
+  const script = prepareLoginsScript(NAME)
+  assert.match(script, /^docker exec -u node -e HOME=\/home\/node sprintengine-0123456789abcdef sh -c /u)
+  // Run for real against a scratch folder standing in for the volume and the home.
+  const root = mkdtempSync(join(scratch, 'logins-'))
+  const home = join(root, 'home')
+  mkdirSync(join(home, '.kimi-code'), { recursive: true })
+  writeFileSync(join(home, '.kimi-code', 'device_id'), 'made before the link\n')
+  const inside = /sh -c ('(?:[^']|'\\'')*')$/u.exec(script)![1]!.slice(1, -1).replace(/'\\''/gu, "'")
+  const logins = join(root, 'logins')
+  const run = () =>
+    execFileSync('/bin/sh', ['-c', inside.replaceAll('/studio-logins', logins)], {
+      env: { PATH: '/usr/bin:/bin', HOME: home },
+      encoding: 'utf8',
+    })
+  run()
+  for (const folder of ['claude', 'codex', 'grok', 'config/git', 'data', 'kimi-code'])
+    assert.ok(statSync(join(logins, folder)).isDirectory(), folder)
+  assert.match(readFileSync(join(logins, 'claude', '.claude.json'), 'utf8'), /hasCompletedOnboarding/u)
+  assert.match(
+    readFileSync(join(logins, 'config', 'git', 'config'), 'utf8'),
+    /\thelper = !\/usr\/local\/bin\/gh auth git-credential/u,
+  )
+  assert.equal(readlinkSync(join(home, '.kimi-code')), join(logins, 'kimi-code'))
+  assert.equal(readFileSync(join(logins, 'kimi-code', 'device_id'), 'utf8'), 'made before the link\n')
+  // A file a CLI wrote is never overwritten on the next start.
+  writeFileSync(join(logins, 'claude', '.claude.json'), '{"signedIn":true}\n')
+  run()
+  assert.equal(readFileSync(join(logins, 'claude', '.claude.json'), 'utf8'), '{"signedIn":true}\n')
 })

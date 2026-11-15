@@ -7,6 +7,14 @@ import {
   type DockerStatus,
 } from '../../../shared/containers'
 import { shellQuote } from './docker-host'
+import {
+  LOGINS_ENV,
+  LOGINS_HOME_LINKS,
+  LOGINS_LABEL,
+  LOGINS_ROOT,
+  LOGINS_SEEDS,
+  LOGINS_VOLUME,
+} from './container-logins'
 
 // The shell scripts a container's host runs (docs/design/container-chats.md),
 // as pure functions of what they act on, so each is read and tested here.
@@ -17,7 +25,7 @@ import { shellQuote } from './docker-host'
 // Each prints its findings as `@@` lines, the way the SSH bootstrap does, so a
 // login profile's greeting on an SSH machine is never mistaken for an answer.
 
-/** The user every agent runs as inside the image (resources/container/agent.Dockerfile). */
+/** The user every agent runs as inside the image (container-image.ts). */
 export const CONTAINER_USER = 'node'
 export const CONTAINER_HOME = '/home/node'
 /** Where repositories are cloned inside a container. */
@@ -50,8 +58,10 @@ function checkImage(image: string): string {
 }
 
 /** Docker on the host, and whether `image` is there: `@@docker <state> …` and `@@image present|absent`. */
-export function dockerStatusScript(image: string): string {
+export function dockerStatusScript(image: string, context: string | null = null): string {
   const tag = checkImage(image)
+  // The image is looked for under the context asked (a container's own, for Rebuild), else the default.
+  const inContext = dockerCommand(context)
   return [
     'if ! command -v docker >/dev/null 2>&1; then',
     '  if command -v colima >/dev/null 2>&1; then echo "@@docker missing colima"; else echo "@@docker missing"; fi',
@@ -62,7 +72,7 @@ export function dockerStatusScript(image: string): string {
     '  ctx="$(docker context show 2>/dev/null)"',
     '  echo "@@docker ready $v"',
     '  echo "@@context $ctx"',
-    `  if docker image inspect ${tag} >/dev/null 2>&1; then echo "@@image present"; else echo "@@image absent"; fi`,
+    `  if ${inContext} image inspect ${tag} >/dev/null 2>&1; then echo "@@image present"; else echo "@@image absent"; fi`,
     '  exit 0',
     'fi',
     'if command -v colima >/dev/null 2>&1; then',
@@ -159,20 +169,27 @@ export function homeVolumeName(name: string): string {
  * network, with every Linux capability dropped and no way to gain one through
  * a setuid program: nothing in it runs as root. Its home is a volume of its
  * own, made first with Studio's label, so a container made again from a new
- * image keeps its repositories, and deleting it removes only Studio's.
+ * image keeps its repositories, and deleting it removes only Studio's. The
+ * host's logins volume (container-logins.ts) is mounted too, made the first
+ * time, with each CLI pointed into it.
  */
 export function runContainerScript(input: {
   name: string
   image: string
   machineId: string
   context?: string | null
+  /** The host's logins volume; a suite names one of its own. */
+  loginsVolume?: string
 }): string {
   const name = checkName(input.name)
   if (!/^[a-f0-9]{16}$/u.test(input.machineId)) throw new Error('Not a machine id Studio minted.')
   const docker = dockerCommand(input.context)
   const home = homeVolumeName(name)
+  const logins = input.loginsVolume ?? LOGINS_VOLUME
+  if (!/^sprintengine-logins[a-z0-9-]{0,40}$/u.test(logins)) throw new Error('Not a logins volume Studio named.')
   return [
     `${docker} volume create --label ${CONTAINER_LABEL}=1 --label ${CONTAINER_MACHINE_LABEL}=${input.machineId} ${home} >/dev/null || exit 4`,
+    `${docker} volume create --label ${LOGINS_LABEL}=1 ${logins} >/dev/null || exit 4`,
     [
       `${docker} run -d`,
       `--name ${name}`,
@@ -183,9 +200,74 @@ export function runContainerScript(input: {
       '--cap-drop ALL',
       '--security-opt no-new-privileges',
       `-v ${home}:${CONTAINER_HOME}`,
+      `-v ${logins}:${LOGINS_ROOT}`,
+      ...Object.entries(LOGINS_ENV).map(([name, value]) => `-e ${name}=${value}`),
       checkImage(input.image),
+      // A run that fails ends the script with its failure: nothing after it may claim the container runs.
+      '>/dev/null || exit 4',
     ].join(' '),
   ].join('\n')
+}
+
+/**
+ * Make a container again from a new image, keeping its volumes: the home
+ * (repositories, worktrees, Studio's server) and the host's logins. The old
+ * container goes only when it carries Studio's label, and only once the new
+ * image is there under the container's own context; one Docker no longer has
+ * is simply made again. Prints `@@replaced` only once the new one runs,
+ * `@@replaced no-image` or `@@replaced not-ours` when nothing was touched.
+ */
+export function replaceContainerScript(input: {
+  name: string
+  image: string
+  machineId: string
+  context?: string | null
+  loginsVolume?: string
+}): string {
+  const name = checkName(input.name)
+  const docker = dockerCommand(input.context)
+  return [
+    `if ! ${docker} image inspect ${checkImage(input.image)} >/dev/null 2>&1; then echo "@@replaced no-image"; exit 5; fi`,
+    `if said="$(${docker} inspect -f '{{index .Config.Labels "${CONTAINER_LABEL}"}}' ${name} 2>&1)"; then`,
+    '  if [ "$said" != "1" ]; then echo "@@replaced not-ours"; exit 3; fi',
+    `  ${docker} rm -f ${name} >/dev/null || exit 4`,
+    'else',
+    '  case "$said" in *"No such object"*|*"No such container"*) ;; *) echo "$said" >&2; exit 4 ;; esac',
+    'fi',
+    runContainerScript(input),
+    'echo "@@replaced"',
+  ].join('\n')
+}
+
+/**
+ * Ready the host's logins volume in a container once it is made or made
+ * again (Rebuild), as the agent's user: every CLI's folder there (`LOGINS_ENV`), the files it starts
+ * with where none is yet (`LOGINS_SEEDS`), and each CLI's login folder in the
+ * home linked into it (`LOGINS_HOME_LINKS`; a folder already there, a login
+ * made before it was linked, is moved in first). Nothing is overwritten.
+ */
+export function prepareLoginsScript(name: string, context: string | null = null): string {
+  const checked = checkName(name)
+  const folders = [
+    ...Object.values(LOGINS_ENV),
+    ...Object.keys(LOGINS_SEEDS).map((file) => `${LOGINS_ROOT}/${file.slice(0, file.lastIndexOf('/'))}`),
+    ...Object.values(LOGINS_HOME_LINKS).map((dir) => `${LOGINS_ROOT}/${dir}`),
+  ]
+  const inside = [
+    `mkdir -p ${[...new Set(folders)].join(' ')}`,
+    ...Object.entries(LOGINS_SEEDS).map(
+      ([file, text]) => `[ -e ${LOGINS_ROOT}/${file} ] || printf '%s' ${shellQuote(text)} > ${LOGINS_ROOT}/${file}`,
+    ),
+    ...Object.entries(LOGINS_HOME_LINKS).map(([home, dir]) =>
+      [
+        `if [ ! -L "$HOME/${home}" ]; then`,
+        `  if [ -d "$HOME/${home}" ]; then cp -an "$HOME/${home}/." ${LOGINS_ROOT}/${dir}/ && rm -rf "$HOME/${home}"; fi`,
+        `  ln -s ${LOGINS_ROOT}/${dir} "$HOME/${home}"`,
+        'fi',
+      ].join('\n'),
+    ),
+  ].join('\n')
+  return `${dockerCommand(context)} exec -u ${CONTAINER_USER} -e HOME=${CONTAINER_HOME} ${checked} sh -c ${shellQuote(inside)}`
 }
 
 /** The line the exec channel prints just before it becomes the container's shell (see `hostRunner`'s `holdUntil`). */

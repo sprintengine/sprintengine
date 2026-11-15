@@ -39,6 +39,8 @@ export const SSH_ENV_CHANNELS = {
   startDocker: 'environments:ssh:start-docker',
   /** renderer → main: New container `{ host, label, clone }`, saved as a machine. */
   containerCreate: 'environments:ssh:container-create',
+  /** renderer → main: make a container again on the image a container gets now, keeping its volumes `{ id }`. */
+  containerRebuild: 'environments:ssh:container-rebuild',
   /** renderer → main: clone a repository into a container `{ id, address }`. */
   containerClone: 'environments:ssh:container-clone',
   /** renderer → main: the branches in a container with commits no remote has `{ id }`, before it is deleted. */

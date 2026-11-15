@@ -232,6 +232,7 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'environments:ssh:connect': SSH_SETUP('invoke'),
   'environments:ssh:container-clone': SSH_SETUP('invoke'),
   'environments:ssh:container-create': SSH_SETUP('invoke'),
+  'environments:ssh:container-rebuild': SSH_SETUP('invoke'),
   'environments:ssh:container-unpushed': SSH_SETUP('invoke'),
   'environments:ssh:diagnostics': SSH_SETUP('invoke'),
   'environments:ssh:disconnect': SSH_SETUP('invoke'),

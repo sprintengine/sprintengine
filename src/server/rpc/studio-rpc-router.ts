@@ -35,10 +35,9 @@ import type {
   StudioEnvironmentWork,
   StudioLaunchTokenChange,
 } from '../../../packages/studio-protocol/src/environment-access'
-import type { SignIns } from '../machine/machine-sign-in'
+import { signInCli, type SignIns } from '../machine/machine-sign-in'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
 import type { DistributionMachine } from '../wsl/distribution-machine'
-import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -2311,10 +2310,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'environment.adopt',
       )
     },
-    // A CLI's login here: the provider names a flow this server knows, never a command line.
+    // A CLI's login here: the provider (a chat's, a CLI's own id, or GitHub's)
+    // names a flow this server knows, never a command line.
     'providers.signInStart': ({ commandId, providerId }, { grant, voice }) =>
       signInOnce('providers.signInStart', grant, commandId, voice, async (table) => {
-        const cli = cliForConversationProvider(providerId)
+        const cli = signInCli(providerId)
         return cli ? table.start(cli) : { ok: false as const, message: 'This chat has no CLI to sign in.' }
       }),
     'providers.signInPaste': ({ commandId, id, code }, { grant, voice }) =>

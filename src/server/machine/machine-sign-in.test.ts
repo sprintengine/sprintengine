@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test, vi } from 'vitest'
 
-import { createSignIns, readSignInOutput, resolveOnPath } from './machine-sign-in'
+import { createSignIns, readSignInOutput, resolveOnPath, signInCli } from './machine-sign-in'
 
 // CLI sign-ins on a server's machine with no terminal (decision R34), with
 // stand-ins that print what each CLI printed when it ran with no terminal
@@ -56,6 +56,30 @@ test("each CLI's output is read for its link, its code and its paste prompt", ()
   )
   assert.equal(readSignInOutput('Paste code here if prompted >').paste, true)
   assert.equal(readSignInOutput('nothing yet').url, null)
+})
+
+test("the GitHub CLI's code comes before its link, and Grok's link carries its code too", () => {
+  assert.deepEqual(
+    readSignInOutput(
+      '! First copy your one-time code: 4CBF-AAAE\nOpen this URL to continue in your web browser: https://github.com/login/device\n',
+    ),
+    { url: 'https://github.com/login/device', code: '4CBF-AAAE', paste: false },
+  )
+  assert.equal(
+    readSignInOutput(
+      'To sign in, open this URL in your browser:\n\n  https://accounts.x.ai/oauth2/device?user_code=PJ7M-2JSC\n\nConfirm this code in your browser:\n\n  PJ7M-2JSC\n',
+    ).code,
+    'PJ7M-2JSC',
+  )
+})
+
+test('a sign-in names a CLI, GitHub, or a chat provider whose CLI it is', () => {
+  assert.equal(signInCli('github'), 'github')
+  assert.equal(signInCli('grok'), 'grok')
+  // A chat's CLI with no flow here is still named, so its command can be told.
+  assert.equal(signInCli('opencode'), 'opencode')
+  assert.equal(signInCli('claude-agent'), 'claude-code')
+  assert.equal(signInCli('openrouter'), null)
 })
 
 test('a device code: the link and the code, and it finishes on its own', async () => {
