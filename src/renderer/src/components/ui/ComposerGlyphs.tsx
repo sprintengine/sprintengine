@@ -108,3 +108,25 @@ export function WorktreeGlyph({ className }: GlyphProps): React.JSX.Element {
     </svg>
   )
 }
+
+/**
+ * A cube drawn in isometric outline, its top and right faces shaded: a
+ * container. The strip's Container switch (owner ruling 2026-11-15). Still:
+ * it never spins or pulses, whatever the container is doing.
+ * `glyphs/container.svg`.
+ */
+export function ContainerGlyph({ className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className={className}>
+      <path d="M8 1.6 13.6 4.8 8 8 2.4 4.8Z" fill="currentColor" fillOpacity=".45" />
+      <path d="M13.6 4.8V11.2L8 14.4V8Z" fill="currentColor" fillOpacity=".18" />
+      <path
+        d="M8 1.6 13.6 4.8V11.2L8 14.4 2.4 11.2V4.8ZM2.4 4.8 8 8 13.6 4.8M8 8V14.4"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}

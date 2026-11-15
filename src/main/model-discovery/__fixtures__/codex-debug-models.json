@@ -34,9 +34,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 1,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -73,9 +71,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 2,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -108,9 +104,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 3,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -143,9 +137,7 @@
       "visibility": "hide",
       "supported_in_api": true,
       "priority": 3,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -182,9 +174,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 4,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -221,9 +211,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 7,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -256,9 +244,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 8,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -287,9 +273,7 @@
       "visibility": "list",
       "supported_in_api": true,
       "priority": 12,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     },
     {
@@ -322,9 +306,7 @@
       "visibility": "hide",
       "supported_in_api": true,
       "priority": 43,
-      "additional_speed_tiers": [
-        "fast"
-      ],
+      "additional_speed_tiers": ["fast"],
       "context_window": 272000
     }
   ]

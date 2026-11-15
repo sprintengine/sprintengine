@@ -58,11 +58,7 @@ export function dockerSearchPath(
         : []
   const seen = new Set<string>()
   const out: string[] = []
-  for (const entry of [
-    ...(options.loginPath ?? '').split(delimiter),
-    ...(basePath ?? '').split(delimiter),
-    ...extra,
-  ]) {
+  for (const entry of [...(options.loginPath ?? '').split(delimiter), ...(basePath ?? '').split(delimiter), ...extra]) {
     if (!entry || seen.has(entry)) continue
     seen.add(entry)
     out.push(entry)
@@ -72,11 +68,17 @@ export function dockerSearchPath(
 
 /** This computer's runner: `/bin/sh -c`, with Docker's usual homes on PATH. */
 export function localHostRunner(
-  options: { env?: NodeJS.ProcessEnv; loginPath?: () => string | null } = {},
+  options: {
+    env?: NodeJS.ProcessEnv
+    loginPath?: () => string | null
+    /** Add Docker's usual homes to PATH (the default); a suite that stands its own `docker` in turns it off. */
+    searchPath?: boolean
+  } = {},
 ): HostRunner {
   return (script) => {
     const env = { ...(options.env ?? process.env) }
-    env.PATH = dockerSearchPath(env.PATH, { loginPath: options.loginPath?.() ?? null })
+    if (options.searchPath !== false)
+      env.PATH = dockerSearchPath(env.PATH, { loginPath: options.loginPath?.() ?? null })
     const child = spawn('/bin/sh', ['-c', script], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     child.stdin.on('error', () => undefined)
     return child

@@ -211,11 +211,9 @@ export class ContainerChats {
         step(`Copying the repository into the container…`)
         const path = `${CONTAINER_WORK}/${workFolderName(request.folder)}`
         const branch = `studio/container-${id.slice(0, 8)}`
-        const copied = await this.run(
-          request.host,
-          copyRepoInScript({ source: request.folder, name, path, branch }),
-          { timeoutMs: this.timing.copyMs },
-        )
+        const copied = await this.run(request.host, copyRepoInScript({ source: request.folder, name, path, branch }), {
+          timeoutMs: this.timing.copyMs,
+        })
         if (/@@repo not-a-repo/u.test(copied.stdout)) {
           await this.deps.machines.forget(id)
           return {
@@ -340,6 +338,9 @@ export class ContainerChats {
     if (/@@removed (yes|absent)/u.test(result.stdout)) return { ok: true }
     if (/@@removed not-ours/u.test(result.stdout))
       return { ok: false, message: `${target.name} is not a container Studio made, so it was left alone.` }
-    return { ok: false, message: `${target.name} could not be removed: ${lastLine(result) || 'Docker did not say why.'}` }
+    return {
+      ok: false,
+      message: `${target.name} could not be removed: ${lastLine(result) || 'Docker did not say why.'}`,
+    }
   }
 }

@@ -21,6 +21,7 @@ import { createAgentStateService } from './agent-state-service'
 import { primeDefaultWslDistro } from './hosts/wsl-distro'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
+import { watchContainerChats } from './environments/container/container-chat-lifecycle'
 import { createDesktopEnvironments } from './environments/desktop-environments'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import type { EnvironmentTicketResult } from '../shared/environments'
@@ -1865,6 +1866,19 @@ export function createAppServices(
   // agent spawn like the hook and the MCP config — an agent that reaches its
   // first prompt without the skills has already lost the session they were for
   // (backlog/2026-09-06-sprintengine-studio-ships-as-a-plugin.md).
+  // A chat's container goes when the chat is deleted (docs/design/container-chats.md).
+  if (ssh)
+    watchContainerChats({
+      workspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
+      subscribe: (listener) => workspaceSyncService.subscribeEvents(listener),
+      containerIds: () =>
+        ssh.environments
+          .list()
+          .filter((entry) => entry.container)
+          .map((entry) => entry.id),
+      remove: (id) => ssh.containers.remove({ id }),
+      log: (message) => console.warn(`[containers] ${message}`),
+    })
   workspaceSyncService.subscribeEvents(() => {
     void studioPluginService.ensureInstalledForRoots(
       uniqueResolvedRoots(listKnownWorkspaceRoots(workspaceSyncService.getSnapshot())),

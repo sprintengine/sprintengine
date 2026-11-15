@@ -102,7 +102,12 @@ export function parseDockerStatus(stdout: string, where: string): DockerStatus {
       imageReady: false,
       canStart: null,
     }
-  return { state: 'unreachable', words: `Studio could not ask ${where} about Docker.`, imageReady: false, canStart: null }
+  return {
+    state: 'unreachable',
+    words: `Studio could not ask ${where} about Docker.`,
+    imageReady: false,
+    canStart: null,
+  }
 }
 
 /** Start Colima with its own saved settings; nothing about its size is changed. */
@@ -174,7 +179,11 @@ export function parseContainerList(stdout: string): ListedContainer[] {
 
 /** A folder's last part as a directory name inside the container: plain characters only. */
 export function workFolderName(source: string | null): string {
-  const last = (source ?? '').replace(/[\\/]+$/u, '').split(/[\\/]/u).pop() ?? ''
+  const last =
+    (source ?? '')
+      .replace(/[\\/]+$/u, '')
+      .split(/[\\/]/u)
+      .pop() ?? ''
   const clean = last.replace(/[^A-Za-z0-9._-]+/gu, '-').replace(/^[.-]+/u, '')
   return clean.slice(0, 64) || 'project'
 }
@@ -233,7 +242,13 @@ export function copyRepoInScript(input: { source: string; name: string; path: st
  * git pushes it with the host's own credentials. Nothing is written to the
  * person's branches or working tree. Prints `@@push ok <sha>` or `@@push <why>`.
  */
-export function pushOutScript(input: { source: string; name: string; path: string; branch: string; ref: string }): string {
+export function pushOutScript(input: {
+  source: string
+  name: string
+  path: string
+  branch: string
+  ref: string
+}): string {
   const name = checkName(input.name)
   if (!/^[A-Za-z0-9._/-]{1,100}$/u.test(input.branch)) throw new Error('Not a branch name Studio chose.')
   if (!/^refs\/sprintengine\/containers\/[a-f0-9]{16}$/u.test(input.ref)) throw new Error('Not a ref Studio chose.')

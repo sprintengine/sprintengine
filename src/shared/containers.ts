@@ -76,8 +76,7 @@ export type ContainerCreateRequest = {
 }
 
 export type ContainerCreateResult =
-  | { ok: true; id: string; label: string; folder: string }
-  | { ok: false; message: string }
+  { ok: true; id: string; label: string; folder: string } | { ok: false; message: string }
 
 /** A container Studio made, as Settings lists it, so none is left behind unseen. */
 export type ContainerSummary = {
@@ -107,6 +106,8 @@ export const CONTAINER_CHANNELS = {
   remove: 'environments:container:remove',
   /** renderer → main: bring a container's branch out and push it from the host `{ id }`. */
   push: 'environments:container:push',
+  /** main → renderer: a container was made, removed or pushed, or one being made moved a step; ask again. */
+  changed: 'environments:container:changed',
 } as const
 
 /** The label every container and image Studio makes carries; nothing without it is ever removed. */

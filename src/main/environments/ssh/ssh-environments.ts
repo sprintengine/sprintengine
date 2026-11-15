@@ -45,13 +45,7 @@ import {
 import { SshEnvironment, type SshServerConnection } from './ssh-environment'
 import type { ContainerHost } from '../../../shared/containers'
 import { execSessionScript, removeContainerScript } from '../container/container-scripts'
-import {
-  localHostRunner,
-  runOnHost,
-  sshRemoteLine,
-  type HostProcess,
-  type HostRunner,
-} from '../container/docker-host'
+import { localHostRunner, runOnHost, sshRemoteLine, type HostProcess, type HostRunner } from '../container/docker-host'
 import { ensureNodeBinary, serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
 
@@ -790,10 +784,18 @@ export class SshEnvironments {
       // only when it carries Studio's label (container-scripts.ts).
       machine?.disconnect()
       if (saved.container.host.kind === 'ssh') await this.askpass().catch(() => undefined)
-      const removed = await runOnHost(this.hostRunner(saved.container.host), removeContainerScript(saved.container.name), {
-        timeoutMs: 120_000,
-        interactive: saved.container.host.kind === 'ssh',
-      }).catch((error: unknown) => ({ code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) }))
+      const removed = await runOnHost(
+        this.hostRunner(saved.container.host),
+        removeContainerScript(saved.container.name),
+        {
+          timeoutMs: 120_000,
+          interactive: saved.container.host.kind === 'ssh',
+        },
+      ).catch((error: unknown) => ({
+        code: 1,
+        stdout: '',
+        stderr: error instanceof Error ? error.message : String(error),
+      }))
       if (!/@@removed (yes|absent)/u.test(removed.stdout))
         return {
           ok: false,

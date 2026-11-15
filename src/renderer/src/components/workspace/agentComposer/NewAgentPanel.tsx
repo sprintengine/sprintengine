@@ -104,6 +104,8 @@ import { showToast } from '../../../store/toastStore'
 import { launchCommandLineKey, launchPreviewRequest, type LaunchCommandLineState } from './launchCommandLine'
 import { drawSuggestions, newSuggestionSeed } from './suggestionBank'
 import { WorktreeChip } from './WorktreeChip'
+import { ContainerChip } from './ContainerChip'
+import type { ContainerHost } from '../../../../../shared/containers'
 import { useNewChatWorktreeReservation } from './useNewChatWorktreeReservation'
 import { ScheduleFailureTray, SchedulePausedTray, ScheduleTag } from './schedule/SchedulePicker'
 import { useScheduledAgentsPause } from '../../../store/scheduledAgentsStore'
@@ -584,7 +586,8 @@ export default function NewAgentPanel({
   const { machines: sshMachinesAll } = useSshMachines(
     hostChoosable && window.api?.sshMachinesEnabled ? window.api : null,
   )
-  const sshMachines = hostChoosable && !editing ? sshMachinesAll : []
+  // A chat's container is saved as a machine too, but it is picked by the Container chip, not here.
+  const sshMachines = hostChoosable && !editing ? sshMachinesAll.filter((machine) => !machine.container) : []
   const [pickedSshId, setPickedSshId] = React.useState<string | null>(() => (editing ? null : rememberedMachine.sshId))
   const pickedSsh = sshMachines.find((machine) => machine.id === pickedSshId) ?? null
   const [sshFolder, setSshFolder] = React.useState(() => (pickedSshId ? (lastSshFolders.get(pickedSshId) ?? '') : ''))
@@ -1433,6 +1436,29 @@ export default function NewAgentPanel({
   // the worktree rather than carrying one nobody could see: a folder that is
   // not a git repository would fail to make it and keep the chat from
   // starting, and an older paired machine would ignore it.
+  // Container (docs/design/container-chats.md): a choice of its own beside
+  // Worktree, for a chat started now on this computer or an SSH machine. Off
+  // at every door. Its container is made on Enter, with the project copied in,
+  // and the chat then starts on it as on a machine.
+  const [containerOn, setContainerOn] = React.useState(false)
+  const [containerPreparing, setContainerPreparing] = React.useState(false)
+  const containerApi =
+    window.api?.sshMachinesEnabled && typeof window.api.containerCreate === 'function' ? window.api : null
+  const containerOffered =
+    Boolean(containerApi) && hostChoosable && !editing && !remoteTarget && !extensionMode && isChatLaunch && !scheduled
+  const containerHost: ContainerHost | null = pickedSsh
+    ? { kind: 'ssh', machine: pickedSsh.id }
+    : hostId === LOCAL_HOST_ID
+      ? { kind: 'local' }
+      : null
+  const containerHostLabel = pickedSsh
+    ? pickedSsh.label
+    : hostId === LOCAL_HOST_ID
+      ? navigator.platform.startsWith('Mac')
+        ? 'this Mac'
+        : 'this computer'
+      : (localHosts.find((host) => host.id === hostId)?.label ?? 'that machine')
+  const containerActive = containerOffered && containerOn && containerHost !== null
   const buildLaunchConfirm = (target: AgentComposerSelection): AgentComposerConfirm => {
     const confirm = composer.buildConfirm(target)
     if (worktreeOffered || confirm.kind === 'terminal' || !confirm.worktree) return confirm
@@ -2009,6 +2035,60 @@ export default function NewAgentPanel({
     })
   }
 
+  // A chat in a container: the container first (Docker found, the image built
+  // on first use, Studio's server in it, the project copied in), then the chat
+  // on it as on an SSH machine. Words for each failure, and the prompt stays.
+  const launchInContainer = async (text: string, stay: boolean) => {
+    if (!containerApi || !containerHost || containerPreparing) return
+    if (pickedSsh && sshFolderProblem) {
+      showToast({ tone: 'warn', title: 'Which folder?', description: sshFolderProblem })
+      return
+    }
+    const confirm = buildLaunchConfirm(selection)
+    if (confirm.kind !== 'conversation') return
+    const providerId = confirm.cli ? conversationProviderForCli(confirm.cli) : null
+    if (!providerId) return
+    confirm.provider = {
+      providerId,
+      modelId: confirm.model ?? CONVERSATION_DEFAULT_MODEL_ID,
+      modelLabel: engineNames.modelLabel ?? engineNames.cliLabel,
+    }
+    // The container's branch is the chat's own; a worktree inside one may follow.
+    const { worktree: _inContainer, ...launched } = confirm
+    const source = pickedSsh ? sshFolder.trim().replace(/(.)\/+$/u, '$1') : projectless ? null : workspaceRoot
+    setContainerPreparing(true)
+    showToast({
+      tone: 'neutral',
+      title: 'Making a container',
+      description: `On ${containerHostLabel}. The chat opens once its project is copied in.`,
+    })
+    const made = await containerApi
+      .containerCreate({
+        host: containerHost,
+        folder: source ?? null,
+        label: activeIdentity?.name ?? (source ? (source.split(/[\\/]/u).pop() ?? 'Chat') : 'Chat'),
+        image: { kind: 'studio-default' },
+      })
+      .catch((error: unknown) => ({
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error),
+      }))
+    setContainerPreparing(false)
+    if (!made.ok) {
+      showToast({ tone: 'error', title: 'No container', description: made.message })
+      return
+    }
+    const sentImages = images.map((image) => image.path)
+    const started = onLaunch({
+      ...launched,
+      prompt: typedFiles(text.trim()),
+      ...(sentImages.length > 0 ? { images: sentImages } : {}),
+      environment: { kind: 'ssh', id: made.id, label: made.label, folder: made.folder },
+      ...(stay ? { stay: true as const } : {}),
+    })
+    if (stay) keepOnNewChat(started, text, images)
+  }
+
   const chatHasMessage = (text: string) => !isChatLaunch || text.trim() !== '' || images.length > 0 || files.length > 0
   const launch = (text: string, options: { stay?: boolean } = {}) => {
     if (!canLaunch || !extensionReady) return
@@ -2023,6 +2103,10 @@ export default function NewAgentPanel({
     // A chat opens on the message that starts it. With nothing to send, New
     // chat stays where it is rather than opening a chat with nothing in it.
     if (!chatHasMessage(text)) return
+    if (containerActive) {
+      void launchInContainer(text, stay)
+      return
+    }
     if (pickedSsh) {
       if (sshFolderProblem) {
         showToast({ tone: 'warn', title: 'Which folder?', description: sshFolderProblem })
@@ -3120,7 +3204,20 @@ export default function NewAgentPanel({
             {/* Worktree, off until turned on or named, else the branch the
                 launch runs on. Set apart from the project by the strip's
                 spacing alone, with no rule between. */}
-            {worktreeOffered ? <WorktreeChip name={composer.worktreeName} onChange={composer.setWorktreeName} /> : null}
+            {worktreeOffered && !containerActive ? (
+              <WorktreeChip name={composer.worktreeName} onChange={composer.setWorktreeName} />
+            ) : null}
+            {containerOffered ? (
+              <ContainerChip
+                on={containerOn}
+                onChange={setContainerOn}
+                host={containerHost}
+                hostLabel={containerHostLabel}
+                unsupported={containerHost ? null : `Containers on ${containerHostLabel} are not built yet.`}
+                preparing={containerPreparing}
+                api={containerApi}
+              />
+            ) : null}
             {stripBranch ? (
               // The one item on the strip that may shrink: it gives its front
               // away first, so the end of the name — the part that says what

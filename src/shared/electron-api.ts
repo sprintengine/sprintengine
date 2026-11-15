@@ -10,6 +10,14 @@ import type {
   SshPromptRequest,
   SshResolveResult,
 } from './ssh-environments'
+import type {
+  ContainerCreateRequest,
+  ContainerCreateResult,
+  ContainerHost,
+  ContainerResult,
+  ContainerSummary,
+  DockerStatus,
+} from './containers'
 import type { EnvironmentEntry, EnvironmentTicketResult } from './environments'
 import type { SshPreviewStatus } from './ssh-preview'
 import type { ServerMode } from './server-mode'
@@ -549,6 +557,18 @@ export type ElectronApi = {
   /** A prompt is over without this window's answer (timed out, answered elsewhere, ssh gave up). */
   onSshPromptClosed: (cb: (id: string) => void) => () => void
   sshPromptAnswer: (id: string, answer: string | null) => void
+  /** Docker on a host, in words (a chat's container, docs/design/container-chats.md). */
+  containerDockerStatus: (host: ContainerHost) => Promise<DockerStatus>
+  /** Start Colima where it is installed and stopped. */
+  containerStartDocker: (host: ContainerHost) => Promise<DockerStatus>
+  /** Make a container for a chat and copy its repository in; the chat then starts on it as on a machine. */
+  containerCreate: (request: ContainerCreateRequest) => Promise<ContainerCreateResult>
+  /** Every container Studio made, so none is left behind unseen. */
+  containersList: () => Promise<ContainerSummary[]>
+  containerRemove: (target: { id: string } | { host: ContainerHost; name: string }) => Promise<ContainerResult>
+  /** Bring a container's branch out and push it from its host. */
+  containerPush: (id: string) => Promise<ContainerResult>
+  onContainersChanged: (cb: () => void) => () => void
   /** The SSH machines preview switch: this session's, and the next launch's. */
   sshPreviewStatus: () => Promise<SshPreviewStatus>
   sshPreviewSet: (enabled: boolean) => Promise<SshPreviewStatus>

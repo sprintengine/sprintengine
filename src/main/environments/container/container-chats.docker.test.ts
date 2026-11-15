@@ -177,7 +177,11 @@ test.skipIf(!DOCKER_TESTS)(
     made.push(foreign)
     const refused = await chats.remove({ host: { kind: 'local' }, name: foreign })
     assert.equal(refused.ok, false)
-    assert.equal(docker('inspect', '-f', '{{.State.Running}}', foreign), 'true', 'a container without the label is left')
+    assert.equal(
+      docker('inspect', '-f', '{{.State.Running}}', foreign),
+      'true',
+      'a container without the label is left',
+    )
     assert.ok((await chats.remove({ host: { kind: 'local' }, name: stray })).ok)
     assert.ok((await chats.remove({ id: created.id })).ok)
     assert.equal(spawnSync('docker', ['inspect', name], { stdio: 'ignore' }).status, 1, 'gone from Docker')
@@ -187,15 +191,24 @@ test.skipIf(!DOCKER_TESTS)(
   15 * 60_000,
 )
 
-test.skipIf(!DOCKER_TESTS)('a folder that is not a repository leaves no container behind', async () => {
-  const { machines, chats } = setup('refused')
-  const plain = join(scratch, 'plain')
-  mkdirSync(plain, { recursive: true })
-  const before = docker('ps', '-a', '-q', '--filter', `label=${CONTAINER_LABEL}=1`)
-  const created = await chats.create({ host: { kind: 'local' }, folder: plain, label: 'x', image: { kind: 'studio-default' } })
-  assert.equal(created.ok, false)
-  assert.match(created.ok ? '' : created.message, /is not a git repository/u)
-  assert.equal(docker('ps', '-a', '-q', '--filter', `label=${CONTAINER_LABEL}=1`), before)
-  assert.equal(machines.list().filter((entry) => entry.container).length, 0)
-  machines.shutdown()
-}, 10 * 60_000)
+test.skipIf(!DOCKER_TESTS)(
+  'a folder that is not a repository leaves no container behind',
+  async () => {
+    const { machines, chats } = setup('refused')
+    const plain = join(scratch, 'plain')
+    mkdirSync(plain, { recursive: true })
+    const before = docker('ps', '-a', '-q', '--filter', `label=${CONTAINER_LABEL}=1`)
+    const created = await chats.create({
+      host: { kind: 'local' },
+      folder: plain,
+      label: 'x',
+      image: { kind: 'studio-default' },
+    })
+    assert.equal(created.ok, false)
+    assert.match(created.ok ? '' : created.message, /is not a git repository/u)
+    assert.equal(docker('ps', '-a', '-q', '--filter', `label=${CONTAINER_LABEL}=1`), before)
+    assert.equal(machines.list().filter((entry) => entry.container).length, 0)
+    machines.shutdown()
+  },
+  10 * 60_000,
+)
