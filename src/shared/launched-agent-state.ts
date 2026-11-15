@@ -6,7 +6,7 @@
 // function keeps the two from disagreeing about what a launched agent is.
 import type { TerminalSessionSnapshot } from './electron-api'
 import type { AgentLaunchRecord } from './agent-launch'
-import type { AgentState } from '../renderer/src/types/workspace'
+import type { AgentState } from './workspace'
 
 /**
  * The `AgentState` a launched session projects to.

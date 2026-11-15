@@ -2,7 +2,7 @@ import React from 'react'
 
 import { Badge, ChangePulse, IconButton, Popover, Tooltip, type PopoverPlacement } from '../ui'
 import { clientSupports } from '../../clientCapabilities'
-import type { AppNotification } from '../../types/workspace'
+import type { AppNotification } from '../../../../shared/workspace'
 import type { NotificationRowAction } from './topbar/NotificationsPopover'
 
 // The bell: reports worth reading, at the rail's foot above the account (owner

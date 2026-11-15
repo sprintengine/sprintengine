@@ -6,7 +6,7 @@
 // surfaces, and nothing but types in the eager module graph (no store, no
 // React).
 
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 
 export type BacklogHandoffRequest = {
   /** The item's OWN project root — never the active workspace's. */

@@ -79,7 +79,7 @@ import {
 } from '../../hooks/useChangelists'
 import { DEFAULT_CHANGELIST_ID, normalizeChangelistPath } from '../../../../shared/git/changelists'
 import { GitGraphView, type GitCommitActions, type GitGraphState, type GitMergeTarget } from './GitGraphView'
-import type { GitPanelView } from '../../types/workspace'
+import type { GitPanelView } from '../../../../shared/workspace'
 import { openTerminal, writeTerminal } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
 import { gitApi } from '../../studio/git'

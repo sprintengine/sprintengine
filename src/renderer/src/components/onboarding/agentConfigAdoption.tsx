@@ -1,4 +1,4 @@
-import type { AgentConfigAdoptionResult } from '../../types/workspace'
+import type { AgentConfigAdoptionResult } from '../../../../shared/workspace'
 import { LifecycleGlyph, Spinner } from '../ui'
 
 // Shared, store-free helpers for the first-run config adoption so the rule and

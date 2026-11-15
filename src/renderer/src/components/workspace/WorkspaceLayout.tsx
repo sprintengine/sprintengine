@@ -41,7 +41,7 @@ import {
 } from '../../hooks/useTerminalSessions'
 import { useRelativeNow } from '../../hooks/useRelativeNow'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../utils/relativeTime'
-import type { HighlightColor, Workspace } from '../../types/workspace'
+import type { HighlightColor, Workspace } from '../../../../shared/workspace'
 import {
   NEW_AGENT_TAB_COMPONENT,
   captureRailWidthFractions,

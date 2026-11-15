@@ -1,5 +1,5 @@
 import type { CreateWorkspaceWindowInput, CreateWorkspaceWindowResult } from '../../../../shared/electron-api'
-import type { WorkspaceWindowId, WorkspaceWindowState } from '../../types/workspace'
+import type { WorkspaceWindowId, WorkspaceWindowState } from '../../../../shared/workspace'
 
 export async function restoreDetachedWorkspaceWindowsOnStartup(input: {
   primaryWorkspaceWindowId: WorkspaceWindowId

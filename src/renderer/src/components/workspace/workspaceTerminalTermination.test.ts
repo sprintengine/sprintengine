@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { test, vi } from 'vitest'
 
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { suspendSnoozedWorkspaceTerminals, terminateSettledWorkspaceTerminals } from './workspaceTerminalTermination'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 import { terminalsDouble } from '../../studio/terminals.double'

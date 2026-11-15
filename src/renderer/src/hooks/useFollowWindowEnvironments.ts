@@ -6,7 +6,7 @@ import { environmentTargetOf } from '../components/panels/agentChat/environmentC
 import { followEnvironmentChats } from '../studio/environmentChats'
 import { environmentStudioAvailable, type EnvironmentTarget } from '../studio/environmentStudio'
 import { useWorkspaceStore } from '../store/workspaceStore'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { currentEnvironments, useEnvironments } from './useEnvironments'
 
 /** The environments a window's chats are on, other than its own Studio's, each once. */

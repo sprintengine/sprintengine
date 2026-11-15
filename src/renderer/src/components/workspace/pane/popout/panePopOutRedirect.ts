@@ -2,7 +2,7 @@ import type { PanePopOutAction } from '../../../../../../shared/ipc/pane-popout'
 import type { SettingsSliceActions } from '../../../../store/slices/settingsSlice'
 import type { WorkspacePaneSliceActions } from '../../../../store/slices/workspacePaneSlice'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
-import type { WorkspaceId } from '../../../../types/workspace'
+import type { WorkspaceId } from '../../../../../../shared/workspace'
 import { redirectFileSurface } from '../../../../utils/openFileSurface'
 
 // The pop-out window's half of the pane's writes.

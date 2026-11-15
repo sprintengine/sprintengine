@@ -27,7 +27,7 @@ import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../../shared/layouts/template
 import { meshConversationSessionId } from '../../../../../../shared/tailnet-mesh'
 import { LAYOUT_TEMPLATES } from '../../../../layouts/templates'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
-import type { Workspace } from '../../../../types/workspace'
+import type { Workspace } from '../../../../../../shared/workspace'
 import { remoteOriginChatWorkspaceId } from '../../remoteBand/remoteSessionsModel'
 
 // Where a Canvas tab's boards are, behind the one list the picker asks.

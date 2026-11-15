@@ -1,4 +1,4 @@
-import type { LayoutTemplate } from '../renderer/src/types/workspace'
+import type { LayoutTemplate } from './workspace'
 import type { AgentId } from './agent-state'
 
 // Agent ids used to be unique only within their workspace: the layout templates

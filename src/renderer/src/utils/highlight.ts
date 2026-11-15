@@ -1,4 +1,4 @@
-import type { HighlightColor, Workspace, WorkspaceHighlight, WorkspaceMode } from '../types/workspace'
+import type { HighlightColor, Workspace, WorkspaceHighlight, WorkspaceMode } from '../../../shared/workspace'
 
 export const HIGHLIGHT_COLORS: HighlightColor[] = ['red', 'orange', 'amber', 'green', 'blue', 'purple', 'pink']
 

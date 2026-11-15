@@ -29,7 +29,7 @@ import type {
   WorkspaceRegistryEmptyState,
   WorkspaceWindowId,
   WorkspaceWindowState,
-} from '../renderer/src/types/workspace'
+} from './workspace'
 
 export const WORKSPACE_REGISTRY_SCHEMA_VERSION = 1
 

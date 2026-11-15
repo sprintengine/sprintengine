@@ -10,7 +10,7 @@
 // on this computer only. Each item that works differently on a remote chat
 // says how.
 
-import type { HighlightColor } from '../../../types/workspace'
+import type { HighlightColor } from '../../../../../shared/workspace'
 import { getHighlightSwatch } from '../../../utils/highlight'
 import { hostPlatform } from '../../../clientCapabilities'
 import type { MeshConversationManage } from '../../../../../shared/tailnet-mesh'

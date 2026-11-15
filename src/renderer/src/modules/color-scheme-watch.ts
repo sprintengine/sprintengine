@@ -11,7 +11,7 @@
 // Ports are injected so the contract is unit-testable; modules/index wires the
 // real store + media query at boot.
 
-import type { ColorScheme } from '../types/appTheme'
+import type { ColorScheme } from '../../../shared/app-theme'
 
 /** The resolved surface of the active theme. */
 export type ModuleColorScheme = ColorScheme

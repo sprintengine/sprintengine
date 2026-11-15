@@ -16,7 +16,7 @@ import { createStudioWorkspaceSync } from '../../../server/workspaces/studio-wor
 import type { WorkspaceSyncCommand, WorkspaceSyncSnapshot } from '../../../shared/workspace-sync'
 import { createMemoryChannel, type MemoryChannelEnd } from '../../../../tests/memory-channel'
 import { memoryWebSocketClass } from '../../../../tests/memory-websocket'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { createWorkspaceSyncClient, type WorkspaceSyncClientApi } from './workspaceSyncClient'
 
 // A window's new chat across a kill -9 of its Studio, on the real registry,

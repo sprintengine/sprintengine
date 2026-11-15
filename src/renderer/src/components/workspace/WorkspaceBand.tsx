@@ -41,7 +41,7 @@ import { BandPanelToggle } from './BandPanelToggle'
 import { TRAFFIC_LIGHT_RESERVE, appRailWidth, trafficLightOverhang } from './AppRail'
 import { AppMenuButton } from './SidebarChrome'
 import { WindowCaptionReserve } from './WindowControls'
-import type { WorkspaceId } from '../../types/workspace'
+import type { WorkspaceId } from '../../../../shared/workspace'
 
 type WorkspaceBandProps<MenuItem extends string> = {
   // Window-scoped active workspace, which the panel toggle acts on (null while

@@ -3,7 +3,7 @@ import { test } from 'vitest'
 
 import type { DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
 import type { CliModelDiscoveryInput, CliModelDiscoveryResult } from '../../../shared/ipc/cli-model-discovery'
-import type { AppSettings } from '../types/workspace'
+import type { AppSettings } from '../../../shared/workspace'
 import { forceCliModelRefresh, startCliModelDiscovery } from './cliModelDiscovery'
 
 const CATALOG: DiscoveredCliModelCatalog = {

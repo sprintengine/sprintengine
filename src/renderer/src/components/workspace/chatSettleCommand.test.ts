@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { chatSettleStep } from './chatSettleCommand'
 
 const remoteOrigin = { connectionId: 'conn-1', workspaceId: 'ws-remote' } as Workspace['remoteOrigin']

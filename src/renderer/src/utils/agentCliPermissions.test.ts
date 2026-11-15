@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import type { AgentState, Workspace } from '../types/workspace'
+import type { AgentState, Workspace } from '../../../shared/workspace'
 import { resolveAgentCliPermissionPreset } from './agentCliPermissions'
 import { test } from 'vitest'
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 
-import type { WorkspaceId } from '../../types/workspace'
+import type { WorkspaceId } from '../../../../shared/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { showToast } from '../../store/toastStore'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'

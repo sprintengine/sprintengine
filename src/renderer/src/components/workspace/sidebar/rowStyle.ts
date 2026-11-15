@@ -1,6 +1,6 @@
 // The sidebar row's accent, highlight and attention classes.
 
-import { type Workspace } from '../../../types/workspace'
+import { type Workspace } from '../../../../../shared/workspace'
 import { getHighlightSwatch, hasHighlightOverride } from '../../../utils/highlight'
 import { type Tone } from '../../ui'
 

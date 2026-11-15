@@ -1,4 +1,4 @@
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from './workspace'
 import type { BranchPullRequest } from './git/pull-request'
 import type { LifecycleState } from './lifecycle-state'
 import { isSettledWorkspace, isStarred, workspaceLastActiveAt, workspaceLastUserMessageAt } from './workspace-lifecycle'

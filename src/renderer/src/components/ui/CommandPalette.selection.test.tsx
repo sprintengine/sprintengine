@@ -9,7 +9,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { FileSearchResult } from '../../../../shared/electron-api'
-import type { Workspace, WorkspaceId, WorkspaceWindowId } from '../../types/workspace'
+import type { Workspace, WorkspaceId, WorkspaceWindowId } from '../../../../shared/workspace'
 import type { ModuleCommandContext } from '../../commands/types'
 import type { CommandAvailabilityContext } from '../../commands/availability'
 

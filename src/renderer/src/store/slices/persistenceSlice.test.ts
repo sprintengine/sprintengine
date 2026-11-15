@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { AppSettings } from '../../types/workspace'
+import type { AppSettings } from '../../../../shared/workspace'
 import {
   WORKSPACE_STORAGE_KEY,
   WORKSPACE_STORE_VERSION,
@@ -12,7 +12,7 @@ import {
 } from './persistenceSlice'
 import { normalizeWorkspaceForPartialize } from './normalizers'
 import { normalizeAppSettings } from './settingsSlice'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import { test } from 'vitest'
 
 test('persistenceSlice', async () => {

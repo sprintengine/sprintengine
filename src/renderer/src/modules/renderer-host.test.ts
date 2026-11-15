@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { createRendererHost, type WorkspaceTypeDefinition } from './renderer-host'
 import type { NotificationActionContext } from './renderer-host'
-import type { AppNotification, LayoutTemplate } from '../types/workspace'
+import type { AppNotification, LayoutTemplate } from '../../../shared/workspace'
 import { COMMAND_REGISTRY } from '../commands/commandRegistry'
 import { test } from 'vitest'
 

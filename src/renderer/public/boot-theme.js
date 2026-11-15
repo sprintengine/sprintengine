@@ -16,13 +16,13 @@
 // the normalizer rewrites it. One frame, theme-list-agnostic.
 //
 // Adding a new DARK theme never touches this file — only
-// src/renderer/src/types/appTheme.ts (one row) and index.css (one
+// src/shared/app-theme.ts (one row) and index.css (one
 // :root[data-theme="..."] block). A new LIGHT-surface theme adds a row to
 // LIGHT_SURFACES below, which drives both the canvas pre-paint and the
 // data-mode stamp.
 ;(function () {
   // The light-surface themes, mapped to the canvas colour to pre-paint.
-  // Membership must match LIGHT_SURFACE_THEMES in types/appTheme.ts (this
+  // Membership must match LIGHT_SURFACE_THEMES in shared/app-theme.ts (this
   // script runs before any bundle exists, so it cannot import it).
   var LIGHT_SURFACES = {
     light: '#f6f6f4',
@@ -59,7 +59,7 @@
     if (!theme || theme === 'system') {
       // The theme the person chose for each side of the OS's switch
       // (systemLightTheme / systemDarkTheme), Light and Dark when none is
-      // stored. Mirrors resolveAppTheme() in types/appTheme.ts.
+      // stored. Mirrors resolveAppTheme() in shared/app-theme.ts.
       var stored = persisted && persisted.state && persisted.state.appSettings && persisted.state.appSettings.appearance
       var mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)')
       theme =
@@ -79,7 +79,7 @@
       persisted.state.appSettings &&
       persisted.state.appSettings.appearance &&
       persisted.state.appSettings.appearance.windowMaterial
-    // Mirrors effectiveWindowMaterial() in types/appTheme.ts: an explicit
+    // Mirrors effectiveWindowMaterial() in shared/app-theme.ts: an explicit
     // solid or tinted is kept; anything else (glass, or nothing persisted
     // on a first launch) is the platform default — glass on macOS,
     // tinted where there is no vibrancy. A browser tab has no window
@@ -113,12 +113,12 @@
     // reason: a restored chat would otherwise draw one frame at full
     // width and the theme's own contrast. Mirrors applyChatAppearance()
     // in hooks/useAppTheme.ts and normalizeChatContrast() in
-    // types/appTheme.ts (85–200 in steps of 5, 100 is the default).
+    // shared/app-theme.ts (85–200 in steps of 5, 100 is the default).
     var appearance =
       persisted && persisted.state && persisted.state.appSettings && persisted.state.appSettings.appearance
     // No stored appearance at all is a new install, which opens on
     // Comfortable; a stored one without a width predates the setting and
-    // keeps Full (DEFAULT_CHAT_WIDTH and LEGACY_CHAT_WIDTH in types/appTheme.ts).
+    // keeps Full (DEFAULT_CHAT_WIDTH and LEGACY_CHAT_WIDTH in shared/app-theme.ts).
     var chatWidth = appearance ? appearance.chatWidth : 'comfortable'
     document.documentElement.setAttribute(
       'data-chat-width',

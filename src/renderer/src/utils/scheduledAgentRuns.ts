@@ -4,7 +4,7 @@
 // the schedule's editor lists them, and the schedule's own row says what its
 // latest run is doing without pretending to be that run.
 
-import type { Workspace, WorkspaceId } from '../types/workspace'
+import type { Workspace, WorkspaceId } from '../../../shared/workspace'
 import type { ScheduledAgentView } from '../../../shared/scheduled-agents'
 
 type RunActivity = 'needs-input' | 'working' | 'failed' | 'idle'

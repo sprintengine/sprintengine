@@ -23,7 +23,7 @@ import {
   type CliRuntimeOption,
   type CliRuntimePickerOption,
 } from './cliRuntimeCatalog'
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 import { isImeKey } from '../../utils/imeKey'
 import { ScrollArea } from './ScrollArea'
 

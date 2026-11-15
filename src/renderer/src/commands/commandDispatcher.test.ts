@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { RendererCommandDispatcher, type CommandDispatcherKeyEvent } from './commandDispatcher'
 import { COMMAND_REGISTRY } from './commandRegistry'
 import { LEGACY_COMMAND_ID_ALIASES } from './keybindings'
-import type { KeybindingSettings } from '../types/workspace'
+import type { KeybindingSettings } from '../../../shared/workspace'
 import type { CommandContribution } from './types'
 import { test } from 'vitest'
 

@@ -1,5 +1,5 @@
 import type { RegisteredModalSurfaceLauncher, SurfaceIconComponent } from '../../../modules/renderer-host'
-import type { WorkspacePaneTabKind } from '../../../types/workspace'
+import type { WorkspacePaneTabKind } from '../../../../../shared/workspace'
 
 // The kinds the workspace pane can open, in the order the "+" menu and the
 // empty-state launcher list them. A kind whose module is disabled is absent

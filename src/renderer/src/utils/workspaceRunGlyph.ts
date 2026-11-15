@@ -1,5 +1,5 @@
 import { getRendererHost } from '../modules'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import type { LifecycleState } from '../../../shared/lifecycle-state'
 
 // Mode-level status for a sidebar workspace row, expressed in the shared

@@ -23,7 +23,7 @@ One plate per theme, keyed off the active `data-theme` on `<html>`:
     backdrop-<theme-id>-workspace.jpg   structured / paper-craft — behind NewWorkspacePanel
     4k/backdrop-<theme-id>-*.jpg        matching 3840 × 2160 derivatives
 
-Theme ids come from `src/renderer/src/types/appTheme.ts`. Standard images are
+Theme ids come from `src/shared/app-theme.ts`. Standard images are
 16:9 at 1600 × 900. The `4k/` set is 3840 × 2160, produced with Lanczos scaling,
 light luma sharpening, and JPEG q3; a host exposes both through `srcset`, so
 Chromium chooses a display-appropriate asset. The art's

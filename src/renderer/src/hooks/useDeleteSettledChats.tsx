@@ -12,7 +12,7 @@ import type {
   SettledChatDeletionPlan,
 } from '../../../../packages/studio-protocol/src/public'
 
-import type { WorkspaceId } from '../types/workspace'
+import type { WorkspaceId } from '../../../shared/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { showToast } from '../store/toastStore'
 import { useConfirmDialog } from '../components/ui/ConfirmDialog'

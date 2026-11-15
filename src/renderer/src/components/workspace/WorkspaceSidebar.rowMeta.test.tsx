@@ -12,7 +12,7 @@ import {
   TerminalLineView,
   WorkingElapsed,
 } from './WorkspaceSidebar'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import type { TerminalLine } from './terminalLines'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { test } from 'vitest'

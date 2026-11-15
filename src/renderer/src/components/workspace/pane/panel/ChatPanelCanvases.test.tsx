@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { StudioError } from '../../../../../../../packages/client-runtime/src/public'
 import { fakePairedStudios } from '../../../../studio/environmentStudio.double'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
-import type { Workspace } from '../../../../types/workspace'
+import type { Workspace } from '../../../../../../shared/workspace'
 import { CanvasTab } from '../canvas/CanvasTab'
 import { ChatPanel } from './ChatPanel'
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { LayoutTemplate, Workspace, WorkspaceWorktreeState } from '../../types/workspace'
+import type { LayoutTemplate, Workspace, WorkspaceWorktreeState } from '../../../../shared/workspace'
 import { useWorkspaceStore } from '../workspaceStore'
 import {
   createWorktreesSlice,

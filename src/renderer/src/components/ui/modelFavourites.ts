@@ -1,6 +1,6 @@
 import React from 'react'
 
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 
 // Starred runtimes, kept in localStorage so they survive a restart, and shared
 // by every mounted picker through one subscription — two open pickers must

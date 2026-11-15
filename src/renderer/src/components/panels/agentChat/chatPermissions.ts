@@ -2,7 +2,7 @@ import type { ConversationSessionSummary } from '../../../../../shared/conversat
 import { conversationPermissionPresetRefusals } from '../../../../../shared/conversation-harness'
 import { CLI_PERMISSION_PRESETS } from '../../../../../shared/cli-permission-preset'
 import { DEFAULT_AGENT_SPAWN_PERMISSION_PRESET } from '../../../../../shared/launch-settings'
-import type { CliPermissionPreset } from '../../../types/workspace'
+import type { CliPermissionPreset } from '../../../../../shared/workspace'
 
 // What a chat's model and permission controls may be set to (AgentChatView).
 

@@ -5,7 +5,7 @@ import { GitBranchGlyph, RemoteMachineGlyph, WslMachineGlyph } from '../AppIcons
 import { ContextRing, TruncatedText, WorkingMark } from '../ui'
 import { formatRelativeMs } from '../../utils/relativeTime'
 import { useRelativeNow } from '../../hooks/useRelativeNow'
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 import type { SessionContextUsage } from '../../../../shared/electron-api'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { PullRequestPeekMark } from './PullRequestMark'

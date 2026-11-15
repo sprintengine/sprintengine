@@ -5,7 +5,7 @@ import type {
   CliRuntimeSettings,
   PluginCatalogEntry,
   PluginCatalogStatus,
-} from '../../../types/workspace'
+} from '../../../../../shared/workspace'
 import type { PluginModelSelection, PluginReasoningCatalog } from '../../../../../shared/plugin-manifest'
 import {
   mergeCliModelCatalog,

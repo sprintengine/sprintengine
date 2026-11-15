@@ -75,7 +75,7 @@ import type {
   WorkspaceWindowId,
   WorkspaceWorktree,
   WorkspaceEnvironmentRef,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 import { agentWorktreePaths, workspaceProjectRoot, worktreeIdFromPath } from '../../utils/workspaceWorktree'
 import { ensureSkillForAgent, skillsSpawnAgentPatch } from '../../utils/skillInvocation'
 import { cliPermissionModeLaunch, cliPermissionModePatch, resolveCliPermissionPreset } from '../ui'

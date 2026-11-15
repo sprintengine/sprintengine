@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { test } from 'vitest'
 
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 
 // Every item of a chat's right-click menu says what it does, on hover and on
 // keyboard focus (owner request 2026-10-21). Held structurally: each menu is

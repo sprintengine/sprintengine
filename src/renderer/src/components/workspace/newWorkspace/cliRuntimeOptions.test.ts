@@ -19,7 +19,7 @@ import {
   selectAgentCliCatalog,
   withoutUnkeyedRuntimes,
 } from './cliRuntimeOptions'
-import type { AgentCliAvailabilityMap, PluginCatalogEntry } from '../../../types/workspace'
+import type { AgentCliAvailabilityMap, PluginCatalogEntry } from '../../../../../shared/workspace'
 import type { DiscoveredCliModel } from '../../../../../shared/cli-model-catalog'
 import { test } from 'vitest'
 

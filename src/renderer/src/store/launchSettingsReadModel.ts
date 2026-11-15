@@ -16,7 +16,7 @@ import {
 } from '../../../shared/launch-settings'
 import { normalizeProjectUsageMap } from '../../../shared/project-frecency'
 import { AGENT_BRANCH_PREFIX } from '../../../shared/worktree-branch'
-import type { AppSettings, Workspace } from '../types/workspace'
+import type { AppSettings, Workspace } from '../../../shared/workspace'
 import { normalizeAppSettings } from './slices/settingsSlice'
 
 export const LAUNCH_SETTINGS_KEYS = [

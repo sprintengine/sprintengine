@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { peekMachineOf, peekPlaceOf, peekStatusOf, rowConversationPeekIdentities } from './conversationPeekRow'
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
-import type { AgentState } from '../../types/workspace'
+import type { AgentState } from '../../../../shared/workspace'
 import { test } from 'vitest'
 
 test('conversationPeekRow', async () => {

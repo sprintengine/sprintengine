@@ -57,7 +57,7 @@ import {
   projectColorKey,
   projectHue,
 } from '../../../shared/project-hue'
-import type { ProjectColor, ProjectColorSetting } from '../types/workspace'
+import type { ProjectColor, ProjectColorSetting } from '../../../shared/workspace'
 
 // The two names live in types/workspace.ts, beside HighlightColor, because
 // AppSettings.projectColors is part of the settings shape main compiles against

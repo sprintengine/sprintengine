@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 
 import { getEffectiveKeybindings, type KeybindingSettingsLike } from '../../../commands/effectiveKeybindings'
 import type { KeybindingPlatform } from '../../../commands/keybindings'
-import type { Workspace } from '../../../types/workspace'
+import type { Workspace } from '../../../../../shared/workspace'
 import { onWindowVisibilityChange } from '../../../utils/windowActivity'
 import { numberedChatRows } from '../manager/numberedChats'
 import {

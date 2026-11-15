@@ -8,7 +8,7 @@ import {
   type TextGenerationResult,
 } from '../../../shared/text-generation/contract'
 import type { AgentCliAvailabilityMap } from '../../../shared/electron-api'
-import type { PluginCatalogEntry, WorkspaceId } from '../types/workspace'
+import type { PluginCatalogEntry, WorkspaceId } from '../../../shared/workspace'
 import {
   createGeneratedTitleRequester,
   regenerateWorkspaceTitle,

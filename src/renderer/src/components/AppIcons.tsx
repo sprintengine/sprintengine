@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ModuleEnablementOverrides } from '../../../shared/modules/manifest'
 import { getRendererHost, selectModuleEnabled } from '../modules'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { PROJECT_MARK_CLASS, projectColorStyle, type ProjectColor } from '../utils/projectColor'
 
 type IconProps = {

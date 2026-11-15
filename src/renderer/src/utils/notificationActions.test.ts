@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { resolveNotificationActions } from './notificationActions'
-import type { AppNotification } from '../types/workspace'
+import type { AppNotification } from '../../../shared/workspace'
 import type { NotificationActionContext, RegisteredNotificationActionProvider } from '../modules/renderer-host'
 import { test } from 'vitest'
 

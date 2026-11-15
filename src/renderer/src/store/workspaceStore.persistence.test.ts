@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { AgentState, LayoutTemplate, Workspace } from '../types/workspace'
+import type { AgentState, LayoutTemplate, Workspace } from '../../../shared/workspace'
 import type { WorkspaceBackupPayload } from '../../../shared/electron-api'
 import { defaultAuthState } from './slices/authSlice'
 import { defaultAgent } from './slices/agentsSlice'
@@ -13,7 +13,7 @@ test('workspaceStore.persistence', async () => {
     state: {
       workspaces: Workspace[]
       activeWorkspaceId: string | null
-      workspaceWindows?: import('../types/workspace').WorkspaceWindowState[]
+      workspaceWindows?: import('../../../shared/workspace').WorkspaceWindowState[]
       primaryWorkspaceWindowId?: string
       workspaceRegistryEmptyState: { reason: 'user_removed_all'; updatedAt: string } | null
     }

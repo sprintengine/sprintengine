@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { EMPTY_CHAT_TEMPLATE } from '../../layouts/templates'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { WorktreeEntry as StoredWorktreeEntry } from '../../types/workspace'
+import type { WorktreeEntry as StoredWorktreeEntry } from '../../../../shared/workspace'
 import { focusOrAddTerminalTab } from '../../utils/modelRegistry'
 import { pathJoin, samePath, trimPath } from '../../utils/paths'
 import { slugifyWorktreeName, worktreeContainerPath, worktreeIdFromPath } from '../../utils/workspaceWorktree'

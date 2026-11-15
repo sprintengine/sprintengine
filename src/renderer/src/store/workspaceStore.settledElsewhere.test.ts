@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { beforeAll, test } from 'vitest'
 
-import type { Workspace, WorkspaceWindowState } from '../types/workspace'
+import type { Workspace, WorkspaceWindowState } from '../../../shared/workspace'
 import type { WorkspaceFieldsPatch, WorkspaceSyncEvent, WorkspaceSyncSnapshot } from '../../../shared/workspace-sync'
 import { takeWorkspacesSettledElsewhere, takeWorkspacesSnoozedElsewhere } from '../utils/settledElsewhere'
 

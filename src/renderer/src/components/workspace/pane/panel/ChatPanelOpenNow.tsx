@@ -1,6 +1,6 @@
 import React from 'react'
 
-import type { WorkspacePaneTab } from '../../../../types/workspace'
+import type { WorkspacePaneTab } from '../../../../../../shared/workspace'
 import type { PublishedChatActivity } from '../../../panels/agentChat/chatActivityStore'
 import { IconButton, Section, Tooltip, type TabItem } from '../../../ui'
 import { paneKindDefinition } from '../paneKinds'

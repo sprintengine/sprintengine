@@ -7,7 +7,7 @@ import type {
   Workspace,
   WorkspaceId,
   WorkspaceMemoryConfig,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 
 export const defaultWorkspaceMemoryConfig = (): WorkspaceMemoryConfig => ({
   relativeRoot: null,

@@ -11,7 +11,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, test } from 'vitest'
 
-import type { Workspace, WorkspacePaneState } from '../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../shared/workspace'
 
 const WS = 'ws-pane-switch'
 

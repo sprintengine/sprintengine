@@ -1,4 +1,4 @@
-import type { FollowUpBehavior } from '../../../types/workspace'
+import type { FollowUpBehavior } from '../../../../../shared/workspace'
 
 // What a message committed while the chat's agent is working does, and what
 // the send button says it will do (Settings ▸ Agents, "When I send while an

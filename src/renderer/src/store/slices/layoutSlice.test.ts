@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import type { IJsonModel } from 'flexlayout-react'
-import type { LayoutTemplate, Workspace } from '../../types/workspace'
+import type { LayoutTemplate, Workspace } from '../../../../shared/workspace'
 import { useWorkspaceStore } from '../workspaceStore'
 import {
   createLayoutSlice,

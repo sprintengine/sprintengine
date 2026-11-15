@@ -1,6 +1,6 @@
 import type { AgentCli, TerminalSessionSnapshot } from '../../../../shared/electron-api'
 import { resolveFocusedAgentId } from '../../store/slices/focusedAgentSlice'
-import type { AgentId, Workspace } from '../../types/workspace'
+import type { AgentId, Workspace } from '../../../../shared/workspace'
 import { resolveWorkspaceWorktree } from '../../utils/workspaceWorktree'
 import { agentCheckoutOf, agentCheckoutProbePath } from './agentCheckout'
 

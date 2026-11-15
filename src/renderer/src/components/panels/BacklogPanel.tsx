@@ -31,7 +31,7 @@ import {
   type SelectItem,
 } from '../ui'
 import { useShallow } from 'zustand/react/shallow'
-import type { AgentState } from '../../types/workspace'
+import type { AgentState } from '../../../../shared/workspace'
 import type { BacklogLocationInfo } from '../../../../shared/electron-api'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { selectBacklogProjectView, useBacklogViewStore } from '../../store/backlogViewStore'

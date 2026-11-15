@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest'
 
-import type { Workspace, WorkspacePaneTab } from '../types/workspace'
+import type { Workspace, WorkspacePaneTab } from '../../../shared/workspace'
 import { createWorkspacePaneSlice } from '../store/slices/workspacePaneSlice'
 import {
   MAX_CLOSED_TABS,

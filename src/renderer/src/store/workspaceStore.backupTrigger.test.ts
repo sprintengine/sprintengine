@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import { test } from 'vitest'
 
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 
 // Main serializes its whole registry for every backup a window asks for, so a
 // window asks only when its workspace list changed in something worth

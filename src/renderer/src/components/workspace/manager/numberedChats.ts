@@ -1,4 +1,4 @@
-import type { Workspace, WorkspaceId } from '../../../types/workspace'
+import type { Workspace, WorkspaceId } from '../../../../../shared/workspace'
 import { isSettledWorkspace } from '../../../utils/workspaceSettle'
 import { isSnoozedWorkspace } from '../../../utils/workspaceSnooze'
 

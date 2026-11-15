@@ -47,7 +47,7 @@ import type {
   CliPermissionPreset,
   FollowUpBehavior,
   Workspace,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 import type { DiscoveredCliModel, DiscoveredCliModelCatalog } from '../../../../shared/cli-model-catalog'
 import {} from '../onboardingState'
 import { SIDEBAR_DEFAULT_WIDTH, clampSidebarWidth } from '../../components/workspace/sidebarWidth'
@@ -75,7 +75,7 @@ import {
   type ReplyStreaming,
   type ResolvedAppTheme,
   type WindowMaterial,
-} from '../../types/appTheme'
+} from '../../../../shared/app-theme'
 import { normalizeModuleOverrides } from '../../../../shared/modules/manifest'
 import { normalizeFontFamilyPreference } from '../../utils/fontFamilyPreference'
 import { LEGACY_COMMAND_ID_ALIASES, collapseDuplicateKeybindings } from '../../commands/keybindings'

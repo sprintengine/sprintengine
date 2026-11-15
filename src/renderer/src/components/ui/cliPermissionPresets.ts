@@ -1,5 +1,5 @@
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { AgentCli, CliPermissionPreset } from '../../types/workspace'
+import type { AgentCli, CliPermissionPreset } from '../../../../shared/workspace'
 
 // The permission preset an agent spawns on, remembered PER CLI: one value for
 // Claude Code, one for Codex, and so on (owner ruling 2026-09-24).

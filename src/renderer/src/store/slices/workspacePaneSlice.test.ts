@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import type { Workspace, WorkspacePaneState } from '../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../shared/workspace'
 import {
   adoptLegacyBacklogTab,
   createWorkspacePaneSlice,

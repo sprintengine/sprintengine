@@ -1,4 +1,4 @@
-import type { AgentId, CliPermissionPreset, Workspace } from '../types/workspace'
+import type { AgentId, CliPermissionPreset, Workspace } from '../../../shared/workspace'
 
 export function resolveAgentCliPermissionPreset(
   workspace: Workspace | null | undefined,

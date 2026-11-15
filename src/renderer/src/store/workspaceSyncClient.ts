@@ -12,7 +12,14 @@ import type {
   WorkspaceSyncSnapshot,
 } from '../../../shared/workspace-sync'
 import { agentPatchForWire } from '../../../shared/workspace-sync'
-import type { AgentCli, AgentId, AgentState, Workspace, WorkspaceId, WorkspaceWindowId } from '../types/workspace'
+import type {
+  AgentCli,
+  AgentId,
+  AgentState,
+  Workspace,
+  WorkspaceId,
+  WorkspaceWindowId,
+} from '../../../shared/workspace'
 import { workspaceSyncApi, workspaceSyncReachable, type WorkspaceSyncApi } from '../studio/workspaceSync'
 
 // Defined locally (matching WorkspaceManager/workspacesSlice) so this adapter

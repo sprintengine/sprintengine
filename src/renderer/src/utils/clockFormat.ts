@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-import { DEFAULT_CLOCK_FORMAT, type ClockFormat } from '../types/appTheme'
+import { DEFAULT_CLOCK_FORMAT, type ClockFormat } from '../../../shared/app-theme'
 
 // The app's clock setting (Settings → Appearance → Clock), held here so every
 // place that writes a time of day reads one value without each subscribing to

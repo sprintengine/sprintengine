@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 
 import { useNotificationStore } from '../../store/notificationStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import type { Workspace } from '../../types/workspace'
+import type { Workspace } from '../../../../shared/workspace'
 import {
   extensionsRailBadge,
   extensionsRowOfNotification,

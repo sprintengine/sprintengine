@@ -1,5 +1,5 @@
 import { useNotificationStore } from '../store/notificationStore'
-import type { DiagnosticLogEntry, DiagnosticLogInput } from '../types/workspace'
+import type { DiagnosticLogEntry, DiagnosticLogInput } from '../../../shared/workspace'
 
 const DIAGNOSTIC_LOG_TIMEOUT_MS = 2000
 

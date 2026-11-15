@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { hostIdForFolder, isWslHostId } from '../../../../shared/execution-host'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useWorkspaceFolderStatus } from '../../hooks/useWorkspaceFolderStatus'
-import type { AgentExecution, AgentExecutionMode } from '../../types/workspace'
+import type { AgentExecution, AgentExecutionMode } from '../../../../shared/workspace'
 import type {
   AgentSessionIdentity,
   AgentSessionSystem,
@@ -60,7 +60,7 @@ import {
   resolveAgentColdLoadDecision,
   wasAgentSessionMintedThisAppSession,
 } from '../../utils/terminalColdLoad'
-import type { McpSettings } from '../../types/workspace'
+import type { McpSettings } from '../../../../shared/workspace'
 import { CursorErrorPopover } from '../ui/CursorErrorPopover'
 import { TerminalMount } from '../terminal/TerminalMount'
 import { FOCUS_RING_TERMINAL_CLASS } from '../ui/tokens'

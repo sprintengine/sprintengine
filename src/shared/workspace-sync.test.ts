@@ -6,7 +6,7 @@ import {
   type WorkspaceSyncEvent,
   type WorkspaceSyncState,
 } from './workspace-sync'
-import type { Workspace, WorkspaceWindowState } from '../renderer/src/types/workspace'
+import type { Workspace, WorkspaceWindowState } from './workspace'
 import { test } from 'vitest'
 
 test('workspace-sync', async () => {

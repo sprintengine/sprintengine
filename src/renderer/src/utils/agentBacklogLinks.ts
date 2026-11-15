@@ -1,7 +1,7 @@
 import type { BacklogItem, BacklogItemLink, BacklogResolvedLink } from './backlog'
 import { findAgentWorkspaceFollowingMoves } from './agentLocation'
 import type { BacklogLinkProviderInput } from '../modules/renderer-host'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 
 // The link shape itself (constants, target-id codec, label, builder) is
 // single-sourced in the shared module so the main-process automation server

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { Workspace, WorkspacePaneState } from '../../types/workspace'
+import type { Workspace, WorkspacePaneState } from '../../../../shared/workspace'
 import {
   createWorkspacePaneSlice,
   normalizeWorkspacePaneState,

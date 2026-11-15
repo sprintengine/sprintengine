@@ -8,7 +8,7 @@
 // because `cli.runtime.list` hands a paired phone the same families, and a
 // phone that grouped them by rules of its own would draw a different picker.
 
-import type { AgentCli } from '../../types/workspace'
+import type { AgentCli } from '../../../../shared/workspace'
 import type { PluginModelCatalog, PluginReasoningCatalog } from '../../../../shared/plugin-manifest'
 import type { ModuleChatRuntimeOption } from '../../../../shared/modules/conversation-service'
 

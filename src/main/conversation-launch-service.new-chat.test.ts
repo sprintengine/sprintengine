@@ -9,7 +9,7 @@ import type {
 } from '../shared/conversation-runtime'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
-import type { Workspace } from '../renderer/src/types/workspace'
+import type { Workspace } from '../shared/workspace'
 import type { WorktreeDependencyInstallView } from '../shared/ipc/worktree-pool'
 import { createConversationLaunchService, type ConversationLaunchServiceDeps } from './conversation-launch-service'
 import { createWorkspaceRegistryService } from './workspace-registry-service'

@@ -1,4 +1,4 @@
-import type { WorkspaceFolderRole } from '../types/workspace'
+import type { WorkspaceFolderRole } from '../../../shared/workspace'
 
 // What a folder IS comes from the person's "Mark Directory As" choice: no amount of sniffing tells you
 // that `out/` is build output and `backlog/` is not. A heuristic would guess;

@@ -1,5 +1,5 @@
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import { APP_THEMES, systemThemeChoices, type ResolvedAppTheme } from '../../types/appTheme'
+import { APP_THEMES, systemThemeChoices, type ResolvedAppTheme } from '../../../../shared/app-theme'
 import { Select } from '../ui'
 import { SettingCard, SettingsRow } from './SettingsAtoms'
 

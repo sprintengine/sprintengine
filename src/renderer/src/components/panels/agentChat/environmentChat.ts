@@ -5,7 +5,7 @@ import { formatEnvironmentRoute } from '../../../../../../packages/studio-protoc
 import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
 import type { EnvironmentTarget } from '../../../studio/environmentStudio'
 import { routeStudioClient } from '../../../../../shared/machine-studio-client'
-import type { WorkspaceEnvironmentRef } from '../../../types/workspace'
+import type { WorkspaceEnvironmentRef } from '../../../../../shared/workspace'
 import {
   localConversationTransport,
   studioConversationTransport,

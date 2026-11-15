@@ -19,7 +19,7 @@ import type {
 } from '../../../../../../packages/conversation-protocol/src/public'
 import { classifyPullRequestUrl } from '../../../../../shared/git/pr-url'
 import { pullRequestRepository, type BranchPullRequest } from '../../../../../shared/git/pull-request'
-import type { Workspace, WorkspaceHighlight, WorkspaceRemoteOrigin } from '../../../types/workspace'
+import type { Workspace, WorkspaceHighlight, WorkspaceRemoteOrigin } from '../../../../../shared/workspace'
 import { workspaceLastUserMessageAt } from '../../../utils/workspaceRecency'
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import type { Tone } from '../../ui'

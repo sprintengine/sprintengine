@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { ModuleEnablementOverrides } from '../../../shared/modules/manifest'
-import type { Workspace } from '../types/workspace'
+import type { Workspace } from '../../../shared/workspace'
 import { FolderTypeIcon, WorkspaceTypeIcon, resolveEnabledWorkspaceType } from './AppIcons'
 import { getRendererHost } from '../modules'
 import { test } from 'vitest'

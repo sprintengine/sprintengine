@@ -13,7 +13,7 @@ import {
   retiredLaunchedAgents,
   unrevealedLaunchedAgents,
 } from './launchedAgentProjection'
-import type { AgentState, Workspace } from '../types/workspace'
+import type { AgentState, Workspace } from '../../../shared/workspace'
 import { test } from 'vitest'
 
 test('launchedAgentProjection', async () => {

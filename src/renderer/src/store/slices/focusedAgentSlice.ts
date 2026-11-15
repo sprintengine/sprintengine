@@ -1,5 +1,5 @@
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
-import type { AgentId, WorkspaceId } from '../../types/workspace'
+import type { AgentId, WorkspaceId } from '../../../../shared/workspace'
 
 // Which agent a workspace is "on" (sidebar-lists-every-terminal): the agent
 // whose tab was selected last. The branch chip follows it, and later the Git

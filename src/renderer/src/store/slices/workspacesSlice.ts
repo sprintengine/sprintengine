@@ -50,7 +50,7 @@ import type {
   WorkspaceMemoryConfig,
   WorkspaceMode,
   WorkspaceWorktreeState,
-} from '../../types/workspace'
+} from '../../../../shared/workspace'
 import { deriveWorkspaceTitle, isDefaultWorkspaceName } from '../../../../shared/workspace-title'
 import { meshConversationTab, type MeshConversationPaneSpec } from '../../../../shared/tailnet-mesh'
 
@@ -247,7 +247,7 @@ interface WorkspacesSliceState {
   // workspaces=[] and cleared by addWorkspace/importWorkspace. Persisted into
   // the workspace-registry storage key so cold-load distinguishes user-removed-
   // all from hydration failure.
-  workspaceRegistryEmptyState: import('../../types/workspace').WorkspaceRegistryEmptyState | null
+  workspaceRegistryEmptyState: import('../../../../shared/workspace').WorkspaceRegistryEmptyState | null
 }
 
 interface WorkspacesSliceActions {
@@ -303,11 +303,11 @@ interface WorkspacesSliceActions {
       name?: string
       folderPath?: string | null
       // Set for a chat created on a paired machine; see Workspace.remoteOrigin.
-      remoteOrigin?: import('../../types/workspace').WorkspaceRemoteOrigin | null
+      remoteOrigin?: import('../../../../shared/workspace').WorkspaceRemoteOrigin | null
       // The machine on this computer the workspace runs on; see Workspace.hostId.
       hostId?: import('../../../../shared/execution-host').ExecutionHostId | null
       // The SSH machine it is on; see Workspace.environment.
-      environment?: import('../../types/workspace').WorkspaceEnvironmentRef | null
+      environment?: import('../../../../shared/workspace').WorkspaceEnvironmentRef | null
       worktree?: WorkspaceWorktree | null
       // CLI for the general template agents (e.g. the solo "New chat" agent).
       // When set, overrides the remembered `lastSelectedCli` default below.
