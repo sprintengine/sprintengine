@@ -2760,7 +2760,6 @@ test('automation', async () => {
         plugin('claude-code', {
           modelSelection: {
             args: ['--model', '{{model}}'],
-            options: [{ id: 'claude-opus-5', label: 'Opus 5' }, { id: 'claude-sonnet-5' }],
             allowCustomId: true,
           },
           reasoningSelection: {
@@ -2770,7 +2769,7 @@ test('automation', async () => {
           },
         } as never),
         // A CLI that declares neither: it must still be listed, with the honest
-        // empty answer — "no model may be passed" is not the same as "unlisted".
+        // answer that no model may be passed.
         // It also names only a manual setting, so it honours that and `none`.
         plugin('plain-cli', { permissionPresets: { manual: { label: 'Manual', args: ['--ask'] } } }),
         // Hooks-only selectability: a spec-less CLI stays LISTED (marked, not
@@ -2796,14 +2795,14 @@ test('automation', async () => {
       [false, false, true],
       'agentSelectable mirrors agentStateSpec presence — marked, never omitted',
     )
-    assert.deepEqual(clis[0].models, [{ id: 'claude-opus-5', label: 'Opus 5' }, { id: 'claude-sonnet-5' }])
+    assert.equal('models' in clis[0], false, 'a manifest names no models; the catalog lists them')
+    assert.equal(clis[0].supportsModelSelection, true)
     assert.equal(clis[0].allowCustomModelId, true)
     assert.deepEqual(clis[0].reasoningLevels, [{ id: 'medium' }, { id: 'high', label: 'High' }])
     assert.equal(clis[0].defaultReasoningLevel, 'medium')
     assert.deepEqual(clis[0].permissionPresets, ['none', 'bypass'])
     assert.deepEqual(clis[1].permissionPresets, ['manual', 'none'], 'only the presets it names, and none')
     assert.equal(clis[1].supportsModelSelection, false)
-    assert.deepEqual(clis[1].models, [])
     assert.equal(clis[1].allowCustomModelId, false)
     assert.equal(clis[1].defaultReasoningLevel, null)
 

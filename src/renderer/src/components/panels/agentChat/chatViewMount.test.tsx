@@ -1142,15 +1142,19 @@ test('a started chat switches models within its CLI from the full catalog, appli
         source: 'bundled',
         version: 1,
         binary: 'claude',
-        modelSelection: {
-          args: ['--model', '{{model}}'],
-          options: [
-            { id: 'claude-opus-5-5', label: 'Opus 5.5' },
-            { id: 'claude-fable-5-1', label: 'Fable 5.1' },
-          ],
-        },
+        modelSelection: { allowCustomId: false },
       },
     ],
+    cliModelCatalog: {
+      'claude-code': {
+        models: [
+          { id: 'claude-opus-5-5', displayName: 'Opus 5.5' },
+          { id: 'claude-fable-5-1', displayName: 'Fable 5.1' },
+        ],
+        fetchedAt: '2026-01-01T00:00:00Z',
+        source: 'agent-sdk',
+      },
+    },
   })
   try {
     // A first turn starts the live session.

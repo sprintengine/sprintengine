@@ -58,18 +58,19 @@ test('cliRuntimeOptions', async () => {
     ],
     'catalog orders bundled before user entries, labels from displayName, and dedupes ids',
   )
-  // Bundled CLIs ship NO seeded model ids (no speculative entitlement guesses):
-  // the fallback catalog exposes model UI via allowCustomId with an empty options
-  // list, so the bare CLI row is the only default and users add their own ids.
+  // Bundled CLIs ship NO model ids (no speculative entitlement guesses): the
+  // fallback catalog exposes model UI via allowCustomId with no rows until the
+  // CLI reports, so the bare CLI row is the only default and users add their
+  // own ids.
   assert.deepEqual(
     buildAgentCliCatalog(plugins).find((option) => option.value === 'codex')?.modelSelection,
     { options: [], allowCustomId: true },
-    'bundled Codex exposes the add-your-own model UI with no seeded options',
+    'bundled Codex exposes the add-your-own model UI with no built-in rows',
   )
   assert.deepEqual(
     buildAgentCliCatalog(plugins).find((option) => option.value === 'claude-code')?.modelSelection,
     { options: [], allowCustomId: true },
-    'bundled Claude Code exposes the add-your-own model UI with no seeded options',
+    'bundled Claude Code exposes the add-your-own model UI with no built-in rows',
   )
 
   assert.deepEqual(
@@ -293,8 +294,8 @@ test('cliRuntimeOptions', async () => {
     'an empty catalog returns lastSelectedCli unchanged instead of throwing',
   )
 
-  // Model catalog merging: manifest seeds first, then user-added ids deduped;
-  // plugins without modelSelection never grow model UI from user runtimes.
+  // Model catalog merging: user-added ids trimmed and deduped; plugins without
+  // modelSelection never grow model UI from user runtimes.
   const modelPlugins: PluginCatalogEntry[] = [
     cliEntry({
       id: 'claude-code',
@@ -302,13 +303,7 @@ test('cliRuntimeOptions', async () => {
       source: 'bundled',
       version: 1,
       binary: 'claude',
-      modelSelection: {
-        options: [
-          { id: 'opus', label: 'Opus' },
-          { id: 'sonnet', label: 'Sonnet' },
-        ],
-        allowCustomId: true,
-      },
+      modelSelection: { allowCustomId: true },
     }),
     // `aider` is an unbundled id with no manifest modelSelection and no bundled
     // fallback catalog — the clean "no model UI anywhere" case. (opencode is no
@@ -323,13 +318,12 @@ test('cliRuntimeOptions', async () => {
     modelCatalog.find((option) => option.value === 'claude-code')?.modelSelection,
     {
       options: [
-        { id: 'opus', label: 'Opus', origin: 'user' },
-        { id: 'sonnet', label: 'Sonnet', origin: 'manifest' },
+        { id: 'opus', origin: 'user' },
         { id: 'haiku', origin: 'user' },
       ],
       allowCustomId: true,
     },
-    'user-added model ids merge after manifest seeds, trimmed and deduped; a seeded id the user also typed reports the stronger claim',
+    'user-added model ids are trimmed and deduped, with nothing built in before them',
   )
   assert.equal(
     modelCatalog.find((option) => option.value === 'aider')?.modelSelection,
@@ -544,9 +538,9 @@ test('cliRuntimeOptions', async () => {
 })
 
 // --- the model merge: the CLI's list is the list (owner ruling 2026-09-22) ---
-// Once a probe has answered for a CLI, its picker shows exactly the rows the
-// CLI reported, in the CLI's order, then the person's own ids. The manifest
-// seed stands in only until then. Each case below is one half of that rule.
+// A CLI's picker shows exactly the rows the CLI reported, in the CLI's order,
+// then the person's own ids. Until it has reported, the person's ids alone:
+// nothing built in stands in for the CLI's list.
 
 const mergeCliEntry = (
   entry: Omit<PluginCatalogEntry, 'resumeSession' | 'sessionIdFromCaller' | 'agentStateCapable'>,
@@ -559,13 +553,7 @@ const mergePlugins: PluginCatalogEntry[] = [
     source: 'bundled',
     version: 1,
     binary: 'claude',
-    modelSelection: {
-      options: [
-        { id: 'opus[1m]', label: 'Opus (1M context)' },
-        { id: 'claude-opus-5', label: 'Opus 5' },
-      ],
-      allowCustomId: true,
-    },
+    modelSelection: { allowCustomId: true },
   }),
 ]
 const userClaudeModels = { 'claude-code': { command: '', models: ['claude-opus-5-5'] } }
@@ -584,23 +572,20 @@ const probe = (models: DiscoveredCliModel[]) => ({
   'claude-code': { models, fetchedAt: '2026-09-22T10:00:00Z', source: 'agent-sdk' as const, cliVersion: '2.1.280' },
 })
 
-test('with no probe answer the picker shows the manifest seed, then the user ids', () => {
-  const seedRows: MergedRow[] = [
-    { id: 'opus[1m]', label: 'Opus (1M context)', origin: 'manifest' },
-    { id: 'claude-opus-5', label: 'Opus 5', origin: 'manifest' },
-    { id: 'claude-opus-5-5', origin: 'user' },
-  ]
-  assert.deepEqual(claudeRows(undefined), seedRows)
-  assert.deepEqual(claudeRows({}), seedRows, 'an empty catalog map is no answer')
-  assert.deepEqual(claudeRows(probe([])), seedRows, 'a CLI that listed nothing falls back to the seed, not to nothing')
+test('with no probe answer the picker shows the user ids alone', () => {
+  const userRows: MergedRow[] = [{ id: 'claude-opus-5-5', origin: 'user' }]
+  assert.deepEqual(claudeRows(undefined), userRows)
+  assert.deepEqual(claudeRows({}), userRows, 'an empty catalog map is no answer')
+  assert.deepEqual(claudeRows(probe([])), userRows, 'a CLI that listed nothing is no answer either')
   assert.deepEqual(
     claudeRows({ 'claude-code': { models: undefined, fetchedAt: '', source: 'agent-sdk' } } as never),
-    seedRows,
+    userRows,
     'a malformed catalog that slipped past the normalizer reads as no answer and never throws',
   )
+  assert.deepEqual(claudeRows(undefined, {}), [], 'with no ids added the list is empty, and the CLI row stands alone')
 })
 
-test('discovered rows replace the manifest seed, in the CLI order and with its labels', () => {
+test('discovered rows are the list, in the CLI order and with its labels', () => {
   assert.deepEqual(
     claudeRows(
       probe([
@@ -617,7 +602,7 @@ test('discovered rows replace the manifest seed, in the CLI order and with its l
       { id: 'sonnet', label: 'Sonnet', origin: 'discovered' },
       { id: 'claude-opus-5-5', origin: 'user' },
     ],
-    'no manifest row survives (not even claude-opus-5, which the CLI did not list); aliases stay ordinary rows and never collapse onto the id resolvedModel names',
+    'aliases stay ordinary rows and never collapse onto the id resolvedModel names',
   )
 })
 
@@ -704,8 +689,8 @@ test('a CLI with no declared modelSelection surfaces no model UI even when disco
 })
 
 // Every surface that renders a model picker must hand the merge what the CLIs
-// reported, or it offers the manifest seed while the others offer the CLI's own
-// list: the New chat composer (and the hosts that borrow its catalog) once did
+// reported, or it offers only the person's ids while the others offer the CLI's
+// own list: the New chat composer (and the hosts that borrow its catalog) once did
 // exactly that. Read from source because the defect is a missing argument,
 // invisible to the merge's own tests.
 test('every model-picker surface passes the discovered catalog to the merge', async () => {

@@ -1332,15 +1332,17 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     name: 'cli.runtime.list',
     description:
       'List the agent CLIs this app can launch, with the model ids and reasoning-effort levels each one ' +
-      'declares. Read it before passing `cli`/`cliModel` to agent.launch — those are otherwise blind strings. Only rows with `agentSelectable: ' +
+      'offers. Read it before passing `cli`/`cliModel` to agent.launch — those are otherwise blind strings. Only rows with `agentSelectable: ' +
       'true` may be launched as agents (the CLI reports agent state via lifecycle hooks); ' +
-      'a false row is registry-held for install/detect only and every launch door refuses it. A CLI whose ' +
-      '`allowCustomModelId` is true accepts model ids outside its listed options (the list is a seed, not a ' +
-      'closed set); a level outside `reasoningLevels` is refused by the CLI itself. This reports what the ' +
-      'registry HOLDS, not what is installed on this machine — it never probes for binaries. ' +
+      'a false row is registry-held for install/detect only and every launch door refuses it. ' +
+      '`supportsModelSelection` says whether a model can be passed at all; a CLI whose `allowCustomModelId` ' +
+      'is true also accepts model ids its catalog does not list. A level outside `reasoningLevels` is ' +
+      'refused by the CLI itself. This reports what the registry HOLDS, not what is installed on this ' +
+      'machine — it never probes for binaries. ' +
       'Each row may carry a `catalog`: what the model picker here offers for that CLI, read the way it reads ' +
-      "it — `models` is the CLI's own reported list (its manifest seed until it has reported) followed by " +
-      "the ids added in Settings, each marked with the `family` row it renders under (a model's context " +
+      'it — `models` is the list the CLI reported about itself followed by the ids added in Settings, ' +
+      'empty until the CLI has reported (or for a CLI that reports none) and nobody has added one, ' +
+      "each marked with the `family` row it renders under (a model's context " +
       'windows are one row; `contextLabel` names the window, `familyDefault` the id the row selects), and ' +
       '`isNew` where the picker shows New; `providerLabel` is the line under each row, naming the CLI a ' +
       'hosted runtime rides (`hostedVia`); `conversational` says whether conversation.create can start it as ' +
@@ -3007,9 +3009,8 @@ function terminalSessionProjection(session: TerminalSessionSnapshot): Record<str
 }
 
 // One agent CLI as cli.runtime.list reports it. Everything here is
-// manifest-declared, so the projection is honest about its own limits: an empty
-// `models` means the CLI declares no seed list, which — with
-// `allowCustomModelId` — is different from "no model may be passed".
+// manifest-declared; the models are the `catalog`'s (cliRuntimeCatalog below),
+// because a manifest names none.
 /**
  * How much the workspace's project is used, for a phone to order its project
  * list the way New chat here does (shared/project-frecency.ts). Additive and
@@ -3050,10 +3051,6 @@ function cliRuntimeProjection(plugin: LoadedPlugin): Record<string, unknown> {
     // learns WHY it is refused instead of seeing the CLI vanish.
     agentSelectable: Boolean(manifest.agentStateSpec),
     supportsModelSelection: Boolean(manifest.modelSelection),
-    models: (manifest.modelSelection?.options ?? []).map((option) => ({
-      id: option.id,
-      ...(option.label ? { label: option.label } : {}),
-    })),
     allowCustomModelId: manifest.modelSelection?.allowCustomId === true,
     reasoningLevels: (manifest.reasoningSelection?.levels ?? []).map((level) => ({
       id: level.id,
@@ -3078,23 +3075,15 @@ function cliRuntimeProjection(plugin: LoadedPlugin): Record<string, unknown> {
 
 // What the model picker here offers for one CLI, for a client that draws the
 // same picker (the phone's New chat). The rows are the picker's own: the same
-// merge of the CLI's reported list, its manifest seed and the person's ids
+// merge of the CLI's reported list and the person's ids
 // (`mergeCliModelCatalog`), grouped into the same families
-// (`cliPickerModels`), named the way its provider line names them. Additive
-// beside `models`, which keeps answering the manifest seed for a caller built
-// before this.
+// (`cliPickerModels`), named the way its provider line names them. The row's
+// top-level `models`, which answered a manifest's built-in list, is gone with
+// that list; a phone that reads it finds none and reads this instead.
 function cliRuntimeCatalog(plugin: LoadedPlugin, sources: CliModelSources, now: number): Record<string, unknown> {
   const { manifest } = plugin
   const merged = mergeCliModelCatalog(
-    manifest.modelSelection
-      ? {
-          options: (manifest.modelSelection.options ?? []).map((option) => ({
-            id: option.id,
-            ...(option.label ? { label: option.label } : {}),
-          })),
-          allowCustomId: manifest.modelSelection.allowCustomId === true,
-        }
-      : undefined,
+    manifest.modelSelection ? { allowCustomId: manifest.modelSelection.allowCustomId === true } : undefined,
     [...(sources.userModels(manifest.id) ?? [])],
     sources.discovered[manifest.id],
     now,

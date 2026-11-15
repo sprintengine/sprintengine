@@ -411,8 +411,7 @@ this machine's own windows do; nothing in it is specific to a phone.
   answers each CLI on `cli.runtime.list` with a `catalog`: whether it can run as
   a chat (`conversational`), its provider line (`providerLabel`, naming the CLI
   a hosted runtime rides), and `models`, the rows this machine's model picker
-  offers — the CLI's reported list (its manifest seed until it has reported),
-  then the ids added in Settings — each with the `family` row it renders under,
+  offers — the CLI's reported list, then the ids added in Settings — each with the `family` row it renders under,
   its window (`contextLabel`, `1M` or `Standard`), whether it is the id the row
   selects (`familyDefault`), and `isNew` where the picker shows New. The model
   favourites are this machine's window's own and do not travel.
@@ -430,8 +429,7 @@ this machine's own windows do; nothing in it is specific to a phone.
 - **Switching a chat's model.** A desktop that advertises the
   `conversation-models` capability (owner ruling 2026-09-27) lists each chat's
   CLI and the models this machine's own picker offers for it — the CLI's
-  reported catalog (its manifest seed until it has reported) and the ids added
-  in Settings — and takes a `setModel` command naming one of them, or the CLI's
+  reported catalog and the ids added in Settings — and takes a `setModel` command naming one of them, or the CLI's
   own default. The switch stays within the chat's CLI: an id outside the
   catalog is refused with `unsupported_model` before the runtime sees it, and
   a provider that binds a session to its model refuses it as well. The switch

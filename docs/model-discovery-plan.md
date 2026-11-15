@@ -31,23 +31,26 @@ What each CLI offers, verified on 2026-09-22:
 | Cursor | `cursor-agent --list-models` | Lines `id - label` under an "Available models" heading |
 | Grok | `grok models` | Lines `* id (default)` and `- id`; works signed out |
 | OpenCode | `opencode models` | Lines of `provider/model`; slow, may exceed the probe timeout |
-| Kimi Code, Gemini | none known | manifest seed only |
+| Kimi Code, Gemini | none known | the person's own ids only |
 
 ## Rules
 
 1. **The CLI's list is the list.** When a probe for a CLI has succeeded, the
    picker shows exactly the rows the CLI reported, in the CLI's order, plus the
    person's own custom ids. A model the CLI stops listing disappears on the next
-   refresh. The bundled manifest seed is shown only while no probe has ever
-   succeeded for that CLI (fresh install, CLI not installed, probe failing).
-   Owner ruling 2026-09-22; this replaces the earlier union rule.
+   refresh. Owner ruling 2026-09-22; this replaces the earlier union rule.
+   Until a probe has succeeded for that CLI (fresh install, CLI not installed,
+   no probe, probe failing) the list is the person's own ids alone, under the
+   CLI's own row, which launches with its default model. The manifests name no
+   models (owner ruling 2026-11-15): the seed that stood in until then was a
+   guess about the person's account and went stale with every release.
 2. **Custom models stay.** `cliRuntimes[cli].models` is the person's own list,
    edited in Settings, never touched by a refresh, and shown after the probed
    rows. It is how a model the CLI accepts but does not advertise is offered
    (Claude Code 2.1.280 accepts `claude-opus-5-5` but does not list it).
    `cliRuntimes[cli].removedModels` is the other half: ids the person took off
-   the list. They are filtered out of the CLI's rows and the seed, so a refresh
-   that lists one again does not bring it back; Settings shows them under "Show
+   the list. They are filtered out of the CLI's rows, so a refresh that lists
+   one again does not bring it back; Settings shows them under "Show
    removed" with a Restore. Both lists belong to the machine the CLI runs on: a
    paired machine or a phone reads that machine's list through the same merge
    (`mergeCliModelCatalog`) and has no copy of its own.

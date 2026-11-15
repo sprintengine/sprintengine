@@ -2,8 +2,8 @@
 // (`MainHost.listChatRuntimes`): the same rows the renderer's
 // `listChatRuntimes` gives a module's window half, built in main from the same
 // sources the shell's chat picker reads — the plugin registry, this machine's
-// CLI availability, the model catalog a chat's picker offers (manifest seed,
-// discovered models, the ids the person added) and the CLI the person last
+// CLI availability, the model catalog a chat's picker offers (discovered
+// models and the ids the person added) and the CLI the person last
 // chose. One id space: a row's `id` is what a conversation's `cli`, a
 // scheduled agent's `cli` and a companion's `engine.cli` take.
 //

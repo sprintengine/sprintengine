@@ -269,7 +269,11 @@ test('NewAgentPanel', async () => {
       }
     }
 
-    const seedStore = (options: { plugins?: unknown[] } = {}): void => {
+    // `models` is what each CLI reported about itself, by CLI id: a manifest
+    // names no models, so the picker's rows come from here.
+    const seedStore = (
+      options: { plugins?: unknown[]; models?: Record<string, Array<{ id: string; label?: string }>> } = {},
+    ): void => {
       // Permissions are remembered per CLI, in the store's launch-settings read
       // model, which would otherwise carry a preset from one check into the next.
       __resetCliPermissionPresetsForTest()
@@ -313,6 +317,16 @@ test('NewAgentPanel', async () => {
           // would otherwise leave its remembered engine for the next one.
           lastSelectedCli: 'claude-code',
           lastSelectedAgentModel: null,
+          cliModelCatalog: Object.fromEntries(
+            Object.entries(options.models ?? {}).map(([cli, models]) => [
+              cli,
+              {
+                models: models.map(({ id, label }) => ({ id, ...(label ? { displayName: label } : {}) })),
+                fetchedAt: '2026-01-01T00:00:00Z',
+                source: 'argv-probe',
+              },
+            ]),
+          ),
         },
       } as never)
     }
@@ -758,14 +772,12 @@ test('NewAgentPanel', async () => {
               source: 'bundled',
               version: 1,
               binary: 'claude',
-              modelSelection: {
-                args: ['--model', '{{model}}'],
-                options: [{ id: 'opus[1m]', label: 'Opus (latest, 1M context)' }],
-              },
+              modelSelection: { allowCustomId: false },
               reasoningSelection: { levels: [{ id: 'low' }, { id: 'high' }] },
             },
             { id: 'acme-cli', displayName: 'Acme CLI', source: 'bundled', version: 1, binary: 'acme' },
           ],
+          models: { 'claude-code': [{ id: 'opus[1m]', label: 'Opus (latest, 1M context)' }] },
         })
         useWorkspaceStore.setState({
           appSettings: {
@@ -952,7 +964,7 @@ test('NewAgentPanel', async () => {
             binary: 'claude',
             resumeSession: true,
             sessionIdFromCaller: true,
-            modelSelection: { options: [{ id: 'claude-opus-5', label: 'Opus 5' }], allowCustomId: true },
+            modelSelection: { allowCustomId: true },
             reasoningSelection: { levels: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] },
             skillIntegration: {
               support: 'native',
@@ -971,13 +983,7 @@ test('NewAgentPanel', async () => {
             resumeSession: true,
             sessionIdFromCaller: true,
             permissionModes: bundledPermissionModes('codex'),
-            modelSelection: {
-              options: [
-                { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-                { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
-              ],
-              allowCustomId: true,
-            },
+            modelSelection: { allowCustomId: true },
             reasoningSelection: { levels: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }], default: 'medium' },
             skillIntegration: {
               support: 'native',
@@ -987,6 +993,13 @@ test('NewAgentPanel', async () => {
             },
           },
         ],
+        models: {
+          'claude-code': [{ id: 'claude-opus-5', label: 'Opus 5' }],
+          codex: [
+            { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+            { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
+          ],
+        },
       })
       const view = await render({ permissionPreset: 'bypass' })
       const engine = [...view.container.querySelectorAll('button')].find((button) =>
@@ -3294,13 +3307,7 @@ test('NewAgentPanel', async () => {
           binary: 'claude',
           resumeSession: true,
           sessionIdFromCaller: true,
-          modelSelection: {
-            options: [
-              { id: 'claude-opus-5', label: 'Opus 5' },
-              { id: 'claude-sonnet-5', label: 'Sonnet 5' },
-            ],
-            allowCustomId: true,
-          },
+          modelSelection: { allowCustomId: true },
           reasoningSelection: { levels: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] },
         }
         const codex = {
@@ -3311,16 +3318,20 @@ test('NewAgentPanel', async () => {
           binary: 'codex',
           resumeSession: true,
           sessionIdFromCaller: true,
-          modelSelection: {
-            options: [
-              { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-              { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
-            ],
-            allowCustomId: true,
-          },
+          modelSelection: { allowCustomId: true },
           reasoningSelection: { levels: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }], default: 'medium' },
         }
-        seedStore({ plugins: [claude, codex] })
+        const models = {
+          'claude-code': [
+            { id: 'claude-opus-5', label: 'Opus 5' },
+            { id: 'claude-sonnet-5', label: 'Sonnet 5' },
+          ],
+          codex: [
+            { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+            { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
+          ],
+        }
+        seedStore({ plugins: [claude, codex], models })
         const modelRow = (label: string) =>
           [...dom.window.document.querySelectorAll('[data-model-row="true"]')].find((row) =>
             (row.textContent ?? '').includes(label),

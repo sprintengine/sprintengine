@@ -282,7 +282,7 @@
     },
     {
       "name": "cli.runtime.list",
-      "sha256": "73405edf696f17098ec791c95408b017bf166607e412cbe383c76c28e5964611"
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "terminal.list",
@@ -720,7 +720,7 @@
     },
     {
       "name": "cli.runtime.list",
-      "sha256": "73405edf696f17098ec791c95408b017bf166607e412cbe383c76c28e5964611"
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "terminal.list",
@@ -910,7 +910,7 @@
     },
     {
       "name": "cli.runtime.list",
-      "sha256": "73405edf696f17098ec791c95408b017bf166607e412cbe383c76c28e5964611"
+      "sha256": "68ad77672bd2ab7ae4eae846b9bd582d69e493f8bba664a0157061478f8e86a6"
     },
     {
       "name": "backlog.list",

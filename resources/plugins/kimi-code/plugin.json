@@ -18,7 +18,6 @@
   },
   "modelSelection": {
     "args": ["--model", "{{model}}"],
-    "options": [{ "id": "kimi-k3", "label": "Kimi K3" }],
     "allowCustomId": true
   },
   "launch": {
