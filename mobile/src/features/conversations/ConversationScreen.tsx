@@ -109,6 +109,7 @@ import {
   SubagentStartRow,
   ThinkingRow,
   ToolGroup,
+  AgentNoticeRow,
   SideQuestionRow,
   TurnFold,
   type StepDetailSource,
@@ -2104,6 +2105,16 @@ const ConversationItem = memo(function ConversationItem({
   }
   // A message Studio sent the chat itself: its quiet line under Studio's name,
   // as the desktop draws it, never the person's bubble and nothing to act on.
+  // News about agents the chat launched: a step per agent, its reply behind
+  // the disclosure, as the desktop draws it.
+  if (row.kind === "studio" && row.notices?.length)
+    return (
+      <View accessibilityLabel={`${STUDIO_NAME} said`}>
+        {row.notices.map((notice, index) => (
+          <AgentNoticeRow key={`${notice.agentId ?? notice.name}:${index}`} notice={notice} at={row.at} onNotice={onNotice} />
+        ))}
+      </View>
+    );
   if (row.kind === "studio")
     return (
       <Text accessibilityLabel={`${STUDIO_NAME} said: ${row.text}`} selectable style={styles.meta}>

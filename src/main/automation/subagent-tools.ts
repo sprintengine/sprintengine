@@ -471,6 +471,7 @@ export function createSubagentTools(deps: SubagentToolsDeps): McpToolRegistratio
                 transport: 'conversation',
                 name: launched.name,
                 subagent: true,
+                cli,
               },
             })
           : { linked: false, reason: NOT_TOLD_UNAVAILABLE }

@@ -262,10 +262,16 @@ test('a message Studio sent keeps its origin on the user entry, the full and the
   ]
   const users = (entries: TranscriptEntry[]) =>
     entries.flatMap((entry) => (entry.kind === 'user' ? [entry.origin ?? null] : []))
-  expect(users(projectConversation(events).entries)).toEqual([null, { kind: 'studio', reason: 'agent-notice' }])
+  // The notice's news, read back from its words (agentNotices.ts), rides with it.
+  const studio = {
+    kind: 'studio',
+    reason: 'agent-notice',
+    notices: [{ kind: 'finished', name: 'Scout' }],
+  }
+  expect(users(projectConversation(events).entries)).toEqual([null, studio])
   let state = createConversationProjectionState()
   for (const next of events) state = applyEvent(state, next)
-  expect(users(state.projection.entries)).toEqual([null, { kind: 'studio', reason: 'agent-notice' }])
+  expect(users(state.projection.entries)).toEqual([null, studio])
 })
 
 // The provider reports the whole list each time it changes; a session that

@@ -36,6 +36,7 @@ import { ConversationFileLink, ConversationMarkdown, useConversationLinkContext 
 import { stepWentWrong, ToolRow, toolGlyphInk, toolPresentationInput } from './toolRows/ToolRow'
 import { useConversationDisclosure } from './conversationViewState'
 import { UserMessageFold } from './userMessageFold'
+import { AgentNoticeRows } from './agentNoticeRow'
 import { CHAT_FIND_SEGMENT_ATTRIBUTE, chatFindSegmentKey } from './chatFindSegment'
 import { presentToolItem, summarizeToolGroup } from '../../../../../shared/conversation/presentation'
 import type { ConversationToolKind } from '../../../../../shared/conversation-runtime'
@@ -405,6 +406,16 @@ function messageHtml(text: string): string {
 // named under it, from its `files` as the person's are, never from its text.
 function StudioNoticeRow({ entry }: { entry: Extract<TranscriptEntry, { kind: 'user' }> }) {
   const files = entry.files ?? []
+  // News about agents this chat launched: a step per agent, its reply behind
+  // the disclosure (agentNoticeRow.tsx), not the words its agent was handed.
+  const notices = entry.origin?.notices
+  if (notices?.length)
+    return (
+      <div className="pb-6" data-studio-notice={entry.origin?.reason ?? ''}>
+        <MessageAuthorHeading>{`${STUDIO_PRODUCT_NAME} said`}</MessageAuthorHeading>
+        <AgentNoticeRows id={entry.id} notices={notices} at={entry.createdAt ?? 0} />
+      </div>
+    )
   return (
     <div className="pb-6" data-studio-notice={entry.origin?.reason ?? ''}>
       <MessageAuthorHeading>{`${STUDIO_PRODUCT_NAME} said`}</MessageAuthorHeading>

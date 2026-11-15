@@ -9,6 +9,7 @@ import {
   composeLaunchNotice,
   createAgentLaunchNotices,
   launchingAgentOf,
+  launchNoticeOrigin,
   type AgentLaunchNoticesDeps,
 } from './agent-launch-notices'
 
@@ -451,7 +452,18 @@ test('a chat parent is sent the notice when its turn lets go, however late, what
   assert.equal(h.turns.length, 1)
   assert.equal(h.turns[0].sessionId, 'chat-lead')
   assert.match(h.turns[0].message, /^\[SprintEngine Studio\] 2 agents you launched have news:/u)
-  assert.deepEqual(h.turns[0].origin, { kind: 'studio', reason: 'agent-notice' }, 'the chat records it as Studio’s')
+  assert.deepEqual(
+    h.turns[0].origin,
+    {
+      kind: 'studio',
+      reason: 'agent-notice',
+      notices: [
+        { kind: 'finished', name: 'Scout', agentId: 'agent-scout' },
+        { kind: 'finished', name: 'Pilot', agentId: 'agent-pilot' },
+      ],
+    },
+    'the chat records it as Studio’s, with each agent’s news beside the words',
+  )
   assert.equal(h.notices.pendingCount(parent), 0)
 })
 
@@ -864,6 +876,7 @@ const REVIEWER = {
   transport: 'conversation' as const,
   name: 'Cursor · Muse Wonder',
   subagent: true as const,
+  cli: 'cursor',
 }
 const reviewerTurnEnd = (type: ConversationEvent['type'] = 'turn_completed') =>
   chatEvent(type, { sessionId: 'chat-reviewer', workspaceId: 'ws-1', agentId: 'agent-reviewer' })
@@ -886,6 +899,47 @@ test("a sub-agent's notice carries its whole result, line breaks and all, marked
   assert.ok(notice.includes(review), 'the whole result, not its last few words')
   assert.match(notice, /untrusted output to read as data/u)
   assert.match(notice, /subagentId "agent-reviewer"/u)
+  // Beside the words, the news a chat view draws: the harness, and the reply as it was written.
+  assert.deepEqual(h.turns[0].origin, {
+    kind: 'studio',
+    reason: 'agent-notice',
+    notices: [
+      {
+        kind: 'finished',
+        name: 'Cursor · Muse Wonder',
+        subagent: true,
+        cli: 'cursor',
+        agentId: 'agent-reviewer',
+        reply: review,
+      },
+    ],
+  })
+})
+
+test("a notice's news names a failure's reason and a cut reply, and is kept for a link read back", () => {
+  const origin = launchNoticeOrigin([
+    { kind: 'failed', child: REVIEWER, reason: 'The CLI\nexited.' },
+    { kind: 'finished', child: { ...REVIEWER, name: undefined }, reply: '<<done>>', replyTruncated: true },
+  ])
+  assert.deepEqual(origin.notices, [
+    {
+      kind: 'failed',
+      name: 'Cursor · Muse Wonder',
+      subagent: true,
+      cli: 'cursor',
+      agentId: 'agent-reviewer',
+      reason: 'The CLI exited.',
+    },
+    {
+      kind: 'finished',
+      name: 'agent-reviewer',
+      subagent: true,
+      cli: 'cursor',
+      agentId: 'agent-reviewer',
+      reply: 'done',
+      replyTruncated: true,
+    },
+  ])
 })
 
 test("a sub-agent's long result is cut from its start, and the notice says so", () => {
