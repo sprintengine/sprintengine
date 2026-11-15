@@ -1,38 +1,55 @@
-// Chats in containers (docs/design/container-chats.md). A container is one more machine Studio
-// runs its own server on, reached over `docker exec` the way an SSH machine
-// is reached over ssh, and kept in the same list of saved machines
+// Containers (docs/design/container-chats.md). A container is a machine:
+// Studio runs its own server in it, reached over `docker exec` the way an SSH
+// machine is reached over ssh, and keeps it in the same list of saved machines
 // (`SavedSshEnvironment.container`). It runs on a host: this computer, or an
 // SSH machine the person saved.
 //
 // Pure and shared: no fs, no electron.
 
-import type { ContainerHost, ContainerRepo } from '../../packages/studio-protocol/src/public'
+/** The machine a container runs on: this computer, or one of its saved SSH machines by id. */
+export type ContainerHost = { kind: 'local' } | { kind: 'ssh'; machine: string }
 
-// What travels between a client and the desktop's Studio is the protocol's
-// (`packages/studio-protocol/src/containers.ts`); what the desktop keeps of
-// each container with its saved machines is below.
-export {
-  CONTAINER_NAME,
-  parseContainerHost,
-  type ContainerCreateRequest,
-  type ContainerCreateResult,
-  type ContainerHost,
-  type ContainerImageChoice,
-  type ContainerRemoveTarget,
-  type ContainerRepo,
-  type ContainerResult,
-  type ContainerSummary,
-  type ContainerTokenStatus,
-  type DockerStatus,
-} from '../../packages/studio-protocol/src/public'
+/** Docker on a host, in words (never a dot). */
+export type DockerStatus = {
+  /**
+   * `ready`: Docker answers. `stopped`: Colima is installed and stopped, and
+   * Studio can start it. `not-running`: Docker's command is there and its
+   * engine does not answer. `missing`: no Docker. `unreachable`: the SSH
+   * machine could not be asked.
+   */
+  state: 'ready' | 'stopped' | 'not-running' | 'missing' | 'unreachable'
+  /** The sentence shown: "Docker 29.2 is running on this Mac (Colima)." */
+  words: string
+  /** Whether Studio's image is built there already (the first container builds it). */
+  imageReady: boolean
+  /** What starting it would run, when Studio can: Colima's own `colima start`. */
+  canStart: 'colima' | null
+  /** The Docker context that answered (`ready` only); a container made now is kept on it. */
+  context?: string | null
+}
 
-/** What a container's agent can reach. Full network is the default (owner ruling 2026-11-15). */
-export type ContainerNetwork = 'full'
+/** New container: where it runs, its name, and a repository to clone into it, if any. */
+export type ContainerCreateRequest = {
+  host: ContainerHost
+  label: string
+  /** A repository's address (`https://…`, `git@…`, or `owner/repo` on GitHub); null for none. */
+  clone: string | null
+}
 
-/** What a container does once its chat settles. Kept, so it can be picked up again (owner ruling 2026-11-15). */
-export type ContainerAfterSettle = 'keep'
+/**
+ * A container made: its saved machine's id, and the folder the clone landed
+ * in (null with no clone, or one that failed, said in `cloneFailed`).
+ */
+export type ContainerCreateResult =
+  { ok: true; id: string; folder: string | null; cloneFailed?: string } | { ok: false; message: string }
 
-/** A container Studio made for a chat, as the desktop keeps it with its saved machines. */
+/** A branch inside a container with commits no remote has: what deleting the container would lose. */
+export type ContainerUnpushedBranch = { repo: string; branch: string; commits: number }
+
+/** What deleting a container would lose, or why that could not be read. */
+export type ContainerUnpushed = { ok: true; branches: ContainerUnpushedBranch[] } | { ok: false; message: string }
+
+/** A container Studio made, as the desktop keeps it with its saved machines. */
 export type SavedContainer = {
   host: ContainerHost
   /** Docker's name for it: `sprintengine-<saved id>`. */
@@ -46,30 +63,29 @@ export type SavedContainer = {
   /**
    * Set from the moment Studio asks Docker to start it until it is ready, so a
    * container whose making was cut short (Studio quit, the machine went away)
-   * is still on the list to be found and removed.
+   * is still listed, to be deleted.
    */
   provisioning?: boolean
-  /**
-   * Its chat was deleted and it is waiting to be removed (Docker was not
-   * running, the machine was away): why the last try did not, in words.
-   * Tried again until it goes.
-   */
-  pendingRemoval?: string | null
   /** The image it was started from. */
   image: string
-  network: ContainerNetwork
-  afterSettle: ContainerAfterSettle
-  repo: ContainerRepo | null
   createdAt: number
 }
 
-/** The label every container and image Studio makes carries; nothing without it is ever removed. */
+/** Docker's names for what Studio makes: `sprintengine-` and sixteen hex digits. */
+export const CONTAINER_NAME = /^sprintengine-[a-f0-9]{16}$/u
+
+/** The label every container, volume and image Studio makes carries; nothing without it is ever removed. */
 export const CONTAINER_LABEL = 'sprintengine.studio.container'
 /** The label that names the saved machine a container belongs to. */
 export const CONTAINER_MACHINE_LABEL = 'sprintengine.studio.machine'
 export const IMAGE_LABEL = 'sprintengine.studio.image'
 
-/** Whether two hosts are the same machine. */
-export function sameContainerHost(a: ContainerHost, b: ContainerHost): boolean {
-  return a.kind === b.kind && (a.kind === 'local' || a.machine === (b as { machine: string }).machine)
+/** A host as a window sends it, checked: this computer, or a saved SSH machine's id. */
+export function parseContainerHost(value: unknown): ContainerHost | null {
+  if (value === null || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (record.kind === 'local') return { kind: 'local' }
+  if (record.kind === 'ssh' && typeof record.machine === 'string' && /^[A-Za-z0-9_-]{1,64}$/u.test(record.machine))
+    return { kind: 'ssh', machine: record.machine }
+  return null
 }

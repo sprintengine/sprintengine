@@ -7,13 +7,13 @@ import { afterAll, test } from 'vitest'
 
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS, type SavedSshEnvironment } from '../../../shared/ssh-environments'
 import { SshEnvironments } from '../ssh/ssh-environments'
-import { ContainerChats } from './container-chats'
+import { ContainerMachines } from './container-machines'
 import { imageFor } from './container-image'
 import { localHostRunner } from './docker-host'
 
 // Containers as saved machines, with a stand-in `docker` on this computer:
 // what is kept when Docker cannot answer, what a forgotten SSH machine does
-// to the containers on it, and when a container's server is first started.
+// to the containers on it, and what a making cut short leaves.
 
 const scratch = mkdtempSync(join(tmpdir(), 'se-container-machines-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
@@ -73,9 +73,6 @@ const localContainer = (id: string) =>
     host: { kind: 'local' },
     name: `sprintengine-${id}`,
     image: 'sprintengine-studio-agent:0123456789ab',
-    network: 'full',
-    afterSettle: 'keep',
-    repo: null,
     createdAt: 0,
   })
 
@@ -105,9 +102,6 @@ test('an SSH machine with containers on it is not forgotten silently; its record
     host: { kind: 'ssh', machine: 'aaaaaaaaaaaaaaaa' },
     name: 'sprintengine-0123456789abcdef',
     image: 'sprintengine-studio-agent:0123456789ab',
-    network: 'full',
-    afterSettle: 'keep',
-    repo: null,
     createdAt: 0,
   })
   const { machines } = setup('exit 1', [ssh, onIt])
@@ -126,33 +120,6 @@ test('an SSH machine with containers on it is not forgotten silently; its record
   machines.shutdown()
 })
 
-test("a container's server is never started before the agent's login has been read", async () => {
-  let token: string | null = null
-  const { machines, dir } = setup(
-    [
-      'case "$1" in',
-      '  start) exit 0 ;;',
-      '  exec) echo "${CLAUDE_CODE_OAUTH_TOKEN:-none}" > "$HOME/seen"; exit 1 ;;',
-      'esac',
-    ].join('\n'),
-    [localContainer('0123456789abcdef')],
-    {
-      containerEnv: (): Record<string, string> => (token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}),
-      // The keychain answers a moment after start.
-      containerEnvReady: () =>
-        new Promise<void>((resolve) =>
-          setTimeout(() => {
-            token = 'sk-ant-oat01-read-at-start'
-            resolve()
-          }, 100),
-        ),
-    },
-  )
-  await machines.connectQuietly('0123456789abcdef', 3_000)
-  assert.equal(readFileSync(join(dir, 'seen'), 'utf8').trim(), 'sk-ant-oat01-read-at-start')
-  machines.shutdown()
-})
-
 test('a container is saved before Docker is asked to start it; one cut short stays listed', async () => {
   const { machines } = setup(
     [
@@ -165,27 +132,42 @@ test('a container is saved before Docker is asked to start it; one cut short sta
       'esac',
     ].join('\n'),
   )
-  const chats = new ContainerChats({
+  const containers = new ContainerMachines({
     machines,
     image: () => imageFor('FROM scratch\n'),
     hostLabel: () => 'this Mac',
-    onChange: () => undefined,
     timing: { runMs: 300 },
   })
-  const created = await chats.create({
-    host: { kind: 'local' },
-    folder: null,
-    label: 'x',
-    image: { kind: 'studio-default' },
-  })
+  const created = await containers.create({ host: { kind: 'local' }, label: 'sandbox', clone: null })
   assert.equal(created.ok, false)
   assert.match(
     created.ok ? '' : created.message,
-    /A container may have been started; it is listed in Settings › Machines › Containers/u,
+    /The container may have been started; it is listed in Settings › Machines, where it can be deleted/u,
   )
   const kept = machines.list().filter((entry) => entry.container)
   assert.equal(kept.length, 1)
+  assert.equal(kept[0]!.label, 'sandbox')
   assert.equal(kept[0]!.container!.provisioning, true)
   assert.equal(kept[0]!.container!.context, 'colima', 'kept on the context it was made under')
+  // Its row says its making was cut short, in words, with nothing to connect.
+  assert.equal(kept[0]!.stateText, 'Its making was cut short. Delete it, and make it again.')
+  assert.equal(kept[0]!.action, null)
+  machines.shutdown()
+})
+
+test('New container refuses a name already taken and an address that is not a repository, before Docker is asked', async () => {
+  const { machines, dir } = setup('echo asked >> "$HOME/asked"', [localContainer('0123456789abcdef')])
+  const containers = new ContainerMachines({
+    machines,
+    image: () => imageFor('FROM scratch\n'),
+    hostLabel: () => 'this Mac',
+  })
+  const taken = await containers.create({ host: { kind: 'local' }, label: '0123456789abcdef (container)', clone: null })
+  assert.match(taken.ok ? '' : taken.message, /is already one of your machines/u)
+  const bad = await containers.create({ host: { kind: 'local' }, label: 'other', clone: '--upload-pack=id' })
+  assert.match(bad.ok ? '' : bad.message, /is not a repository address/u)
+  const unnamed = await containers.create({ host: { kind: 'local' }, label: '  ', clone: null })
+  assert.match(unnamed.ok ? '' : unnamed.message, /Give the container a name/u)
+  assert.throws(() => readFileSync(join(dir, 'asked')), 'Docker was never asked')
   machines.shutdown()
 })

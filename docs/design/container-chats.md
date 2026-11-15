@@ -53,7 +53,7 @@ Then Studio:
 3. starts it: `docker run -d --init --cap-drop ALL --security-opt
 no-new-privileges`, as the image's unprivileged `node` user, on Docker's
    default network (full network), labelled `sprintengine.studio.container=1`,
-   with two volumes: the container's own home (`sprintengine-home-<id>` at
+   with two volumes: the container's own home (`sprintengine-<id>-home` at
    `/home/node`) and the machine's logins (below);
 4. installs and connects Studio's server in it, as for an SSH machine;
 5. clones the repository, if one was given.

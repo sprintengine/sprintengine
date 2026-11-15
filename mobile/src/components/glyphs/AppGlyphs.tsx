@@ -292,28 +292,6 @@ export function WorktreeGlyph({ tone, size = iconSize.xs, label }: AppGlyphProps
   );
 }
 
-/**
- * A cube in isometric outline, its top and right faces shaded: a container.
- * Desktop `glyphs/container.svg`; New's strip says with it that chats in
- * containers are started from a desktop. Still, never animated.
- */
-export function ContainerGlyph({ tone, size = iconSize.xs, label }: AppGlyphProps) {
-  return (
-    <GlyphFrame viewBox="0 0 16 16" color={useInk(tone)} size={size} label={label}>
-      <Path d="M8 1.6 13.6 4.8 8 8 2.4 4.8Z" fill="currentColor" fillOpacity={0.45} />
-      <Path d="M13.6 4.8V11.2L8 14.4V8Z" fill="currentColor" fillOpacity={0.18} />
-      <Path
-        d="M8 1.6 13.6 4.8V11.2L8 14.4 2.4 11.2V4.8ZM2.4 4.8 8 8 13.6 4.8M8 8V14.4"
-        stroke="currentColor"
-        strokeWidth={STROKE}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </GlyphFrame>
-  );
-}
-
 /** A branch feeding an arrow — open a pull request. */
 export function PullRequestIcon({ tone, size = iconSize.md, label }: AppGlyphProps) {
   return (

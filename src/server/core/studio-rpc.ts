@@ -56,7 +56,6 @@ import { createStudioCanvasDomain, type StudioCanvasHost } from '../canvas/canva
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { createStudioPhoneReads } from '../backlog/backlog-domain'
 import type { StudioTailnetDomain } from '../rpc/studio-tailnet'
-import type { StudioContainersDomain } from '../rpc/studio-containers'
 import {
   createTailnetShareService,
   readTailnetWebTargets,
@@ -97,12 +96,6 @@ export function createStudioRpc(
     terminalHost?: DistributionTerminalHost
     /** A WSL distribution's: what it does on its machine for the desktop (git, the home). */
     machine?: DistributionMachine
-    /**
-     * A desktop's: the containers its shell makes for chats on the hosts it
-     * drives (docs/design/container-chats.md), where the SSH machines preview
-     * is on. Absent, `containers` is not offered.
-     */
-    containers?: StudioContainersDomain
   } = {},
 ): StudioRpcService {
   // The dev servers this machine publishes on the tailnet: Settings and the
@@ -145,8 +138,6 @@ export function createStudioRpc(
     // (`tailnet`): the gateway's listener and mesh, the same service the
     // agents' local-socket `tailnet.*` tools call.
     tailnet: createStudioTailnetDomain(gateway, shares),
-    // The containers this desktop makes for chats, which its shell runs Docker for.
-    ...(options.containers ? { containers: options.containers } : {}),
     backend: () =>
       createStudioConversationBackend({
         // Listed as `conversation-lifecycle` promises, which this socket

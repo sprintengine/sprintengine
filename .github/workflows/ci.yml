@@ -20,11 +20,11 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: "Commit to check"
+        description: 'Commit to check'
         required: true
         type: string
       release_gate:
-        description: "Called by release.yml: run regardless of repository visibility"
+        description: 'Called by release.yml: run regardless of repository visibility'
         required: true
         type: boolean
 
@@ -300,7 +300,7 @@ jobs:
           src/main/environments/ssh/askpass.test.ts
           src/main/environments/ssh/ssh-environment.docker.test.ts
           src/main/environments/ssh/ssh-variants.docker.test.ts
-          src/main/environments/container/container-chats.docker.test.ts
+          src/main/environments/container/container-machines.docker.test.ts
 
   # The cut-overs' proof (tests/cross-client/main.ts): one real server build
   # (build:server) driven by several clients at once, each the code that

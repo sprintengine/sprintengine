@@ -74,8 +74,6 @@ vi.mock('../src/renderer/src/studio/access', () => import('../src/renderer/src/s
 vi.mock('../src/renderer/src/studio/workspaceSync', () => import('../src/renderer/src/studio/workspaceSync.double'))
 // The machines this computer offers (`src/renderer/src/studio/hosts.ts`), the same way.
 vi.mock('../src/renderer/src/studio/hosts', () => import('../src/renderer/src/studio/hosts.double'))
-// Chats' containers (`src/renderer/src/studio/containers.ts`), the same way.
-vi.mock('../src/renderer/src/studio/containers', () => import('../src/renderer/src/studio/containers.double'))
 // A web tab's paired browsers (`src/renderer/src/studio/webDevices.ts`), the same way.
 vi.mock('../src/renderer/src/studio/webDevices', () => import('../src/renderer/src/studio/webDevices.double'))
 // Who reaches this machine over the tailnet, and the machines it drives (`src/renderer/src/studio/tailnet.ts`), the same way.
