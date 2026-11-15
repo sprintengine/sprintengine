@@ -6,6 +6,8 @@ import { writeTailnetSettings } from '../../src/main/automation/tailnet/tailnet-
 import { defaultAgent, type AgentState } from '../../src/shared/agent-state'
 import { readStudioEnvironmentId } from '../../src/server/environment/environment-id'
 import type { StudioServer, StudioServerOptions } from '../../src/server/studio-server'
+import type { StudioContainersDomain } from '../../src/server/rpc/studio-containers'
+import type { ContainerSummary } from '../../packages/studio-protocol/src/public'
 import { GATE_WINDOW_ORIGIN } from './client'
 
 // The server host: its own process, which requires the built Studio server
@@ -71,6 +73,62 @@ function startShellBroker(server: StudioServer) {
   return broker
 }
 
+/**
+ * Main's containers, stood in: what a desktop's `ContainerChats` answers,
+ * kept in memory, with no Docker. The gate holds who reaches the methods and
+ * that the window's own code drives them; what they do on a host is the
+ * Docker suite's (`container-chats.docker.test.ts`).
+ */
+function fakeContainers(): StudioContainersDomain {
+  const made = new Map<string, ContainerSummary>()
+  const listeners = new Set<() => void>()
+  const changed = () => listeners.forEach((listener) => listener())
+  let token: string | null = null
+  let next = 0
+  const ready = {
+    state: 'ready' as const,
+    words: 'Docker 29.2.1 is running on this computer (stand-in).',
+    imageReady: true,
+    canStart: null,
+  }
+  return {
+    status: async () => ready,
+    startDocker: async () => ready,
+    create: async (request) => {
+      const id = (++next).toString(16).padStart(16, '0')
+      const folder = `/home/node/work/${request.folder?.split('/').pop() ?? 'work'}`
+      made.set(id, {
+        id,
+        name: `sprintengine-${id}`,
+        host: request.host,
+        hostLabel: 'this computer',
+        status: 'Up 1 second',
+        repo: request.folder
+          ? { source: request.folder, path: folder, branch: `studio/container-${id.slice(-8)}`, base: null }
+          : null,
+      })
+      changed()
+      return { ok: true, id, label: request.label, folder }
+    },
+    list: async () => [...made.values()],
+    push: async (id) =>
+      made.has(id) ? { ok: true, message: 'Branch pushed (stand-in).' } : { ok: false, message: 'No such container.' },
+    remove: async (target) => {
+      const id = 'id' in target ? target.id : target.name.replace(/^sprintengine-/u, '')
+      const removed = made.delete(id)
+      changed()
+      return removed ? { ok: true } : { ok: false, message: 'No such container.' }
+    },
+    tokenStatus: async () => ({ set: token !== null, kept: token ? 'session' : null }),
+    setToken: async (value) => ((token = value), { ok: true }),
+    clearToken: async () => ((token = null), { ok: true }),
+    onChanged: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
 async function main(): Promise<void> {
   // The tailnet listener is off until a person turns it on; this is that.
   mkdirSync(config.dataDir, { recursive: true, mode: 0o700 })
@@ -90,6 +148,8 @@ async function main(): Promise<void> {
     web: { port: config.webPort, publicOrigins: config.publicOrigins, staticDir: null },
     // No Tailscale on a CI runner: the real listener, on loopback.
     tailnetBindAddress: '127.0.0.1',
+    // A desktop's containers, which its shell runs Docker for.
+    containers: fakeContainers(),
     log: (message) => process.stderr.write(`[server] ${message}\n`),
   })
   const { core } = server

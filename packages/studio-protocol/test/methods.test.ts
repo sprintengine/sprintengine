@@ -53,6 +53,10 @@ test('only the mutations whose receipts outlive the server are sent again to a r
     (method) => STUDIO_METHODS[method].receipts === 'durable',
   )
   assert.deepEqual(durable.sort(), [
+    // A container's create, push and remove: what each id did is kept by the desktop's main, on disk.
+    'containers.create',
+    'containers.push',
+    'containers.remove',
     'conversation.answerQuestion',
     'conversation.create',
     'conversation.interrupt',

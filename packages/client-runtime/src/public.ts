@@ -35,6 +35,7 @@ export {
 } from './rpc/websocket.js'
 export {
   connect,
+  STUDIO_DEFAULT_READ_TIMEOUT_MS,
   type ConnectOptions,
   type StudioClient,
   type StudioClientState,

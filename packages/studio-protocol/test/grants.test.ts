@@ -59,6 +59,9 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * The browsers paired with the web listener (`web-devices.ts`): who may reach
  * this Studio from a browser.
  * The machines this computer offers (`hosts.ts`): a refresh starts WSL here.
+ * Chats' containers (`containers.ts`): Docker on this computer and its SSH
+ * machines, a push with this computer's git credentials, a removal; and a
+ * container's chat runs on a machine no paired device reaches through here.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -81,6 +84,16 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'environment.terminalProcesses',
   'environment.windowTicket',
   'environment.work',
+  'containers.changed',
+  'containers.clearToken',
+  'containers.create',
+  'containers.list',
+  'containers.push',
+  'containers.remove',
+  'containers.setToken',
+  'containers.startDocker',
+  'containers.status',
+  'containers.tokenStatus',
   'hosts.changed',
   'hosts.list',
   'localServers.changed',
@@ -328,6 +341,16 @@ test('what only Studio’s own desktop windows may call is an owner’s too, and
     ...(Object.keys(STUDIO_TOPICS) as StudioTopic[]).filter((name) => STUDIO_TOPICS[name].window),
   ]
   assert.deepEqual(windowOnly.sort(), [
+    'containers.changed',
+    'containers.clearToken',
+    'containers.create',
+    'containers.list',
+    'containers.push',
+    'containers.remove',
+    'containers.setToken',
+    'containers.startDocker',
+    'containers.status',
+    'containers.tokenStatus',
     'localApps.cancelOffer',
     'localApps.changed',
     'localApps.offer',

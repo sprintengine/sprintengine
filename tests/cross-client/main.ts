@@ -17,6 +17,7 @@ import type { HostConfig, HostReady } from './host'
 import { Matrix } from './matrix'
 import { runSshLeg } from './ssh'
 import { runWslLeg } from './wsl'
+import { runContainerLeg } from './containers'
 
 // The cross-client gate (scripts/cross-client-gate.mjs bundles and runs this).
 // One real Studio server build, started by a host process, and several clients
@@ -587,6 +588,9 @@ async function main(): Promise<number> {
         'its own chat, still, after its asks',
       )
     })
+
+    // Chats' containers: the window makes one; its paired devices are refused in words.
+    await runContainerLeg({ matrix, desktop, devices: [peer, phone], folder: repository })
 
     // While the desktop and its paired devices are still up: they are who must not reach it.
     await runWslLeg({

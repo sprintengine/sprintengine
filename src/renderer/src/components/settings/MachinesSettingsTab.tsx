@@ -32,6 +32,7 @@ import { MachineMarkPicker, MachineRowMark } from './MachineMarkPicker'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import { AddSshMachine, SshMachineActions, SshMachineDetail, useSshMachines } from './SshMachinesSection'
 import { ContainersSection } from './ContainersSection'
+import { containersApi } from '../../studio/containers'
 
 const ROW_FIELD = 'w-60 max-w-full font-mono'
 
@@ -270,7 +271,7 @@ export function MachinesSettingsTab({
         </p>
       ) : null}
 
-      {sshOn && typeof window.api?.containersList === 'function' ? <ContainersSection api={window.api} /> : null}
+      {sshOn ? <ContainersSection api={containersApi} /> : null}
 
       {sshOn ? (
         <section className="space-y-2">

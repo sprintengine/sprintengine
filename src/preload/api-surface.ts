@@ -15,7 +15,6 @@ import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
 import { modulesApi } from './api/modules'
 import { sshEnvironmentsApi } from './api/ssh-environments'
-import { containersApi } from './api/containers'
 import { environmentsApi } from './api/environments'
 import { splashApi } from './api/splash'
 import { startupApi } from './api/startup'
@@ -60,7 +59,6 @@ export const apiModules = {
   ...chatExportApi,
   ...filesystemApi,
   ...sshEnvironmentsApi,
-  ...containersApi,
   ...environmentsApi,
   ...gitApi,
   ...modulesApi,

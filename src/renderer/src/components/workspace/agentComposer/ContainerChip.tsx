@@ -1,11 +1,11 @@
 import React from 'react'
 
 import type { ContainerHost, DockerStatus } from '../../../../../shared/containers'
-import type { ElectronApi } from '../../../../../shared/electron-api'
+import type { ContainersApi } from '../../../studio/containers'
 import { ChipButton, ContainerGlyph, OutlineButton, Popover, Switch, WorkingMark } from '../../ui'
 import { ChipCaretGlyph } from './agentSpawnShared'
 
-type ContainerApi = Pick<ElectronApi, 'containerDockerStatus' | 'containerStartDocker'>
+type ContainerApi = Pick<ContainersApi, 'containerDockerStatus' | 'containerStartDocker'>
 
 /**
  * Container, in the New chat composer's context strip beside Worktree (owner

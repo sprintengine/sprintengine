@@ -5,13 +5,17 @@ import { app, ipcMain, MessageChannelMain, net, powerMonitor, session } from 'el
 import { writeDiagnosticLog } from '../../diagnostics-service'
 import { allowMachinePartitions } from '../../browser/guest-policy'
 import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
-import { registerContainersIpc } from '../../ipc/containers-ipc'
 import { ContainerChats } from '../container/container-chats'
+import { ContainerCommandReceipts } from '../container/container-command-receipts'
+import {
+  createContainersDomain,
+  serveContainersToServer,
+  type DesktopContainersDomain,
+} from '../container/containers-domain'
 import { readAgentImage } from '../container/container-image'
 import { ContainerAgentToken, CLAUDE_TOKEN_ENV } from '../container/container-agent-token'
 import { studioPlatform } from '../../../server/platform/platform'
 import { join } from 'node:path'
-import { CONTAINER_CHANNELS } from '../../../shared/containers'
 import { channelForVersion } from '../../update-channel-store'
 import { readStudioEnv } from '../../../shared/studio-env'
 import type { WorkspaceEnvironmentRef } from '../../../renderer/src/types/workspace'
@@ -29,7 +33,13 @@ import { prefixedId } from '../../../shared/random-id'
 // wake and network hooks that restart a dead session at once. Built only
 // when the SSH machines preview is on (shared/ssh-preview.ts).
 
-export type DesktopSsh = { environments: SshEnvironments; panes: PanePartitions; containers: ContainerChats }
+export type DesktopSsh = {
+  environments: SshEnvironments
+  panes: PanePartitions
+  containers: ContainerChats
+  /** The same containers as the desktop's Studio serves them to its clients (`containers.*`). */
+  containersDomain: DesktopContainersDomain
+}
 
 export function createDesktopSsh(deps: {
   version: string
@@ -93,23 +103,21 @@ export function createDesktopSsh(deps: {
           ? 'this Mac'
           : 'this computer'
         : (sshEnvironments.get(host.machine)?.label ?? 'that SSH machine'),
-    onChange: () => broadcastToAllWindows(CONTAINER_CHANNELS.changed, null),
+    onChange: () => containersDomain.changed(),
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', title: 'Container', message, source: 'workspace' })
     },
   })
-  // A token set or forgotten reaches the servers already running in containers here by restarting them.
-  registerContainersIpc(ipcMain, containers, {
-    status: () => containerToken.status(),
-    set: async (token) => {
-      const result = await containerToken.set(token)
-      if (result.ok) void sshEnvironments.restartContainerServers()
-      return result
-    },
-    clear: async () => {
-      await containerToken.clear()
-      void sshEnvironments.restartContainerServers()
-    },
+  // What the desktop's Studio serves of them (`containers.*`). A token set or
+  // forgotten reaches the servers already running in containers here by
+  // restarting them.
+  const containersDomain: DesktopContainersDomain = createContainersDomain({
+    containers,
+    token: containerToken,
+    // What each create, push and remove did, by the client's command id, kept
+    // on disk: one sent again after the server restarted is answered, not redone.
+    receipts: new ContainerCommandReceipts({ path: join(app.getPath('userData'), 'container-commands.json') }),
+    onTokenChanged: () => void sshEnvironments.restartContainerServers(),
   })
   // The pane's tabs for a workspace on an SSH machine: that machine's own
   // partition, behind an authenticated proxy on loopback that sends their
@@ -160,8 +168,11 @@ export function createDesktopSsh(deps: {
     poll.unref?.()
   })
 
-  if (deps.server) serveSshToServer(deps.server, sshEnvironments)
-  return { environments: sshEnvironments, panes: panePartitions, containers }
+  if (deps.server) {
+    serveSshToServer(deps.server, sshEnvironments)
+    serveContainersToServer(deps.server.rpc, containersDomain)
+  }
+  return { environments: sshEnvironments, panes: panePartitions, containers, containersDomain }
 }
 
 /**

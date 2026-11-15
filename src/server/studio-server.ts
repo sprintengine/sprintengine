@@ -26,6 +26,7 @@ import { readStudioEnvironmentId } from './environment/environment-id'
 import type { WebFrontDoor, WebFrontDoorOptions } from './web/web-front-door'
 import type { StudioUpdates } from './update/studio-updates'
 import type { SignIns } from './machine/machine-sign-in'
+import type { StudioContainersDomain } from './rpc/studio-containers'
 
 // A Studio server under plain Node: the core and its gateway, with nothing of
 // Electron. The `studio-server` entry (main.ts) runs it from a shell; a later
@@ -98,6 +99,12 @@ export type StudioServerOptions = {
   terminalHost?: DistributionTerminalHost
   /** A WSL distribution's Studio: what it does on its machine for the desktop (`distribution-machine.ts`). */
   machine?: DistributionMachine
+  /**
+   * The containers a desktop's shell makes for chats (`containers.*`). A
+   * standalone server runs no Docker for anyone; the cross-client gate stands
+   * a fake in to hold who reaches the methods. Not served when not said.
+   */
+  containers?: StudioContainersDomain
 }
 
 export type StudioServerReady = {
@@ -274,6 +281,7 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
     ...(options.signIns ? { signIns: options.signIns } : {}),
     ...(options.terminalHost ? { terminalHost: options.terminalHost } : {}),
     ...(options.machine ? { machine: options.machine } : {}),
+    ...(options.containers ? { containers: options.containers } : {}),
   })
   // The chat surface over this core's chats (`session.*`): what a window that
   // follows and drives a chat here reaches it by, the desktop's window over

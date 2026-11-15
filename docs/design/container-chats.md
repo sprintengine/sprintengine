@@ -236,13 +236,42 @@ inside.
 
 A container chat is an SSH-machine chat to every client: the window, a paired
 desktop and the phone see and drive it as they do one on an SSH machine.
-Making a container, and pushing its branch, are this desktop's actions (it
-runs Docker) over its own IPC, like adding an SSH machine. A paired desktop's
-New chat shows the Container chip for that machine with the words "A chat in a
-container on <machine> is started from <machine> itself for now", and the
-phone's New chat shows "No container" with the cube, saying the same. Making
-containers from a paired desktop or the phone over the Studio protocol is a
-follow-up. Windows and WSL say "Containers on … are not built yet".
+Making, listing, pushing and removing containers, Docker's status and
+Claude Code's token are served on the Studio protocol by the desktop that runs
+Docker (`containers.*` and the `containers.changed` stream, capability
+`containers`, `packages/studio-protocol/src/containers.ts`). Main holds
+`ContainerChats`, since it runs Docker and holds the SSH sessions; the
+desktop's Studio forwards each call to it over the shell's control channel when
+it runs in a process of its own (`SHELL_METHODS.containers`). The window's New
+chat and Settings › Machines › Containers use these methods; there is no IPC
+for them.
+
+Every method and the stream is served to Studio's own desktop windows only:
+not a paired device, not an owner's web tab, and not an app or script holding
+the owner's credential. No other surface uses them yet.
+
+| Methods                                 | Why                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create`                                | A container's chat runs on its own Studio (`ssh:<id>`), which paired devices do not reach through this desktop (#602), so a device that made one could not follow its chat (an owner decision is pending). From a web tab it would start a chat outside the folders a tailnet browser may start one in, and on SSH machines reached from the desktop alone. |
+| `push`                                  | It pushes with the host's git credentials.                                                                                                                                                                                                                                                                                                                  |
+| `remove`                                | It destroys the container and its chat's work.                                                                                                                                                                                                                                                                                                              |
+| `startDocker`                           | It starts a VM on the host.                                                                                                                                                                                                                                                                                                                                 |
+| `status`, `list`, `containers.changed`  | The status probes Docker on the host and may raise an SSH passphrase dialog on the desktop; the list names folders on this computer and its SSH machines.                                                                                                                                                                                                   |
+| `tokenStatus`, `setToken`, `clearToken` | A credential sealed with this computer's keychain.                                                                                                                                                                                                                                                                                                          |
+
+A create can take half an hour (the first image build on a host). Create, push
+and remove carry the client's command id through to main, which keeps what
+each id did on disk (`container-command-receipts.ts`), and they are
+`receipts: 'durable'`: when the desktop's server restarts mid-build, the window
+sends the create again under its id and is answered with the one container,
+never a second. One that was running when Studio itself stopped is answered
+in words that send the person to Settings › Machines › Containers. A request is recorded as started, on disk, before anything is done, and is not carried out when that record cannot be written; a record that exists and cannot be read refuses every create, push and remove in words and is left for a person to look at, never read as empty. An answer
+that never came is never called "No container" in New chat.
+
+So a paired desktop's New chat still shows the Container chip for that machine
+with the words "A chat in a container on <machine> is started from <machine>
+itself for now", and the phone's New chat shows "No container" with the cube,
+saying the same. Windows and WSL say "Containers on … are not built yet".
 
 ## Left for later
 
@@ -254,8 +283,9 @@ follow-up. Windows and WSL say "Containers on … are not built yet".
 - A worktree inside a container.
 - The host-side proxy that keeps even the token out (above).
 - The server and the agent as separate users (Threat model).
-- Making, pushing and removing containers over the Studio protocol, for a
-  paired desktop and the phone.
+- Making and using containers from a paired desktop and the phone: the
+  methods are on the protocol; what is left is how a device follows the chat
+  in a container it made (an owner decision).
 - Push from the chat itself (its pull-request flow), not only from Settings.
 - Containers in WSL.
 - Network choices other than full.
