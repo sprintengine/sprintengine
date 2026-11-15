@@ -1446,18 +1446,35 @@ export default function NewAgentPanel({
     window.api?.sshMachinesEnabled && typeof window.api.containerCreate === 'function' ? window.api : null
   const containerOffered =
     Boolean(containerApi) && hostChoosable && !editing && !remoteTarget && !extensionMode && isChatLaunch && !scheduled
-  const containerHost: ContainerHost | null = pickedSsh
-    ? { kind: 'ssh', machine: pickedSsh.id }
-    : hostId === LOCAL_HOST_ID
-      ? { kind: 'local' }
-      : null
-  const containerHostLabel = pickedSsh
-    ? pickedSsh.label
-    : hostId === LOCAL_HOST_ID
-      ? navigator.platform.startsWith('Mac')
-        ? 'this Mac'
-        : 'this computer'
-      : (localHosts.find((host) => host.id === hostId)?.label ?? 'that machine')
+  // Where the container runs and what is copied into it. The project in hand
+  // may itself be a folder on another machine (a chat on an SSH machine or in
+  // a container was the last one opened): a container is then made on that
+  // SSH machine from that folder, or, for a container's folder, from the
+  // project that container was copied from, on its host.
+  const thisComputer = navigator.platform.startsWith('Mac') ? 'this Mac' : 'this computer'
+  const rootOnMachine = !pickedSsh && workspaceRoot ? parseMachinePath(workspaceRoot) : null
+  const rootMachine = rootOnMachine ? (sshMachinesAll.find((machine) => machine.id === rootOnMachine.id) ?? null) : null
+  const labelOfHost = (host: ContainerHost): string =>
+    host.kind === 'local'
+      ? thisComputer
+      : (sshMachinesAll.find((machine) => machine.id === host.machine)?.label ?? 'that SSH machine')
+  const containerSource: { host: ContainerHost; folder: string | null } | null = pickedSsh
+    ? { host: { kind: 'ssh', machine: pickedSsh.id }, folder: sshFolder.trim().replace(/(.)\/+$/u, '$1') }
+    : rootOnMachine
+      ? rootMachine?.container
+        ? rootMachine.container.repo
+          ? { host: rootMachine.container.host, folder: rootMachine.container.repo.source }
+          : null
+        : rootMachine
+          ? { host: { kind: 'ssh', machine: rootMachine.id }, folder: rootOnMachine.path }
+          : null
+      : hostId === LOCAL_HOST_ID
+        ? { host: { kind: 'local' }, folder: projectless ? null : (workspaceRoot ?? null) }
+        : null
+  const containerHost: ContainerHost | null = containerSource?.host ?? null
+  const containerHostLabel = containerHost
+    ? labelOfHost(containerHost)
+    : (localHosts.find((host) => host.id === hostId)?.label ?? rootMachine?.label ?? 'that machine')
   const containerActive = containerOffered && containerOn && containerHost !== null
   const buildLaunchConfirm = (target: AgentComposerSelection): AgentComposerConfirm => {
     const confirm = composer.buildConfirm(target)
@@ -2055,7 +2072,7 @@ export default function NewAgentPanel({
     }
     // The container's branch is the chat's own; a worktree inside one may follow.
     const { worktree: _inContainer, ...launched } = confirm
-    const source = pickedSsh ? sshFolder.trim().replace(/(.)\/+$/u, '$1') : projectless ? null : workspaceRoot
+    const source = containerSource?.folder ?? null
     setContainerPreparing(true)
     showToast({
       tone: 'neutral',

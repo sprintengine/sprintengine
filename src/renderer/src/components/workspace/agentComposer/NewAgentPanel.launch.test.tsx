@@ -968,7 +968,16 @@ test('NewAgentPanel launch paths', async () => {
         api.sshEnvironmentsList = async () => [
           machine('ssh-1', 'build-box'),
           machine('0123456789abcdef', 'older (container)', {
-            container: { host: { kind: 'local' }, name: 'sprintengine-0123456789abcdef' },
+            container: {
+              host: { kind: 'local' },
+              name: 'sprintengine-0123456789abcdef',
+              repo: {
+                source: '/Users/dev/proj',
+                path: '/home/node/work/proj',
+                branch: 'studio/container-01234567',
+                base: 'main',
+              },
+            },
           }),
         ]
         api.containerDockerStatus = async () => ({
@@ -1032,6 +1041,22 @@ test('NewAgentPanel launch paths', async () => {
           await settle()
           assert.equal(again.launches.length, 0)
           again.unmount()
+          // The project in hand is a container chat's folder: the next container
+          // is copied from the project that one came from, on its host.
+          answer = { ok: true, id: 'fedcba9876543210', label: 'proj (container)', folder: '/home/node/work/proj' }
+          created.length = 0
+          const fromContainer = await render(
+            scheduleProps({ folderPath: 'ssh://0123456789abcdef/home/node/work/proj' }),
+          )
+          await settle()
+          await click(fromContainer.container.querySelector('[data-container-trigger="true"]')!)
+          await settle()
+          await click(dom.window.document.querySelector('[data-container-settings="true"] [role="switch"]')!)
+          await typePrompt(fromContainer, 'Fix the login.')
+          await click(sendOf(fromContainer)!)
+          await settle()
+          assert.deepEqual([created[0]?.host, created[0]?.folder], [{ kind: 'local' }, '/Users/dev/proj'])
+          fromContainer.unmount()
         } finally {
           delete api.sshMachinesEnabled
           delete api.sshEnvironmentsList

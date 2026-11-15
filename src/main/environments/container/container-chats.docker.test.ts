@@ -29,6 +29,7 @@ const CACHE = process.env.STUDIO_TEST_CACHE || join(tmpdir(), 'se-ssh-node-cache
 const DOCKERFILE = readFileSync(join(__dirname, '__fixtures__', 'container-test.Dockerfile'), 'utf8')
 const IMAGE = imageFor(DOCKERFILE)
 
+const AGENT_TOKEN = `sk-ant-oat01-${'standin'.repeat(6)}`
 let scratch = ''
 const made: string[] = []
 
@@ -77,6 +78,8 @@ function setup(profile: string) {
     isDefaultProfile: true,
     startedBy: 'Studio on dev-macbook-air',
     broadcast: (channel) => changes.push(channel),
+    // The agent's own login, as Settings keeps it: a stand-in value here.
+    containerEnv: () => ({ CLAUDE_CODE_OAUTH_TOKEN: AGENT_TOKEN }),
   })
   const chats = new ContainerChats({
     machines,
@@ -138,6 +141,23 @@ test.skipIf(!DOCKER_TESTS)(
     assert.ok((await connection.owner.request('conversation.list', {})).conversations)
     assert.equal(machines.list().find((entry) => entry.id === created.id)?.stateText, 'Connected')
 
+    // The agent's login reached the server it runs under, and nowhere Docker keeps: not the
+    // container's saved config, not a command line. No git credential is there.
+    const serverPid = docker(
+      'exec',
+      '-u',
+      'node',
+      name,
+      'sh',
+      '-c',
+      'sed -n \'s/.*"pid":\\([0-9]*\\).*/\\1/p\' /home/node/.local/share/sprintengine-studio/data/run/server.json',
+    )
+    const serverEnv = docker('exec', '-u', 'node', name, 'sh', '-c', `tr '\\0' '\\n' < /proc/${serverPid}/environ`)
+    assert.ok(serverEnv.split('\n').includes(`CLAUDE_CODE_OAUTH_TOKEN=${AGENT_TOKEN}`), 'the server holds the login')
+    assert.doesNotMatch(serverEnv, /^(GH_TOKEN|GITHUB_TOKEN|GIT_ASKPASS|SSH_AUTH_SOCK)=/mu)
+    assert.ok(!docker('inspect', '-f', '{{json .Config.Env}}', name).includes(AGENT_TOKEN), 'not in its saved config')
+    assert.ok(!docker('exec', name, 'ps', '-eo', 'args').includes(AGENT_TOKEN), 'not in a command line')
+
     // The repository: its commit, on the chat's own branch, origin the host's address, nothing uncommitted.
     const inside = (command: string) => docker('exec', '-u', 'node', '-w', created.folder, name, 'sh', '-c', command)
     assert.equal(inside('git log --format=%s'), 'first')
@@ -162,7 +182,8 @@ test.skipIf(!DOCKER_TESTS)(
     const stray = 'sprintengine-0123456789abcdef'
     docker('run', '-d', '--name', stray, '--label', `${CONTAINER_LABEL}=1`, IMAGE.tag)
     made.push(stray)
-    const listed = await chats.list()
+    // (Containers another Studio profile on this Docker made are listed too; only this suite's are compared.)
+    const listed = (await chats.list()).filter((entry) => made.includes(entry.name))
     assert.deepEqual(
       listed.map((entry) => [entry.id, entry.name]).sort(),
       [

@@ -79,6 +79,12 @@ export type SshEnvironmentsDeps = {
   sshBinary?: string | null
   /** How a script runs on this computer for a container here; `/bin/sh -c` unless a suite says otherwise. */
   localRunner?: HostRunner
+  /**
+   * What a container's Studio server is started with on this computer: the
+   * agent's own login (container-agent-token.ts), by variable name and value.
+   * Read when a session is spawned; a container on an SSH machine is not given it.
+   */
+  containerEnv?: () => Record<string, string>
   /** A machine was forgotten (its pane forward closes; its browsing data goes when asked). */
   onForget?(saved: SavedSshEnvironment, options: { clearBrowsingData: boolean }): Promise<void> | void
   log?(message: string): void
@@ -370,10 +376,13 @@ export class SshEnvironments {
       spawn: ({ interactive }) => {
         const entry = this.get(id) ?? saved
         // A container's exec channel is a script on its host: `docker exec -i … sh -s`.
-        if (entry.container)
-          return this.hostRunner(entry.container.host)(execSessionScript(entry.container.name), {
-            interactive,
-          }) as unknown as SessionProcess
+        if (entry.container) {
+          const env = entry.container.host.kind === 'local' ? (this.deps.containerEnv?.() ?? {}) : {}
+          return this.hostRunner(entry.container.host)(
+            execSessionScript(entry.container.name, { passEnv: Object.keys(env) }),
+            { interactive, env },
+          ) as unknown as SessionProcess
+        }
         return spawnSshSession({
           ssh: this.ssh(),
           destination: this.destinationOf(id),

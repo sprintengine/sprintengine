@@ -140,11 +140,16 @@ export function runContainerScript(input: { name: string; image: string; machine
  * again if Docker stopped it (a restart, Colima stopped overnight), then a
  * shell inside it, as the image's user, reading Studio's script from stdin.
  */
-export function execSessionScript(name: string): string {
+export function execSessionScript(name: string, options: { passEnv?: readonly string[] } = {}): string {
   const checked = checkName(name)
+  const pass = (options.passEnv ?? []).map((variable) => {
+    if (!/^[A-Z_][A-Z0-9_]{0,63}$/u.test(variable)) throw new Error(`Not a variable name: ${variable}`)
+    // By name only: docker takes the value from its own environment, so it is in no command line.
+    return ` -e ${variable}`
+  })
   return [
     `docker start ${checked} >/dev/null || exit 125`,
-    `exec docker exec -i -u ${CONTAINER_USER} -w ${CONTAINER_HOME} -e HOME=${CONTAINER_HOME} ${checked} sh -s`,
+    `exec docker exec -i -u ${CONTAINER_USER} -w ${CONTAINER_HOME} -e HOME=${CONTAINER_HOME}${pass.join('')} ${checked} sh -s`,
   ].join('\n')
 }
 

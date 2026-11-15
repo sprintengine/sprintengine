@@ -194,3 +194,26 @@ test("Docker's usual homes join the PATH an app opened from the Dock has", () =>
     '/Applications/Docker.app/Contents/Resources/bin',
   ])
 })
+
+test("the agent's login reaches a container's session by name: its value is in no command line", async () => {
+  assert.throws(() => execSessionScript('sprintengine-0123456789abcdef', { passEnv: ['A; id'] }))
+  const dir = fakeBin('exec', {
+    docker: [
+      'case "$1" in',
+      '  start) exit 0 ;;',
+      '  exec) echo "args: $*"; echo "env: ${CLAUDE_CODE_OAUTH_TOKEN:-unset}" ;;',
+      'esac',
+    ].join('\n'),
+  })
+  const run = localHostRunner({ env: { PATH: `${dir}:/usr/bin:/bin` }, searchPath: false })
+  const result = await runOnHost(
+    (script, options) => run(script, { ...options, env: { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-secret' } }),
+    execSessionScript('sprintengine-0123456789abcdef', { passEnv: ['CLAUDE_CODE_OAUTH_TOKEN'] }),
+  )
+  assert.match(
+    result.stdout,
+    /args: exec -i -u node -w \/home\/node -e HOME=\/home\/node -e CLAUDE_CODE_OAUTH_TOKEN sprintengine-0123456789abcdef sh -s/u,
+  )
+  assert.doesNotMatch(result.stdout.split('\n')[0]!, /sk-ant-secret/u)
+  assert.match(result.stdout, /env: sk-ant-secret/u)
+})

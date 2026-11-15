@@ -16,6 +16,7 @@ import type {
   ContainerHost,
   ContainerResult,
   ContainerSummary,
+  ContainerTokenStatus,
   DockerStatus,
 } from './containers'
 import type { EnvironmentEntry, EnvironmentTicketResult } from './environments'
@@ -569,6 +570,11 @@ export type ElectronApi = {
   /** Bring a container's branch out and push it from its host. */
   containerPush: (id: string) => Promise<ContainerResult>
   onContainersChanged: (cb: () => void) => () => void
+  /** Whether Claude Code's token for chats in containers is kept (never the token itself). */
+  containerTokenStatus: () => Promise<ContainerTokenStatus>
+  /** Keep a token from `claude setup-token`, sealed, for containers made from now on. */
+  containerTokenSet: (token: string) => Promise<ContainerResult>
+  containerTokenClear: () => Promise<ContainerResult>
   /** The SSH machines preview switch: this session's, and the next launch's. */
   sshPreviewStatus: () => Promise<SshPreviewStatus>
   sshPreviewSet: (enabled: boolean) => Promise<SshPreviewStatus>

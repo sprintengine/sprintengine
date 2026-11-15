@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 
 import { CONTAINER_CHANNELS, parseContainerHost } from '../../shared/containers'
 import type { ContainerChats } from '../environments/container/container-chats'
+import type { ContainerAgentToken } from '../environments/container/container-agent-token'
 
 // The renderer's way to chats' containers (docs/design/container-chats.md).
 // Every payload is checked here: hosts, folders and ids come from a window,
@@ -14,7 +15,11 @@ function idOf(payload: unknown): string | null {
 
 const noHost = { ok: false as const, message: 'Which machine the container is on was not said.' }
 
-export function registerContainersIpc(ipcMain: IpcMain, containers: ContainerChats): () => void {
+export function registerContainersIpc(
+  ipcMain: IpcMain,
+  containers: ContainerChats,
+  token: Pick<ContainerAgentToken, 'status' | 'set' | 'clear'>,
+): () => void {
   const handle = (channel: string, run: (payload: unknown) => unknown) =>
     ipcMain.handle(channel, (_event, payload) => run(payload))
   handle(CONTAINER_CHANNELS.status, (payload) => {
@@ -55,6 +60,15 @@ export function registerContainersIpc(ipcMain: IpcMain, containers: ContainerCha
   handle(CONTAINER_CHANNELS.push, (payload) => {
     const id = idOf(payload)
     return id ? containers.push(id) : { ok: false, message: 'That container is not one of yours.' }
+  })
+  handle(CONTAINER_CHANNELS.tokenStatus, () => token.status())
+  handle(CONTAINER_CHANNELS.tokenSet, (payload) => {
+    const value = (payload as { token?: unknown } | null)?.token
+    return typeof value === 'string' ? token.set(value) : { ok: false, message: 'No token was given.' }
+  })
+  handle(CONTAINER_CHANNELS.tokenClear, async () => {
+    await token.clear()
+    return { ok: true }
   })
   return () => {
     for (const [key, channel] of Object.entries(CONTAINER_CHANNELS))

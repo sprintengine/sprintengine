@@ -25,7 +25,18 @@ import type { ContainerHost } from '../../../shared/containers'
 export type HostProcess = ChildProcessWithoutNullStreams
 
 /** Runs `script` with POSIX `sh` on the host; `interactive` lets an SSH machine ask through Studio's dialogs. */
-export type HostRunner = (script: string, options?: { interactive?: boolean }) => HostProcess
+export type HostRunner = (
+  script: string,
+  options?: {
+    interactive?: boolean
+    /**
+     * Variables for the script's own environment on this computer, which
+     * `docker exec -e NAME` passes on by name: a value never in a command
+     * line. An SSH machine's runner does not carry them.
+     */
+    env?: Record<string, string>
+  },
+) => HostProcess
 
 /** `value` as one word for a POSIX shell: single-quoted, with each `'` closed, escaped and reopened. */
 export function shellQuote(value: string): string {
@@ -75,8 +86,8 @@ export function localHostRunner(
     searchPath?: boolean
   } = {},
 ): HostRunner {
-  return (script) => {
-    const env = { ...(options.env ?? process.env) }
+  return (script, runOptions = {}) => {
+    const env = { ...(options.env ?? process.env), ...runOptions.env }
     if (options.searchPath !== false)
       env.PATH = dockerSearchPath(env.PATH, { loginPath: options.loginPath?.() ?? null })
     const child = spawn('/bin/sh', ['-c', script], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })

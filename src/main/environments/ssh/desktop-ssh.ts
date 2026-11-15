@@ -8,6 +8,9 @@ import { registerSshEnvironmentsIpc } from '../../ipc/ssh-environments-ipc'
 import { registerContainersIpc } from '../../ipc/containers-ipc'
 import { ContainerChats } from '../container/container-chats'
 import { readAgentImage } from '../container/container-image'
+import { ContainerAgentToken, CLAUDE_TOKEN_ENV } from '../container/container-agent-token'
+import { studioPlatform } from '../../../server/platform/platform'
+import { join } from 'node:path'
 import { CONTAINER_CHANNELS } from '../../../shared/containers'
 import { channelForVersion } from '../../update-channel-store'
 import { readStudioEnv } from '../../../shared/studio-env'
@@ -35,7 +38,22 @@ export function createDesktopSsh(deps: {
   /** The SSH machine a workspace is on, from main's registry. */
   workspaceEnvironment(workspaceId: string): WorkspaceEnvironmentRef | null
 }): DesktopSsh {
+  // Claude Code's login for chats in containers, sealed with the app's keychain
+  // cipher, read once the app is ready and handed only to containers on this computer.
+  const containerToken = new ContainerAgentToken({
+    path: join(app.getPath('userData'), 'container-claude-token'),
+    cipher: {
+      available: () => studioPlatform().secrets.available(),
+      seal: (plaintext) => studioPlatform().secrets.seal(plaintext),
+      open: (sealed) => studioPlatform().secrets.open(sealed),
+    },
+  })
+  void app.whenReady().then(() => containerToken.value())
   const sshEnvironments = new SshEnvironments({
+    containerEnv: (): Record<string, string> => {
+      const token = containerToken.current()
+      return token ? { [CLAUDE_TOKEN_ENV]: token } : {}
+    },
     userDataDir: app.getPath('userData'),
     app: {
       version: deps.version,
@@ -79,7 +97,7 @@ export function createDesktopSsh(deps: {
       void writeDiagnosticLog({ level: 'info', title: 'Container', message, source: 'workspace' })
     },
   })
-  registerContainersIpc(ipcMain, containers)
+  registerContainersIpc(ipcMain, containers, containerToken)
   // The pane's tabs for a workspace on an SSH machine: that machine's own
   // partition, behind an authenticated proxy on loopback that sends their
   // traffic through the machine (phase 8 spec, 6.8; decisions R75, R76).

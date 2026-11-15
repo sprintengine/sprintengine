@@ -90,6 +90,9 @@ export type ContainerSummary = {
   repo: ContainerRepo | null
 }
 
+/** Whether Claude Code's token for containers is kept, and how: sealed on disk, or for this session only. */
+export type ContainerTokenStatus = { set: boolean; kept: 'sealed' | 'session' | null }
+
 export type ContainerResult = { ok: true; message?: string } | { ok: false; message: string }
 
 /** The channels, all owned by main (it runs Docker and holds the sessions). */
@@ -106,6 +109,12 @@ export const CONTAINER_CHANNELS = {
   remove: 'environments:container:remove',
   /** renderer → main: bring a container's branch out and push it from the host `{ id }`. */
   push: 'environments:container:push',
+  /** renderer → main: whether Claude Code's token for containers is set (never the token). */
+  tokenStatus: 'environments:container:token-status',
+  /** renderer → main: keep Claude Code's token for containers `{ token }`. */
+  tokenSet: 'environments:container:token-set',
+  /** renderer → main: forget it. */
+  tokenClear: 'environments:container:token-clear',
   /** main → renderer: a container was made, removed or pushed, or one being made moved a step; ask again. */
   changed: 'environments:container:changed',
 } as const

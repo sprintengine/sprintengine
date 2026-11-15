@@ -10,12 +10,21 @@ let root: Root
 let host: HTMLDivElement
 const calls: Array<[string, unknown]> = []
 let listed: ContainerSummary[] = []
+let tokenSet = false
 
 const api = {
   containersList: async () => listed,
   containerRemove: async (target: unknown) => (calls.push(['remove', target]), { ok: true as const }),
   containerPush: async (id: string) => (calls.push(['push', id]), { ok: true as const, message: 'Pushed.' }),
   onContainersChanged: () => () => undefined,
+  containerTokenStatus: async () => ({ set: tokenSet, kept: tokenSet ? ('sealed' as const) : null }),
+  containerTokenSet: async (token: string) => {
+    calls.push(['token-set', token.length])
+    if (!token.startsWith('sk-ant-')) return { ok: false as const, message: 'That does not look like a token.' }
+    tokenSet = true
+    return { ok: true as const }
+  },
+  containerTokenClear: async () => ((tokenSet = false), calls.push(['token-clear', null]), { ok: true as const }),
 }
 
 const flush = async () => {
@@ -64,15 +73,18 @@ test('every container Studio made is listed: one with no record too, removable b
   expect(text).toContain('Containers')
   expect(text).toContain('studio/container-01234567')
   expect(text).toContain('Studio has no record of this one')
-  const labels = [...host.querySelectorAll('button')].map((each) => each.getAttribute('aria-label'))
+  const labels = [...host.querySelectorAll('ul[aria-label="Containers"] button')].map((each) =>
+    each.getAttribute('aria-label'),
+  )
   expect(labels).toEqual([
     'Push studio/container-01234567 from sprintengine-0123456789abcdef',
     'Remove sprintengine-0123456789abcdef',
     'Remove sprintengine-fedcba9876543210',
   ])
-  await act(async () => (host.querySelectorAll('button')[0] as HTMLButtonElement).click())
+  const rows = host.querySelectorAll<HTMLButtonElement>('ul[aria-label="Containers"] button')
+  await act(async () => rows[0]!.click())
   await flush()
-  await act(async () => (host.querySelectorAll('button')[2] as HTMLButtonElement).click())
+  await act(async () => rows[2]!.click())
   await flush()
   expect(calls).toEqual([
     ['push', '0123456789abcdef'],
@@ -80,9 +92,28 @@ test('every container Studio made is listed: one with no record too, removable b
   ])
 })
 
-test('no section while Studio has made no container', async () => {
+test("Claude Code's token for containers: pasted once, kept, never shown back, and forgotten", async () => {
   listed = []
+  tokenSet = false
   act(() => root.render(<ContainersSection api={api as never} />))
   await flush()
-  expect(host.textContent).toBe('')
+  expect(host.textContent).toContain('Run claude setup-token in a terminal here and paste the token it prints.')
+  expect(host.querySelector('ul[aria-label="Containers"]')).toBeNull()
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="Claude Code token for containers"]')!
+  expect(field.type).toBe('password')
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  await act(async () => {
+    setValue.call(field, 'sk-ant-oat01-' + 'x'.repeat(40))
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const save = [...host.querySelectorAll('button')].find((each) => each.textContent === 'Save')!
+  await act(async () => save.click())
+  await flush()
+  expect(calls).toContainEqual(['token-set', 53])
+  expect(host.textContent).toContain('sign Claude Code in with your token')
+  expect(host.textContent).not.toContain('xxxxxxxx')
+  const forget = [...host.querySelectorAll('button')].find((each) => each.textContent === 'Forget token')!
+  await act(async () => forget.click())
+  await flush()
+  expect(calls).toContainEqual(['token-clear', null])
 })

@@ -7,6 +7,7 @@ import {
   type ContainerHost,
   type ContainerResult,
   type ContainerSummary,
+  type ContainerTokenStatus,
   type DockerStatus,
 } from '../../shared/containers'
 
@@ -22,6 +23,10 @@ export const containersApi = {
   containerRemove: (target: { id: string } | { host: ContainerHost; name: string }): Promise<ContainerResult> =>
     ipcRenderer.invoke(CONTAINER_CHANNELS.remove, target),
   containerPush: (id: string): Promise<ContainerResult> => ipcRenderer.invoke(CONTAINER_CHANNELS.push, { id }),
+  containerTokenStatus: (): Promise<ContainerTokenStatus> => ipcRenderer.invoke(CONTAINER_CHANNELS.tokenStatus),
+  containerTokenSet: (token: string): Promise<ContainerResult> =>
+    ipcRenderer.invoke(CONTAINER_CHANNELS.tokenSet, { token }),
+  containerTokenClear: (): Promise<ContainerResult> => ipcRenderer.invoke(CONTAINER_CHANNELS.tokenClear),
   onContainersChanged: (cb: () => void): (() => void) => {
     const handler = () => cb()
     ipcRenderer.on(CONTAINER_CHANNELS.changed, handler)
