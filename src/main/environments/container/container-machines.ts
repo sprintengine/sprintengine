@@ -44,9 +44,7 @@ export type ContainerMachinesStore = {
   setPreparing(id: string, words: string | null): void
   connect(id: string): Promise<{ ok: true } | { ok: false; message: string }>
   /** The machine's live connection, or null; never connects. */
-  connection(
-    id: string,
-  ): {
+  connection(id: string): {
     owner: {
       request(
         method: 'conversation.list',
