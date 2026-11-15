@@ -4,7 +4,7 @@
  * clone's progress in words, and where a browsed-to folder puts the clone.
  * Kept beside folderCreation.ts and unit-tested the same way.
  */
-import type { CloneProgress, GitHubRepoSummary } from '../../../../../shared/electron-api'
+import type { CloneProgress } from '../../../../../shared/electron-api'
 import { providerLabel, validateCloneUrl, type GitHostProvider } from '../../../../../shared/git-clone-url'
 import { basename, parentPath } from '../../../utils/paths'
 
@@ -45,22 +45,6 @@ export function resolveCloneSource(urlDraft: string): CloneSourceResolution {
     },
     error: null,
   }
-}
-
-/** Whether a listed repository is the one the draft names, however it was typed. */
-export function draftNamesRepo(urlDraft: string, repo: GitHubRepoSummary): boolean {
-  const draft = validateCloneUrl(urlDraft)
-  const listed = validateCloneUrl(repo.cloneUrl)
-  return draft.ok && listed.ok && draft.host === listed.host && draft.path.toLowerCase() === listed.path.toLowerCase()
-}
-
-/** Case-insensitive substring filter over full name and description. */
-export function filterGitHubRepos(repos: readonly GitHubRepoSummary[], filter: string): GitHubRepoSummary[] {
-  const needle = filter.trim().toLowerCase()
-  if (!needle) return [...repos]
-  return repos.filter(
-    (repo) => repo.fullName.toLowerCase().includes(needle) || (repo.description ?? '').toLowerCase().includes(needle),
-  )
 }
 
 const STAGE_WORDS: Record<CloneProgress['stage'], string> = {
