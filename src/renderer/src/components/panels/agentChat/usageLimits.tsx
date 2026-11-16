@@ -188,27 +188,27 @@ export function useUsageLimitSnapshot(provider: UsageLimitProvider | null): Usag
 /**
  * The composer's mark, beside the model picker: the provider's fullest window
  * as a small bar, in the warn tone at 90% or at the limit. The tooltip says it
- * in words; a click opens every provider's windows: this computer's, or, for a
- * chat on a paired machine, that machine's (`elsewhere`), as its agents
- * reported them there.
+ * in words; a click opens every provider's windows as the chat's server's
+ * agents reported them (`state`), whichever machine that server is on. A
+ * paired machine's readings carry its name (`machineName`).
  */
 export function UsageLimitsComposerButton({
   snapshot,
-  elsewhere,
+  state,
+  machineName,
 }: {
   snapshot: UsageLimitSnapshot
-  elsewhere?: { machineName: string; state: UsageLimitsState }
+  /** Every provider's readings, from the same server `snapshot` came from. */
+  state: UsageLimitsState
+  /** The paired machine the chat runs on; absent for the window's own Studio. */
+  machineName?: string
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   // Redrawn when the words change, at most once a minute: a reset passing
   // empties the bar, and "resets in" counts down.
   const now = useRelativeNowFor((at) => usageStripLabel(snapshot, at), RESET_TICK_MS)
-  const own = useUsageLimitsStore((store) => store.state)
-  const state = elsewhere ? elsewhere.state : own
   const window = headlineWindow(snapshot, now)
-  const label = elsewhere
-    ? `${usageStripLabel(snapshot, now)}, on ${elsewhere.machineName}`
-    : usageStripLabel(snapshot, now)
+  const label = machineName ? `${usageStripLabel(snapshot, now)}, on ${machineName}` : usageStripLabel(snapshot, now)
   return (
     <Popover
       open={open}
