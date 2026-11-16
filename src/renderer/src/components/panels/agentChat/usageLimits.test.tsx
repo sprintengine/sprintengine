@@ -163,11 +163,32 @@ test('with nothing reported the list says so rather than guess', async () => {
 })
 
 test('the composer draws the bar, named in words', async () => {
-  const strip = await render(<UsageLimitsComposerButton snapshot={claude()} />)
+  const strip = await render(<UsageLimitsComposerButton snapshot={claude()} state={{ snapshots: [claude()] }} />)
   const trigger = strip.querySelector<HTMLButtonElement>('[data-composer-usage-limits="claude"]')!
   expect(trigger.getAttribute('aria-label')).toBe('Claude usage limits: Weekly, 93% used · resets in 3d 4h')
   expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
   // The compact bar is the button's picture; the button carries the name.
   expect(trigger.querySelector('[data-meter]')?.getAttribute('aria-hidden')).toBe('true')
   expect(trigger.querySelector('[data-meter]')?.getAttribute('data-meter')).toBe('warn')
+})
+
+test('a chat on this computer opens on its server’s readings, with the window’s own store empty', async () => {
+  // The window's store fills only while something retains it; the chat's
+  // server is what the bar reads, so the list it opens must read it too.
+  useUsageLimitsStore.setState({ state: null })
+  const strip = await render(<UsageLimitsComposerButton snapshot={claude()} state={{ snapshots: [claude()] }} />)
+  const trigger = strip.querySelector<HTMLButtonElement>('[data-composer-usage-limits="claude"]')!
+  await act(async () => trigger.click())
+  expect(document.body.querySelector('[data-usage-empty]')).toBeNull()
+  expect(document.body.textContent).toMatch(/Session \(5h\)/)
+})
+
+test('a paired machine’s readings are named for it', async () => {
+  const strip = await render(
+    <UsageLimitsComposerButton snapshot={claude()} state={{ snapshots: [claude()] }} machineName="mac-mini" />,
+  )
+  const trigger = strip.querySelector<HTMLButtonElement>('[data-composer-usage-limits="claude"]')!
+  expect(trigger.getAttribute('aria-label')).toBe(
+    'Claude usage limits: Weekly, 93% used · resets in 3d 4h, on mac-mini',
+  )
 })

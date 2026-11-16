@@ -4152,15 +4152,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const usageLimitsShown = useWorkspaceStore((s) => s.appSettings.appearance.usageLimits)
   const hostUsageProvider = usageLimitsShown && hostUsageLimits ? usageLimitProviderOf(conversation?.providerId) : null
   const stripUsageLimits = hostUsageLimits ? selectUsageLimitSnapshot(hostUsageLimits.state, hostUsageProvider) : null
-  // Another machine's readings are labelled with its name; the window's own
-  // Studio's are this window's.
-  const usageLimitsElsewhere = useMemo(
-    () =>
-      hostUsageLimits && environment.label
-        ? { machineName: environment.label, state: hostUsageLimits.state }
-        : undefined,
-    [hostUsageLimits, environment.label],
-  )
   // The resume row's buttons ask the chat's server, which sends the resume;
   // a refusal is said here in its words.
   const actOnHostUsageLimit = useCallback(
@@ -5008,10 +4999,14 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 {contextReading ? (
                   <ContextComposerButton context={contextReading} source={contextBreakdownSource} />
                 ) : null}
-                {stripUsageLimits ? (
+                {stripUsageLimits && hostUsageLimits ? (
+                  // The popover lists what the chat's server says, as the
+                  // ring does, wherever that server is; a paired machine's
+                  // readings are labelled with its name.
                   <UsageLimitsComposerButton
                     snapshot={stripUsageLimits}
-                    {...(usageLimitsElsewhere ? { elsewhere: usageLimitsElsewhere } : {})}
+                    state={hostUsageLimits.state}
+                    {...(environment.label ? { machineName: environment.label } : {})}
                   />
                 ) : null}
                 {chatCli ? (
