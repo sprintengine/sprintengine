@@ -107,6 +107,16 @@ test('RemoteTailnetSettingsTab', async () => {
     },
   ]
 
+  // A request this machine made to the phone, waiting for its code.
+  const REQUEST = {
+    requestId: 'req_1',
+    endpoint: '100.64.0.80:8471',
+    machineName: 'android-phone.example.ts.net',
+    comparisonCode: '334021',
+    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+    reverseOffered: false,
+  }
+
   ;(dom.window as unknown as { api: unknown }).api = {
     platform: 'darwin',
     tailnetGetStatus: () => Promise.resolve(STATUS),
@@ -135,7 +145,7 @@ test('RemoteTailnetSettingsTab', async () => {
       return Promise.resolve({ tailscaleAvailable: true, unavailableReason: null, probedPort: 8471, peers: PEERS })
     },
     meshListConnections: () => Promise.resolve([]),
-    meshGetLiveState: () => Promise.resolve({ revision: 0, attachments: [], requests: [], reachability: [] }),
+    meshGetLiveState: () => Promise.resolve({ revision: 0, attachments: [], requests: [REQUEST], reachability: [] }),
     onTailnetEvent: () => () => {},
     onMeshEvent: () => () => {},
     clipboardWriteText: () => Promise.resolve(),
@@ -306,6 +316,20 @@ test('RemoteTailnetSettingsTab', async () => {
       'conversation:read',
       'conversation:operate',
     ])
+    unmount()
+  })
+
+  run('the code to type sits under the machine it was asked of', async () => {
+    const { host, unmount } = await mount()
+    const row = host.querySelector('[data-machine="android-phone.example.ts.net"]')
+    const card = row?.querySelector('[data-outbound-request="req_1"]')
+    assert.ok(card, 'the waiting request is drawn inside the phone’s row')
+    assert.match(card?.textContent ?? '', /334 021/)
+    assert.match(card?.textContent ?? '', /Pairing code: type it on that machine/)
+    assert.match(card?.textContent ?? '', /Type this code on android-phone\.example\.ts\.net to allow it\./)
+    assert.ok(!/^Pair$/.test(row?.querySelector('button')?.textContent?.trim() ?? ''), 'no second Pair while it waits')
+    assert.equal(host.querySelectorAll('[data-outbound-request]').length, 1, 'drawn once, not again at the foot')
+    assert.doesNotMatch(host.innerHTML, /Codes to type on other machines/)
     unmount()
   })
 

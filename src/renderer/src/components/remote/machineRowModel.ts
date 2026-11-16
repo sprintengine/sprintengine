@@ -40,3 +40,40 @@ export function platformLabel(os: string | null | undefined): string | null {
   if (value.includes('linux')) return 'Linux'
   return null
 }
+
+/** What a request this machine made says about where it went. */
+type RequestTarget = { endpoint: string; machineName: string }
+
+/** The host of a `host:port` endpoint, unbracketed and normalised for comparison. */
+function endpointHost(endpoint: string): string {
+  const host = endpoint
+    .trim()
+    .replace(/:\d+$/u, '')
+    .replace(/^\[(.*)\]$/u, '$1')
+  return host.replace(/\.+$/u, '').toLowerCase()
+}
+
+/**
+ * Whether a pairing request this machine is waiting on was made to `machine`.
+ *
+ * The request names its machine as the far end resolved it (a tailnet FQDN
+ * where it could, else the endpoint's host), and dials the address the row's
+ * Pair took from the scan: either one is enough. Comparing the short names
+ * too keeps a FQDN and a bare host name from reading as two machines.
+ */
+export function requestIsFor(
+  request: RequestTarget,
+  machine: { key: string; name: string },
+  machineAddress: string | null,
+): boolean {
+  const asked = request.machineName.trim().replace(/\.+$/u, '').toLowerCase()
+  const host = endpointHost(request.endpoint)
+  const key = machine.key.toLowerCase()
+  const name = machine.name.trim().toLowerCase()
+  if (asked === key || host === key) return true
+  if (machineAddress && host === endpointHost(machineAddress)) return true
+  return (
+    name !== '' &&
+    (shortMachineName(asked) === shortMachineName(name) || shortMachineName(host) === shortMachineName(name))
+  )
+}

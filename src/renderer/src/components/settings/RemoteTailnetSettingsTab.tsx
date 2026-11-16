@@ -30,6 +30,7 @@ import { pairRoute } from '../remote/pairRouteModel'
 import { STANDARD_SCOPES } from '../remote/scopePickerModel'
 import { PairRequestCard } from '../remote/PairRequestCard'
 import { OutboundPairRequestCard } from '../remote/OutboundPairRequestCard'
+import { requestIsFor } from '../remote/machineRowModel'
 import { RemoteMcpSection } from './RemoteMcpSection'
 import { useTailnetPresence } from '../workspace/topbar/useTailnetPresence'
 import { hostPlatform } from '../../clientCapabilities'
@@ -312,6 +313,21 @@ export function RemoteTailnetSettingsTab() {
 
   const pairing = offer ?? outstandingPairing
 
+  // Each request this machine is waiting on, drawn under the row of the
+  // machine it asked: the code is typed over there, so it belongs beside that
+  // machine's name, not at the foot of the page. One that matches no row
+  // (the scan has not seen that machine yet) keeps the section of its own.
+  const requestFor = (machine: TailnetMachine) =>
+    presence.meshRequests.find((request) =>
+      requestIsFor(request, machine, scan ? peerAddressOf(machine, scan) : null),
+    ) ?? null
+  const unplacedRequests = presence.meshRequests.filter(
+    (request) =>
+      !machines.some(
+        (machine) => !machine.isSelf && requestIsFor(request, machine, scan ? peerAddressOf(machine, scan) : null),
+      ),
+  )
+
   return (
     <div role="tabpanel" id="settings-panel-remote" aria-labelledby="settings-tab-remote" className="space-y-5">
       {/* The listener's state is the page's only status word. No `label` on
@@ -430,19 +446,23 @@ export function RemoteTailnetSettingsTab() {
 
         {machines.length > 0 ? (
           <MachineList ariaLabel={appCopy.settings.remoteTailnetSettingsTab.machines}>
-            {machines.map((machine) => (
-              <MachineRow
-                key={machine.key}
-                machine={machine}
-                now={now}
-                busy={busy}
-                onPair={(target) =>
-                  setPairTarget(pairablePeers.find((peer) => peer.machineName === target.name) ?? { kind: 'code' })
-                }
-                onRevoke={(target) => void forgetMachine(target)}
-                onGrant={(target) => void grantStandard(target)}
-              />
-            ))}
+            {machines.map((machine) => {
+              const waiting = machine.isSelf ? null : requestFor(machine)
+              return (
+                <MachineRow
+                  key={machine.key}
+                  machine={machine}
+                  now={now}
+                  busy={busy}
+                  waiting={waiting ? <OutboundPairRequestCard request={waiting} now={now} variant="row" /> : null}
+                  onPair={(target) =>
+                    setPairTarget(pairablePeers.find((peer) => peer.machineName === target.name) ?? { kind: 'code' })
+                  }
+                  onRevoke={(target) => void forgetMachine(target)}
+                  onGrant={(target) => void grantStandard(target)}
+                />
+              )
+            })}
           </MachineList>
         ) : (
           <p className="text-body leading-5 text-[color:var(--text-muted)]">
@@ -474,17 +494,17 @@ export function RemoteTailnetSettingsTab() {
         </section>
       ) : null}
 
-      {presence.meshRequests.length > 0 ? (
+      {unplacedRequests.length > 0 ? (
         <section>
           {/* Named for what the card under it is FOR. "Asking" described the
               state and hid the payload: each row carries the six digits the
               other machine is waiting to be told, and someone who has walked
               to that machine needs to find them by the heading alone. */}
-          <SettingsSectionTitle className="mb-1.5" count={presence.meshRequests.length}>
+          <SettingsSectionTitle className="mb-1.5" count={unplacedRequests.length}>
             {appCopy.settings.remoteTailnetSettingsTab.codesToTypeOnOther}
           </SettingsSectionTitle>
           <SettingCard>
-            {presence.meshRequests.map((request) => (
+            {unplacedRequests.map((request) => (
               <OutboundPairRequestCard key={request.requestId} request={request} now={now} variant="flush" />
             ))}
           </SettingCard>
