@@ -11,7 +11,7 @@ vi.mock('../../../utils/modelRegistry', () => ({
   },
 }))
 
-import { chatSignInProviderId, openCliSignInTerminal } from './cliSignIn'
+import { chatSignInProviderId, openCliSignInTerminal, wslSignInRuntimes } from './cliSignIn'
 import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 type Calls = { spawns: unknown[][]; writes: Array<{ sessionId: string; data: string }>; signIns: unknown[] }
@@ -123,4 +123,31 @@ test("this machine's chat signs in where its transport serves it, for a CLI Stud
   expect(offered('claude-agent', true)).toBe('claude-agent')
   expect(offered('claude-agent', false)).toBeUndefined()
   expect(offered('mock-provider', true)).toBeUndefined()
+})
+
+test("a chat in a WSL distribution signs in where this PC's Studio can, whatever the distribution's serves", () => {
+  const offered = (providerId: string, localSignIn: boolean) =>
+    chatSignInProviderId({
+      providerId,
+      machineId: null,
+      sshMachinesOn: false,
+      // The distribution's Studio has no terminals, so it never serves one.
+      providerSignIn: false,
+      wslHostId: 'wsl:Ubuntu',
+      localSignIn,
+    })
+  expect(offered('claude-agent', true)).toBe('claude-agent')
+  expect(offered('claude-agent', false)).toBeUndefined()
+  expect(offered('mock-provider', true)).toBeUndefined()
+})
+
+test('a WSL sign-in runs the CLI set for that distribution, on that distribution', () => {
+  const hosts = { 'wsl:Ubuntu': { enabled: true, cliCommands: { 'claude-code': '/home/dev/bin/claude' }, env: {} } }
+  expect(wslSignInRuntimes('claude-agent', 'wsl:Ubuntu', hosts)).toEqual({
+    'claude-code': { command: '/home/dev/bin/claude', hostId: 'wsl:Ubuntu' },
+  })
+  // None set: found on the distribution's own PATH.
+  expect(wslSignInRuntimes('claude-agent', 'wsl:Debian', hosts)).toEqual({
+    'claude-code': { command: '', hostId: 'wsl:Debian' },
+  })
 })
