@@ -3264,6 +3264,7 @@ export const en = {
       couldNotStopWaiting: 'Could not stop waiting',
       waiting: 'Waiting',
       waitingFor: 'Waiting for ',
+      pairingCodeTypeItThere: 'Pairing code: type it on that machine',
       code: (comparisonCode: unknown) => `Code ${comparisonCode}`,
       allowingItAlsoLets: 'Allowing it also lets ',
       driveThisDevice: ' drive this device.',
