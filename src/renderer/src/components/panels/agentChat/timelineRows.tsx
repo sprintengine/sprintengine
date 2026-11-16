@@ -168,9 +168,12 @@ export type TimelineChrome = {
   // Opens a side question the chat kept in the side question drawer, as it
   // was answered. Absent where the view has no drawer to open it in.
   onOpenSideQuestion?: (entry: KeptSideQuestion) => void
-  // `window.api.platform`: on Windows the chat's login is the native CLI's,
-  // which is not the one inside WSL.
+  // `window.api.platform`.
   platform?: string
+  // Where the Sign in button signs in, in a sentence, where that could be
+  // mistaken: on Windows, a chat on this PC and one in WSL have different
+  // logins. Absent where there is nothing to tell apart.
+  signInNote?: string
   // The agent CLI the chat drives ('claude-code', 'codex', …), so a lapsed
   // login names that CLI's own sign-in command. Absent for a provider that is
   // not a CLI, which gets the command-free wording.
@@ -1138,9 +1141,7 @@ export function TurnErrorBlock({
   ) : !authShaped ? (
     `${refused ?? 'Something went wrong while responding.'} ${kept}`
   ) : onSignIn ? (
-    `Sign-in failed or expired. Sign in, then retry.${
-      chrome.platform === 'win32' ? ` This signs in ${chrome.assistantName} for Windows, not WSL.` : ''
-    } ${kept}`
+    `Sign-in failed or expired. Sign in, then retry.${chrome.signInNote ? ` ${chrome.signInNote}` : ''} ${kept}`
   ) : command ? (
     <>
       {appCopy.panels.agentChat.timelineRows.signInFailedOrExpired}{' '}

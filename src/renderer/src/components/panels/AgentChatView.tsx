@@ -13,7 +13,7 @@
 
 import { pairedConnectionOf } from '../../studio/environmentStudio'
 import { parseMachinePath } from '../../../../shared/machine-paths'
-import { workspaceHostIdOf } from '../../../../shared/execution-host'
+import { isWslHostId, workspaceHostIdOf, wslHostId } from '../../../../shared/execution-host'
 import { withoutStudioNoticePrefix } from '../../../../shared/studio-notice'
 import { limitResetSendAt } from '../../../../shared/scheduled-messages'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -124,9 +124,9 @@ import { isClippedEvent, useConversationSession } from './agentChat/useConversat
 import { useListedSession } from './agentChat/useListedSession'
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
-import { useConversationTransport } from './agentChat/conversationTransport'
+import { localConversationTransport, useConversationTransport } from './agentChat/conversationTransport'
 import type { ChatCommandSource } from './agentChat/chatServices'
-import { chatSignInProviderId, openCliSignInTerminal } from './agentChat/cliSignIn'
+import { chatSignInProviderId, openCliSignInTerminal, wslSignInRuntimes } from './agentChat/cliSignIn'
 import { useLocalChatBinding, type ChatBinding } from './agentChat/chatBinding'
 import { latestReplyTurnId } from './agentChat/turnFolds'
 import { useComposerDraft, type ComposerDraftMetadata } from './agentChat/useComposerDraft'
@@ -2663,12 +2663,21 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     const environment = state.workspaces.find((workspace) => workspace.id === workspaceId)?.environment
     return environment?.kind === 'ssh' ? environment.id : null
   })
+  // A chat in a WSL distribution signs in there, in a terminal this PC's
+  // Studio opens in the distribution: the distribution's own Studio has none.
+  const wslSignInHostId = useWorkspaceStore((state) => {
+    const environment = state.workspaces.find((workspace) => workspace.id === workspaceId)?.environment
+    if (environment?.kind === 'wsl') return wslHostId(environment.id)
+    return isWslHostId(workspaceHostId) ? workspaceHostId : null
+  })
   const sshMachinesOn = window.api?.sshMachinesEnabled === true
   const signInProviderId = chatSignInProviderId({
     providerId: conversation?.providerId,
     machineId,
     sshMachinesOn,
     providerSignIn: transport.capabilities.providerSignIn,
+    wslHostId: wslSignInHostId,
+    localSignIn: localConversationTransport.capabilities.providerSignIn,
   })
   const signIn = useCallback(async () => {
     if (!signInProviderId) return
@@ -2676,14 +2685,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       const result = await openCliSignInTerminal({
         workspaceId,
         providerId: signInProviderId,
-        cliRuntimes: cliRuntimes as ConversationCliRuntimeOverrides,
+        cliRuntimes: wslSignInHostId
+          ? wslSignInRuntimes(signInProviderId, wslSignInHostId, hostSettings)
+          : (cliRuntimes as ConversationCliRuntimeOverrides),
         machineId,
       })
       if (!result.ok) setActionError(result.message)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Could not open the sign-in terminal.')
     }
-  }, [signInProviderId, workspaceId, cliRuntimes, machineId])
+  }, [signInProviderId, workspaceId, cliRuntimes, machineId, wslSignInHostId, hostSettings])
   const onSignIn = signInProviderId ? signIn : undefined
 
   // "Edit from here" went back to before a message: it returns to the
@@ -3684,9 +3695,19 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             forkFromHere({ side: 'assistant', turnId: latestTurnId, draft: { text: question } }),
         }
       : undefined
+  // Where the card's Sign in signs in, said where it could be mistaken: on
+  // Windows a chat on this PC and a chat in WSL have different logins.
+  const signInNote = !onSignIn
+    ? undefined
+    : wslSignInHostId
+      ? `This signs in ${assistantName} inside WSL (${wslSignInHostId.replace(/^wsl:/u, '')}).`
+      : !machineId && hostPlatform() === 'win32'
+        ? `This signs in ${assistantName} for Windows, not WSL.`
+        : undefined
   const chrome: TimelineChrome =
     oldChrome &&
     oldChrome.assistantName === assistantName &&
+    oldChrome.signInNote === signInNote &&
     oldChrome.latestTurnId === latestTurnId &&
     oldChrome.retryTurnId === lastFailedTurnId &&
     oldChrome.onRetry === retry &&
@@ -3708,6 +3729,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           onRetry: retry,
           retryDisabled: composerDisabled,
           onSignIn,
+          signInNote,
           onOpenPrivacySettings,
           platform: hostPlatform(),
           checkpointsEnabled: capabilities?.checkpoints === true && !isSubagent,

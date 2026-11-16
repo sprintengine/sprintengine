@@ -49,10 +49,22 @@ test('a lapsed login offers Sign in beside Retry when this machine can run it', 
   expect(html).not.toContain('WSL')
 })
 
-test('on Windows the copy says it is the Windows sign-in, not the one inside WSL', () => {
-  const html = render(failedTurn(EXPIRED), chrome({ onSignIn: async () => undefined, platform: 'win32' }))
-  expect(html).toContain('Claude Code for Windows')
-  expect(html).toContain('WSL')
+test('the copy says where Sign in signs in, as the chat view words it', () => {
+  const windows = render(
+    failedTurn(EXPIRED),
+    chrome({ onSignIn: async () => undefined, signInNote: 'This signs in Claude Code for Windows, not WSL.' }),
+  )
+  expect(windows).toContain('Sign in, then retry. This signs in Claude Code for Windows, not WSL.')
+  const wsl = render(
+    failedTurn(EXPIRED),
+    chrome({ onSignIn: async () => undefined, signInNote: 'This signs in Claude Code inside WSL (Ubuntu).' }),
+  )
+  expect(wsl).toContain('inside WSL (Ubuntu)')
+  expect(wsl).not.toContain('for Windows')
+  // With no note (an SSH machine's chat on Windows), nothing about WSL.
+  expect(render(failedTurn(EXPIRED), chrome({ onSignIn: async () => undefined, platform: 'win32' }))).not.toContain(
+    'WSL',
+  )
 })
 
 test('where Studio cannot sign in, the copy names the chat CLI’s own command, set as code', () => {
