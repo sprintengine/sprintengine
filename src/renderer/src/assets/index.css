@@ -4404,8 +4404,9 @@ body:has([data-selection-pane]:focus-within)
 }
 
 /* The pill: the selected tab of a top-row strip, its name centred over the
-   column. It floats on whatever scrolls under it, so it is opaque and lifted. It
-   closes from its menu and the keyboard, so it wears no close of its own.
+   column. It floats on whatever scrolls under it, so it is opaque and lifted. At
+   rest it wears no close; while its strip is fanned out it wears one, as every
+   tab beside it does, so the tab being looked at can be closed from where it is.
 
    Its ground is the composer's, one step above the conversation it floats on,
    with the default hairline. On --bg-surface it was the conversation's own
@@ -4439,8 +4440,33 @@ body:has([data-selection-pane]:focus-within)
   z-index: 1;
 }
 
+/* The pill's close slides in with the tabs rather than appearing at once, and
+   the notch's margin goes the same way: what moves the pill moves over a
+   transition, so the frame the strip starts to fan out still has the pill where
+   it stood, which is where bandStripPin.ts holds it. */
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill]) .flexlayout__tab_button_trailing {
-  display: none;
+  max-width: var(--hit-target-min);
+  overflow: hidden;
+  transition:
+    max-width var(--motion-fast) var(--motion-ease),
+    min-width var(--motion-fast) var(--motion-ease),
+    margin var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease);
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:not(:hover, :has(:focus-visible)) .flexlayout__tab_button:has([data-tab-pill]) .flexlayout__tab_button_trailing {
+  min-width: 0;
+  max-width: 0;
+  margin: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer .flexlayout__tab_button:has([data-tab-pill]) {
+  transition:
+    color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease),
+    margin var(--motion-fast) var(--motion-ease);
 }
 
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill])::after {
@@ -4461,8 +4487,14 @@ body:has([data-selection-pane]:focus-within)
   border-radius: 999px;
   background: var(--composer-surface);
   opacity: 0;
+  /* Everything that gives a folded tab width moves over the same transition,
+     so the frame a strip starts to fan out still has its pill where it stood
+     (bandStripPin.ts measures it there). */
   transition:
     max-width var(--motion-fast) var(--motion-ease),
+    padding var(--motion-fast) var(--motion-ease),
+    margin var(--motion-fast) var(--motion-ease),
+    border-width var(--motion-fast) var(--motion-ease),
     opacity var(--motion-fast) var(--motion-ease);
 }
 
