@@ -40,6 +40,7 @@ import {
   useWorkspaceTerminalSessions,
 } from '../../hooks/useTerminalSessions'
 import { useRelativeNow } from '../../hooks/useRelativeNow'
+import { createBandStripPin } from './bandStripPin'
 import { formatRelativeMs, formatRelativeMsAgo } from '../../utils/relativeTime'
 import type { HighlightColor, Workspace } from '../../../../shared/workspace'
 import {
@@ -1091,10 +1092,16 @@ function WorkspaceLayoutBody({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const tab = (event.target as Element).closest?.('.flexlayout__tab_button')
       if (!tab?.querySelector('[data-tab-pill]')) return
+      // The pill's close, shown while its strip is fanned out, closes the tab.
+      if ((event.target as Element).closest('.flexlayout__tab_button_trailing')) return
       useWorkspaceStore.getState().togglePaneMenu(workspaceId)
     },
     [workspaceId],
   )
+  // While a top-row strip's tabs are out, its pill stays where the pointer
+  // found it (bandStripPin.ts).
+  const [bandStripPin] = useState(() => createBandStripPin())
+  useEffect(() => () => bandStripPin.stop(), [bandStripPin])
   const handleMouseUpCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 1) return
     if (!(event.target instanceof Element) || !event.target.closest('.flexlayout__tab_button')) return
@@ -2050,6 +2057,8 @@ function WorkspaceLayoutBody({
       onMouseDownCapture={handleMouseDownCapture}
       onMouseUpCapture={handleMouseUpCapture}
       onClickCapture={handleClickCapture}
+      onPointerOverCapture={(event) => bandStripPin.track(event.target)}
+      onFocusCapture={(event) => bandStripPin.track(event.target)}
     >
       <div className="absolute inset-x-0 top-[36px] z-[var(--z-float)]">
         <AgentRevealStrip workspaceId={workspaceId} />
