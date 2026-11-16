@@ -47,6 +47,7 @@ export function MachineRow({
   onRevoke,
   onGrant,
   busy = false,
+  waiting = null,
 }: {
   machine: TailnetMachine
   now: number
@@ -56,6 +57,12 @@ export function MachineRow({
   /** Widen the inbound grant to the full Standard set. */
   onGrant: (machine: TailnetMachine) => void
   busy?: boolean
+  /**
+   * The request this machine made to it, while it waits: drawn under the
+   * name, where the Pair that asked stood, so the code to type over there is
+   * beside the machine it is for rather than at the foot of the page.
+   */
+  waiting?: React.ReactNode
 }) {
   const [scopesOpen, setScopesOpen] = React.useState(false)
   const Glyph = deviceGlyphFor({ os: machine.os, hostName: machine.name })
@@ -143,9 +150,10 @@ export function MachineRow({
             ))}
           </div>
         ) : null}
+        {waiting}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {machine.isSelf ? null : paired ? (
+        {machine.isSelf || waiting ? null : paired ? (
           <GhostButton size="xs" tone="danger" disabled={busy} onClick={() => onRevoke(machine)}>
             {appCopy.remote.machineRow.revoke}
           </GhostButton>

@@ -32,7 +32,12 @@ export function OutboundPairRequestCard({
 }: {
   request: MeshPairRequestView
   now: number
-  variant?: 'card' | 'flush'
+  /**
+   * `row` draws it inside the machine row it was asked of (Settings ›
+   * Remote): the row names the machine and the row's edges frame it, so it
+   * says only that this is the pairing code and where it goes.
+   */
+  variant?: 'card' | 'flush' | 'row'
 }) {
   const [stopping, setStopping] = React.useState(false)
   const msLeft = Math.max(0, Date.parse(request.expiresAt) - now)
@@ -56,16 +61,24 @@ export function OutboundPairRequestCard({
   const frame =
     variant === 'card'
       ? 'mx-2.5 my-1.5 rounded-md border border-[color:var(--border-default)] p-2.5'
-      : // A row inside a card: the card owns the hairline, so the row owns only
-        // its padding — and it pads its sides too, since the card is full-bleed.
-        'px-3 py-2.5'
+      : variant === 'row'
+        ? 'mt-2'
+        : // A row inside a card: the card owns the hairline, so the row owns only
+          // its padding — and it pads its sides too, since the card is full-bleed.
+          'px-3 py-2.5'
   return (
     <div className={frame} data-outbound-request={request.requestId}>
       <div className="flex items-center gap-2 text-meta">
         <StatusDot tone="warn" pulse={!lapsed} label={copy.remote.outboundPairRequestCard.waiting} />
         <span className="min-w-0 flex-1 truncate font-medium text-[color:var(--text-default)]">
-          {copy.remote.outboundPairRequestCard.waitingFor}
-          {request.machineName}
+          {variant === 'row' ? (
+            copy.remote.outboundPairRequestCard.pairingCodeTypeItThere
+          ) : (
+            <>
+              {copy.remote.outboundPairRequestCard.waitingFor}
+              {request.machineName}
+            </>
+          )}
         </span>
       </div>
       <div className="my-2 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] py-1.5 text-center">

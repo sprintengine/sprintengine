@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { platformLabel, shortMachineName } from './machineRowModel'
+import { platformLabel, requestIsFor, shortMachineName } from './machineRowModel'
 import { test } from 'vitest'
 
 test('machineRowModel', async () => {
@@ -26,4 +26,19 @@ test('machineRowModel', async () => {
   assert.equal(platformLabel('plan9'), null)
 
   console.log('machineRowModel.test.ts: machine row contracts ok')
+})
+
+test('a pairing request is drawn under the machine it asked', () => {
+  const air = { key: 'dev-macbook-air.tail1234.ts.net', name: 'dev-macbook-air' }
+  const box = { key: 'build-box.tail1234.ts.net', name: 'build-box' }
+  // Named by the FQDN the far end resolved.
+  const byName = { endpoint: '100.64.0.7:8471', machineName: 'dev-macbook-air.tail1234.ts.net' }
+  assert.equal(requestIsFor(byName, air, '100.64.0.7'), true)
+  assert.equal(requestIsFor(byName, box, '100.64.0.9'), false)
+  // Named by nothing better than the address it dialled.
+  const byAddress = { endpoint: '100.64.0.9:8471', machineName: '100.64.0.9' }
+  assert.equal(requestIsFor(byAddress, box, '100.64.0.9'), true)
+  assert.equal(requestIsFor(byAddress, air, '100.64.0.7'), false)
+  // A bare host name against the row's FQDN key.
+  assert.equal(requestIsFor({ endpoint: 'build-box:8471', machineName: 'build-box' }, box, null), true)
 })
