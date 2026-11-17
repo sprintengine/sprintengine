@@ -3078,8 +3078,10 @@ test('a message steered in while a Claude tool runs is folded into the running t
     await first.done
 
     assert.equal(h.spawned.length, 1, 'the steer reused the running child')
+    // "Running the tests" never streamed, so it is shown from its message.
     assert.deepEqual(turnScoped(first.events), [
       ['turn_started', 'turn_1'],
+      ['content_delta', 'turn_1'],
       ['tool_started', 'turn_1'],
       ['tool_output', 'turn_1'],
       ['content_delta', 'turn_1'],
