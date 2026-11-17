@@ -2980,6 +2980,15 @@ export function mapSdkMessage(
     contextModel?: string | null
     contextPromptTokens?: number
     contextOutputTokens?: number
+    // Whether the main chain's reply text reached the chat as it streamed, so
+    // the finished assistant message that repeats it is not shown twice: the
+    // id the latest request's `message_start` named, and whether text streamed
+    // since the last main-chain assistant message, under which id. A reply the
+    // CLI fetched without streaming (its fallback after a stalled stream)
+    // carries its text only in the finished message.
+    streamMessageId?: string | null
+    streamedText?: boolean
+    streamedTextMessageId?: string | null
     // How the session bills, from its init's key source and its account
     // (`reportAccount`): a session that does not bill a plan reports no plan
     // limits, and none of what it says is taken as one.
@@ -3266,6 +3275,7 @@ export function mapSdkMessage(
       // That is the prompt cache's reading (shared/prompt-cache.ts); the
       // runtime stamps when it goes cold off this event's own time.
       if (streamEvent?.type === 'message_start') {
+        state.streamMessageId = readString(asRecord(streamEvent.message)?.id) ?? null
         const requestUsage = asRecord(asRecord(streamEvent.message)?.usage)
         const promptCache = readRequestPromptCache(state, requestUsage)
         // The same request's size is also how full the context window is:
@@ -3310,6 +3320,8 @@ export function mapSdkMessage(
           eventFor(state, 'content_delta', { turnId, text: state.textSeam ? `\n\n${delta.text}` : delta.text }),
         )
         state.textSeam = false
+        state.streamedText = true
+        state.streamedTextMessageId = state.streamMessageId ?? null
       } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string' && delta.thinking) {
         events.push(eventFor(state, 'reasoning_delta', { turnId, text: delta.thinking }))
       }
@@ -3331,8 +3343,35 @@ export function mapSdkMessage(
       }
       const tracked = parentToolUseId ? state.subagents?.get(parentToolUseId) : undefined
       const displays = toolDisplays(message.tool_use_meta)
+      // The main chain's reply text is shown from its stream. One that never
+      // streamed — the CLI's non-streaming retry after a stalled request —
+      // arrives only here, and would otherwise be lost from the chat while the
+      // agent's transcript has it. Text that streamed under an earlier
+      // request's id (an attempt that died part way) does not cover this one.
+      // A message the CLI made up itself (an API error, a usage limit) is
+      // reported its own way and is not the agent's reply.
+      const madeUp = asRecord(message.message)?.model === '<synthetic>' || typeof message.error === 'string'
+      const messageId = readString(asRecord(message.message)?.id)
+      const textStreamed =
+        madeUp ||
+        (state.streamedText === true &&
+          (messageId === undefined || !state.streamedTextMessageId || state.streamedTextMessageId === messageId))
+      if (!parentToolUseId) state.streamedText = false
       for (const rawBlock of content) {
         const block = asRecord(rawBlock)
+        if (
+          !parentToolUseId &&
+          !textStreamed &&
+          block?.type === 'text' &&
+          typeof block.text === 'string' &&
+          block.text
+        ) {
+          events.push(
+            eventFor(state, 'content_delta', { turnId, text: state.textSeam ? `\n\n${block.text}` : block.text }),
+          )
+          state.textSeam = false
+          continue
+        }
         // What an agent says between its steps belongs to its own thread. A
         // background agent's last words are also its answer: its spawning
         // call only ever returned the launch notice.
