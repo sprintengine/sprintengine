@@ -105,15 +105,15 @@ test('a method is called only through its own access, and an unknown name is tol
     save: { access: 'operate', params: anything, handler: () => ({ ok: true, result: null }) },
   })
   const asRead = await k.callModuleMethod(call({ method: 'save', access: 'read' }))
-  assert.equal(!asRead.ok && asRead.code, 'module_method_unknown')
+  assert.equal(!asRead.ok && asRead.code, 'extension_method_unknown')
   assert.match(!asRead.ok ? asRead.message : '', /operate/)
   const unknown = await k.callModuleMethod(call({ method: 'nothing' }))
-  assert.equal(!unknown.ok && unknown.code, 'module_method_unknown')
+  assert.equal(!unknown.ok && unknown.code, 'extension_method_unknown')
   // A module that runs but declares nothing has no methods, not no module.
   const first = await k.callModuleMethod(call({ moduleId: 'first' }))
-  assert.equal(!first.ok && first.code, 'module_method_unknown')
+  assert.equal(!first.ok && first.code, 'extension_method_unknown')
   const missing = await k.callModuleMethod(call({ moduleId: 'gone' }))
-  assert.equal(!missing.ok && missing.code, 'module_unavailable')
+  assert.equal(!missing.ok && missing.code, 'extension_unavailable')
 })
 
 test('a result that is not JSON is the handler’s failure, not an answer', async () => {
@@ -147,7 +147,7 @@ test('a batch is validated whole: a bad name, a missing validator or a repeat re
   assert.deepEqual(k.declaredMethods('deck'), [{ name: 'ping', access: 'read' }])
 })
 
-test('unloading a module takes its methods, and a call to it is then module_unavailable', async () => {
+test('unloading a module takes its methods, and a call to it is then extension_unavailable', async () => {
   const k = kernel()
   k.hostFor('deck').registerMethods({
     forecast: { access: 'read', params: city, handler: () => ({ ok: true, result: 1 }) },
@@ -155,7 +155,7 @@ test('unloading a module takes its methods, and a call to it is then module_unav
   await k.unregisterModule('deck')
   assert.deepEqual(k.declaredMethods('deck'), [])
   const after = await k.callModuleMethod(call({}))
-  assert.equal(!after.ok && after.code, 'module_unavailable')
+  assert.equal(!after.ok && after.code, 'extension_unavailable')
 })
 
 test('a module switched off says nothing more through the host it kept, and registers nothing more', async () => {

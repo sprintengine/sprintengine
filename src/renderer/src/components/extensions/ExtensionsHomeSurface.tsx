@@ -82,7 +82,7 @@ import { copy as appCopy } from '../../../../shared/copy'
 // late (backlog/2026-09-06-the-home-pages-bottom-half.md).
 //
 // What this page deliberately does NOT carry is the module list: module
-// switches live in Settings → Modules, and having them here too put the same
+// switches live in Settings → Extensions, and having them here too put the same
 // choice in two shapes on two surfaces (principles, Composition).
 
 // The one glyph that is not a module's: a chevron saying the tile leads

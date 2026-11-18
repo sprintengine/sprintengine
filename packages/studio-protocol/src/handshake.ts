@@ -153,10 +153,19 @@ export const STUDIO_PROVIDER_SETTINGS_CAPABILITY = 'provider-settings' as const
 export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
 
 /**
- * This Studio's modules speak to clients: the `module.events` and
- * `module.notifications` streams. Offered where the Studio runs a module kernel.
+ * This Studio's extensions speak to clients: the `extension.*` methods and the
+ * `extension.events`, `extension.notifications` and `extension.changed`
+ * streams. Offered where the Studio runs an extension kernel.
  */
-export const STUDIO_MODULES_CAPABILITY = 'modules' as const
+export const STUDIO_EXTENSION_HOST_CAPABILITY = 'extension-host' as const
+
+/**
+ * What a Studio built before 2026-11-18 offered in place of `extension-host`,
+ * with `module.*` methods no client of this version calls. A client reads it
+ * only to tell the person that machine's Studio is older and needs an update
+ * to use its extensions (`docs/compatibility.md`).
+ */
+export const STUDIO_RETIRED_MODULES_CAPABILITY = 'modules' as const
 
 /**
  * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
@@ -413,7 +422,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_PROVIDER_SETTINGS_CAPABILITY,
   STUDIO_UPDATE_SESSION_CAPABILITY,
-  STUDIO_MODULES_CAPABILITY,
+  STUDIO_EXTENSION_HOST_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,

@@ -225,7 +225,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       // This desktop's Studio holds the marketplace, the CLI catalogue, the
       // extension scaffold and the hosted feeds; Studio's own plugin in a
       // workspace is the shell's, which installs it, and what is installed
-      // changing is told to the clients following `module.changed`.
+      // changing is told to the clients following `extension.changed`.
       extensions: {
         studioPluginStatus: (workspaceRoot) => rpc.call(SHELL_METHODS.studioPluginStatus, { workspaceRoot }),
         changed: () => modules.hub.deliverChanged(),
@@ -389,8 +389,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           getScheduledAgents: () => modules.scheduledAgents(),
           ...withDefinedMachineSchedules(machineSchedulesOf(core)),
           ...launchSettingsGatewayDeps(agentLaunchSettings),
-          // The registry the windows report (`module.reportRegistry`), and
-          // the extensions installed here, as `module.installed` lists them.
+          // The registry the windows report (`extension.reportRegistry`), and
+          // the extensions installed here, as `extension.installed` lists them.
           getModuleRegistrySnapshot: () => modules.registry.read(),
           listInstalledThirdPartyModules: async () =>
             (await modules.hub.lifecycle()?.installed()) ?? { modules: [], rejected: [] },

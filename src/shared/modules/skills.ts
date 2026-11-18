@@ -5,7 +5,7 @@
 //
 // Node-free on purpose: these shapes are shared by the module host
 // (MainHost.registerSkills), the main-process skill registry
-// (src/main/builtin-skills.ts) and the SDK mirror in packages/module-sdk —
+// (src/main/builtin-skills.ts) and the SDK mirror in packages/extension-sdk —
 // src/shared cannot import src/main (TS6307).
 
 /**

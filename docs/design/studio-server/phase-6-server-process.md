@@ -1207,7 +1207,7 @@ The owner default is to skip the server half, based on a capability.
 4. **No host API bump.** `HOST_API_VERSION` stays 1. The capability and the
    manifest field are additive, which is the policy `docs/compatibility.md`
    already applies to capabilities.
-5. **The SDK documents it.** `docs/module-authors/` gains a paragraph:
+5. **The SDK documents it.** `docs/extension-authors/` gains a paragraph:
    `entry.main` runs in a Node process with no Electron APIs; a module that
    cannot live without them declares the capability and runs only in the
    in-process host.

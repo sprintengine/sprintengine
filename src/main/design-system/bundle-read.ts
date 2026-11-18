@@ -1,7 +1,7 @@
 import { readdir, realpath, stat } from 'fs/promises'
 import { extname, join, resolve } from 'path'
 
-import { isSafeManifestRelativePath } from '../../../packages/module-sdk/src/manifest-validate'
+import { isSafeManifestRelativePath } from '../../../packages/extension-sdk/src/manifest-validate'
 import { isConfinedFileTooLarge, readConfinedFile } from '../confined-file'
 import { MAX_TEXT_FILE_READ_BYTES } from '../filesystem-read-limits'
 import { isPathInsideOrEqual } from '../path-containment'

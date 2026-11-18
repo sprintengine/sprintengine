@@ -3135,7 +3135,7 @@ test('automation', async () => {
       }
       assert.equal(refusal.isError, true)
       assert.equal(refusal.structuredContent.error.code, 'weather-deck_module_disabled')
-      assert.match(refusal.structuredContent.error.message, /Weather Deck module is disabled/)
+      assert.match(refusal.structuredContent.error.message, /Weather Deck extension is disabled/)
 
       socket.destroy()
     } finally {
@@ -3244,7 +3244,7 @@ test('automation', async () => {
         { id: 'git', displayName: 'Git panel', version: 1, defaultEnabled: true },
         {
           enabled: false,
-          absence: { reason: 'disabled', message: 'Module "git" is not enabled (Settings → Modules).' },
+          absence: { reason: 'disabled', message: 'Extension "git" is not enabled (Settings → Extensions).' },
         },
       ),
       registryEntry({
@@ -3407,7 +3407,7 @@ test('automation', async () => {
                     enabled: false,
                     absence: {
                       reason: 'disabled',
-                      message: 'Module "weather-deck" is not enabled (Settings -> Modules).',
+                      message: 'Extension "weather-deck" is not enabled (Settings -> Extensions).',
                     },
                   },
             ),

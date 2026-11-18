@@ -318,8 +318,8 @@ export const STUDIO_ERROR_CODES = [
   // A module method called on a Studio where the module does not run (not
   // installed, switched off, refused or failed to load), or one it does not
   // declare under the entry it was called through.
-  'module_unavailable',
-  'module_method_unknown',
+  'extension_unavailable',
+  'extension_method_unknown',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]

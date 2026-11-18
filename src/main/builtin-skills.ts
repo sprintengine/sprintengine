@@ -262,7 +262,7 @@ export function registerModuleSkills(moduleId: string, registrations: readonly M
   const batch = new Map<string, RegisteredModuleSkill>()
   for (const registration of registrations) {
     const id = registration.id?.trim() ?? ''
-    if (!id) throw new Error(`Module "${moduleId}" registered a skill with no id.`)
+    if (!id) throw new Error(`Extension "${moduleId}" registered a skill with no id.`)
     if (findBuiltinSkill(id)) {
       throw new Error(`Skill "${id}" is a built-in skill and cannot be registered by module "${moduleId}".`)
     }

@@ -6,7 +6,7 @@
  * unsigned code needs the person's own "I trust this code", that an update
  * asks again only when the disclosure changed, and that uninstall removes a
  * module however it arrived — through its plugin's own uninstall when a
- * receipt owns it (the Studio's `module.uninstall` refuses it, naming the
+ * receipt owns it (the Studio's `extension.uninstall` refuses it, naming the
  * plugin), by its folder (and only that folder) when not — and forgets its
  * trust, enablement choice and secrets with it.
  *
@@ -31,7 +31,7 @@ test('an extension installed from GitHub, and uninstalled however it arrived', a
   const openWorkspace = join(userData, 'workspace')
   mkdirSync(openWorkspace, { recursive: true })
   process.env.SPRINTENGINE_USER_DATA_DIR = userData
-  process.env.SPRINTENGINE_USER_MODULE_ROOT = moduleRoot
+  process.env.SPRINTENGINE_USER_EXTENSION_ROOT = moduleRoot
 
   try {
     const { createModuleLifecycle } = await import('../modules/module-lifecycle')
@@ -184,7 +184,7 @@ test('an extension installed from GitHub, and uninstalled however it arrived', a
         version: 1,
         defaultEnabled: false,
         source: 'third-party',
-        engines: { hostApi: 2 },
+        engines: { hostApi: 3 },
         entry: { renderer: 'dist/renderer.mjs' },
       }),
     )
@@ -213,7 +213,7 @@ test('an extension installed from GitHub, and uninstalled however it arrived', a
     assert.deepEqual(readModuleOverridesSync(userData), { 'other-mod': false })
     assert.equal(existsSync(secrets), false, 'a later module with this id inherits no secrets')
   } finally {
-    delete process.env.SPRINTENGINE_USER_MODULE_ROOT
+    delete process.env.SPRINTENGINE_USER_EXTENSION_ROOT
     rmSync(userData, { recursive: true, force: true })
   }
 })

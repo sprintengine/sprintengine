@@ -131,7 +131,7 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
 // agent-runtime core module seeds the shared services (terminal runtime, auth,
 // token stores) that the optional modules consume via the service bridge; the
 // resolver orders it first because every dependent declares
-// `dependsOn: ['agent-runtime']`. See docs/module-authors/drop-in-extensions.md.
+// `dependsOn: ['agent-runtime']`. See docs/extension-authors/drop-in-extensions.md.
 const moduleOverrides = readModuleEnablementOverrides()
 
 const thirdPartyMainLoad = planThirdPartyMainModules(
@@ -192,11 +192,11 @@ const moduleLoad = loadMainModules({
   moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
-  // Module events reach every client following the Studio's `module.events`
+  // Module events reach every client following the Studio's `extension.events`
   // stream; each window routes them to its own module's subscribers. Nothing
   // is buffered for a client that connects later (shared/modules/events.ts).
   deliverModuleEvent: (event) => services.moduleHub.deliverEvent(event),
-  // A module's notify is a bell row on `module.notifications`; the kernel
+  // A module's notify is a bell row on `extension.notifications`; the kernel
   // keeps the recent ones, which the stream sends a client first.
   deliverModuleNotification: (notification) => services.moduleHub.deliverNotification(notification),
   // A module tool that would shadow one of the gateway's own is refused at
@@ -204,9 +204,9 @@ const moduleLoad = loadMainModules({
   coreMcpToolNames: () => services.automationService?.coreToolNames() ?? [],
 })
 services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
-// A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
+// A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
 services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
-// The host's services a module's window half calls: `moduleBacklog.*` and `moduleUsage.query`.
+// The host's services a module's window half calls: `extensionBacklog.*` and `extensionUsage.query`.
 services.moduleHub.serveHostServicesFrom((moduleId) => moduleLoad.kernel.hostServicesFor(moduleId))
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,

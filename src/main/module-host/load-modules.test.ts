@@ -405,9 +405,15 @@ test('load-modules', async () => {
     assert.deepEqual(
       report.errors.map((error) => ({ id: error.id, message: error.message })),
       [
-        { id: 'invalid', message: 'Module "invalid" has an invalid signature and will not load.' },
-        { id: 'signed', message: 'Module "signed" is not trusted yet; trust it in Settings → Modules to enable.' },
-        { id: 'unsigned', message: 'Module "unsigned" is not trusted yet; trust it in Settings → Modules to enable.' },
+        { id: 'invalid', message: 'Extension "invalid" has an invalid signature and will not load.' },
+        {
+          id: 'signed',
+          message: 'Extension "signed" is not trusted yet; trust it in Settings → Extensions to enable.',
+        },
+        {
+          id: 'unsigned',
+          message: 'Extension "unsigned" is not trusted yet; trust it in Settings → Extensions to enable.',
+        },
       ],
     )
   }
@@ -533,9 +539,9 @@ test('load-modules', async () => {
       [
         {
           id: 'dependency',
-          message: 'Module "dependency" is not trusted yet; trust it in Settings → Modules to enable.',
+          message: 'Extension "dependency" is not trusted yet; trust it in Settings → Extensions to enable.',
         },
-        { id: 'dependent', message: 'Module "dependent" requires "dependency", which is not enabled.' },
+        { id: 'dependent', message: 'Extension "dependent" requires "dependency", which is not enabled.' },
       ],
     )
   }

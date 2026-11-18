@@ -10,7 +10,7 @@ import { test } from 'vitest'
 import { EXTENSION_IDEAS, EXTENSION_IDEAS_FIRST } from './extensionIdeas'
 
 test('one idea for each SDK template, the first ones each a different surface', () => {
-  const templates = readdirSync(join(process.cwd(), 'packages', 'module-sdk', 'templates'), { withFileTypes: true })
+  const templates = readdirSync(join(process.cwd(), 'packages', 'extension-sdk', 'templates'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
     .map((entry) => entry.name)
     .sort()

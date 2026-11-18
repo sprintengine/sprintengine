@@ -199,7 +199,7 @@ to look at.
   again, read what they changed, and redo the part that is still wanted. Never
   simply retry the same edit.
 - **`canvas_module_disabled`** — the Canvas module is switched off. Say so and
-  point at Settings → Modules; there is no way around it from here.
+  point at Settings → Extensions; there is no way around it from here.
 - **`too_large` from `canvas_screenshot`** — the render did not fit the wire.
   Capture a subset with `elementIds`, or lower `maxEdge`.
 - **`not_found`** — there is no board at that path yet. `canvas_open` creates one

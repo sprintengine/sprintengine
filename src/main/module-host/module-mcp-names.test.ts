@@ -20,7 +20,7 @@ function manifest(id: string): CapabilityManifest {
     defaultEnabled: true,
     source: 'third-party',
     permissions: ['mcp:tools'],
-    engines: { hostApi: 2 },
+    engines: { hostApi: 3 },
   }
 }
 

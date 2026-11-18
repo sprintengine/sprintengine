@@ -232,8 +232,8 @@ export type MainHost = {
   listChatRuntimes(): Promise<ModuleChatRuntimeOption[]>
   /**
    * Declare the methods this module serves its renderer half, and any client
-   * the person granted `modules:read` / `modules:operate`, over the Studio
-   * protocol's `module.read` and `module.operate`. Each names its access
+   * the person granted `extensions:read` / `extensions:operate`, over the Studio
+   * protocol's `extension.read` and `extension.operate`. Each names its access
    * (`read` or `operate`, the only entry it is called through), a validator
    * for its params and a handler; a handler's result must be JSON. Names are
    * a lower-case letter, then letters, digits, dots and dashes: the module id
@@ -358,7 +358,7 @@ export type MainHost = {
    * request/response bridge does not have. The source module id is stamped
    * from this host's scope, so only this module's `RendererHost.subscribe`
    * receives it; an empty or over-long topic throws. It rides the Studio's
-   * `module.events` stream: fan-out reaches every client following it,
+   * `extension.events` stream: fan-out reaches every client following it,
    * ordering is FIFO per module, and nothing is replayed to a client that
    * connects later (shared/modules/events.ts). The payload must be JSON.
    */
@@ -371,14 +371,14 @@ export type MainKernel = {
   /** The methods a module declares, in registration order. Empty for one that declares none or is not loaded. */
   declaredMethods(moduleId: string): ReadonlyArray<{ name: string; access: ModuleMethodAccess }>
   /**
-   * Call a module's declared method, as `module.read` / `module.operate` do:
+   * Call a module's declared method, as `extension.read` / `extension.operate` do:
    * the module's answer (its result or its own refusal), or the host's
    * refusal. Rejects when the handler throws or answers something not JSON.
    */
   callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
   /**
    * The host's services a module's window half calls on this server (the
-   * protocol's `moduleBacklog.*` and `moduleUsage.query`), for a module that
+   * protocol's `extensionBacklog.*` and `extensionUsage.query`), for a module that
    * runs here: its main half loaded, or its manifest alone. Each service
    * checks the module's own permission on every call; one this Studio does
    * not provide is null.
@@ -430,7 +430,7 @@ export type MainKernel = {
 export type ModuleMethodCallRequest = {
   moduleId: string
   method: string
-  /** The entry it came through: `module.read` or `module.operate`. */
+  /** The entry it came through: `extension.read` or `extension.operate`. */
   access: ModuleMethodAccess
   /** What the client sent, for the method's validator. */
   params: unknown
@@ -447,12 +447,12 @@ export type ModuleHostServices = {
 
 /** A module's host services, or why it has none here. */
 export type ModuleHostServicesOutcome =
-  { ok: true; services: ModuleHostServices } | { ok: false; code: 'module_unavailable'; message: string }
+  { ok: true; services: ModuleHostServices } | { ok: false; code: 'extension_unavailable'; message: string }
 
 /** What a call came to: the module's answer, or why the host refused it before the module heard it. */
 export type ModuleMethodCallOutcome =
   | { ok: true; answer: ModuleMethodAnswer<ModuleMethodContract> }
-  | { ok: false; code: 'module_unavailable' | 'module_method_unknown' | 'invalid_params'; message: string }
+  | { ok: false; code: 'extension_unavailable' | 'extension_method_unknown' | 'invalid_params'; message: string }
 
 export type MainKernelOptions = {
   /**
@@ -461,7 +461,7 @@ export type MainKernelOptions = {
    * server out of process. What `host.supports('electron-main')` answers.
    */
   electronMain?: boolean
-  /** Sends one module event to every client following `module.events`. Absent in tests. */
+  /** Sends one module event to every client following `extension.events`. Absent in tests. */
   deliverModuleEvent?: (event: ModuleEventEnvelope) => void
   /**
    * Sends one bell row to every attached client (shared/modules/notifications.ts).
@@ -553,7 +553,7 @@ type ServiceEntry = {
 type ModuleLoad = { generation: number; retired: () => boolean }
 
 const switchedOff = (moduleId: string, what: string): string =>
-  `Module "${moduleId}" was switched off; the host it was given ${what}.`
+  `Extension "${moduleId}" was switched off; the host it was given ${what}.`
 
 // The key the storage service is provided under (service-tokens.ts'
 // ModuleStorageToken, and the SDK's private token behind getModuleStorage).
@@ -607,29 +607,31 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       isThirdParty(moduleId) &&
       !options.resolveModuleManifest?.(moduleId)?.permissions?.some((permission) => METHOD_PERMISSIONS.has(permission))
     ) {
-      throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
+      throw new Error(`Extension "${moduleId}" needs the "module:bridge" permission to declare methods.`)
     }
     if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
-      throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
+      throw new Error(`Extension "${moduleId}" declares its methods as an object of name to method.`)
     }
     const own = methods.get(moduleId)
     const entries = Object.entries(batch)
     for (const [name, registration] of entries) {
       if (!isModuleMethodName(name)) {
         throw new Error(
-          `Module "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most 100.`,
+          `Extension "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most 100.`,
         )
       }
-      if (own?.has(name)) throw new Error(`Module "${moduleId}" already declares "${name}".`)
+      if (own?.has(name)) throw new Error(`Extension "${moduleId}" already declares "${name}".`)
       const access = (registration as { access?: unknown } | null)?.access
       if (access !== 'read' && access !== 'operate') {
-        throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
+        throw new Error(`Extension "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
       }
       if (typeof registration.params !== 'function') {
-        throw new Error(`Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`)
+        throw new Error(
+          `Extension "${moduleId}" method "${name}" has no params validator; every method reads its params.`,
+        )
       }
       if (typeof registration.handler !== 'function') {
-        throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)
+        throw new Error(`Extension "${moduleId}" method "${name}" has no handler.`)
       }
     }
     const next = own ?? new Map<string, ModuleMethodRegistration>()
@@ -644,8 +646,8 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     if (!present || moduleId.startsWith('@'))
       return {
         ok: false,
-        code: 'module_unavailable',
-        message: `Module "${moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+        code: 'extension_unavailable',
+        message: `Extension "${moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
       }
     const backlog = services.get('backlog.module-service')?.value as ModuleBacklogRegistry | undefined
     const usage = services.get('usage.module-service')?.value as ModuleUsageRegistry | undefined
@@ -664,23 +666,23 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     if (!active || request.moduleId.startsWith('@')) {
       return {
         ok: false,
-        code: 'module_unavailable',
-        message: `Module "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+        code: 'extension_unavailable',
+        message: `Extension "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
       }
     }
     const registration = own?.get(request.method)
     if (!registration) {
       return {
         ok: false,
-        code: 'module_method_unknown',
-        message: `Module "${request.moduleId}" declares no method "${request.method}".`,
+        code: 'extension_method_unknown',
+        message: `Extension "${request.moduleId}" declares no method "${request.method}".`,
       }
     }
     if (registration.access !== request.access) {
       return {
         ok: false,
-        code: 'module_method_unknown',
-        message: `Module "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+        code: 'extension_method_unknown',
+        message: `Extension "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
       }
     }
     const parsed = registration.params(request.params)
@@ -691,7 +693,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         message:
           typeof parsed.message === 'string' && parsed.message
             ? parsed.message
-            : `Module "${request.moduleId}" refused the params of "${request.method}".`,
+            : `Extension "${request.moduleId}" refused the params of "${request.method}".`,
       }
     }
     const context: ModuleMethodContext = {
@@ -703,7 +705,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
       if (problem)
         throw new Error(
-          `Module "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
+          `Extension "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
         )
       return { ok: true, answer: { ok: true, result: answer.result ?? null } }
     }
@@ -711,14 +713,14 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       return { ok: true, answer: { ok: false, code: answer.code, message: answer.message } }
     }
     throw new Error(
-      `Module "${request.moduleId}" method "${request.method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+      `Extension "${request.moduleId}" method "${request.method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
     )
   }
 
   function emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void {
     const validated = validateModuleNotifyInput(input)
     if (!validated.ok) {
-      throw new Error(`Module "${sourceModuleId}" ${validated.message}`)
+      throw new Error(`Extension "${sourceModuleId}" ${validated.message}`)
     }
     const emittedAt = now()
     if (!passesFloodBound(sourceModuleId, validated, emittedAt)) return
@@ -746,7 +748,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   function emitModuleEvent(sourceModuleId: string, topic: string, payload?: unknown): void {
     const validated = validateModuleEventTopic(topic)
     if (!validated.ok) {
-      throw new Error(`Module "${sourceModuleId}" ${validated.message}`)
+      throw new Error(`Extension "${sourceModuleId}" ${validated.message}`)
     }
     // A payload no client could receive is the module's mistake, and it hears
     // about it here, from its own `emit`. Checked once, whether or not any
@@ -756,7 +758,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       const problem = moduleEventPayloadProblem(payload)
       if (problem) {
         throw new Error(
-          `Module "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${problem}.`,
+          `Extension "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${problem}.`,
         )
       }
     }
@@ -942,7 +944,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   // its first argument is the module itself.
   function guardedServiceView(moduleId: string, key: string, root: object, load: ModuleLoad, pinned: boolean) {
     const readOnly = (): never => {
-      throw new Error(`Module "${moduleId}" cannot change service "${key}".`)
+      throw new Error(`Extension "${moduleId}" cannot change service "${key}".`)
     }
     // One guarded stand-in per member and the object it is called on, so a
     // member read twice is the same one (a class's method is shared by every
@@ -967,7 +969,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         live()
         if (pinFirst && args[0] !== moduleId) {
           throw new Error(
-            `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
+            `Extension "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
           )
         }
         return guardResult(fn.apply(self, args))
@@ -1029,12 +1031,12 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       /[\\\0?#]/.test(relativePath) ||
       relativePath.split('/').some((part) => !part || part === '.' || part === '..')
     ) {
-      throw new Error(`Module "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
+      throw new Error(`Extension "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
     }
     const root = options.resolveModuleRoot?.(moduleId)
     const verified = options.resolveModuleVerifiedFiles?.(moduleId)
     if (!root || !verified) {
-      throw new Error(`Module "${moduleId}" has no verified files on disk, so "${relativePath}" has no path.`)
+      throw new Error(`Extension "${moduleId}" has no verified files on disk, so "${relativePath}" has no path.`)
     }
     const expected = verified[relativePath]
     if (expected === undefined) {
@@ -1045,10 +1047,10 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     const real = realpathSync(candidate)
     const within = relative(realRoot, real)
     if (!within || within.startsWith('..') || isAbsolute(within)) {
-      throw new Error(`Module "${moduleId}" asset "${relativePath}" resolves outside the module.`)
+      throw new Error(`Extension "${moduleId}" asset "${relativePath}" resolves outside the module.`)
     }
     if (createHash('sha256').update(readFileSync(real)).digest('hex') !== expected) {
-      throw new Error(`Module "${moduleId}" asset "${relativePath}" changed after it was verified.`)
+      throw new Error(`Extension "${moduleId}" asset "${relativePath}" changed after it was verified.`)
     }
     return real
   }
@@ -1139,7 +1141,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)
         if (thirdParty && !options.resolveModuleManifest?.(moduleId)?.permissions?.includes('mcp:tools')) {
-          throw new Error(`Module "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
+          throw new Error(`Extension "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
         }
         // Validate the whole batch before landing any of it: a module whose
         // registerMain fails on a collision must not leave half its tools
@@ -1190,7 +1192,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
           sourceDir: resolveModuleSkillDirectory(
             options.resolveModuleRoot?.(moduleId) ?? null,
             skill.sourceDir,
-            `Module "${moduleId}" skill "${skill.id}" sourceDir`,
+            `Extension "${moduleId}" skill "${skill.id}" sourceDir`,
           ),
         }))
         skillRegistry.register(moduleId, resolved)
@@ -1208,7 +1210,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         const storage = services.get(MODULE_STORAGE_SERVICE_KEY)?.value as
           { dataDir?: (moduleId: string) => string } | undefined
         if (typeof storage?.dataDir !== 'function') {
-          throw new Error(`Module "${moduleId}" asked for its data directory, and no storage service is provided.`)
+          throw new Error(`Extension "${moduleId}" asked for its data directory, and no storage service is provided.`)
         }
         return storage.dataDir(moduleId)
       },
@@ -1237,7 +1239,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
           return {
             ok: false,
             code: 'permission_missing',
-            message: `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
+            message: `Extension "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
           }
         }
         const reader = services.get(WORKSPACE_GIT_INFO_SERVICE_KEY)?.value as
@@ -1267,7 +1269,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       requireService<T>(token: ServiceToken<T>): T {
         assertServiceVisible(moduleId, token.key)
         if (!services.has(token.key)) {
-          throw new Error(`Module "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
+          throw new Error(`Extension "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
         }
         return asCaller(moduleId, token.key, services.get(token.key)!.value as T, load)
       },

@@ -10,7 +10,7 @@
 //
 // A notification that passes the kernel's flood bound is a bell row. The kernel
 // stamps an id and the module's display name onto it and delivers it on the
-// Studio's `module.notifications` stream (packages/studio-protocol/src/modules.ts)
+// Studio's `extension.notifications` stream (packages/studio-protocol/src/modules.ts)
 // to every client following it. The renderer files it into its notification store.
 //
 // Unlike module events, the kernel also keeps the recent ones: a module's

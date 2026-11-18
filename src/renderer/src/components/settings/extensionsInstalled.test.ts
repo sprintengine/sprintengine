@@ -298,7 +298,7 @@ test('extensionsInstalled', async () => {
     )
     assert.equal(view.status, 'ready')
     if (view.status !== 'ready') throw new Error('unreachable')
-    assert.ok(view.notices.some((n) => n.kind === 'module' && /Couldn't load 1 module folder/.test(n.message)))
+    assert.ok(view.notices.some((n) => n.kind === 'module' && /Couldn't load 1 extension folder/.test(n.message)))
   }
 
   // --- loading + unsupported gating ------------------------------------------

@@ -116,26 +116,26 @@ The `welcome`'s `grant` is what the connection may do:
   `environment:maintain`, and seeding, attaching or detaching a bundle
   `files:write`. A plugin's install and uninstall, a bundle's lint and a card's
   Go (`cards.run`) are an owner's.
-- `modules:read` — hear what this Studio's modules say: the `module.events`
-  and `module.notifications` streams, and call the methods they declare
-  `read` (`module.read`), under the `modules` capability. It also reads the
+- `extensions:read` — hear what this Studio's modules say: the `extension.events`
+  and `extension.notifications` streams, and call the methods they declare
+  `read` (`extension.read`), under the `modules` capability. It also reads the
   host's services as a module's window half does, naming the module
-  (`moduleBacklog.location`, `moduleUsage.query`). Not an owner's only; a
+  (`extensionBacklog.location`, `extensionUsage.query`). Not an owner's only; a
   pairing holds it when it was given it.
-- `modules:operate` — call the methods modules declare `operate`
-  (`module.operate`, once per `commandId`), and write the Backlog as a module
-  (`moduleBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink`,
-  `.updateModuleMetadata`); carries `modules:read`. The module's own manifest
+- `extensions:operate` — call the methods modules declare `operate`
+  (`extension.operate`, once per `commandId`), and write the Backlog as a module
+  (`extensionBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink`,
+  `.updateModuleMetadata`); carries `extensions:read`. The module's own manifest
   permissions (`backlog.write`, `usage:read`) are checked on every call. A
   browser session never holds it.
-- No scope changes what runs: `module.setEnabled`, `module.install`,
-  `module.setTrust` and `module.uninstall` are an owner's
+- No scope changes what runs: `extension.setEnabled`, `extension.install`,
+  `extension.setTrust` and `extension.uninstall` are an owner's
   (`STUDIO_MODULES_OWNER`), because each installs, trusts, starts or stops an
-  extension's code on that machine. `module.list`, what runs there, needs
-  `modules:read`, as do `module.installed` (every installed extension, with
-  its trust and origin), `module.rendererEntries` (their window halves) and
-  the `module.changed` stream. `module.setAppState` (the modules' Settings
-  values) needs `settings:write`. `module.reportRegistry` (the registry a
+  extension's code on that machine. `extension.list`, what runs there, needs
+  `extensions:read`, as do `extension.installed` (every installed extension, with
+  its trust and origin), `extension.rendererEntries` (their window halves) and
+  the `extension.changed` stream. `extension.setAppState` (the modules' Settings
+  values) needs `settings:write`. `extension.reportRegistry` (the registry a
   window resolved) is an owner's: it is the report of the Studio's own window.
 - No scope installs code either: the marketplace's reviews, installs, updates
   and uninstalls, a GitHub repository's review and install

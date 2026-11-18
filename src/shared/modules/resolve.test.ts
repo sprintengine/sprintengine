@@ -92,8 +92,11 @@ test('resolve', async () => {
       { ineligible: { 'ipc-build': 'incompatible_host_api' } },
     )
     const refused = old.errors.find((e) => e.id === 'ipc-build')
-    assert.match(refused?.message ?? '', /^Module "ipc-build" will not load\. The module was built for host API 1/)
-    assert.match(refused?.message ?? '', /@sprintengine\/module-sdk 2/)
+    assert.match(
+      refused?.message ?? '',
+      /^Extension "ipc-build" will not load\. The extension was built for host API 1/,
+    )
+    assert.match(refused?.message ?? '', /"@sprintengine\/extension-sdk" 3/)
   }
 
   function testDefaultsAndExplicitDisable(): void {

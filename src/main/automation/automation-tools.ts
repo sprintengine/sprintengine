@@ -1868,7 +1868,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     } catch (error) {
       // The bundled half of the answer is still exact; say what is missing
       // rather than pretending no third-party module is installed.
-      thirdPartyUnavailable = error instanceof Error ? error.message : 'The installed module folder could not be read.'
+      thirdPartyUnavailable =
+        error instanceof Error ? error.message : 'The installed extension folder could not be read.'
     }
     const installedById = new Map((installed?.modules ?? []).map((module) => [module.manifest.id, module] as const))
     const records: ModuleRecord[] = snapshot.modules.map((entry) => {
@@ -1899,16 +1900,16 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   const moduleList: McpToolRegistration = {
     name: 'module.list',
     description:
-      'List the capability modules this app has, as the user sees them: bundled and third-party, each with its ' +
-      'source, version, whether it is enabled, and why it is not when it is off. Modules that ship only in ' +
+      'List the extensions this app has, as the user sees them: built-in and third-party, each with its ' +
+      'source, version, whether it is enabled, and why it is not when it is off. Extensions that ship only in ' +
       'development builds are absent from a packaged build entirely — never reported as present-but-disabled. ' +
-      'A third-party module that is installed but untrusted appears here (installed) even though it loads nowhere. ' +
+      'A third-party extension that is installed but untrusted appears here (installed) even though it loads nowhere. ' +
       'Read-only: enabling, installing, and trusting are not on this surface.',
     inputSchema: {
       type: 'object',
       properties: {
-        source: { type: 'string', enum: ['bundled', 'third-party'], description: 'Only modules from this source.' },
-        enabled: { type: 'boolean', description: 'Only modules in this enablement state.' },
+        source: { type: 'string', enum: ['bundled', 'third-party'], description: 'Only extensions from this source.' },
+        enabled: { type: 'boolean', description: 'Only extensions in this enablement state.' },
       },
       additionalProperties: false,
     },
@@ -1937,9 +1938,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   const moduleStatus: McpToolRegistration = {
     name: 'module.status',
     description:
-      'Read one capability module: its manifest, the permissions it declares, the surfaces it contributes ' +
+      'Read one extension: its manifest, the permissions it declares, the surfaces it contributes ' +
       '(workspace types, doors, settings sections, commands, …), the gateway tools it adds, and — when it is ' +
-      'not active — why. A module that ships only in development builds reports module_not_in_build on a ' +
+      'not active — why. An extension that ships only in development builds reports module_not_in_build on a ' +
       'packaged build rather than appearing disabled.',
     inputSchema: {
       type: 'object',
@@ -1958,11 +1959,11 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
           return failure(
             'module_not_in_build',
             isDevOnlyModule(id) && collected.snapshot.channel === 'production'
-              ? `Module "${id}" ships only in development builds; this build does not contain it, so it is absent rather than disabled.`
-              : `Module "${id}" is a known module id but is not part of this ${collected.snapshot.channel} build.`,
+              ? `Extension "${id}" ships only in development builds; this build does not contain it, so it is absent rather than disabled.`
+              : `Extension "${id}" is a known module id but is not part of this ${collected.snapshot.channel} build.`,
           )
         }
-        return failure('unknown_module', `Module "${id}" is not installed in the running app.`)
+        return failure('unknown_module', `Extension "${id}" is not installed in the running app.`)
       }
       const contributedTools = backends
         .listModuleContributedTools()
@@ -2435,7 +2436,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     if (!service) {
       return failure(
         'scheduled_agents_unavailable',
-        'Scheduled agents are switched off or not loaded in this app session; turn them on in Settings → Modules.',
+        'Scheduled agents are switched off or not loaded in this app session; turn them on in Settings → Extensions.',
       )
     }
     return service
@@ -3142,15 +3143,18 @@ function installedOnlyModuleReport(view: ThirdPartyModuleView): Record<string, u
   const id = view.manifest.id
   const absence =
     view.trust === 'invalid'
-      ? { reason: 'invalid_signature', message: `Module "${id}" has an invalid signature and will not load.` }
+      ? { reason: 'invalid_signature', message: `Extension "${id}" has an invalid signature and will not load.` }
       : view.trust === 'trusted'
         ? {
             reason: 'not_loaded',
             message:
               view.launch.message ??
-              `Module "${id}" is installed and trusted but registered nothing in the running app.`,
+              `Extension "${id}" is installed and trusted but registered nothing in the running app.`,
           }
-        : { reason: 'untrusted', message: `Module "${id}" is installed but not trusted yet (Settings → Modules).` }
+        : {
+            reason: 'untrusted',
+            message: `Extension "${id}" is installed but not trusted yet (Settings → Extensions).`,
+          }
   return {
     id,
     displayName: view.manifest.displayName,

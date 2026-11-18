@@ -1,6 +1,6 @@
-// The host half of `@sprintengine/module-sdk/ui` (D6).
+// The host half of `@sprintengine/extension-sdk/ui` (D6).
 //
-// A third-party module's renderer bundle marks `@sprintengine/module-sdk/ui`
+// A third-party module's renderer bundle marks `@sprintengine/extension-sdk/ui`
 // external and imports the kit from it; the SDK tarball ships only types and a
 // throwing runtime stub, and the real components arrive through the import map
 // third-party-loader.ts installs, whose target for that specifier is THIS
@@ -9,7 +9,7 @@
 //
 // Why a curated re-export rather than `components/ui/index.ts`: the barrel is
 // the app's internal surface and changes freely. This file is a published
-// contract — every name here is mirrored in packages/module-sdk/src/ui.ts and
+// contract — every name here is mirrored in packages/extension-sdk/src/ui.ts and
 // pinned by the drift guard, so adding or removing one is a deliberate,
 // versioned act. Keep the list minimal; a component a single module wants is
 // cheaper copied into that module than frozen here forever.

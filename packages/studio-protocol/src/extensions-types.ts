@@ -165,7 +165,7 @@ export type ThirdPartyModuleView = {
 export type ModuleManifestIssue = { path: string; message: string }
 
 /**
- * `module.installed`: every installed extension, and the folders that hold
+ * `extension.installed`: every installed extension, and the folders that hold
  * none Studio could read. A folder's `path` is its place on that disk (the
  * folder or its `manifest.json`) for a connection that may name any path (an
  * owner's own); anyone else is told the folder's name, and an issue's words
@@ -190,7 +190,7 @@ export type ThirdPartyRendererEntry = {
   firstPartySigned?: boolean
 }
 
-/** `module.rendererEntries`: the servable window halves, and why each other declared one was not served. */
+/** `extension.rendererEntries`: the servable window halves, and why each other declared one was not served. */
 export type ThirdPartyRendererEntriesResult = {
   entries: ThirdPartyRendererEntry[]
   /** By module id, a sentence (never a path); trust-blocked modules are not listed. */
@@ -239,7 +239,7 @@ export type ModuleRegistrySnapshot = {
   modules: ModuleRegistryEntry[]
 }
 
-/** The answer to `module.reportRegistry`: refused with why when the snapshot is not one. */
+/** The answer to `extension.reportRegistry`: refused with why when the snapshot is not one. */
 export type ModuleRegistrySnapshotWriteResult = { ok: boolean; message?: string }
 
 // ── The marketplace ─────────────────────────────────────────────────────────

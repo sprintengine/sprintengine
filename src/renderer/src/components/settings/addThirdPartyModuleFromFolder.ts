@@ -11,7 +11,7 @@ export type AddThirdPartyModuleOutcome =
 /**
  * The one folder-picker install round trip used by both Settings and the
  * Extensions drawer. The folder is picked here, on this computer; validation,
- * copying and signature classification are the Studio's (`module.install`),
+ * copying and signature classification are the Studio's (`extension.install`),
  * which installs from a folder on its own machine: the window's Studio is
  * this computer's. This adapter only turns cancellation and failures into UI
  * states.

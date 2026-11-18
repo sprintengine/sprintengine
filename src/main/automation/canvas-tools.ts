@@ -1033,7 +1033,7 @@ export function createCanvasTools(deps: CanvasToolsDeps): McpToolRegistration[] 
         ? tool.handler(args, context)
         : failure(
             'canvas_module_disabled',
-            'The Canvas module is disabled. Enable it in Settings → Modules to use canvas tools.',
+            'The Canvas extension is disabled. Enable it in Settings → Extensions to use canvas tools.',
           ),
   }))
 }

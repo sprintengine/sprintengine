@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
       jsx: 'automatic',
       loader: { '.css': 'text' },
       alias: {
-        '@sprintengine/module-sdk/ui': path.join(root, 'src/renderer/src/modules/sdk-ui.ts'),
+        '@sprintengine/extension-sdk/ui': path.join(root, 'src/renderer/src/modules/sdk-ui.ts'),
         react: path.join(root, 'node_modules/react'),
         'react-dom': path.join(root, 'node_modules/react-dom'),
       },

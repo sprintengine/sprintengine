@@ -8,7 +8,7 @@
     "src/server/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
-    "packages/module-sdk/src/**/*",
+    "packages/extension-sdk/src/**/*",
     "packages/conversation-timeline/src/**/*",
     "packages/conversation-protocol/src/**/*",
     "packages/studio-protocol/src/**/*",

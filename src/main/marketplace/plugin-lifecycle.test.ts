@@ -145,7 +145,7 @@ test('plugin-lifecycle', async () => {
     return validated.manifest
   }
 
-  // Signed as `sprintengine-module sign` signs, with the digests of the
+  // Signed as `sprintengine-extension sign` signs, with the digests of the
   // module's files — or, with `undigested`, the way the first-party modules
   // were signed before `files` existed, which only a trusted publisher's bundle
   // can vouch for.
@@ -1567,7 +1567,7 @@ test('plugin-lifecycle', async () => {
 
   // The install prompt's trust decision IS the module trust decision: a signed
   // module installed from a community bundle loads without a second, identical
-  // toggle in Settings → Modules, and uninstalling takes the grant back with it.
+  // toggle in Settings → Extensions, and uninstalling takes the grant back with it.
   // M-F3: the install is bound to what the prompt showed. The source is swapped
   // for different content after the approval — same entry, same id — and the
   // install refuses rather than writing an MCP server nobody reviewed.
@@ -1823,7 +1823,7 @@ test('plugin-lifecycle', async () => {
     })
   }
 
-  // G3. Settings → Modules knows a module's id, never the id of the bundle that
+  // G3. Settings → Extensions knows a module's id, never the id of the bundle that
   // installed it — those need not match — so an uninstall named by the module id
   // has to reach the receipt that owns it and take the whole bundle out. An id
   // nothing installed is refused by name rather than reported as a success.

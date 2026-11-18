@@ -55,7 +55,7 @@ test('ModuleAbsenceSurfaces', async () => {
     assert.match(html, /Calendar isn’t installed/)
     assert.match(html, /safe on disk/, 'the surface says the data is untouched')
     assert.match(html, /Find it in Plugins/, 'the install affordance is present')
-    assert.match(html, /aria-label="Module not installed"/)
+    assert.match(html, /aria-label="Extension not installed"/)
   }
 
   function testMissingPanelSurfaceFallsBackUntilResolved(): void {
@@ -83,14 +83,14 @@ test('ModuleAbsenceSurfaces', async () => {
   function testDoorNotInstalledSurfaceNamesTheDoorAndOffersExtensions(): void {
     const html = renderToStaticMarkup(<DoorModuleNotInstalledSurface label="Reviews" onOpenExtensions={() => {}} />)
     assert.match(html, /Reviews/)
-    assert.match(html, /The Reviews module isn’t installed\./)
+    assert.match(html, /The Reviews extension isn’t installed\./)
     assert.match(html, /Find it in Plugins/, 'the single CTA is present')
-    assert.match(html, /aria-label="Door module not installed"/)
+    assert.match(html, /aria-label="Door extension not installed"/)
 
     const disabled = renderToStaticMarkup(
       <DoorModuleNotInstalledSurface label="Reviews" installed onOpenExtensions={() => {}} />,
     )
-    assert.match(disabled, /The Reviews module is turned off\./)
+    assert.match(disabled, /The Reviews extension is turned off\./)
     assert.doesNotMatch(disabled, /isn’t installed\./, 'a disabled module is never called uninstalled')
   }
 
@@ -128,7 +128,7 @@ test('ModuleAbsenceSurfaces', async () => {
     const html = renderToStaticMarkup(
       <DoorModuleNotInstalledSurface label="Reviews" moduleId="review" installed onOpenExtensions={() => {}} />,
     )
-    assert.match(html, /The Reviews module is turned off\./)
+    assert.match(html, /The Reviews extension is turned off\./)
     assert.doesNotMatch(html, /Install Reviews/)
     assert.match(html, /Find it in Plugins/)
   }
@@ -142,13 +142,13 @@ test('ModuleAbsenceSurfaces', async () => {
       <ModuleNotInstalledSurface
         label="Automations"
         installed
-        actionLabel="Open module settings"
+        actionLabel="Open extension settings"
         onOpenMarketplace={() => {}}
       />,
     )
     assert.match(html, /Automations is turned off/)
-    assert.match(html, /turn the module back on/, 'the body names the remedy')
-    assert.match(html, /Open module settings/, 'the enable affordance replaces the storefront signpost')
+    assert.match(html, /turn the extension back on/, 'the body names the remedy')
+    assert.match(html, /Open extension settings/, 'the enable affordance replaces the storefront signpost')
     assert.doesNotMatch(html, /Find it in Plugins/)
   }
 

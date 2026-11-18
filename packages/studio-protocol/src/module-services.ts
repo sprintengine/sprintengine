@@ -5,22 +5,22 @@ import {
   type StudioParsed,
   type StudioParamsRefusal,
 } from './contract.js'
-import { STUDIO_MODULES_CAPABILITY } from './handshake.js'
+import { STUDIO_EXTENSION_HOST_CAPABILITY } from './handshake.js'
 import type { StudioBacklogItemStatus } from './backlog.js'
 
 // The host's services a module's window half calls on its server: the
 // Backlog's writes and the token-usage query, the same services its main half
 // reaches in process through the module SDK (`getBacklogService`,
 // `getUsageService`). Each call names the calling module; the server answers
-// `module_unavailable` for one that is not running there, then hands the call
+// `extension_unavailable` for one that is not running there, then hands the call
 // to the service under that module's id, and the service checks the
 // module's own permission (`backlog.read`, `backlog.write`, `usage:read`) as
 // it does for the main half. What a service answers, its refusals in its own
 // codes included, is the result; the protocol's refusals are the request's
 // errors.
 //
-// Two grants hold every call: the client's (`modules:read` for a read,
-// `modules:operate` for a write, which carries it) and the module's own
+// Two grants hold every call: the client's (`extensions:read` for a read,
+// `extensions:operate` for a write, which carries it) and the module's own
 // manifest permissions. A write is a mutation: it carries the client's
 // `commandId` and a retry under it is answered with the first answer.
 // Offered under the `modules` capability, where a module kernel runs.
@@ -140,46 +140,46 @@ type OnItem = { workspaceId: string; itemId: string }
 
 export type StudioModuleServicesMethodMap = {
   /** Where a workspace's Backlog is kept. Needs the module's `backlog.read`. */
-  'moduleBacklog.location': {
+  'extensionBacklog.location': {
     params: ByModule<{ workspaceId: string }>
     result: StudioModuleBacklogAnswer<{ location: StudioModuleBacklogLocation }>
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
   /** Add an item to a workspace's Backlog. Needs the module's `backlog.write`. */
-  'moduleBacklog.create': {
+  'extensionBacklog.create': {
     params: Write<{ workspaceId: string; input: StudioModuleBacklogCreateInput }>
     result: StudioModuleBacklogAnswer<StudioModuleBacklogCreated>
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
   /** Set an item's status. Needs `backlog.write`. */
-  'moduleBacklog.updateStatus': {
+  'extensionBacklog.updateStatus': {
     params: Write<OnItem & { status: StudioModuleBacklogStatus }>
     result: StudioModuleBacklogAnswer
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
   /** Set or clear an item's triage fields. Needs `backlog.write`. */
-  'moduleBacklog.updateTriage': {
+  'extensionBacklog.updateTriage': {
     params: Write<OnItem & { triage: StudioModuleBacklogTriageInput }>
     result: StudioModuleBacklogAnswer
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
   /** Record a link on an item, replacing the module's link of the same id. Needs `backlog.write`. */
-  'moduleBacklog.addLink': {
+  'extensionBacklog.addLink': {
     params: Write<OnItem & { link: StudioModuleBacklogLinkInput }>
     result: StudioModuleBacklogAnswer
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
   /** Set the module's own metadata on an item (a JSON value; absent clears it). Needs `backlog.write`. */
-  'moduleBacklog.updateModuleMetadata': {
+  'extensionBacklog.updateModuleMetadata': {
     params: Write<OnItem & { value?: unknown }>
     result: StudioModuleBacklogAnswer
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
   /** Token usage across the agent sessions on the server's machine. Needs the module's `usage:read`. */
-  'moduleUsage.query': {
+  'extensionUsage.query': {
     params: ByModule<{ query: StudioModuleUsageQuery }>
     result: StudioModuleUsageAnswer
-    errors: 'module_unavailable'
+    errors: 'extension_unavailable'
   }
 }
 
@@ -356,12 +356,12 @@ function usageQuery(value: unknown): StudioParsed<StudioModuleUsageQuery> {
   return studioParams(query)
 }
 
-const read = { scope: 'modules:read', mutation: false, capability: STUDIO_MODULES_CAPABILITY } as const
-const write = { scope: 'modules:operate', mutation: true, capability: STUDIO_MODULES_CAPABILITY } as const
+const read = { scope: 'extensions:read', mutation: false, capability: STUDIO_EXTENSION_HOST_CAPABILITY } as const
+const write = { scope: 'extensions:operate', mutation: true, capability: STUDIO_EXTENSION_HOST_CAPABILITY } as const
 
 export const STUDIO_MODULE_SERVICES_METHODS: StudioMethodTable<StudioModuleServicesMethodMap> = {
-  'moduleBacklog.location': { ...read, params: inWorkspace },
-  'moduleBacklog.create': {
+  'extensionBacklog.location': { ...read, params: inWorkspace },
+  'extensionBacklog.create': {
     ...write,
     params: (value) => {
       const named = inWorkspace(value)
@@ -373,7 +373,7 @@ export const STUDIO_MODULE_SERVICES_METHODS: StudioMethodTable<StudioModuleServi
       return studioParams({ ...named.params, input: input.params, commandId: command.params })
     },
   },
-  'moduleBacklog.updateStatus': {
+  'extensionBacklog.updateStatus': {
     ...write,
     params: (value) => {
       const item = onItem(value)
@@ -383,7 +383,7 @@ export const STUDIO_MODULE_SERVICES_METHODS: StudioMethodTable<StudioModuleServi
       return studioParams({ ...item.params, status: value.status as StudioModuleBacklogStatus })
     },
   },
-  'moduleBacklog.updateTriage': {
+  'extensionBacklog.updateTriage': {
     ...write,
     params: (value) => {
       const item = onItem(value)
@@ -393,7 +393,7 @@ export const STUDIO_MODULE_SERVICES_METHODS: StudioMethodTable<StudioModuleServi
       return studioParams({ ...item.params, triage: triage.params })
     },
   },
-  'moduleBacklog.addLink': {
+  'extensionBacklog.addLink': {
     ...write,
     params: (value) => {
       const item = onItem(value)
@@ -403,7 +403,7 @@ export const STUDIO_MODULE_SERVICES_METHODS: StudioMethodTable<StudioModuleServi
       return studioParams({ ...item.params, link: link.params })
     },
   },
-  'moduleBacklog.updateModuleMetadata': {
+  'extensionBacklog.updateModuleMetadata': {
     ...write,
     params: (value) => {
       const item = onItem(value)
@@ -411,7 +411,7 @@ export const STUDIO_MODULE_SERVICES_METHODS: StudioMethodTable<StudioModuleServi
       return studioParams(value.value === undefined ? item.params : { ...item.params, value: value.value })
     },
   },
-  'moduleUsage.query': {
+  'extensionUsage.query': {
     ...read,
     params: (value) => {
       const named = byModule(value)

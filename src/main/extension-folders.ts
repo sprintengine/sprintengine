@@ -20,7 +20,7 @@ Drop a capability module here to have SprintEngine pick it up on next launch.
 ## Layout
 
 \`\`\`
-~/.sprintengine/modules/
+~/.sprintengine/extensions/
   <module-id>/
     manifest.json   # required — id must equal this folder name
     dist/main.cjs   # optional entry.main (CommonJS, main process)
@@ -32,7 +32,7 @@ Drop a capability module here to have SprintEngine pick it up on next launch.
 Author modules against the published SDK:
 
 \`\`\`
-npm install --save-dev @sprintengine/module-sdk
+npm install --save-dev @sprintengine/extension-sdk
 \`\`\`
 
 A \`manifest.json\` describes the module; \`entry.main\` / \`entry.renderer\`
@@ -41,11 +41,11 @@ the host APIs (\`MainHost\` / \`RendererHost\`). Validate, pack and sign with th
 bundled CLI:
 
 \`\`\`
-npx sprintengine-module pack ./my-module
-npx sprintengine-module sign ./my-module --key ./signing.pem
+npx sprintengine-extension pack ./my-module
+npx sprintengine-extension sign ./my-module --key ./signing.pem
 \`\`\`
 
-Installed modules are listed under **Settings → Modules**, where you review the
+Installed modules are listed under **Settings → Extensions**, where you review the
 access each one requests and grant trust before its code runs. You can also
 install a module folder from there instead of copying it here by hand.
 `

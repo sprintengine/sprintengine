@@ -32,7 +32,7 @@ import { installElectronRequireGuard } from './electron-require-guard'
 // `module.*` streams. The same steps app-main.ts takes in process, over the server's own
 // services.
 //
-// What runs here is changed through the Studio RPC (`module.setEnabled`,
+// What runs here is changed through the Studio RPC (`extension.setEnabled`,
 // `.install`, `.setTrust`, `.uninstall`, main/modules/module-lifecycle.ts):
 // enablement applies live where a module can load live; what is installed
 // and trusted is read at the next start. The marketplace installs here too
@@ -44,7 +44,7 @@ export type ServerModules = {
   /** Register every enabled module. Called once the gateway exists. */
   load(gateway: StudioGateway): void
   mcpTools(): ReadonlyArray<McpToolContribution>
-  /** The module registry a window resolved (`module.reportRegistry`), for the agents' `module.*` tools. */
+  /** The module registry a window resolved (`extension.reportRegistry`), for the agents' `module.*` tools. */
   readonly registry: ModuleRegistryMirror
   isEnabled(moduleId: string): boolean
   scheduledAgents(): ScheduledAgentsService | null
@@ -71,20 +71,20 @@ export function createServerModules(deps: {
   const hub = createStudioModuleHub()
   const registry = createModuleRegistryMirror()
   hub.readRecentFrom(() => load?.kernel.recentNotifications() ?? [])
-  // A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
+  // A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
   hub.serveCallsFrom(async (request) =>
     load
       ? load.kernel.callModuleMethod(request)
       : {
           ok: false,
-          code: 'module_unavailable',
-          message: `Module "${request.moduleId}" is not running on this Studio.`,
+          code: 'extension_unavailable',
+          message: `Extension "${request.moduleId}" is not running on this Studio.`,
         },
   )
   hub.serveHostServicesFrom((moduleId) =>
     load
       ? load.kernel.hostServicesFor(moduleId)
-      : { ok: false, code: 'module_unavailable', message: `Module "${moduleId}" is not running on this Studio.` },
+      : { ok: false, code: 'extension_unavailable', message: `Extension "${moduleId}" is not running on this Studio.` },
   )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
@@ -118,7 +118,7 @@ export function createServerModules(deps: {
       dataDir,
       moduleRoot: defaultUserModuleRoot,
       applyEnablement,
-      // Every client following `module.changed` lists and loads them again.
+      // Every client following `extension.changed` lists and loads them again.
       changed: () => hub.deliverChanged(),
       launchSession: () =>
         thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load?.kernel.mcpToolRegistrations() ?? []),

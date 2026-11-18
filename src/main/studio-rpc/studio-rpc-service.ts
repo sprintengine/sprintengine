@@ -259,7 +259,7 @@ export type StudioRpcServiceOptions = {
   canvas?: StudioCanvasDomain
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
-  /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
+  /** What the modules beside this Studio say to clients: `extension.events` and `extension.notifications`. */
   modules?: StudioModules
   /** Forget the saved approvals that allow a revoked app's tools. */
   forgetToolApprovals?: (toolsets: string[]) => Promise<unknown>

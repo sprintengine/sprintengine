@@ -65,7 +65,7 @@ function withManifest(root: string, manifest: CapabilityManifest): CapabilityMan
   return manifest
 }
 
-// Signed the way `sprintengine-module sign` signs: with the folder's digests.
+// Signed the way `sprintengine-extension sign` signs: with the folder's digests.
 function signedWithFiles(root: string, signer: Signer, manifest = baseManifest()): CapabilityManifest {
   const files = computeModuleFileDigestsSync(root).files
   return withManifest(root, signer.sign({ ...manifest, files }))

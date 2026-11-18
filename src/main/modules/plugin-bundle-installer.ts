@@ -26,7 +26,7 @@ import {
 } from '../../shared/marketplace'
 import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest, type ModuleFileDigests } from '../../shared/modules/manifest'
 import { parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
-import { marketplaceComponentDigestMismatchIssuesSync } from '../../../packages/module-sdk/src/plugin-component-digests'
+import { marketplaceComponentDigestMismatchIssuesSync } from '../../../packages/extension-sdk/src/plugin-component-digests'
 import { normalizeMcpClients, normalizeMcpServerConfig, type McpConfigService } from '../mcp-config-service'
 import { installSkillDirectory } from '../skills/install'
 import {
@@ -419,7 +419,11 @@ async function installModuleComponent(
     return componentFailure('module', result.message, installed, result.rejected.issues)
   }
   if (result.trust.status === 'invalid') {
-    return componentFailure('module', `Module "${result.id}" has an invalid signature and was not accepted.`, installed)
+    return componentFailure(
+      'module',
+      `Extension "${result.id}" has an invalid signature and was not accepted.`,
+      installed,
+    )
   }
   // No trust mutation here: this runs mid-bundle, while a later component can
   // still fail and roll every file back. The receipt carries the trust identity
@@ -534,8 +538,8 @@ async function prepareModuleComponent(
     return {
       ok: false,
       message: trust.tampered
-        ? `Module "${parsed.manifest.id}" does not match the file digests its manifest signs and cannot be installed.`
-        : `Module "${parsed.manifest.id}" has an invalid signature and cannot be installed.`,
+        ? `Extension "${parsed.manifest.id}" does not match the file digests its manifest signs and cannot be installed.`
+        : `Extension "${parsed.manifest.id}" has an invalid signature and cannot be installed.`,
       issues: trust.tampered ? trust.issues : [{ path: 'signature', message: 'Invalid signature.' }],
     }
   }
@@ -548,8 +552,8 @@ async function prepareModuleComponent(
     return {
       ok: false,
       message:
-        `Module "${parsed.manifest.id}" lists no digests of its code, so it could never be trusted. ` +
-        'Its publisher must sign it with `sprintengine-module sign`, which records them.',
+        `Extension "${parsed.manifest.id}" lists no digests of its code, so it could never be trusted. ` +
+        'Its publisher must sign it with `sprintengine-extension sign`, which records them.',
       issues: [{ path: 'files', message: 'the module manifest carries no file digests.' }],
     }
   }
@@ -563,7 +567,7 @@ async function prepareModuleComponent(
     return {
       ok: false,
       message:
-        `Module "${parsed.manifest.id}" is inside a verified first-party plugin, so its own manifest must be ` +
+        `Extension "${parsed.manifest.id}" is inside a verified first-party plugin, so its own manifest must be ` +
         `signed by a trusted publisher; this one is ${trust.status}. ` +
         'A first-party module manifest must be signed by a trusted publisher.',
       issues: [
@@ -584,7 +588,7 @@ async function prepareModuleComponent(
   if (undisclosed.length > 0) {
     return {
       ok: false,
-      message: `Module "${parsed.manifest.id}" declares permissions its plugin bundle does not disclose: ${undisclosed.join(', ')}.`,
+      message: `Extension "${parsed.manifest.id}" declares permissions its plugin bundle does not disclose: ${undisclosed.join(', ')}.`,
       issues: undisclosed.map((permission) => ({
         path: 'permissions',
         message: `"${permission}" is declared by the module manifest but not by plugin.json.`,

@@ -23,11 +23,11 @@
     "design-system/scripts/*.mjs",
     "resources/marketplace/*.ts",
     "resources/hooks/*.mjs",
-    "packages/module-sdk/src/cli.ts",
+    "packages/extension-sdk/src/cli.ts",
     // The SDK's `./testing/register` entry: a module's tests load it with
     // `node --import`, so nothing in this repository imports it.
-    "packages/module-sdk/src/testing-register.ts",
-    "packages/module-sdk/drift/*.ts",
+    "packages/extension-sdk/src/testing-register.ts",
+    "packages/extension-sdk/drift/*.ts",
     // The standalone Studio server, bundled by scripts/build-server.mjs.
     "src/server/main.ts",
     // The cross-client gate's two processes and the phone's file-module
@@ -56,8 +56,8 @@
   ],
   "ignore": [
     // Scaffold sources: copied into an author's own project, whose package.json
-    // depends on @sprintengine/module-sdk. They are not part of this one.
-    "packages/module-sdk/templates/**",
+    // depends on @sprintengine/extension-sdk. They are not part of this one.
+    "packages/extension-sdk/templates/**",
     // The phone app: its own package, with its own package.json and lockfile.
     // Its dependencies are declared there, not in this one.
     "mobile/**",

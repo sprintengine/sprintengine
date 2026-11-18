@@ -32,7 +32,7 @@ test('third-party-renderer-entries', async () => {
   ): Promise<void> {
     const dir = join(root, id)
     await mkdir(dir, { recursive: true })
-    // The manifest lists its files' digests, as `sprintengine-module sign`
+    // The manifest lists its files' digests, as `sprintengine-extension sign`
     // writes them, so a grant for it covers the bundle being served.
     const digests = Object.fromEntries(
       Object.entries(files).map(([name, content]) => [name, createHash('sha256').update(content).digest('hex')]),
@@ -43,7 +43,7 @@ test('third-party-renderer-entries', async () => {
         id,
         displayName: `Module ${id}`,
         version: 1,
-        engines: { hostApi: 2 },
+        engines: { hostApi: 3 },
         files: digests,
         ...manifest,
       }),
@@ -152,7 +152,7 @@ test('third-party-renderer-entries', async () => {
             version: 1,
             defaultEnabled: true,
             source: 'third-party',
-            engines: { hostApi: 2 },
+            engines: { hostApi: 3 },
             entry: { renderer },
           },
           moduleRoot,
@@ -237,7 +237,7 @@ test('third-party-renderer-entries', async () => {
     })
   }
 
-  // What `module.rendererEntries` serves: only the trusted entries, each with
+  // What `extension.rendererEntries` serves: only the trusted entries, each with
   // the private origin its assets are served at in this Studio's windows.
   async function testKernelIpcSurface(): Promise<void> {
     await withTempDir(async (root) => {

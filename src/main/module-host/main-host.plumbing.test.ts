@@ -50,7 +50,7 @@ test('getWorkspaceGitInfo needs ipc:workspace-read from a third-party module', a
             defaultEnabled: true,
             source: 'third-party',
             permissions: permissions[id],
-            engines: { hostApi: 2 },
+            engines: { hostApi: 3 },
           }
         : undefined,
   })

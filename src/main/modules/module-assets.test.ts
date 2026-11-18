@@ -34,7 +34,7 @@ test('module-assets', async () => {
       )
       await writeFile(join(directory, 'runtime', 'index.html'), '<script src="engine.js"></script>')
       await writeFile(join(directory, 'runtime', 'engine.wasm'), new Uint8Array([0, 97, 115, 109]))
-      // The manifest lists its files' digests, as `sprintengine-module sign` writes them.
+      // The manifest lists its files' digests, as `sprintengine-extension sign` writes them.
       await writeFile(
         join(directory, 'manifest.json'),
         JSON.stringify({

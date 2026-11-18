@@ -322,11 +322,11 @@
     },
     {
       "name": "module.list",
-      "sha256": "89727eca6d135726c1f9f4ad836dccf5d100124798aa6329aa422b8750098493"
+      "sha256": "1f907cd7a54ec04ffcd9e47ae2d79bb150463af2382cc14641fbafcd98a994c5"
     },
     {
       "name": "module.status",
-      "sha256": "51fa7acce6ba0b9ca6b3ea3a0fe89ed343f876687d219b730b4bc3f773ece5fb"
+      "sha256": "e0ed6b4ae14024e262faf155fa37a7f2a1308d1838f2087aac33b29d2cdc97dd"
     },
     {
       "name": "marketplace.list",
@@ -390,11 +390,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "f4525db0abd39d2e2a5a5ebf58301aa643b431911b8a12432b36b9b07e751d57"
+      "sha256": "1be4dc035e087e34fc446943a11de1fbaf6a7d7326ce6fc7607d3e9289938ac5"
     },
     {
       "name": "extension.guide",
-      "sha256": "63156b8af1080da04fd866171bb19de134a39b719ef987cdc2d2c70c35383cc2"
+      "sha256": "d6bb69259ba8d02d647bd64953abb142169d868513da0796753153e98e946a8b"
     },
     {
       "name": "plugin.search",
@@ -760,11 +760,11 @@
     },
     {
       "name": "module.list",
-      "sha256": "89727eca6d135726c1f9f4ad836dccf5d100124798aa6329aa422b8750098493"
+      "sha256": "1f907cd7a54ec04ffcd9e47ae2d79bb150463af2382cc14641fbafcd98a994c5"
     },
     {
       "name": "module.status",
-      "sha256": "51fa7acce6ba0b9ca6b3ea3a0fe89ed343f876687d219b730b4bc3f773ece5fb"
+      "sha256": "e0ed6b4ae14024e262faf155fa37a7f2a1308d1838f2087aac33b29d2cdc97dd"
     },
     {
       "name": "marketplace.list",
@@ -828,11 +828,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "f4525db0abd39d2e2a5a5ebf58301aa643b431911b8a12432b36b9b07e751d57"
+      "sha256": "1be4dc035e087e34fc446943a11de1fbaf6a7d7326ce6fc7607d3e9289938ac5"
     },
     {
       "name": "extension.guide",
-      "sha256": "63156b8af1080da04fd866171bb19de134a39b719ef987cdc2d2c70c35383cc2"
+      "sha256": "d6bb69259ba8d02d647bd64953abb142169d868513da0796753153e98e946a8b"
     },
     {
       "name": "plugin.search",
@@ -922,11 +922,11 @@
     },
     {
       "name": "module.list",
-      "sha256": "89727eca6d135726c1f9f4ad836dccf5d100124798aa6329aa422b8750098493"
+      "sha256": "1f907cd7a54ec04ffcd9e47ae2d79bb150463af2382cc14641fbafcd98a994c5"
     },
     {
       "name": "module.status",
-      "sha256": "51fa7acce6ba0b9ca6b3ea3a0fe89ed343f876687d219b730b4bc3f773ece5fb"
+      "sha256": "e0ed6b4ae14024e262faf155fa37a7f2a1308d1838f2087aac33b29d2cdc97dd"
     },
     {
       "name": "marketplace.list",

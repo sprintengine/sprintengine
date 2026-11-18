@@ -385,8 +385,8 @@ export function RejectedFolders({
   return (
     <InlineNotice tone="warn">
       {rejected.length === 1
-        ? 'A module folder couldn’t be loaded: '
-        : `${rejected.length} module folders couldn’t be loaded: `}
+        ? 'An extension folder couldn’t be loaded: '
+        : `${rejected.length} extension folders couldn’t be loaded: `}
       {rejected.map((entry) => entry.issues[0]?.message ?? entry.path).join('; ')}
     </InlineNotice>
   )

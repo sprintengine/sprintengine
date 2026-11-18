@@ -33,10 +33,10 @@
 // `environment:maintain`, an owner holds it and a pairing only when it was
 // given it.
 //
-// `modules:read` hears what this Studio's modules say: their events and the
-// bell rows they raise, and calls the methods they declare `read`
-// (`module.*`). `modules:operate` calls the ones they declare `operate` too,
-// and carries `modules:read`. Neither is held to an owner's connection.
+// `extensions:read` hears what this Studio's extensions say: their events and
+// the bell rows they raise, and calls the methods they declare `read`
+// (`extension.*`). `extensions:operate` calls the ones they declare `operate`
+// too, and carries `extensions:read`. Neither is held to an owner's connection.
 //
 // `workspaces:operate` changes what a Studio keeps beside its workspaces and
 // runs on its own: its scheduled agents (`schedules.*`). It carries
@@ -60,8 +60,8 @@ export const STUDIO_SCOPES = [
   'files:write',
   'environment:maintain',
   'settings:write',
-  'modules:read',
-  'modules:operate',
+  'extensions:read',
+  'extensions:operate',
   'workspaces:operate',
 ] as const
 
@@ -73,13 +73,28 @@ export function isStudioScope(value: unknown): value is StudioScope {
 }
 
 /**
+ * The names two scopes had before modules were called extensions (2026-11-18).
+ * A grant stored by an older build (a local app's, a web session) or sent by
+ * an older Studio still holds them, and is read with the names that replaced
+ * them, so it reaches what it reached before. Nothing writes the old names.
+ */
+const RENAMED_STUDIO_SCOPES: Readonly<Record<string, StudioScope>> = {
+  'modules:read': 'extensions:read',
+  'modules:operate': 'extensions:operate',
+}
+
+function renamedStudioScope(value: unknown): unknown {
+  return typeof value === 'string' && Object.hasOwn(RENAMED_STUDIO_SCOPES, value) ? RENAMED_STUDIO_SCOPES[value] : value
+}
+
+/**
  * A grant as stored or received: unknown names dropped, each scope once, in
  * the order `STUDIO_SCOPES` lists them, so two grants holding the same scopes
  * compare equal.
  */
 export function normalizeStudioScopes(value: unknown): StudioScope[] {
   if (!Array.isArray(value)) return []
-  const held = new Set(value.filter(isStudioScope))
+  const held = new Set(value.map(renamedStudioScope).filter(isStudioScope))
   return STUDIO_SCOPES.filter((scope) => held.has(scope))
 }
 
@@ -87,7 +102,7 @@ export function normalizeStudioScopes(value: unknown): StudioScope[] {
 export function studioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
   if (needed === 'backlog:read') return scopes.includes('backlog:operate')
-  if (needed === 'modules:read') return scopes.includes('modules:operate')
+  if (needed === 'extensions:read') return scopes.includes('extensions:operate')
   if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }

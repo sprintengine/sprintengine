@@ -362,7 +362,7 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     return canOperate(moduleId) || declared(moduleId).includes('conversation:read')
   }
   function missing(moduleId: string, permission: 'conversation:read' | 'conversation:operate'): Failure {
-    return failure('permission_missing', `Module "${moduleId}" must declare the "${permission}" permission.`)
+    return failure('permission_missing', `Extension "${moduleId}" must declare the "${permission}" permission.`)
   }
   function requireRead(moduleId: string): void {
     if (!canRead(moduleId)) throw new Error(missing(moduleId, 'conversation:read').message)
@@ -545,7 +545,7 @@ export function createConversationModuleRegistry(deps: ModuleConversationDeps): 
     if (input.allowedTools?.length && !mayAllowTools(moduleId)) {
       return failure(
         'permission_missing',
-        `Module "${moduleId}" must declare "conversation:bypass" to let a chat use tools without asking.`,
+        `Extension "${moduleId}" must declare "conversation:bypass" to let a chat use tools without asking.`,
       )
     }
     const worktree = input.worktree

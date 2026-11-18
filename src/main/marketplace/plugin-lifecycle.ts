@@ -96,7 +96,7 @@ export type MarketplacePluginLifecycleServices = MarketplacePluginInstallerServi
    * uninstalling a module component revokes its entry. The returned `previous`
    * is what the id mapped to before the write, so a failed receipt write can
    * put the trust store back as it was. Absent, installs still succeed and the
-   * module simply stays awaiting-trust in Settings → Modules.
+   * module simply stays awaiting-trust in Settings → Extensions.
    */
   setModuleTrust?: (
     id: string,
@@ -406,7 +406,7 @@ async function installOrUpdateMarketplacePlugin(
     // stale components were removed: a failed later component rolls files back,
     // so no grant may precede full success. The install-prompt trust decision
     // IS the module trust decision, so a signed module component no longer
-    // lands awaiting a second, identical toggle in Settings → Modules. Bound to
+    // lands awaiting a second, identical toggle in Settings → Extensions. Bound to
     // the installed manifest fingerprint, so different bytes under the same id
     // never inherit it. Verified installs never ask for a grant; an unsigned
     // module is granted only when the person trusted it as code.
@@ -1083,7 +1083,7 @@ async function grantModuleComponentTrust(
       granted.push({ id: component.id, previous: grant.previous ?? null })
       component.message = 'Installed and trusted; loads on the next app launch.'
     } else {
-      component.message = `Installed, but recording trust failed (${grant.message ?? 'unknown error'}); trust it from Settings → Modules.`
+      component.message = `Installed, but recording trust failed (${grant.message ?? 'unknown error'}); trust it from Settings → Extensions.`
     }
   }
   return granted
@@ -1104,7 +1104,7 @@ async function restoreModuleComponentTrust(
   if (failed.length === 0) return { ok: true }
   return {
     ok: false,
-    message: `Trust granted during this install could not be taken back for ${failed.join('; ')}. Review these modules in Settings → Modules.`,
+    message: `Trust granted during this install could not be taken back for ${failed.join('; ')}. Review these modules in Settings → Extensions.`,
   }
 }
 
@@ -1154,7 +1154,7 @@ async function uninstallMarketplacePlugin(
  * MODULE it installed.
  *
  * A receipt is keyed by the plugin bundle's id, and that is what the storefront
- * knows. Settings → Modules does not: a module row carries the id of the module
+ * knows. Settings → Extensions does not: a module row carries the id of the module
  * itself, which is a component INSIDE the bundle and need not share its name.
  * Removing the module alone would leave the receipt behind claiming a module
  * that is gone — and a later re-install would then be read as an update of

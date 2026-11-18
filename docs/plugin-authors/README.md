@@ -12,7 +12,7 @@ uses.
 
 The same `plugin.json` is also what a **GitHub install** reads, from the root of
 a repository — see "Publishing from GitHub instead" at the end. A module you
-build from a template (`sprintengine-module init`) already has that layout.
+build from a template (`sprintengine-extension init`) already has that layout.
 
 Registry pull requests target the standalone `sprintengine/studio-releases`
 repository layout:
@@ -31,20 +31,20 @@ From the studio repo root:
 
 ```bash
 npm ci
-npx esbuild packages/module-sdk/src/cli.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/sprintengine-module.cjs
+npx esbuild packages/extension-sdk/src/cli.ts --bundle --platform=node --format=cjs --packages=external --outfile=node_modules/.cache/sprintengine/sprintengine-extension.cjs
 ```
 
 The commands below use the bundled local CLI:
 
 ```bash
-SPRINTENGINE_MODULE="node $(pwd)/node_modules/.cache/sprintengine/sprintengine-module.cjs"
+SPRINTENGINE_MODULE="node $(pwd)/node_modules/.cache/sprintengine/sprintengine-extension.cjs"
 ```
 
 When the SDK package is installed in an external author workspace, replace that
 variable with the packaged binary:
 
 ```bash
-SPRINTENGINE_MODULE="sprintengine-module"
+SPRINTENGINE_MODULE="sprintengine-extension"
 ```
 
 Run the scaffold, sign, verify, pack, and registry-entry commands below from a
@@ -70,11 +70,11 @@ After scaffold, edit:
 
 Declare real permissions in `plugin.json`. Permissions are install-time
 disclosure, not a runtime sandbox. See
-[`docs/module-authors/permissions.md`](../module-authors/permissions.md).
+[`docs/extension-authors/permissions.md`](../module-authors/permissions.md).
 
 A `module` component is a capability module folder. Its `manifest.json` must
-declare `"engines": { "hostApi": 2 }` and carry a `files` map (every file's
-sha256, written by `sprintengine-module sign`); sign the module before you sign
+declare `"engines": { "hostApi": 3 }` and carry a `files` map (every file's
+sha256, written by `sprintengine-extension sign`); sign the module before you sign
 the bundle, because signing the module rewrites its manifest and the bundle's
 digests cover it. A bundle whose signed module has no `files` is refused.
 
@@ -202,7 +202,7 @@ npm run verify:marketplace-registry -- --root ../marketplace
 The validator checks:
 
 - `marketplace.json` with the shared marketplace index validator.
-- Every `plugins/<id>/plugin.json` with `sprintengine-module plugin verify`.
+- Every `plugins/<id>/plugin.json` with `sprintengine-extension plugin verify`.
 - Signed component file digests against the committed bytes under
   `plugins/<id>/`.
 - Registry entry id, name, version, provided components, and signature against
@@ -228,7 +228,7 @@ Open a pull request against the marketplace registry with:
 The `.github/workflows/marketplace-registry.yml` job runs the same
 `npm run verify:marketplace-registry` command and the publish validation test. Schema-invalid submissions fail with
 the exact shared-validator path, and tampered signatures fail through
-`sprintengine-module plugin verify` with an `INVALID signature` message.
+`sprintengine-extension plugin verify` with an `INVALID signature` message.
 
 ## Publishing from GitHub instead
 

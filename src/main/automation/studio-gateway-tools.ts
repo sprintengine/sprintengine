@@ -172,7 +172,7 @@ function gateOnModuleEnablement(
           )
         : toolError(
             `${moduleId}_module_disabled`,
-            `The ${moduleDisplayName} module is disabled. Enable it in Settings → Modules to use ${moduleId} tools.`,
+            `The ${moduleDisplayName} extension is disabled. Enable it in Settings → Extensions to use ${moduleId} tools.`,
           ),
   }
 }

@@ -3,7 +3,7 @@
 // scaffold the project there, on the Studio's machine (`extensionScaffold.*`).
 //
 // The project is written by the SDK's own scaffolder — the one
-// `sprintengine-module init` runs — from the templates the app ships beside
+// `sprintengine-extension init` runs — from the templates the app ships beside
 // itself (`sdk-templates` in package.json `build.extraResources`), so a project
 // made here and one made on the command line are the same project. The
 // extension guide ships beside them (`sdk-guide`), for the `extension.*` tools
@@ -12,7 +12,7 @@
 // depends on is this checkout's, fixed at build time.
 //
 // The SDK itself ships beside the app too, as the tarball `npm run sdk:bundle`
-// packs (`module-sdk` in extraResources). The project gets a copy in vendor/
+// packs (`extension-sdk` in extraResources). The project gets a copy in vendor/
 // and depends on it by `file:`, so `npm install` needs no registry — the SDK is
 // not on npm yet, and a company registry may never carry it. A build without
 // the tarball (a checkout that never ran sdk:bundle) depends on the npm release.
@@ -34,8 +34,8 @@ import {
   scaffoldModuleProject,
   type ScaffoldModuleOptions,
   type ScaffoldModuleResult,
-} from '../../packages/module-sdk/src/scaffold'
-import sdkPackage from '../../packages/module-sdk/package.json'
+} from '../../packages/extension-sdk/src/scaffold'
+import sdkPackage from '../../packages/extension-sdk/package.json'
 import {
   EXTENSION_START_TEMPLATE_ID,
   extensionDisplayName,
@@ -52,15 +52,15 @@ import { defaultUserModuleRoot } from './modules/user-module-registry'
 /** The SDK version a scaffolded project depends on: this build's own. */
 export const SCAFFOLD_SDK_VERSION: string = sdkPackage.version
 
-/** npm's name for this version's tarball, as scripts/pack-module-sdk.mjs packs it. */
-export const SCAFFOLD_SDK_TARBALL = `sprintengine-module-sdk-${SCAFFOLD_SDK_VERSION}.tgz`
+/** npm's name for this version's tarball, as scripts/pack-extension-sdk.mjs packs it. */
+export const SCAFFOLD_SDK_TARBALL = `sprintengine-extension-sdk-${SCAFFOLD_SDK_VERSION}.tgz`
 
 // An IDEA.md longer than this is not a brief.
 const MAX_IDEA_CHARS = 20_000
 
 export type ScaffoldRoots = {
   templatesRoot: string
-  /** The extension guide's topics (packages/module-sdk/guide), which `extension.guide` serves. */
+  /** The extension guide's topics (packages/extension-sdk/guide), which `extension.guide` serves. */
   guideRoot: string
   /** Where the SDK tarball would be; the scaffold uses it only when it is there. */
   sdkTarball: string
@@ -77,14 +77,14 @@ export function resolveScaffoldRoots(
     return {
       templatesRoot: join(env.resourcesPath, 'sdk-templates'),
       guideRoot: join(env.resourcesPath, 'sdk-guide'),
-      sdkTarball: join(env.resourcesPath, 'module-sdk', SCAFFOLD_SDK_TARBALL),
+      sdkTarball: join(env.resourcesPath, 'extension-sdk', SCAFFOLD_SDK_TARBALL),
     }
   }
-  const sdk = join(env.appPath, 'packages', 'module-sdk')
+  const sdk = join(env.appPath, 'packages', 'extension-sdk')
   return {
     templatesRoot: join(sdk, 'templates'),
     guideRoot: join(sdk, 'guide'),
-    sdkTarball: join(env.appPath, 'resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
+    sdkTarball: join(env.appPath, 'resources', 'extension-sdk', SCAFFOLD_SDK_TARBALL),
   }
 }
 

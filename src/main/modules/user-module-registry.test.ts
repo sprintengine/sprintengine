@@ -79,7 +79,7 @@ function keyTrust(signer: Signer): ModuleTrustContext {
 }
 
 // A module folder with dist/main.cjs, its manifest signed the way
-// `sprintengine-module sign` signs it: over the digests of the folder's files.
+// `sprintengine-extension sign` signs it: over the digests of the folder's files.
 async function writeSignedModule(
   parent: string,
   folderName: string,
@@ -350,7 +350,7 @@ test('a folder carrying .git or node_modules is refused with a pointer to pack',
     await writeFile(join(src, '.git', 'HEAD'), 'ref: refs/heads/main\n')
     const install = await installModuleFolder(src, join(dir, 'modules'), EMPTY_TRUST)
     assert.equal(install.ok, false)
-    if (!install.ok) assert.match(install.message, /sprintengine-module pack/)
+    if (!install.ok) assert.match(install.message, /sprintengine-extension pack/)
   })
 })
 

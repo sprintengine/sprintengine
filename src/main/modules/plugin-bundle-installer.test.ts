@@ -260,7 +260,7 @@ test('plugin-bundle-installer', async () => {
         version: 1,
         permissions: components.module.permissions ?? ['network'],
       }
-      // Signed the way `sprintengine-module sign` signs: with the digests of the
+      // Signed the way `sprintengine-extension sign` signs: with the digests of the
       // module's files, of which this one ships none besides its manifest.
       const withFiles = { ...moduleManifest, files: {} }
       const signed = components.module.signer

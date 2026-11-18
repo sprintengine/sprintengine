@@ -7,7 +7,7 @@ import {
   STUDIO_MARKETPLACE_OWNER,
   STUDIO_SCAFFOLD_OWNER,
 } from '../src/extensions'
-import { STUDIO_EXTENSIONS_CAPABILITY, STUDIO_MODULES_CAPABILITY } from '../src/handshake'
+import { STUDIO_EXTENSIONS_CAPABILITY, STUDIO_EXTENSION_HOST_CAPABILITY } from '../src/handshake'
 import { STUDIO_METHODS, STUDIO_TOPICS, authorizeStudioMethod, parseStudioMethodParams } from '../src/methods'
 import { STUDIO_MODULES_METHODS, STUDIO_MODULES_REPORT_OWNER, STUDIO_MODULES_TOPICS } from '../src/modules'
 import { STUDIO_SCOPES } from '../src/scopes'
@@ -59,23 +59,26 @@ test('reading what could be installed and what can run is the narrowest read eac
   assert.equal(STUDIO_TOPICS['cardFeed.changed'], STUDIO_EXTENSIONS_TOPICS['cardFeed.changed'])
 })
 
-test('the installed extensions are listed and loaded under modules:read; what a window sets is a write', () => {
-  assert.equal(STUDIO_MODULES_METHODS['module.installed'].scope, 'modules:read')
-  assert.equal(STUDIO_MODULES_METHODS['module.rendererEntries'].scope, 'modules:read')
-  assert.equal(STUDIO_MODULES_METHODS['module.setAppState'].scope, 'settings:write')
-  for (const method of ['module.installed', 'module.rendererEntries', 'module.setAppState'] as const) {
+test('the installed extensions are listed and loaded under extensions:read; what a window sets is a write', () => {
+  assert.equal(STUDIO_MODULES_METHODS['extension.installed'].scope, 'extensions:read')
+  assert.equal(STUDIO_MODULES_METHODS['extension.rendererEntries'].scope, 'extensions:read')
+  assert.equal(STUDIO_MODULES_METHODS['extension.setAppState'].scope, 'settings:write')
+  for (const method of ['extension.installed', 'extension.rendererEntries', 'extension.setAppState'] as const) {
     assert.equal(STUDIO_MODULES_METHODS[method].owner, undefined, method)
-    assert.equal(STUDIO_MODULES_METHODS[method].capability, STUDIO_MODULES_CAPABILITY, method)
+    assert.equal(STUDIO_MODULES_METHODS[method].capability, STUDIO_EXTENSION_HOST_CAPABILITY, method)
   }
   // The window's own report of the modules it resolved: an owner's, with its reason.
-  const report = STUDIO_MODULES_METHODS['module.reportRegistry']
+  const report = STUDIO_MODULES_METHODS['extension.reportRegistry']
   assert.equal(report.scope, null)
   assert.equal(report.owner, STUDIO_MODULES_REPORT_OWNER)
   assert.match(STUDIO_MODULES_REPORT_OWNER, /this Studio’s own window/)
-  assert.equal(report.capability, STUDIO_MODULES_CAPABILITY)
-  assert.equal(authorizeStudioMethod({ owner: false, scopes: [...STUDIO_SCOPES] }, 'module.reportRegistry').ok, false)
-  assert.equal(authorizeStudioMethod({ owner: true, scopes: [] }, 'module.reportRegistry').ok, true)
-  assert.equal(STUDIO_MODULES_TOPICS['module.changed'].scope, 'modules:read')
+  assert.equal(report.capability, STUDIO_EXTENSION_HOST_CAPABILITY)
+  assert.equal(
+    authorizeStudioMethod({ owner: false, scopes: [...STUDIO_SCOPES] }, 'extension.reportRegistry').ok,
+    false,
+  )
+  assert.equal(authorizeStudioMethod({ owner: true, scopes: [] }, 'extension.reportRegistry').ok, true)
+  assert.equal(STUDIO_MODULES_TOPICS['extension.changed'].scope, 'extensions:read')
 })
 
 test('an install names its entry and the approval its review issued, never the entry itself', () => {
@@ -137,15 +140,15 @@ test('a scaffold names an id and, at most, a folder; a module app state is names
     })
   assert.equal(refusal(parseStudioMethodParams('extensionScaffold.target', { id: 'x', folder: '' })), 'invalid_params')
   assert.equal(
-    refusal(parseStudioMethodParams('module.setAppState', { commandId: 'c', state: { 'module:a': 1 } })),
+    refusal(parseStudioMethodParams('extension.setAppState', { commandId: 'c', state: { 'module:a': 1 } })),
     'invalid_params',
   )
   assert.equal(
-    parseStudioMethodParams('module.setAppState', { commandId: 'c', state: { 'module:a': { on: true } } }).ok,
+    parseStudioMethodParams('extension.setAppState', { commandId: 'c', state: { 'module:a': { on: true } } }).ok,
     true,
   )
   assert.equal(
-    refusal(parseStudioMethodParams('module.reportRegistry', { commandId: 'c', snapshot: [] })),
+    refusal(parseStudioMethodParams('extension.reportRegistry', { commandId: 'c', snapshot: [] })),
     'invalid_params',
   )
 })

@@ -13,7 +13,7 @@ import type { InstalledModule } from './user-module-registry'
 // modules whose entry resolves inside the module root are servable; unsigned,
 // signed-pending, and invalid modules stay blocked with their existing
 // statuses. Bundle content travels over the Studio protocol
-// (`module.rendererEntries`; the window dynamic-imports it as a blob URL), so
+// (`extension.rendererEntries`; the window dynamic-imports it as a blob URL), so
 // a window loads the extensions of the Studio it is connected to, and the
 // module root is never exposed as file:// or a custom protocol.
 //
@@ -26,7 +26,7 @@ const CHANGED_MESSAGE = 'entry.renderer bundle changed after the module was veri
 type RendererEntryResolution =
   { servable: true; entryPath: string; expectedSha256: string } | { servable: false; view: ThirdPartyRendererEntryView }
 
-// Pure availability check used both by the launch view (Settings → Modules)
+// Pure availability check used both by the launch view (Settings → Extensions)
 // and by the serving path below, so what the UI reports and what actually
 // loads can never disagree.
 function resolveRendererEntry(installed: InstalledModule): RendererEntryResolution {

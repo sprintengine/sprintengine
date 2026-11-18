@@ -129,19 +129,19 @@ accepts ids the catalog does not list; leave `model` out for the CLI's own
 default. This reports what the registry holds, not what is installed on this
 machine — it never probes for binaries.
 
-`module_list` reports the capability modules this app has, as the user sees
-them: bundled and third-party, each with its source, version, whether it is
+`module_list` reports the extensions this app has, as the user sees
+them: built-in and third-party, each with its source, version, whether it is
 enabled, and why it is not when it is off. Scheduled agents are one of them
-(`scheduled-agents`); when it is off, the `schedule_*` tools say so. A module
-that ships only in development builds is absent from a packaged build
-entirely, never reported as present-but-disabled. A third-party module that is
-installed but untrusted appears as installed even though it loads nowhere.
+(`scheduled-agents`); when it is off, the `schedule_*` tools say so. An
+extension that ships only in development builds is absent from a packaged build
+entirely, never reported as present-but-disabled. A third-party extension that
+is installed but untrusted appears as installed even though it loads nowhere.
 
-`module_status` with `{id}` reads one module: its manifest, the permissions it
-declares, the surfaces it contributes, the gateway tools it adds, and — when it
-is not active — why. This is the tool that answers "why is that tool missing":
-a `<moduleId>_module_disabled` refusal anywhere on this gateway is a module to
-look up here.
+`module_status` with `{id}` reads one extension: its manifest, the
+permissions it declares, the surfaces it contributes, the gateway tools it adds,
+and — when it is not active — why. This is the tool that answers "why is that
+tool missing": a `<moduleId>_module_disabled` refusal anywhere on this gateway
+is an extension to look up here.
 
 Enabling, installing and trusting are **not** on this surface. They are trust
 decisions and belong to a person in the app. Report what is off and why; do not

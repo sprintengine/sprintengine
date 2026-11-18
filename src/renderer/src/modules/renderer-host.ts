@@ -51,7 +51,7 @@ import { copy as appCopy } from '../../../shared/copy'
 // WorkspaceLayout.tsx. Enablement is computed reactively from settings so a
 // feature can be toggled without a reload.
 //
-// See docs/module-authors/drop-in-extensions.md.
+// See docs/extension-authors/drop-in-extensions.md.
 
 export type WorkspacePanelProps = {
   workspaceId: string
@@ -806,7 +806,7 @@ export type ModuleAppStateStore = {
 }
 
 // Source of main→renderer module events. The kernel owns only the
-// seam: modules/index.ts wires it over the window's `module.events` stream, and the
+// seam: modules/index.ts wires it over the window's `extension.events` stream, and the
 // scoped host's `subscribe` filters the stream to the calling module's own
 // events. One stream subscription backs every module's subscriptions.
 export type ModuleEventSource = (cb: (envelope: ModuleEventEnvelope) => void) => () => void
@@ -822,11 +822,11 @@ export type ModuleMethodCall = {
 }
 
 // Caller of a module's declared methods: modules/index.ts wires it over the
-// window's Studio client (`module.read` / `module.operate`). It never throws:
+// window's Studio client (`extension.read` / `extension.operate`). It never throws:
 // every refusal, the host's or the module's, is an answer.
 export type ModuleMethodCaller = (call: ModuleMethodCall) => Promise<ModuleCallAnswer<ModuleMethodContract>>
 
-/** A host service a module's renderer half calls on its server: `moduleBacklog.*`, `moduleUsage.query`. */
+/** A host service a module's renderer half calls on its server: `extensionBacklog.*`, `extensionUsage.query`. */
 export type ModuleServiceMethod = keyof StudioModuleServicesMethodMap
 /** What a host-service call takes: the protocol's params, less the command id the caller makes. */
 export type ModuleServiceParams<M extends ModuleServiceMethod> = Omit<
@@ -854,7 +854,7 @@ export function moduleServiceRefusal<M extends ModuleServiceMethod>(
   code: string,
   message: string,
 ): ModuleServiceAnswer<M> {
-  const unavailable = method.startsWith('moduleBacklog.') ? 'backlog_unavailable' : 'unavailable'
+  const unavailable = method.startsWith('extensionBacklog.') ? 'backlog_unavailable' : 'unavailable'
   return {
     ok: false,
     code: code === 'invalid_params' || code === 'too_large' ? 'invalid_input' : unavailable,
@@ -995,10 +995,10 @@ export type RendererHost = {
    * Call the methods this module's own `entry.main` declared with
    * `MainHost.registerMethods`, typed by the module's contract: `read` offers
    * the methods declared `read`, `operate` the ones declared `operate`. They
-   * travel over the window's Studio connection (`module.read` /
-   * `module.operate`) to the server the module runs on, and never throw: a
-   * refusal, the module's own or the host's (`module_unavailable`,
-   * `module_method_unknown`, `invalid_params`, …), is an answer.
+   * travel over the window's Studio connection (`extension.read` /
+   * `extension.operate`) to the server the module runs on, and never throw: a
+   * refusal, the module's own or the host's (`extension_unavailable`,
+   * `extension_method_unknown`, `invalid_params`, …), is an answer.
    */
   methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
   /** The workspace's Backlog items (read-only views; change them with the write methods below). Requires `backlog.read`. */
@@ -1009,8 +1009,8 @@ export type RendererHost = {
    * watch stays open. Requires `backlog.read`.
    */
   watchBacklogItems(workspaceId: string, cb: (items: BacklogItem[]) => void, options?: BacklogWatchOptions): () => void
-  // ── Backlog writes and usage: the protocol's `moduleBacklog.*` and ──
-  // `moduleUsage.query` on the module's server. Result-shaped, never a throw.
+  // ── Backlog writes and usage: the protocol's `extensionBacklog.*` and ──
+  // `extensionUsage.query` on the module's server. Result-shaped, never a throw.
   getBacklogLocation(workspaceId: string): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>>
   createBacklogItem(
     workspaceId: string,
@@ -1357,7 +1357,7 @@ export type RendererKernel = {
   setModuleAppStateStore(store: ModuleAppStateStore): void
   /**
    * Source for `RendererHost.subscribe`. Wired once at boot by modules/index.ts
-   * over the window's `module.events` stream. The kernel owns the subscriber set, so ONE
+   * over the window's `extension.events` stream. The kernel owns the subscriber set, so ONE
    * listener on this source backs every module's subscriptions and a subscribe
    * made before the source lands still receives once it does — module code
    * never has to guard the wiring window. Absent (tests, windowless bundles)
@@ -1594,7 +1594,7 @@ export function createRendererHost(): RendererKernel {
       throw new Error('No Backlog reader is registered — the backlog module did not load.')
     }
     if (moduleEnabledResolver && !moduleEnabledResolver(backlogReader.moduleId)) {
-      throw new Error('The Backlog module is disabled.')
+      throw new Error('Backlog is turned off.')
     }
     return backlogReader.reader
   }
@@ -1604,7 +1604,7 @@ export function createRendererHost(): RendererKernel {
   const requireBacklogRead = (moduleId: string, manifest: CapabilityManifest | undefined): void => {
     if (manifest?.source !== 'third-party' || manifest.permissions?.includes('backlog.read')) return
     throw new Error(
-      `Module "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
+      `Extension "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
     )
   }
   // A call into one of the host's services on the module's server, which
@@ -1618,7 +1618,7 @@ export function createRendererHost(): RendererKernel {
       : Promise.resolve(moduleServiceRefusal(method, 'unavailable', 'The host services are not available here.'))
   // The Backlog writes follow the Backlog module's enablement like its reads:
   // switched off, the Backlog is off for modules too.
-  const callBacklog = <M extends Exclude<ModuleServiceMethod, 'moduleUsage.query'>>(
+  const callBacklog = <M extends Exclude<ModuleServiceMethod, 'extensionUsage.query'>>(
     method: M,
     params: ModuleServiceParams<M>,
   ): Promise<ModuleServiceAnswer<M>> => {
@@ -1725,7 +1725,7 @@ export function createRendererHost(): RendererKernel {
           // put its actions on rows the app wrote.
           if (manifest?.source === 'third-party' && provider.source !== moduleId) {
             throw new Error(
-              `Module "${moduleId}" may only register a notification action provider for its own rows (source "${moduleId}"); got "${provider.source}".`,
+              `Extension "${moduleId}" may only register a notification action provider for its own rows (source "${moduleId}"); got "${provider.source}".`,
             )
           }
           if (notificationActionProviders.has(provider.source)) {
@@ -1932,7 +1932,7 @@ export function createRendererHost(): RendererKernel {
           // The Backlog read API is the backlog module's to serve; another
           // module providing it would answer every listBacklogItems caller.
           if (moduleId !== 'backlog') {
-            throw new Error(`Module "${moduleId}" cannot provide the Backlog reader; only the backlog module can.`)
+            throw new Error(`Extension "${moduleId}" cannot provide the Backlog reader; only the backlog module can.`)
           }
           if (backlogReader) {
             throw new Error(`The Backlog reader is already provided by module "${backlogReader.moduleId}".`)
@@ -1978,22 +1978,22 @@ export function createRendererHost(): RendererKernel {
           )
         },
         getBacklogLocation(workspaceId) {
-          return callBacklog('moduleBacklog.location', { moduleId, workspaceId })
+          return callBacklog('extensionBacklog.location', { moduleId, workspaceId })
         },
         createBacklogItem(workspaceId, input) {
-          return callBacklog('moduleBacklog.create', { moduleId, workspaceId, input })
+          return callBacklog('extensionBacklog.create', { moduleId, workspaceId, input })
         },
         updateBacklogStatus(workspaceId, itemId, status) {
-          return callBacklog('moduleBacklog.updateStatus', { moduleId, workspaceId, itemId, status })
+          return callBacklog('extensionBacklog.updateStatus', { moduleId, workspaceId, itemId, status })
         },
         updateBacklogTriage(workspaceId, itemId, triage) {
-          return callBacklog('moduleBacklog.updateTriage', { moduleId, workspaceId, itemId, triage })
+          return callBacklog('extensionBacklog.updateTriage', { moduleId, workspaceId, itemId, triage })
         },
         addBacklogLink(workspaceId, itemId, link) {
-          return callBacklog('moduleBacklog.addLink', { moduleId, workspaceId, itemId, link })
+          return callBacklog('extensionBacklog.addLink', { moduleId, workspaceId, itemId, link })
         },
         updateBacklogModuleMetadata(workspaceId, itemId, value) {
-          return callBacklog('moduleBacklog.updateModuleMetadata', {
+          return callBacklog('extensionBacklog.updateModuleMetadata', {
             moduleId,
             workspaceId,
             itemId,
@@ -2001,7 +2001,7 @@ export function createRendererHost(): RendererKernel {
           })
         },
         queryUsage(query) {
-          return callModuleService('moduleUsage.query', { moduleId, query })
+          return callModuleService('extensionUsage.query', { moduleId, query })
         },
         getAssetUrl(relativePath) {
           if (moduleEnabledResolver && !moduleEnabledResolver(moduleId)) throw new Error('Module is disabled.')
@@ -2017,7 +2017,7 @@ export function createRendererHost(): RendererKernel {
             throw new Error(`Workspace type "${typeId}" is not registered by module "${moduleId}".`)
           }
           if (moduleEnabledResolver && !moduleEnabledResolver(moduleId)) {
-            throw new Error(`Module "${moduleId}" is disabled.`)
+            throw new Error(`Extension "${moduleId}" is disabled.`)
           }
           if (!workspaceOpener) throw new Error('Workspace opening is not available yet.')
           return workspaceOpener(typeId)

@@ -6,7 +6,7 @@ import type { DiagnosticLevel, DiagnosticLogEntry } from '../../../shared/worksp
 // the ports it is handed, so the mapping and the once-only filing are testable
 // without a store or a preload.
 //
-// A row reaches a window on its Studio's `module.notifications` stream, which
+// A row reaches a window on its Studio's `extension.notifications` stream, which
 // sends the rows the server still keeps (a module's launch failure or an
 // `onStartup` notify is raised before any window listens) and then each new
 // one. A reconnect sends the kept rows again; the delivery id makes that a

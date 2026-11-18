@@ -1,5 +1,5 @@
 // The Backlog for capability modules (SDK `getBacklogService`, and the
-// renderer's Backlog write methods over the protocol's `moduleBacklog.*`): list,
+// renderer's Backlog write methods over the protocol's `extensionBacklog.*`): list,
 // locate, create and change items of a workspace's Backlog.
 //
 // Nothing here writes a file. Every write is a call into the app's own Backlog
@@ -125,7 +125,7 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
     if (deps.getModulePermissions(moduleId)?.includes(permission)) return null
     return failure(
       'permission_missing',
-      `Module "${moduleId}" does not declare the "${permission}" permission, so it cannot ${
+      `Extension "${moduleId}" does not declare the "${permission}" permission, so it cannot ${
         permission === 'backlog.read' ? 'read' : 'change'
       } the Backlog.`,
     )

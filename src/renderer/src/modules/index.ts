@@ -4,7 +4,7 @@ import type { MarketplacePluginRegistryInstallResult } from '../../../shared/ele
 import { activeForChannel } from '../../../shared/modules/dev-only'
 import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { toModuleWorkspaceView, type ModuleWorkspaceView } from '../../../shared/modules/workspace-view'
-import { STUDIO_MODULES_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
+import { STUDIO_EXTENSION_HOST_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
 import { isModuleEvent } from '../../../shared/modules/events'
 import { followWindowStudioPush } from '../studio/windowStudioPush'
 import { windowModuleMethodCaller, windowModuleServiceCaller } from '../studio/moduleMethods'
@@ -57,7 +57,7 @@ const IS_PRODUCTION_BUILD: boolean = import.meta.env.PROD === true
 
 // Active renderer modules for this build channel. Dev-only modules (none today)
 // are dropped from a packaged (production) renderer bundle so they are absent everywhere downstream: host registration, the
-// enablement universe, profiles, and the Settings → Modules manager. In a dev
+// enablement universe, profiles, and the Settings → Extensions manager. In a dev
 // build the full set is active and the modules remain user-toggleable. See
 // src/shared/modules/dev-only.ts.
 
@@ -73,7 +73,7 @@ export const ACTIVE_RENDERER_MODULE_MANIFESTS: ReadonlyArray<CapabilityManifest>
 
 // Bundled modules that exist but are not active in this build channel — i.e. the
 // feature-flagged (dev-only) modules in a production build; empty in a dev build
-// where every bundled module is active. The Settings → Modules manager shows
+// where every bundled module is active. The Settings → Extensions manager shows
 // these as greyed-out "Coming soon" rows so users can see what's on the way
 // without being able to turn them on (they are absent from the enablement
 // universe, so they can never resolve enabled).
@@ -335,19 +335,19 @@ if (typeof window !== 'undefined') {
             })
           },
         })
-        // One `module.events` stream of the window's Studio backs every
+        // One `extension.events` stream of the window's Studio backs every
         // module's subscriptions; the kernel filters each event down to the
         // module and topic that asked for it.
         // A module's renderer half calls its own declared methods over the
-        // same client: `module.read` and `module.operate`.
+        // same client: `extension.read` and `extension.operate`.
         rendererHost.setModuleMethodCaller(windowModuleMethodCaller())
         // And the host's services (the Backlog's writes, the usage query).
         rendererHost.setModuleServiceCaller(windowModuleServiceCaller())
         rendererHost.setModuleEventSource((cb) =>
           followWindowStudioPush({
-            topic: 'module.events',
+            topic: 'extension.events',
             params: {},
-            capability: STUDIO_MODULES_CAPABILITY,
+            capability: STUDIO_EXTENSION_HOST_CAPABILITY,
             onPayload: (payload) => {
               if (isModuleEvent(payload)) cb(payload)
             },

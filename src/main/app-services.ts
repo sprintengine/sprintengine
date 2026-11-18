@@ -1104,7 +1104,7 @@ export function createAppServices(
   // The renderer's module registry, mirrored here. Empty until a
   // window pushes one; consumers report "not yet known" rather than "no
   // modules", the same rule the enablement mirror follows.
-  // In process, the Studio's own (`module.reportRegistry`); out of process the
+  // In process, the Studio's own (`extension.reportRegistry`); out of process the
   // server keeps its own and this one stays empty.
   const moduleRegistryMirror = createModuleRegistryMirror()
   // The marketplace, the scaffold and the feeds, where this process's core holds them.
@@ -1518,10 +1518,10 @@ export function createAppServices(
               ...withDefinedMachineSchedules(machineSchedulesOf(core)),
               ...launchSettingsGatewayDeps(agentLaunchSettings),
               // module.*/marketplace.*. The registry snapshot is the one a
-              // window reported (`module.reportRegistry`): the kernel's own list
+              // window reported (`extension.reportRegistry`): the kernel's own list
               // omits every window-only module, so reporting from it would be
               // wrong by construction. The installed extensions and the
-              // marketplace are read as a window's `module.installed` and
+              // marketplace are read as a window's `extension.installed` and
               // `marketplace.read` are, cache included.
               getModuleRegistrySnapshot: () => moduleRegistryMirror.read(),
               listInstalledThirdPartyModules: async () =>
@@ -1686,8 +1686,8 @@ export function createAppServices(
     commands: updateCommandFile(join(app.getPath('userData'), UPDATE_COMMAND_FILENAME)),
     log: (message) => void writeDiagnosticLog({ level: 'warning', source: 'update', title: 'Client update', message }),
   })
-  // What this process's modules say to clients (`module.events`,
-  // `module.notifications`): app-main's kernel delivers into it.
+  // What this process's modules say to clients (`extension.events`,
+  // `extension.notifications`): app-main's kernel delivers into it.
   const moduleHub = createStudioModuleHub()
   // Which window may take over a running terminal's output: set once the pane
   // pop-out relay is registered (register-core-ipc.ts).

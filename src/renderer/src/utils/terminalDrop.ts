@@ -378,7 +378,7 @@ function parseFileDropPayload(dataTransfer: DataTransfer): FileDropPayload | nul
 }
 
 /**
- * The published module-facing parse (mirrored verbatim by @sprintengine/module-sdk
+ * The published module-facing parse (mirrored verbatim by @sprintengine/extension-sdk
  * and parity-tested against it): strictly the studio's MIME entry — no
  * native-Files fallback — returning null on a missing entry, unparseable JSON,
  * an unknown version, or an invalid shape. Never throws.

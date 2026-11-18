@@ -110,4 +110,4 @@ resources/marketplace/trusted-publishers.dev.json
 /backlog/
 
 # The module SDK tarball the app ships (npm run sdk:bundle).
-resources/module-sdk/
+resources/extension-sdk/
