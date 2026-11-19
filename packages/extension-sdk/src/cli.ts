@@ -46,7 +46,7 @@ import {
 } from './plugin-component-digests.js'
 import { generateModuleSigningKeyPair, signManifest, verifyModuleSignature } from './signing.js'
 
-const USAGE = `sprintengine-extension — pack, sign, and verify SprintEngine Studio capability modules
+const USAGE = `sprintengine-extension — pack, sign, and verify SprintEngine Studio extensions
 
 Usage:
   sprintengine-extension init <dir> --template <id> [--with <part,...>] [--id <module-id>] [--name <name>] [--sdk-tarball <file>] [--force]

@@ -37,14 +37,14 @@ npx esbuild packages/extension-sdk/src/cli.ts --bundle --platform=node --format=
 The commands below use the bundled local CLI:
 
 ```bash
-SPRINTENGINE_MODULE="node $(pwd)/node_modules/.cache/sprintengine/sprintengine-extension.cjs"
+SPRINTENGINE_EXTENSION="node $(pwd)/node_modules/.cache/sprintengine/sprintengine-extension.cjs"
 ```
 
 When the SDK package is installed in an external author workspace, replace that
 variable with the packaged binary:
 
 ```bash
-SPRINTENGINE_MODULE="sprintengine-extension"
+SPRINTENGINE_EXTENSION="sprintengine-extension"
 ```
 
 Run the scaffold, sign, verify, pack, and registry-entry commands below from a
@@ -56,7 +56,7 @@ at the current directory.
 Pick a lowercase plugin id. The id is the registry key and the folder name.
 
 ```bash
-$SPRINTENGINE_MODULE plugin scaffold acme-doc-search --out plugins/acme-doc-search --component mcp --component skills
+$SPRINTENGINE_EXTENSION plugin scaffold acme-doc-search --out plugins/acme-doc-search --component mcp --component skills
 ```
 
 By default, scaffold can create all component placeholders. Use `--component`
@@ -84,7 +84,7 @@ Keep the private key outside the plugin folder and outside git.
 
 ```bash
 mkdir -p .private
-$SPRINTENGINE_MODULE keygen --out .private/acme-doc-search.key
+$SPRINTENGINE_EXTENSION keygen --out .private/acme-doc-search.key
 ```
 
 The CLI prints the public-key fingerprint. Store the private key in your own
@@ -97,7 +97,7 @@ sign command writes per-component file digests into `plugin.json` before adding
 the ed25519 signature, so component byte changes require a fresh signature.
 
 ```bash
-$SPRINTENGINE_MODULE plugin sign plugins/acme-doc-search --key .private/acme-doc-search.key
+$SPRINTENGINE_EXTENSION plugin sign plugins/acme-doc-search --key .private/acme-doc-search.key
 ```
 
 Signing writes the normalized signed manifest, including component file
@@ -108,7 +108,7 @@ digests, back to `plugin.json`.
 Run the same plugin verification command CI uses:
 
 ```bash
-$SPRINTENGINE_MODULE plugin verify plugins/acme-doc-search
+$SPRINTENGINE_EXTENSION plugin verify plugins/acme-doc-search
 ```
 
 A valid plugin prints `<id>: plugin signature valid` and the signer fingerprint. If
@@ -121,8 +121,8 @@ component digest mismatch. Re-sign before submitting.
 Packing proves the bundle can be copied without private key material.
 
 ```bash
-$SPRINTENGINE_MODULE plugin pack plugins/acme-doc-search --out packed/acme-doc-search --force
-$SPRINTENGINE_MODULE plugin verify packed/acme-doc-search
+$SPRINTENGINE_EXTENSION plugin pack plugins/acme-doc-search --out packed/acme-doc-search --force
+$SPRINTENGINE_EXTENSION plugin verify packed/acme-doc-search
 ```
 
 `plugin pack` excludes `.git`, `node_modules`, `*.key`, and `*.pem`.

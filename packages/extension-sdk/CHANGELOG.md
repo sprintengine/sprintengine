@@ -23,6 +23,9 @@ Studio speaks of them, and this package with them.
   under `~/.sprintengine/modules/` is read any more, and receipts of bundles
   installed before this release are dropped. Rebuild an extension against this
   SDK and install it again into `~/.sprintengine/extensions/`.
+- Skill folders and MCP server entries that a bundle installed before this
+  release copied into workspaces and agent configs are not cleaned up, since
+  its receipt is dropped: remove them by hand before installing it again.
 - The Studio protocol entries a module's window half reaches are
   `extension.read` and `extension.operate` (they were `module.read` and
   `module.operate`), and the host's refusals are `extension_unavailable` and

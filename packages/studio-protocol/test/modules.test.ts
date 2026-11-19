@@ -16,7 +16,7 @@ import { studioScopesGrant } from '../src/scopes'
 
 const refusal = (parsed: { ok: boolean; code?: string }) => (parsed.ok ? null : parsed.code)
 
-test('a module method is read under extensions:read and operated under extensions:operate, behind the modules capability', () => {
+test('a module method is read under extensions:read and operated under extensions:operate, behind the extension-host capability', () => {
   for (const method of ['extension.read', 'extension.operate', 'extension.list'] as const) {
     const spec = STUDIO_MODULES_METHODS[method]
     assert.equal(spec.owner, undefined, `${method} is not held to an owner`)
@@ -88,7 +88,7 @@ test('a method name is a lower-case word, then letters, digits, dots and dashes,
 
 // ── The host's services a module's window half calls ──────────────────────
 
-test('a module’s host services are read under extensions:read and written under extensions:operate, behind the modules capability', () => {
+test('a module’s host services are read under extensions:read and written under extensions:operate, behind the extension-host capability', () => {
   for (const [method, spec] of Object.entries(STUDIO_MODULE_SERVICES_METHODS)) {
     assert.equal(spec.owner, undefined, `${method} is not held to an owner`)
     assert.equal(spec.capability, STUDIO_EXTENSION_HOST_CAPABILITY, method)

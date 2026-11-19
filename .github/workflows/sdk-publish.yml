@@ -1,4 +1,4 @@
-name: Publish module SDK
+name: Publish extension SDK
 
 # Publishes @sprintengine/extension-sdk to npm, with provenance.
 #
