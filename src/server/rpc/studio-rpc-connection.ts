@@ -1113,7 +1113,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   function subscribeModuleEvents(id: string, params: StudioTopicParams<'extension.events'>): void {
     const modules = options.modules
     if (!modules) {
-      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.events.')
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve extension.events.')
       return
     }
     const subscription: Subscription = { id, topic: 'extension.events', key: null, replay: null, handle: null }
@@ -1389,7 +1389,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   function subscribeModuleNotifications(id: string): void {
     const modules = options.modules
     if (!modules) {
-      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.notifications.')
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve extension.notifications.')
       return
     }
     const subscription: Subscription = { id, topic: 'extension.notifications', key: null, replay: null, handle: null }

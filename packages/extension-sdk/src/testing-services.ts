@@ -547,7 +547,7 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
   const canOperate = (): boolean => context.permissions.has('conversation:operate')
   const canRead = (): boolean => canOperate() || context.permissions.has('conversation:read')
   const missing = (permission: string) =>
-    failure('permission_missing', `Module "${context.moduleId}" must declare the "${permission}" permission.`)
+    failure('permission_missing', `Extension "${context.moduleId}" must declare the "${permission}" permission.`)
   const notOwned = (ref: ModuleConversationRef) =>
     failure(
       'not_owned',
@@ -737,7 +737,7 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
         if (input.allowedTools?.length && !context.permissions.has('conversation:bypass')) {
           return failure(
             'permission_missing',
-            `Module "${context.moduleId}" must declare "conversation:bypass" to let a chat use tools without asking.`,
+            `Extension "${context.moduleId}" must declare "conversation:bypass" to let a chat use tools without asking.`,
           )
         }
         const worktree = input.worktree
@@ -1340,7 +1340,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
         const tools = options.tools ?? 'none'
         if (tools === 'auto' && !context.permissions.has('conversation:bypass')) {
           throw new Error(
-            `Module "${context.moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
+            `Extension "${context.moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
           )
         }
         // A live intent spawns the session, as the host's first runStructured does.
@@ -1380,7 +1380,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
         if (input?.decision === 'once' && !context.permissions.has('conversation:operate')) {
           return {
             ok: false,
-            message: `Module "${context.moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
+            message: `Extension "${context.moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
           }
         }
         if (input?.decision !== 'once' && input?.decision !== 'deny') {
@@ -1417,7 +1417,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
     attach(_moduleId: string, spec: CompanionAgentSpec): CompanionAgentHandle {
       if (!context.permissions.has('agents:companion')) {
         throw new Error(
-          `Module "${context.moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
+          `Extension "${context.moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
         )
       }
       if (!spec?.workspaceRoot || !isAbsolute(spec.workspaceRoot)) {
@@ -1492,7 +1492,7 @@ function secretsRegistry(context: FakeServiceContext): { registry: object; handl
   const missing = () =>
     failure<ModuleSecretsError>(
       'permission_missing',
-      `Module "${context.moduleId}" must declare the "secrets" permission.`,
+      `Extension "${context.moduleId}" must declare the "secrets" permission.`,
     )
   const badName = (name: unknown) =>
     typeof name === 'string' && SECRET_NAME_PATTERN.test(name)
@@ -1743,7 +1743,7 @@ function githubRegistry(context: FakeServiceContext): { registry: object; handle
   let signedIn = true
   let login = 'dev'
   const allowed = (): boolean => context.permissions.has('github')
-  const missingMessage = `Module "${context.moduleId}" must declare the "github" permission.`
+  const missingMessage = `Extension "${context.moduleId}" must declare the "github" permission.`
   const signedOut = () => failure('not_signed_in', 'Sign in to GitHub in Settings to let extensions use it.')
   const mediaIssue = (accept: unknown) =>
     accept !== undefined && (typeof accept !== 'string' || !GITHUB_MEDIA_TYPES.has(accept as ModuleGitHubMediaType))
@@ -1972,7 +1972,7 @@ function backlogRegistry(context: FakeServiceContext): { registry: object; handl
       ? null
       : failure(
           'permission_missing',
-          `Module "${context.moduleId}" does not declare the "${permission}" permission, so it cannot ${
+          `Extension "${context.moduleId}" does not declare the "${permission}" permission, so it cannot ${
             permission === 'backlog.read' ? 'read' : 'change'
           } the Backlog.`,
         )
@@ -2426,7 +2426,7 @@ function usageRegistry(context: FakeServiceContext): { registry: object; handle:
         return {
           ok: false,
           code: 'permission_missing',
-          message: `Module "${moduleId}" does not declare the "usage:read" permission, so it cannot read token usage.`,
+          message: `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot read token usage.`,
         }
       }
       const problem = invalid(query)
@@ -2439,7 +2439,7 @@ function usageRegistry(context: FakeServiceContext): { registry: object; handle:
     onChanged(moduleId: string, listener: () => void): () => void {
       if (!permitted()) {
         throw new Error(
-          `Module "${moduleId}" does not declare the "usage:read" permission, so it cannot watch token usage.`,
+          `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot watch token usage.`,
         )
       }
       listeners.add(listener)
@@ -2491,7 +2491,7 @@ function activityRegistry(context: FakeServiceContext): { registry: object; hand
       ? null
       : failure(
           'permission_missing',
-          `Module "${context.moduleId}" does not declare the "conversation:read-all" permission, so it cannot read your chats.`,
+          `Extension "${context.moduleId}" does not declare the "conversation:read-all" permission, so it cannot read your chats.`,
         )
   const invalidWindow = (from: unknown, to: unknown, required: boolean): string | null => {
     for (const [name, value] of [
@@ -2706,7 +2706,7 @@ function textGenerationRegistry(context: FakeServiceContext): { registry: object
       if (!context.permissions.has('agents:generate')) {
         return refuse(
           'permission_missing',
-          `Module "${context.moduleId}" must declare the "agents:generate" permission.`,
+          `Extension "${context.moduleId}" must declare the "agents:generate" permission.`,
         )
       }
       const problem = invalid(input)

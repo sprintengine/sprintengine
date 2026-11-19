@@ -238,7 +238,7 @@ function notifyTargetId(value: unknown): string | null {
 function validateNotify(moduleId: string, input: unknown): ModuleNotifyInput {
   const { severity, title, body, target } = (input ?? {}) as Record<string, unknown>
   const fail = (message: string): never => {
-    throw new Error(`Module "${moduleId}" notify(...) ${message}`)
+    throw new Error(`Extension "${moduleId}" notify(...) ${message}`)
   }
   if (typeof input !== 'object' || input === null) fail('requires a payload object.')
   if (typeof severity !== 'string' || !NOTIFY_SEVERITIES.includes(severity)) {
@@ -306,7 +306,7 @@ function createAppStateStore(initial: Record<string, unknown> | undefined): AppS
 
 function validateTopic(moduleId: string, topic: unknown): string {
   if (typeof topic !== 'string' || !topic.trim() || topic.length > MAX_TOPIC_LENGTH) {
-    throw new Error(`Module "${moduleId}" emit(...) needs a topic of 1-${MAX_TOPIC_LENGTH} characters.`)
+    throw new Error(`Extension "${moduleId}" emit(...) needs a topic of 1-${MAX_TOPIC_LENGTH} characters.`)
   }
   return topic
 }
@@ -450,11 +450,11 @@ function validateAssetPath(relativePath: string, moduleId: string): string[] {
     relativePath.startsWith('/') ||
     /[\\\0?#]/.test(relativePath)
   ) {
-    throw new Error(`Module "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
+    throw new Error(`Extension "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
   }
   const parts = relativePath.split('/')
   if (parts.some((part) => !part || part === '.' || part === '..')) {
-    throw new Error(`Module "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
+    throw new Error(`Extension "${moduleId}" asset path must be a module-relative file path, got "${relativePath}".`)
   }
   return parts
 }
@@ -509,14 +509,14 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       return {
         ok: false,
         code: 'extension_method_unknown',
-        message: `Module "${moduleId}" declares no method "${method}".`,
+        message: `Extension "${moduleId}" declares no method "${method}".`,
       }
     }
     if (registration.access !== access) {
       return {
         ok: false,
         code: 'extension_method_unknown',
-        message: `Module "${moduleId}" declares "${method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+        message: `Extension "${moduleId}" declares "${method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with extension.${registration.access}.`,
       }
     }
     const problem = params === undefined ? null : jsonValueProblem(params, 'params')
@@ -530,13 +530,15 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     if (answer?.ok === true) {
       const resultProblem = answer.result === undefined ? null : jsonValueProblem(answer.result, 'result')
       if (resultProblem)
-        throw new Error(`Module "${moduleId}" method "${method}" answered a result that is not JSON: ${resultProblem}`)
+        throw new Error(
+          `Extension "${moduleId}" method "${method}" answered a result that is not JSON: ${resultProblem}`,
+        )
       return { ok: true, result: answer.result === undefined ? null : structuredClone(answer.result) }
     }
     if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string')
       return { ok: false, code: answer.code, message: answer.message }
     throw new Error(
-      `Module "${moduleId}" method "${method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+      `Extension "${moduleId}" method "${method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
     )
   }
   const tools = new Map<string, McpToolRegistration>()
@@ -663,7 +665,8 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       throw new Error(`Service "${key}" is not available to third-party modules.`)
     }
     if (override === null) {
-      if (required) throw new Error(`Module "${moduleId}" requires service "${key}", which no enabled module provides.`)
+      if (required)
+        throw new Error(`Extension "${moduleId}" requires service "${key}", which no enabled module provides.`)
       return undefined
     }
     if (!fake.resolved.includes(key)) fake.resolved.push(key)
@@ -684,37 +687,37 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     },
     registerMethods(batch) {
       if (!METHOD_PERMISSIONS.some((permission) => permissions.has(permission))) {
-        throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
+        throw new Error(`Extension "${moduleId}" needs the "module:bridge" permission to declare methods.`)
       }
       if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
-        throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
+        throw new Error(`Extension "${moduleId}" declares its methods as an object of name to method.`)
       }
       const entries = Object.entries(batch as unknown as Record<string, ModuleMethodRegistration>)
       for (const [name, registration] of entries) {
         if (!isModuleMethodName(name)) {
           throw new Error(
-            `Module "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most ${MODULE_METHOD_MAX_CHARS}.`,
+            `Extension "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most ${MODULE_METHOD_MAX_CHARS}.`,
           )
         }
-        if (declared.has(name)) throw new Error(`Module "${moduleId}" already declares "${name}".`)
+        if (declared.has(name)) throw new Error(`Extension "${moduleId}" already declares "${name}".`)
         const access = (registration as { access?: unknown } | null)?.access
         if (access !== 'read' && access !== 'operate') {
-          throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
+          throw new Error(`Extension "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
         }
         if (typeof registration.params !== 'function') {
           throw new Error(
-            `Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`,
+            `Extension "${moduleId}" method "${name}" has no params validator; every method reads its params.`,
           )
         }
         if (typeof registration.handler !== 'function') {
-          throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)
+          throw new Error(`Extension "${moduleId}" method "${name}" has no handler.`)
         }
       }
       for (const [name, registration] of entries) declared.set(name, registration)
     },
     registerMcpTools(batch) {
       if (!permissions.has('mcp:tools')) {
-        throw new Error(`Module "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
+        throw new Error(`Extension "${moduleId}" must declare the "mcp:tools" permission to register MCP tools.`)
       }
       const names = new Set<string>()
       for (const tool of batch) {
@@ -732,7 +735,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       for (const skill of batch) {
         const parts = typeof skill.sourceDir === 'string' ? skill.sourceDir.split(/[\\/]/) : ['..']
         if (!skill.sourceDir || isAbsolute(skill.sourceDir) || parts.includes('..')) {
-          throw new Error(`Module "${moduleId}" skill "${skill.id}" sourceDir must stay inside the module root.`)
+          throw new Error(`Extension "${moduleId}" skill "${skill.id}" sourceDir must stay inside the module root.`)
         }
         if (ids.has(skill.id) || builtinSkills.has(skill.id)) {
           throw new Error(`Skill "${skill.id}" is already registered.`)
@@ -764,7 +767,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         options.services && Object.hasOwn(options.services, key) ? options.services[key] : registries.get(key)
       ) as { dataDir?: (moduleId: string) => string } | null | undefined
       if (typeof storage?.dataDir !== 'function') {
-        throw new Error(`Module "${moduleId}" asked for its data directory, and no storage service is provided.`)
+        throw new Error(`Extension "${moduleId}" asked for its data directory, and no storage service is provided.`)
       }
       return storage.dataDir(moduleId)
     },
@@ -784,7 +787,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
         return {
           ok: false,
           code: 'permission_missing',
-          message: `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
+          message: `Extension "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
         }
       }
       return workspaces.gitInfo(workspaceId)
@@ -837,7 +840,7 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
       const problem = payload === undefined ? null : jsonValueProblem(payload)
       if (problem)
         throw new Error(
-          `Module "${moduleId}" emitted a "${valid}" payload that cannot be sent to a client: ${problem}.`,
+          `Extension "${moduleId}" emitted a "${valid}" payload that cannot be sent to a client: ${problem}.`,
         )
       const cloned = payload === undefined ? undefined : structuredClone(payload)
       fake.emitted.push(cloned === undefined ? { topic: valid } : { topic: valid, payload: cloned })
@@ -1317,7 +1320,7 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
   const requireBacklogRead = (): void => {
     if (permissions.has('backlog.read')) return
     throw new Error(
-      `Module "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
+      `Extension "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
     )
   }
   const backlogCall = <T>(method: string, args: unknown[]): Promise<T> =>
@@ -1365,7 +1368,7 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
       // An installed module's bell rows are filed under its own id, the only source it may claim.
       if (provider.source !== moduleId) {
         throw new Error(
-          `Module "${moduleId}" may only register a notification action provider for its own rows (source "${moduleId}"); got "${provider.source}".`,
+          `Extension "${moduleId}" may only register a notification action provider for its own rows (source "${moduleId}"); got "${provider.source}".`,
         )
       }
       if (registrations.notificationActionProviders.some((existing) => existing.source === provider.source)) {
@@ -1474,7 +1477,7 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
         return {
           ok: false,
           code: 'permission_missing',
-          message: `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
+          message: `Extension "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
         }
       }
       return world.workspaces.gitInfo(workspaceId)
@@ -1558,8 +1561,8 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
           ok: false,
           code: 'permission_missing',
           message: sends
-            ? `Module "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`
-            : `Module "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
+            ? `Extension "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`
+            : `Extension "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
         }
       }
       const optionalText = (value: unknown, max: number): string | null | undefined => {
@@ -1694,7 +1697,7 @@ export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRe
         Promise.resolve({
           ok: false,
           code: 'extension_unavailable',
-          message: `Module "${moduleId}" is not running: the fake renderer host was given no main.`,
+          message: `Extension "${moduleId}" is not running: the fake renderer host was given no main.`,
         })
       return {
         read: (method, params) => (main ? main.methods.read(method, params) : absent()) as never,

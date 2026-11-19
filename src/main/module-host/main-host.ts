@@ -682,7 +682,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       return {
         ok: false,
         code: 'extension_method_unknown',
-        message: `Extension "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+        message: `Extension "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with extension.${registration.access}.`,
       }
     }
     const parsed = registration.params(request.params)
