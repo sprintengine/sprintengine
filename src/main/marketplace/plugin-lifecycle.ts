@@ -36,11 +36,6 @@ import { isRecord } from '../../shared/records'
 
 const MARKETPLACE_PLUGIN_INSTALLS_FILENAME = 'marketplace-plugin-installs.json'
 const RECEIPT_COMPONENT_KINDS = new Set(['mcp', 'skills', 'module'])
-// A kind an older receipt may list that this Studio no longer installs: an
-// automation component added a definition to the retired automations engine,
-// which left with the engine. Such an entry is dropped on read — it names
-// nothing left to update or uninstall — and the rest of the receipt stands.
-const RETIRED_RECEIPT_COMPONENT_KINDS = new Set(['automation'])
 const MODULE_TRUST_STATUSES = new Set(['trusted', 'signed', 'unsigned', 'invalid'])
 
 export type MarketplacePluginInstallReceipt = {
@@ -1619,9 +1614,9 @@ function validateReceipt(value: unknown, path: string): MarketplacePluginInstall
     sourceUrl: value.sourceUrl,
     classification: value.classification,
     installedAt: value.installedAt,
-    components: value.components
-      .filter((component) => !(isRecord(component) && RETIRED_RECEIPT_COMPONENT_KINDS.has(String(component.kind))))
-      .map((component, index) => validateReceiptComponent(component, `${path}.components[${index}]`)),
+    components: value.components.map((component, index) =>
+      validateReceiptComponent(component, `${path}.components[${index}]`),
+    ),
   }
   if (value.source !== undefined) receipt.source = validateReceiptSource(value.source, `${path}.source`)
   if (value.permissions !== undefined) {

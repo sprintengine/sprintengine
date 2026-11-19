@@ -819,11 +819,11 @@ test('plugin-lifecycle', async () => {
     })
   }
 
-  async function testOldReceiptListingAnAutomationStillUninstalls(): Promise<void> {
+  async function testReceiptWithAnUnsupportedComponentKindIsRejected(): Promise<void> {
     await withTempDir(async (temp) => {
-      // An install from before automations became scheduled agents recorded an
-      // `automation` component beside the rest. That entry names nothing left to
-      // remove, so it is dropped on read and the rest of the receipt still works.
+      // A component kind this Studio does not install (an `automation`, say)
+      // makes the receipt invalid: it is refused, never skipped, and nothing
+      // the receipt names is touched.
       const signer = generateKeyPairSync('ed25519')
       const bundle = await writeBundle(
         temp,
@@ -847,13 +847,11 @@ test('plugin-lifecycle', async () => {
       assert.equal(installed.ok, true, JSON.stringify(installed))
 
       const receipts = JSON.parse(await readFile(receiptStorePath, 'utf8')) as {
+        schemaVersion: number
         plugins: Record<string, { components: Array<Record<string, unknown>> }>
       }
-      receipts.plugins['registry-plugin']?.components.push({
-        kind: 'automation',
-        id: 'nightly-dependency-sweep',
-        message: 'Added "Nightly dependency sweep" to this project.',
-      })
+      assert.equal(receipts.schemaVersion, 2)
+      receipts.plugins['registry-plugin']?.components.push({ kind: 'automation', id: 'nightly-dependency-sweep' })
       await writeFile(receiptStorePath, `${JSON.stringify(receipts, null, 2)}\n`, 'utf8')
 
       const uninstalled = await lifecycle.uninstall({
@@ -861,13 +859,9 @@ test('plugin-lifecycle', async () => {
         workspaceRoot,
         skillHarnesses: ['agents'],
       })
-      assert.equal(uninstalled.ok, true, JSON.stringify(uninstalled))
-      if (!uninstalled.ok) return
-      assert.deepEqual(
-        uninstalled.removed.map((component) => component.kind),
-        ['skills'],
-      )
-      assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'sweep-skill')), false, 'the skill is removed')
+      assert.equal(uninstalled.ok, false)
+      assert.match(uninstalled.message, /components\[1\]\.kind: unsupported component kind/)
+      assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'sweep-skill')), true, 'nothing is removed')
     })
   }
 
@@ -2082,7 +2076,7 @@ test('plugin-lifecycle', async () => {
     await testUpdateAvailabilitySettlesThroughRegistryUpdate()
     await testUpdateWithInvalidSignatureIsBlocked()
     await testUpdateSignedByDifferentPublisherReprompts()
-    await testOldReceiptListingAnAutomationStillUninstalls()
+    await testReceiptWithAnUnsupportedComponentKindIsRejected()
     await testFailedUpdateRollsBackReplacementAndKeepsReceipt()
     await testReceiptStoreValidationRejectsMalformedAndUnsafeState()
     await testReceiptStoreFromBeforeExtensionsIsRemovedUnread()
