@@ -1,7 +1,6 @@
 import {
   STUDIO_MODULE_SERVICES_METHODS,
   STUDIO_EXTENSION_HOST_CAPABILITY,
-  STUDIO_RETIRED_MODULES_CAPABILITY,
   type StudioModuleServicesMethodMap,
 } from '../../../../packages/studio-protocol/src/public'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
@@ -48,24 +47,10 @@ function refusal(error: unknown): Answer {
   return { ok: false, ...refusalOf(error) }
 }
 
-/**
- * Why a client cannot reach a Studio's extensions: an older Studio still says
- * `modules`, and is told to update; any other does not run them.
- */
-export function extensionHostRefusal(client: StudioClient, otherwise: string): string {
-  return client.welcome.capabilities.includes(STUDIO_RETIRED_MODULES_CAPABILITY)
-    ? copy.studio.moduleMethods.thisStudioIsOlder
-    : otherwise
-}
-
 /** One call over a client: the protocol's entry for its access, the module's answer as it came. */
 export async function callModuleMethod(client: StudioClient, call: ModuleMethodCall): Promise<Answer> {
   if (!client.supports(STUDIO_EXTENSION_HOST_CAPABILITY))
-    return {
-      ok: false,
-      code: 'unavailable',
-      message: extensionHostRefusal(client, copy.studio.moduleMethods.thisStudioDoesNotServe),
-    }
+    return { ok: false, code: 'unavailable', message: copy.studio.moduleMethods.thisStudioDoesNotServe }
   const named = {
     moduleId: call.moduleId,
     method: call.method,
@@ -103,11 +88,7 @@ export async function callModuleService<M extends ModuleServiceMethod>(
   params: ModuleServiceParams<M>,
 ): Promise<ModuleServiceAnswer<M>> {
   if (!client.supports(STUDIO_EXTENSION_HOST_CAPABILITY))
-    return moduleServiceRefusal(
-      method,
-      'unavailable',
-      extensionHostRefusal(client, 'This Studio does not serve host services to extensions.'),
-    )
+    return moduleServiceRefusal(method, 'unavailable', 'This Studio does not serve host services to extensions.')
   // A write (a mutation in the contract) is sent under a command id made here.
   const sent = (
     STUDIO_MODULE_SERVICES_METHODS[method].mutation ? { ...params, commandId: randomId() } : params

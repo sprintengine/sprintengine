@@ -254,17 +254,12 @@ against:
 "engines": { "hostApi": 3 }
 ```
 
-Host API 3 is host API 2 under the SDK's new name: this package was
-`@sprintengine/module-sdk`, and a window half imports
-`@sprintengine/extension-sdk/ui` and `/surface` at runtime. Host API 2 had
-replaced host API 1's IPC channels with declared methods
-(`MainHost.registerMethods`, `RendererHost.methods`; see "Calling your
-entry.main from the renderer"). A module built for host API 1 or 2 is refused,
-and Settings and the bell say what to change: depend on
-`@sprintengine/extension-sdk` 3 and point the window build's `--external`
-flags at its `/ui` and `/surface`; from host API 1, also `registerIpc` becomes
-`registerMethods` and `host.invoke` becomes `host.methods().read` or
-`.operate`; and `engines.hostApi` becomes 3.
+Host API 3 is the contract under this package's name: a window half imports
+`@sprintengine/extension-sdk/ui` and `/surface` at runtime. Methods a module
+declares (`MainHost.registerMethods`, `RendererHost.methods`; see "Calling your
+entry.main from the renderer") are host API 2's. A module built for an older
+host API is refused, and Settings and the bell say to rebuild it against
+`@sprintengine/extension-sdk` 3.
 
 Studio loads a module when that number is within
 `[HOST_API_MIN_SUPPORTED, HOST_API_VERSION]` of the app, and otherwise refuses

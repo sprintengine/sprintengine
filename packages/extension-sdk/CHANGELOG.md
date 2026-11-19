@@ -15,12 +15,14 @@ Studio speaks of them, and this package with them.
   `@sprintengine/extension-sdk/surface` at runtime, which Studio provides
   under that name only. Point the window build's `--external` flags at them.
 - `HOST_API_VERSION` and `HOST_API_MIN_SUPPORTED` are 3. A module built for
-  host API 1 or 2 is refused (`host_api_too_old`) with a message saying what to
-  change; set `"engines": { "hostApi": 3 }` and rebuild.
-- Studio installs extensions under `~/.sprintengine/extensions/` (it was
-  `~/.sprintengine/modules/`); the templates' `dev:install` copies there, and
-  `SPRINTENGINE_USER_EXTENSION_ROOT` replaces
-  `SPRINTENGINE_USER_MODULE_ROOT`.
+  host API 1 or 2 is refused (`host_api_too_old`); set
+  `"engines": { "hostApi": 3 }` and rebuild.
+- Studio installs extensions under `~/.sprintengine/extensions/`; the
+  templates' `dev:install` copies there, and `SPRINTENGINE_USER_EXTENSION_ROOT`
+  replaces `SPRINTENGINE_USER_MODULE_ROOT`. There is no migration: nothing
+  under `~/.sprintengine/modules/` is read any more, and receipts of bundles
+  installed before this release are dropped. Rebuild an extension against this
+  SDK and install it again into `~/.sprintengine/extensions/`.
 - The Studio protocol entries a module's window half reaches are
   `extension.read` and `extension.operate` (they were `module.read` and
   `module.operate`), and the host's refusals are `extension_unavailable` and

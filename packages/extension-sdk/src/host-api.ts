@@ -14,22 +14,11 @@ import type { CapabilityManifest } from './index.js'
 export const HOST_API_VERSION = 3
 
 /**
- * The oldest host API a host still loads modules for. Host API 3 renamed the
- * SDK to `@sprintengine/extension-sdk`, whose `/ui` and `/surface` a window
- * half imports at runtime, so a module built for 2 (or 1) is refused, told how
- * to rebuild.
+ * The oldest host API a host still loads modules for. Host API 3 is the SDK
+ * under its name `@sprintengine/extension-sdk`, whose `/ui` and `/surface` a
+ * window half imports at runtime, so a module built for an older one is refused.
  */
 export const HOST_API_MIN_SUPPORTED = 3
-
-/** The SDK's name before host API 3; a module built for 1 or 2 imports it. */
-const RENAME_HELP =
-  'Host API 3 renamed the SDK: change the dependency "@sprintengine/module-sdk" to "@sprintengine/extension-sdk" 3, and the --external flags of the window build to @sprintengine/extension-sdk/ui and /surface, set "engines": { "hostApi": 3 }, and rebuild.'
-
-/** What each host API this host no longer loads lost, and how a module built for it is rebuilt. */
-const RETIRED_HOST_APIS: Readonly<Record<number, string>> = {
-  1: `Host API 2 replaced its IPC channels with declared methods: MainHost.registerIpc becomes registerMethods, and the window's host.invoke becomes host.methods().read or .operate. ${RENAME_HELP}`,
-  2: RENAME_HELP,
-}
 
 /** Where a refused module's author is sent, and what someone whose agent wrote it can do. */
 const UPDATE_HELP =
@@ -191,7 +180,7 @@ export function checkHostApiCompatibility(
     return {
       ok: false,
       code: 'host_api_too_old',
-      message: `The extension was built for host API ${hostApi}, and this version of the app loads ${HOST_API_MIN_SUPPORTED} or newer. ${RETIRED_HOST_APIS[hostApi] ?? 'Rebuild it against a current SDK.'} ${UPDATE_HELP}`,
+      message: `The extension was built for host API ${hostApi}, and this version of the app loads ${HOST_API_MIN_SUPPORTED} or newer. Rebuild it against @sprintengine/extension-sdk ${HOST_API_VERSION}. ${UPDATE_HELP}`,
     }
   }
   return { ok: true }

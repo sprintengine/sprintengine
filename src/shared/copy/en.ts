@@ -4450,7 +4450,6 @@ export const en = {
     // src/renderer/src/studio/moduleMethods.ts
     moduleMethods: {
       thisStudioDoesNotServe: 'This Studio does not serve extension methods.',
-      thisStudioIsOlder: "This machine's Studio is older. Update it to use its extensions.",
       thisWindowHasNoStudio: 'This window has no Studio connection.',
     },
     // src/renderer/src/studio/pairedCanvas.ts

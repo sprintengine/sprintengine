@@ -2,7 +2,6 @@ import {
   STUDIO_EXTENSION_HOST_CAPABILITY,
   type StudioModulesMethodMap,
 } from '../../../../packages/studio-protocol/src/public'
-import { extensionHostRefusal } from './moduleMethods'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
 
@@ -37,8 +36,7 @@ export async function sendModuleLifecycle<M extends Lifecycle>(
   method: M,
   params: Params<M>,
 ): Promise<Result<M>> {
-  if (!client.supports(STUDIO_EXTENSION_HOST_CAPABILITY))
-    return refused(extensionHostRefusal(client, 'This Studio does not run extensions.'))
+  if (!client.supports(STUDIO_EXTENSION_HOST_CAPABILITY)) return refused('This Studio does not run extensions.')
   try {
     return await client.request(method, { ...params, commandId: commandId() } as StudioModulesMethodMap[M]['params'])
   } catch (error) {

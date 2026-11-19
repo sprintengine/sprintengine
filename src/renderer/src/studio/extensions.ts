@@ -35,7 +35,6 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
-import { extensionHostRefusal } from './moduleMethods'
 
 // The window's way to what its Studio is extended with: the marketplace and
 // installing from it or from GitHub (`marketplace.*`), the agent CLIs' plugin
@@ -101,12 +100,7 @@ async function call<M extends StudioMethod>(
   params: StudioMethodParams<M>,
 ): Promise<StudioMethodResult<M>> {
   const client = await windowStudioClient()
-  if (!client.supports(capability))
-    throw new Error(
-      capability === STUDIO_EXTENSION_HOST_CAPABILITY
-        ? extensionHostRefusal(client, `This Studio does not serve ${method}.`)
-        : `This Studio does not serve ${method}.`,
-    )
+  if (!client.supports(capability)) throw new Error(`This Studio does not serve ${method}.`)
   return client.request(method, params)
 }
 

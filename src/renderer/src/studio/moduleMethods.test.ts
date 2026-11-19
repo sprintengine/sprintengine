@@ -8,7 +8,6 @@ import { callModuleMethod, callModuleService } from './moduleMethods'
 function fakeClient(answer: (method: string, params: unknown) => unknown, capabilities = ['extension-host']) {
   const requests: Array<{ method: string; params: unknown }> = []
   const client = {
-    welcome: { capabilities },
     supports: (capability: string) => capabilities.includes(capability),
     request: async (method: string, params: unknown) => {
       requests.push({ method, params })
@@ -57,22 +56,6 @@ test('a refusal from Studio is an answer with its code, never a throw', async ()
   const answer = await callModuleMethod(none, { moduleId: 'deck', method: 'list', access: 'read', params: {} })
   assert.equal(!answer.ok && answer.code, 'unavailable')
   assert.equal(!answer.ok && answer.message, 'This Studio does not serve extension methods.')
-})
-
-test('a Studio from before extensions were named so is told to update, not called', async () => {
-  const { client, requests } = fakeClient(() => ({ ok: true, result: 1 }), ['modules'])
-  const answer = await callModuleMethod(client, { moduleId: 'deck', method: 'list', access: 'read', params: {} })
-  assert.deepEqual(answer, {
-    ok: false,
-    code: 'unavailable',
-    message: "This machine's Studio is older. Update it to use its extensions.",
-  })
-  const service = await callModuleService(client, 'extensionUsage.query', {
-    moduleId: 'deck',
-    query: { from: 0, to: 1 },
-  })
-  assert.equal(!service.ok && service.message, "This machine's Studio is older. Update it to use its extensions.")
-  assert.deepEqual(requests, [], 'nothing is sent to it')
 })
 
 test('a host-service read goes out as it is; a write under a command id made for it', async () => {

@@ -19,7 +19,7 @@ up there first, with the app's own validators.
 | Needs trust / unsigned / signed | Not trusted yet — or trusted before the last rebuild | Trust it. Every `dev:install` changes the fingerprint |
 | Invalid / tampered | Files in the folder do not match `files`, or the manifest changed after signing | `npm run dev:install` (it rewrites `files` and signs again when it can). Never edit the installed copy |
 | Needs a newer Studio (`host_api_too_new`) | `engines.hostApi` is newer than this Studio | Update Studio, or build against the SDK version it ships |
-| Built for an older host (`host_api_too_old`) | The SDK the module was built with is too old. Host API 2 is the SDK's old name (`@sprintengine/module-sdk`); host API 1 (`registerIpc`, `host.invoke`) is older still | Depend on `@sprintengine/extension-sdk` 3 instead of `@sprintengine/module-sdk`, point the window build's `--external` flags at `@sprintengine/extension-sdk/ui` and `/surface`, set `"engines": { "hostApi": 3 }`, rebuild. From host API 1, also move `registerIpc` channels to `registerMethods` and `host.invoke` calls to `host.methods().read` / `.operate` |
+| Built for an older host (`host_api_too_old`) | The SDK the module was built with is older than this Studio loads | Depend on `@sprintengine/extension-sdk` 3, set `"engines": { "hostApi": 3 }`, rebuild |
 | No host API (`host_api_missing`) | `engines` missing or not an integer | Add `"engines": { "hostApi": 3 }` |
 | Disabled | `defaultEnabled: false` and never turned on, or a `dependsOn` module is off | Turn it on; turn on the dependency |
 | A load error | `registerRenderer`/`registerMain` threw, rejected or took over 10 s; or an id clash | Read the error text; `npm test` reproduces most registration failures |

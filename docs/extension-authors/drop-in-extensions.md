@@ -50,13 +50,8 @@ the user has trusted execute code.
   A module without it, or built for a host API this app does not load, is
   refused with a message saying which side to update — never shown as merely
   "not trusted".
-- A module built for host API 1 or 2 is refused until it is updated. Host
-  API 3 renamed the SDK: rebuild it against `@sprintengine/extension-sdk` 3
-  (it was `@sprintengine/module-sdk`) with the window build's `--external`
-  flags naming `@sprintengine/extension-sdk/ui` and `/surface`, and set
-  `"engines": { "hostApi": 3 }`. From host API 1, also move
-  `MainHost.registerIpc` to `registerMethods` and the window's `host.invoke`
-  to `host.methods().read` or `.operate` (host API 2's declared methods).
+- A module built for an older host API is refused until it is rebuilt against
+  `@sprintengine/extension-sdk` 3 with `"engines": { "hostApi": 3 }`.
   A module an agent wrote can be handed to an agent with this guide to update.
 - What runs is the Studio server's to change: Settings installs a folder,
   trusts it, switches it on or off and uninstalls it through the server

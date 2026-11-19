@@ -42,33 +42,19 @@ test('a host API older than the supported floor is refused as too old', () => {
   assert.equal(codeOf({ source: 'third-party', engines: { hostApi: HOST_API_MIN_SUPPORTED - 1 } }), 'host_api_too_old')
 })
 
-test('a module built for host API 1 is refused, told what replaced its IPC and what to rebuild against', () => {
+test('a module built for an older host API is refused, told what to rebuild against and where to read how', () => {
   assert.equal(HOST_API_VERSION, 3)
   assert.equal(HOST_API_MIN_SUPPORTED, 3)
-  const result = checkHostApiCompatibility({ source: 'third-party', engines: { hostApi: 1 } })
-  assert.equal(result.ok, false)
-  if (result.ok) return
-  assert.equal(result.code, 'host_api_too_old')
-  assert.match(result.message, /built for host API 1/)
-  assert.match(result.message, /declared methods/)
-  assert.match(result.message, /registerIpc becomes registerMethods/)
-  assert.match(result.message, /host\.invoke becomes host\.methods\(\)\.read or \.operate/)
-  assert.match(result.message, /"@sprintengine\/extension-sdk" 3/)
-  // And where to read how, and what a person whose agent wrote it can do.
-  assert.match(result.message, /docs\/extension-authors\/drop-in-extensions\.md/)
-  assert.match(result.message, /ask an agent to update it/)
-})
-
-test('a module built for host API 2 is refused, told the SDK was renamed and what to change', () => {
-  const result = checkHostApiCompatibility({ source: 'third-party', engines: { hostApi: 2 } })
-  assert.equal(result.ok, false)
-  if (result.ok) return
-  assert.equal(result.code, 'host_api_too_old')
-  assert.match(result.message, /built for host API 2/)
-  assert.match(result.message, /"@sprintengine\/module-sdk" to "@sprintengine\/extension-sdk" 3/)
-  assert.match(result.message, /@sprintengine\/extension-sdk\/ui and \/surface/)
-  assert.match(result.message, /"engines": \{ "hostApi": 3 \}/)
-  assert.doesNotMatch(result.message, /registerIpc/)
+  for (const hostApi of [1, 2]) {
+    const result = checkHostApiCompatibility({ source: 'third-party', engines: { hostApi } })
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.code, 'host_api_too_old')
+    assert.match(result.message, new RegExp(`built for host API ${hostApi}`))
+    assert.match(result.message, /Rebuild it against @sprintengine\/extension-sdk 3\./)
+    assert.match(result.message, /docs\/extension-authors\/drop-in-extensions\.md/)
+    assert.match(result.message, /ask an agent to update it/)
+  }
 })
 
 test('a hostApi that is not a whole number is no version at all', () => {

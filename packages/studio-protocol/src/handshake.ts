@@ -160,14 +160,6 @@ export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
 export const STUDIO_EXTENSION_HOST_CAPABILITY = 'extension-host' as const
 
 /**
- * What a Studio built before 2026-11-18 offered in place of `extension-host`,
- * with `module.*` methods no client of this version calls. A client reads it
- * only to tell the person that machine's Studio is older and needs an update
- * to use its extensions (`docs/compatibility.md`).
- */
-export const STUDIO_RETIRED_MODULES_CAPABILITY = 'modules' as const
-
-/**
  * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
  * update) and `cliVersions.*` (whether each is behind its published version),
  * with their streams. Offered where the Studio holds the CLIs' detection.
