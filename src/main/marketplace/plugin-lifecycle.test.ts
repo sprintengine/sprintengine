@@ -976,7 +976,7 @@ test('plugin-lifecycle', async () => {
         receiptStorePath,
         `${JSON.stringify(
           {
-            schemaVersion: 1,
+            schemaVersion: 2,
             plugins: {
               'registry-plugin': {
                 id: 'registry-plugin',
@@ -1002,6 +1002,54 @@ test('plugin-lifecycle', async () => {
       assert.equal(unsafe.ok, false)
       assert.match(unsafe.message, /components\[0\]\.id/)
       assert.equal(existsSync(outsidePath), true)
+    })
+  }
+
+  // A store written before modules became extensions names module components
+  // by an install root this build no longer reads. It is removed unread: none
+  // of its receipts may uninstall, vouch for or claim a folder under the new
+  // root, even one with the same id.
+  async function testReceiptStoreFromBeforeExtensionsIsRemovedUnread(): Promise<void> {
+    await withTempDir(async (temp) => {
+      const { services, workspaceRoot, receiptStorePath, moduleRoot } = await createServices(
+        temp,
+        createGithubFetcher(new Map()),
+        { trustedModules: new Map() },
+      )
+      const lifecycle = createMarketplacePluginLifecycleService(services)
+      const folderInstall = join(moduleRoot, 'notes')
+      await mkdir(folderInstall, { recursive: true })
+      await writeFile(join(folderInstall, 'manifest.json'), '{}\n', 'utf8')
+      const before = {
+        schemaVersion: 1,
+        plugins: {
+          'notes-bundle': {
+            id: 'notes-bundle',
+            displayName: 'Notes',
+            version: 1,
+            sourceUrl: 'https://example.test/notes-bundle',
+            classification: 'verified',
+            installedAt: new Date().toISOString(),
+            components: [{ kind: 'module', id: 'notes', trustStatus: 'trusted', manifestFp: 'sha256-old' }],
+          },
+        },
+      }
+      await mkdir(dirname(receiptStorePath), { recursive: true })
+      await writeFile(receiptStorePath, `${JSON.stringify(before, null, 2)}\n`, 'utf8')
+
+      assert.equal(readVerifiedModuleInstallsSync(receiptStorePath).size, 0, 'it vouches for nothing')
+      for (const pluginId of ['notes-bundle', 'notes']) {
+        const uninstalled = await lifecycle.uninstall({
+          pluginId,
+          workspaceRoot,
+          mcpSettings: { syncEnabled: false, servers: {} },
+        })
+        assert.equal(uninstalled.ok, false, pluginId)
+        assert.match(uninstalled.message, /is not installed/, pluginId)
+      }
+      assert.equal(existsSync(folderInstall), true, 'the folder installed under the new root is left alone')
+      assert.equal(existsSync(receiptStorePath), false, 'the old store is removed')
+      assert.deepEqual(await readMarketplacePluginInstallReceipts(receiptStorePath), { ok: true, receipts: [] })
     })
   }
 
@@ -2037,6 +2085,7 @@ test('plugin-lifecycle', async () => {
     await testOldReceiptListingAnAutomationStillUninstalls()
     await testFailedUpdateRollsBackReplacementAndKeepsReceipt()
     await testReceiptStoreValidationRejectsMalformedAndUnsafeState()
+    await testReceiptStoreFromBeforeExtensionsIsRemovedUnread()
     await testClaudePluginRequiresTrustGrant()
     await testClaudePluginInstallsSkillsIntoClaudeHarnessAndUninstalls()
     await testClaudePluginDefaultFanOutUsesResolvedHarnesses()

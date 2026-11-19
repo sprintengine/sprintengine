@@ -61,8 +61,14 @@ export type MarketplacePluginInstallReceipt = {
   mcpDigest?: string
 }
 
+// 2 since modules became extensions (2026-11-18). A store written before then
+// records module components by an install root this build no longer reads,
+// so it is removed unread rather than trusted: its receipts would uninstall
+// and claim folders under the new root.
+const INSTALL_STORE_SCHEMA_VERSION = 2
+
 type MarketplacePluginInstallStore = {
-  schemaVersion: 1
+  schemaVersion: typeof INSTALL_STORE_SCHEMA_VERSION
   plugins: Record<string, MarketplacePluginInstallReceipt>
 }
 
@@ -1552,10 +1558,16 @@ function validateRegistryEntry(
 async function loadInstallStore(
   path: string,
 ): Promise<{ ok: true; store: MarketplacePluginInstallStore } | { ok: false; message: string }> {
+  const empty: MarketplacePluginInstallStore = { schemaVersion: INSTALL_STORE_SCHEMA_VERSION, plugins: {} }
   try {
-    return { ok: true, store: validateInstallStore(JSON.parse(await readFile(path, 'utf8'))) }
+    const value: unknown = JSON.parse(await readFile(path, 'utf8'))
+    if (isRecord(value) && value.schemaVersion === 1) {
+      await rm(path, { force: true })
+      return { ok: true, store: empty }
+    }
+    return { ok: true, store: validateInstallStore(value) }
   } catch (error) {
-    if (isMissingFileError(error)) return { ok: true, store: { schemaVersion: 1, plugins: {} } }
+    if (isMissingFileError(error)) return { ok: true, store: empty }
     return { ok: false, message: `Marketplace plugin install receipt store is invalid: ${formatError(error)}` }
   }
 }
@@ -1567,15 +1579,15 @@ async function writeInstallStore(path: string, store: MarketplacePluginInstallSt
 }
 
 function validateInstallStore(value: unknown): MarketplacePluginInstallStore {
-  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.plugins)) {
-    throw new Error('schemaVersion must be 1 and plugins must be an object.')
+  if (!isRecord(value) || value.schemaVersion !== INSTALL_STORE_SCHEMA_VERSION || !isRecord(value.plugins)) {
+    throw new Error(`schemaVersion must be ${INSTALL_STORE_SCHEMA_VERSION} and plugins must be an object.`)
   }
   const plugins: Record<string, MarketplacePluginInstallReceipt> = {}
   for (const [pluginId, receipt] of Object.entries(value.plugins)) {
     if (!isSafeIdentifier(pluginId)) throw new Error(`plugins.${pluginId}: plugin id is not safe.`)
     plugins[pluginId] = validateReceipt(receipt, `plugins.${pluginId}`)
   }
-  return { schemaVersion: 1, plugins }
+  return { schemaVersion: INSTALL_STORE_SCHEMA_VERSION, plugins }
 }
 
 function validateReceipt(value: unknown, path: string): MarketplacePluginInstallReceipt {
