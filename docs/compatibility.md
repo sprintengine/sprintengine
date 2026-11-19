@@ -222,7 +222,7 @@ nothing crosses a network.
   imports `@sprintengine/extension-sdk/ui` and `/surface` at runtime, which the
   host provides under that name only. So a module built for host API 1 or 2 is
   refused: Settings and the bell say to rebuild it against
-  `@sprintengine/extension-sdk` 3 and what changes. Both numbers are declared
+  `@sprintengine/extension-sdk` 3. Both numbers are declared
   once, in `packages/extension-sdk/src/host-api.ts`, and re-exported for app
   code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
   `sprintengine-extension` CLI cannot disagree about them. The drift guard
@@ -873,22 +873,16 @@ client reads it. Its methods are `extension.read`, `.operate`, `.list`,
 `extensionBacklog.*` and `extensionUsage.query`, under the scopes
 `extensions:read` and `extensions:operate` (permissions `extension:read` and
 `extension:operate`), and its refusals `extension_unavailable` and
-`extension_method_unknown`; params and results are unchanged. No `module.*`
-method is served any more. A grant stored or sent with `modules:read` or
-`modules:operate` (a local app's, a web session, an older Studio's welcome) is
-read as `extensions:read` or `extensions:operate` (`normalizeStudioScopes`),
-so it reaches what it reached before; nothing writes the old names. Across
-versions: a client of this version whose Studio offers only `modules` (an
-older build) calls none of its extension methods and says that machine's
-Studio is older and needs an update to use its extensions
-(`STUDIO_RETIRED_MODULES_CAPABILITY`); an older client of a Studio of this
-version finds no `modules` capability and shows that Studio's extensions as it
-shows a Studio that runs none. A desktop's own window and its Studio are one
-build, so this reaches only another machine's window. The agents' gateway
-tools `module.list` and `module.status` keep their names: a WSL server serves
-`extension.*` tools of its own and relays the Windows side's other families,
-and a paired device reaches a tool by its family, so renaming them is a change
-of reach, not of words. The paragraphs above and below keep the
+`extension_method_unknown`; params and results are unchanged. The agents'
+`module.list` and `module.status` are `extension.list` and `extension.status`:
+a paired device reaches them under its workspace scope, as before, and a WSL
+agent through the relay, where of the `extension` family only these two
+cross (`EXTENSION_READ_TOOLS`). No `module.*` method or tool, `modules`
+capability or `modules:*` scope is served or read any more. There were no
+users yet (owner ruling 2026-11-19), so nothing bridges the two names: a grant
+holding a `modules:*` scope reaches no extension until it is given
+`extensions:*`, and a client and a Studio on either side of the rename see
+each other's extensions as absent. The paragraphs above and below keep the
 names each change used at the time.
 `extensions` (2026-11-13) is what a desktop's Studio is extended with beyond
 its modules: the marketplace's registry and each installed entry against it

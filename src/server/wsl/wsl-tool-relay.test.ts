@@ -203,18 +203,27 @@ test('the Windows side’s own families go too, but for the conversation the WSL
     inputSchema: { type: 'object' },
     handler: async () => ({ content: [{ type: 'text', text: 'none' }] }),
   }
-  const { offers } = await relayed([], [...parts.core, ...parts.automation, ...parts.tailnet, review])
+  const { offers } = await relayed(
+    [],
+    [...parts.core, ...parts.automation, ...parts.extension, ...parts.tailnet, review],
+  )
   assert.deepEqual(offers.map((offer) => offer.name).sort(), [
     'agent',
     'backlog',
     'cli',
+    'extension',
     'marketplace',
-    'module',
     'review',
     'schedule',
     'terminal',
     'workspace',
   ])
+  const extension = offers.find((offer) => offer.name === 'extension')!
+  assert.deepEqual(
+    extension.tools.map((tool) => tool.name).sort(),
+    ['list', 'status'],
+    'what runs on Windows is read from WSL; making an extension project on its disk is not offered there',
+  )
   const cli = offers.find((offer) => offer.name === 'cli')!
   assert.deepEqual(
     cli.tools.map((tool) => tool.name),

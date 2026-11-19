@@ -321,12 +321,12 @@
       "sha256": "376869abec19697c94885336af8ea7ae61f25b54bc55ce1fcc77c3a44e0e57c2"
     },
     {
-      "name": "module.list",
-      "sha256": "1f907cd7a54ec04ffcd9e47ae2d79bb150463af2382cc14641fbafcd98a994c5"
+      "name": "extension.list",
+      "sha256": "1f0359d10aad16427deb2ddcf9c011acad5d401676c2be1c291b13ca3895add6"
     },
     {
-      "name": "module.status",
-      "sha256": "e0ed6b4ae14024e262faf155fa37a7f2a1308d1838f2087aac33b29d2cdc97dd"
+      "name": "extension.status",
+      "sha256": "7bc099fae4fab32c9732df661098aa3694a488c086a8633ae5a293fbfaa678e3"
     },
     {
       "name": "marketplace.list",
@@ -759,12 +759,12 @@
       "sha256": "376869abec19697c94885336af8ea7ae61f25b54bc55ce1fcc77c3a44e0e57c2"
     },
     {
-      "name": "module.list",
-      "sha256": "1f907cd7a54ec04ffcd9e47ae2d79bb150463af2382cc14641fbafcd98a994c5"
+      "name": "extension.list",
+      "sha256": "1f0359d10aad16427deb2ddcf9c011acad5d401676c2be1c291b13ca3895add6"
     },
     {
-      "name": "module.status",
-      "sha256": "e0ed6b4ae14024e262faf155fa37a7f2a1308d1838f2087aac33b29d2cdc97dd"
+      "name": "extension.status",
+      "sha256": "7bc099fae4fab32c9732df661098aa3694a488c086a8633ae5a293fbfaa678e3"
     },
     {
       "name": "marketplace.list",
@@ -921,12 +921,12 @@
       "sha256": "a8f4d5ab55150595f1ac5f63269719b9c0ccf2e355a534558ec4eb82b5b14e35"
     },
     {
-      "name": "module.list",
-      "sha256": "1f907cd7a54ec04ffcd9e47ae2d79bb150463af2382cc14641fbafcd98a994c5"
+      "name": "extension.list",
+      "sha256": "1f0359d10aad16427deb2ddcf9c011acad5d401676c2be1c291b13ca3895add6"
     },
     {
-      "name": "module.status",
-      "sha256": "e0ed6b4ae14024e262faf155fa37a7f2a1308d1838f2087aac33b29d2cdc97dd"
+      "name": "extension.status",
+      "sha256": "7bc099fae4fab32c9732df661098aa3694a488c086a8633ae5a293fbfaa678e3"
     },
     {
       "name": "marketplace.list",

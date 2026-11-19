@@ -57,7 +57,7 @@ npm run dev:install  # build, write module/manifest.json "files", sign if a key 
 ```
 
 Then in Studio: **Settings → Extensions**, find the module, trust it. Only the
-person can trust it; never try to do it for them. `module.status` (a Studio
+person can trust it; never try to do it for them. `extension.status` (a Studio
 tool) says whether Studio sees the installed module, whether it is trusted, and
 why it is not running when it is not.
 

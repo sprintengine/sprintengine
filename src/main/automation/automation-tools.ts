@@ -319,7 +319,7 @@ export type AutomationBackends = {
    * Installed third-party modules with the trust + launch readiness only main
    * can compute (signature verification and the trust store live here). An
    * untrusted module never reaches the renderer registry, so this is also how
-   * `module.list` sees that it is installed at all.
+   * `extension.list` sees that it is installed at all.
    */
   listInstalledThirdPartyModules(): Promise<ThirdPartyModuleListResult>
   /** Gateway tools contributed by capability modules, by owner. */
@@ -1898,7 +1898,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   }
 
   const moduleList: McpToolRegistration = {
-    name: 'module.list',
+    name: 'extension.list',
     description:
       'List the extensions this app has, as the user sees them: built-in and third-party, each with its ' +
       'source, version, whether it is enabled, and why it is not when it is off. Extensions that ship only in ' +
@@ -1936,7 +1936,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   }
 
   const moduleStatus: McpToolRegistration = {
-    name: 'module.status',
+    name: 'extension.status',
     description:
       'Read one extension: its manifest, the permissions it declares, the surfaces it contributes ' +
       '(workspace types, doors, settings sections, commands, …), the gateway tools it adds, and — when it is ' +
@@ -1944,7 +1944,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       'packaged build rather than appearing disabled.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'Module id from module.list, e.g. "automations".' } },
+      properties: { id: { type: 'string', description: 'Extension id from extension.list, e.g. "automations".' } },
       required: ['id'],
       additionalProperties: false,
     },
