@@ -42,7 +42,7 @@ function hostWithServices(answer: (sent: Sent) => Promise<unknown>) {
 
 test('each Backlog write is its protocol method, naming the calling module, and answers what the server answered', async () => {
   const { kernel, calls } = hostWithServices(async ({ method }) =>
-    method === 'moduleBacklog.create' ? { ok: true, id: 'backlog/unfiled/x.md', numericId: 3 } : { ok: true },
+    method === 'extensionBacklog.create' ? { ok: true, id: 'backlog/unfiled/x.md', numericId: 3 } : { ok: true },
   )
   const host = kernel.hostFor('task-board', thirdParty(['backlog.write']))
   const link = { id: 'l', type: 'external' as const, label: 'L', target: { kind: 'url', id: 'u' } }
@@ -59,12 +59,12 @@ test('each Backlog write is its protocol method, naming the calling module, and 
   const at = { moduleId: 'task-board', workspaceId: 'ws-1' }
   const item = { ...at, itemId: 'backlog/a.md' }
   assert.deepEqual(calls, [
-    { method: 'moduleBacklog.create', params: { ...at, input: { title: 'X' } } },
-    { method: 'moduleBacklog.updateStatus', params: { ...item, status: 'ready' } },
-    { method: 'moduleBacklog.updateTriage', params: { ...item, triage: { risk: null } } },
-    { method: 'moduleBacklog.addLink', params: { ...item, link } },
-    { method: 'moduleBacklog.updateModuleMetadata', params: { ...item, value: { lane: 1 } } },
-    { method: 'moduleBacklog.location', params: at },
+    { method: 'extensionBacklog.create', params: { ...at, input: { title: 'X' } } },
+    { method: 'extensionBacklog.updateStatus', params: { ...item, status: 'ready' } },
+    { method: 'extensionBacklog.updateTriage', params: { ...item, triage: { risk: null } } },
+    { method: 'extensionBacklog.addLink', params: { ...item, link } },
+    { method: 'extensionBacklog.updateModuleMetadata', params: { ...item, value: { lane: 1 } } },
+    { method: 'extensionBacklog.location', params: at },
   ])
 })
 
@@ -78,7 +78,7 @@ test('queryUsage is moduleUsage.query', async () => {
     sources: [],
   })
   assert.deepEqual(calls, [
-    { method: 'moduleUsage.query', params: { moduleId: 'insights', query: { from: 0, to: 10, groupBy: ['day'] } } },
+    { method: 'extensionUsage.query', params: { moduleId: 'insights', query: { from: 0, to: 10, groupBy: ['day'] } } },
   ])
 })
 
@@ -92,20 +92,20 @@ test('a call answers in the service’s words, never a throw, with no caller wir
 
 test('a protocol refusal is the service’s own code: its params refused are invalid_input, the rest unavailable', () => {
   assert.deepEqual(
-    moduleServiceRefusal('moduleBacklog.create', 'invalid_params', '"input.title" is the item\'s title.'),
+    moduleServiceRefusal('extensionBacklog.create', 'invalid_params', '"input.title" is the item\'s title.'),
     {
       ok: false,
       code: 'invalid_input',
       message: '"input.title" is the item\'s title.',
     },
   )
-  assert.equal(moduleServiceRefusal('moduleBacklog.create', 'module_unavailable', 'gone').ok, false)
-  assert.deepEqual(moduleServiceRefusal('moduleBacklog.addLink', 'module_unavailable', 'gone'), {
+  assert.equal(moduleServiceRefusal('extensionBacklog.create', 'extension_unavailable', 'gone').ok, false)
+  assert.deepEqual(moduleServiceRefusal('extensionBacklog.addLink', 'extension_unavailable', 'gone'), {
     ok: false,
     code: 'backlog_unavailable',
     message: 'gone',
   })
-  assert.deepEqual(moduleServiceRefusal('moduleUsage.query', 'scope_required', 'no grant'), {
+  assert.deepEqual(moduleServiceRefusal('extensionUsage.query', 'scope_required', 'no grant'), {
     ok: false,
     code: 'unavailable',
     message: 'no grant',
@@ -119,7 +119,7 @@ test('a disabled Backlog module refuses writes without asking the server', async
   const result = await kernel.hostFor('task-board', thirdParty(['backlog.write'])).createBacklogItem('ws-1', {
     title: 'X',
   })
-  assert.deepEqual(result, { ok: false, code: 'backlog_unavailable', message: 'The Backlog module is disabled.' })
+  assert.deepEqual(result, { ok: false, code: 'backlog_unavailable', message: 'Backlog is turned off.' })
   assert.equal(calls.length, 0)
 })
 

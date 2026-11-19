@@ -60,7 +60,7 @@ export function resolveModuleEnablement(
       errors.push({
         id,
         code: 'conflict',
-        message: `Module "${id}" conflicts with enabled module "${conflict}".`,
+        message: `Extension "${id}" conflicts with enabled extension "${conflict}".`,
       })
       continue
     }
@@ -90,7 +90,7 @@ export function resolveModuleEnablement(
           errors.push({
             id,
             code: 'missing_dependency',
-            message: `Module "${id}" requires "${dep}", which is not installed.`,
+            message: `Extension "${id}" requires "${dep}", which is not installed.`,
           })
           accepted.delete(id)
           changed = true
@@ -100,7 +100,7 @@ export function resolveModuleEnablement(
           errors.push({
             id,
             code: 'disabled_dependency',
-            message: `Module "${id}" requires "${dep}", which is not enabled.`,
+            message: `Extension "${id}" requires "${dep}", which is not enabled.`,
           })
           accepted.delete(id)
           changed = true
@@ -157,16 +157,16 @@ function ineligibleMessage(manifest: CapabilityManifest, reason: ModuleResolutio
   const id = manifest.id
   switch (reason) {
     case 'invalid_signature':
-      return `Module "${id}" has an invalid signature and will not load.`
+      return `Extension "${id}" has an invalid signature and will not load.`
     case 'incompatible_host_api': {
       // The check's own words say which side to update, and for a retired
       // host API what replaced it and what to rebuild against.
       const compatibility = checkHostApiCompatibility(manifest)
       return compatibility.ok
-        ? `Module "${id}" was built for a different host API than this app provides (${HOST_API_VERSION}); update the module or the app to enable it.`
-        : `Module "${id}" will not load. ${compatibility.message}`
+        ? `Extension "${id}" was built for a different host API than this app provides (${HOST_API_VERSION}); update the extension or the app to enable it.`
+        : `Extension "${id}" will not load. ${compatibility.message}`
     }
     default:
-      return `Module "${id}" is not trusted yet; trust it in Settings → Modules to enable.`
+      return `Extension "${id}" is not trusted yet; trust it in Settings → Extensions to enable.`
   }
 }

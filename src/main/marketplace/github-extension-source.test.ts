@@ -211,7 +211,7 @@ test('a module with no files map is refused, and its author told what to run', a
   assert.equal(verify.classification, 'invalid')
   assert.equal(verify.pin, undefined)
   assert.match(verify.message ?? '', /lists no digests of its files/)
-  assert.match(verify.message ?? '', /sprintengine-module sign/)
+  assert.match(verify.message ?? '', /sprintengine-extension sign/)
 })
 
 test('a module whose files do not match its digests is refused as changed', async () => {

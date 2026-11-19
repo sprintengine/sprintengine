@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { buildSync } from 'esbuild'
 
-import { marketplaceComponentDigestMismatchIssuesSync } from '../../packages/module-sdk/src/plugin-component-digests'
+import { marketplaceComponentDigestMismatchIssuesSync } from '../../packages/extension-sdk/src/plugin-component-digests'
 import { normalizeMcpServerConfig } from '../../src/main/mcp-config-service'
 import { readStudioEnv } from '../../src/shared/studio-env'
 import { verifyBundledSkillFolder } from '../../src/main/marketplace/skill-content'
@@ -68,7 +68,7 @@ function parseArgs(args: string[]): VerifyOptions {
         break
       case '--help':
       case '-h':
-        console.log('Usage: node marketplace-registry-verify.cjs [--root <marketplace-root>] [--cli <sprintengine-module-cli.cjs>]')
+        console.log('Usage: node marketplace-registry-verify.cjs [--root <marketplace-root>] [--cli <sprintengine-extension-cli.cjs>]')
         process.exit(0)
       default:
         throw new Error(`Unknown argument: ${arg}`)
@@ -125,10 +125,10 @@ function ensureCliBundle(cliPath: string | undefined): string {
     if (!existsSync(cliPath)) throw new Error(`CLI bundle not found: ${cliPath}`)
     return cliPath
   }
-  const outfile = join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'sprintengine-module-marketplace-ci.cjs')
+  const outfile = join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'sprintengine-extension-marketplace-ci.cjs')
   mkdirSync(dirname(outfile), { recursive: true })
   buildSync({
-    entryPoints: [join(process.cwd(), 'packages', 'module-sdk', 'src', 'cli.ts')],
+    entryPoints: [join(process.cwd(), 'packages', 'extension-sdk', 'src', 'cli.ts')],
     bundle: true,
     platform: 'node',
     format: 'cjs',
@@ -317,7 +317,7 @@ function validateInlineCliEntry(
 
 /**
  * Every committed plugins/<id>/ payload must be claimed by an index entry that
- * this verifier actually checked — signed entries through `sprintengine-module
+ * this verifier actually checked — signed entries through `sprintengine-extension
  * plugin verify`, unsigned non-code-bearing entries through
  * {@link validateUnsignedPluginPayload}. The payload dir is what the
  * packaged-seed install path stages, so an unclaimed one would ship bytes
@@ -546,7 +546,7 @@ async function validateMarketplace(root: string, cliBundle: string): Promise<Ver
     if (!cliResult.ok) {
       issues.push(issue(
         `plugins/${entry.id}/plugin.json`,
-        `sprintengine-module plugin verify failed (exit ${cliResult.status ?? 'unknown'}): ${(cliResult.stderr || cliResult.stdout).trim()}`
+        `sprintengine-extension plugin verify failed (exit ${cliResult.status ?? 'unknown'}): ${(cliResult.stderr || cliResult.stdout).trim()}`
       ))
       continue
     }

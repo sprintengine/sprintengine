@@ -40,9 +40,9 @@ buildSync({
  * inside a registry root — `assertNoKeyMaterial` rejects committed key material
  * and that check has to keep firing on real registries.
  */
-const moduleCliBundle = join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'sprintengine-module-for-marketplace-test.cjs')
+const moduleCliBundle = join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'sprintengine-extension-for-marketplace-test.cjs')
 buildSync({
-  entryPoints: [join(process.cwd(), 'packages', 'module-sdk', 'src', 'cli.ts')],
+  entryPoints: [join(process.cwd(), 'packages', 'extension-sdk', 'src', 'cli.ts')],
   bundle: true,
   platform: 'node',
   format: 'cjs',
@@ -53,7 +53,7 @@ const signingKeyPath = join(workDir, 'probe-signing.key')
 assert.equal(
   spawnSync(process.execPath, [moduleCliBundle, 'keygen', '--out', signingKeyPath], { encoding: 'utf8' }).status,
   0,
-  'sprintengine-module keygen must produce a throwaway signing key'
+  'sprintengine-extension keygen must produce a throwaway signing key'
 )
 
 const SIGNED_PROBE_ID = 'signed-probe-mcp'
@@ -492,7 +492,7 @@ function testTamperedPluginFailsThroughCliVerify(): void {
   const result = runVerifier(root)
   assert.equal(result.status, 1)
   assert.match(result.stderr, new RegExp(`plugins/${SIGNED_PROBE_ID}/plugin\\.json`))
-  assert.match(result.stderr, /sprintengine-module plugin verify failed/)
+  assert.match(result.stderr, /sprintengine-extension plugin verify failed/)
   assert.match(result.stderr, /INVALID signature/)
 }
 
@@ -507,7 +507,7 @@ function testTamperedComponentFailsThroughCliVerify(): void {
   const result = runVerifier(root)
   assert.equal(result.status, 1)
   assert.match(result.stderr, new RegExp(`plugins/${SIGNED_PROBE_ID}/plugin\\.json`))
-  assert.match(result.stderr, /sprintengine-module plugin verify failed/)
+  assert.match(result.stderr, /sprintengine-extension plugin verify failed/)
   assert.match(result.stderr, /component digests/i)
 }
 

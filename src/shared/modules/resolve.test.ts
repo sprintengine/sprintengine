@@ -85,15 +85,18 @@ test('resolve', async () => {
     assert.match(error?.message ?? '', /does not say which host API it was built for/)
     assert.doesNotMatch(error?.message ?? '', /not trusted/, 'trusting would not fix it, so it does not say so')
 
-    // One built for host API 1 is told what replaced its IPC and what to rebuild against.
+    // One built for an older host API is told what to rebuild against.
     const old = resolveModuleEnablement(
       [manifest('ipc-build', { source: 'third-party', engines: { hostApi: 1 } })],
       {},
       { ineligible: { 'ipc-build': 'incompatible_host_api' } },
     )
     const refused = old.errors.find((e) => e.id === 'ipc-build')
-    assert.match(refused?.message ?? '', /^Module "ipc-build" will not load\. The module was built for host API 1/)
-    assert.match(refused?.message ?? '', /@sprintengine\/module-sdk 2/)
+    assert.match(
+      refused?.message ?? '',
+      /^Extension "ipc-build" will not load\. The extension was built for host API 1/,
+    )
+    assert.match(refused?.message ?? '', /Rebuild it against @sprintengine\/extension-sdk 3\./)
   }
 
   function testDefaultsAndExplicitDisable(): void {

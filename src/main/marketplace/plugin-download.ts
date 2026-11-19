@@ -21,11 +21,11 @@ import {
   resolveOptionallySignedManifest,
   retiredMarketplaceComponentIssue,
 } from '../../shared/marketplace'
-import { isSafeManifestRelativePath } from '../../../packages/module-sdk/src/manifest-validate'
+import { isSafeManifestRelativePath } from '../../../packages/extension-sdk/src/manifest-validate'
 import {
   marketplaceComponentDigestMismatchIssuesSync,
   marketplaceComponentDigestPaths,
-} from '../../../packages/module-sdk/src/plugin-component-digests'
+} from '../../../packages/extension-sdk/src/plugin-component-digests'
 import {
   classifySignedManifestTrust,
   isLoadEligible,

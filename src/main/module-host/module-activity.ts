@@ -75,7 +75,7 @@ export function createModuleActivityRegistry(deps: ModuleActivityDeps): ModuleAc
     if (deps.getModulePermissions(moduleId)?.includes('conversation:read-all')) return null
     return failure(
       'permission_missing',
-      `Module "${moduleId}" does not declare the "conversation:read-all" permission, so it cannot read your chats.`,
+      `Extension "${moduleId}" does not declare the "conversation:read-all" permission, so it cannot read your chats.`,
     )
   }
 

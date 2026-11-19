@@ -720,8 +720,8 @@ test('globalDoorsIntegration', async () => {
       assert.match(absentHost.textContent ?? '', /Atlas/, 'the door is named')
       assert.match(
         absentHost.textContent ?? '',
-        /The Atlas module isn’t installed\./,
-        'and says its module is not installed',
+        /The Atlas extension isn’t installed\./,
+        'and says its extension is not installed',
       )
       const cta = [...absentHost.querySelectorAll('button')].find(
         (button) => button.textContent === 'Find it in Plugins',
@@ -787,7 +787,7 @@ test('globalDoorsIntegration', async () => {
       await act(async () => {
         disabledRoot.render(React.createElement(disabled.Component))
       })
-      assert.match(disabledHost.textContent ?? '', /The Tide-tables module is turned off\./)
+      assert.match(disabledHost.textContent ?? '', /The Tide-tables extension is turned off\./)
       const disabledCta = [...disabledHost.querySelectorAll('button')].find(
         (button) => button.textContent === 'Find it in Plugins',
       )

@@ -421,7 +421,7 @@ test('settingsSlice', async () => {
 
   // openExtensionsSurface opens the Extensions MODAL (owner ruling 2026-11-03;
   // the Plugins door from 2026-09-05, a modal from 2026-09-01 until then). The
-  // caller can be inside the Settings modal (Settings → Modules "Browse
+  // caller can be inside the Settings modal (Settings → Extensions "Browse
   // marketplace"): Extensions takes the modal's place, and the settings request
   // it was carrying goes with it rather than surviving to re-open a category
   // later. A modal routes nothing, so the door underneath and the sidebar

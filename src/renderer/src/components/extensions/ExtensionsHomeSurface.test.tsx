@@ -202,7 +202,7 @@ test('ExtensionsHomeSurface', async () => {
   assert.equal(
     [...home.host.querySelectorAll('input[type="checkbox"], [role="switch"]')].length,
     0,
-    'no module switches here: those live in Settings → Modules, and one choice in two shapes on two surfaces is the thing Stage 2 removed',
+    'no module switches here: those live in Settings → Extensions, and one choice in two shapes on two surfaces is the thing Stage 2 removed',
   )
 
   // ── A tile opens EXACTLY what the drawer row opens ───────────────────────────

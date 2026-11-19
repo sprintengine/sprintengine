@@ -15,7 +15,7 @@ a private data structure, and changing one is not a local edit.**
 | ------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
 | Tailnet transport — a paired phone or Studio reaching this one                        | `TAILNET_TRANSPORT_VERSION` (integer)   | current only (3)                                 | `src/main/automation/tailnet/tailnet-routes.ts` |
 | MCP                                                                                   | dated strings, newest first             | every entry in the list                          | `src/shared/mcp/protocol.ts`                    |
-| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)            | `HOST_API_MIN_SUPPORTED` .. current              | `src/shared/modules/host-api.ts`                |
+| Extension host API — an installed extension built against `@sprintengine/extension-sdk` | `HOST_API_VERSION` (integer)            | `HOST_API_MIN_SUPPORTED` .. current              | `src/shared/modules/host-api.ts`                |
 | Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current       | `packages/studio-protocol/src/handshake.ts`     |
 | Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships) | `src/renderer/src/web/embed/embedProtocol.ts`   |
 
@@ -204,23 +204,28 @@ meaning or type, a field that is removed, a response whose shape a peer is
 already parsing. Nothing a capability flag can describe should bump the version,
 and nothing a capability flag cannot describe should ship without one.
 
-## The module host API
+## The extension host API
 
-An extension is compiled against `@sprintengine/module-sdk` and runs inside
+An extension is compiled against `@sprintengine/extension-sdk` and runs inside
 whatever Studio later loads it, so the contract between them — the `MainHost`
 and `RendererHost` members, the services behind the SDK's `get*Service`
 helpers, the manifest fields — is a wire in the sense of this file, even though
 nothing crosses a network.
 
-- **The version.** `HOST_API_VERSION = 2`, `HOST_API_MIN_SUPPORTED = 2`. Host
+- **The version.** `HOST_API_VERSION = 3`, `HOST_API_MIN_SUPPORTED = 3`. Host
   API 2 (2026-11-12) replaced host API 1's IPC channels (`MainHost.registerIpc`,
   `RendererHost.invoke`) with declared methods served over the Studio protocol
-  (`registerMethods`, `methods()`, `module.read` / `module.operate`), with no
-  shim, so a module built for host API 1 is refused: Settings and the bell say
-  to rebuild it against `@sprintengine/module-sdk` 2 and what changes. Both
-  are declared once, in `packages/module-sdk/src/host-api.ts`, and re-exported
-  for app code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
-  `sprintengine-module` CLI cannot disagree about them. The drift guard
+  (`registerMethods`, `methods()`, then `module.read` / `module.operate`), with
+  no shim. Host API 3 (2026-11-18) is the same contract under the SDK's new
+  name: `@sprintengine/module-sdk` became `@sprintengine/extension-sdk` (its CLI
+  `sprintengine-module` became `sprintengine-extension`), and a window half
+  imports `@sprintengine/extension-sdk/ui` and `/surface` at runtime, which the
+  host provides under that name only. So a module built for host API 1 or 2 is
+  refused: Settings and the bell say to rebuild it against
+  `@sprintengine/extension-sdk` 3. Both numbers are declared
+  once, in `packages/extension-sdk/src/host-api.ts`, and re-exported for app
+  code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
+  `sprintengine-extension` CLI cannot disagree about them. The drift guard
   (`npm run test:sdk:drift`) pins the two sides anyway.
 - **The declaration.** A third-party manifest must carry
   `"engines": { "hostApi": <n> }`. First-party modules ship with the host they
@@ -859,6 +864,26 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 `workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
 `chats:projectless-*` IPC channels are gone; a desktop's window and its own
 Studio are one build.
+`extension-host` (2026-11-18) is the `modules` capability renamed, with
+everything it offered: modules are called extensions everywhere a person or a
+client reads it. Its methods are `extension.read`, `.operate`, `.list`,
+`.setEnabled`, `.install`, `.setTrust`, `.uninstall`, `.installed`,
+`.rendererEntries`, `.setAppState` and `.reportRegistry`, its streams
+`extension.events`, `.notifications` and `.changed`, the host services
+`extensionBacklog.*` and `extensionUsage.query`, under the scopes
+`extensions:read` and `extensions:operate` (permissions `extension:read` and
+`extension:operate`), and its refusals `extension_unavailable` and
+`extension_method_unknown`; params and results are unchanged. The agents'
+`module.list` and `module.status` are `extension.list` and `extension.status`:
+a paired device reaches them under its workspace scope, as before, and a WSL
+agent through the relay, where of the `extension` family only these two
+cross (`EXTENSION_READ_TOOLS`). No `module.*` method or tool, `modules`
+capability or `modules:*` scope is served or read any more. There were no
+users yet (owner ruling 2026-11-19), so nothing bridges the two names: a grant
+holding a `modules:*` scope reaches no extension until it is given
+`extensions:*`, and a client and a Studio on either side of the rename see
+each other's extensions as absent. The paragraphs above and below keep the
+names each change used at the time.
 `extensions` (2026-11-13) is what a desktop's Studio is extended with beyond
 its modules: the marketplace's registry and each installed entry against it
 (`marketplace.read`, `.updateStates`), the agent CLIs' plugin catalogue

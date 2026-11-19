@@ -4,7 +4,7 @@
 // packaged/installed (production) build they are excluded from the registration
 // universe entirely — their main IPC/services/sidecars never register, their
 // renderer panels/commands/settings sections/workspace modes never mount, and
-// they never appear in the Settings → Modules manager or any profile. This is a
+// they never appear in the Settings → Extensions manager or any profile. This is a
 // hard gate: a packaged build has no env var or setting that re-enables them.
 //
 // The build channel (source vs packaged) decides whether this list is excluded;

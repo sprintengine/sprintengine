@@ -37,7 +37,7 @@ function trustedModule(id: string, source: string, manifest: Partial<CapabilityM
       version: 1,
       defaultEnabled: true,
       source: 'third-party',
-      engines: { hostApi: 2 },
+      engines: { hostApi: 3 },
       entry: { main: 'main.cjs' },
       ...manifest,
     },

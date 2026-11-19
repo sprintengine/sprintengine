@@ -233,7 +233,7 @@ socket. The module's own rules still hold: it reaches only the chats it
 created, under its declared permissions and ceiling.
 
 ```js
-import { getConversationService } from '@sprintengine/module-sdk'
+import { getConversationService } from '@sprintengine/extension-sdk'
 import { fromModuleConversationService } from '@sprintengine/agent-sdk'
 
 const conversations = fromModuleConversationService(getConversationService(host))

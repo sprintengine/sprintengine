@@ -41,8 +41,8 @@ vi.mock('../../modules', async (importOriginal) => ({
   refreshThirdPartyRendererModules: async () => {},
 }))
 
-// What runs on the window's Studio is changed through it (`module.setTrust`,
-// `module.uninstall`); this stands in for the window's connection.
+// What runs on the window's Studio is changed through it (`extension.setTrust`,
+// `extension.uninstall`); this stands in for the window's connection.
 vi.mock('../../studio/moduleLifecycle', () => ({
   windowModuleLifecycle: () => ({
     setEnabled: async (id: string, enabled: boolean | null) => {

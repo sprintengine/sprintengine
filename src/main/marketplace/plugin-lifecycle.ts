@@ -36,11 +36,6 @@ import { isRecord } from '../../shared/records'
 
 const MARKETPLACE_PLUGIN_INSTALLS_FILENAME = 'marketplace-plugin-installs.json'
 const RECEIPT_COMPONENT_KINDS = new Set(['mcp', 'skills', 'module'])
-// A kind an older receipt may list that this Studio no longer installs: an
-// automation component added a definition to the retired automations engine,
-// which left with the engine. Such an entry is dropped on read — it names
-// nothing left to update or uninstall — and the rest of the receipt stands.
-const RETIRED_RECEIPT_COMPONENT_KINDS = new Set(['automation'])
 const MODULE_TRUST_STATUSES = new Set(['trusted', 'signed', 'unsigned', 'invalid'])
 
 export type MarketplacePluginInstallReceipt = {
@@ -61,8 +56,14 @@ export type MarketplacePluginInstallReceipt = {
   mcpDigest?: string
 }
 
+// 2 since modules became extensions (2026-11-18). A store written before then
+// records module components by an install root this build no longer reads,
+// so it is removed unread rather than trusted: its receipts would uninstall
+// and claim folders under the new root.
+const INSTALL_STORE_SCHEMA_VERSION = 2
+
 type MarketplacePluginInstallStore = {
-  schemaVersion: 1
+  schemaVersion: typeof INSTALL_STORE_SCHEMA_VERSION
   plugins: Record<string, MarketplacePluginInstallReceipt>
 }
 
@@ -96,7 +97,7 @@ export type MarketplacePluginLifecycleServices = MarketplacePluginInstallerServi
    * uninstalling a module component revokes its entry. The returned `previous`
    * is what the id mapped to before the write, so a failed receipt write can
    * put the trust store back as it was. Absent, installs still succeed and the
-   * module simply stays awaiting-trust in Settings → Modules.
+   * module simply stays awaiting-trust in Settings → Extensions.
    */
   setModuleTrust?: (
     id: string,
@@ -406,7 +407,7 @@ async function installOrUpdateMarketplacePlugin(
     // stale components were removed: a failed later component rolls files back,
     // so no grant may precede full success. The install-prompt trust decision
     // IS the module trust decision, so a signed module component no longer
-    // lands awaiting a second, identical toggle in Settings → Modules. Bound to
+    // lands awaiting a second, identical toggle in Settings → Extensions. Bound to
     // the installed manifest fingerprint, so different bytes under the same id
     // never inherit it. Verified installs never ask for a grant; an unsigned
     // module is granted only when the person trusted it as code.
@@ -1083,7 +1084,7 @@ async function grantModuleComponentTrust(
       granted.push({ id: component.id, previous: grant.previous ?? null })
       component.message = 'Installed and trusted; loads on the next app launch.'
     } else {
-      component.message = `Installed, but recording trust failed (${grant.message ?? 'unknown error'}); trust it from Settings → Modules.`
+      component.message = `Installed, but recording trust failed (${grant.message ?? 'unknown error'}); trust it from Settings → Extensions.`
     }
   }
   return granted
@@ -1104,7 +1105,7 @@ async function restoreModuleComponentTrust(
   if (failed.length === 0) return { ok: true }
   return {
     ok: false,
-    message: `Trust granted during this install could not be taken back for ${failed.join('; ')}. Review these modules in Settings → Modules.`,
+    message: `Trust granted during this install could not be taken back for ${failed.join('; ')}. Review these modules in Settings → Extensions.`,
   }
 }
 
@@ -1154,7 +1155,7 @@ async function uninstallMarketplacePlugin(
  * MODULE it installed.
  *
  * A receipt is keyed by the plugin bundle's id, and that is what the storefront
- * knows. Settings → Modules does not: a module row carries the id of the module
+ * knows. Settings → Extensions does not: a module row carries the id of the module
  * itself, which is a component INSIDE the bundle and need not share its name.
  * Removing the module alone would leave the receipt behind claiming a module
  * that is gone — and a later re-install would then be read as an update of
@@ -1552,10 +1553,16 @@ function validateRegistryEntry(
 async function loadInstallStore(
   path: string,
 ): Promise<{ ok: true; store: MarketplacePluginInstallStore } | { ok: false; message: string }> {
+  const empty: MarketplacePluginInstallStore = { schemaVersion: INSTALL_STORE_SCHEMA_VERSION, plugins: {} }
   try {
-    return { ok: true, store: validateInstallStore(JSON.parse(await readFile(path, 'utf8'))) }
+    const value: unknown = JSON.parse(await readFile(path, 'utf8'))
+    if (isRecord(value) && value.schemaVersion === 1) {
+      await rm(path, { force: true })
+      return { ok: true, store: empty }
+    }
+    return { ok: true, store: validateInstallStore(value) }
   } catch (error) {
-    if (isMissingFileError(error)) return { ok: true, store: { schemaVersion: 1, plugins: {} } }
+    if (isMissingFileError(error)) return { ok: true, store: empty }
     return { ok: false, message: `Marketplace plugin install receipt store is invalid: ${formatError(error)}` }
   }
 }
@@ -1567,15 +1574,15 @@ async function writeInstallStore(path: string, store: MarketplacePluginInstallSt
 }
 
 function validateInstallStore(value: unknown): MarketplacePluginInstallStore {
-  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.plugins)) {
-    throw new Error('schemaVersion must be 1 and plugins must be an object.')
+  if (!isRecord(value) || value.schemaVersion !== INSTALL_STORE_SCHEMA_VERSION || !isRecord(value.plugins)) {
+    throw new Error(`schemaVersion must be ${INSTALL_STORE_SCHEMA_VERSION} and plugins must be an object.`)
   }
   const plugins: Record<string, MarketplacePluginInstallReceipt> = {}
   for (const [pluginId, receipt] of Object.entries(value.plugins)) {
     if (!isSafeIdentifier(pluginId)) throw new Error(`plugins.${pluginId}: plugin id is not safe.`)
     plugins[pluginId] = validateReceipt(receipt, `plugins.${pluginId}`)
   }
-  return { schemaVersion: 1, plugins }
+  return { schemaVersion: INSTALL_STORE_SCHEMA_VERSION, plugins }
 }
 
 function validateReceipt(value: unknown, path: string): MarketplacePluginInstallReceipt {
@@ -1607,9 +1614,9 @@ function validateReceipt(value: unknown, path: string): MarketplacePluginInstall
     sourceUrl: value.sourceUrl,
     classification: value.classification,
     installedAt: value.installedAt,
-    components: value.components
-      .filter((component) => !(isRecord(component) && RETIRED_RECEIPT_COMPONENT_KINDS.has(String(component.kind))))
-      .map((component, index) => validateReceiptComponent(component, `${path}.components[${index}]`)),
+    components: value.components.map((component, index) =>
+      validateReceiptComponent(component, `${path}.components[${index}]`),
+    ),
   }
   if (value.source !== undefined) receipt.source = validateReceiptSource(value.source, `${path}.source`)
   if (value.permissions !== undefined) {

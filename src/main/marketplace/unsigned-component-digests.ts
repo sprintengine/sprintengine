@@ -1,6 +1,6 @@
 import type { MarketplacePluginAuthoringManifest, MarketplacePluginComponents } from '../../shared/marketplace'
 import { MARKETPLACE_COMPONENT_KINDS } from '../../shared/marketplace'
-import { computeMarketplacePluginComponentsWithDigestsSync } from '../../../packages/module-sdk/src/plugin-component-digests'
+import { computeMarketplacePluginComponentsWithDigestsSync } from '../../../packages/extension-sdk/src/plugin-component-digests'
 
 // The component digests an UNSIGNED plugin.json is held to.
 //

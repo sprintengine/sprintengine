@@ -12,7 +12,7 @@
 //
 // and the things that left are each somewhere better: the Automations shelf
 // went with automations themselves, which became scheduled agents, Modules are
-// switches in Settings → Modules (they were offered in two shapes on two
+// switches in Settings → Extensions (they were offered in two shapes on two
 // surfaces), the automation server is a Settings concern rather than a
 // catalogue row, Featured ranked the catalogue by a fact about the machine,
 // and Agent CLIs are Settings ▸ Agents (owner ruling 2026-09-25), which lists

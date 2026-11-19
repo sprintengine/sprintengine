@@ -7,7 +7,7 @@ import { test } from 'vitest'
 
 test('module-events', async () => {
   // A module's events: the push to its client half a module gets through its
-  // scoped host (the Studio's `module.events` stream), and the subscribe verb the request/response bridge
+  // scoped host (the Studio's `extension.events` stream), and the subscribe verb the request/response bridge
   // does not have. What is pinned here is the routing contract — identity is the
   // host's, topic and payload are the module's — plus the two decisions the item
   // asked for: no replay buffer, and no flood bound.

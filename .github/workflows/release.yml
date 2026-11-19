@@ -236,14 +236,14 @@ jobs:
         run: npm run runtimes:fetch -- ${{ matrix.runtimeArgs }}
 
       # The module SDK tarball "Build your own extension" copies into a new
-      # project (resources/module-sdk, gitignored like resources/runtime): a
+      # project (resources/extension-sdk, gitignored like resources/runtime): a
       # missing one packages green and scaffolds projects that cannot install.
       # Guarded like the icon step: a promotion may build a commit from before
       # the script existed.
       - name: Pack the module SDK the app ships
         shell: bash
         run: |
-          if [ -f scripts/pack-module-sdk.mjs ]; then
+          if [ -f scripts/pack-extension-sdk.mjs ]; then
             npm run sdk:bundle
           else
             echo "This commit predates the bundled module SDK; packaging without it."

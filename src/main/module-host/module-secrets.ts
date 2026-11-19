@@ -122,7 +122,7 @@ export function createModuleSecretsRegistry(deps: ModuleSecretsDeps): ModuleSecr
     return (deps.getModulePermissions(moduleId) ?? []).includes('secrets')
   }
   function missing(moduleId: string): Failure {
-    return failure('permission_missing', `Module "${moduleId}" must declare the "secrets" permission.`)
+    return failure('permission_missing', `Extension "${moduleId}" must declare the "secrets" permission.`)
   }
   function encryptionAvailable(): boolean {
     try {

@@ -48,9 +48,9 @@ beforeEach(() => {
 test('a stream the client ended is followed again when the connection next opens, on the same client', async () => {
   const heard: unknown[] = []
   const stop = followWindowStudioPush({
-    topic: 'module.notifications',
+    topic: 'extension.notifications',
     params: {},
-    capability: 'modules',
+    capability: 'extension-host',
     onPayload: (payload) => heard.push(payload),
     api,
   })

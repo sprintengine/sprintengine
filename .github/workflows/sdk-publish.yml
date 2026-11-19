@@ -1,9 +1,9 @@
-name: Publish module SDK
+name: Publish extension SDK
 
-# Publishes @sprintengine/module-sdk to npm, with provenance.
+# Publishes @sprintengine/extension-sdk to npm, with provenance.
 #
 # A push of an `sdk-v<version>` tag publishes that version; the tag must name
-# packages/module-sdk/package.json's version exactly. A dispatch publishes
+# packages/extension-sdk/package.json's version exactly. A dispatch publishes
 # whatever version the chosen ref carries (use it to retry a failed publish).
 # Either way the release check runs first: the CHANGELOG's newest entry must be
 # the version, and the host API numbers the docs and templates quote must be
@@ -13,7 +13,7 @@ name: Publish module SDK
 # The app release does not depend on this: the app ships the templates, the
 # skill and the SDK tarball itself, and a project "Build your own extension"
 # scaffolds depends on that tarball. The npm release is for projects made on
-# the command line with `sprintengine-module init`.
+# the command line with `sprintengine-extension init`.
 on:
   push:
     tags:
@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish @sprintengine/module-sdk
+    name: Publish @sprintengine/extension-sdk
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -73,4 +73,4 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           DIST_TAG: ${{ steps.check.outputs.dist_tag }}
-        run: npm publish --provenance --access public --tag "$DIST_TAG" -w packages/module-sdk
+        run: npm publish --provenance --access public --tag "$DIST_TAG" -w packages/extension-sdk

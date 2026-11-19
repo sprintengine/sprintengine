@@ -1,5 +1,5 @@
 // The module registry as the user sees it, reported by a window to its Studio
-// (`module.reportRegistry`).
+// (`extension.reportRegistry`).
 //
 // The renderer owns the module universe: it registers every bundled renderer
 // module (already narrowed to the build channel by `activeForChannel`), loads

@@ -10,11 +10,11 @@ import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createStudioModuleHub, type StudioModules } from './studio-modules'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
-// `module.events` and `module.notifications` over the owner socket: the
+// `extension.events` and `extension.notifications` over the owner socket: the
 // capability, the scope, the module filter, and the bell's kept rows sent
 // before the live ones. The hub is the real one; the kernel behind it is not
 // here (module-events.test.ts and module-notifications.test.ts hold it).
-// `module.read` and `module.operate` are called through the hub into a real
+// `extension.read` and `extension.operate` are called through the hub into a real
 // kernel, with a module's declared methods behind it.
 
 const cleanups: Array<() => unknown> = []
@@ -67,10 +67,10 @@ async function clientOver(
 
 test('a Studio with a module kernel advertises modules, and one without refuses the streams', async () => {
   const { welcome } = await clientOver(createStudioModuleHub())
-  assert.equal(welcome.t === 'welcome' && welcome.capabilities.includes('modules'), true)
+  assert.equal(welcome.t === 'welcome' && welcome.capabilities.includes('extension-host'), true)
   const without = await clientOver(undefined)
-  assert.equal(without.welcome.t === 'welcome' && without.welcome.capabilities.includes('modules'), false)
-  without.client.send({ t: 'sub', id: 's1', topic: 'module.events', params: {} })
+  assert.equal(without.welcome.t === 'welcome' && without.welcome.capabilities.includes('extension-host'), false)
+  without.client.send({ t: 'sub', id: 's1', topic: 'extension.events', params: {} })
   const failed = await without.client.next((frame) => frame.t === 'subFailed' && frame.sub === 's1')
   assert.equal(failed.t === 'subFailed' && failed.code, 'unavailable')
 })
@@ -79,10 +79,10 @@ test("every module's events, or one module's, in the order the kernel delivered 
   const { hub, listening } = hubWithListening()
   const { client } = await clientOver(hub)
   const both = listening()
-  client.send({ t: 'sub', id: 'all', topic: 'module.events', params: {} })
+  client.send({ t: 'sub', id: 'all', topic: 'extension.events', params: {} })
   await both
   const one = listening()
-  client.send({ t: 'sub', id: 'radar', topic: 'module.events', params: { moduleId: 'acme.radar' } })
+  client.send({ t: 'sub', id: 'radar', topic: 'extension.events', params: { moduleId: 'acme.radar' } })
   await one
   hub.deliverEvent(event('acme.board', 'changed', { id: 1 }))
   hub.deliverEvent(event('acme.radar', 'run-status', { phase: 'started' }))
@@ -106,7 +106,7 @@ test("every module's events, or one module's, in the order the kernel delivered 
 
 test('a malformed module filter is refused', async () => {
   const { client } = await clientOver(createStudioModuleHub())
-  client.send({ t: 'sub', id: 's1', topic: 'module.events', params: { moduleId: 7 } })
+  client.send({ t: 'sub', id: 's1', topic: 'extension.events', params: { moduleId: 7 } })
   const failed = await client.next((frame) => frame.t === 'subFailed' && frame.sub === 's1')
   assert.equal(failed.t === 'subFailed' && failed.code, 'invalid_params')
 })
@@ -117,7 +117,7 @@ test('the bell sends the kept rows first, then each new one, and again on a new 
   hub.readRecentFrom(() => kept)
   const { client } = await clientOver(hub)
   const subscribed = listening()
-  client.send({ t: 'sub', id: 'bell', topic: 'module.notifications', params: {} })
+  client.send({ t: 'sub', id: 'bell', topic: 'extension.notifications', params: {} })
   await subscribed
   kept.push(row('k1-1', 'Standup ready'))
   hub.deliverNotification(row('k1-1', 'Standup ready'))
@@ -127,7 +127,7 @@ test('the bell sends the kept rows first, then each new one, and again on a new 
     [first, second].map((frame) => frame.t === 'push' && (frame.payload as StudioModuleNotification).id),
     ['k1-0', 'k1-1'],
   )
-  client.send({ t: 'sub', id: 'again', topic: 'module.notifications', params: {} })
+  client.send({ t: 'sub', id: 'again', topic: 'extension.notifications', params: {} })
   const resent = [
     await client.next((frame) => frame.t === 'push' && frame.sub === 'again'),
     await client.next((frame) => frame.t === 'push' && frame.sub === 'again'),
@@ -139,17 +139,17 @@ test('the bell sends the kept rows first, then each new one, and again on a new 
   )
 })
 
-test('a paired client needs modules:read, and holds it only when granted', async () => {
+test('a paired client needs extensions:read, and holds it only when granted', async () => {
   const hub = createStudioModuleHub()
   const without = await clientOver(hub, (started) => pairFakeClient(started.auth, 'app', ['conversation:read']))
-  without.client.send({ t: 'sub', id: 's1', topic: 'module.notifications', params: {} })
+  without.client.send({ t: 'sub', id: 's1', topic: 'extension.notifications', params: {} })
   const failed = await without.client.next((frame) => frame.t === 'subFailed' && frame.sub === 's1')
   assert.equal(failed.t === 'subFailed' && failed.code, 'scope_required')
 
   const { hub: watched, listening } = hubWithListening()
-  const granted = await clientOver(watched, (started) => pairFakeClient(started.auth, 'reader', ['modules:read']))
+  const granted = await clientOver(watched, (started) => pairFakeClient(started.auth, 'reader', ['extensions:read']))
   const subscribed = listening()
-  granted.client.send({ t: 'sub', id: 's2', topic: 'module.events', params: {} })
+  granted.client.send({ t: 'sub', id: 's2', topic: 'extension.events', params: {} })
   await subscribed
   watched.deliverEvent(event('acme.board', 'changed'))
   const pushed = await granted.client.next((frame) => frame.t === 'push' && frame.sub === 's2')
@@ -244,7 +244,7 @@ const codeOf = (frame: { t: string; ok?: boolean; error?: { code: string } }) =>
 test('a module’s read and operate methods answer over the socket, its own refusals as answers', async () => {
   const { hub, saved } = hubWithBoard()
   const { request } = await caller(hub)
-  const added = await request('module.operate', {
+  const added = await request('extension.operate', {
     moduleId: 'acme.board',
     method: 'cards.add',
     params: { title: 'Ship it' },
@@ -252,11 +252,11 @@ test('a module’s read and operate methods answer over the socket, its own refu
   })
   assert.deepEqual(answerOf(added), { ok: true, result: { count: 1 } })
   assert.deepEqual(saved, [{ title: 'Ship it', clientId: 'owner', commandId: 'owner:c1' }])
-  assert.deepEqual(answerOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), {
+  assert.deepEqual(answerOf(await request('extension.read', { moduleId: 'acme.board', method: 'cards.list' })), {
     ok: true,
     result: ['Ship it'],
   })
-  const taken = await request('module.operate', {
+  const taken = await request('extension.operate', {
     moduleId: 'acme.board',
     method: 'cards.add',
     params: { title: 'taken' },
@@ -269,18 +269,18 @@ test('the host’s refusals: no such module, no such method, the wrong entry, an
   const { hub } = hubWithBoard()
   const { request } = await caller(hub)
   assert.equal(
-    codeOf(await request('module.read', { moduleId: 'acme.gone', method: 'cards.list' })),
-    'module_unavailable',
+    codeOf(await request('extension.read', { moduleId: 'acme.gone', method: 'cards.list' })),
+    'extension_unavailable',
   )
   assert.equal(
-    codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.burn' })),
-    'module_method_unknown',
+    codeOf(await request('extension.read', { moduleId: 'acme.board', method: 'cards.burn' })),
+    'extension_method_unknown',
   )
   assert.equal(
-    codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.add' })),
-    'module_method_unknown',
+    codeOf(await request('extension.read', { moduleId: 'acme.board', method: 'cards.add' })),
+    'extension_method_unknown',
   )
-  const refused = await request('module.operate', {
+  const refused = await request('extension.operate', {
     moduleId: 'acme.board',
     method: 'cards.add',
     params: { name: 'x' },
@@ -294,23 +294,23 @@ test('a retried operate is carried out once; the same id for another call is ref
   const { hub, saved } = hubWithBoard()
   const { request } = await caller(hub)
   const params = { moduleId: 'acme.board', method: 'cards.add', params: { title: 'Once' }, commandId: 'c1' }
-  const first = await request('module.operate', params)
-  const again = await request('module.operate', params)
+  const first = await request('extension.operate', params)
+  const again = await request('extension.operate', params)
   assert.deepEqual(answerOf(again), answerOf(first))
   assert.equal(saved.length, 1)
-  const other = await request('module.operate', { ...params, params: { title: 'Twice' } })
+  const other = await request('extension.operate', { ...params, params: { title: 'Twice' } })
   assert.equal(codeOf(other), 'command_id_conflict')
   assert.equal(saved.length, 1)
 })
 
-test('a paired client reads with modules:read, operates only with modules:operate, and its operates are audited', async () => {
+test('a paired client reads with extensions:read, operates only with extensions:operate, and its operates are audited', async () => {
   const { hub, saved } = hubWithBoard()
-  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['modules:read']))
-  assert.deepEqual(answerOf(await reader.request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), {
+  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['extensions:read']))
+  assert.deepEqual(answerOf(await reader.request('extension.read', { moduleId: 'acme.board', method: 'cards.list' })), {
     ok: true,
     result: [],
   })
-  const refused = await reader.request('module.operate', {
+  const refused = await reader.request('extension.operate', {
     moduleId: 'acme.board',
     method: 'cards.add',
     params: { title: 'No' },
@@ -319,8 +319,8 @@ test('a paired client reads with modules:read, operates only with modules:operat
   assert.equal(codeOf(refused), 'scope_required')
   assert.equal(saved.length, 0)
 
-  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['modules:operate']))
-  await operator.request('module.operate', {
+  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['extensions:operate']))
+  await operator.request('extension.operate', {
     moduleId: 'acme.board',
     method: 'cards.add',
     params: { title: 'Yes' },
@@ -330,24 +330,24 @@ test('a paired client reads with modules:read, operates only with modules:operat
   assert.equal(
     operator.started.audit.some(
       (entry) =>
-        entry.tool === 'module.operate' && entry.moduleId === 'acme.board' && entry.moduleMethod === 'cards.add',
+        entry.tool === 'extension.operate' && entry.moduleId === 'acme.board' && entry.moduleMethod === 'cards.add',
     ),
     true,
     'an operate from a paired client is audited',
   )
-  // A read-only grant without modules:read reaches nothing.
+  // A read-only grant without extensions:read reaches nothing.
   const none = await caller(hub, (started) => pairFakeClient(started.auth, 'none', ['conversation:read']))
   assert.equal(
-    codeOf(await none.request('module.read', { moduleId: 'acme.board', method: 'cards.list' })),
+    codeOf(await none.request('extension.read', { moduleId: 'acme.board', method: 'cards.list' })),
     'scope_required',
   )
 })
 
-test('a Studio with no kernel yet answers module_unavailable; one without modules does not serve the methods', async () => {
+test('a Studio with no kernel yet answers extension_unavailable; one without modules does not serve the methods', async () => {
   const { request } = await caller(createStudioModuleHub())
   assert.equal(
-    codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })),
-    'module_unavailable',
+    codeOf(await request('extension.read', { moduleId: 'acme.board', method: 'cards.list' })),
+    'extension_unavailable',
   )
 })
 
@@ -408,22 +408,22 @@ test('a module’s Backlog writes and usage query reach the services under its i
   const { hub, calls } = hubWithServices()
   const { request } = await caller(hub)
   const at = { moduleId: 'acme.board', workspaceId: 'ws-1' }
-  assert.deepEqual(answerOf(await request('moduleBacklog.location', at)), {
+  assert.deepEqual(answerOf(await request('extensionBacklog.location', at)), {
     ok: true,
     location: { root: 'backlog', isDefault: true, exists: true },
   })
   assert.deepEqual(
-    answerOf(await request('moduleBacklog.create', { ...at, input: { title: 'Ship' }, commandId: 'c1' })),
+    answerOf(await request('extensionBacklog.create', { ...at, input: { title: 'Ship' }, commandId: 'c1' })),
     { ok: true, id: 'backlog/unfiled/x.md', relativePath: 'unfiled/x.md', path: '/p/x.md' },
   )
   const item = { ...at, itemId: 'backlog/a.md' }
-  await request('moduleBacklog.updateStatus', { ...item, status: 'ready', commandId: 'c2' })
-  await request('moduleBacklog.updateTriage', { ...item, triage: { risk: null }, commandId: 'c3' })
+  await request('extensionBacklog.updateStatus', { ...item, status: 'ready', commandId: 'c2' })
+  await request('extensionBacklog.updateTriage', { ...item, triage: { risk: null }, commandId: 'c3' })
   const link = { id: 'l', type: 'external', label: 'L', target: { kind: 'url', id: 'u' } }
-  await request('moduleBacklog.addLink', { ...item, link, commandId: 'c4' })
-  await request('moduleBacklog.updateModuleMetadata', { ...item, value: { lane: 1 }, commandId: 'c5' })
+  await request('extensionBacklog.addLink', { ...item, link, commandId: 'c4' })
+  await request('extensionBacklog.updateModuleMetadata', { ...item, value: { lane: 1 }, commandId: 'c5' })
   assert.deepEqual(
-    answerOf(await request('moduleUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 9 } })),
+    answerOf(await request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 9 } })),
     { ok: true, rows: [], scannedAt: 5, sources: [] },
   )
   assert.deepEqual(calls, [
@@ -437,30 +437,30 @@ test('a module’s Backlog writes and usage query reach the services under its i
   ])
   // The service's own refusal is the answer, in its words.
   assert.deepEqual(
-    answerOf(await request('moduleBacklog.create', { ...at, input: { title: 'denied' }, commandId: 'c6' })),
+    answerOf(await request('extensionBacklog.create', { ...at, input: { title: 'denied' }, commandId: 'c6' })),
     { ok: false, code: 'permission_missing', message: 'No backlog.write.' },
   )
 })
 
-test('a host-service call for a module not running here is module_unavailable; a service not provided answers in its words', async () => {
+test('a host-service call for a module not running here is extension_unavailable; a service not provided answers in its words', async () => {
   const { hub, calls } = hubWithServices({ backlog: false })
   const { request } = await caller(hub)
   assert.equal(
-    codeOf(await request('moduleBacklog.location', { moduleId: 'acme.gone', workspaceId: 'ws-1' })),
-    'module_unavailable',
+    codeOf(await request('extensionBacklog.location', { moduleId: 'acme.gone', workspaceId: 'ws-1' })),
+    'extension_unavailable',
   )
   assert.equal(
-    codeOf(await request('moduleUsage.query', { moduleId: '@host', query: { from: 0, to: 1 } })),
-    'module_unavailable',
+    codeOf(await request('extensionUsage.query', { moduleId: '@host', query: { from: 0, to: 1 } })),
+    'extension_unavailable',
     'the host is not a module a client speaks for',
   )
-  const missing = answerOf(await request('moduleBacklog.location', { moduleId: 'acme.board', workspaceId: 'ws-1' }))
+  const missing = answerOf(await request('extensionBacklog.location', { moduleId: 'acme.board', workspaceId: 'ws-1' }))
   assert.equal((missing as { code?: string }).code, 'backlog_unavailable')
   assert.equal(calls.length, 0)
   const before = await caller(createStudioModuleHub())
   assert.equal(
-    codeOf(await before.request('moduleUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })),
-    'module_unavailable',
+    codeOf(await before.request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })),
+    'extension_unavailable',
     'before the kernel exists',
   )
 })
@@ -469,36 +469,36 @@ test('a retried Backlog write is carried out once', async () => {
   const { hub, calls } = hubWithServices()
   const { request } = await caller(hub)
   const params = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'Once' }, commandId: 'c1' }
-  const first = await request('moduleBacklog.create', params)
-  assert.deepEqual(answerOf(await request('moduleBacklog.create', params)), answerOf(first))
+  const first = await request('extensionBacklog.create', params)
+  assert.deepEqual(answerOf(await request('extensionBacklog.create', params)), answerOf(first))
   assert.equal(calls.length, 1)
   assert.equal(
-    codeOf(await request('moduleBacklog.create', { ...params, input: { title: 'Twice' } })),
+    codeOf(await request('extensionBacklog.create', { ...params, input: { title: 'Twice' } })),
     'command_id_conflict',
   )
 })
 
-test('a paired client reads the host services with modules:read and writes them only with modules:operate', async () => {
+test('a paired client reads the host services with extensions:read and writes them only with extensions:operate', async () => {
   const { hub, calls } = hubWithServices()
-  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['modules:read']))
+  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['extensions:read']))
   assert.equal(
     (
-      answerOf(await reader.request('moduleUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })) as {
+      answerOf(await reader.request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })) as {
         ok: boolean
       }
     ).ok,
     true,
   )
   const write = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'No' }, commandId: 'c1' }
-  assert.equal(codeOf(await reader.request('moduleBacklog.create', write)), 'scope_required')
-  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['modules:operate']))
-  await operator.request('moduleBacklog.create', { ...write, input: { title: 'Yes' } })
+  assert.equal(codeOf(await reader.request('extensionBacklog.create', write)), 'scope_required')
+  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['extensions:operate']))
+  await operator.request('extensionBacklog.create', { ...write, input: { title: 'Yes' } })
   assert.deepEqual(
     calls.map((call) => call[0]),
     ['query', 'create'],
   )
   assert.equal(
-    operator.started.audit.some((entry) => entry.tool === 'moduleBacklog.create' && entry.moduleId === 'acme.board'),
+    operator.started.audit.some((entry) => entry.tool === 'extensionBacklog.create' && entry.moduleId === 'acme.board'),
     true,
     'a write from a paired client is audited',
   )
@@ -508,9 +508,9 @@ test('a paired client reads the host services with modules:read and writes them 
 
 test('before the kernel is wired the list is empty and a change is refused unavailable, never lost silently', async () => {
   const { request } = await caller(createStudioModuleHub())
-  assert.deepEqual(answerOf(await request('module.list', {})), { modules: [] })
+  assert.deepEqual(answerOf(await request('extension.list', {})), { modules: [] })
   assert.equal(
-    codeOf(await request('module.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1' })),
+    codeOf(await request('extension.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1' })),
     'unavailable',
   )
 })
@@ -546,9 +546,9 @@ test('the installed list names a folder Studio could not read by its place only 
     reportRegistry: () => ({ ok: true }),
   })
   const owner = await caller(hub)
-  assert.deepEqual(answerOf(await owner.request('module.installed', {})), { modules: [], rejected })
-  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:read']))
-  const seen = answerOf(await paired.request('module.installed', {}))
+  assert.deepEqual(answerOf(await owner.request('extension.installed', {})), { modules: [], rejected })
+  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:read']))
+  const seen = answerOf(await paired.request('extension.installed', {}))
   assert.ok(!JSON.stringify(seen).includes('Users'), JSON.stringify(seen))
   assert.deepEqual(seen, {
     modules: [],
@@ -563,7 +563,7 @@ test('the installed list names a folder Studio could not read by its place only 
   })
 })
 
-test('a change to what runs is an owner’s: a paired client holding modules:operate is refused it', async () => {
+test('a change to what runs is an owner’s: a paired client holding extensions:operate is refused it', async () => {
   const hub = createStudioModuleHub()
   const changes: string[] = []
   hub.serveLifecycleFrom({
@@ -577,20 +577,20 @@ test('a change to what runs is an owner’s: a paired client holding modules:ope
     setAppState: () => undefined,
     reportRegistry: () => ({ ok: true }),
   })
-  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:operate']))
-  assert.deepEqual(answerOf(await paired.request('module.list', {})), { modules: [] })
+  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
+  assert.deepEqual(answerOf(await paired.request('extension.list', {})), { modules: [] })
   assert.equal(
-    codeOf(await paired.request('module.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1' })),
+    codeOf(await paired.request('extension.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1' })),
     'owner_required',
   )
   const owner = await caller(hub)
   const params = { moduleId: 'acme', enabled: false, commandId: 'c1' }
-  assert.deepEqual(answerOf(await owner.request('module.setEnabled', params)), { ok: true, module: null })
-  await owner.request('module.setEnabled', params)
+  assert.deepEqual(answerOf(await owner.request('extension.setEnabled', params)), { ok: true, module: null })
+  await owner.request('extension.setEnabled', params)
   assert.deepEqual(changes, ['acme'], 'a retried change is carried out once')
 })
 
-test('the window’s module report is an owner’s: a paired client holding modules:operate cannot replace it', async () => {
+test('the window’s module report is an owner’s: a paired client holding extensions:operate cannot replace it', async () => {
   const hub = createStudioModuleHub()
   const reported: unknown[] = []
   hub.serveLifecycleFrom({
@@ -605,10 +605,15 @@ test('the window’s module report is an owner’s: a paired client holding modu
     reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
   })
   const snapshot = { modules: [] }
-  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:operate']))
-  assert.equal(codeOf(await paired.request('module.reportRegistry', { snapshot, commandId: 'r1' })), 'owner_required')
+  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['extensions:operate']))
+  assert.equal(
+    codeOf(await paired.request('extension.reportRegistry', { snapshot, commandId: 'r1' })),
+    'owner_required',
+  )
   assert.deepEqual(reported, [], 'nothing a paired client sent was kept')
   const owner = await caller(hub)
-  assert.deepEqual(answerOf(await owner.request('module.reportRegistry', { snapshot, commandId: 'r2' })), { ok: true })
+  assert.deepEqual(answerOf(await owner.request('extension.reportRegistry', { snapshot, commandId: 'r2' })), {
+    ok: true,
+  })
   assert.deepEqual(reported, [snapshot])
 })

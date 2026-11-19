@@ -758,24 +758,24 @@ export const en = {
     },
     // src/renderer/src/modules/registry-snapshot.ts
     registrySnapshot: {
-      moduleIsNotEnabledSettings: (id: unknown) => `Module "${id}" is not enabled (Settings → Modules).`,
+      moduleIsNotEnabledSettings: (id: unknown) => `Extension "${id}" is not turned on (Settings → Extensions).`,
     },
     // src/renderer/src/modules/renderer-host.ts
     rendererHost: {
-      theBacklogModuleIsDisabled: 'The Backlog module is disabled.',
+      theBacklogModuleIsDisabled: 'Backlog is turned off.',
       moduleMustDeclareTheIpc: (moduleId: unknown) =>
-        `Module "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
+        `Extension "${moduleId}" must declare the "ipc:workspace-read" permission to read a workspace's git information.`,
       workspaceGitInformationIsNot: 'Workspace git information is not available yet.',
       theWorkspaceSGitInformation: "The workspace's git information could not be read.",
       moduleDoesNotDeclareThe: (moduleId: unknown) =>
-        `Module "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`,
+        `Extension "${moduleId}" does not declare the "conversation:operate" permission, so it cannot open a chat and send its prompt.`,
       moduleDeclaresNeitherChatDraft: (moduleId: unknown) =>
-        `Module "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
+        `Extension "${moduleId}" declares neither "chat:draft" nor "conversation:operate", so it cannot open a chat.`,
       thisWindowCannotOpenA: 'This window cannot open a chat yet.',
       onlyAnAbsoluteHttpS: 'Only an absolute http(s) URL can be opened.',
       thisWindowCannotOpenLinks: 'This window cannot open links yet.',
       couldNotOpenTheLink: 'Could not open the link.',
-      thisWindowHasNoStudio: 'This window has no Studio connection for module calls.',
+      thisWindowHasNoStudio: 'This window has no Studio connection for extension calls.',
     },
   },
   onboarding: {
@@ -1736,7 +1736,7 @@ export const en = {
       },
       // src/renderer/src/components/panels/ConnectorsPanel/InstalledExtensionsInventory.tsx
       installedExtensionsInventory: {
-        couldNotListInstalledModules: 'Could not list installed modules.',
+        couldNotListInstalledModules: 'Could not list installed extensions.',
         updateTheAppAndRestart: 'Update the app and restart to update extensions.',
         thisUpdateIsnTIn: "This update isn't in the marketplace right now.",
         checking: (name: unknown) => `Checking ${name}…`,
@@ -3617,7 +3617,7 @@ export const en = {
     // src/renderer/src/components/settings/extensionsInstalled.ts
     extensionsInstalled: {
       listingNeedsANewerApp: (value: unknown) => `${value} listing needs a newer app. Update and restart.`,
-      couldnTLoadModuleFolder: (count: unknown, value: unknown) => `Couldn't load ${count} module folder${value}.`,
+      couldnTLoadModuleFolder: (count: unknown, value: unknown) => `Couldn't load ${count} extension folder${value}.`,
     },
     // src/renderer/src/components/settings/extensionsModel.ts
     extensionsModel: {
@@ -3948,7 +3948,7 @@ export const en = {
       availabilityUnknownTheCheckDid: 'Availability unknown — the check did not complete',
       reCheckNow: 'Re-check now',
       versionControlCouldNotBe: 'Version control could not be checked.',
-      fromTheModule: (moduleId: unknown) => `From the ${moduleId} module`,
+      fromTheModule: (moduleId: unknown) => `From the ${moduleId} extension`,
       enableActivityTracking: 'Enable activity tracking?',
       whatHappens: 'What happens:',
       claudeCodeAgentsNoteEach: 'Claude Code agents note each knowledge file they read or edit',
@@ -4449,7 +4449,7 @@ export const en = {
     },
     // src/renderer/src/studio/moduleMethods.ts
     moduleMethods: {
-      thisStudioDoesNotServe: 'This Studio does not serve module methods.',
+      thisStudioDoesNotServe: 'This Studio does not serve extension methods.',
       thisWindowHasNoStudio: 'This window has no Studio connection.',
     },
     // src/renderer/src/studio/pairedCanvas.ts
@@ -5922,16 +5922,16 @@ export const en = {
     },
     // src/renderer/src/components/workspace/ModuleAbsenceSurfaces.tsx
     moduleAbsenceSurfaces: {
-      moduleNotInstalled: 'Module not installed',
+      moduleNotInstalled: 'Extension not installed',
       isTurnedOff: (label: unknown) => `${label} is turned off`,
       isnTInstalled: (label: unknown) => `${label} isn’t installed`,
       thisWorkspaceNeedsTheModule: (label: unknown) =>
-        `This workspace needs the ${label} module. Your work is safe on disk; turn the module back on to continue.`,
+        `This workspace needs the ${label} extension. Your work is safe on disk; turn the extension back on to continue.`,
       thisWorkspaceNeedsTheModule2: (label: unknown) =>
-        `This workspace needs the ${label} module. Your work is safe on disk; install the module to continue.`,
-      doorModuleNotInstalled: 'Door module not installed',
-      theModuleIsTurnedOff: (label: unknown) => `The ${label} module is turned off.`,
-      theModuleIsnTInstalled: (label: unknown) => `The ${label} module isn’t installed.`,
+        `This workspace needs the ${label} extension. Your work is safe on disk; install the extension to continue.`,
+      doorModuleNotInstalled: 'Door extension not installed',
+      theModuleIsTurnedOff: (label: unknown) => `The ${label} extension is turned off.`,
+      theModuleIsnTInstalled: (label: unknown) => `The ${label} extension isn’t installed.`,
       findItInPlugins: 'Find it in Plugins',
       updateStudioToInstallExtensions: 'Update Studio to install extensions.',
       couldNotVerifyThisExtension: 'Could not verify this extension.',
@@ -6709,7 +6709,7 @@ export const en = {
       idle: 'Idle',
       chatAgent: 'Chat agent',
       newAgent: 'New agent',
-      openModuleSettings: 'Open module settings',
+      openModuleSettings: 'Open extension settings',
       tabActions: (getName: unknown) => `Tab actions: ${getName}`,
       rename: 'Rename',
       hideTab: 'Hide tab',

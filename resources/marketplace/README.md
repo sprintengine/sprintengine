@@ -97,7 +97,7 @@ npm run verify:marketplace-registry -- --root ../marketplace
 ```
 
 The verifier uses the shared marketplace schema validator for `marketplace.json`
-and delegates every *signed* plugin bundle to `sprintengine-module plugin verify`,
+and delegates every *signed* plugin bundle to `sprintengine-extension plugin verify`,
 the same authoring CLI path used before publish. It also checks component file
 digests, allowlisted HTTPS source URLs (the host allowlist above, replacing the
 former canonical `plugins/<id>` pin), verified publisher signatures

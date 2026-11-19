@@ -31,9 +31,9 @@ import { readModuleTrustContextSync } from './trust-context'
 import { setModuleTrust } from './trust-store'
 import { discoverUserModules, installModuleFolder } from './user-module-registry'
 
-// What runs on a Studio, changed through its server (`module.setEnabled`,
-// `module.install`, `module.setTrust`, `module.uninstall`) and read
-// (`module.list`): the same steps in process and out of process, over the
+// What runs on a Studio, changed through its server (`extension.setEnabled`,
+// `extension.install`, `extension.setTrust`, `extension.uninstall`) and read
+// (`extension.list`): the same steps in process and out of process, over the
 // data folder and the module root the server reads at load. Nothing here
 // needs Electron.
 //
@@ -44,13 +44,13 @@ import { discoverUserModules, installModuleFolder } from './user-module-registry
 // - Installing, trusting and uninstalling change what is on disk and in the
 //   trust store; the kernel reads them at its next start. `changed` tells the
 //   windows, which load a trusted extension's window half again.
-// - Listing the installed extensions (`module.installed`) reads the disk, the
+// - Listing the installed extensions (`extension.installed`) reads the disk, the
 //   trust store and the receipts now, with what this server run loaded; the
-//   window halves (`module.rendererEntries`) are read and checked against
+//   window halves (`extension.rendererEntries`) are read and checked against
 //   their verified bytes per request, so revoking trust applies at once.
-// - The modules' Settings values (`module.setAppState`) are kept in the data
+// - The modules' Settings values (`extension.setAppState`) are kept in the data
 //   folder for their main halves; the registry a window resolved
-//   (`module.reportRegistry`) is kept in memory for the agents' tools.
+//   (`extension.reportRegistry`) is kept in memory for the agents' tools.
 // - A module a marketplace or GitHub install put in place belongs to that
 //   plugin: uninstalling it here is refused with the plugin's id, and the
 //   plugin's own uninstall removes it with the rest of its bundle.
@@ -106,10 +106,10 @@ export type ModuleLifecycleDeps = {
 
 export type ModuleLifecycle = {
   list(): StudioModuleSummary[]
-  setEnabled(moduleId: string, enabled: boolean | null): Promise<Answer<'module.setEnabled'>>
-  install(path: string): Promise<Answer<'module.install'>>
-  setTrust(moduleId: string, trusted: boolean): Promise<Answer<'module.setTrust'>>
-  uninstall(moduleId: string): Promise<Answer<'module.uninstall'>>
+  setEnabled(moduleId: string, enabled: boolean | null): Promise<Answer<'extension.setEnabled'>>
+  install(path: string): Promise<Answer<'extension.install'>>
+  setTrust(moduleId: string, trusted: boolean): Promise<Answer<'extension.setTrust'>>
+  uninstall(moduleId: string): Promise<Answer<'extension.uninstall'>>
   installed(): Promise<ThirdPartyModuleListResult>
   rendererEntries(): Promise<ThirdPartyRendererEntriesResult>
   setAppState(state: Record<string, Record<string, unknown>>): void
@@ -127,7 +127,7 @@ const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
   incompatible_host_api: 'It was built for a host API this Studio does not provide.',
 }
 
-/** Every module a kernel holds, as `module.list` answers it. */
+/** Every module a kernel holds, as `extension.list` answers it. */
 export function summarizeModules(view: ModuleLifecycleView): StudioModuleSummary[] {
   return view.manifests().map((manifest) => summarize(view, manifest))
 }
@@ -255,13 +255,13 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           }
           // Trust binds to what is on disk now, never to a client's idea of it.
           const target = await installed(moduleId)
-          if (!target) return { ok: false, message: `Module "${moduleId}" is not installed.` }
+          if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
           if (target.trust.status === 'invalid')
             return {
               ok: false,
               message: target.trust.tampered
-                ? `Module "${moduleId}" does not match the file digests its manifest signs and cannot be trusted.`
-                : `Module "${moduleId}" has an invalid signature and cannot be trusted.`,
+                ? `Extension "${moduleId}" does not match the file digests its manifest signs and cannot be trusted.`
+                : `Extension "${moduleId}" has an invalid signature and cannot be trusted.`,
             }
           // The grant binds to the manifest fingerprint, which covers the
           // `files` digests the folder was just held to; without them a grant
@@ -270,8 +270,8 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
             return {
               ok: false,
               message:
-                `Module "${moduleId}" lists no digests of its code, so trusting it could not cover what runs. ` +
-                'Sign it with `sprintengine-module sign`, which records them, and install it again.',
+                `Extension "${moduleId}" lists no digests of its code, so trusting it could not cover what runs. ` +
+                'Sign it with `sprintengine-extension sign`, which records them, and install it again.',
             }
           const { result } = await setModuleTrust(deps.dataDir, moduleId, manifestFingerprint(target.manifest))
           if (!result.ok) return { ok: false, message: result.message ?? 'Trust could not be saved.' }
@@ -298,11 +298,11 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           if (owner)
             return {
               ok: false,
-              message: `Module "${moduleId}" came with the plugin "${owner.id}": uninstall the plugin.`,
+              message: `Extension "${moduleId}" came with the plugin "${owner.id}": uninstall the plugin.`,
               pluginId: owner.id,
             }
           const target = await installed(moduleId)
-          if (!target) return { ok: false, message: `Module "${moduleId}" is not installed.` }
+          if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
           const contained = await containedModuleFolder(deps.moduleRoot(), target.moduleRoot)
           if (!contained.ok) return { ok: false, message: contained.message }
           await rm(contained.path, { recursive: true, force: true })

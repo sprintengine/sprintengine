@@ -126,7 +126,7 @@ function InstallMenu({
 
 /**
  * The window's Studio's word on its modules: what it holds, switched on or
- * off and whether each runs there now (`module.list`), and a switch that waits
+ * off and whether each runs there now (`extension.list`), and a switch that waits
  * for it. Without a Studio of this window's own (a browser tab) a switch is
  * this window's copy alone.
  */

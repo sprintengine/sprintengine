@@ -17,6 +17,7 @@ import { backoffDelayMs } from '../../shared/exponentialBackoff'
 import { wslToWindowsPath } from '../../shared/host-paths'
 import { toolError, type McpToolRegistration } from '../../shared/modules/mcp-tools'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
+import { EXTENSION_READ_TOOLS } from '../../shared/extension-read-tools'
 import { lineTransport, readTicket } from './studio-door'
 import type { WslServerConnection } from './wsl-environment-manager'
 
@@ -24,7 +25,7 @@ import type { WslServerConnection } from './wsl-environment-manager'
 // agent there reaches its own server's gateway, which serves the core's tools
 // but has no browser, canvas, editor, tour, terminals or agent launches, and
 // none of what the Windows side keeps: the person's workspace list, the
-// backlog, scheduled agents, modules. So the front door is a client of each
+// backlog, scheduled agents, its extensions. So the front door is a client of each
 // WSL server too, with the shell role, and offers it those as toolsets: the
 // ones the desktop's shell offers the Windows-side server, each call run
 // through that side's registry, which hands it to the shell; and the
@@ -33,7 +34,8 @@ import type { WslServerConnection } from './wsl-environment-manager'
 // answer goes back the same way. An agent in WSL lists the tools an agent on
 // Windows does, but for three families: `conversation` and `subagent`, which
 // the WSL server serves itself, and `tailnet`, which is served on the Windows
-// side's owner-only socket and nowhere else (`tailnet-tools.ts`).
+// side's owner-only socket and nowhere else (`tailnet-tools.ts`); of
+// `extension`, only the two that read what runs here.
 //
 // In process the shell offers only the browser and the canvas, and the
 // editor, tours, terminals and agent launches are the Windows gateway's own
@@ -61,10 +63,17 @@ export const RELAYED_TOOLSETS = ['browser', 'canvas', 'editor', 'tour', 'termina
 /**
  * The families of Studio's own tools whose data the Windows side keeps, which
  * a WSL server cannot serve: the backlog (phase 7, 3.7), and the workspace
- * list, scheduled agents, the CLI catalog, modules and the marketplace, which
- * an agent on Windows is listed beside it.
+ * list, scheduled agents, the CLI catalog, the extensions it runs and the
+ * marketplace, which an agent on Windows is listed beside it. Of `extension`
+ * only the reads cross (`EXTENSION_READ_TOOLS`): the rest of that family makes
+ * extension projects on this computer's disk, for an agent working here.
  */
-export const WINDOWS_SIDE_TOOLSETS = ['backlog', 'workspace', 'schedule', 'cli', 'module', 'marketplace'] as const
+export const WINDOWS_SIDE_TOOLSETS = ['backlog', 'workspace', 'schedule', 'cli', 'extension', 'marketplace'] as const
+
+/** Whether one of this side's tools crosses to a WSL server at all, beside its family being taken. */
+function crosses(toolset: string, toolName: string): boolean {
+  return toolset !== 'extension' || EXTENSION_READ_TOOLS.has(toolName)
+}
 
 export type WslToolRelay = { close(): void }
 
@@ -259,6 +268,7 @@ export function relayShellToolsets(input: {
     const sets = new Map<string, RelayedToolset>()
     for (const definition of visible) {
       if (!definition.builtIn || !target.toolsets.includes(definition.toolset)) continue
+      if (!crosses(definition.toolset, `${definition.toolset}.${definition.tool.name}`)) continue
       const entry = sets.get(definition.toolset) ?? {
         title: definition.title,
         ...(definition.description ? { description: definition.description } : {}),
@@ -278,7 +288,7 @@ export function relayShellToolsets(input: {
     const offeredByClients = new Set(sets.keys())
     for (const registration of input.gatewayTools?.() ?? []) {
       const named = relayedToolName(registration.name)
-      if (!named || offeredByClients.has(named.toolset)) continue
+      if (!named || offeredByClients.has(named.toolset) || !crosses(named.toolset, registration.name)) continue
       const taken =
         target.toolsets.includes(named.toolset) ||
         (target.moduleTools === true && !STUDIO_RESERVED_TOOLSET_NAMES.includes(named.toolset))

@@ -7,9 +7,9 @@ import { afterAll, test, vi } from 'vitest'
 
 import { connectToStudio } from '../../packages/agent-sdk/src/node'
 import type { StudioClient } from '../../packages/client-runtime/src/public'
-import { validateThirdPartyModuleManifest } from '../../packages/module-sdk/src/manifest-validate'
-import type { ModuleMethodContracts } from '../../packages/module-sdk/src/methods'
-import { generateModuleSigningKeyPair, signManifest } from '../../packages/module-sdk/src/signing'
+import { validateThirdPartyModuleManifest } from '../../packages/extension-sdk/src/manifest-validate'
+import type { ModuleMethodContracts } from '../../packages/extension-sdk/src/methods'
+import { generateModuleSigningKeyPair, signManifest } from '../../packages/extension-sdk/src/signing'
 import type { StudioModuleEvent, StudioModuleSummary } from '../../packages/studio-protocol/src/public'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
 import { ConversationRuntime } from '../main/conversation-runtime'
@@ -56,7 +56,7 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 // release key) is installed from a folder and trusted through the server; at
 // the server's next start it runs: the window calls its declared methods and
 // hears its events. Switched off, it is gone at once: its calls are refused
-// `module_unavailable`, the list says it is not running and declares nothing,
+// `extension_unavailable`, the list says it is not running and declares nothing,
 // and it says nothing more. Switched on again, it answers again.
 //
 // An extension drives a chat the same way: the window calls its methods, it
@@ -91,7 +91,7 @@ afterAll(async () => {
 
 const ID = 'acme-deck'
 
-/** An extension as its author ships it, at host API 2, signed as `sprintengine-module sign` signs by a test key. */
+/** An extension as its author ships it, at host API 2, signed as `sprintengine-extension sign` signs by a test key. */
 function writeSigned(folder: string, manifestFields: Record<string, unknown>, main: string): void {
   mkdirSync(join(folder, 'dist'), { recursive: true })
   writeFileSync(join(folder, 'dist', 'main.cjs'), main)
@@ -314,7 +314,7 @@ async function windowOn(path: string, token = OWNER_TOKEN): Promise<StudioClient
 }
 
 async function listed(client: StudioClient): Promise<StudioModuleSummary | undefined> {
-  return (await client.request('module.list', {})).modules.find((module) => module.id === ID)
+  return (await client.request('extension.list', {})).modules.find((module) => module.id === ID)
 }
 
 /** What `count` events have been heard so far, waiting a little for one still on its way. */
@@ -332,10 +332,10 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
   const settings = await windowOn(first.path)
   const lifecycle = moduleLifecycleOver(async () => settings)
   let changes = 0
-  settings.subscribe('module.changed', {}, { onPayload: () => void changes++ })
+  settings.subscribe('extension.changed', {}, { onPayload: () => void changes++ })
   const installed = await lifecycle.install(source)
   assert.deepEqual(installed, { ok: true, moduleId: ID, trust: 'signed' }, 'a test key is not a trusted publisher')
-  const listedInstalled = await settings.request('module.installed', {})
+  const listedInstalled = await settings.request('extension.installed', {})
   assert.deepEqual(
     listedInstalled.modules.map((module) => [module.manifest.id, module.trust, module.origin?.kind]),
     [[ID, 'signed', 'folder']],
@@ -362,7 +362,7 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
   assert.equal(running?.source, 'third-party')
 
   const events: StudioModuleEvent[] = []
-  client.subscribe('module.events', { moduleId: ID }, { onPayload: (event) => events.push(event) })
+  client.subscribe('extension.events', { moduleId: ID }, { onPayload: (event) => events.push(event) })
   // The window's renderer half of the extension, calling its own server.
   const renderer = createRendererHost()
   renderer.setModuleMethodCaller((call) => callModuleMethod(client, call))
@@ -404,7 +404,7 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
     methods: [],
   })
   const unavailable = await deck.read('cards.list', {})
-  assert.equal(!unavailable.ok && unavailable.code, 'module_unavailable')
+  assert.equal(!unavailable.ok && unavailable.code, 'extension_unavailable')
   const quiet = events.length
   assert.equal(!(await deck.operate('cards.add', { title: 'Nobody' })).ok, true)
   await new Promise((resolve) => setTimeout(resolve, 50))
@@ -421,8 +421,8 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
 
 test('only an owner changes what runs: a paired client granted modules may list, and is refused the rest', async () => {
   const { path, auth } = await startServer()
-  const paired = await windowOn(path, pairFakeClient(auth, 'tablet', ['modules:operate']))
-  const modules = (await paired.request('module.list', {})).modules
+  const paired = await windowOn(path, pairFakeClient(auth, 'tablet', ['extensions:operate']))
+  const modules = (await paired.request('extension.list', {})).modules
   assert.equal(
     modules.find((module) => module.id === ID)?.running,
     true,
@@ -561,7 +561,7 @@ test('an extension drives a chat through its server, and a retried call sends on
   const second = await startServer()
   const client = await windowOn(second.path)
   const said: StudioModuleEvent[] = []
-  client.subscribe('module.events', { moduleId: CHAT_ID }, { onPayload: (event) => said.push(event) })
+  client.subscribe('extension.events', { moduleId: CHAT_ID }, { onPayload: (event) => said.push(event) })
   const chat = methodsOn<ChatMethods>(client, CHAT_ID)
 
   // ── It starts a chat, follows it and sends to it; the window hears the answer ──

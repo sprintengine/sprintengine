@@ -1,7 +1,7 @@
 // MCP tool contract for the Studio gateway. Node-free on purpose:
 // these shapes are shared by the socket server (src/main/automation), the
 // module host's contribution point (MainHost.registerMcpTools), and the SDK
-// mirror in packages/module-sdk — src/shared cannot import src/main (TS6307).
+// mirror in packages/extension-sdk — src/shared cannot import src/main (TS6307).
 
 import { STUDIO_BUILT_IN_TOOLSETS } from '../../../packages/studio-protocol/src/public'
 import { isRecord } from '../records'

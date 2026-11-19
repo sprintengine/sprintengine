@@ -5,7 +5,7 @@ import type { StudioModuleEvent } from '../../../packages/studio-protocol/src/pu
 // A module's methods answer one request each; a module whose main half learns
 // something its client half has to react to (a background run finishing, a
 // watcher firing) emits it. The Studio carries every module's events on its
-// `module.events` stream (packages/studio-protocol/src/modules.ts), and each
+// `extension.events` stream (packages/studio-protocol/src/modules.ts), and each
 // window files them under the emitting module for that module's subscribers.
 //
 // Identity is stamped by the kernel from the emitting module's scope, exactly
@@ -50,7 +50,7 @@ export function isModuleEvent(value: unknown): value is ModuleEventEnvelope {
  * through and through. Read before the emit is delivered, so the module hears
  * it from its own `emit`. The SDK's test host applies the same check.
  */
-export { jsonValueProblem as moduleEventPayloadProblem } from '../../../packages/module-sdk/src/json-value'
+export { jsonValueProblem as moduleEventPayloadProblem } from '../../../packages/extension-sdk/src/json-value'
 
 const MAX_TOPIC_LENGTH = 128
 

@@ -21,7 +21,7 @@ import { copy } from '../../../../shared/copy'
 // revokes and uninstalls through the window's Studio (`module.*`), which owns
 // what runs there. The page and
 // its rows only render what this hands them. The trust, uninstall and update
-// semantics are the ones Settings → Modules had — the presentation moved, the
+// semantics are the ones Settings → Extensions had — the presentation moved, the
 // rules did not.
 
 /** An update paused on the trust disclosure: the new version is signed differently. */
@@ -177,7 +177,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // Uninstall, however the module arrived. One a marketplace or GitHub install
   // put in place belongs to that plugin, and the plugin's own uninstall takes
   // it out with the rest of its bundle (its skill copies and MCP servers). One
-  // added from a folder is removed by the Studio (`module.uninstall`), which
+  // added from a folder is removed by the Studio (`extension.uninstall`), which
   // also names the plugin when it finds one this list did not know. Either
   // way its trust grant, enablement and stored secrets go too, and what this
   // window keeps for it is dropped.

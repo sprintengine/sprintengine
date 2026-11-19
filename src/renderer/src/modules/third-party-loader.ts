@@ -19,7 +19,7 @@ import type { RendererKernel } from './renderer-host'
 // entries are ever served); this loader's jobs are evaluation, registration
 // through the identical `hostFor(manifest.id)` contract bundled modules use,
 // and per-module failure isolation: a broken bundle records an error surfaced
-// in Settings → Modules and never takes down the renderer or its neighbors.
+// in Settings → Extensions and never takes down the renderer or its neighbors.
 //
 // Like bundled modules, third-party entries register their contributions
 // regardless of the enablement toggle — enablement gating happens in the
@@ -63,7 +63,7 @@ export function getThirdPartyRendererLoadState(moduleId: string): ThirdPartyRend
 
 // ── Shared React runtime ─────────────────────────────────────────────────────
 //
-// The SDK contract (packages/module-sdk README) has authors bundle
+// The SDK contract (packages/extension-sdk README) has authors bundle
 // `entry.renderer` as a single-file ESM bundle with React marked external, so
 // the bundle still contains bare `import … from 'react'` statements. Module
 // contributions render inside the app's React tree, so they MUST resolve to
@@ -92,11 +92,11 @@ const EAGER_SHARED_MODULE_SPECIFIERS: Record<string, object> = {
 
 // Resolved lazily, in parallel, the first time a third-party entry is loaded.
 // The keys are exact bare specifiers, which is what an import map matches on,
-// so a module's `import { Banner } from '@sprintengine/module-sdk/ui'` resolves
+// so a module's `import { Banner } from '@sprintengine/extension-sdk/ui'` resolves
 // without the SDK tarball's runtime stub ever being reached.
 const LAZY_SHARED_MODULE_LOADERS: Record<string, () => Promise<object>> = {
-  '@sprintengine/module-sdk/ui': () => import('./sdk-ui'),
-  '@sprintengine/module-sdk/surface': () => import('./sdk-surface'),
+  '@sprintengine/extension-sdk/ui': () => import('./sdk-ui'),
+  '@sprintengine/extension-sdk/surface': () => import('./sdk-surface'),
 }
 
 const SHARED_RUNTIME_GLOBAL = '__sprintengineSharedModuleRuntime'

@@ -45,7 +45,7 @@ function hasCodeBearingKind(provides: readonly MarketplaceProvidesKind[]): boole
  *
  * Only the two workspace-scoped kinds do: an MCP server syncs into
  * `<workspaceRoot>/.mcp.json` and a skill pack copies into the workspace's
- * harness dirs. A module installs into `~/.sprintengine/modules/<id>`, which
+ * harness dirs. A module installs into `~/.sprintengine/extensions/<id>`, which
  * touches no project — so a module-only bundle installs with no workspace open at all, which is what
  * makes a first-party module installable from a fresh app that has never
  * opened a folder (D10).

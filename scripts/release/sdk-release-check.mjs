@@ -1,4 +1,4 @@
-// Whether @sprintengine/module-sdk is ready to publish, and under which npm
+// Whether @sprintengine/extension-sdk is ready to publish, and under which npm
 // dist-tag. Run by sdk-publish.yml before `npm publish`, and covered offline by
 // sdk-release-check.test.mjs, which also runs it against this tree so a
 // release-blocking mismatch fails `npm run test:release` on the pull request
@@ -8,7 +8,7 @@
 //
 //   - the CHANGELOG's newest entry is the version being published;
 //   - the host API version and floor quoted in the docs, the README and every
-//     template manifest are the ones packages/module-sdk/src/host-api.ts
+//     template manifest are the ones packages/extension-sdk/src/host-api.ts
 //     declares;
 //   - a pushed `sdk-v*` tag names the package's version exactly.
 //
@@ -73,25 +73,25 @@ export function hostApiClaims(text) {
 export function checkSdkRelease({ packageVersion, changelog, hostApiSource, docs = [], templateManifests = [], tag }) {
   const problems = []
   if (!isSemver(packageVersion)) {
-    problems.push(`packages/module-sdk/package.json: "${packageVersion}" is not a semver version.`)
+    problems.push(`packages/extension-sdk/package.json: "${packageVersion}" is not a semver version.`)
   }
 
   const head = changelogHeadVersion(changelog)
   if (head === null) {
-    problems.push('packages/module-sdk/CHANGELOG.md: the first "## " heading does not name a version.')
+    problems.push('packages/extension-sdk/CHANGELOG.md: the first "## " heading does not name a version.')
   } else if (head !== packageVersion) {
     problems.push(
-      `packages/module-sdk/CHANGELOG.md: the newest entry is ${head}, and package.json is ${packageVersion}. Write the ${packageVersion} entry first.`,
+      `packages/extension-sdk/CHANGELOG.md: the newest entry is ${head}, and package.json is ${packageVersion}. Write the ${packageVersion} entry first.`,
     )
   }
 
   const hostApi = hostApiFromSource(hostApiSource)
   if (hostApi.version === null || hostApi.minSupported === null) {
-    problems.push('packages/module-sdk/src/host-api.ts: HOST_API_VERSION or HOST_API_MIN_SUPPORTED is not an integer literal.')
+    problems.push('packages/extension-sdk/src/host-api.ts: HOST_API_VERSION or HOST_API_MIN_SUPPORTED is not an integer literal.')
   } else {
     if (hostApi.minSupported > hostApi.version) {
       problems.push(
-        `packages/module-sdk/src/host-api.ts: HOST_API_MIN_SUPPORTED (${hostApi.minSupported}) is above HOST_API_VERSION (${hostApi.version}).`,
+        `packages/extension-sdk/src/host-api.ts: HOST_API_MIN_SUPPORTED (${hostApi.minSupported}) is above HOST_API_VERSION (${hostApi.version}).`,
       )
     }
     const expected = { HOST_API_VERSION: hostApi.version, HOST_API_MIN_SUPPORTED: hostApi.minSupported }
@@ -130,7 +130,7 @@ export function checkSdkRelease({ packageVersion, changelog, hostApiSource, docs
 
 // The files the check reads, from a checkout at `root`.
 export function readSdkReleaseInputs(root) {
-  const sdk = join(root, 'packages', 'module-sdk')
+  const sdk = join(root, 'packages', 'extension-sdk')
   const read = (...parts) => readFileSync(join(...parts), 'utf8')
   const templatesRoot = join(sdk, 'templates')
   const templateManifests = readdirSync(templatesRoot, { withFileTypes: true })
@@ -144,7 +144,7 @@ export function readSdkReleaseInputs(root) {
     hostApiSource: read(sdk, 'src', 'host-api.ts'),
     docs: [
       { path: 'docs/compatibility.md', text: read(root, 'docs', 'compatibility.md'), required: true },
-      { path: 'packages/module-sdk/README.md', text: read(sdk, 'README.md'), required: false },
+      { path: 'packages/extension-sdk/README.md', text: read(sdk, 'README.md'), required: false },
     ],
     templateManifests,
   }
@@ -167,7 +167,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const problem of result.problems) console.error(`- ${problem}`)
     process.exit(1)
   }
-  console.log(`@sprintengine/module-sdk ${result.version} is ready to publish under the "${result.distTag}" tag.`)
+  console.log(`@sprintengine/extension-sdk ${result.version} is ready to publish under the "${result.distTag}" tag.`)
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `version=${result.version}\ndist_tag=${result.distTag}\n`)
   }

@@ -9,7 +9,7 @@
 // deliberately separate from the BYO-CLI `permissionPresets` (opaque launch-arg
 // bundles for a CLI, not capability scopes for code).
 //
-// See docs/module-authors/permissions.md for the author-facing reference.
+// See docs/extension-authors/permissions.md for the author-facing reference.
 //
 // ## The `ipc:*` tiers
 //
@@ -302,6 +302,6 @@ export function partitionCapabilityAccess(permissions: readonly string[]): {
 }
 
 // The permissions validator lives in the published SDK so the app and the
-// `sprintengine-module` CLI validate manifests identically; re-exported here for
+// `sprintengine-extension` CLI validate manifests identically; re-exported here for
 // app code.
-export { validateCapabilityPermissions } from '../../../packages/module-sdk/src/manifest-validate'
+export { validateCapabilityPermissions } from '../../../packages/extension-sdk/src/manifest-validate'

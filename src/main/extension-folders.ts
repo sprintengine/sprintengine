@@ -5,7 +5,7 @@ import { defaultUserModuleRoot } from './modules/user-module-registry'
 import { defaultUserPluginRoot } from './plugin-registry'
 
 // Drop-in extension folders. On a packaged install nothing tells a user where
-// capability modules and CLI plugins are picked up from, and the folders only
+// extensions and conversation providers are picked up from, and the folders only
 // exist once something has been installed. This ensures both roots exist on
 // startup and seeds each with a README so a user (or an SDK author shipping a
 // folder) can discover the contract without reading source. Best-effort: a
@@ -13,41 +13,42 @@ import { defaultUserPluginRoot } from './plugin-registry'
 
 const EXTENSION_README_FILENAME = 'README.md'
 
-export const MODULE_FOLDER_README = `# SprintEngine capability modules
+export const MODULE_FOLDER_README = `# SprintEngine extensions
 
-Drop a capability module here to have SprintEngine pick it up on next launch.
+Drop an extension here to have SprintEngine pick it up on next launch.
 
 ## Layout
 
 \`\`\`
-~/.sprintengine/modules/
-  <module-id>/
+~/.sprintengine/extensions/
+  <extension-id>/
     manifest.json   # required — id must equal this folder name
-    dist/main.cjs   # optional entry.main (CommonJS, main process)
-    dist/renderer.mjs # optional entry.renderer (ESM bundle, renderer)
+    dist/main.cjs   # optional entry.main (CommonJS, where Studio's server runs)
+    dist/renderer.mjs # optional entry.renderer (ESM bundle, Studio's windows)
 \`\`\`
 
 ## Getting started
 
-Author modules against the published SDK:
+Author extensions against the published SDK:
 
 \`\`\`
-npm install --save-dev @sprintengine/module-sdk
+npm install --save-dev @sprintengine/extension-sdk
 \`\`\`
 
-A \`manifest.json\` describes the module; \`entry.main\` / \`entry.renderer\`
-register IPC, services, panels, workspace types, commands and settings through
-the host APIs (\`MainHost\` / \`RendererHost\`). Validate, pack and sign with the
-bundled CLI:
+A \`manifest.json\` describes the extension; \`entry.main\` / \`entry.renderer\`
+register methods, services, panels, workspace types, commands and settings
+through the host APIs (\`MainHost\` / \`RendererHost\`). Validate, pack and sign
+with the bundled CLI:
 
 \`\`\`
-npx sprintengine-module pack ./my-module
-npx sprintengine-module sign ./my-module --key ./signing.pem
+npx sprintengine-extension pack ./my-extension
+npx sprintengine-extension sign ./my-extension --key ./signing.pem
 \`\`\`
 
-Installed modules are listed under **Settings → Modules**, where you review the
-access each one requests and grant trust before its code runs. You can also
-install a module folder from there instead of copying it here by hand.
+Installed extensions are listed under **Settings → Extensions**, where you
+review the access each one requests and grant trust before its code runs. You
+can also install an extension folder from there instead of copying it here by
+hand.
 `
 
 export const PLUGIN_FOLDER_README = `# SprintEngine conversation providers

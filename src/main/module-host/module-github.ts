@@ -256,7 +256,7 @@ export function createModuleGitHubRegistry(deps: ModuleGitHubDeps): ModuleGitHub
     return (deps.getModulePermissions(moduleId) ?? []).includes('github')
   }
   function missingMessage(moduleId: string): string {
-    return `Module "${moduleId}" must declare the "github" permission.`
+    return `Extension "${moduleId}" must declare the "github" permission.`
   }
   async function readToken(): Promise<string> {
     try {

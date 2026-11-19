@@ -675,8 +675,8 @@ export function createCompanionAgentsModuleRegistry(input: {
             return Promise.reject(
               new Error(
                 permissions.includes('conversation:bypass')
-                  ? `Module "${moduleId}" cannot run a companion task with tools: 'auto' while it serves an agent's tool call that asks before acting.`
-                  : `Module "${moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
+                  ? `Extension "${moduleId}" cannot run a companion task with tools: 'auto' while it serves an agent's tool call that asks before acting.`
+                  : `Extension "${moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
               ),
             )
           }
@@ -688,7 +688,7 @@ export function createCompanionAgentsModuleRegistry(input: {
         if (answer?.decision === 'once' && !declared(moduleId).includes('conversation:operate')) {
           return {
             ok: false,
-            message: `Module "${moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
+            message: `Extension "${moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
           }
         }
         return handle.respondToApproval(answer)
@@ -703,7 +703,7 @@ export function createCompanionAgentsModuleRegistry(input: {
     attach(moduleId, spec) {
       if (!declared(moduleId).includes('agents:companion')) {
         throw new Error(
-          `Module "${moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
+          `Extension "${moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
         )
       }
       const handle = input.service.attach({ ...spec, agentId: companionAgentIdFor(moduleId, spec.agentId) })

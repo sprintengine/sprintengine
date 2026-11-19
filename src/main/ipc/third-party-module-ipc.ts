@@ -22,7 +22,7 @@ export function registerThirdPartyModuleIpc(ipcMain: IpcMain): void {
         readModuleTrustContextSync(app.getPath('userData')),
       )
       const target = modules.find((module) => module.manifest.id === id)
-      if (!target) return { ok: false, message: `Module "${id}" is not installed.` }
+      if (!target) return { ok: false, message: `Extension "${id}" is not installed.` }
       const failure = await shell.openPath(target.moduleRoot)
       return failure ? { ok: false, message: failure } : { ok: true }
     },

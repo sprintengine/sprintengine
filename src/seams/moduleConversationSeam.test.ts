@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { test, vi } from 'vitest'
 
-import { getConversationService, type ModuleConversationService } from '../../packages/module-sdk/src/conversation'
+import { getConversationService, type ModuleConversationService } from '../../packages/extension-sdk/src/conversation'
 import type { ConversationEvent, ConversationEventType } from '../shared/conversation-runtime'
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import type { CapabilityManifest } from '../shared/modules/manifest'
@@ -142,7 +142,7 @@ test('moduleConversationSeam', async () => {
     version: 1,
     defaultEnabled: true,
     source: 'third-party',
-    engines: { hostApi: 2 },
+    engines: { hostApi: 3 },
     // As the SDK's docs tell a module that uses a chat service: the agent
     // runtime provides it, so it loads first.
     dependsOn: ['agent-runtime'],

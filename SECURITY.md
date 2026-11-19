@@ -32,7 +32,7 @@ In scope:
 
 - **The desktop app** — the Electron main, preload, renderer and shared code in
   `src/`, and its packaging and update path.
-- **The module SDK** in `packages/module-sdk/`, including module manifest
+- **The module SDK** in `packages/extension-sdk/`, including module manifest
   parsing, the permission model, and module and plugin signature verification.
 - **The studio plugin** in `resources/studio-plugin/`, and the MCP surface it
   exposes to agents.

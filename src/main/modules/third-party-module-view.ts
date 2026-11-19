@@ -11,7 +11,7 @@ import { readThirdPartyMainLaunchSnapshot, type ThirdPartyMainLaunchSnapshot } f
 import { rendererEntryView } from './third-party-renderer-entries'
 import type { InstalledModule } from './user-module-registry'
 
-// One installed extension as `module.installed` answers it: what is on disk,
+// One installed extension as `extension.installed` answers it: what is on disk,
 // its trust, where it came from, and whether it runs (module-lifecycle.ts).
 
 // Each module a receipt put in place, by module id, with where the receipt's

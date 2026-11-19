@@ -1,5 +1,5 @@
 // The ideas the New chat door offers in extension mode, one for each surface
-// an extension can add (the SDK's templates, packages/module-sdk/templates), so
+// an extension can add (the SDK's templates, packages/extension-sdk/templates), so
 // the cards together show what the SDK reaches.
 //
 // A card starts nothing. Choosing one puts its `prompt` in the box as it is,

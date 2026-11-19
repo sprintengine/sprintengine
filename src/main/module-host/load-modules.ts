@@ -85,7 +85,7 @@ async function settleRegistration(id: string, pending: PromiseLike<unknown>, tim
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`Module "${id}" registerMain did not settle within ${timeoutMs / 1000}s.`)),
+      () => reject(new Error(`Extension "${id}" registerMain did not settle within ${timeoutMs / 1000}s.`)),
       timeoutMs,
     )
   })
@@ -188,7 +188,7 @@ export function loadMainModules(options: {
     if (byId.get(loadError.id)?.manifest.source !== 'third-party') return
     kernel.emitNotification(loadError.id, {
       severity: 'error',
-      title: `Module "${loadError.id}" failed to load`,
+      title: `Extension "${loadError.id}" failed to load`,
       body: sanitizeNotificationText(loadError.message, 'Module startup failed.'),
     })
   }

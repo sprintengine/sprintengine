@@ -1,5 +1,6 @@
 import type { StudioAccess } from '../../../../packages/studio-protocol/src/permissions'
 import type { TailnetScope } from '../../../shared/tailnet'
+import { EXTENSION_READ_TOOLS } from '../../../shared/extension-read-tools'
 
 // What everything a paired device can ask of this machine requires, in the
 // permissions every remote method declares
@@ -160,7 +161,7 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
   if (toolName === 'artifacts.publish' || toolName === 'artifacts.update' || toolName === 'artifacts.delete') {
     return `"${toolName}" publishes files from this machine's disk with its credentials, and is served only on its local socket. Run it from an agent on that machine.`
   }
-  if (toolName.startsWith('extension.')) {
+  if (toolName.startsWith('extension.') && !EXTENSION_READ_TOOLS.has(toolName)) {
     return `"${toolName}" makes and explains an extension project on this machine's disk, for an agent working there. Run it from an agent on that machine.`
   }
   if (toolName.startsWith('plugin.')) {
@@ -202,7 +203,7 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
  * mutation immediately needs the operate grant here too.
  *
  * `workspace` is the deliberate catch-all for the app-wide families
- * (`workspace.*`, `agent.*`, `cli.*`, `module.*`, `marketplace.*`,
+ * (`workspace.*`, `agent.*`, `cli.*`, `extension.list` and `.status`, `marketplace.*`,
  * `schedule.*`, `editor.*`, `review_*`) and for any tool this mapping has not
  * been taught. `editor.open` and `editor.open_diff` change what is on the
  * person's screen, so they are mutations and need `workspace:operate`.

@@ -70,7 +70,7 @@ test('update-detection', async () => {
         },
       ]),
     )
-    await writeFile(path, JSON.stringify({ schemaVersion: 1, plugins }, null, 2), 'utf8')
+    await writeFile(path, JSON.stringify({ schemaVersion: 2, plugins }, null, 2), 'utf8')
   }
 
   async function writeUserModule(root: string, id: string, version: number): Promise<void> {
@@ -210,7 +210,7 @@ test('update-detection', async () => {
   async function testMalformedReceiptStoreFailsClosed(): Promise<void> {
     await withTempDir(async (temp) => {
       const svc = services(temp, okRegistry([]))
-      await writeFile(svc.receiptStorePath, '{"schemaVersion":2}', 'utf8')
+      await writeFile(svc.receiptStorePath, '{"schemaVersion":3}', 'utf8')
 
       const result = await readMarketplaceUpdateStates(svc)
       assert.equal(result.ok, false)

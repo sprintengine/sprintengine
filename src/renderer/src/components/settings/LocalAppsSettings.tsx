@@ -68,12 +68,12 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
     description: copy.settings.localAppsSettings.setOrRemoveAPIKeys,
   },
   {
-    scope: 'modules:read',
+    scope: 'extensions:read',
     title: copy.settings.localAppsSettings.hearExtensions,
     description: copy.settings.localAppsSettings.receiveExtensionsEventsAndNotificati,
   },
   {
-    scope: 'modules:operate',
+    scope: 'extensions:operate',
     title: copy.settings.localAppsSettings.useExtensions,
     description: copy.settings.localAppsSettings.runExtensionsActionsThatChange,
   },

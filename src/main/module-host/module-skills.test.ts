@@ -59,7 +59,7 @@ test('module-skills', async () => {
     return { registry, registered, unregistered, ensured, owners }
   }
 
-  const REVIEW_ROOT = resolve('/tmp/sprintengine-modules/review')
+  const REVIEW_ROOT = resolve('/tmp/sprintengine-extensions/review')
 
   function testSourceDirResolvesAgainstTheModuleRoot(): void {
     const recorder = createRecordingSkillRegistry()
@@ -156,7 +156,7 @@ test('module-skills', async () => {
   function testOwnershipIsTracked(): void {
     const recorder = createRecordingSkillRegistry()
     const kernel = createMainKernel({
-      resolveModuleRoot: (moduleId) => resolve('/tmp/sprintengine-modules', moduleId),
+      resolveModuleRoot: (moduleId) => resolve('/tmp/sprintengine-extensions', moduleId),
       skillRegistry: recorder.registry,
     })
 

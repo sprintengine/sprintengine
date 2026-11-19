@@ -16,7 +16,7 @@ import type {
 } from '../../shared/electron-api'
 import type { CapabilityPermission } from '../../shared/modules/permissions'
 import { normalizeMcpServerConfig } from '../mcp-config-service'
-import { validateModuleFileDigests } from '../../../packages/module-sdk/src/manifest-validate'
+import { validateModuleFileDigests } from '../../../packages/extension-sdk/src/manifest-validate'
 import { parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
 import { moduleFileDigestIssuesSync, type ModuleTrustContext } from '../modules/module-signature'
 import { readBundleMcpServers } from '../modules/plugin-bundle-installer'
@@ -208,7 +208,7 @@ async function moduleFileDigestProblem(
     source = await readFile(join(moduleRoot, 'manifest.json'), 'utf8')
   } catch {
     return {
-      message: `The module folder "${component.path}" has no manifest.json.`,
+      message: `The extension folder "${component.path}" has no manifest.json.`,
       issues: [{ path: 'components.module.path', message: 'manifest.json is missing.' }],
     }
   }
@@ -219,7 +219,7 @@ async function moduleFileDigestProblem(
     return {
       message:
         `The module "${parsed.manifest.id}" lists no digests of its files, so nothing could hold the installed ` +
-        'code to what you review here. Its author must record them with `sprintengine-module sign` (or a ' +
+        'code to what you review here. Its author must record them with `sprintengine-extension sign` (or a ' +
         `template's \`npm run dev:install\`) and commit ${component.path}/manifest.json.`,
       issues: [{ path: 'files', message: 'the module manifest carries no "files" digests.' }],
     }

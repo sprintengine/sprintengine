@@ -1,8 +1,8 @@
 // Trust classification for third-party modules.
 //
 // The pure sign/verify/canonicalization logic and the walk that digests a
-// module folder live in the published SDK (packages/module-sdk/src/signing.ts)
-// so the app and the `sprintengine-module` CLI can never disagree about what a
+// module folder live in the published SDK (packages/extension-sdk/src/signing.ts)
+// so the app and the `sprintengine-extension` CLI can never disagree about what a
 // valid signature is or which files a module ships; this module re-exports
 // them and adds the app's trust policy on top.
 
@@ -12,8 +12,8 @@ import {
   moduleFileDigestIssuesSync,
   verifyModuleSignature,
   type SignedManifest,
-} from '../../../packages/module-sdk/src/signing'
-import { compareModuleFileDigests } from '../../../packages/module-sdk/src/manifest-validate'
+} from '../../../packages/extension-sdk/src/signing'
+import { compareModuleFileDigests } from '../../../packages/extension-sdk/src/manifest-validate'
 
 import type { CapabilityManifest, ModuleFileDigests, ModuleTrustStatus } from '../../shared/modules/manifest'
 
@@ -92,7 +92,7 @@ const NO_DIGESTS_FOR_GRANT: ModuleTrustIssue = {
   path: 'files',
   message:
     'the manifest lists no digests of its code, so a trust grant cannot cover it; ' +
-    'sign it with `sprintengine-module sign`, which records them.',
+    'sign it with `sprintengine-extension sign`, which records them.',
 }
 
 // Trust for a module on disk. A publisher key is trusted for the module's

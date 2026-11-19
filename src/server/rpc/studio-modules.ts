@@ -8,27 +8,27 @@ import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 
 // What a Studio's modules say to its clients, between the module kernel and
 // the Studio RPC: the kernel delivers each event and bell row here, and every
-// connection following `module.events` or `module.notifications` listens.
-// The kernel keeps the recent bell rows; a new `module.notifications`
+// connection following `extension.events` or `extension.notifications` listens.
+// The kernel keeps the recent bell rows; a new `extension.notifications`
 // subscriber is sent those first, read from the kernel through `readRecentFrom`.
 //
 // A module's declared methods are called through here too: the router hands
-// `module.read` / `module.operate` to `call`, which the kernel serves once it
+// `extension.read` / `extension.operate` to `call`, which the kernel serves once it
 // exists (`serveCallsFrom`); before then, and on a Studio with no kernel, a
-// call is answered `module_unavailable`.
+// call is answered `extension_unavailable`.
 //
 // So are the host's services a module's window half calls (the Backlog's
 // writes, the usage query): the router asks `hostServices` for the calling
 // module's, which the kernel answers once it exists (`serveHostServicesFrom`),
-// `module_unavailable` for a module not running here.
+// `extension_unavailable` for a module not running here.
 //
-// What runs here (`module.list`, and the owner's `module.setEnabled`,
+// What runs here (`extension.list`, and the owner's `extension.setEnabled`,
 // `.install`, `.setTrust`, `.uninstall`) is the lifecycle's, served once the
 // kernel exists (`serveLifecycleFrom`).
 //
 // What is installed or trusted here changing (the lifecycle's install, trust
 // and uninstall, a marketplace install) is told to every connection following
-// `module.changed` (`deliverChanged`), so its windows list and load the
+// `extension.changed` (`deliverChanged`), so its windows list and load the
 // extensions again.
 //
 // Delivery is best effort per listener: one connection whose send throws does
@@ -48,14 +48,14 @@ export type StudioModuleCallRequest = {
 /** The module's answer, or the host's refusal before the module heard the call. */
 export type StudioModuleCallOutcome =
   | { ok: true; answer: StudioModuleAnswer }
-  | { ok: false; code: 'module_unavailable' | 'module_method_unknown' | 'invalid_params'; message: string }
+  | { ok: false; code: 'extension_unavailable' | 'extension_method_unknown' | 'invalid_params'; message: string }
 
 export type StudioModules = {
   /** Call a module's declared method. Rejects when its handler throws. */
   call(request: StudioModuleCallRequest): Promise<StudioModuleCallOutcome>
   /** Where calls are served from: the kernel, once it exists. */
   serveCallsFrom(serve: (request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>): void
-  /** The host's services, as the module named reaches them here; `module_unavailable` before a kernel. */
+  /** The host's services, as the module named reaches them here; `extension_unavailable` before a kernel. */
   hostServices(moduleId: string): ModuleHostServicesOutcome
   /** Where host services are read from: the kernel, once it exists. */
   serveHostServicesFrom(read: (moduleId: string) => ModuleHostServicesOutcome): void
@@ -107,8 +107,8 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
       if (!serve)
         return {
           ok: false,
-          code: 'module_unavailable',
-          message: `Module "${request.moduleId}" is not running on this Studio: its modules have not loaded.`,
+          code: 'extension_unavailable',
+          message: `Extension "${request.moduleId}" is not running on this Studio: its extensions have not loaded.`,
         }
       return serve(request)
     },
@@ -119,8 +119,8 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
       if (!readHostServices)
         return {
           ok: false,
-          code: 'module_unavailable',
-          message: `Module "${moduleId}" is not running on this Studio: its modules have not loaded.`,
+          code: 'extension_unavailable',
+          message: `Extension "${moduleId}" is not running on this Studio: its extensions have not loaded.`,
         }
       return readHostServices(moduleId)
     },

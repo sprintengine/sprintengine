@@ -507,7 +507,7 @@ for (const through of ['direct', 'the shell'] as const)
           assert.equal(errorOf(result).code, 'canvas_module_disabled', name)
           assert.equal(
             errorOf(result).message,
-            'The Canvas module is disabled. Enable it in Settings → Modules to use canvas tools.',
+            'The Canvas extension is disabled. Enable it in Settings → Extensions to use canvas tools.',
             name,
           )
         }

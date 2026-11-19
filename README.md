@@ -75,7 +75,7 @@ ready-made task.
 ### Extensions, plugins and skills
 
 Browse plugin and skill marketplaces and install from one place, or describe an extension and have an agent build it with you on the
-[module SDK](packages/module-sdk).
+[module SDK](packages/extension-sdk).
 
 <p>
   <img alt="The plugin marketplace" src="docs/images/readme/plugins.png" width="49%">
@@ -187,7 +187,7 @@ one needs network access and takes a while.
 | `src/preload` | The preload bridge — the typed API surface the renderer is allowed to call. |
 | `src/renderer` | The React user interface. |
 | `src/shared` | Types and contracts shared across processes, including the IPC contract and the plugin and skill manifest schemas. Deliberately free of Node APIs. |
-| `packages/module-sdk` | The published SDK for building capability modules and BYO-CLI plugins: manifest and permission types, host contribution points, and bundle signing. MIT licensed. |
+| `packages/extension-sdk` | The published SDK for building capability modules and BYO-CLI plugins: manifest and permission types, host contribution points, and bundle signing. MIT licensed. |
 | `resources/` | Everything bundled with the app rather than compiled into it: the agent CLI plugin manifests, the marketplace registry, MCP definitions, hooks, the studio plugin and its skills, the fetched agent runtimes, and the app icons. |
 | `design-system/` | A self-contained, framework-neutral design system — tokens, components, patterns and a catalog — with its own lint that the app's build gates enforce. |
 | `mobile/` | The phone companion, a React Native (Expo) app for iOS and Android. Its own package, with its own lockfile and checks (`npm run ci` inside it); the desktop build and its gates leave it alone. |
@@ -198,9 +198,9 @@ The app is meant to be built on rather than only used.
 
 - **Capability modules** contribute to the main and renderer hosts — new
   workspace types, automation providers, notifications, panels. Start with
-  [docs/module-authors/drop-in-extensions.md](docs/module-authors/drop-in-extensions.md)
+  [docs/extension-authors/drop-in-extensions.md](docs/extension-authors/drop-in-extensions.md)
   for how the app discovers a module you drop on disk, and
-  [docs/module-authors/permissions.md](docs/module-authors/permissions.md) for
+  [docs/extension-authors/permissions.md](docs/extension-authors/permissions.md) for
   what the permission vocabulary means.
 - **CLI plugins** teach the app to drive an agent CLI it has never seen: how to
   launch it, how to write its MCP config, how to install skills for it, and how
@@ -213,7 +213,7 @@ The app is meant to be built on rather than only used.
   [resources/studio-plugin/README.md](resources/studio-plugin/README.md).
 
 Both kinds of extension are built against
-[`packages/module-sdk`](packages/module-sdk).
+[`packages/extension-sdk`](packages/extension-sdk).
 
 ## Uninstalling
 
@@ -239,7 +239,7 @@ The repository is licensed under the **MIT License**. You may use, modify and
 redistribute it, including in commercial products. The full text is in
 [LICENSE](LICENSE).
 
-`packages/module-sdk` and `packages/conversation-protocol` carry their own
+`packages/extension-sdk` and `packages/conversation-protocol` carry their own
 MIT licence files as well, so an SDK consumer does not have to take the whole
 application tree.
 

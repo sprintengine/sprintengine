@@ -172,8 +172,8 @@ test('a pairing given every scope reaches the reads, and is refused what install
     'files:write',
     'environment:maintain',
     'settings:write',
-    'modules:read',
-    'modules:operate',
+    'extensions:read',
+    'extensions:operate',
   ]
   const app = await client(started.path, pairFakeClient(started.auth, 'app', scopes))
   for (const [method, params] of Object.entries(CALLS)) {

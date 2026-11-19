@@ -1,7 +1,7 @@
 /**
  * Sends every module's app-level state (`appSettings.moduleSettings`, the
  * `module:<id>` namespaces a Settings section writes) to the window's Studio
- * (`module.setAppState`).
+ * (`extension.setAppState`).
  *
  * A module's `entry.main` reads its settings there (`MainHost.getModuleAppState`)
  * with no window to ask — a scheduler's run time, a poller's interval — so

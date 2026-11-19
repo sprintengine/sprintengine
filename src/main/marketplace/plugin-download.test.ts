@@ -15,7 +15,7 @@ import {
   generateModuleSigningKeyPair,
   publicKeyFingerprint,
   signManifest,
-} from '../../../packages/module-sdk/src/signing'
+} from '../../../packages/extension-sdk/src/signing'
 import {
   downloadClaudeCodePluginSource,
   downloadMarketplacePluginBundle as downloadAtResolvedCommit,
@@ -728,9 +728,9 @@ test('plugin-download', async () => {
   function testCliAndAppRejectSameTamperedModuleBytes(): void {
     const workDir = mkdtempSync(join(tmpdir(), 'mc-marketplace-cli-verify-'))
     try {
-      const cliBundle = join(workDir, 'sprintengine-module.cjs')
+      const cliBundle = join(workDir, 'sprintengine-extension.cjs')
       buildSync({
-        entryPoints: [join(process.cwd(), 'packages/module-sdk/src/cli.ts')],
+        entryPoints: [join(process.cwd(), 'packages/extension-sdk/src/cli.ts')],
         bundle: true,
         platform: 'node',
         format: 'cjs',
@@ -747,7 +747,7 @@ test('plugin-download', async () => {
             displayName: 'Marketplace Download Fixture',
             version: 1,
             permissions: ['network'],
-            engines: { hostApi: 2 },
+            engines: { hostApi: 3 },
           },
           null,
           2,

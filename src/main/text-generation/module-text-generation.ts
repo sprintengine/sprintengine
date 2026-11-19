@@ -160,7 +160,7 @@ export function createModuleTextGenerationRegistry(deps: ModuleTextGenerationDep
   return {
     async generate(moduleId, input) {
       if (!(deps.getModulePermissions(moduleId) ?? []).includes('agents:generate')) {
-        return refuse('permission_missing', `Module "${moduleId}" must declare the "agents:generate" permission.`)
+        return refuse('permission_missing', `Extension "${moduleId}" must declare the "agents:generate" permission.`)
       }
       const invalid = invalidInput(input)
       if (invalid) return refuse('invalid_input', invalid)

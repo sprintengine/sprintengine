@@ -1138,10 +1138,10 @@ test('renderer-host', async () => {
     kernel.setModuleEnablementResolver((moduleId) => moduleId !== 'backlog')
     await assert.rejects(
       () => consumer.listBacklogItems('ws-1'),
-      /Backlog module is disabled/,
+      /Backlog is turned off/,
       'a disabled backlog module is named as the cause',
     )
-    assert.throws(() => consumer.watchBacklogItems('ws-1', () => {}), /Backlog module is disabled/)
+    assert.throws(() => consumer.watchBacklogItems('ws-1', () => {}), /Backlog is turned off/)
     kernel.setModuleEnablementResolver(() => true)
     assert.equal((await consumer.listBacklogItems('ws-3')).length, 2, 're-enabling restores access')
 

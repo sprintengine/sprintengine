@@ -1,6 +1,6 @@
 // "Build an extension" (the New chat door's extension mode): the wire shapes
 // between the door and main, which scaffolds the project from the SDK's own
-// templates (packages/module-sdk/src/scaffold.ts). Renderer-safe: types and
+// templates (packages/extension-sdk/src/scaffold.ts). Renderer-safe: types and
 // pure helpers only.
 
 import { BUNDLED_MODULE_IDS } from './modules/manifest'

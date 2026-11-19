@@ -1,23 +1,26 @@
-import { STUDIO_MODULES_CAPABILITY, type StudioModulesMethodMap } from '../../../../packages/studio-protocol/src/public'
+import {
+  STUDIO_EXTENSION_HOST_CAPABILITY,
+  type StudioModulesMethodMap,
+} from '../../../../packages/studio-protocol/src/public'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudioClient'
 
 // What runs on the window's Studio, changed from Settings: switching a module
 // on or off, installing an extension from a folder, trusting it, and
 // uninstalling one added from a folder. Each is an owner's command
-// (`module.setEnabled`, `.install`, `.setTrust`, `.uninstall`) under a command
+// (`extension.setEnabled`, `.install`, `.setTrust`, `.uninstall`) under a command
 // id made for the call. None throws: a refusal, Studio's or the connection's,
 // is an answer the caller shows.
 
-type Lifecycle = 'module.setEnabled' | 'module.install' | 'module.setTrust' | 'module.uninstall'
+type Lifecycle = 'extension.setEnabled' | 'extension.install' | 'extension.setTrust' | 'extension.uninstall'
 type Params<M extends Lifecycle> = Omit<StudioModulesMethodMap[M]['params'], 'commandId'>
 type Result<M extends Lifecycle> = StudioModulesMethodMap[M]['result']
 
 export type ModuleLifecycleClient = {
-  setEnabled(moduleId: string, enabled: boolean | null): Promise<Result<'module.setEnabled'>>
-  install(path: string): Promise<Result<'module.install'>>
-  setTrust(moduleId: string, trusted: boolean): Promise<Result<'module.setTrust'>>
-  uninstall(moduleId: string): Promise<Result<'module.uninstall'>>
+  setEnabled(moduleId: string, enabled: boolean | null): Promise<Result<'extension.setEnabled'>>
+  install(path: string): Promise<Result<'extension.install'>>
+  setTrust(moduleId: string, trusted: boolean): Promise<Result<'extension.setTrust'>>
+  uninstall(moduleId: string): Promise<Result<'extension.uninstall'>>
 }
 
 function commandId(): string {
@@ -33,7 +36,7 @@ export async function sendModuleLifecycle<M extends Lifecycle>(
   method: M,
   params: Params<M>,
 ): Promise<Result<M>> {
-  if (!client.supports(STUDIO_MODULES_CAPABILITY)) return refused('This Studio does not run extensions.')
+  if (!client.supports(STUDIO_EXTENSION_HOST_CAPABILITY)) return refused('This Studio does not run extensions.')
   try {
     return await client.request(method, { ...params, commandId: commandId() } as StudioModulesMethodMap[M]['params'])
   } catch (error) {
@@ -53,10 +56,10 @@ export function moduleLifecycleOver(client: () => Promise<StudioClient>): Module
     return sendModuleLifecycle(connected, method, params)
   }
   return {
-    setEnabled: (moduleId, enabled) => send('module.setEnabled', { moduleId, enabled }),
-    install: (path) => send('module.install', { path }),
-    setTrust: (moduleId, trusted) => send('module.setTrust', { moduleId, trusted }),
-    uninstall: (moduleId) => send('module.uninstall', { moduleId }),
+    setEnabled: (moduleId, enabled) => send('extension.setEnabled', { moduleId, enabled }),
+    install: (path) => send('extension.install', { path }),
+    setTrust: (moduleId, trusted) => send('extension.setTrust', { moduleId, trusted }),
+    uninstall: (moduleId) => send('extension.uninstall', { moduleId }),
   }
 }
 

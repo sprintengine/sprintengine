@@ -26,15 +26,15 @@ import { normalizeMcpServerConfig } from '../mcp/normalize-server'
 import {
   validateThirdPartyModuleManifest as validateSdkThirdPartyModuleManifest,
   type ThirdPartyManifestIssue,
-} from '../../../packages/module-sdk/src/manifest-validate'
+} from '../../../packages/extension-sdk/src/manifest-validate'
 import {
   MARKETPLACE_COMPONENT_KINDS,
   type MarketplaceComponentKind,
   type MarketplaceManifestIssue,
-} from '../../../packages/module-sdk/src/plugin-manifest'
+} from '../../../packages/extension-sdk/src/plugin-manifest'
 import { isRecord } from '../records'
 
-export { canonicalManifestPayload } from '../../../packages/module-sdk/src/manifest-validate'
+export { canonicalManifestPayload } from '../../../packages/extension-sdk/src/manifest-validate'
 
 export {
   MARKETPLACE_COMPONENT_KINDS,
@@ -48,7 +48,7 @@ export {
   type MarketplacePluginAuthoringManifest,
   type MarketplacePluginComponents,
   type MarketplacePluginManifest,
-} from '../../../packages/module-sdk/src/plugin-manifest'
+} from '../../../packages/extension-sdk/src/plugin-manifest'
 
 // What a registry entry may say it provides: the kinds a bundle can carry,
 // plus `cli` for the inline-CLI lane — a first-party agent CLI the app already

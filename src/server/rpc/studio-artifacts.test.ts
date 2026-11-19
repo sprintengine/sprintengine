@@ -139,8 +139,8 @@ test('a pairing given every scope is refused each method and the question stream
     'files:write',
     'environment:maintain',
     'settings:write',
-    'modules:read',
-    'modules:operate',
+    'extensions:read',
+    'extensions:operate',
     'workspaces:operate',
   ]
   const app = await client(started.path, pairFakeClient(started.auth, 'app', scopes))

@@ -677,7 +677,7 @@ walks. Its anatomy:
    **Add extension leads the drawer.** It is the dashed add-row used by the
    other door rails, opening the native folder chooser for an installable module
    directory. Selection runs through the same validation, copying, signature,
-   and trust workflow as Settings → Modules, then opens that settings page for
+   and trust workflow as Settings → Extensions, then opens that settings page for
    access review; choosing a folder never silently grants trust.
    A drawer row reads `aria-current` while its page is showing (it is
    navigation, exactly like a workspace row); the rail's square reads

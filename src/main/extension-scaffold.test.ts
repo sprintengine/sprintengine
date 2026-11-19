@@ -18,7 +18,7 @@ import {
   SCAFFOLD_SDK_VERSION,
 } from './extension-scaffold'
 
-const SDK = join(process.cwd(), 'packages', 'module-sdk')
+const SDK = join(process.cwd(), 'packages', 'extension-sdk')
 
 let parent = ''
 let sdkTarball = ''
@@ -142,7 +142,7 @@ describe('extensionScaffold.create', () => {
     assert.equal(manifest.displayName, 'Pr radar', 'the display name comes from the id')
     const pkg = JSON.parse(readFileSync(join(result.folder, 'package.json'), 'utf8'))
     assert.equal(
-      pkg.devDependencies['@sprintengine/module-sdk'],
+      pkg.devDependencies['@sprintengine/extension-sdk'],
       `^${SCAFFOLD_SDK_VERSION}`,
       'with no tarball shipped, the npm release',
     )
@@ -161,7 +161,7 @@ describe('extensionScaffold.create', () => {
     assert.equal(result.ok, true, JSON.stringify(result))
     if (!result.ok) return
     const pkg = JSON.parse(readFileSync(join(result.folder, 'package.json'), 'utf8'))
-    assert.equal(pkg.devDependencies['@sprintengine/module-sdk'], `file:vendor/${SCAFFOLD_SDK_TARBALL}`)
+    assert.equal(pkg.devDependencies['@sprintengine/extension-sdk'], `file:vendor/${SCAFFOLD_SDK_TARBALL}`)
     assert.equal(readFileSync(join(result.folder, 'vendor', SCAFFOLD_SDK_TARBALL), 'utf8'), 'the packed SDK')
   })
 
@@ -199,15 +199,15 @@ describe('extensionScaffold.create', () => {
 })
 
 test('reads the shipped copies when packaged and the SDK package in a checkout', () => {
-  assert.equal(SCAFFOLD_SDK_TARBALL, `sprintengine-module-sdk-${SCAFFOLD_SDK_VERSION}.tgz`)
+  assert.equal(SCAFFOLD_SDK_TARBALL, `sprintengine-extension-sdk-${SCAFFOLD_SDK_VERSION}.tgz`)
   assert.deepEqual(resolveScaffoldRoots({ isPackaged: true, resourcesPath: '/App/Resources', appPath: '/x' }), {
     templatesRoot: join('/App/Resources', 'sdk-templates'),
     guideRoot: join('/App/Resources', 'sdk-guide'),
-    sdkTarball: join('/App/Resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
+    sdkTarball: join('/App/Resources', 'extension-sdk', SCAFFOLD_SDK_TARBALL),
   })
   assert.deepEqual(resolveScaffoldRoots({ isPackaged: false, resourcesPath: '/x', appPath: '/repo' }), {
-    templatesRoot: join('/repo', 'packages', 'module-sdk', 'templates'),
-    guideRoot: join('/repo', 'packages', 'module-sdk', 'guide'),
-    sdkTarball: join('/repo', 'resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
+    templatesRoot: join('/repo', 'packages', 'extension-sdk', 'templates'),
+    guideRoot: join('/repo', 'packages', 'extension-sdk', 'guide'),
+    sdkTarball: join('/repo', 'resources', 'extension-sdk', SCAFFOLD_SDK_TARBALL),
   })
 })

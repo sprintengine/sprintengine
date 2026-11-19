@@ -45,7 +45,7 @@ function writeModule(
   return { root, moduleRoot }
 }
 
-// The grant Settings → Modules records: the listed manifest's fingerprint.
+// The grant Settings → Extensions records: the listed manifest's fingerprint.
 function grantFor(root: string, id: string): ReadonlyMap<string, string> {
   const { modules } = discoverUserModulesSync(root, { trustedModules: new Map() })
   const module = modules.find((entry) => entry.manifest.id === id)

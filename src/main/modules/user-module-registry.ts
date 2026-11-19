@@ -15,21 +15,21 @@ import {
 import { readStudioEnv } from '../../shared/studio-env'
 
 // Discovery + install for third-party capability modules under
-// ~/.sprintengine/modules/<id>/manifest.json. Mirrors the BYO-CLI plugin-registry
+// ~/.sprintengine/extensions/<id>/manifest.json. Mirrors the BYO-CLI plugin-registry
 // pattern. This layer validates, classifies trust, and installs — it does NOT
 // execute module code; trusted `entry.main` loading is wired separately through
 // third-party-main-loader. Trust is classified over the folder's files as well
 // as its manifest (module-signature.ts), so it is decided again from the bytes
 // on disk at every discovery, not carried over from the install.
 
-// SPRINTENGINE_USER_MODULE_ROOT redirects discovery for hermetic end-to-end
+// SPRINTENGINE_USER_EXTENSION_ROOT redirects discovery for hermetic end-to-end
 // testing (paired with SPRINTENGINE_USER_DATA_DIR temp profiles). It moves the
 // install root only — trust classification, signing, and isLoadEligible gating
 // apply to that root exactly as they do to the default one.
 export function defaultUserModuleRoot(): string {
-  const override = readStudioEnv('SPRINTENGINE_USER_MODULE_ROOT')?.trim()
+  const override = readStudioEnv('SPRINTENGINE_USER_EXTENSION_ROOT')?.trim()
   if (override) return override
-  return join(homedir(), '.sprintengine', 'modules')
+  return join(homedir(), '.sprintengine', 'extensions')
 }
 
 type ModuleRejectionIssue = { path: string; message: string }
@@ -255,7 +255,7 @@ export async function installModuleFolder(
     return {
       ok: false,
       rejected: { path: manifestPath, issues: sourceTrust.issues ?? [] },
-      message: `Module "${result.manifest.id}" has been tampered with: its files do not match the digests its manifest signs.`,
+      message: `Extension "${result.manifest.id}" has been tampered with: its files do not match the digests its manifest signs.`,
     }
   }
   const reserved = reservedIdIssues(result.manifest, sourceTrust)
@@ -272,8 +272,8 @@ export async function installModuleFolder(
       ok: false,
       rejected: { path: manifestPath, issues: sourceContent.issues },
       message:
-        `Module "${result.manifest.id}" has files a module cannot ship. Install the folder ` +
-        '`sprintengine-module pack` writes, which leaves out node_modules, .git and key files.',
+        `Extension "${result.manifest.id}" has files a module cannot ship. Install the folder ` +
+        '`sprintengine-extension pack` writes, which leaves out node_modules, .git and key files.',
     }
   }
 

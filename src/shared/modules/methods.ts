@@ -1,6 +1,6 @@
 // The methods a module declares: what its main half serves, and what its
 // renderer half (or any client the person granted it) calls, over the Studio
-// protocol's `module.read` and `module.operate`
+// protocol's `extension.read` and `extension.operate`
 // (packages/studio-protocol/src/modules.ts).
 //
 // A module writes a contract per method, a type: who may call it (`access`),
@@ -29,4 +29,4 @@ export {
   type ModuleMethodsClient,
   type ModuleOperateMethod,
   type ModuleReadMethod,
-} from '../../../packages/module-sdk/src/methods'
+} from '../../../packages/extension-sdk/src/methods'

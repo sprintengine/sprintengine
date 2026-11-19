@@ -1,6 +1,6 @@
 import {
   STUDIO_EXTENSIONS_CAPABILITY,
-  STUDIO_MODULES_CAPABILITY,
+  STUDIO_EXTENSION_HOST_CAPABILITY,
   type AgentLaunchPreviewInput,
   type AgentLaunchPreviewResult,
   type ExtensionScaffoldCreateInput,
@@ -40,8 +40,8 @@ import { windowStudioClient, windowStudioIsAnotherMachine } from './windowStudio
 // installing from it or from GitHub (`marketplace.*`), the agent CLIs' plugin
 // catalogue (`cliPlugins.*`), Studio's own plugin in a workspace, building an
 // extension (`extensionScaffold.*`), the hosted feeds, and the extensions
-// installed there (`module.installed`, `module.rendererEntries`,
-// `module.changed`, `module.list`). Over the window's own connection, as every
+// installed there (`extension.installed`, `extension.rendererEntries`,
+// `extension.changed`, `extension.list`). Over the window's own connection, as every
 // other client reaches them. The members keep the names the window has always
 // called them by, so a caller changes only where it imports them from. A
 // command carries a command id made for the call; a follow (`on…`) is kept
@@ -107,7 +107,7 @@ async function call<M extends StudioMethod>(
 const extensions = <M extends StudioMethod>(method: M, params: StudioMethodParams<M>) =>
   call(STUDIO_EXTENSIONS_CAPABILITY, method, params)
 const modules = <M extends StudioMethod>(method: M, params: StudioMethodParams<M>) =>
-  call(STUDIO_MODULES_CAPABILITY, method, params)
+  call(STUDIO_EXTENSION_HOST_CAPABILITY, method, params)
 
 export { windowHasStudio } from './windowStudioClient'
 
@@ -174,17 +174,17 @@ export const extensionsApi: ExtensionsApi = {
       reread: rereadOnReopen(() => extensions('cardFeed.get', {}), cb),
     }),
   hostedSourcesFeedGet: () => extensions('sourcesFeed.get', {}),
-  listThirdPartyModules: () => modules('module.installed', {}),
-  listStudioModules: async () => (await modules('module.list', {})).modules,
+  listThirdPartyModules: () => modules('extension.installed', {}),
+  listStudioModules: async () => (await modules('extension.list', {})).modules,
   listThirdPartyRendererEntries: async () =>
     // A window half's assets are served from this computer's own folders, so
     // a window whose Studio is another machine (a browser tab) runs none.
-    windowStudioIsAnotherMachine() ? { entries: [], failures: {} } : modules('module.rendererEntries', {}),
+    windowStudioIsAnotherMachine() ? { entries: [], failures: {} } : modules('extension.rendererEntries', {}),
   onThirdPartyModulesChanged: (cb) =>
     followWindowStudioPush({
-      topic: 'module.changed',
+      topic: 'extension.changed',
       params: {},
-      capability: STUDIO_MODULES_CAPABILITY,
+      capability: STUDIO_EXTENSION_HOST_CAPABILITY,
       onPayload: () => cb(),
       // A change itself carries nothing: the listener reads the list.
       onReopen: () => cb(),
@@ -193,10 +193,10 @@ export const extensionsApi: ExtensionsApi = {
   // what it would send would replace the desktop window's with blanks.
   setModuleAppState: async (state) => {
     if (windowStudioIsAnotherMachine()) return
-    await modules('module.setAppState', { state, commandId: commandId() })
+    await modules('extension.setAppState', { state, commandId: commandId() })
   },
   setModuleRegistrySnapshot: async (snapshot) =>
     windowStudioIsAnotherMachine()
       ? { ok: true }
-      : modules('module.reportRegistry', { snapshot, commandId: commandId() }),
+      : modules('extension.reportRegistry', { snapshot, commandId: commandId() }),
 }

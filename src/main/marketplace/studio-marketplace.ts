@@ -152,7 +152,7 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
         stagingRoot: defaultMarketplacePluginStagingRoot(deps.dataDir()),
         resolveSkillHarnesses: () => resolveInstalledSkillHarnesses(),
         // The trust the review already took, written through the one trust-store
-        // writer `module.setTrust` uses, so a trusted install does not land
+        // writer `extension.setTrust` uses, so a trusted install does not land
         // behind a second, identical switch in Settings.
         setModuleTrust: async (id, manifestFp) => {
           const { result, previous } = await setModuleTrust(deps.dataDir(), id, manifestFp)
@@ -346,7 +346,7 @@ export function createStudioMarketplace(deps: StudioMarketplaceDeps): StudioMark
     // The other end of an install. It takes the same envelope install does,
     // because removing an MCP component writes the CLI configs and needs the
     // workspace and settings to do it. A module it took out leaves nothing
-    // under its id, as one `module.uninstall` removes does.
+    // under its id, as one `extension.uninstall` removes does.
     async uninstall(input) {
       try {
         const envelope = installEnvelope(input, deps.openWorkspaceRoots())

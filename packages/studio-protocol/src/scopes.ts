@@ -33,10 +33,10 @@
 // `environment:maintain`, an owner holds it and a pairing only when it was
 // given it.
 //
-// `modules:read` hears what this Studio's modules say: their events and the
-// bell rows they raise, and calls the methods they declare `read`
-// (`module.*`). `modules:operate` calls the ones they declare `operate` too,
-// and carries `modules:read`. Neither is held to an owner's connection.
+// `extensions:read` hears what this Studio's extensions say: their events and
+// the bell rows they raise, and calls the methods they declare `read`
+// (`extension.*`). `extensions:operate` calls the ones they declare `operate`
+// too, and carries `extensions:read`. Neither is held to an owner's connection.
 //
 // `workspaces:operate` changes what a Studio keeps beside its workspaces and
 // runs on its own: its scheduled agents (`schedules.*`). It carries
@@ -60,8 +60,8 @@ export const STUDIO_SCOPES = [
   'files:write',
   'environment:maintain',
   'settings:write',
-  'modules:read',
-  'modules:operate',
+  'extensions:read',
+  'extensions:operate',
   'workspaces:operate',
 ] as const
 
@@ -87,7 +87,7 @@ export function normalizeStudioScopes(value: unknown): StudioScope[] {
 export function studioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
   if (needed === 'backlog:read') return scopes.includes('backlog:operate')
-  if (needed === 'modules:read') return scopes.includes('modules:operate')
+  if (needed === 'extensions:read') return scopes.includes('extensions:operate')
   if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }

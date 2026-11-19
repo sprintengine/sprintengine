@@ -255,7 +255,7 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
       return {
         ok: false,
         code: 'permission_missing',
-        message: `Module "${moduleId}" does not declare the "usage:read" permission, so it cannot read token usage.`,
+        message: `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot read token usage.`,
       }
     }
     const invalid = invalidQuery(input)
@@ -352,7 +352,7 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
   function onChanged(moduleId: string, listener: () => void): () => void {
     if (!permitted(moduleId)) {
       throw new Error(
-        `Module "${moduleId}" does not declare the "usage:read" permission, so it cannot watch token usage.`,
+        `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot watch token usage.`,
       )
     }
     const entry = { moduleId, listener }

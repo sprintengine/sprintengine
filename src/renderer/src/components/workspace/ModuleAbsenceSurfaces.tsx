@@ -56,7 +56,7 @@ export function moduleLabelForModuleId(moduleId: string): string {
  *    uninstalled module, or a marketplace module whose install has not landed.
  *    The mode string is all there is to name it by.
  *  - `disabled` — the type IS registered and its owning module is switched off
- *    in Settings → Modules. This is where a persisted workspace of a
+ *    in Settings → Extensions. This is where a persisted workspace of a
  *    module-registered type lands: without this answer the layout mounts and every module-owned tab paints
  *    its own dead placeholder, which is the grid of blanks the rule exists to
  *    prevent. The module is on the machine, so the remedy is a toggle.

@@ -321,12 +321,12 @@
       "sha256": "376869abec19697c94885336af8ea7ae61f25b54bc55ce1fcc77c3a44e0e57c2"
     },
     {
-      "name": "module.list",
-      "sha256": "89727eca6d135726c1f9f4ad836dccf5d100124798aa6329aa422b8750098493"
+      "name": "extension.list",
+      "sha256": "1f0359d10aad16427deb2ddcf9c011acad5d401676c2be1c291b13ca3895add6"
     },
     {
-      "name": "module.status",
-      "sha256": "51fa7acce6ba0b9ca6b3ea3a0fe89ed343f876687d219b730b4bc3f773ece5fb"
+      "name": "extension.status",
+      "sha256": "7bc099fae4fab32c9732df661098aa3694a488c086a8633ae5a293fbfaa678e3"
     },
     {
       "name": "marketplace.list",
@@ -390,11 +390,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "f4525db0abd39d2e2a5a5ebf58301aa643b431911b8a12432b36b9b07e751d57"
+      "sha256": "1be4dc035e087e34fc446943a11de1fbaf6a7d7326ce6fc7607d3e9289938ac5"
     },
     {
       "name": "extension.guide",
-      "sha256": "63156b8af1080da04fd866171bb19de134a39b719ef987cdc2d2c70c35383cc2"
+      "sha256": "d6bb69259ba8d02d647bd64953abb142169d868513da0796753153e98e946a8b"
     },
     {
       "name": "plugin.search",
@@ -759,12 +759,12 @@
       "sha256": "376869abec19697c94885336af8ea7ae61f25b54bc55ce1fcc77c3a44e0e57c2"
     },
     {
-      "name": "module.list",
-      "sha256": "89727eca6d135726c1f9f4ad836dccf5d100124798aa6329aa422b8750098493"
+      "name": "extension.list",
+      "sha256": "1f0359d10aad16427deb2ddcf9c011acad5d401676c2be1c291b13ca3895add6"
     },
     {
-      "name": "module.status",
-      "sha256": "51fa7acce6ba0b9ca6b3ea3a0fe89ed343f876687d219b730b4bc3f773ece5fb"
+      "name": "extension.status",
+      "sha256": "7bc099fae4fab32c9732df661098aa3694a488c086a8633ae5a293fbfaa678e3"
     },
     {
       "name": "marketplace.list",
@@ -828,11 +828,11 @@
     },
     {
       "name": "extension.create",
-      "sha256": "f4525db0abd39d2e2a5a5ebf58301aa643b431911b8a12432b36b9b07e751d57"
+      "sha256": "1be4dc035e087e34fc446943a11de1fbaf6a7d7326ce6fc7607d3e9289938ac5"
     },
     {
       "name": "extension.guide",
-      "sha256": "63156b8af1080da04fd866171bb19de134a39b719ef987cdc2d2c70c35383cc2"
+      "sha256": "d6bb69259ba8d02d647bd64953abb142169d868513da0796753153e98e946a8b"
     },
     {
       "name": "plugin.search",
@@ -921,12 +921,12 @@
       "sha256": "a8f4d5ab55150595f1ac5f63269719b9c0ccf2e355a534558ec4eb82b5b14e35"
     },
     {
-      "name": "module.list",
-      "sha256": "89727eca6d135726c1f9f4ad836dccf5d100124798aa6329aa422b8750098493"
+      "name": "extension.list",
+      "sha256": "1f0359d10aad16427deb2ddcf9c011acad5d401676c2be1c291b13ca3895add6"
     },
     {
-      "name": "module.status",
-      "sha256": "51fa7acce6ba0b9ca6b3ea3a0fe89ed343f876687d219b730b4bc3f773ece5fb"
+      "name": "extension.status",
+      "sha256": "7bc099fae4fab32c9732df661098aa3694a488c086a8633ae5a293fbfaa678e3"
     },
     {
       "name": "marketplace.list",

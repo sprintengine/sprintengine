@@ -145,7 +145,7 @@ test('plugin-lifecycle', async () => {
     return validated.manifest
   }
 
-  // Signed as `sprintengine-module sign` signs, with the digests of the
+  // Signed as `sprintengine-extension sign` signs, with the digests of the
   // module's files — or, with `undigested`, the way the first-party modules
   // were signed before `files` existed, which only a trusted publisher's bundle
   // can vouch for.
@@ -819,11 +819,11 @@ test('plugin-lifecycle', async () => {
     })
   }
 
-  async function testOldReceiptListingAnAutomationStillUninstalls(): Promise<void> {
+  async function testReceiptWithAnUnsupportedComponentKindIsRejected(): Promise<void> {
     await withTempDir(async (temp) => {
-      // An install from before automations became scheduled agents recorded an
-      // `automation` component beside the rest. That entry names nothing left to
-      // remove, so it is dropped on read and the rest of the receipt still works.
+      // A component kind this Studio does not install (an `automation`, say)
+      // makes the receipt invalid: it is refused, never skipped, and nothing
+      // the receipt names is touched.
       const signer = generateKeyPairSync('ed25519')
       const bundle = await writeBundle(
         temp,
@@ -847,13 +847,11 @@ test('plugin-lifecycle', async () => {
       assert.equal(installed.ok, true, JSON.stringify(installed))
 
       const receipts = JSON.parse(await readFile(receiptStorePath, 'utf8')) as {
+        schemaVersion: number
         plugins: Record<string, { components: Array<Record<string, unknown>> }>
       }
-      receipts.plugins['registry-plugin']?.components.push({
-        kind: 'automation',
-        id: 'nightly-dependency-sweep',
-        message: 'Added "Nightly dependency sweep" to this project.',
-      })
+      assert.equal(receipts.schemaVersion, 2)
+      receipts.plugins['registry-plugin']?.components.push({ kind: 'automation', id: 'nightly-dependency-sweep' })
       await writeFile(receiptStorePath, `${JSON.stringify(receipts, null, 2)}\n`, 'utf8')
 
       const uninstalled = await lifecycle.uninstall({
@@ -861,13 +859,9 @@ test('plugin-lifecycle', async () => {
         workspaceRoot,
         skillHarnesses: ['agents'],
       })
-      assert.equal(uninstalled.ok, true, JSON.stringify(uninstalled))
-      if (!uninstalled.ok) return
-      assert.deepEqual(
-        uninstalled.removed.map((component) => component.kind),
-        ['skills'],
-      )
-      assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'sweep-skill')), false, 'the skill is removed')
+      assert.equal(uninstalled.ok, false)
+      assert.match(uninstalled.message, /components\[1\]\.kind: unsupported component kind/)
+      assert.equal(existsSync(join(workspaceRoot, '.agents', 'skills', 'sweep-skill')), true, 'nothing is removed')
     })
   }
 
@@ -976,7 +970,7 @@ test('plugin-lifecycle', async () => {
         receiptStorePath,
         `${JSON.stringify(
           {
-            schemaVersion: 1,
+            schemaVersion: 2,
             plugins: {
               'registry-plugin': {
                 id: 'registry-plugin',
@@ -1002,6 +996,54 @@ test('plugin-lifecycle', async () => {
       assert.equal(unsafe.ok, false)
       assert.match(unsafe.message, /components\[0\]\.id/)
       assert.equal(existsSync(outsidePath), true)
+    })
+  }
+
+  // A store written before modules became extensions names module components
+  // by an install root this build no longer reads. It is removed unread: none
+  // of its receipts may uninstall, vouch for or claim a folder under the new
+  // root, even one with the same id.
+  async function testReceiptStoreFromBeforeExtensionsIsRemovedUnread(): Promise<void> {
+    await withTempDir(async (temp) => {
+      const { services, workspaceRoot, receiptStorePath, moduleRoot } = await createServices(
+        temp,
+        createGithubFetcher(new Map()),
+        { trustedModules: new Map() },
+      )
+      const lifecycle = createMarketplacePluginLifecycleService(services)
+      const folderInstall = join(moduleRoot, 'notes')
+      await mkdir(folderInstall, { recursive: true })
+      await writeFile(join(folderInstall, 'manifest.json'), '{}\n', 'utf8')
+      const before = {
+        schemaVersion: 1,
+        plugins: {
+          'notes-bundle': {
+            id: 'notes-bundle',
+            displayName: 'Notes',
+            version: 1,
+            sourceUrl: 'https://example.test/notes-bundle',
+            classification: 'verified',
+            installedAt: new Date().toISOString(),
+            components: [{ kind: 'module', id: 'notes', trustStatus: 'trusted', manifestFp: 'sha256-old' }],
+          },
+        },
+      }
+      await mkdir(dirname(receiptStorePath), { recursive: true })
+      await writeFile(receiptStorePath, `${JSON.stringify(before, null, 2)}\n`, 'utf8')
+
+      assert.equal(readVerifiedModuleInstallsSync(receiptStorePath).size, 0, 'it vouches for nothing')
+      for (const pluginId of ['notes-bundle', 'notes']) {
+        const uninstalled = await lifecycle.uninstall({
+          pluginId,
+          workspaceRoot,
+          mcpSettings: { syncEnabled: false, servers: {} },
+        })
+        assert.equal(uninstalled.ok, false, pluginId)
+        assert.match(uninstalled.message, /is not installed/, pluginId)
+      }
+      assert.equal(existsSync(folderInstall), true, 'the folder installed under the new root is left alone')
+      assert.equal(existsSync(receiptStorePath), false, 'the old store is removed')
+      assert.deepEqual(await readMarketplacePluginInstallReceipts(receiptStorePath), { ok: true, receipts: [] })
     })
   }
 
@@ -1567,7 +1609,7 @@ test('plugin-lifecycle', async () => {
 
   // The install prompt's trust decision IS the module trust decision: a signed
   // module installed from a community bundle loads without a second, identical
-  // toggle in Settings → Modules, and uninstalling takes the grant back with it.
+  // toggle in Settings → Extensions, and uninstalling takes the grant back with it.
   // M-F3: the install is bound to what the prompt showed. The source is swapped
   // for different content after the approval — same entry, same id — and the
   // install refuses rather than writing an MCP server nobody reviewed.
@@ -1823,7 +1865,7 @@ test('plugin-lifecycle', async () => {
     })
   }
 
-  // G3. Settings → Modules knows a module's id, never the id of the bundle that
+  // G3. Settings → Extensions knows a module's id, never the id of the bundle that
   // installed it — those need not match — so an uninstall named by the module id
   // has to reach the receipt that owns it and take the whole bundle out. An id
   // nothing installed is refused by name rather than reported as a success.
@@ -2034,9 +2076,10 @@ test('plugin-lifecycle', async () => {
     await testUpdateAvailabilitySettlesThroughRegistryUpdate()
     await testUpdateWithInvalidSignatureIsBlocked()
     await testUpdateSignedByDifferentPublisherReprompts()
-    await testOldReceiptListingAnAutomationStillUninstalls()
+    await testReceiptWithAnUnsupportedComponentKindIsRejected()
     await testFailedUpdateRollsBackReplacementAndKeepsReceipt()
     await testReceiptStoreValidationRejectsMalformedAndUnsafeState()
+    await testReceiptStoreFromBeforeExtensionsIsRemovedUnread()
     await testClaudePluginRequiresTrustGrant()
     await testClaudePluginInstallsSkillsIntoClaudeHarnessAndUninstalls()
     await testClaudePluginDefaultFanOutUsesResolvedHarnesses()
