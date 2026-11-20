@@ -97,18 +97,19 @@ export const ReasoningBox = memo(function ReasoningBox({
         <div
           ref={bodyRef}
           id={bodyId}
-          role="log"
+          role="region"
           aria-label={label}
           onScroll={(event) => {
             const body = event.currentTarget
             atEndRef.current = body.scrollHeight - body.scrollTop - body.clientHeight <= 4
           }}
-          className="max-h-64 overflow-y-auto border-t border-[color:var(--border-subtle)] px-3 py-2 text-[color:var(--text-muted)]"
+          className="max-h-64 overflow-y-auto px-3 pb-2 text-[color:var(--text-muted)]"
         >
           {shown.map((text, index) => (
-            // A stretch of thinking per block, a hairline between them where
-            // the agent stopped to run a step.
-            <div key={index} className={index ? 'mt-2 border-t border-[color:var(--border-subtle)] pt-2' : undefined}>
+            // A stretch of thinking per block, a gap between them where the
+            // agent stopped to run a step. Space, not rules: the box's own
+            // edge is the only line it draws (quiet headers, 2026-11-10).
+            <div key={index} className={index ? 'mt-3' : undefined}>
               <ConversationMarkdown text={text} streaming={live && index === shown.length - 1} tone="muted" />
             </div>
           ))}

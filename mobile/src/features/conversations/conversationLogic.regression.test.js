@@ -687,6 +687,23 @@ test("thinking between steps splits their group, as the agent's words do", () =>
   assert.deepEqual(rows.slice(0, 3).map((row) => row.kind), ["tools", "reasoning", "tools"]);
 });
 
+test("a working turn's box stands right after its fold, before its agents, and stays there when the reply starts", () => {
+  const events = [
+    event(1, "user_message", { text: "look", turnId: "turn" }),
+    event(2, "turn_started", { turnId: "turn" }),
+    event(3, "reasoning_delta", { turnId: "turn", text: "Map it first." }),
+    event(4, "tool_started", { turnId: "turn", toolUseId: "read", name: "Read", input: { path: "a.ts" } }),
+    event(5, "tool_started", { turnId: "turn", toolUseId: "task", name: "Task", subagentLane: true, subagentType: "Explore", input: { description: "Map the tools" } }),
+    event(6, "subagent_status", { toolUseId: "task", status: "running", background: true }),
+    event(7, "reasoning_delta", { turnId: "turn", text: "Waiting on the map." }),
+  ];
+  const thinking = projectPhoneConversation(events).rows;
+  assert.deepEqual(thinking.map((row) => row.kind), ["message", "fold", "reasoning", "agent"]);
+  assert.deepEqual(thinking[2].texts, ["Map it first.", "Waiting on the map."]);
+  const replying = projectPhoneConversation([...events, event(8, "content_delta", { turnId: "turn", text: "Here." })]).rows;
+  assert.deepEqual(replying.map((row) => row.kind), ["message", "fold", "reasoning", "agent", "message"]);
+});
+
 test("while a turn works its thinking is one open box above the reply, and folds back once it settles", () => {
   const events = [
     event(1, "user_message", { text: "fix it" }),

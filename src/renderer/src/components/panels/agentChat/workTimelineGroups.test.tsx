@@ -144,6 +144,11 @@ test('a working turn shows its reasoning in the open; a settled one folds it to 
   expect(working).toContain('First pass.')
   expect(working).toContain('Now the edge cases.')
   expect(working).not.toContain('Thought for')
+  // After the fold over the steps and before the reply, as on the phone.
+  expect(working.indexOf('aria-controls=')).toBeLessThan(working.indexOf('data-reasoning-box'))
+  expect(working.indexOf('data-reasoning-box')).toBeLessThan(working.indexOf('Here is the plan.'))
+  // Not a live region: a screen reader is not read every token of it.
+  expect(working).not.toContain('role="log"')
   const settled = renderToStaticMarkup(
     <AssistantTurnBlock
       entry={assistant({

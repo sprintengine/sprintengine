@@ -514,7 +514,7 @@ export function AssistantTurnBlock({
   modelSwitched?: boolean
 }) {
   const context = useConversationLinkContext()
-  const fold = deriveTurnFold(entry, tools)
+  const derivedFold = deriveTurnFold(entry, tools)
   // Folded until asked for, the turn running now included: the steps are how
   // the reply was reached, and the working line already says what is
   // happening (owner ruling 2026-10-02).
@@ -524,7 +524,6 @@ export function AssistantTurnBlock({
     false,
   )
   const foldRegionId = useId()
-  const open = !fold || workOpen
   // Kept while the tools are, so the cards are not redrawn for each token.
   const lanes = useMemo(() => turnAgentLanes(tools), [tools])
   const failed = useMemo(() => turnFoldFailures(tools), [tools])
@@ -545,6 +544,10 @@ export function AssistantTurnBlock({
     [working, entry.reasoningSegments, entry.reasoning],
   )
   const boxed = thoughts.length > 0
+  // The box holds the thinking, so a fold with nothing else under it (its
+  // steps all shown to the person) would open onto nothing: there is none.
+  const fold = boxed && !foldedSteps && !foldedProse?.length ? null : derivedFold
+  const open = !fold || workOpen
   const copy = useMessageCopyMenu(
     settledReply
       ? {
