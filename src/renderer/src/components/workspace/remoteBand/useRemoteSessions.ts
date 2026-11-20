@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
-import { useWindowPageVisible } from '../../../utils/windowActivity'
+import { useWindowPageVisible, windowActivity } from '../../../utils/windowActivity'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { publishRemoteConversationList } from './remoteConversationFacts'
 import { browsePairedMachine } from '../../../studio/pairedDiscovery'
@@ -16,6 +16,13 @@ import {
   type RemoteBrowseEntry,
   type RemoteLinkState,
 } from './remoteSessionsModel'
+import {
+  listFailureOf,
+  remoteReadDue,
+  REMOTE_ANSWER_GRACE_MS,
+  type RemoteListFailure,
+  type RemoteReadHistory,
+} from './remoteListFreshness'
 
 // The reads behind the sidebar's Remote band (remote-sessions-in-the-sidebar,
 // epic decision 2): an expanded band IS the ask, and the asking is bounded —
@@ -30,21 +37,31 @@ import {
 // holds, `conversation.list` for its chats. That machine says when either
 // list moved (`conversations.changed`), and the band re-reads on that, and
 // once more whenever the window reaches it again: the server owns the
-// state, the client subscribes. Nothing is read on a timer.
+// state, the client subscribes.
 //
 // A push re-reads only what it names: a conversation push re-lists the
 // machine's chats, a workspace push re-browses it. A window
 // nobody can see does not re-read at all; it remembers what changed and
 // reads once when it is shown again.
+//
+// Pushes alone left a list silently old: a notice can be lost, and a machine
+// that stops taking this pairing sends nothing at all. So a window someone
+// can see also re-reads each machine on a slow clock, further apart while it
+// keeps failing, and when the window comes back to the front
+// (`remoteListFreshness.ts` has the intervals). A machine that refused this
+// pairing is asked again then too, rather than never: a pairing made again
+// over there is otherwise only noticed by main's next check. A read that
+// fails, or goes unanswered, keeps the rows it had and says why
+// (`listFailure`), which the rows draw as a last-known list.
 
 /** A machine's change pushes arrive already folded; a short settle folds the workspace and conversation pushes of one event into one read. */
 const REMOTE_CHANGE_SETTLE_MS = 250
+/** How often the slow clock looks for a machine due a read; it asks only those whose delay has passed. */
+const REMOTE_REREAD_TICK_MS = 60_000
 
 export type RemoteSessions = {
   presence: TailnetPresence
   browses: ReadonlyMap<string, RemoteBrowseEntry>
-  /** This device's listener is up: the band may draw what it read from over there. */
-  listening: boolean
   /**
    * Whether this device is on the tailnet at all — up, down, or not yet known.
    * What the rows that are WINDOWS here are gated on: a chat on another machine
@@ -76,10 +93,12 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
   const presence = useTailnetPresence()
   // Off the tailnet nothing over there can answer, so nothing is asked
   // (owner ruling 2026-09-05): the band draws only what is open here until
-  // the listener is back, and the first read after that is the mount read.
-  const listening = presence.status?.running === true
+  // the link is back, and the first read after that is the mount read. On
+  // the tailnet is what counts, not this device's own listener: the reads
+  // are outgoing, and a person may drive paired machines with Remote turned
+  // off here (`RemoteLinkState`).
   const link = remoteLinkStateOf(presence.status)
-  const enabled = wanted && listening
+  const enabled = wanted && link === 'up'
   const [browses, setBrowses] = useState<ReadonlyMap<string, RemoteBrowseEntry>>(() => new Map())
   const browsesRef = useRef(browses)
   browsesRef.current = browses
@@ -89,6 +108,15 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
   /** Machines being read right now, and what was asked for while each read was out. */
   const inFlight = useRef(new Map<string, ReadonlySet<ReadPart>>())
   const queued = useRef(new Map<string, Set<ReadPart>>())
+  /** When each machine was last asked for its chats, and how many reads of them in a row failed. */
+  const history = useRef(new Map<string, RemoteReadHistory>())
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   // A host without the mesh bridge (partial test harnesses, narrower
   // preloads) gets a band that draws what the rows already know and asks
   // nothing — never a throw inside an effect.
@@ -112,6 +140,26 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
       inFlight.current.set(connectionId, parts)
       if (wantBrowse)
         setBrowses((current) => withEntry(current, connectionId, (entry) => ({ ...entry, loading: true })))
+      // A read that hangs is a machine not answering, said once the grace has
+      // passed; the read landing later replaces it either way.
+      const askedAt = Date.now()
+      const previous = history.current.get(connectionId)
+      history.current.set(connectionId, { askedAt, failures: previous?.failures ?? 0 })
+      let landed = false
+      const graceTimer = !wantList
+        ? undefined
+        : window.setTimeout(() => {
+            if (landed || !mounted.current) return
+            setBrowses((current) =>
+              withEntry(current, connectionId, (entry) =>
+                entry.listFailure
+                  ? entry
+                  : { ...entry, listFailure: { kind: 'unavailable', message: 'Not answering.' } },
+              ),
+            )
+          }, REMOTE_ANSWER_GRACE_MS)
+      // Whether this read left the chats current, for the clock's backoff.
+      let failed = false
       void (async () => {
         // What it holds, and what of its chats' records it keeps for this
         // one, asked of its Studio by this window itself.
@@ -127,17 +175,31 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
             : null
         // The tab of a pane open on one of these chats draws from the same list.
         if (listed?.ok) publishRemoteConversationList(connectionId, listed.conversations)
+        // What this read says of the chats: listed (or a refusal that is the
+        // answer, which lists none), or why the rows it had are kept.
+        const failure: RemoteListFailure | null | undefined =
+          result && !result.reachable
+            ? {
+                kind: result.unauthorized ? 'unauthorized' : 'unavailable',
+                message: result.unreachableReason ?? 'Not answering.',
+              }
+            : !wantList
+              ? undefined
+              : listed === null
+                ? { kind: 'unavailable', message: 'Not answering.' }
+                : listed.ok
+                  ? null
+                  : listFailureOf(listed.code, listed.message)
+        failed = failure !== null && failure !== undefined
+        const answered = wantList && failure === null
         setBrowses((current) =>
           withEntry(current, connectionId, (entry) => {
-            // A list read on its own keeps the rows it has when it fails: the
-            // machine may simply be asleep, which the browse is the one to say.
-            const conversations = listed
-              ? listed.ok
-                ? listed.conversations
-                : result
-                  ? []
-                  : entry.conversations
-              : entry.conversations
+            // A read that could not list them keeps the rows it has, said to
+            // be a last-known list: the machine may simply be asleep, or no
+            // longer take this pairing. A refusal that is the answer (a
+            // pairing that may not read them, a machine that does not serve
+            // them) lists none.
+            const conversations = answered ? (listed?.ok ? listed.conversations : []) : entry.conversations
             // What this pairing may do with its chats, as its newest list said.
             const access = listed?.ok ? listed.access : entry.access
             // What of its chats' records the machine keeps for this one, as
@@ -150,6 +212,17 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
               ...(lifecycle !== undefined ? { lifecycle } : {}),
               ...(access !== undefined ? { access } : {}),
               ...(manage !== undefined ? { manage } : {}),
+              // Kept across a read that did not list them, as the rows are.
+              ...(answered
+                ? { listedAt: Date.now() }
+                : entry.listedAt !== undefined
+                  ? { listedAt: entry.listedAt }
+                  : {}),
+              ...(failure !== undefined
+                ? { listFailure: failure }
+                : entry.listFailure !== undefined
+                  ? { listFailure: entry.listFailure }
+                  : {}),
             }
             if (!result) return { ...entry, at: Date.now(), ...listedParts }
             return {
@@ -165,16 +238,22 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
         )
       })()
         .catch((error: unknown) => {
+          failed = true
           setBrowses((current) =>
             withEntry(current, connectionId, (entry) => ({
               ...entry,
               loading: false,
               error: error instanceof Error ? error.message : String(error),
               at: Date.now(),
+              listFailure: { kind: 'unavailable', message: error instanceof Error ? error.message : String(error) },
             })),
           )
         })
         .finally(() => {
+          landed = true
+          if (graceTimer !== undefined) window.clearTimeout(graceTimer)
+          const asked = history.current.get(connectionId)
+          if (asked) history.current.set(connectionId, { ...asked, failures: failed ? asked.failures + 1 : 0 })
           inFlight.current.delete(connectionId)
           const waiting = queued.current.get(connectionId)
           queued.current.delete(connectionId)
@@ -296,6 +375,45 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
     }
   }, [enabled, mesh, meshReachability, browse])
 
+  // The slow clock, and the window coming back to the front: what catches a
+  // lost notice or a pairing dropped over there. Each machine is asked at
+  // most once at a time (`read` folds an ask into the one in flight), on the
+  // clock only once its delay has passed, which doubles with each failure in
+  // a row, and on coming back only once the focus gap has.
+  const meshRef = useRef(mesh)
+  meshRef.current = mesh
+  const reachRef = useRef(meshReachability)
+  reachRef.current = meshReachability
+  const rereadDue = useCallback(
+    (trigger: 'clock' | 'focus') => {
+      const now = Date.now()
+      for (const connection of meshRef.current) {
+        const reach = reachRef.current.get(connection.id)
+        // Asleep is main's to notice (epic decision 2); a machine that refused
+        // this pairing is asked again when a person comes back to the window.
+        const askable = shouldBrowse(reach) || (trigger === 'focus' && reach?.unauthorized === true)
+        if (!askable || inFlight.current.has(connection.id)) continue
+        if (remoteReadDue(history.current.get(connection.id), trigger, now)) read(connection.id)
+      }
+    },
+    [read],
+  )
+  useEffect(() => {
+    if (!enabled || !bridge || !visible) return
+    const timer = window.setInterval(() => rereadDue('clock'), REMOTE_REREAD_TICK_MS)
+    return () => window.clearInterval(timer)
+  }, [enabled, bridge, visible, rereadDue])
+  useEffect(() => {
+    if (!enabled || !bridge) return
+    const activity = windowActivity()
+    let front = activity.get().visible && activity.get().focused
+    return activity.subscribe((state) => {
+      const atFront = state.visible && state.focused
+      if (atFront && !front) rereadDue('focus')
+      front = atFront
+    })
+  }, [enabled, bridge, rereadDue])
+
   const refresh = useCallback(
     (connectionId?: string) => {
       for (const connection of mesh) {
@@ -306,5 +424,5 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
     [mesh, meshReachability, browse],
   )
 
-  return { presence, browses, listening, link, refresh }
+  return { presence, browses, link, refresh }
 }

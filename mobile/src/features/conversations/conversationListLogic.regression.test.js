@@ -1,6 +1,12 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
+  CHAT_LIST_SLOW_POLL_MAX_MS,
+  CHAT_LIST_SLOW_POLL_MS,
+  chatListFailureKind,
+  chatListSlowPollMs,
+  chatListStaleWords,
+  lastKnownChatRow,
   CHAT_DATE_SECTION_LABEL,
   CHAT_EARLIER_AFTER_MS,
   chatCliMark,
@@ -539,4 +545,32 @@ test("a chat opened in a screen's place keeps what was under it, and the list un
   assert.deepEqual(routesInPlaceOfTop([home, { name: "ChatLink" }], chat, home), [home, chat]);
   assert.deepEqual(routesInPlaceOfTop([{ name: "ChatLink" }], chat, home), [home, chat]);
   assert.deepEqual(routesInPlaceOfTop([home, { name: "Notices" }, { name: "Conversation" }], chat, home), [home, { name: "Notices" }, chat]);
+});
+
+test("a desktop's chats as a last-known list: why, how old, and polled further apart while it fails", () => {
+  assert.equal(chatListFailureKind({ code: "unauthorized" }), "signed-out");
+  assert.equal(chatListFailureKind({ code: "revoked" }), "signed-out");
+  assert.equal(chatListFailureKind({ code: "peer_mismatch" }), "signed-out");
+  assert.equal(chatListFailureKind({ code: "unavailable" }), "not-answering");
+  assert.equal(chatListFailureKind(new Error("socket closed")), "not-answering");
+
+  const now = Date.UTC(2026, 10, 20, 12);
+  assert.equal(
+    chatListStaleWords({ deviceId: "d", desktopName: "mac-mini", kind: "signed-out", since: now - 2 * 3_600_000 }, now),
+    "mac-mini no longer accepts this phone. Its chats here are from 2h ago.",
+  );
+  assert.equal(
+    chatListStaleWords({ deviceId: "d", desktopName: "mac-mini", kind: "not-answering", since: null }, now),
+    "mac-mini is not answering. Its chats here are from an earlier read.",
+  );
+
+  const row = { deviceId: "d", thread: { workspaceId: "w", agentId: "a", phase: "running", backgroundWork: { agents: 1, monitors: 0 } } };
+  assert.equal(lastKnownChatRow(row).thread.phase, "idle");
+  assert.equal(lastKnownChatRow(row).thread.backgroundWork, undefined);
+  const failed = { deviceId: "d", thread: { workspaceId: "w", agentId: "a", phase: "failed" } };
+  assert.equal(lastKnownChatRow(failed), failed, "a row with nothing live is kept as it is");
+
+  assert.equal(chatListSlowPollMs(0), CHAT_LIST_SLOW_POLL_MS);
+  assert.equal(chatListSlowPollMs(1), CHAT_LIST_SLOW_POLL_MS * 2);
+  assert.equal(chatListSlowPollMs(99), CHAT_LIST_SLOW_POLL_MAX_MS);
 });

@@ -28,6 +28,7 @@ import type { RowRecency } from '../stableRowSlices'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
 import { environmentStatus, type EnvironmentStatusKind } from '../../../../../shared/environment-status'
 import { copy as appCopy } from '../../../../../shared/copy'
+import { remoteLastKnownOf, type RemoteLastKnown, type RemoteListFailure } from './remoteListFreshness'
 
 // The sidebar's Remote band (remote-sessions-in-the-sidebar): the sessions
 // that live on each paired machine, as rows a person can open here. DOM-free,
@@ -64,6 +65,13 @@ export type RemoteBrowseEntry = {
   access?: MeshConversationAccess
   /** What of its chats' management the machine takes from here, as its Studio's welcome said. Absent before a browse. */
   manage?: MeshConversationManage
+  /** Epoch ms of the newest read that listed its chats (or got a refusal that is the answer); absent before one. */
+  listedAt?: number
+  /**
+   * Why the newest read of its chats did not replace them, or null when it
+   * did: the rows are then a last-known list (`remoteLastKnownOf`).
+   */
+  listFailure?: RemoteListFailure | null
 }
 
 /** No chat management from here: a machine before it, or a pairing that may only follow. */
@@ -228,6 +236,12 @@ export type RemoteMachineGroup = {
   parked: Workspace[]
   /** The rows are from an earlier read and the machine is not answering now. */
   stale: boolean
+  /**
+   * Why the machine's rows are a last-known list, and since when; null while
+   * its newest read stands. Set for a machine with no rows too, so a chat
+   * opened here from it can say so (`remoteLastKnownByConnection`).
+   */
+  lastKnown: RemoteLastKnown | null
   loading: boolean
 }
 
@@ -259,6 +273,8 @@ export type RemoteConversation = {
   attachedWorkspaceId: string | null
   /** Read from an earlier browse on a machine that is not answering now. */
   stale: boolean
+  /** Its machine's list is a last-known one, and why (`RemoteMachineGroup.lastKnown`). */
+  lastKnown: RemoteLastKnown | null
   /** Its row's place in the list; see `RemoteSessionRow.recencyAt`. */
   recencyAt: number
   /** The chat's star and highlight colour over there; null for neither. */
@@ -418,12 +434,16 @@ function remoteChatRowOf(
   browse: MeshBrowse | null,
   workspaces: readonly Workspace[],
   writes: RemoteRowWrites,
+  lastKnown = false,
 ): RemoteSessionRow {
   const remoteWorkspace = browse?.workspaces.find((workspace) => workspace.id === conversation.workspaceId) ?? null
   const sessionId = meshConversationSessionId(conversation.workspaceId, conversation.agentId)
   // Its background work counts, as the machine's own sidebar counts it: a
   // chat whose turn is over while its agents or a monitor go on is working.
-  const presence = meshConversationPresence(conversation.phase, conversation.backgroundWork)
+  // A row from a last-known list claims no live work: a turn that was running
+  // when the machine stopped answering would otherwise wear the working mark
+  // and its clock for as long as the machine stays away.
+  const presence = lastKnown ? 'idle' : meshConversationPresence(conversation.phase, conversation.backgroundWork)
   const attached = attachedWorkspaceFor(workspaces, connection.id, sessionId)
   const title = conversation.title || 'Conversation'
   // The chat's own title over there is its workspace's name there; the list
@@ -548,9 +568,6 @@ export function openSpecOf(row: RemoteSessionRow): RemoteSessionOpenSpec {
   }
 }
 
-// A machine in one of these is not answering: its rows are drawn from its last read.
-const QUIET_STATUSES = new Set<EnvironmentStatusKind>(['offline', 'signed-out', 'incompatible'])
-
 /**
  * The band: one group per paired machine, in name order, plus a group for
  * any machine whose pairing is gone but whose rows are still here.
@@ -561,8 +578,20 @@ export function buildRemoteBand(input: {
   /** The machines this desktop knows (`useEnvironments`), for how each stands. */
   environments: readonly EnvironmentEntry[]
   workspaces: readonly Workspace[]
+  /**
+   * Main's last check of each machine (`useTailnetPresence().meshReachability`):
+   * a read this window made after it is believed over it. Absent, how each
+   * machine stands is read off `environments` alone.
+   */
+  reachability?: ReadonlyMap<string, MeshMachineReachability>
+  /**
+   * `connections` has been read (`TailnetPresence.meshListed`), so a machine
+   * missing from it is one no longer paired. Before that, nothing is said of
+   * the rows opened from one.
+   */
+  connectionsListed?: boolean
 }): RemoteMachineGroup[] {
-  const { connections, browses, environments, workspaces } = input
+  const { connections, browses, environments, workspaces, reachability, connectionsListed = false } = input
   const paired = new Set(connections.map((connection) => connection.id))
   const groups: RemoteMachineGroup[] = [...connections]
     .sort((a, b) => a.machineName.localeCompare(b.machineName))
@@ -571,6 +600,9 @@ export function buildRemoteBand(input: {
       const browse = entry?.browse ?? null
       const environment = environmentOfRoute(environments, { kind: 'tailnet', connection: connection.id })
       const status = environment ? environmentStatus(environment).kind : null
+      // Whether these rows are what the machine holds now, or what it held
+      // when this window last read it; a last-known list says so on its rows.
+      const lastKnown = remoteLastKnownOf(entry, status, reachability?.get(connection.id))
       // A chat the machine has settled has no row, as it has none in that
       // machine's own sidebar. A machine that keeps rest leaves them out of
       // its list; one whose browse says a workspace is resting is believed
@@ -590,7 +622,9 @@ export function buildRemoteBand(input: {
       }
       const listed = (entry?.conversations ?? [])
         .filter((conversation) => !resting.has(conversation.workspaceId))
-        .map((conversation) => remoteChatRowOf(connection, conversation, browse, workspaces, writes))
+        .map((conversation) =>
+          remoteChatRowOf(connection, conversation, browse, workspaces, writes, lastKnown !== null),
+        )
       const rows = entry?.lifecycle === true ? listed : listed.sort(compareByRecency)
       const attachedIds = new Set(rows.map((row) => row.attachedWorkspaceId).filter((id): id is string => id !== null))
       const parked = workspaces.filter(
@@ -599,7 +633,10 @@ export function buildRemoteBand(input: {
       // No notices (owner ruling 2026-09-05). A transport error, a scope
       // the pairing lacks, a revocation: none of it is a sidebar sentence.
       // The band lists conversations and nothing else; the Remote glyph
-      // and Settings → Remote are where a machine's state is read.
+      // and Settings → Remote are where a machine's state is read. A row
+      // from a last-known list does say so, in a word or two on the row
+      // (`remoteListFreshness.ts`): rows that look current and are not hid
+      // a revoked pairing for days.
       return {
         key: connection.id,
         connectionId: connection.id,
@@ -607,7 +644,8 @@ export function buildRemoteBand(input: {
         status,
         rows,
         parked,
-        stale: rows.length > 0 && status !== null && QUIET_STATUSES.has(status),
+        stale: rows.length > 0 && lastKnown !== null,
+        lastKnown,
         loading: entry?.loading ?? false,
       }
     })
@@ -631,6 +669,9 @@ export function buildRemoteBand(input: {
       rows: [],
       parked,
       stale: false,
+      // What was opened here from it stays, and says the pairing is gone
+      // once the list of pairings has been read and does not name it.
+      lastKnown: connectionsListed ? { reason: 'unpaired', since: null } : null,
       loading: false,
     })
   }
@@ -680,6 +721,7 @@ export function conversationsOf(group: RemoteMachineGroup): RemoteConversation[]
       since: lead.since,
       attachedWorkspaceId: lead.attachedWorkspaceId,
       stale: group.stale,
+      lastKnown: group.lastKnown,
       recencyAt: Math.max(...agents.map((row) => row.recencyAt)),
       // The chat's own marks, which its machine keeps on the chat rather than
       // on an agent: every agent of it lists the same ones.
@@ -705,17 +747,19 @@ export function conversationsOf(group: RemoteMachineGroup): RemoteConversation[]
  * list, and must not be: that workspace is already a row of its project
  * (`remoteOrigin`), and listing it here too would be the same chat twice.
  *
- * `listening` is whether this device is on the tailnet at all. Off it, nothing
- * over there can be reached, so nothing read from over there is drawn — only
- * the rows that are windows open HERE stay, since closing those is the
- * person's call. Nothing is forgotten: the browse rows return with the link.
+ * `onTailnet` is whether this device is on the tailnet at all
+ * (`RemoteLinkState` not `down`), never whether its own listener runs: the
+ * reads are outgoing. Off it, nothing over there can be reached, so nothing
+ * read from over there is drawn — only the rows that are windows open HERE
+ * stay, since closing those is the person's call. Nothing is forgotten: the
+ * browse rows return with the link.
  */
 export function unattachedConversations(
   groups: readonly RemoteMachineGroup[],
-  listening: boolean,
+  onTailnet: boolean,
   workspaces: readonly Workspace[],
 ): RemoteConversation[] {
-  if (!listening) return []
+  if (!onTailnet) return []
   return mergeByRecency(
     groups.map((group) =>
       conversationsOf(group).filter(
@@ -1004,6 +1048,25 @@ export function attachedConversations(
     }
   }
   return byWorkspace
+}
+
+/**
+ * Each machine whose list is a last-known one, by the connection a row opened
+ * from it names (`remoteOrigin.connectionId`): a chat opened here from a
+ * machine that stopped answering, or whose pairing is gone, says so on its
+ * row as the machine's unopened chats do, rather than reading as a plain
+ * local row.
+ */
+export function remoteLastKnownByConnection(
+  groups: readonly RemoteMachineGroup[],
+): ReadonlyMap<string, RemoteLastKnown> {
+  const byConnection = new Map<string, RemoteLastKnown>()
+  for (const group of groups) {
+    if (!group.lastKnown) continue
+    const connectionId = group.connectionId ?? group.parked[0]?.remoteOrigin?.connectionId ?? null
+    if (connectionId) byConnection.set(connectionId, group.lastKnown)
+  }
+  return byConnection
 }
 
 /**

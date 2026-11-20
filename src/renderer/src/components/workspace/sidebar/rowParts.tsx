@@ -2,7 +2,7 @@
 // attention pulse, row tooltips, the machine and schedule marks, the project
 // line, the branch chip, the working timer and the number key's hint.
 
-import { KbdChord, MachineGlyph, RowButton, Tooltip, TruncatedText } from '../../ui'
+import { KbdChord, LinkButton, MachineGlyph, RowButton, Tooltip, TruncatedText } from '../../ui'
 import { platformKeybindingsFromApiPlatform } from '../../../commands/effectiveKeybindings'
 import { useChatJumpHint } from './chatJumpHints'
 import type { MachineRef } from '../../../../../shared/machine-identity'
@@ -17,6 +17,8 @@ import { formatElapsedMs } from '../../../utils/relativeTime'
 import { useRelativeNow } from '../../../hooks/useRelativeNow'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { copy } from '../../../../../shared/copy'
+import { remoteLastKnownWords, type RemoteLastKnown } from '../remoteBand/remoteListFreshness'
+import { useOpenRemoteSettings } from '../topbar/remoteGlyph'
 
 // A shelf's fold row (settled-chats, 2026-09-07): the one line a folder shows
 // for a group of parked chats — its name, and how many — collapsed by default,
@@ -241,6 +243,58 @@ export function MachineRowGlyph({
         <MachineGlyph identity={identity} inheritInk={projectInk !== undefined} />
       </span>
     </Tooltip>
+  )
+}
+
+/**
+ * A row whose machine's list is a last-known one says so, in words on its
+ * title line: "Not answering · 2d", "Signed out · pair again". No dot (owner
+ * ruling 2026-09-28): the words are the state, in the subtle ink a quiet
+ * row's time is drawn in, and the sentence on hover says what the list is.
+ * Where the remedy is a pairing, "pair again" opens Settings → Remote, where
+ * the machine's own Pair again is, so the row offers the one thing that fixes it.
+ */
+export function RemoteLastKnownMark({
+  lastKnown,
+  machineName,
+  now,
+}: {
+  lastKnown: RemoteLastKnown
+  machineName: string
+  now: number
+}) {
+  const openRemoteSettings = useOpenRemoteSettings()
+  const short = shortMachineName(machineName)
+  const words = remoteLastKnownWords(lastKnown, short, now)
+  const pairAgain = words.pairAgain ? openRemoteSettings : null
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 text-meta tabular-nums text-[color:var(--text-subtle)]"
+      data-remote-last-known={lastKnown.reason}
+    >
+      <RowTooltip content={words.detail} placement="bottom" wrapperClassName="inline-flex shrink-0 items-center">
+        <span aria-hidden="true">{words.text}</span>
+      </RowTooltip>
+      <span className="sr-only">{words.spoken}</span>
+      {pairAgain ? (
+        <>
+          <span aria-hidden="true">·</span>
+          <LinkButton
+            layout="row"
+            underline="never"
+            size="inherit"
+            ink="quiet"
+            aria-label={copy.workspace.remoteBand.remoteListFreshness.pairAgainWith(short)}
+            onClick={(event) => {
+              event.stopPropagation()
+              pairAgain()
+            }}
+          >
+            {copy.workspace.remoteBand.remoteListFreshness.pairAgain}
+          </LinkButton>
+        </>
+      ) : null}
+    </span>
   )
 }
 

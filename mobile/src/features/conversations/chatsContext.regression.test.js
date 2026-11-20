@@ -28,7 +28,8 @@ const desktop = (deviceId) => ({
 
 function harness({ chatsPerDesktop = 3, threads = null } = {}) {
   // `threads`, when given, is what every desktop lists, read afresh each time.
-  const desk = { workspaceIds: ["w"], threads };
+  // `fail`, by desktop, is the error its next list reads throw.
+  const desk = { workspaceIds: ["w"], threads, fail: {} };
   const toasts = [];
   const slots = [];
   const effects = [];
@@ -76,6 +77,7 @@ function harness({ chatsPerDesktop = 3, threads = null } = {}) {
     list: async () => {
       reads.list++;
       await tick();
+      if (desk.fail[deviceId]) throw desk.fail[deviceId];
       if (desk.threads) return desk.threads.map((thread) => ({ ...thread }));
       return Array.from({ length: chatsPerDesktop }, (_, i) => ({
         workspaceId: desk.workspaceIds[i % desk.workspaceIds.length],
@@ -513,4 +515,47 @@ test("a desktop that keeps no rest offers no Snooze", async () => {
   const [row] = h.value().chats;
   assert.equal(row.snoozable, false);
   assert.equal(await h.value().snoozeChat(row, Date.now() + MIN), false);
+});
+
+test("a desktop whose list cannot be read keeps its chats, says why, and claims no live work", async () => {
+  const h = harness({
+    threads: [{ workspaceId: "w", agentId: "busy", phase: "running", title: "busy" }],
+  });
+  h.render({ sessions: [desktop("one"), desktop("two")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().chats.length, 2);
+  assert.equal(h.value().stale.length, 0);
+  assert.equal(h.value().failingReads, 0);
+
+  // Desktop one drops this pairing; desktop two stops answering.
+  h.desk.fail.one = Object.assign(new Error("This phone is no longer paired with the desktop."), { code: "unauthorized" });
+  h.desk.fail.two = Object.assign(new Error("The desktop did not answer."), { code: "unavailable" });
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().chats.length, 2, "the chats each desktop last listed stay in the list");
+  assert.ok(
+    h.value().chats.every((row) => row.thread.phase === "idle"),
+    "a turn that was running then is not drawn as working now",
+  );
+  const stale = h.value().stale;
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(stale.map((entry) => [entry.deviceId, entry.kind]))),
+    [
+      ["one", "signed-out"],
+      ["two", "not-answering"],
+    ],
+  );
+  assert.ok(stale.every((entry) => typeof entry.since === "number"), "each says when its chats were last listed");
+  assert.equal(h.value().failingReads, 1);
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().failingReads, 2, "the slow poll backs off while a desktop keeps failing");
+
+  // Paired again, and answering: the list is current.
+  h.desk.fail = {};
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().stale.length, 0);
+  assert.equal(h.value().failingReads, 0);
+  assert.equal(h.value().chats[0].thread.phase, "running");
 });

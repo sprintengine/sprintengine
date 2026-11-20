@@ -51,9 +51,12 @@ import {
   groupChatsByProject,
   chatSections,
   matchesChatSearch,
+  chatListSlowPollMs,
+  chatListStaleWords,
   type ChatListRow,
   type ChatRowState,
 } from "./conversationListLogic";
+import { PrimaryButton } from "../../components/PrimaryButton";
 import type { ConversationTarget } from "./conversationLogic";
 import { isChatSnoozed, resolveSnoozePresets, snoozeOffered, snoozeWakeLabel, splitSnoozed } from "./snoozeLogic";
 import { copy as appCopy } from "../../../../src/shared/copy";
@@ -103,6 +106,7 @@ export function ConversationsScreen({
   onOpenSettings,
   noticeCount,
   onOpenPullRequest,
+  onPairAgain,
 }: {
   onOpen: (target: ConversationTarget) => void;
   /** Step one of New; the button is drawn only where some desktop may start a chat. */
@@ -119,10 +123,14 @@ export function ConversationsScreen({
    * browser, as before). Asked per desktop.
    */
   onOpenPullRequest?: (deviceId: string) => ((url: string) => void) | null;
+  /** Pairing again, offered where a desktop no longer accepts this phone; absent, the words alone. */
+  onPairAgain?: () => void;
 }) {
   const {
     chats: rows,
     failures,
+    stale,
+    failingReads,
     loaded,
     refreshing,
     refresh,
@@ -178,9 +186,12 @@ export function ConversationsScreen({
   );
   const refreshControl = useRefreshControl(() => void refresh(), refreshing);
 
+  // A desktop whose chats are last-known is not polled every few seconds for
+  // them: its rows claim no live work, and its reads back off on the slow poll.
   const anyWorking = rows.some(
     (row) => row.thread.phase === "running" || row.thread.phase === "starting" || chatWorksInBackground(row.thread),
   );
+  const slowPollMs = chatListSlowPollMs(failingReads);
   const now = useNow(anyWorking);
   // Kept current while in front, not only when navigated back to: coming
   // back to the app, which focus does not announce, reads the chats, and so
@@ -193,16 +204,20 @@ export function ConversationsScreen({
       const subscription = AppState.addEventListener("change", (next) => {
         if (next === "active") void revalidate();
       });
-      const poll = anyWorking
-        ? setInterval(() => {
-            if (AppState.currentState === "active") void revalidate();
-          }, LIST_POLL_MS)
-        : undefined;
+      // While nothing works, a slow poll still catches a list that moved
+      // without this phone hearing, or a desktop that stopped answering or
+      // dropped this pairing; it waits longer each time a read fails.
+      const poll = setInterval(
+        () => {
+          if (AppState.currentState === "active") void revalidate();
+        },
+        anyWorking ? LIST_POLL_MS : slowPollMs,
+      );
       return () => {
         subscription.remove();
-        if (poll) clearInterval(poll);
+        clearInterval(poll);
       };
-    }, [anyWorking, revalidate]),
+    }, [anyWorking, slowPollMs, revalidate]),
   );
   const showDesktop = streamingDesktops > 1;
   const sections = useMemo<Section[]>(() => {
@@ -367,7 +382,24 @@ export function ConversationsScreen({
           </Text>
         }
         ListHeaderComponent={
-          failures.length ? (
+          stale.length ? (
+            // Each desktop whose chats are last-known, why, and how old they
+            // are: its chats stay in the list below as they were last listed.
+            <View style={styles.staleBlock}>
+              {stale.map((entry) => (
+                <Text accessibilityRole="alert" key={entry.deviceId} style={styles.stale}>
+                  {chatListStaleWords(entry, now)}
+                </Text>
+              ))}
+              {onPairAgain && stale.some((entry) => entry.kind === "signed-out") ? (
+                <PrimaryButton
+                  label={appCopy.phone.conversations.chatListStale.pairAgain}
+                  onPress={onPairAgain}
+                  variant="secondary"
+                />
+              ) : null}
+            </View>
+          ) : failures.length ? (
             <Text accessibilityRole="alert" style={styles.failure}>
               {failures.length === 1 ? `${failures[0]} is` : `${failures.join(", ")} are`}{appCopy.phone.conversations.conversationsScreen.unavailableCheckTheTailnetThen}</Text>
           ) : null
@@ -1055,6 +1087,15 @@ const createStyles = ({ colors }: Theme) =>
       color: colors.toneError,
       paddingHorizontal: space.lg,
       paddingVertical: space.sm,
+    },
+    staleBlock: {
+      gap: space.sm,
+      paddingHorizontal: space.lg,
+      paddingVertical: space.sm,
+    },
+    stale: {
+      ...typography.meta,
+      color: colors.textMuted,
     },
     empty: {
       ...typography.meta,

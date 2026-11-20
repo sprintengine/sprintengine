@@ -5,6 +5,7 @@ import type { DesktopWorkspace } from "../../api/tailnetWorkspaces";
 import { DEFAULT_MODEL_ID, modelLabel, type ChatLink } from "./conversationLogic";
 import { cliForChatProvider } from "./launchLogic";
 import { copy } from "../../../../src/shared/copy";
+import { formatTimestamp } from "../../components/formatTimestamp";
 
 // Where it lived first; the launch rules need it too, without importing this file.
 export { cliForChatProvider };
@@ -780,4 +781,65 @@ export function chatLaunchAvailability(
   if (!offers.operate)
     return { available: false, reason: `This phone may read chats on ${machine} but not start them. Pair again with chat control.` };
   return { available: true };
+}
+
+// ── A desktop's chats as a last-known list ──────────────────────────────────
+//
+// A desktop whose list cannot be read keeps the chats it last listed, and the
+// list says so: which desktop, why (it no longer takes this phone, or it is
+// not answering), and how old its chats here are. Its rows used to vanish
+// behind one "unavailable, check the tailnet" line, which was also the wrong
+// advice for a pairing the desktop had dropped.
+
+/** Why a desktop's chats are a last-known list. */
+export type ChatListStaleKind = "signed-out" | "not-answering";
+
+/** A desktop whose newest list read failed, and since when its chats here date. */
+export interface ChatListStale {
+  deviceId: string;
+  desktopName: string;
+  kind: ChatListStaleKind;
+  /** When its chats were last listed here; null when they never have been. */
+  since: number | null;
+}
+
+/** The codes a desktop refuses a pairing with: it no longer takes this phone. */
+const SIGNED_OUT_CODES = new Set(["unauthorized", "revoked", "peer_mismatch"]);
+
+/** What a failed list read means: the desktop refused this phone, or it did not answer. */
+export function chatListFailureKind(error: unknown): ChatListStaleKind {
+  const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : null;
+  return typeof code === "string" && SIGNED_OUT_CODES.has(code) ? "signed-out" : "not-answering";
+}
+
+/**
+ * A row from a last-known list, drawn as claiming no live work: a turn that
+ * was running when the desktop stopped answering would otherwise wear
+ * "Working" and its clock for as long as the desktop stays away, and keep the
+ * list polling every few seconds a desktop that cannot answer.
+ */
+export function lastKnownChatRow(row: ChatListRow): ChatListRow {
+  const { phase, backgroundWork } = row.thread;
+  const live =
+    phase === "running" || phase === "starting" || phase === "waiting_for_approval" || phase === "waiting_for_input";
+  if (!live && !backgroundWork) return row;
+  return { ...row, thread: { ...row.thread, phase: live ? "idle" : phase, backgroundWork: undefined } };
+}
+
+/** The line the list says for one desktop whose chats are last-known. */
+export function chatListStaleWords(stale: ChatListStale, now: number): string {
+  const words = copy.phone.conversations.chatListStale;
+  const name = stale.desktopName.trim() || words.thisDesktop;
+  const age = stale.since !== null ? formatTimestamp(new Date(stale.since).toISOString(), now) : null;
+  const lead = stale.kind === "signed-out" ? words.signedOut(name) : words.notAnswering(name);
+  return `${lead} ${age ? words.chatsFrom(age) : words.chatsFromEarlier}`;
+}
+
+/** How often the list in front re-reads while nothing works: a few minutes, further apart while a desktop keeps failing. */
+export const CHAT_LIST_SLOW_POLL_MS = 3 * 60_000;
+export const CHAT_LIST_SLOW_POLL_MAX_MS = 30 * 60_000;
+
+export function chatListSlowPollMs(failingReads: number): number {
+  if (failingReads <= 0) return CHAT_LIST_SLOW_POLL_MS;
+  return Math.min(CHAT_LIST_SLOW_POLL_MS * 2 ** failingReads, CHAT_LIST_SLOW_POLL_MAX_MS);
 }

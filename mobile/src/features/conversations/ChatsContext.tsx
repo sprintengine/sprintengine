@@ -27,8 +27,11 @@ import {
   canStartChats,
   chatOpenedKey,
   chatRowTitle,
+  chatListFailureKind,
   chatWorkspaceKey,
+  lastKnownChatRow,
   type ChatListRow,
+  type ChatListStale,
 } from "./conversationListLogic";
 import type { ChatGrouping } from "./chatGrouping";
 import { keepUnchanged } from "./keepUnchanged";
@@ -101,6 +104,13 @@ export interface ChatsValue {
   chats: ChatListRow[];
   /** The desktops whose list did not answer on the last read. */
   failures: string[];
+  /**
+   * The same desktops, each with why and since when: their chats stay in
+   * `chats` as they were last listed, and the list says they are last-known.
+   */
+  stale: ChatListStale[];
+  /** How many reads in a row some desktop failed, which the list's slow poll backs off by. */
+  failingReads: number;
   /** False until the first read has answered. */
   loaded: boolean;
   refreshing: boolean;
@@ -265,6 +275,10 @@ export function ChatsProvider({
 
   const [chats, setChats] = useState<ChatListRow[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
+  const [stale, setStale] = useState<ChatListStale[]>([]);
+  const [failingReads, setFailingReads] = useState(0);
+  // When each desktop's chats were last listed here, for how old a kept list is.
+  const listedAt = useRef(new Map<string, number>());
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const generation = useRef(0);
@@ -306,8 +320,12 @@ export function ChatsProvider({
         // that may not read it omits the pill rather than showing a workspace
         // id nobody chose.
         const reads = workspaceReads.get(session.deviceId);
+        let listError: unknown = null;
         let [threads, workspaces] = await Promise.all([
-          api.list().catch(() => null),
+          api.list().catch((error: unknown) => {
+            listError = error;
+            return null;
+          }),
           reads?.[workspacesFrom]().catch(() => null) ?? Promise.resolve(null),
         ]);
         // A workspace list kept from the last minute names every chat it knew
@@ -334,6 +352,7 @@ export function ChatsProvider({
           }),
           markUnread: offers.manage,
           failed: threads === null,
+          failure: threads === null ? chatListFailureKind(listError) : null,
         };
       }),
     );
@@ -366,12 +385,42 @@ export function ChatsProvider({
         if (rewind) noteRewind(key, rewind);
       }
     }
+    // A desktop that could not be read keeps the chats it last listed, drawn
+    // as a last-known list that claims no live work (`lastKnownChatRow`): they
+    // used to vanish, which read as the chats being gone.
+    const readAt = Date.now();
+    for (const answer of answers) if (!answer.failed) listedAt.current.set(answer.session.deviceId, readAt);
     // Rows that read as they did stay the objects the list holds, so a read
     // that found one new chat draws one row, not every row again.
-    setChats((previous) => keepUnchanged(previous, answers.flatMap((answer) => answer.rows), chatKey));
+    setChats((previous) =>
+      keepUnchanged(
+        previous,
+        answers.flatMap((answer) =>
+          answer.failed
+            ? previous.filter((row) => row.deviceId === answer.session.deviceId).map(lastKnownChatRow)
+            : answer.rows,
+        ),
+        chatKey,
+      ),
+    );
     setSettles((current) => settlesAfterRead(current, startedAt));
     setSnoozes((current) => snoozesAfterRead(current, startedAt));
     setFailures(answers.filter((answer) => answer.failed).map((answer) => answer.session.desktopName));
+    setStale(
+      answers.flatMap((answer) =>
+        answer.failure
+          ? [
+              {
+                deviceId: answer.session.deviceId,
+                desktopName: answer.session.desktopName,
+                kind: answer.failure,
+                since: listedAt.current.get(answer.session.deviceId) ?? null,
+              },
+            ]
+          : [],
+      ),
+    );
+    setFailingReads((count) => (answers.some((answer) => answer.failed) ? count + 1 : 0));
     // An answer for no desktops is not an answer for the ones paired next:
     // the provider reads once before the stored pairings arrive, and that
     // empty answer drew "No chats yet" over a cold start's first real read.
@@ -739,6 +788,8 @@ export function ChatsProvider({
       recentWorkspaces,
       chats: listedChats,
       failures,
+      stale,
+      failingReads,
       loaded,
       refreshing,
       refresh,
@@ -761,6 +812,8 @@ export function ChatsProvider({
       chatClients.length,
       desktops,
       failures,
+      stale,
+      failingReads,
       listedChats,
       loaded,
       markChatOpened,
