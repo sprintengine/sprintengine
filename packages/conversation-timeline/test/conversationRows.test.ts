@@ -176,3 +176,35 @@ test('the rows lay a turn out as it happened: its message, its work behind one l
     'a client words its clock its own way',
   )
 })
+
+test("a working turn's thinking is one open box above its reply; once it settles, each stretch rests folded again", () => {
+  const working = [
+    event('user_message', 1, { turnId: 't', text: 'fix it' }),
+    event('turn_started', 2, { turnId: 't' }),
+    event('reasoning_delta', 3, { turnId: 't', text: 'Read the test first.' }),
+    event('tool_started', 4, { turnId: 't', toolUseId: 'read', name: 'Read', kind: 'file_read' }),
+    event('tool_output', 5, { turnId: 't', toolUseId: 'read', status: 'ok' }),
+    event('reasoning_delta', 6, { turnId: 't', text: 'The fixture is stale.' }),
+    event('content_delta', 7, { turnId: 't', text: 'Fixed.' }),
+  ]
+  const live = deriveConversationRows(projectConversation(working)).rows
+  const boxes = live.filter((row) => row.kind === 'reasoning')
+  assert.equal(boxes.length, 1, 'one box for the whole turn')
+  const box = boxes[0]!
+  assert.ok(box.kind === 'reasoning' && box.box)
+  assert.deepEqual(box.kind === 'reasoning' && box.texts, ['Read the test first.', 'The fixture is stale.'])
+  const fold = live.find((row) => row.kind === 'fold')
+  assert.ok(fold?.kind === 'fold' && fold.parts.every((part) => part.kind !== 'reasoning'), 'none left in the fold')
+  const order = live.map((row) => row.kind)
+  assert.equal(order.indexOf('reasoning'), order.lastIndexOf('message') - 1, 'just above the reply')
+
+  const settled = deriveConversationRows(
+    projectConversation([...working, event('turn_completed', 8, { turnId: 't', status: 'complete' })]),
+  ).rows
+  assert.ok(
+    settled.every((row) => row.kind !== 'reasoning' || !row.box),
+    'no box once settled',
+  )
+  const folded = settled.find((row) => row.kind === 'fold')
+  assert.ok(folded?.kind === 'fold' && folded.parts.some((part) => part.kind === 'reasoning'))
+})

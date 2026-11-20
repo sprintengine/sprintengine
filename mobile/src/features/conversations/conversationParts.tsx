@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { CliLogo } from "../../components/glyphs/CliLogo";
 import { useSecondsClock } from "../../components/useNow";
@@ -262,6 +262,83 @@ export const ThinkingRow = memo(function ThinkingRow({
         <View style={[styles.rail, styles.thought]}>
           <MarkdownDocument body={text} variant="chat" tone="muted" onLinkBlocked={onLinkBlocked} />
         </View>
+      ) : null}
+    </View>
+  );
+});
+
+/**
+ * The thinking of a turn still working, out in the open as the desktop's
+ * Reasoning box (owner ruling 2026-11-20): an agent's thinking often says what
+ * it is about to do, and its later words assume the person read it. A
+ * labelled box of its own, so it never reads as the reply, open until tapped
+ * shut; it follows the newest words down unless the person has scrolled up to
+ * read. Once the turn settles it is gone, and its stretches rest folded with
+ * the steps they led to.
+ */
+export const ReasoningBox = memo(function ReasoningBox({
+  texts,
+  live,
+  onNotice,
+}: {
+  texts: readonly string[];
+  /** The model is thinking now, rather than running a step or writing. */
+  live: boolean;
+  onNotice: (message: string) => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(true);
+  const scroll = useRef<ScrollView>(null);
+  const atEnd = useRef(true);
+  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
+  const label = "Reasoning";
+  const preview = useMemo(() => (open ? "" : reasoningPreview(texts.at(-1) ?? "")), [open, texts]);
+  return (
+    <View style={styles.reasoningBox}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={preview ? `${label} ${preview}` : label}
+        accessibilityState={{ expanded: open }}
+        hitSlop={space.xs}
+        onPress={() => {
+          if (!open) atEnd.current = true;
+          setOpen(!open);
+        }}
+        style={({ pressed }) => [styles.step, styles.reasoningHead, pressed ? styles.pressed : null]}
+      >
+        <ThoughtGlyph color={live ? colors.accentPrimary : colors.textSubtle} />
+        <Text style={styles.groupHead}>{live ? `${label}\u2026` : label}</Text>
+        {preview ? (
+          <Text numberOfLines={1} style={styles.thoughtPreview}>
+            {preview}
+          </Text>
+        ) : null}
+        <View style={styles.end}>
+          <DisclosureGlyph open={open} color={colors.textDisabled} />
+        </View>
+      </Pressable>
+      {open ? (
+        <ScrollView
+          ref={scroll}
+          nestedScrollEnabled
+          style={styles.reasoningBody}
+          contentContainerStyle={styles.reasoningContent}
+          scrollEventThrottle={64}
+          onScroll={({ nativeEvent }) => {
+            const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
+            atEnd.current = contentSize.height - contentOffset.y - layoutMeasurement.height <= 8;
+          }}
+          onContentSizeChange={() => {
+            if (atEnd.current) scroll.current?.scrollToEnd({ animated: false });
+          }}
+        >
+          {texts.map((text, index) => (
+            <View key={index} style={index ? styles.reasoningNext : null}>
+              <MarkdownDocument body={text} variant="chat" tone="muted" onLinkBlocked={onLinkBlocked} />
+            </View>
+          ))}
+        </ScrollView>
       ) : null}
     </View>
   );
@@ -767,6 +844,22 @@ const createStyles = ({ colors }: Theme) =>
     prose: { paddingVertical: space.xs },
     thoughtPreview: { ...typography.body, fontSize: 14, color: colors.textSubtle, flexShrink: 1 },
     thought: { paddingTop: space["2xs"] },
+    reasoningBox: {
+      marginVertical: space.xs,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.borderSubtle,
+      backgroundColor: colors.bgSurface,
+    },
+    reasoningHead: { paddingHorizontal: space.sm },
+    reasoningBody: { maxHeight: 240, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+    reasoningContent: { paddingHorizontal: space.md, paddingVertical: space.sm },
+    reasoningNext: {
+      marginTop: space.sm,
+      paddingTop: space.sm,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderSubtle,
+    },
     noticeEnd: { flexDirection: "row", alignItems: "center", gap: space.xs },
     noticeTime: { ...typography.meta, color: colors.textSubtle },
     lane: {
