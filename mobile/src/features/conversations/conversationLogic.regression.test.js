@@ -680,9 +680,31 @@ test("thinking between steps splits their group, as the agent's words do", () =>
       event(2, "tool_started", { turnId: "t", toolUseId: "a", name: "Read", input: { path: "a.ts" } }),
       event(3, "reasoning_delta", { turnId: "t", text: "Next file." }),
       event(4, "tool_started", { turnId: "t", toolUseId: "b", name: "Read", input: { path: "b.ts" } }),
+      event(5, "turn_completed", { turnId: "t" }),
     ]).rows,
   );
-  assert.deepEqual(rows.map((row) => row.kind), ["tools", "reasoning", "tools"]);
+  // Settled, so the thought rests among the steps rather than in the open box.
+  assert.deepEqual(rows.slice(0, 3).map((row) => row.kind), ["tools", "reasoning", "tools"]);
+});
+
+test("while a turn works its thinking is one open box above the reply, and folds back once it settles", () => {
+  const events = [
+    event(1, "user_message", { text: "fix it" }),
+    event(2, "turn_started", { turnId: "t" }),
+    event(3, "reasoning_delta", { turnId: "t", text: "Look at the test." }),
+    event(4, "tool_started", { turnId: "t", toolUseId: "a", name: "Read", input: { path: "a.ts" } }),
+    event(5, "tool_output", { toolUseId: "a", output: "x" }),
+    event(6, "reasoning_delta", { turnId: "t", text: "The fixture is stale." }),
+    event(7, "content_delta", { turnId: "t", text: "Fixed." }),
+  ];
+  const working = projectPhoneConversation(events).rows;
+  assert.deepEqual(working.map((row) => row.kind), ["message", "fold", "reasoning", "message"]);
+  assert.equal(working[2].box, true);
+  assert.deepEqual(working[2].texts, ["Look at the test.", "The fixture is stale."]);
+  assert.equal(working[1].parts.some((part) => part.kind === "reasoning"), false);
+  const settled = projectPhoneConversation([...events, event(8, "turn_completed", { turnId: "t" })]).rows;
+  assert.equal(settled.some((row) => row.box), false);
+  assert.equal(settled[1].parts[0].kind, "reasoning");
 });
 
 test("empty reasoning produces no row, and a stretch that opens blank starts at its words", () => {

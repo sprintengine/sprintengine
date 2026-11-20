@@ -11,6 +11,11 @@
 
 ### Changed
 
+- `deriveConversationRows` shows a working turn's thinking in the open: every
+  stretch of it so far is one `reasoning` row marked `box`, with the stretches
+  in `texts`, just above the reply. Once the turn settles the stretches are
+  rows of their own again, folded with the steps they led to.
+
 - `formatStepDuration` moves up to hours from an hour on ("6h 59m 50s"),
   where it read "419m 50s".
 

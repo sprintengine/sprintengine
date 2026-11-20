@@ -111,6 +111,7 @@ import {
   ToolGroup,
   AgentNoticeRow,
   SideQuestionRow,
+  ReasoningBox,
   TurnFold,
   type StepDetailSource,
 } from "./conversationParts";
@@ -2119,7 +2120,12 @@ const ConversationItem = memo(function ConversationItem({
         {` · ${row.text}`}
       </Text>
     );
-  if (row.kind === "reasoning") return <ThinkingRow text={row.text} live={streaming} onNotice={onNotice} />;
+  if (row.kind === "reasoning")
+    return row.box ? (
+      <ReasoningBox texts={row.texts ?? [row.text]} live={streaming} onNotice={onNotice} />
+    ) : (
+      <ThinkingRow text={row.text} live={streaming} onNotice={onNotice} />
+    );
   if (row.kind === "tools") {
     const starts = row.tools.filter(isSubagentStart);
     if (!starts.length) return <ToolGroup tools={row.tools} source={source} />;

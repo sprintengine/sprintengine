@@ -114,8 +114,23 @@ export type ConversationRow =
    * What the model thought on its way to the reply, one row per stretch of
    * thinking, where in the turn it happened. `live` while it is the last thing
    * the running turn has said: the model is thinking now.
+   *
+   * While its turn is working, the turn's thinking is one row instead, marked
+   * `box`: every stretch so far in `texts`, in order (`text` joins them), drawn
+   * open above the reply as the desktop's Reasoning box. Once the turn settles
+   * the stretches are rows of their own again, folded with the steps they led
+   * to.
    */
-  | { kind: 'reasoning'; id: string; text: string; at: number; live: boolean; turn?: string }
+  | {
+      kind: 'reasoning'
+      id: string
+      text: string
+      at: number
+      live: boolean
+      turn?: string
+      box?: true
+      texts?: string[]
+    }
   | ToolsRow
   /**
    * A turn's work resting behind one line ("Worked for 2m 14s · 12 steps"):
@@ -779,5 +794,69 @@ function foldTurns(
     fold.label = turnFoldLabel(state, counted.length, rules.formatDuration)
     fold.failed = counted.filter(rowStepFailed).length
   }
-  return out
+  return boxWorkingReasoning(out, stateOf)
+}
+
+/**
+ * The thinking of a turn still working, out in the open (owner ruling
+ * 2026-11-20): an agent's thinking often says what it is about to do, and its
+ * later words assume the person read it. Every stretch of it, folded or not,
+ * is gathered into one `box` row that stands just above the reply, or after
+ * the turn's last row while there is none yet.
+ */
+function boxWorkingReasoning(rows: ConversationRow[], stateOf: (turn: string) => TurnState): ConversationRow[] {
+  const working = (turn: string | undefined): turn is string =>
+    turn !== undefined && stateOf(turn).status === 'streaming'
+  const boxes = new Map<string, Extract<ConversationRow, { kind: 'reasoning' }>>()
+  const gather = (turn: string, text: string, at: number, live: boolean) => {
+    const box = boxes.get(turn)
+    if (box) {
+      box.texts!.push(text)
+      box.live = live
+      return
+    }
+    boxes.set(turn, {
+      kind: 'reasoning',
+      id: `reasoning-box:${turn}`,
+      text: '',
+      at,
+      live,
+      turn,
+      box: true,
+      texts: [text],
+    })
+  }
+  const kept: ConversationRow[] = []
+  for (const row of rows) {
+    if (row.kind === 'fold' && working(row.turn) && row.parts.some((part) => part.kind === 'reasoning')) {
+      for (const part of row.parts) if (part.kind === 'reasoning') gather(row.turn, part.text, 0, false)
+      kept.push({ ...row, parts: row.parts.filter((part) => part.kind !== 'reasoning') })
+      continue
+    }
+    if (row.kind === 'reasoning' && working(row.turn)) {
+      gather(row.turn, row.text, row.at, row.live)
+      continue
+    }
+    kept.push(row)
+  }
+  for (const [turn, box] of boxes) {
+    box.text = box.texts!.join('\n\n')
+    // Its turn's time, read off any row of the turn that carries one.
+    for (const row of rows)
+      if ('turn' in row && row.turn === turn && 'at' in row && typeof row.at === 'number' && row.at) {
+        box.at = row.at
+        break
+      }
+    const reply = kept.findIndex((row) => row.kind === 'message' && row.id === `${turn}:reply`)
+    if (reply >= 0) {
+      kept.splice(reply, 0, box)
+      continue
+    }
+    let last = -1
+    kept.forEach((row, index) => {
+      if ('turn' in row && row.turn === turn) last = index
+    })
+    kept.splice(last >= 0 ? last + 1 : kept.length, 0, box)
+  }
+  return kept
 }

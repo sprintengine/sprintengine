@@ -121,31 +121,45 @@ const assistant = (
   ...values,
 })
 
-test('thinking again after prose reads "Thinking", not the first stretch’s duration', () => {
-  const second = renderToStaticMarkup(
+test('a working turn shows its reasoning in the open; a settled one folds it to "Thought for"', () => {
+  const working = renderToStaticMarkup(
     <AssistantTurnBlock
       entry={assistant({
         text: 'Here is the plan.',
-        reasoning: 'First pass.\n\nNow the edge cases.',
+        reasoning: 'Now the edge cases.',
+        reasoningSegments: [{ text: 'First pass.', beforeToolUseId: 'a' }],
         reasoningDurationMs: 4000,
         reasoningLive: true,
+      })}
+      tools={[tool('a')]}
+      decisions={[]}
+      chrome={chrome}
+    />,
+  )
+  // One labelled box, open, with every stretch of the turn's thinking in it,
+  // whatever the fold over the steps is doing.
+  expect(working).toContain('data-reasoning-box=""')
+  expect(working).toContain('aria-expanded="true"')
+  expect(working).toContain('>Reasoning<')
+  expect(working).toContain('First pass.')
+  expect(working).toContain('Now the edge cases.')
+  expect(working).not.toContain('Thought for')
+  const settled = renderToStaticMarkup(
+    <AssistantTurnBlock
+      entry={assistant({
+        status: 'complete',
+        text: 'Here is the plan.',
+        reasoning: 'First pass.',
+        reasoningDurationMs: 4000,
       })}
       tools={[]}
       decisions={[]}
       chrome={chrome}
     />,
   )
-  expect(second).toContain('Thinking')
-  expect(second).not.toContain('Thought for')
-  const closed = renderToStaticMarkup(
-    <AssistantTurnBlock
-      entry={assistant({ text: 'Here is the plan.', reasoning: 'First pass.', reasoningDurationMs: 4000 })}
-      tools={[]}
-      decisions={[]}
-      chrome={chrome}
-    />,
-  )
-  expect(closed).toContain('Thought for 4s')
+  expect(settled).not.toContain('data-reasoning-box')
+  expect(settled).toContain('Thought for 4s')
+  expect(settled).toContain('aria-expanded="false"')
 })
 
 test('a folded older turn says when steps inside it went wrong', () => {
