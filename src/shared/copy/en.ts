@@ -2718,6 +2718,7 @@ export const en = {
         notAnswering: (desktop: unknown) => `${desktop} is not answering.`,
         chatsFrom: (ago: unknown) => `Its chats here are from ${ago}.`,
         pairAgain: 'Pair again',
+        didNotAnswer: 'The desktop did not answer in time.',
       },
       // mobile/src/features/conversations/ConversationsScreen.tsx
       conversationsScreen: {

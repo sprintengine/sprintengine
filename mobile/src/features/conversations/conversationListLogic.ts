@@ -879,3 +879,22 @@ export function chatListPollDue(history: { askedAt: number; failures: number } |
   if (!history || history.failures <= 0) return true;
   return now - history.askedAt >= chatListSlowPollMs(history.failures);
 }
+
+/** How long a desktop's chat list may take before the read lands without it, as not answering. */
+export const CHAT_LIST_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * A list read held to a bound: the read's own answer, or, once the bound
+ * passes, a `timeout` failure (`chatListFailureKind`: not answering). The
+ * request itself is not cancelled; the list just stops waiting for it.
+ */
+export function chatListWithin<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(Object.assign(new Error(copy.phone.conversations.chatListStale.didNotAnswer), { code: "timeout" })),
+      ms,
+    );
+  });
+  return Promise.race([work, bound]).finally(() => clearTimeout(timer));
+}

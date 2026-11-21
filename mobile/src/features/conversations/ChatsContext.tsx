@@ -27,8 +27,10 @@ import {
   canStartChats,
   chatOpenedKey,
   chatRowTitle,
+  CHAT_LIST_READ_TIMEOUT_MS,
   chatListFailureKind,
   chatListPollDue,
+  chatListWithin,
   chatWorkspaceKey,
   lastKnownChatRow,
   type ChatListRow,
@@ -339,7 +341,9 @@ export function ChatsProvider({
         let [threads, workspaces] = await Promise.all([
           // A refusal that is the answer (a pairing that may not read them, a
           // desktop that does not serve them) lists none, and is current.
-          api.list().catch((error: unknown) => {
+          // Within a bound: a desktop that takes the socket and never answers
+          // the list is not answering, and the read lands without it.
+          chatListWithin(api.list(), CHAT_LIST_READ_TIMEOUT_MS).catch((error: unknown) => {
             listError = error;
             return chatListFailureKind(error) === null ? [] : null;
           }),
@@ -477,26 +481,42 @@ export function ChatsProvider({
   // one for the same pairings is in flight joins it: a cold start asked twice
   // in one moment (the provider for the pairings, the list screen for its
   // focus) and opened two sockets to every desktop for the same answer.
-  const inFlight = useRef<{ clients: typeof chatClients; reading: Promise<void> } | null>(null);
-  const read = useCallback((workspacesFrom: "fresh" | "recent") => {
-    const joined = inFlight.current;
-    if (joined && joined.clients === chatClients) return joined.reading;
-    const reading = readChats(workspacesFrom);
-    inFlight.current = { clients: chatClients, reading };
-    void reading
-      .finally(() => {
-        if (inFlight.current?.reading === reading) inFlight.current = null;
-      })
-      .catch(() => undefined);
-    return reading;
-  }, [chatClients, readChats]);
+  //
+  // A poll's read is registered too, so the next poll joins it rather than
+  // starting a read that discards it (`generation`): with a desktop slow to
+  // answer, polls every 15 s would otherwise each throw the last away, and
+  // nothing would ever land. A person's own asking does not join a poll,
+  // which only asked the desktops due a read; it supersedes it.
+  const inFlight = useRef<{ clients: typeof chatClients; reading: Promise<void>; onlyDue: boolean } | null>(null);
+  const start = useCallback(
+    (workspacesFrom: "fresh" | "recent", onlyDue: boolean) => {
+      const reading = readChats(workspacesFrom, onlyDue);
+      inFlight.current = { clients: chatClients, reading, onlyDue };
+      void reading
+        .finally(() => {
+          if (inFlight.current?.reading === reading) inFlight.current = null;
+        })
+        .catch(() => undefined);
+      return reading;
+    },
+    [chatClients, readChats],
+  );
+  const read = useCallback(
+    (workspacesFrom: "fresh" | "recent") => {
+      const joined = inFlight.current;
+      if (joined && joined.clients === chatClients && !joined.onlyDue) return joined.reading;
+      return start(workspacesFrom, false);
+    },
+    [chatClients, start],
+  );
   const refresh = useCallback(() => read("fresh"), [read]);
   const revalidate = useCallback(() => read("recent"), [read]);
-  // A poll joins a read already out, and otherwise asks only the desktops due one.
-  const poll = useCallback(
-    () => inFlight.current?.reading ?? readChats("recent", true),
-    [readChats],
-  );
+  // A poll joins any read already out, and otherwise asks only the desktops due one.
+  const poll = useCallback(() => {
+    const joined = inFlight.current;
+    if (joined && joined.clients === chatClients) return joined.reading;
+    return start("recent", true);
+  }, [chatClients, start]);
 
   // Read on start and whenever the pairings change — a new desktop, a Studio
   // that updated and now streams chats — as well as whenever the list screen

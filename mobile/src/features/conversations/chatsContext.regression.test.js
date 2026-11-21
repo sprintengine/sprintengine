@@ -605,3 +605,24 @@ test("a desktop known to have revoked this phone keeps its chats and says so", a
   assert.equal(h.value().stale.length, 1);
   assert.equal(h.value().stale[0].kind, "signed-out");
 });
+
+test("a poll while a poll is out joins it, so a slow desktop cannot make every poll discard the last", async () => {
+  const h = harness();
+  h.render({ sessions: [desktop("one"), desktop("two")], activeDeviceId: "one" });
+  await settle(h);
+  const before = h.reads.list;
+  const first = h.value().poll();
+  const second = h.value().poll();
+  assert.equal(second, first, "the second poll is the first one's read");
+  await first;
+  await settle(h);
+  assert.equal(h.reads.list, before + 2, "one read per desktop, not two");
+  assert.equal(h.value().chats.length, 6, "and what it read is applied");
+  // A person's own asking does not wait on a poll; it asks every desktop.
+  const polled = h.value().poll();
+  const asked = h.value().refresh();
+  assert.notEqual(asked, polled);
+  await asked;
+  await settle(h);
+  assert.equal(h.value().chats.length, 6);
+});

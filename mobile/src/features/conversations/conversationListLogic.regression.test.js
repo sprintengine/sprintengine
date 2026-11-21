@@ -6,6 +6,7 @@ const {
   chatListFailureKind,
   chatListPollDue,
   chatListSlowPollMs,
+  chatListWithin,
   chatListStaleWords,
   lastKnownChatRow,
   CHAT_DATE_SECTION_LABEL,
@@ -581,4 +582,10 @@ test("a desktop's chats as a last-known list: why, how old, and polled further a
   assert.equal(chatListPollDue({ askedAt: 0, failures: 0 }, 1), true, "a desktop that answers is asked on every poll");
   assert.equal(chatListPollDue({ askedAt: 0, failures: 1 }, CHAT_LIST_SLOW_POLL_MS), false);
   assert.equal(chatListPollDue({ askedAt: 0, failures: 1 }, CHAT_LIST_SLOW_POLL_MS * 2), true);
+});
+
+test("a list read that never answers lands as not answering once its bound passes", async () => {
+  const hung = new Promise(() => {});
+  await assert.rejects(chatListWithin(hung, 5), (error) => chatListFailureKind(error) === "not-answering");
+  assert.equal(await chatListWithin(Promise.resolve("listed"), 1000), "listed", "an answer in time is the answer");
 });
