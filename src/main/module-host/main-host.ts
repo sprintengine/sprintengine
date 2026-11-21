@@ -402,6 +402,55 @@ export type MainKernel = {
    * module events are signals, not diagnostics (see shared/modules/events.ts).
    */
   emitModuleEvent(sourceModuleId: string, topic: string, payload?: unknown): void
+  /**
+   * Hand the kernel the extensions whose code runs in a worker process of its
+   * own (src/server/extensions/workers): their methods and MCP tools are the
+   * worker's, and a call to one starts it when it is not running.
+   */
+  attachWorkers(port: KernelWorkerPort): void
+  /** The host's gate for one of an extension's `studio` methods, as whoever the code running now serves. */
+  gateHostMethod(moduleId: string, method: string): ExtensionHostDecision
+  /** Why `names` would collide with a gateway tool or another module's, or null when they do not. */
+  mcpToolNameProblem(moduleId: string, names: readonly string[]): string | null
+}
+
+/**
+ * The extensions whose code runs in a worker process. The kernel asks it for
+ * what such an extension serves, rather than holding its registrations itself.
+ */
+export type KernelWorkerPort = {
+  /** Whether `moduleId`'s code runs in a worker. */
+  serves(moduleId: string): boolean
+  /** One call of its method, starting the worker first when it is not running. */
+  callMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
+  /** The methods its worker declared when it last ran. */
+  declaredMethods(moduleId: string): ReadonlyArray<{ name: string; access: ModuleMethodAccess }>
+  /** The MCP tools of every worker extension, advertised whether or not it runs now. */
+  mcpTools(): ReadonlyArray<{ moduleId: string; registration: McpToolRegistration }>
+}
+
+/**
+ * A method's answer, checked: its result must be JSON, and a refusal of its
+ * own must carry a code and words. Throws for anything else.
+ */
+export function settleMethodAnswer(
+  moduleId: string,
+  method: string,
+  answer: unknown,
+): Extract<ModuleMethodCallOutcome, { ok: true }> {
+  const given = answer as { ok?: unknown; result?: unknown; code?: unknown; message?: unknown } | null | undefined
+  if (given?.ok === true) {
+    const problem = given.result === undefined ? null : moduleEventPayloadProblem(given.result, 'result')
+    if (problem)
+      throw new Error(`Extension "${moduleId}" method "${method}" answered a result that is not JSON: ${problem}`)
+    return { ok: true, answer: { ok: true, result: (given.result ?? null) as never } }
+  }
+  if (given?.ok === false && typeof given.code === 'string' && typeof given.message === 'string') {
+    return { ok: true, answer: { ok: false, code: given.code, message: given.message } }
+  }
+  throw new Error(
+    `Extension "${moduleId}" method "${method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+  )
 }
 
 /** One call of a module's method, as the Studio protocol carries it. */
@@ -585,6 +634,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   let notificationSeq = 0
   const floodStateByModule = new Map<string, ModuleNotificationFloodState>()
   let started = false
+  let workers: KernelWorkerPort | null = null
 
   function registerMethods(moduleId: string, batch: ModuleMethodRegistrations): void {
     if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
@@ -663,6 +713,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         message: `Extension "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
       }
     }
+    if (workers?.serves(request.moduleId)) return workers.callMethod(request)
     const registration = own?.get(request.method)
     if (!registration) {
       return {
@@ -701,21 +752,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
             : `Extension "${request.moduleId}" refused the params of "${request.method}".`,
       }
     }
-    const answer = ran.answer
-    if (answer?.ok === true) {
-      const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
-      if (problem)
-        throw new Error(
-          `Extension "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
-        )
-      return { ok: true, answer: { ok: true, result: answer.result ?? null } }
-    }
-    if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string') {
-      return { ok: true, answer: { ok: false, code: answer.code, message: answer.message } }
-    }
-    throw new Error(
-      `Extension "${request.moduleId}" method "${request.method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
-    )
+    return settleMethodAnswer(request.moduleId, request.method, ran.answer)
   }
 
   function emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void {
@@ -1235,10 +1272,10 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
                 'core tool names and families are reserved, so give the tool a name of your own.',
             )
           }
-          const existing = [...mcpTools.values()].find((entry) => mcpToolWireName(entry.registration.name) === wire)
+          const existing = allModuleTools().find((entry) => mcpToolWireName(entry.registration.name) === wire)
           if (existing) {
             throw new Error(
-              `MCP tool "${tool.name}" is already registered by module "${existing.owner}"` +
+              `MCP tool "${tool.name}" is already registered by module "${existing.moduleId}"` +
                 (existing.registration.name === tool.name ? '.' : ` (as "${existing.registration.name}").`),
             )
           }
@@ -1408,18 +1445,58 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     loadGenerations.set(moduleId, (loadGenerations.get(moduleId) ?? 0) + 1)
   }
 
+  // Every tool the gateway serves from a module: the ones registered here,
+  // then those of the extensions whose code runs in a worker.
+  function allModuleTools(): Array<{ moduleId: string; registration: McpToolRegistration }> {
+    return [
+      ...[...mcpTools.values()].map(({ owner, registration }) => ({ moduleId: owner, registration })),
+      ...(workers?.mcpTools() ?? []),
+    ]
+  }
+
+  function mcpToolNameProblem(moduleId: string, names: readonly string[]): string | null {
+    const coreNames = [...(options.coreMcpToolNames?.() ?? [])]
+    const others = allModuleTools().filter((tool) => tool.moduleId !== moduleId)
+    const seen = new Map<string, string>()
+    for (const name of names) {
+      const wire = mcpToolWireName(name)
+      const core = coreMcpToolConflict(name, coreNames)
+      if (core)
+        return `MCP tool "${name}" from extension "${moduleId}" collides with the core gateway tool "${core}"; core tool names and families are reserved, so give the tool a name of your own.`
+      const existing = others.find((tool) => mcpToolWireName(tool.registration.name) === wire)
+      if (existing) return `MCP tool "${name}" is already registered by module "${existing.moduleId}".`
+      const twin = seen.get(wire)
+      if (twin !== undefined)
+        return `MCP tool "${name}" is declared twice by extension "${moduleId}" (also as "${twin}").`
+      seen.set(wire, name)
+    }
+    return null
+  }
+
   return {
     hostFor,
     declaredMethods: (moduleId) =>
-      [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
+      workers?.serves(moduleId)
+        ? workers.declaredMethods(moduleId)
+        : [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
     callModuleMethod,
     callFrameMethod: (request) => frameCalls(request),
     mcpToolRegistrations: () =>
-      [...mcpTools.values()].map(({ owner, registration }) => ({
-        moduleId: owner,
-        moduleDisplayName: options.resolveModuleManifest?.(owner)?.displayName ?? owner,
+      allModuleTools().map(({ moduleId, registration }) => ({
+        moduleId,
+        moduleDisplayName: options.resolveModuleManifest?.(moduleId)?.displayName ?? moduleId,
         registration,
       })),
+    attachWorkers(port) {
+      workers = port
+    },
+    gateHostMethod: (moduleId, method) =>
+      gate(
+        moduleId,
+        method,
+        Object.hasOwn(EXTENSION_MAIN_HOST_METHODS, method) ? EXTENSION_MAIN_HOST_METHODS[method] : undefined,
+      ),
+    mcpToolNameProblem,
     startupHooks: () => startupHooks.map((entry) => entry.hook),
     shutdownBeginHooks: () => shutdownBeginHooks.map((entry) => entry.hook),
     shutdownHooks: () => shutdownHooks.map((entry) => entry.hook),

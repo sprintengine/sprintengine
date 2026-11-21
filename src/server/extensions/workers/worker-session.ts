@@ -1,0 +1,341 @@
+import { randomUUID } from 'node:crypto'
+
+import type { StudioPermission } from '../../../../packages/studio-protocol/src/permissions'
+import { studioPrincipal } from '../../../../packages/studio-protocol/src/permissions'
+import { EXTENSION_HOST_REFUSALS } from '../../../../packages/extension-sdk/src/services'
+import type { CliPermissionPreset } from '../../../shared/cli-permission-preset'
+import { isLooserCliPermissionPreset } from '../../../shared/cli-permission-preset'
+import type { MainHost } from '../../../main/module-host/main-host'
+import {
+  currentInvoker,
+  ownerInvoker,
+  runAsInvoker,
+  type ExtensionInvoker,
+} from '../../../main/module-host/extension-invocation'
+import {
+  WORKER_HOST_METHODS,
+  type WorkerArg,
+  type WorkerError,
+  type WorkerHandleMember,
+  type WorkerHandleRef,
+  type WorkerHostAnswerMessage,
+  type WorkerHostCallMessage,
+  type WorkerHostMethod,
+} from './worker-protocol'
+import type { WorkerCall } from './worker-process'
+
+// The server's side of one worker process: who each call into it serves, and
+// every call it makes into Studio.
+//
+// Each call the server sends the worker runs as an invocation the server
+// made: a fresh id, and the invoker that call was made by, kept here and
+// nowhere else. A call the worker makes into Studio names the invocation it
+// serves; the server finds who that is in its own record, and the call goes
+// through the host's gate (extension-host-gate.ts) as the extension and as
+// that invoker. An id the server did not make, or one whose call has ended,
+// is refused; so is a call naming none, unless the extension is a
+// `background` one, whose own work runs as the person who approved it.
+//
+// The ids name what a call is for, not what it may do. A worker serving two
+// invokers at once holds both ids, and nothing stops it putting one on the
+// other's work. So a call is held to every invocation the worker is serving
+// when it is made, not only to the one it names: whichever id it carries, it
+// can do no more than the least of them could. Serving the person alone, it
+// does what the person may; while it also serves a paired device, what it
+// does then is held to that device too.
+//
+// What a call hands back that can be called (an unsubscriber, a companion's
+// handle) stays here as a handle; the worker calls it by number, and each
+// call passes the gate again as whoever the worker serves then. What the
+// worker hands Studio to call back (a listener) is called back as whoever
+// registered it (boundToRegistrant, as the host's services already do), in an
+// invocation of its own.
+
+const ENDED_REMEMBERED = 4096
+
+export type WorkerSessionDeps = {
+  extensionId: string
+  /** The host the kernel handed this extension's load. */
+  host: MainHost
+  /** Whether it is a `background` extension, whose own work may name no invocation. */
+  background: boolean
+  /** Whether the host's gate admits one of its `studio` methods now, as whoever the call runs as. */
+  gate: (method: WorkerHostMethod) => { ok: true } | { ok: false; code: string; message: string }
+  registerMethods: (batch: unknown) => void
+  registerMcpTools: (tools: unknown) => void
+  /** Send the worker a call as `invocation`. */
+  call: (call: WorkerCall & { invocation: string }) => Promise<unknown>
+}
+
+export type WorkerSession = {
+  /** Start an invocation as `invoker`: its id. */
+  begin(invoker: ExtensionInvoker): string
+  end(id: string): void
+  /** Run `call` in the worker as an invocation of `invoker`, ending it once answered. */
+  run(call: WorkerCall, invoker: ExtensionInvoker): Promise<unknown>
+  /** Answer one call the worker made into Studio. */
+  hostCall(message: WorkerHostCallMessage): Promise<Omit<WorkerHostAnswerMessage, 't' | 'id'>>
+  /** How many invocations are live. */
+  live(): number
+  /** The process is gone: end every invocation and stop what it subscribed to. */
+  close(): void
+}
+
+/** A refusal, as it crosses. */
+const refusal = (code: string, message: string): WorkerError => ({ name: 'ExtensionHostRefusal', code, message })
+
+function toWorkerError(error: unknown): WorkerError {
+  if (error instanceof Error) {
+    const code = (error as { code?: unknown }).code
+    return { message: error.message, name: error.name, ...(typeof code === 'string' ? { code } : {}) }
+  }
+  return { message: String(error) }
+}
+
+/** The tighter of two ceilings; null is no ceiling. */
+function tighter(a: CliPermissionPreset | null, b: CliPermissionPreset | null): CliPermissionPreset | null {
+  if (a === null) return b
+  if (b === null) return a
+  return isLooserCliPermissionPreset(a, b) ? b : a
+}
+
+/**
+ * `own`, held to every other invoker the worker serves now: only what all of
+ * them hold, the person's own reach only if every one is the person, and the
+ * tightest ceiling. The words name whoever narrowed it.
+ */
+export function heldToAll(own: ExtensionInvoker, others: readonly ExtensionInvoker[]): ExtensionInvoker {
+  const narrower = others.filter(
+    (other) =>
+      other !== own &&
+      ((own.principal.owner && !other.principal.owner) ||
+        [...own.principal.permissions].some((permission) => !other.principal.permissions.has(permission)) ||
+        tighter(own.permissionCeiling, other.permissionCeiling) !== own.permissionCeiling),
+  )
+  if (narrower.length === 0) return own
+  let permissions: Set<StudioPermission> = new Set(own.principal.permissions)
+  let owner = own.principal.owner
+  let ceiling = own.permissionCeiling
+  for (const other of narrower) {
+    permissions = new Set([...permissions].filter((permission) => other.principal.permissions.has(permission)))
+    owner = owner && other.principal.owner
+    ceiling = tighter(ceiling, other.permissionCeiling)
+  }
+  const labels = [...new Set(narrower.map((other) => other.label))].join(' and ')
+  return {
+    principal: studioPrincipal({ owner, permissions }),
+    permissionCeiling: ceiling,
+    label: `${labels} (whom the extension's worker is also serving now)`,
+  }
+}
+
+/** A plain object, or a host facade, with something on it that can be called. */
+function isCapability(value: unknown): value is object {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value) as unknown
+  if (prototype !== Object.prototype && prototype !== null) return false
+  return Object.keys(value).some((name) => typeof Reflect.get(value, name) === 'function')
+}
+
+export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
+  const { extensionId, host } = deps
+  const invocations = new Map<string, ExtensionInvoker>()
+  const ended = new Set<string>()
+  const handles = new Map<number, unknown>()
+  const listeners = new Map<number, (...args: unknown[]) => unknown>()
+  // What the worker subscribed to, stopped when its process ends.
+  const subscriptions = new Set<() => unknown>()
+  let nextHandle = 0
+  let open = true
+
+  function begin(invoker: ExtensionInvoker): string {
+    const id = randomUUID()
+    invocations.set(id, invoker)
+    return id
+  }
+
+  function end(id: string): void {
+    if (!invocations.delete(id)) return
+    ended.add(id)
+    if (ended.size > ENDED_REMEMBERED) ended.delete(ended.values().next().value as string)
+  }
+
+  async function run(call: WorkerCall, invoker: ExtensionInvoker): Promise<unknown> {
+    const id = begin(invoker)
+    try {
+      return await deps.call({ ...call, invocation: id })
+    } finally {
+      end(id)
+    }
+  }
+
+  /** Who a call naming `id` runs as, or why it is refused. */
+  function invokerFor(id: string | null): { ok: true; invoker: ExtensionInvoker } | { ok: false; error: WorkerError } {
+    if (id === null) {
+      if (!deps.background)
+        return {
+          ok: false,
+          error: refusal(
+            'not_admitted',
+            `Extension "${extensionId}" called Studio outside any call Studio made to it, so Studio refused it. Only a background extension's own work may do that.`,
+          ),
+        }
+      return { ok: true, invoker: heldToAll(ownerInvoker(null, 'its own background work'), [...invocations.values()]) }
+    }
+    if (ended.has(id))
+      return {
+        ok: false,
+        error: refusal(
+          'invocation_ended',
+          `Extension "${extensionId}" called Studio for a call that has already ended, so Studio refused it.`,
+        ),
+      }
+    const invoker = typeof id === 'string' ? invocations.get(id) : undefined
+    if (!invoker)
+      return {
+        ok: false,
+        error: refusal(
+          'not_admitted',
+          `Extension "${extensionId}" named a call Studio did not make to it, so Studio refused it.`,
+        ),
+      }
+    return { ok: true, invoker: heldToAll(invoker, [...invocations.values()]) }
+  }
+
+  function listener(id: number): (...args: unknown[]) => unknown {
+    const known = listeners.get(id)
+    if (known) return known
+    // Called back by the host as whoever registered it (the host binds it so);
+    // that is who this delivery's invocation is for.
+    const made = (...args: unknown[]): unknown => {
+      if (!open) return undefined
+      return run({ kind: 'callback', callback: id, args }, currentInvoker()).catch(() => undefined)
+    }
+    listeners.set(id, made)
+    return made
+  }
+
+  function decodeArgs(args: readonly WorkerArg[]): unknown[] {
+    if (!Array.isArray(args)) throw new Error('A host call carries its arguments as a list.')
+    return args.map((arg) => {
+      if (arg && typeof arg === 'object' && 'callback' in arg && typeof arg.callback === 'number')
+        return listener(arg.callback)
+      return (arg as { value?: unknown } | null)?.value
+    })
+  }
+
+  function keep(value: unknown): WorkerHandleRef {
+    const id = nextHandle++
+    handles.set(id, value)
+    if (typeof value === 'function') return { handle: id, kind: 'function' }
+    const members: Record<string, WorkerHandleMember> = {}
+    for (const name of Object.keys(value as object)) {
+      const member = Reflect.get(value as object, name) as unknown
+      if (typeof member === 'function') members[name] = { fn: true }
+      else if (isCapability(member)) members[name] = { nested: keep(member) }
+      else members[name] = { value: member }
+    }
+    return { handle: id, kind: 'object', members }
+  }
+
+  async function dispatch(message: WorkerHostCallMessage, args: unknown[]): Promise<unknown> {
+    const { target } = message
+    if (target && typeof target === 'object' && 'host' in target) {
+      const name = target.host
+      if (!(WORKER_HOST_METHODS as readonly string[]).includes(name))
+        throw Object.assign(new Error(`"${String(name)}" is not a host method an extension may call.`), {
+          name: 'ExtensionHostRefusal',
+          code: EXTENSION_HOST_REFUSALS.notPermitted,
+        })
+      const method = name as WorkerHostMethod
+      switch (method) {
+        case 'registerMethods':
+        case 'registerMcpTools': {
+          const decision = deps.gate(method)
+          if (!decision.ok)
+            throw Object.assign(new Error(decision.message), { name: 'ExtensionHostRefusal', code: decision.code })
+          if (method === 'registerMethods') deps.registerMethods(args[0])
+          else deps.registerMcpTools(args[0])
+          return undefined
+        }
+        case 'watchModuleAppState': {
+          const stop = host.watchModuleAppState(args[0] as (values: Readonly<Record<string, unknown>>) => void)
+          subscriptions.add(stop)
+          return stop
+        }
+        default:
+          return await (host[method] as (...given: unknown[]) => unknown)(...args)
+      }
+    }
+    if (target && typeof target === 'object' && 'service' in target) {
+      const service = host.requireService({ key: String(target.service) }) as Record<string, unknown>
+      const member =
+        typeof target.method === 'string' && Object.hasOwn(service, target.method) ? service[target.method] : undefined
+      if (typeof member !== 'function')
+        throw Object.assign(
+          new Error(`Service "${String(target.service)}" has no method "${String(target.method)}".`),
+          {
+            name: 'ExtensionHostRefusal',
+            code: EXTENSION_HOST_REFUSALS.notPermitted,
+          },
+        )
+      const result = await (member as (...given: unknown[]) => unknown)(...args)
+      if (typeof result === 'function') subscriptions.add(result as () => unknown)
+      return result
+    }
+    if (target && typeof target === 'object' && 'handle' in target) {
+      const kept = handles.get(target.handle)
+      if (kept === undefined) throw new Error('That handle is not one Studio gave this worker.')
+      let fn: unknown = kept
+      if (target.member !== null) {
+        fn =
+          typeof target.member === 'string' && Object.hasOwn(kept as object, target.member)
+            ? Reflect.get(kept as object, target.member)
+            : undefined
+      }
+      if (typeof fn !== 'function') throw new Error('That handle has nothing of that name to call.')
+      const result = await (fn as (...given: unknown[]) => unknown)(...args)
+      // A stop function, called: it has done its work.
+      if (target.member === null) subscriptions.delete(kept as () => unknown)
+      if (typeof result === 'function') subscriptions.add(result as () => unknown)
+      return result
+    }
+    throw new Error('A host call names a host method, a service or a handle.')
+  }
+
+  return {
+    begin,
+    end,
+    run,
+    live: () => invocations.size,
+    async hostCall(message) {
+      if (!open)
+        return { ok: false, error: refusal('invocation_ended', `Extension "${extensionId}"'s worker was stopped.`) }
+      const resolved = invokerFor(message.invocation)
+      if (!resolved.ok) return { ok: false, error: resolved.error }
+      try {
+        const args = decodeArgs(message.args)
+        const result = await runAsInvoker(resolved.invoker, () => dispatch(message, args))
+        if (typeof result === 'function' || isCapability(result)) return { ok: true, handle: keep(result) }
+        return { ok: true, value: result }
+      } catch (error) {
+        return { ok: false, error: toWorkerError(error) }
+      }
+    },
+    close() {
+      if (!open) return
+      open = false
+      for (const id of [...invocations.keys()]) end(id)
+      for (const stop of subscriptions) {
+        try {
+          void Promise.resolve(stop()).catch(() => undefined)
+        } catch {
+          // Its stop refused (the extension is no longer approved): the host drops it when the load ends.
+        }
+      }
+      subscriptions.clear()
+      handles.clear()
+      listeners.clear()
+    },
+  }
+}

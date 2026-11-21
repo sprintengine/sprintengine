@@ -20,6 +20,8 @@ const SERIAL = [
   // These two wait on a platform's directory watch, which a loaded machine delivers late.
   'src/main/canvas/canvas-service-filesystems.test.ts',
   'src/server/rpc/studio-files.test.ts',
+  // Forks extension workers and times their restarts, ready and call timeouts.
+  'src/server/extensions/workers/worker-lifecycle.test.ts',
   // Builds the WSL server tree and runs real servers through a stand-in for
   // wsl.exe: heavy enough to starve the timing suites it would share a CPU with.
   'src/server/wsl/wsl-environment-manager.test.ts',

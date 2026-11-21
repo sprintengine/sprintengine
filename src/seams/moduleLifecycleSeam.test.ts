@@ -15,11 +15,10 @@ import { readModuleOverridesSync } from '../main/module-host/enablement-store'
 import { loadMainModules } from '../main/module-host/load-modules'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../main/modules/agent-runtime-module'
 import { createModuleLifecycle, liveModuleIds } from '../main/modules/module-lifecycle'
-import {
-  planThirdPartyMainModules,
-  readThirdPartyMainLaunchSnapshot,
-  thirdPartyLaunchSession,
-} from '../main/modules/third-party-main-loader'
+import { createExtensionApprovalReader } from '../main/modules/extension-approvals'
+import { planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
+import { workerEntryForTests } from '../../tests/extension-worker'
 import { createModuleRegistryMirror } from '../main/modules/registry-mirror'
 import { readExtensionStandingContextSync } from '../main/modules/extension-standing-context'
 import { discoverUserModulesSync } from '../main/modules/user-module-registry'
@@ -223,11 +222,19 @@ const chats = () => (sharedChats ??= createChats())
 
 /** One start of the server: what is on disk now, loaded, and served on a socket of its own. */
 async function startServer() {
-  const thirdParty = planThirdPartyMainModules(
-    discoverUserModulesSync(moduleRoot, readExtensionStandingContextSync(dataDir)),
-    { electronMain: false },
-  )
   const hub = createStudioModuleHub()
+  const approvals = createExtensionApprovalReader(dataDir)
+  // Its worker runs in a process of its own, forked from the built entry.
+  const { workers, bind } = createExtensionWorkers({
+    entryPath: workerEntryForTests(),
+    logDir: join(scratch, 'logs'),
+    approvals,
+    stateChanged: () => hub.deliverChanged(),
+  })
+  const thirdParty = planInstalledExtensions(
+    discoverUserModulesSync(moduleRoot, readExtensionStandingContextSync(dataDir)),
+    () => workers,
+  )
   const byId = new Map<string, CapabilityManifest>(
     [AGENT_RUNTIME_MANIFEST, ...thirdParty.modules.map((module) => module.manifest)].map((manifest) => [
       manifest.id,
@@ -250,7 +257,10 @@ async function startServer() {
     ineligible: thirdParty.ineligible,
     launchErrors: thirdParty.launchErrors,
     deliverModuleEvent: (event) => hub.deliverEvent(event),
+    extensionApprovals: thirdParty.approvals,
+    currentApprovals: approvals,
     electronMain: false,
+    onKernel: bind,
   })
   await load.ready
   const manifests = thirdParty.modules.map((module) => module.manifest)
@@ -260,9 +270,16 @@ async function startServer() {
     createModuleLifecycle({
       dataDir,
       moduleRoot: () => moduleRoot,
-      changed: () => hub.deliverChanged(),
-      launchSession: () =>
-        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load.kernel.mcpToolRegistrations()),
+      changed: () => {
+        workers.reconcile()
+        hub.deliverChanged()
+      },
+      run: () => ({
+        attached: (id) => workers.serves(id),
+        worker: (id) => workers.status(id),
+        loadError: (id) => load.report.errors.find((error) => error.id === id)?.message,
+        mcpTools: () => [],
+      }),
       registry: createModuleRegistryMirror(),
       applyEnablement: async (overrides) => {
         await load.applyEnablement(overrides, {
@@ -287,6 +304,7 @@ async function startServer() {
   const stop = async () => {
     await started.dispose()
     await load.kernel.runShutdown()
+    await workers.close()
   }
   cleanups.push(stop)
   return { path: started.path, auth: started.auth, stop }
@@ -345,13 +363,11 @@ test('an extension is installed, approved, called, heard, switched off and on ag
   const second = await startServer()
   const client = await windowOn(second.path)
   const running = await listed(client)
+  // Its worker has not started: nothing has used it yet, so it declares nothing so far.
   assert.deepEqual(running && { enabled: running.enabled, running: running.running, methods: running.methods }, {
     enabled: true,
     running: true,
-    methods: [
-      { name: 'cards.list', access: 'read' },
-      { name: 'cards.add', access: 'operate' },
-    ],
+    methods: [],
   })
   assert.equal(running?.source, 'third-party')
 
@@ -373,6 +389,11 @@ test('an extension is installed, approved, called, heard, switched off and on ag
   assert.ok(events.length > 0, 'the window hears the extension’s events')
   const before = (await deck.read('cards.list', {})) as { ok: true; result: string[] }
   assert.equal(before.ok, true)
+  // Its worker ran, in a process of its own, and declared its methods.
+  assert.deepEqual((await listed(client))?.methods, [
+    { name: 'cards.list', access: 'read' },
+    { name: 'cards.add', access: 'operate' },
+  ])
 
   const added = await deck.operate('cards.add', { title: 'Ship it' }, { commandId: 'add-ship-it' })
   assert.deepEqual(added, { ok: true, result: { count: before.result.length + 1 } })

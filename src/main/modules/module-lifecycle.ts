@@ -22,8 +22,7 @@ import { readModuleOverridesSync, writeModuleOverrides } from '../module-host/en
 import { forgetModules, isModuleIdSegment } from './forget-modules'
 import type { ModuleRegistryMirror } from './registry-mirror'
 import { approvalView } from './extension-approval-view'
-import type { ThirdPartyLaunchSession } from './third-party-main-loader'
-import { toThirdPartyModuleView } from './third-party-module-view'
+import { toThirdPartyModuleView, type ExtensionRunView } from './third-party-module-view'
 import { collectExtensionContributions, readExtensionSurfaceEntry } from './extension-surface-entries'
 import { isExtensionRunnable } from './module-signature'
 import { pinExtensionFrame } from './extension-frame-grant'
@@ -44,7 +43,8 @@ import { discoverUserModules, installModuleFolder } from './user-module-registry
 // - Installing, approving and uninstalling change what is on disk and in the
 //   approvals (extension-approvals.ts); the kernel reads them at its next
 //   start. `changed` tells the clients, which list what the approved
-//   extensions add again. Installing a new version of an approved extension keeps
+//   extensions add again, and the server, which stops a worker whose
+//   approval is gone or changed since it started. Installing a new version of an approved extension keeps
 //   the approval when it asks for no more access; otherwise it waits.
 // - Listing the installed extensions (`extension.installed`) reads the disk, the
 //   approvals and the receipts now, with what this server run loaded; what
@@ -98,8 +98,8 @@ export type ModuleLifecycleDeps = {
   applyEnablement: (overrides: Record<string, boolean>) => Promise<{ ok: true } | { ok: false; message: string }>
   /** What is installed or approved changed: tell the windows. */
   changed: () => void
-  /** What this server run's kernel loaded of the extensions' main halves, and their tools. */
-  launchSession: () => ThirdPartyLaunchSession
+  /** What this server run did with its extensions: their workers and their tools. */
+  run: () => ExtensionRunView
   /** The registry a window resolved, kept for the agents' `module.*` tools. */
   registry: Pick<ModuleRegistryMirror, 'write'>
 }
@@ -175,14 +175,10 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
 
     async installed() {
       const { modules, rejected } = await discoverUserModules(deps.moduleRoot(), standingContext())
-      const session = deps.launchSession()
+      const run = deps.run()
       const overrides = readModuleOverridesSync(deps.dataDir)
       return {
-        modules: modules.map((module) =>
-          toThirdPartyModuleView(module, session.snapshot, overrides, {
-            mcpTools: session.mcpTools.get(module.key) ?? [],
-          }),
-        ),
+        modules: modules.map((module) => toThirdPartyModuleView(module, run, overrides)),
         rejected,
       }
     },

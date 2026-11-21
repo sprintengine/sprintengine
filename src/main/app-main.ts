@@ -20,12 +20,10 @@ import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
 import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
-import {
-  planThirdPartyMainModules,
-  readThirdPartyMainLaunchSnapshot,
-  thirdPartyLaunchSession,
-  recordThirdPartyMainLaunchReport,
-} from './modules/third-party-main-loader'
+import { planInstalledExtensions } from '../server/extensions/extension-plan'
+import { createExtensionWorkers } from '../server/extensions/workers/worker-manager'
+import { resolveWorkerEntryPath } from '../server/extensions/workers/worker-process'
+import { join } from 'node:path'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
 import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
@@ -131,8 +129,20 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
 // `dependsOn: ['agent-runtime']`. See docs/extension-authors/drop-in-extensions.md.
 const moduleOverrides = readModuleEnablementOverrides()
 
-const thirdPartyMainLoad = planThirdPartyMainModules(
+const extensionApprovals = createExtensionApprovalReader(app.getPath('userData'))
+// Every worker extension's code runs in a process of its own
+// (src/server/extensions/workers). Out of process the server holds them.
+const extensionWorkers = createExtensionWorkers({
+  entryPath: resolveWorkerEntryPath(),
+  logDir: join(app.getPath('logs'), 'extensions'),
+  approvals: extensionApprovals,
+  toolsChanged: () => services.automationService?.notifyToolsListChanged(),
+  stateChanged: () => services.moduleHub.deliverChanged(),
+})
+if (!serverHost) app.once('will-quit', () => void extensionWorkers.workers.close())
+const thirdPartyMainLoad = planInstalledExtensions(
   discoverUserModulesSync(defaultUserModuleRoot(), readExtensionStanding()),
+  () => extensionWorkers.workers,
 )
 // Live-resolved main enablement, kept in step with the renderer's overrides (see
 // recomputeMainEnablement below). A module with no main runtime of its own — one
@@ -186,11 +196,12 @@ const moduleLoad = loadMainModules({
   moduleMcpTools: thirdPartyMainLoad.mcpTools,
   // What each extension runs under; its calls are refused once that approval is gone.
   extensionApprovals: thirdPartyMainLoad.approvals,
-  currentApprovals: createExtensionApprovalReader(app.getPath('userData')),
+  currentApprovals: extensionApprovals,
   resolveFrameGrant: createExtensionFrameGrant({
-    approvals: createExtensionApprovalReader(app.getPath('userData')),
+    approvals: extensionApprovals,
     dataDir: app.getPath('userData'),
   }),
+  onKernel: extensionWorkers.bind,
   frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
@@ -239,11 +250,23 @@ if (!serverHost)
     createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
-      changed: () => services.moduleHub.deliverChanged(),
-      // What this session's kernel loaded, read only when an extension list is
+      // A worker whose approval is gone or changed stops, and the windows hear.
+      changed: () => {
+        extensionWorkers.workers.reconcile()
+        services.moduleHub.deliverChanged()
+      },
+      // What this session's kernel holds, read only when an extension list is
       // asked for, long after `moduleLoad` exists.
-      launchSession: () =>
-        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), moduleLoad.kernel.mcpToolRegistrations()),
+      run: () => {
+        const { workers } = extensionWorkers
+        const tools = moduleLoad.kernel.mcpToolRegistrations()
+        return {
+          attached: (id) => workers.serves(id) && workers.status(id)?.state !== 'stopped',
+          worker: (id) => workers.status(id),
+          loadError: (id) => moduleLoad.report.errors.find((error) => error.id === id)?.message,
+          mcpTools: (id) => tools.filter((tool) => tool.moduleId === id).map((tool) => tool.registration.name),
+        }
+      },
       registry: services.moduleRegistryMirror,
       applyEnablement: async (overrides) => {
         const report = await moduleLoad.applyEnablement(overrides, {
@@ -297,10 +320,6 @@ services.setModuleEnabledResolver((moduleId) => enabledMainModuleIds.has(moduleI
 // constructed above, before loadMainModules ran; this seam hands it the live
 // registry, and the per-request evaluation makes the tools visible immediately.
 services.setModuleMcpToolsResolver(() => moduleLoad.kernel.mcpToolRegistrations())
-recordThirdPartyMainLaunchReport(
-  thirdPartyMainLoad.modules.map((module) => module.manifest.id),
-  moduleLoad.report,
-)
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
@@ -350,8 +369,8 @@ if (DIAGNOSTICS_ENABLED) {
   if (moduleLoad.report.errors.length > 0) {
     console.warn('[modules] load errors:', moduleLoad.report.errors)
   }
-  if (thirdPartyMainLoad.diagnostics.rejected.length > 0) {
-    console.warn('[modules] rejected third-party modules:', thirdPartyMainLoad.diagnostics.rejected)
+  if (thirdPartyMainLoad.launchErrors.length > 0) {
+    console.warn('[modules] rejected third-party modules:', thirdPartyMainLoad.launchErrors)
   }
 }
 

@@ -3,9 +3,10 @@ import type {
   ThirdPartyModuleLaunchView,
   ThirdPartyModuleView,
 } from '../../shared/modules/manifest'
+import type { WorkerStatus } from '../../server/extensions/workers/worker-manager'
+import { sanitizeEntryMessage } from './entry-containment'
 import { approvalView } from './extension-approval-view'
 import { isExtensionRunnable } from './module-signature'
-import { readThirdPartyMainLaunchSnapshot, type ThirdPartyMainLaunchSnapshot } from './third-party-main-loader'
 import { surfaceEntriesView } from './extension-surface-entries'
 import type { InstalledModule } from './user-module-registry'
 
@@ -13,11 +14,29 @@ import type { InstalledModule } from './user-module-registry'
 // whether the person approved it as it is, its signature, and whether it runs
 // (module-lifecycle.ts).
 
+/** What this server run did with its extensions: which it loaded, how each worker stands, and their tools. */
+export type ExtensionRunView = {
+  /** Whether this run's kernel holds its worker (it was approved and switched on at load, or since). */
+  attached(moduleId: string): boolean
+  /** Its worker now, while the kernel holds it. */
+  worker(moduleId: string): WorkerStatus | null
+  /** Why it failed to load in this run. */
+  loadError(moduleId: string): string | undefined
+  /** The MCP tools it serves on the gateway. */
+  mcpTools(moduleId: string): string[]
+}
+
+export const NO_EXTENSION_RUN: ExtensionRunView = {
+  attached: () => false,
+  worker: () => null,
+  loadError: () => undefined,
+  mcpTools: () => [],
+}
+
 export function toThirdPartyModuleView(
   module: InstalledModule,
-  launchSnapshot: ThirdPartyMainLaunchSnapshot = readThirdPartyMainLaunchSnapshot(),
+  run: ExtensionRunView = NO_EXTENSION_RUN,
   enablementOverrides: ModuleEnablementOverrides = {},
-  extras: Pick<ThirdPartyModuleView, 'mcpTools'> = {},
 ): ThirdPartyModuleView {
   return {
     manifest: module.manifest,
@@ -25,26 +44,26 @@ export function toThirdPartyModuleView(
     approval: approvalView(module.standing.approval),
     signature: module.standing.signature,
     ...(module.standing.signer ? { signer: module.standing.signer } : {}),
-    launch: launchViewFor(module, launchSnapshot, enablementOverrides),
-    ...extras,
+    launch: launchViewFor(module, run, enablementOverrides),
+    mcpTools: run.mcpTools(module.key),
   }
 }
 
 function launchViewFor(
   module: InstalledModule,
-  launchSnapshot: ThirdPartyMainLaunchSnapshot,
+  run: ExtensionRunView,
   enablementOverrides: ModuleEnablementOverrides,
 ): ThirdPartyModuleLaunchView {
   return {
-    ...mainEntryLaunchView(module, launchSnapshot, enablementOverrides),
-    mainLoaded: launchSnapshot.loaded.has(module.key),
+    ...mainEntryLaunchView(module, run, enablementOverrides),
+    mainLoaded: run.attached(module.key),
     rendererEntry: surfaceEntriesView(module),
   }
 }
 
 function mainEntryLaunchView(
   module: InstalledModule,
-  launchSnapshot: ThirdPartyMainLaunchSnapshot,
+  run: ExtensionRunView,
   enablementOverrides: ModuleEnablementOverrides,
 ): ThirdPartyModuleLaunchView {
   const id = module.key
@@ -81,13 +100,22 @@ function mainEntryLaunchView(
     }
   }
 
-  const launchError = launchSnapshot.errors.get(id)
-  if (launchError) {
+  const loadError = run.loadError(id)
+  if (loadError) {
     return {
       status: 'launch_error',
       hasMainEntry,
       expectedToLoad: false,
-      message: launchError,
+      message: sanitizeEntryMessage(loadError, 'The extension’s worker failed during startup.'),
+    }
+  }
+  const worker = run.worker(id)
+  if (worker?.state === 'errored' || (worker?.state === 'stopped' && worker.message)) {
+    return {
+      status: 'launch_error',
+      hasMainEntry,
+      expectedToLoad: false,
+      message: sanitizeEntryMessage(worker.message ?? '', 'Its worker stopped.'),
     }
   }
 
@@ -96,6 +124,11 @@ function mainEntryLaunchView(
     status: 'runs_worker',
     hasMainEntry,
     expectedToLoad,
-    message: expectedToLoad ? 'Its worker runs.' : 'Its worker is switched off until you switch it on.',
+    ...(worker?.state === 'waiting' && worker.message ? { waiting: worker.message } : {}),
+    message: expectedToLoad
+      ? worker?.state === 'running'
+        ? 'Its worker runs.'
+        : 'Its worker starts when something uses it.'
+      : 'Its worker is switched off until you switch it on.',
   }
 }

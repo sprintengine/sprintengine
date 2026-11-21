@@ -3,15 +3,25 @@ import assert from 'node:assert/strict'
 import { validateExtensionManifest } from '../../../packages/extension-sdk/src/extension-manifest'
 import { extensionManifest } from '../../../tests/extension-folder'
 import { capabilityManifestOf } from '../../shared/modules/third-party-manifest'
-import {
-  readThirdPartyMainLaunchSnapshot,
-  recordThirdPartyMainLaunchReport,
-  thirdPartyLaunchSession,
-  type ThirdPartyMainLaunchSnapshot,
-} from './third-party-main-loader'
+import type { WorkerStatus } from '../../server/extensions/workers/worker-manager'
 import type { InstalledModule } from './user-module-registry'
-import { toThirdPartyModuleView } from './third-party-module-view'
+import { toThirdPartyModuleView, type ExtensionRunView } from './third-party-module-view'
 import { test } from 'vitest'
+
+/** What a server run did with its extensions, as the view reads it. */
+function runView(options: {
+  attached?: string[]
+  errors?: Record<string, string>
+  workers?: Record<string, WorkerStatus>
+  tools?: Record<string, string[]>
+}): ExtensionRunView {
+  return {
+    attached: (id) => options.attached?.includes(id) ?? false,
+    worker: (id) => options.workers?.[id] ?? (options.attached?.includes(id) ? { state: 'idle' } : null),
+    loadError: (id) => options.errors?.[id],
+    mcpTools: (id) => options.tools?.[id] ?? [],
+  }
+}
 
 test('third-party-module-view', async () => {
   function main(): void {
@@ -24,11 +34,11 @@ test('third-party-module-view', async () => {
   }
 
   function testLaunchReadinessClasses(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(['approved-main']),
-      manifestOnly: new Set(['manifest-only']),
-      errors: new Map([['broken-main', 'main must export activate(studio), as a named export or its default.']]),
-    }
+    const snapshot = runView({
+      attached: ['approved-main'],
+      workers: { 'approved-main': { state: 'running' } },
+      errors: { 'broken-main': 'main must export activate(studio), as a named export or its default.' },
+    })
 
     assert.deepEqual(
       toThirdPartyModuleView(installedModule({ id: 'approved-main', standing: 'approved', main: 'main.cjs' }), snapshot)
@@ -110,11 +120,7 @@ test('third-party-module-view', async () => {
   }
 
   function testExpectedToLoadUsesEnablementOverrides(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(['default-on-disabled']),
-      manifestOnly: new Set(),
-      errors: new Map(),
-    }
+    const snapshot = runView({ attached: ['default-on-disabled'] })
 
     assert.deepEqual(
       toThirdPartyModuleView(
@@ -141,17 +147,13 @@ test('third-party-module-view', async () => {
         expectedToLoad: true,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Its worker runs.',
+        message: 'Its worker starts when something uses it.',
       },
     )
   }
 
   function testCurrentBlockedStateWinsOverStaleLaunchError(): void {
-    const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(),
-      manifestOnly: new Set(),
-      errors: new Map([['changed-module', 'Previous startup failed.']]),
-    }
+    const snapshot = runView({ errors: { 'changed-module': 'Previous startup failed.' } })
 
     assert.deepEqual(
       toThirdPartyModuleView(installedModule({ id: 'changed-module', standing: 'pending', main: 'main.cjs' }), snapshot)
@@ -181,17 +183,10 @@ test('third-party-module-view', async () => {
       'Cannot read \\\\build-box\\share\\main.cjs',
     ]
     for (const message of leaking) {
-      recordThirdPartyMainLaunchReport(['broken-main'], {
-        loaded: [],
-        manifestOnly: [],
-        disabled: [],
-        sidecars: [],
-        errors: [{ id: 'broken-main', message }],
-      })
       assert.deepEqual(
         toThirdPartyModuleView(
           installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }),
-          readThirdPartyMainLaunchSnapshot(),
+          runView({ errors: { 'broken-main': message } }),
         ).launch,
         {
           status: 'launch_error',
@@ -208,14 +203,13 @@ test('third-party-module-view', async () => {
       'main must export activate(studio), as a named export or its default.',
       'and/or 1/2 failed: see https://example.com/help',
     ]) {
-      recordThirdPartyMainLaunchReport(['broken-main'], {
-        loaded: [],
-        manifestOnly: [],
-        disabled: [],
-        sidecars: [],
-        errors: [{ id: 'broken-main', message }],
-      })
-      assert.equal(readThirdPartyMainLaunchSnapshot().errors.get('broken-main'), message)
+      assert.equal(
+        toThirdPartyModuleView(
+          installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }),
+          runView({ errors: { 'broken-main': message } }),
+        ).launch.message,
+        message,
+      )
     }
   }
 
@@ -260,14 +254,13 @@ function installedModule(options: {
   }
 }
 
-test('the view carries the approval, the signature, and what it registered this session', () => {
-  const snapshot: ThirdPartyMainLaunchSnapshot = { loaded: new Set(['m']), manifestOnly: new Set(), errors: new Map() }
+test('the view carries the approval, the signature, and the tools it serves', () => {
+  const snapshot = runView({ attached: ['m'], tools: { m: ['m_search'] } })
   const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
   const view = toThirdPartyModuleView(
     { ...module, standing: { ...module.standing, signature: 'verified', signer: 'abc' } },
     snapshot,
     {},
-    { mcpTools: ['m_search'] },
   )
   assert.deepEqual(view.approval, { state: 'approved', fingerprint: 'sha256-test' })
   assert.equal(view.signature, 'verified')
@@ -280,16 +273,29 @@ test('the view carries the approval, the signature, and what it registered this 
   assert.deepEqual(toThirdPartyModuleView(waiting, snapshot).approval, { state: 'pending', fingerprint: 'sha256-test' })
 })
 
-test('the launch session groups each module’s MCP tools under it', () => {
-  const session = thirdPartyLaunchSession(
-    { loaded: new Set(['a']), manifestOnly: new Set(), errors: new Map([['b', 'boom']]) },
-    [
-      { moduleId: 'a', registration: { name: 'a.one' } },
-      { moduleId: 'a', registration: { name: 'a.two' } },
-    ],
+test('a worker that crashed past its restarts reads as failed, with why', () => {
+  const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
+  const message = 'Extension "m"\'s worker stopped after it crashed 4 times; it exited unexpectedly (SIGKILL).'
+  assert.deepEqual(
+    toThirdPartyModuleView(module, runView({ attached: ['m'], workers: { m: { state: 'errored', message } } })).launch,
+    {
+      status: 'launch_error',
+      hasMainEntry: true,
+      expectedToLoad: false,
+      mainLoaded: true,
+      rendererEntry: { availability: 'none' },
+      message,
+    },
   )
-  assert.deepEqual([...session.snapshot.loaded], ['a'])
-  assert.equal(session.snapshot.errors.get('b'), 'boom')
-  assert.deepEqual(session.mcpTools.get('a'), ['a.one', 'a.two'])
-  assert.equal(thirdPartyLaunchSession(session.snapshot, []).mcpTools.size, 0)
+})
+
+test('a worker waiting for a place says why', () => {
+  const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
+  const waiting = 'Waiting to start: 16 extensions already run in the background.'
+  const launch = toThirdPartyModuleView(
+    module,
+    runView({ attached: ['m'], workers: { m: { state: 'waiting', message: waiting } } }),
+  ).launch
+  assert.equal(launch.status, 'runs_worker')
+  assert.equal(launch.waiting, waiting)
 })
