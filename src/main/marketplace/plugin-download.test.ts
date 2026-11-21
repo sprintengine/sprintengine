@@ -283,7 +283,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot: join(dir, 'staging'),
@@ -314,7 +313,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot: join(dir, 'staging'),
@@ -350,7 +348,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot,
@@ -387,7 +384,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot,
@@ -419,7 +415,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot: join(dir, 'staging'),
         fetcher,
       })
@@ -440,7 +436,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot: join(dir, 'staging'),
         fetcher,
       })
@@ -464,7 +460,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot,
@@ -489,7 +484,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot,
         fetcher,
       })
@@ -511,7 +506,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot,
         fetcher,
       })
@@ -547,7 +542,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot,
         fetcher,
       })
@@ -576,7 +571,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot,
         fetcher,
       })
@@ -601,7 +596,7 @@ test('plugin-download', async () => {
 
       const result = await downloadMarketplacePluginBundle({
         entry: signed.entry,
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot,
         fetcher,
       })
@@ -618,7 +613,7 @@ test('plugin-download', async () => {
     let fetched = false
     const result = await downloadMarketplacePluginBundle({
       entry: { ...fixture.entry, source: 'http://example.com/plugins/downloaded-plugin' },
-      trustContext: { trustedModules: new Map() },
+      trustContext: {},
       fetcher: async () => {
         fetched = true
         return textResponse('unexpected')
@@ -635,7 +630,7 @@ test('plugin-download', async () => {
     let fetched = false
     const result = await downloadMarketplacePluginBundle({
       entry: { ...fixture.entry, source: 'https://evil.example.com/plugins/downloaded-plugin' },
-      trustContext: { trustedModules: new Map() },
+      trustContext: {},
       fetcher: async () => {
         fetched = true
         return textResponse('unexpected')
@@ -656,7 +651,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: fixture.entry,
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot,
@@ -708,7 +702,6 @@ test('plugin-download', async () => {
       const result = await downloadMarketplacePluginBundle({
         entry: { ...fixture.entry, source },
         trustContext: {
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         },
         stagingRoot: join(dir, 'staging'),
@@ -968,7 +961,7 @@ test('plugin-download', async () => {
       const sha = 'ab12'.padEnd(40, 'f')
       const result = await downloadAtResolvedCommit({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map(), trustedKeyFingerprints: new Set([fixture.fingerprint]) },
+        trustContext: { trustedKeyFingerprints: new Set([fixture.fingerprint]) },
         stagingRoot: join(dir, 'staging'),
         fetcher: async (url, init) => {
           const headers = (init.headers ?? {}) as Record<string, string>
@@ -996,7 +989,7 @@ test('plugin-download', async () => {
       const pinnedRequests: string[] = []
       const pinned = await downloadAtResolvedCommit({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map(), trustedKeyFingerprints: new Set([fixture.fingerprint]) },
+        trustContext: { trustedKeyFingerprints: new Set([fixture.fingerprint]) },
         stagingRoot: join(dir, 'staging'),
         commitSha: sha,
         fetcher: async (url, init) => {
@@ -1020,7 +1013,7 @@ test('plugin-download', async () => {
       const requests: string[] = []
       const dashed = await downloadAtResolvedCommit({
         entry: { ...fixture.entry, source: 'https://github.com/sprintengine/studio-releases/tree/-evil/plugins/x' },
-        trustContext: { trustedModules: new Map() },
+        trustContext: {},
         stagingRoot: join(dir, 'staging'),
         fetcher: async (url) => {
           requests.push(url)
@@ -1036,7 +1029,7 @@ test('plugin-download', async () => {
       writeFileSync(join(packagedBundle, 'mcp', 'server.json'), mcpComponentSource(), 'utf8')
       const offline = await downloadAtResolvedCommit({
         entry: fixture.entry,
-        trustContext: { trustedModules: new Map(), trustedKeyFingerprints: new Set([fixture.fingerprint]) },
+        trustContext: { trustedKeyFingerprints: new Set([fixture.fingerprint]) },
         stagingRoot: join(dir, 'staging'),
         fetcher: async (url) => {
           requests.push(url)

@@ -112,7 +112,7 @@ test('module-notifications', async () => {
   }
 
   function testThirdPartyLoadErrorsBecomeNotificationsBundledStayLogOnly(): void {
-    const blockedThirdParty = thirdPartyManifestOnly('untrusted-module')
+    const blockedThirdParty = thirdPartyManifestOnly('unapproved-module')
     const failingThirdParty: CapabilityModule = {
       manifest: {
         id: 'broken-module',
@@ -134,14 +134,14 @@ test('module-notifications', async () => {
 
     const { report, kernel } = loadMainModules({
       modules: [blockedThirdParty, failingThirdParty, failingBundled],
-      ineligible: { 'untrusted-module': 'untrusted' },
+      ineligible: { 'unapproved-module': 'unapproved' },
     })
     const delivered = kernel.recentNotifications()
 
     assert.equal(report.errors.length, 3)
     assert.deepEqual(
       delivered.map((n) => n.sourceModuleId).sort(),
-      ['broken-module', 'untrusted-module'],
+      ['broken-module', 'unapproved-module'],
       'only third-party load errors graduate to notifications',
     )
     for (const notification of delivered) {
@@ -153,8 +153,8 @@ test('module-notifications', async () => {
       'Module startup failed.',
       'a message containing an absolute path is replaced, never forwarded',
     )
-    const untrusted = delivered.find((n) => n.sourceModuleId === 'untrusted-module')
-    assert.match(untrusted?.body ?? '', /not trusted yet/)
+    const unapproved = delivered.find((n) => n.sourceModuleId === 'unapproved-module')
+    assert.match(unapproved?.body ?? '', /waits for your approval/)
   }
 
   testNotifyStampsScopedModuleIdentity()
@@ -174,6 +174,7 @@ const thirdPartyManifest = (id: string, displayName: string): CapabilityManifest
   version: 1,
   defaultEnabled: true,
   source: 'third-party',
+  permissions: ['notifications:show'],
 })
 
 test('a notify is delivered to the clients, stamped with id and display name', () => {

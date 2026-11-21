@@ -13,9 +13,8 @@
 //    node_modules, .git and key files are never copied;
 // 3. signs the installed copy when a key is at hand (--key,
 //    $SPRINTENGINE_SIGNING_KEY, or ~/.sprintengine/keys/<id>.key), writing its
-//    extension.sig. Studio trusts an extension signed by a publisher key the
-//    person trusts. With no key it installs unsigned, and Studio waits for the
-//    person to trust it in Settings → Extensions.
+//    extension.sig. With no key it installs unsigned. Signed or not, Studio
+//    waits for the person to approve it in Settings → Extensions.
 //
 // The project's own extension/ is never written: a signature for publishing is
 // `npx sprintengine-extension sign extension --key <file>`.
@@ -104,7 +103,7 @@ if (keyPath !== undefined) {
   if (signed.status !== 0) discard(`Signing failed:\n${signed.stderr}`)
 } else if (existsSync(signaturePath) && run(['verify', staging]).status !== 0) {
   // A signature over other files reads as tampered, which Studio refuses
-  // outright; unsigned, the person can at least trust it by hand.
+  // outright; unsigned, the person can at least approve it.
   console.warn(
     'warning: extension.sig does not match this build and there is no key to sign it again; installing unsigned.',
   )
@@ -123,6 +122,6 @@ console.log(
 console.log('')
 console.log(
   state === 'signed'
-    ? 'Studio trusts it if you trust the key that signed it; otherwise trust it in Settings → Extensions.'
-    : `Next, in SprintEngine Studio: Settings → Extensions → ${manifest.name} → trust it. Each new build asks again.`,
+    ? `Next, in SprintEngine Studio: Settings → Extensions → ${manifest.name} → approve it. The signature shows who signed it; each new build asks again.`
+    : `Next, in SprintEngine Studio: Settings → Extensions → ${manifest.name} → approve it. Each new build asks again.`,
 )

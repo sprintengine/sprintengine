@@ -15,7 +15,6 @@ test('agent-skill-installer', async () => {
   function bundledRegistry(): PluginRegistry {
     const registry = createPluginRegistry(
       createAppPluginRegistryOptions(
-        join(process.cwd(), 'node_modules', '.cache', 'sprintengine'),
         join(process.cwd(), 'resources', 'plugins'),
         join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'plugins-none'),
       ),

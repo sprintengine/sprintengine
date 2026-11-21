@@ -8,6 +8,7 @@ import {
 } from './contract.js'
 import { STUDIO_EXTENSION_HOST_CAPABILITY } from './handshake.js'
 import type {
+  StudioExtensionApproval,
   ModuleRegistrySnapshot,
   ModuleRegistrySnapshotWriteResult,
   ThirdPartyModuleListResult,
@@ -16,7 +17,7 @@ import type {
 
 // What a Studio's modules say to its clients. A module is a capability its
 // server runs (a bundled one, or an extension the person installed and
-// trusted); its main half emits events for its own client half and raises bell
+// approved); its main half emits events for its own client half and raises bell
 // rows, and both reach every client following these streams.
 //
 // - `extension.events`: what the modules emit, every module's or one's
@@ -43,18 +44,22 @@ import type {
 //
 // - `extension.list`: every module this Studio knows, whether it is switched on
 //   and running here, and the methods it declares.
-// - `extension.setEnabled`, `extension.install`, `extension.setTrust`,
+// - `extension.setEnabled`, `extension.install`, `extension.approve`,
 //   `extension.uninstall`: what runs here. Each is an owner's
 //   (`STUDIO_MODULES_OWNER`), a mutation under the client's `commandId`, and
-//   answers the server's own outcome as its result. Installing, trusting and
+//   answers the server's own outcome as its result. Installing, approving and
 //   uninstalling change what the server loads at its next start; switching a
 //   module on or off applies at once where its main half can load live.
+//   An extension beyond content runs only once the person approved it as it is
+//   now: `extension.approve` names the fingerprint the person was shown, and is
+//   refused when the extension changed since.
 //
-// - `extension.installed`: every extension installed here, with its trust, where
-//   it came from and whether it runs; what Settings and the Extensions door
-//   list. `extension.rendererEntries`: the trusted extensions' window halves, for
-//   a desktop window of this Studio to run. `extension.changed`: what is
-//   installed or trusted here changed, so a window lists and loads them again.
+// - `extension.installed`: every extension installed here, with its approval,
+//   its signature, where it came from and whether it runs; what Settings and the
+//   Extensions door list. `extension.rendererEntries`: the approved extensions'
+//   window halves, for a desktop window of this Studio to run.
+//   `extension.changed`: what is installed or approved here changed, so a
+//   window lists and loads them again.
 // - `extension.setAppState`: the person's values for the modules' Settings
 //   sections, which their main halves read here (`settings:write`).
 //   `extension.reportRegistry`: the module registry a window resolved, its window
@@ -135,7 +140,7 @@ export type StudioModuleAnswer = { ok: true; result: unknown } | { ok: false; co
 
 /** Why changing what runs on a Studio is an owner's. */
 export const STUDIO_MODULES_OWNER =
-  'It changes what runs on this machine: an extension’s code is installed, trusted, started or stopped.'
+  'It changes what runs on this machine: an extension’s code is installed, approved, started or stopped.'
 
 /** Why `extension.reportRegistry` is an owner's only. */
 export const STUDIO_MODULES_REPORT_OWNER =
@@ -156,7 +161,7 @@ export type StudioModuleSummary = {
   enabled: boolean
   /** Running here now: its main half loaded, or (a window-only extension) its manifest. */
   running: boolean
-  /** Why a switched-on module does not run: not trusted, a bad signature, a failed load. */
+  /** Why a switched-on module does not run: not approved, a bad signature, a failed load. */
   blocked?: string
   /** What it declares (`extension.read` / `extension.operate`), empty while it is not running. */
   methods: StudioModuleDeclaredMethod[]
@@ -164,9 +169,6 @@ export type StudioModuleSummary = {
 
 /** A lifecycle change's outcome: done, or the server's refusal in its words. */
 export type StudioModuleLifecycleAnswer<T extends object = object> = ({ ok: true } & T) | { ok: false; message: string }
-
-/** A module's trust as its signature and the person's grant classify it. */
-export type StudioModuleTrust = 'trusted' | 'signed' | 'unsigned' | 'invalid'
 
 export type StudioModulesMethodMap = {
   /** Call a method the module declared `read`. */
@@ -194,18 +196,22 @@ export type StudioModulesMethodMap = {
   }
   /**
    * Install the extension in a folder on this machine, under `local.<id>`. It
-   * runs once trusted. Symbolic links in the folder are left out of the copy
-   * and named in `strippedLinks`.
+   * runs once approved (`approval`); a new version of an approved extension
+   * keeps its approval when it asks for no more. Symbolic links in the folder
+   * are left out of the copy and named in `strippedLinks`.
    */
   'extension.install': {
     params: { path: string; commandId: string }
     result:
-      | { ok: true; moduleId: string; trust: StudioModuleTrust; strippedLinks: string[] }
+      | { ok: true; moduleId: string; approval: StudioExtensionApproval; strippedLinks: string[] }
       | { ok: false; message: string; issues?: Array<{ path: string; message: string }> }
   }
-  /** Trust an installed extension's manifest and code as they are now, or withdraw trust. */
-  'extension.setTrust': {
-    params: { moduleId: string; trusted: boolean; commandId: string }
+  /**
+   * Approve an installed extension as it is now: `fingerprint` is the one the
+   * person was shown (`extension.installed`). Refused when it changed since.
+   */
+  'extension.approve': {
+    params: { moduleId: string; fingerprint: string; commandId: string }
     result: StudioModuleLifecycleAnswer
   }
   /** Remove an extension added from a folder, and what was kept for it. */
@@ -213,9 +219,9 @@ export type StudioModulesMethodMap = {
     params: { moduleId: string; commandId: string }
     result: { ok: true; removedModuleIds: string[] } | { ok: false; message: string }
   }
-  /** Every extension installed here, with its trust, origin and launch state. */
+  /** Every extension installed here, with its approval, signature, origin and launch state. */
   'extension.installed': { params: Record<string, never>; result: ThirdPartyModuleListResult }
-  /** The trusted extensions' window halves, read and checked against their verified bytes now. */
+  /** The approved extensions' window halves, read and checked against their verified bytes now. */
   'extension.rendererEntries': { params: Record<string, never>; result: ThirdPartyRendererEntriesResult }
   /** The person's values for the modules' Settings sections, by `module:<id>` namespace. */
   'extension.setAppState': {
@@ -235,7 +241,7 @@ export type StudioModuleEventsParams = { moduleId?: string }
 export type StudioModulesTopicMap = {
   'extension.events': { params: StudioModuleEventsParams; payload: StudioModuleEvent; stream: 'push' }
   'extension.notifications': { params: Record<string, never>; payload: StudioModuleNotification; stream: 'push' }
-  /** What is installed or trusted here changed: list and load the extensions again. */
+  /** What is installed or approved here changed: list and load the extensions again. */
   'extension.changed': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
 }
 
@@ -258,6 +264,8 @@ function parseCall(value: Record<string, unknown>) {
 }
 
 const MAX_COMMAND_ID_CHARS = 200
+/** The longest approval fingerprint: `sha256-` and its digest. */
+const MAX_FINGERPRINT_CHARS = 128
 /** The longest folder path an install may name. */
 const MAX_PATH_CHARS = 4096
 
@@ -333,13 +341,18 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
       return studioParams({ path: value.path, commandId: command.params })
     },
   },
-  'extension.setTrust': {
+  'extension.approve': {
     ...lifecycle,
     params: (value) => {
       const named = namedModule(value)
       if (!named.ok) return named
-      if (typeof value.trusted !== 'boolean') return studioParamsRefused('"trusted" is true or false.')
-      return studioParams({ ...named.params, trusted: value.trusted })
+      if (
+        typeof value.fingerprint !== 'string' ||
+        !value.fingerprint.startsWith('sha256-') ||
+        value.fingerprint.length > MAX_FINGERPRINT_CHARS
+      )
+        return studioParamsRefused('"fingerprint" is the approval fingerprint the person was shown.')
+      return studioParams({ ...named.params, fingerprint: value.fingerprint })
     },
   },
   'extension.uninstall': { ...lifecycle, params: namedModule },

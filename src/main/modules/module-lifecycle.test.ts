@@ -53,7 +53,7 @@ test('a module is listed with its switch, whether it runs, why not, and what it 
     ],
     enabled: (id) => id !== 'off',
     running: (id) => id === 'deck',
-    ineligible: (id) => (id === 'waiting' ? 'untrusted' : undefined),
+    ineligible: (id) => (id === 'waiting' ? 'unapproved' : undefined),
     loadError: () => undefined,
     declaredMethods: (id) => (id === 'deck' ? [{ name: 'cards.list', access: 'read' }] : []),
   }
@@ -74,7 +74,7 @@ test('a module is listed with its switch, whether it runs, why not, and what it 
       source: 'third-party',
       enabled: true,
       running: false,
-      blocked: 'It waits to be trusted.',
+      blocked: 'It waits for your approval.',
       methods: [],
     },
     { id: 'off', name: 'off', version: 1, source: 'bundled', enabled: false, running: false, methods: [] },

@@ -10,7 +10,11 @@
 // pure enablement resolver; later phases migrate features onto it and add the
 // renderer/preload hosts plus the user-facing module chooser.
 
-import type { ModuleResolutionErrorCode, StudioModuleTrustStatus } from '../../../packages/studio-protocol/src/public'
+import type {
+  ModuleResolutionErrorCode,
+  StudioExtensionApproval,
+  StudioModuleTrustStatus,
+} from '../../../packages/studio-protocol/src/public'
 
 // The manifest and what a Studio says about its installed extensions, as the
 // Studio protocol defines them (`extensions-types.ts`), under the names the
@@ -91,11 +95,15 @@ export const CANVAS_MODULE_DEFAULT_ENABLED = true
  */
 export const LIVE_ENABLED_MODULE_IDS: readonly string[] = ['scheduled-agents']
 
-// Trust classification of a third-party module (see module-signature.ts):
-// 'trusted' (loadable), 'signed' (valid sig, awaiting user approval), 'unsigned'
-// (awaiting approval), 'invalid' (tampered signature; blocked).
-/** Whether a module's code is one Studio may run; the Studio protocol's, as a provider list reports it. */
+// How a plugin bundle's or a provider's signed manifest is classified (see
+// module-signature.ts): 'trusted' (signed by a publisher key Studio trusts),
+// 'signed' (another key), 'unsigned', 'invalid'. Installed extensions are
+// judged by the person's approval instead (`ExtensionApprovalState`).
+/** Whether a bundle's or a provider's code is one Studio may run; the Studio protocol's, as a provider list reports it. */
 export type ModuleTrustStatus = StudioModuleTrustStatus
+
+/** An installed extension's approval as a list shows it, or `invalid` for one whose signature does not match its files. */
+export type ExtensionApprovalState = StudioExtensionApproval['state'] | 'invalid'
 
 /** Showing an extension's folder on this computer: done, or why not. */
 export type ThirdPartyModuleRevealResult = { ok: boolean; message?: string }

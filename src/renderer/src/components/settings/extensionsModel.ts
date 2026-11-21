@@ -15,8 +15,13 @@ import { copy } from '../../../../shared/copy'
 
 // ── State ────────────────────────────────────────────────────────────────
 
+/** Whether the person approved it as it is (or it only carries content, which needs no approval). */
+export function isApproved(module: Pick<ThirdPartyModuleView, 'approval'>): boolean {
+  return module.approval.state === 'approved' || module.approval.state === 'not-needed'
+}
+
 /**
- * What a trusted module is doing, in the words its row says:
+ * What an approved module is doing, in the words its row says:
  * - `running` — its code is loaded in this session (Running);
  * - `on` — on, with no code of its own to run (On);
  * - `pending` — on, but its main entry waits on the next launch (Starts after restart);
@@ -36,19 +41,19 @@ export const RUN_STATE_LABEL: Record<ExtensionRunState, string> = {
 }
 
 export type ExtensionProblem =
-  // A tampered or invalid signature: it can never be trusted as installed.
+  // A tampered or invalid signature: it can never be approved as installed.
   | { kind: 'invalid' }
   // It was loaded and failed, this session.
   | { kind: 'error'; message: string }
 
-/** Why a module cannot run as installed, whatever its trust, or null. */
+/** Why a module cannot run as installed, whatever its approval, or null. */
 export function moduleProblem(
   module: ThirdPartyModuleView,
   rendererLoadState: ThirdPartyRendererLoadState | undefined,
   contributionError?: string,
 ): ExtensionProblem | null {
-  if (module.trust === 'invalid' || module.launch.status === 'blocked_invalid') return { kind: 'invalid' }
-  if (module.trust !== 'trusted') return null
+  if (module.signature === 'invalid' || module.launch.status === 'blocked_invalid') return { kind: 'invalid' }
+  if (!isApproved(module)) return null
   if (module.launch.status === 'launch_error') {
     return { kind: 'error', message: module.launch.message ?? copy.settings.extensionsModel.itsMainEntryFailedAt }
   }
@@ -64,7 +69,7 @@ export function moduleProblem(
 export function problemText(problem: ExtensionProblem): string {
   switch (problem.kind) {
     case 'invalid':
-      return 'Its signature doesn’t match its files, so it can’t be trusted.'
+      return 'Its signature doesn’t match its files, so it can’t be approved.'
     case 'error':
       return problem.message
   }
@@ -74,7 +79,7 @@ const hasRendererEntry = (module: ThirdPartyModuleView): boolean =>
   Boolean(module.launch.rendererEntry && module.launch.rendererEntry.availability !== 'none')
 
 /**
- * The state word for a TRUSTED module. Main code loads once, at launch, so a
+ * The state word for an APPROVED module. Main code loads once, at launch, so a
  * main entry turned on since reads "Starts after restart" and one turned off
  * reads "Stops after restart" until the next launch; renderer contributions
  * follow the switch live.
@@ -101,7 +106,7 @@ export function resolveModuleEnabled(overrides: ModuleEnablementOverrides, modul
 // ── Restart ──────────────────────────────────────────────────────────────
 
 /**
- * Trusted, enabled modules whose main entry is ready but was not loaded this
+ * Approved, enabled modules whose main entry is ready but was not loaded this
  * session. A module that failed or cannot run on this host is not waiting on a
  * restart, and says so on its own row.
  */
@@ -111,8 +116,8 @@ export function modulesAwaitingRestart(
 ): ThirdPartyModuleView[] {
   return modules.filter(
     (module) =>
-      module.trust === 'trusted' &&
-      module.launch.status === 'trusted_executable' &&
+      isApproved(module) &&
+      module.launch.status === 'runs_worker' &&
       module.launch.hasMainEntry &&
       module.launch.mainLoaded !== true &&
       enabledFor(module),
@@ -133,15 +138,14 @@ export function sourceLabel(module: Pick<ThirdPartyModuleView, 'manifest'>): str
   return module.manifest.publisher === 'local' ? 'Local build' : null
 }
 
-/** Whether it carries an extension.sig that checked out: a signer's key fingerprint is known. */
-export function isSigned(module: Pick<ThirdPartyModuleView, 'trust' | 'fingerprint'>): boolean {
-  if (module.trust === 'signed') return true
-  if (module.trust === 'trusted') return Boolean(module.fingerprint)
-  return false
+/** Whether it carries an extension.sig that checked out. */
+export function isSigned(module: Pick<ThirdPartyModuleView, 'signature'>): boolean {
+  return module.signature === 'signed' || module.signature === 'verified'
 }
 
-export function signatureLabel(module: Pick<ThirdPartyModuleView, 'trust' | 'fingerprint'>): string {
-  if (module.trust === 'invalid') return 'Invalid signature'
+export function signatureLabel(module: Pick<ThirdPartyModuleView, 'signature'>): string {
+  if (module.signature === 'invalid') return 'Invalid signature'
+  if (module.signature === 'verified') return 'Verified'
   return isSigned(module) ? 'Signed' : 'Unsigned'
 }
 
@@ -178,8 +182,8 @@ export function accessItems(permissions: readonly string[] | undefined): {
 
 export type ExtensionFilter = 'all' | 'review' | 'on' | 'off'
 
-/** Whether an extension waits on the person's trust decision. */
-export const needsReview = (module: ThirdPartyModuleView): boolean => module.trust !== 'trusted'
+/** Whether an extension waits on the person's approval. */
+export const needsReview = (module: ThirdPartyModuleView): boolean => !isApproved(module)
 
 export function matchesQuery(query: string, ...parts: Array<string | null | undefined>): boolean {
   const needle = query.trim().toLowerCase()

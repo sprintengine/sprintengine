@@ -113,7 +113,7 @@ export function activate(studio: MainHost): void {
     },
   })
   // Scoped module storage composed with the workspace context: resolve the
-  // root, persist under it (host-placed), read back. Declare `storage`.
+  // root, persist under it (host-placed), read back. Needs `storage:own`.
   studio.registerMethods({
     savePreferences: {
       access: 'operate',

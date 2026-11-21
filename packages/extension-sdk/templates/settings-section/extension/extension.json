@@ -10,7 +10,7 @@
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
   "permissions": [
-    "storage"
+    "settings:own"
   ],
   "contributes": {
     "commands": [

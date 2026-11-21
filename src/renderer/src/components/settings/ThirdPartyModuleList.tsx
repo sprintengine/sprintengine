@@ -1,9 +1,9 @@
 import React, { type JSX } from 'react'
 
 import type {
+  ExtensionApprovalState,
   ModuleEnablementOverrides,
   ModuleManifestIssue,
-  ModuleTrustStatus,
   ThirdPartyModuleView,
 } from '../../../../shared/modules/manifest'
 import {
@@ -17,7 +17,7 @@ import type { Tone } from '../ui/tokens'
 import { Badge, EmptyState, GhostButton, InlineNotice, OutlineButton, SettingCard, type OverflowMenuItem } from '../ui'
 import { deriveContributions, moduleDoorIcon } from './extensionContributions'
 import {
-  CannotTrustTrailing,
+  CannotApproveTrailing,
   ExtensionDetails,
   ExtensionMark,
   ExtensionRow,
@@ -27,6 +27,7 @@ import {
 } from './ExtensionRow'
 import {
   accessItems,
+  isApproved,
   isSigned,
   moduleMeta,
   moduleProblem,
@@ -44,23 +45,21 @@ import { copy as appCopy } from '../../../../shared/copy'
 // then "Installed", the trusted ones with their one switch. The rows and the
 // details are in ExtensionRow; what talks to main is in useThirdPartyExtensions.
 
-type TrustPresentation = { tone: Tone; label: string }
+type ApprovalPresentation = { tone: Tone; label: string }
 
-// The trust state in words, for the Plugins door's installed inventory.
-export const TRUST_PRESENTATION: Record<ModuleTrustStatus, TrustPresentation> = {
-  trusted: { tone: 'good', label: appCopy.settings.thirdPartyModuleList.trusted },
-  // 'signed' is informational (valid signature, awaiting approval) — a neutral
-  // status, not the accent (which is reserved for primary/selected chrome).
-  signed: { tone: 'neutral', label: appCopy.settings.thirdPartyModuleList.signed },
-  unsigned: { tone: 'warn', label: appCopy.settings.thirdPartyModuleList.unsigned },
+// The approval state in words, for the Plugins door's installed inventory.
+export const APPROVAL_PRESENTATION: Record<ExtensionApprovalState, ApprovalPresentation> = {
+  approved: { tone: 'good', label: appCopy.settings.thirdPartyModuleList.approved },
+  'not-needed': { tone: 'good', label: appCopy.settings.thirdPartyModuleList.contentOnly },
+  pending: { tone: 'warn', label: appCopy.settings.thirdPartyModuleList.needsApproval },
+  unavailable: { tone: 'error', label: appCopy.settings.thirdPartyModuleList.cannotBeApproved },
   invalid: { tone: 'error', label: appCopy.settings.thirdPartyModuleList.invalidSignature },
 }
 
-// Requested-access chips, in the full consent wording: the disclosure a trust
-// prompt for a marketplace or GitHub install reads out. Disclosure only — the
-// text is what the module says it does, never what the app prevents. The broad
-// scopes and unrecognized ones wear the warn tone, and their wording says the
-// same thing, so the flag is never colour alone.
+// Requested-access chips, in the full wording: what a review for a
+// marketplace or GitHub install reads out. The broad scopes and unrecognized
+// ones wear the warn tone, and their wording says the same thing, so the flag
+// is never colour alone.
 export function PermissionChips({ permissions }: { permissions: string[] }) {
   if (permissions.length === 0) {
     return (
@@ -92,23 +91,23 @@ export type ExtensionActions = {
   pendingId: string | null
   onReview: (module: ThirdPartyModuleView) => void
   onSetEnabled: (moduleId: string, enabled: boolean) => void
-  onRevokeTrust: (module: ThirdPartyModuleView) => void
   onUninstall: ((module: ThirdPartyModuleView) => void) | null
   onReveal: ((module: ThirdPartyModuleView) => void) | null
   onCopyId: (module: ThirdPartyModuleView) => void
 }
 
 function signatureFact(module: ThirdPartyModuleView): string {
-  if (module.trust === 'invalid') return 'Invalid'
+  if (module.signature === 'invalid') return 'Invalid'
   if (!isSigned(module)) return 'Unsigned'
+  const verified = module.signature === 'verified' ? 'Verified, s' : 'S'
   const signer = publisherName(module.manifest)
-  if (signer) return `Signed by ${signer}`
-  return module.fingerprint ? `Signed, key ${module.fingerprint.slice(0, 12)}` : 'Signed'
+  if (signer) return `${verified}igned by ${signer}`
+  return module.signer ? `${verified}igned, key ${module.signer.slice(0, 12)}` : `${verified}igned`
 }
 
-function trustFact(module: ThirdPartyModuleView): string {
-  if (module.trust !== 'trusted') return 'Not yet'
-  return module.trustedVia === 'publisher' ? 'By its publisher’s key' : 'By you'
+function approvalFact(module: ThirdPartyModuleView): string {
+  if (module.approval.state === 'not-needed') return 'Not needed: it only carries content'
+  return module.approval.state === 'approved' ? 'By you' : 'Not yet'
 }
 
 export function ExtensionListRow({
@@ -126,21 +125,21 @@ export function ExtensionListRow({
 }): JSX.Element {
   const id = module.manifest.id
   const name = module.manifest.displayName
-  const trusted = module.trust === 'trusted'
-  const invalid = module.trust === 'invalid'
+  const approved = isApproved(module)
+  const invalid = module.signature === 'invalid'
   const enabled = resolveModuleEnabled(overrides, module)
   const pending = actions.pendingId === id
   const rendererLoadState = getThirdPartyRendererLoadState(id)
   const contributionError = getModuleContributionError(id)
   const problem = moduleProblem(module, rendererLoadState, contributionError)
-  const reviewable = !trusted && !invalid
+  const reviewable = !approved && !invalid && module.approval.state === 'pending'
   const state = runState(module, enabled, rendererLoadState, contributionError)
   const doorIcon = moduleDoorIcon(module.extension)
   const { care, standard } = accessItems(module.manifest.permissions)
 
   const trailing = invalid ? (
-    <CannotTrustTrailing />
-  ) : !trusted ? (
+    <CannotApproveTrailing />
+  ) : !approved ? (
     <ReviewTrailing name={name} onReview={() => actions.onReview(module)} />
   ) : (
     <InstalledTrailing
@@ -154,7 +153,7 @@ export function ExtensionListRow({
 
   const menuItems: OverflowMenuItem[] = [
     { id: 'details', label: appCopy.settings.thirdPartyModuleList.details, onSelect: () => onDetailsOpenChange(true) },
-    ...(trusted
+    ...(approved
       ? [
           {
             id: 'toggle',
@@ -169,7 +168,7 @@ export function ExtensionListRow({
         ? [
             {
               id: 'review',
-              label: appCopy.settings.thirdPartyModuleList.reviewAndTrust,
+              label: appCopy.settings.thirdPartyModuleList.reviewAndApprove,
               onSelect: () => actions.onReview(module),
             },
           ]
@@ -184,19 +183,7 @@ export function ExtensionListRow({
         ]
       : []),
     { id: 'copy', label: appCopy.settings.thirdPartyModuleList.copyId, onSelect: () => actions.onCopyId(module) },
-    ...((trusted && module.trustedVia !== 'publisher') || actions.onUninstall
-      ? [{ kind: 'separator' as const, id: 'sep' }]
-      : []),
-    ...(trusted && module.trustedVia !== 'publisher'
-      ? [
-          {
-            id: 'revoke',
-            label: appCopy.settings.thirdPartyModuleList.revokeTrust,
-            disabled: pending,
-            onSelect: () => actions.onRevokeTrust(module),
-          },
-        ]
-      : []),
+    ...(actions.onUninstall ? [{ kind: 'separator' as const, id: 'sep' }] : []),
     ...(actions.onUninstall
       ? [
           {
@@ -218,7 +205,7 @@ export function ExtensionListRow({
   const facts = [
     ...(source ? [{ term: 'Source', description: source }] : []),
     { term: 'Signature', description: signatureFact(module) },
-    { term: 'Trusted', description: trustFact(module) },
+    { term: 'Approved', description: approvalFact(module) },
   ]
 
   return (
@@ -230,7 +217,7 @@ export function ExtensionListRow({
       trailing={trailing}
       menuItems={menuItems}
       notice={notice}
-      dimmed={trusted && !enabled}
+      dimmed={approved && !enabled}
       detailsOpen={detailsOpen}
       onDetailsOpenChange={onDetailsOpenChange}
       renderDetails={({ titleId }) => (
@@ -239,11 +226,11 @@ export function ExtensionListRow({
           titleId={titleId}
           icon={<ExtensionMark module={module} doorIcon={doorIcon} size={40} />}
           status={
-            trusted ? (
+            approved ? (
               <ExtensionStateLabel state={state} />
             ) : (
               <span className="whitespace-nowrap text-meta text-[color:var(--tone-warn)]">
-                {appCopy.settings.thirdPartyModuleList.notTrusted}
+                {appCopy.settings.thirdPartyModuleList.notApproved}
               </span>
             )
           }
@@ -253,13 +240,9 @@ export function ExtensionListRow({
           facts={facts}
           actions={
             <>
-              {trusted && module.trustedVia !== 'publisher' ? (
-                <GhostButton size="xs" disabled={pending} onClick={() => actions.onRevokeTrust(module)}>
-                  {appCopy.settings.thirdPartyModuleList.revokeTrust}
-                </GhostButton>
-              ) : reviewable ? (
+              {reviewable ? (
                 <OutlineButton size="xs" onClick={() => actions.onReview(module)}>
-                  {appCopy.settings.thirdPartyModuleList.reviewAndTrust}
+                  {appCopy.settings.thirdPartyModuleList.reviewAndApprove}
                 </OutlineButton>
               ) : null}
               <span className="flex-1" />

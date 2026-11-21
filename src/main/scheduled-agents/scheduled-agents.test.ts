@@ -14,7 +14,7 @@ import {
 } from '../../shared/scheduled-agents'
 import { isRunChatWorking, runScheduledAgent } from './runner'
 import { schedulerWithRunRecords } from './scheduled-runs.test-helper'
-import { runAsModuleToolCall } from '../module-host/module-tool-caller'
+import { runAsInvoker, ownerInvoker } from '../module-host/extension-invocation'
 import { createScheduledAgentsModuleRegistry, createScheduledAgentsService, withinOwnerModuleCeiling } from './service'
 import { createScheduledAgentsStore } from './store'
 
@@ -644,11 +644,11 @@ test("an extension's schedule goes no looser than the extension, or the agent ca
 
     // During a capped agent's tool call the stored preset is pinned to that
     // agent's, and a run that could go looser is refused.
-    const pinned = await runAsModuleToolCall({ permissionCeiling: 'manual' }, () =>
+    const pinned = await runAsInvoker(ownerInvoker('manual'), () =>
       registry.create('loose', draft({ permissionPreset: 'bypass' })),
     )
     assert.equal(pinned.ok && pinned.agent.permissionPreset, 'manual')
-    const refused = await runAsModuleToolCall({ permissionCeiling: 'manual' }, () => registry.runNow('loose', 'sa-2'))
+    const refused = await runAsInvoker(ownerInvoker('manual'), () => registry.runNow('loose', 'sa-2'))
     assert.equal(refused.ok, false)
     assert.deepEqual(ran, [])
     assert.equal((await registry.runNow('loose', 'sa-2')).ok, true)

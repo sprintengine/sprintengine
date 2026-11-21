@@ -19,7 +19,7 @@ function manifest(id: string): CapabilityManifest {
     version: 1,
     defaultEnabled: true,
     source: 'third-party',
-    permissions: ['mcp:tools'],
+    permissions: ['tools:contribute'],
   }
 }
 

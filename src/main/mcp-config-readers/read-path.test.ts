@@ -58,7 +58,6 @@ test('read-path', async () => {
   function bundledManifests(): Map<string, PluginManifest> {
     const registry = createPluginRegistry(
       createAppPluginRegistryOptions(
-        join(process.cwd(), 'node_modules', '.cache', 'sprintengine'),
         join(process.cwd(), 'resources', 'plugins'),
         join(process.cwd(), 'node_modules', '.cache', 'sprintengine', 'plugins-none'),
       ),

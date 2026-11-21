@@ -8,7 +8,13 @@ import type { MainHost, ServiceToken } from './index.js'
 // ── Secrets ──────────────────────────────────────────────────────────────────
 
 export type ModuleSecretsError =
-  'permission_missing' | 'invalid_name' | 'not_set' | 'origin_not_allowed' | 'network_error' | 'storage_unavailable'
+  | 'not_permitted'
+  | 'approval_required'
+  | 'invalid_name'
+  | 'not_set'
+  | 'origin_not_allowed'
+  | 'network_error'
+  | 'storage_unavailable'
 
 export type ModuleSecretFetchInit = {
   method?: string
@@ -27,7 +33,7 @@ export type ModuleSecretFetchResult =
  * Secrets for an extension's worker, obtained via `getSecretsService(host)`
  * and scoped to that module. A stored value can only leave the host inside a
  * `fetchWithSecret` request to one of the origins it was stored with. Declare
- * the `secrets` permission.
+ * the `secrets:own` permission.
  */
 export type ModuleSecretsService = {
   set(
@@ -103,7 +109,8 @@ export type ModuleGitHubRequest = {
 }
 
 export type ModuleGitHubErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'not_signed_in'
   | 'invalid_route'
   // `graphql` was handed a document holding a mutation or subscription, or no query at all.
@@ -152,7 +159,7 @@ export type ModuleGitHubDownloadResponse =
 /**
  * The GitHub API with the user's sign-in, for an extension's worker,
  * obtained via `getGitHubService(host)`. The host attaches the token; the
- * module never sees it. Declare the `github` permission.
+ * module never sees it. Declare the `github:api` permission.
  */
 export type ModuleGitHubService = {
   request(request: ModuleGitHubRequest): Promise<ModuleGitHubResponse>

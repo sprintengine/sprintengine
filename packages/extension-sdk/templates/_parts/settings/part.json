@@ -4,7 +4,7 @@
   "summary": "A section in Settings whose values the rest of the extension reads with getModuleAppState.",
   "requires": [],
   "permissions": [
-    "storage"
+    "settings:own"
   ],
   "contributes": {
     "settingsSections": [

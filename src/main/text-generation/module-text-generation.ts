@@ -10,8 +10,8 @@
 // Code's small model when they chose none; a call that names a CLI but no model
 // runs that CLI's chosen model when it is the person's, else its small one.
 //
-// `agents:generate` is checked on every call, as the conversation service
-// checks its permissions. Each module has its own lane: two calls run at once,
+// Whether an extension may call it is the host's gate (extension-host-gate.ts):
+// `agents:generate`, and an invoker who may start a chat. Each module has its own lane: two calls run at once,
 // a few more wait their turn, and a module calling faster than a person could
 // read the answers is told `busy` rather than queued without end. One module's
 // flood never slows another's calls.
@@ -68,8 +68,6 @@ const MAX_CALLS_PER_WINDOW = 30
 const JSON_NOTE = 'Answer with a single JSON value and nothing else: no prose before or after it, and no code fence.'
 
 export type ModuleTextGenerationDeps = {
-  /** The permissions the module declared in its manifest. */
-  getModulePermissions: (moduleId: string) => readonly string[] | undefined
   /** One headless call (generateHeadlessText). */
   generate: (request: HeadlessTextRequest) => Promise<HeadlessTextResult>
   /** The person's CLI command overrides, read per call. */
@@ -159,9 +157,6 @@ export function createModuleTextGenerationRegistry(deps: ModuleTextGenerationDep
 
   return {
     async generate(moduleId, input) {
-      if (!(deps.getModulePermissions(moduleId) ?? []).includes('agents:generate')) {
-        return refuse('permission_missing', `Extension "${moduleId}" must declare the "agents:generate" permission.`)
-      }
       const invalid = invalidInput(input)
       if (invalid) return refuse('invalid_input', invalid)
       const preferred = moduleTextGenerationEngine(deps.getTextGenerationSettings?.())

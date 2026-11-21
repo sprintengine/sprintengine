@@ -29,7 +29,7 @@ import {
 } from './usage-scan'
 
 // Token usage of every agent session on this machine, for modules
-// (SDK `getUsageService`, permission `usage:read`) and for the app's own
+// (SDK `getUsageService`, permission `usage:read`, checked by the host's gate) and for the app's own
 // usage dashboard (`report`, priced; usage-report.ts).
 //
 // Reading is lazy and incremental. Nothing happens at startup: the first query
@@ -59,7 +59,6 @@ export type UsageServiceDeps = {
   dataDir: () => string
   /** Open workspaces with their agents, read fresh on each scan and query. */
   getWorkspaces: () => readonly UsageServiceWorkspace[]
-  getModulePermissions: (moduleId: string) => readonly string[] | undefined
   homeDir?: () => string
   env?: () => NodeJS.ProcessEnv
   /** The built worker file. Absent or missing on disk, scans run inline. */
@@ -241,23 +240,12 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
     }
   }
 
-  function permitted(moduleId: string): boolean {
-    return deps.getModulePermissions(moduleId)?.includes('usage:read') ?? false
-  }
-
   function chatTitle(workspaceId: string, agentId: string): string | null {
     const agent = deps.getWorkspaces().find((workspace) => workspace.id === workspaceId)?.agents?.[agentId]
     return agent?.name?.trim() || null
   }
 
-  async function query(moduleId: string, input: UsageQuery): Promise<UsageQueryResult> {
-    if (!permitted(moduleId)) {
-      return {
-        ok: false,
-        code: 'permission_missing',
-        message: `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot read token usage.`,
-      }
-    }
+  async function query(_moduleId: string, input: UsageQuery): Promise<UsageQueryResult> {
     const invalid = invalidQuery(input)
     if (invalid) return { ok: false, code: 'invalid_input', message: invalid }
     if (disposed) return { ok: false, code: 'unavailable', message: 'The app is shutting down.' }
@@ -350,11 +338,6 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
   }
 
   function onChanged(moduleId: string, listener: () => void): () => void {
-    if (!permitted(moduleId)) {
-      throw new Error(
-        `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot watch token usage.`,
-      )
-    }
     const entry = { moduleId, listener }
     listeners.add(entry)
     if (!poll && !disposed) {
@@ -388,59 +371,42 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
   }
 }
 
-const shared = new Map<string, { service: UsageService; permissions: Set<UsageServiceDeps['getModulePermissions']> }>()
+const shared = new Map<string, UsageService>()
 
 /**
  * The one usage service of this process for a data folder. The module host
  * (for modules) and the dashboard's IPC each ask for it, and share one scan,
  * one cache file and one worker rather than reading every log twice. The
- * first caller's deps build it; each caller adds how it resolves a module's
- * permissions, and a module holds `usage:read` if any of them says so.
+ * first caller's deps build it. Whether an extension may read it is the
+ * host's gate (extension-host-gate.ts), not this service's.
  */
 export function sharedUsageService(deps: UsageServiceDeps): UsageService {
   const key = deps.dataDir()
   const known = shared.get(key)
-  if (known) {
-    known.permissions.add(deps.getModulePermissions)
-    return known.service
-  }
-  const permissions = new Set<UsageServiceDeps['getModulePermissions']>([deps.getModulePermissions])
-  const service = createUsageService({
-    ...deps,
-    getModulePermissions: (moduleId) => {
-      for (const resolve of permissions) {
-        const granted = resolve(moduleId)
-        if (granted) return granted
-      }
-      return undefined
-    },
-  })
+  if (known) return known
+  const service = createUsageService(deps)
   const dispose = service.dispose
-  const entry = {
-    service: {
-      ...service,
-      dispose: () => {
-        shared.delete(key)
-        return dispose()
-      },
+  const entry: UsageService = {
+    ...service,
+    dispose: () => {
+      shared.delete(key)
+      return dispose()
     },
-    permissions,
   }
   shared.set(key, entry)
-  return entry.service
+  return entry
 }
 
 /**
  * The app's own usage service, for the dashboard's IPC and for the gateway's
  * `usage.report`, whichever asks first: the worker is built beside main's
  * entry (electron.vite.config.ts), and where it is not there (the server
- * built on its own), the scan runs inline. It grants no module anything.
+ * built on its own), the scan runs inline.
  */
 export function appUsageService(deps: Pick<UsageServiceDeps, 'dataDir' | 'getWorkspaces'>): UsageService {
   return sharedUsageService({
     dataDir: deps.dataDir,
     getWorkspaces: deps.getWorkspaces,
-    getModulePermissions: () => undefined,
     workerPath: join(__dirname, 'usage-scan-worker.js'),
   })
 }

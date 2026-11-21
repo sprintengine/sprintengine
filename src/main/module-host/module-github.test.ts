@@ -11,7 +11,6 @@ type Call = { url: string; init: RequestInit }
 function harness(
   options: {
     token?: string
-    permissions?: Record<string, string[]>
     respond?: (call: Call) => Response | Promise<Response>
     now?: () => number
   } = {},
@@ -25,7 +24,6 @@ function harness(
   }
   const github = createModuleGitHubRegistry({
     tokenStore: { resolveToken: async () => options.token ?? TOKEN },
-    getModulePermissions: (id) => (options.permissions ?? { reviews: ['github'] })[id],
     fetch: fetchImpl,
     ...(options.now ? { now: options.now } : {}),
   })
@@ -120,17 +118,6 @@ test('no token means not_signed_in, before anything is sent', async () => {
   const result = await reviews.request({ route: '/user' })
   assert.equal(result.ok === false && result.code, 'not_signed_in')
   assert.deepEqual(await reviews.status(), { signedIn: false })
-  assert.equal(calls.length, 0)
-})
-
-test('the github permission gates both calls', async () => {
-  const { calls, github } = harness({ permissions: { reviews: ['storage'] } })
-  const service = github.forModule('reviews')
-  const result = await service.request({ route: '/user' })
-  assert.equal(result.ok === false && result.code, 'permission_missing')
-  await assert.rejects(service.status(), /"github" permission/)
-  const unknown = await github.registry.request('stranger', { route: '/user' })
-  assert.equal(unknown.ok === false && unknown.code, 'permission_missing')
   assert.equal(calls.length, 0)
 })
 

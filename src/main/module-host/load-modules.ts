@@ -1,3 +1,4 @@
+import type { ExtensionLoadedApproval } from '../modules/third-party-main-loader'
 import type { ExtensionMcpToolContribution } from '../../../packages/extension-sdk/src/extension-manifest'
 import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import type {
@@ -110,10 +111,9 @@ export function loadMainModules(options: {
   provideServices?: (host: MainHost) => void
   /**
    * Modules that must not load regardless of enablement, keyed by id to the
-   * reason. The trust gate for third-party modules: when a future increment
-   * adds discovered third-party modules to `modules`, it MUST pass each
-   * non-`trusted` module here (e.g. `'untrusted'` / `'invalid_signature'`) so
-   * its `registerMain` never runs. Bundled modules never appear here.
+   * reason. The approval gate for extensions: every installed extension that
+   * may not run (`'unapproved'` / `'invalid_signature'`) is passed here so its
+   * `registerMain` never runs. Bundled modules never appear here.
    */
   ineligible?: Record<string, ModuleResolutionErrorCode>
   /** Pre-resolution launch errors from module discovery/validation. */
@@ -142,6 +142,14 @@ export function loadMainModules(options: {
   moduleVerifiedFiles?: Record<string, ModuleFileDigests>
   /** The MCP tools each installed extension declares (`contributes.mcpTools`). */
   moduleMcpTools?: Record<string, readonly ExtensionMcpToolContribution[]>
+  /** What each extension that runs was approved for, as loaded (third-party-main-loader.ts). */
+  extensionApprovals?: Record<string, ExtensionLoadedApproval>
+  /**
+   * The person's approvals as they stand now, read at each host call: an
+   * extension whose approval is gone (uninstalled) or no longer names what was
+   * loaded is refused `approval_required`. Absent (tests), what was loaded stands.
+   */
+  currentApprovals?: () => ReadonlyMap<string, { fingerprint: string }>
 }): LoadMainModulesResult {
   const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
@@ -167,6 +175,16 @@ export function loadMainModules(options: {
     ...(options.coreMcpToolNames ? { coreMcpToolNames: options.coreMcpToolNames } : {}),
     resolveModuleVerifiedFiles: (moduleId) => options.moduleVerifiedFiles?.[moduleId],
     resolveDeclaredMcpTools: (moduleId) => options.moduleMcpTools?.[moduleId],
+    resolveExtensionGrant: (moduleId) => {
+      // Without the loader's record (tests), an extension holds what its manifest asks.
+      if (!options.extensionApprovals) return byId.get(moduleId)?.manifest.permissions ?? []
+      const loadedAs = options.extensionApprovals[moduleId]
+      if (!loadedAs) return null
+      if (loadedAs.fingerprint === null || !options.currentApprovals) return loadedAs.permissions
+      return options.currentApprovals().get(moduleId)?.fingerprint === loadedAs.fingerprint
+        ? loadedAs.permissions
+        : null
+    },
   })
   const hostScope = kernel.hostFor('@host')
   provideServices?.(hostScope)

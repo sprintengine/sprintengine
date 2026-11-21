@@ -10,12 +10,10 @@ import { createModuleBacklogRegistry, type ModuleBacklogWorkspace } from './modu
 
 let root: string
 let workspaces: ModuleBacklogWorkspace[]
-let permissions: Record<string, readonly string[]>
 
 const registry = () =>
   createModuleBacklogRegistry({
     getWorkspace: (id) => workspaces.find((workspace) => workspace.id === id) ?? null,
-    getModulePermissions: (moduleId) => permissions[moduleId],
   })
 
 beforeEach(async () => {
@@ -32,11 +30,6 @@ beforeEach(async () => {
     { id: 'ws-1', name: 'acme', folderPath: root },
     { id: 'ws-bare', name: 'scratch', folderPath: null },
   ]
-  permissions = {
-    board: ['backlog.read', 'backlog.write'],
-    reader: ['backlog.read'],
-    nobody: [],
-  }
 })
 
 afterEach(async () => {
@@ -57,19 +50,6 @@ test('list reads the items with their number, display id, epic and modification 
   assert.equal(item!.displayId, 'MC-7')
   assert.equal(item!.epic, 'payments')
   assert.equal(typeof item!.modifiedAt, 'number')
-})
-
-test('reads need backlog.read and writes need backlog.write', async () => {
-  const reads = await registry().list('nobody', 'ws-1')
-  assert.deepEqual(reads.ok ? null : reads.code, 'permission_missing')
-  const location = await registry().getLocation('nobody', 'ws-1')
-  assert.equal(location.ok ? null : location.code, 'permission_missing')
-  const write = await registry().updateStatus('reader', 'ws-1', ITEM, 'completed')
-  assert.equal(write.ok ? null : write.code, 'permission_missing')
-  const created = await registry().create('reader', 'ws-1', { title: 'Nope' })
-  assert.equal(created.ok ? null : created.code, 'permission_missing')
-  // Nothing was written.
-  assert.match(await readFile(join(root, ITEM), 'utf-8'), /status: ready/)
 })
 
 test('list reads no file a link in the backlog points out of it', async () => {
@@ -185,7 +165,6 @@ test('create refuses what the app does not know', async () => {
 })
 
 test('concurrent creates from two modules never share an id', async () => {
-  permissions.other = ['backlog.write']
   const results = await Promise.all([
     registry().create('board', 'ws-1', { title: 'One' }),
     registry().create('other', 'ws-1', { title: 'Two' }),

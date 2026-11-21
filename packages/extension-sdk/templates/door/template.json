@@ -3,7 +3,7 @@
   "title": "Door",
   "summary": "A full-window surface with its own row in the Extensions drawer, listing the open workspaces.",
   "permissions": [
-    "ipc:workspace-read"
+    "workspace:read"
   ],
   "capabilities": [
     "door"

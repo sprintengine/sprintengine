@@ -188,7 +188,7 @@ test('switching, installing, trusting and uninstalling a module are an owner’s
   for (const method of [
     'extension.setEnabled',
     'extension.install',
-    'extension.setTrust',
+    'extension.approve',
     'extension.uninstall',
   ] as const) {
     const spec = STUDIO_MODULES_METHODS[method]
@@ -227,8 +227,12 @@ test('a lifecycle command names its module or folder and carries a commandId', (
   })
   assert.equal(refusal(parseStudioMethodParams('extension.install', { path: ' ', commandId: 'c1' })), 'invalid_params')
   assert.equal(
-    refusal(parseStudioMethodParams('extension.setTrust', { moduleId: 'acme', trusted: 1, commandId: 'c1' })),
+    refusal(parseStudioMethodParams('extension.approve', { moduleId: 'acme', fingerprint: 'abc', commandId: 'c1' })),
     'invalid_params',
+  )
+  assert.deepEqual(
+    parseStudioMethodParams('extension.approve', { moduleId: 'acme', fingerprint: 'sha256-ab12', commandId: 'c1' }),
+    { ok: true, params: { moduleId: 'acme', fingerprint: 'sha256-ab12', commandId: 'c1' } },
   )
   assert.deepEqual(parseStudioMethodParams('extension.uninstall', { moduleId: 'acme', commandId: 'c1' }), {
     ok: true,

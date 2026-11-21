@@ -5,7 +5,7 @@ import type { ModuleFileDigests, ModuleResolutionErrorCode } from '../../shared/
 import type { CapabilityModule, MainModuleLoadError, MainModuleLoadReport } from '../module-host/load-modules'
 import type { MainHost } from '../module-host/main-host'
 import { resolveContainedEntry, sanitizeEntryMessage } from './entry-containment'
-import { isLoadEligible, moduleFileDigestIssuesSync } from './module-signature'
+import { isExtensionRunnable, moduleFileDigestIssuesSync } from './module-signature'
 import type { InstalledModule, ModuleRejection } from './user-module-registry'
 
 type ThirdPartyMainLoadDiagnostics = {
@@ -21,14 +21,23 @@ export type ThirdPartyMainLoadPlan = {
   modules: CapabilityModule[]
   /** Install folder per module id — what contains its entries and its skills. */
   moduleRoots: Record<string, string>
-  /** The file digests each trusted module was verified with — what `getAssetPath` resolves against. */
+  /** The file digests each approved module was verified with — what `getAssetPath` resolves against. */
   verifiedFiles: Record<string, ModuleFileDigests>
   /** The MCP tools each extension's extension.json declares: all its worker may register. */
   mcpTools: Record<string, readonly ExtensionMcpToolContribution[]>
+  /** What each extension that runs was approved for, as it was loaded: the host's gate reads it. */
+  approvals: Record<string, ExtensionLoadedApproval>
   ineligible: Record<string, ModuleResolutionErrorCode>
   launchErrors: MainModuleLoadError[]
   diagnostics: ThirdPartyMainLoadDiagnostics
 }
+
+/**
+ * What an extension that runs was loaded under: the fingerprint the person
+ * approved (null for content only, which needs none), and the permissions
+ * that approval holds. Its calls are held to these while that approval stands.
+ */
+export type ExtensionLoadedApproval = { fingerprint: string | null; permissions: string[] }
 
 type ThirdPartyMainExport = {
   activate?: unknown
@@ -79,15 +88,22 @@ export function planThirdPartyMainModules(
   const mcpTools: Record<string, readonly ExtensionMcpToolContribution[]> = {}
   const electronMain = options.electronMain ?? true
 
+  const approvals: Record<string, ExtensionLoadedApproval> = {}
+
   for (const installed of input.modules) {
     modules.push(createThirdPartyMainModule(installed, { electronMain }))
     moduleRoots[installed.key] = installed.moduleRoot
     mcpTools[installed.key] = installed.extension.contributes.mcpTools
-    if (isLoadEligible(installed.trust.status) && installed.trust.verifiedFiles) {
-      verifiedFiles[installed.key] = installed.trust.verifiedFiles
+    const { standing } = installed
+    if (isExtensionRunnable(standing) && standing.verifiedFiles) {
+      verifiedFiles[installed.key] = standing.verifiedFiles
+      approvals[installed.key] = {
+        fingerprint: standing.approval.state === 'approved' ? standing.approval.fingerprint : null,
+        permissions: [...installed.extension.permissions],
+      }
+      continue
     }
-    if (isLoadEligible(installed.trust.status)) continue
-    ineligible[installed.key] = installed.trust.status === 'invalid' ? 'invalid_signature' : 'untrusted'
+    ineligible[installed.key] = standing.signature === 'invalid' ? 'invalid_signature' : 'unapproved'
   }
 
   return {
@@ -95,6 +111,7 @@ export function planThirdPartyMainModules(
     moduleRoots,
     verifiedFiles,
     mcpTools,
+    approvals,
     ineligible,
     launchErrors: input.rejected.map(rejectionToLoadError),
     diagnostics: { rejected: input.rejected },
@@ -158,11 +175,11 @@ export function skippedForElectronMain(moduleId: string): boolean {
 
 function createThirdPartyMainModule(installed: InstalledModule, options: { electronMain: boolean }): CapabilityModule {
   const main = installed.extension.tier === 'worker' ? installed.extension.main : undefined
-  if (!isLoadEligible(installed.trust.status) || !main) {
+  if (!isExtensionRunnable(installed.standing) || !main) {
     return { manifest: installed.manifest }
   }
 
-  const verifiedFiles = installed.trust.verifiedFiles
+  const verifiedFiles = installed.standing.verifiedFiles
   return {
     manifest: installed.manifest,
     registerMain: (host) => {

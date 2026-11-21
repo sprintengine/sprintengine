@@ -6,7 +6,7 @@ const failure = (value: string): McpToolResult => ({ content: [{ type: 'text', t
 // The worker: Studio loads extension/dist/main.cjs with require and calls
 // `activate` with a `studio` for this extension. Tools it serves join Studio's
 // MCP server, which every agent in every workspace is connected to, so an
-// agent can call them by name. Needs the "mcp:tools" permission.
+// agent can call them by name. Needs the "tools:contribute" permission.
 //
 // Each tool is declared in extension.json (`contributes.mcpTools`): its name,
 // what agents are told it does, and its access (`read` changes nothing). A

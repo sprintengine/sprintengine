@@ -3,12 +3,15 @@ import type {
   ThirdPartyModuleLaunchView,
   ThirdPartyModuleView,
 } from '../../shared/modules/manifest'
+import { approvalView } from './extension-approval-view'
+import { isExtensionRunnable } from './module-signature'
 import { readThirdPartyMainLaunchSnapshot, type ThirdPartyMainLaunchSnapshot } from './third-party-main-loader'
 import { rendererEntryView } from './third-party-renderer-entries'
 import type { InstalledModule } from './user-module-registry'
 
 // One installed extension as `extension.installed` answers it: what is on disk,
-// its trust, and whether it runs (module-lifecycle.ts).
+// whether the person approved it as it is, its signature, and whether it runs
+// (module-lifecycle.ts).
 
 export function toThirdPartyModuleView(
   module: InstalledModule,
@@ -19,10 +22,10 @@ export function toThirdPartyModuleView(
   return {
     manifest: module.manifest,
     extension: module.extension,
-    trust: module.trust.status,
-    fingerprint: module.trust.fingerprint,
+    approval: approvalView(module.standing.approval),
+    signature: module.standing.signature,
+    ...(module.standing.signer ? { signer: module.standing.signer } : {}),
     launch: launchViewFor(module, launchSnapshot, enablementOverrides),
-    ...(module.trust.status === 'trusted' && module.trust.via ? { trustedVia: module.trust.via } : {}),
     ...extras,
   }
 }
@@ -45,40 +48,36 @@ function mainEntryLaunchView(
   enablementOverrides: ModuleEnablementOverrides,
 ): ThirdPartyModuleLaunchView {
   const id = module.key
+  const { standing } = module
   const hasMainEntry = module.extension.tier === 'worker' && Boolean(module.extension.main)
-  if (module.trust.status === 'invalid') {
+  if (standing.signature === 'invalid') {
     return {
       status: 'blocked_invalid',
       hasMainEntry,
       expectedToLoad: false,
-      message: module.trust.tampered
+      message: standing.tampered
         ? 'Its files do not match the digests extension.sig signs (tampered), so it will not run.'
-        : 'Invalid signature blocks startup execution.',
+        : 'Its signature is invalid, so it will not run.',
     }
   }
-  if (module.trust.status === 'signed') {
+  if (!isExtensionRunnable(standing)) {
     return {
-      status: 'blocked_signed',
+      status: 'awaiting_approval',
       hasMainEntry,
       expectedToLoad: false,
-      message: 'Signed extension is waiting for trust before it runs.',
-    }
-  }
-  if (module.trust.status === 'unsigned') {
-    return {
-      status: 'blocked_unsigned',
-      hasMainEntry,
-      expectedToLoad: false,
-      message: 'Unsigned extension is waiting for trust before it runs.',
+      message:
+        standing.approval.state === 'unavailable'
+          ? 'It holds files an extension cannot ship, so there is nothing to approve. Install it again.'
+          : 'It waits for your approval before it runs.',
     }
   }
 
   if (!hasMainEntry) {
     return {
-      status: 'trusted_manifest_only',
+      status: 'runs_without_worker',
       hasMainEntry,
       expectedToLoad: false,
-      message: 'Trusted extension with no worker; nothing runs in the background.',
+      message: 'It has no worker; nothing runs in the background.',
     }
   }
 
@@ -94,9 +93,9 @@ function mainEntryLaunchView(
 
   const expectedToLoad = enablementOverrides[id] ?? module.manifest.defaultEnabled
   return {
-    status: 'trusted_executable',
+    status: 'runs_worker',
     hasMainEntry,
     expectedToLoad,
-    message: expectedToLoad ? 'Trusted worker is eligible to run.' : 'Trusted worker is switched off until enabled.',
+    message: expectedToLoad ? 'Its worker runs.' : 'Its worker is switched off until you switch it on.',
   }
 }

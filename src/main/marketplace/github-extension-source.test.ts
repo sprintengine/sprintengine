@@ -38,7 +38,7 @@ import { consumeTrustToken, issueTrustToken } from './trust-tokens'
 import type { McpConfigService } from '../mcp-config-service'
 import type { ModuleTrustContext } from '../modules/module-signature'
 
-const untrusted = (): ModuleTrustContext => ({ trustedModules: new Map() })
+const untrusted = (): ModuleTrustContext => ({})
 
 let scratch = ''
 beforeEach(async () => {

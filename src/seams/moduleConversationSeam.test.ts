@@ -13,6 +13,7 @@ import type { ModuleConversationEvent } from '../shared/modules/conversation-ser
 import { toolSuccess, type McpConnectionContext } from '../shared/modules/mcp-tools'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
 import type { Workspace } from '../shared/workspace'
+import { ownerInvoker } from '../main/module-host/extension-invocation'
 import { launchPermissionCeiling } from '../main/automation/launch-permission-cap'
 import { createStudioGatewayTools } from '../main/automation/studio-gateway-tools'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
@@ -150,8 +151,8 @@ test('moduleConversationSeam', async () => {
     permissions,
   })
   // acme may run its chats on bypass; the other module goes no looser than auto.
-  const acmeManifest = thirdParty('acme.chat', ['conversation:operate', 'conversation:bypass', 'mcp:tools'])
-  const otherManifest = thirdParty('acme.other-chat', ['conversation:operate'])
+  const acmeManifest = thirdParty('acme.chat', ['conversation:own', 'conversation:bypass', 'tools:contribute'])
+  const otherManifest = thirdParty('acme.other-chat', ['conversation:own'])
   const modules: Record<string, ModuleConversationService> = {}
   const manifests = new Map([acmeManifest, otherManifest].map((manifest) => [manifest.id, manifest]))
   const agentRuntime = createAgentRuntimeModule(services as never, {
@@ -302,8 +303,8 @@ test('moduleConversationSeam', async () => {
       appTools: [],
       resolveModuleTools: () => load.kernel.mcpToolRegistrations(),
       isModuleEnabled: () => true,
-      callerPermissionCeiling: (context) =>
-        launchPermissionCeiling(context, ({ agentId }) => (agentId === 'careful-agent' ? 'none' : null)),
+      callerInvoker: (context) =>
+        ownerInvoker(launchPermissionCeiling(context, ({ agentId }) => (agentId === 'careful-agent' ? 'none' : null))),
     })()
     const tool = tools.find((candidate) => candidate.name === 'acme_start_chat')!
     // What agents are told is the manifest's, not the code's.

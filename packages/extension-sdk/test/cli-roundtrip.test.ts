@@ -78,7 +78,7 @@ function validManifest(): Record<string, unknown> {
     engines: { studio: `>=${EXTENSION_MANIFEST_SINCE}` },
     tier: 'worker',
     name: 'CLI Roundtrip Fixture',
-    permissions: ['network'],
+    permissions: ['storage:own'],
     main: 'main.cjs',
     contributes: { panels: [{ id: 'notes', title: 'Notes', entry: 'dist/notes.js' }] },
   }
@@ -142,7 +142,10 @@ test('a tampered extension is refused by the CLI and by the SDK, reading the sam
   const dir = writeExtensionFixture(validManifest())
   assert.equal(runCli(['sign', dir, '--key', keyPath]).status, 0)
   const manifest = JSON.parse(readFileSync(join(dir, 'extension.json'), 'utf8')) as Record<string, unknown>
-  writeFileSync(join(dir, 'extension.json'), JSON.stringify({ ...manifest, permissions: ['network', 'secrets'] }))
+  writeFileSync(
+    join(dir, 'extension.json'),
+    JSON.stringify({ ...manifest, permissions: ['storage:own', 'secrets:own'] }),
+  )
 
   const cli = runCli(['verify', dir])
   assert.equal(cli.status, 1)
@@ -171,7 +174,7 @@ test('pack refuses an invalid manifest, naming the field and the fix', () => {
     assert.match(run.stderr, pattern)
   }
   refused({ ...validManifest(), id: 'Bad_ID!' }, /id: must be kebab-case/)
-  refused({ ...validManifest(), permissions: 'network' }, /permissions: must be an array/)
+  refused({ ...validManifest(), permissions: 'storage:own' }, /permissions: must be an array/)
   refused({ ...validManifest(), entry: { main: 'main.cjs' } }, /entry: is not a field Studio knows/)
   refused({ ...validManifest(), engines: { hostApi: 3 } }, /engines\.studio: is required/)
   refused({ ...validManifest(), tier: 'ui' }, /tier: "ui" cannot carry what this manifest declares/)

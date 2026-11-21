@@ -1,5 +1,5 @@
 // The signed-in user's GitHub, brokered for modules (SDK `getGitHubService`,
-// permission `github`).
+// permission `github:api`).
 //
 // A module names a REST route and its parameters; the host attaches the token
 // the app itself uses (github-token-store.ts) and sends the request to
@@ -15,8 +15,8 @@
 // and the built URL is checked once more against the origin and the path it
 // was meant to have.
 //
-// Permissions are read per call from the module's declared list. `request`
-// answers `permission_missing`; `status` has no failure shape and rejects.
+// Whether an extension may call it at all is the host.s gate
+// (extension-host-gate.ts): `github:api`, and only the person may set it off.
 //
 // Three additions keep a module from working around the broker:
 // - Answers carry an allow-list of response headers (rate limit, pagination,
@@ -41,8 +41,6 @@ import { brokerRequest, redactSecret, type BrokerFetch, type BrokerHttpResponse 
 export type ModuleGitHubDeps = {
   /** The app's GitHub token store; an empty string means nobody is signed in. */
   tokenStore: { resolveToken(): Promise<string> }
-  /** The permissions the module declared in its manifest. */
-  getModulePermissions: (moduleId: string) => readonly string[] | undefined
   /** Defaults to the global fetch. */
   fetch?: BrokerFetch
   /** Clock for the signed-in login cache; tests only. */
@@ -252,12 +250,6 @@ export function createModuleGitHubRegistry(deps: ModuleGitHubDeps): ModuleGitHub
   // else is never answered with the previous login.
   let loginCache: { token: string; login: string | null; at: number } | null = null
 
-  function hasPermission(moduleId: string): boolean {
-    return (deps.getModulePermissions(moduleId) ?? []).includes('github')
-  }
-  function missingMessage(moduleId: string): string {
-    return `Extension "${moduleId}" must declare the "github" permission.`
-  }
   async function readToken(): Promise<string> {
     try {
       return (await deps.tokenStore.resolveToken()).trim()
@@ -348,10 +340,9 @@ export function createModuleGitHubRegistry(deps: ModuleGitHubDeps): ModuleGitHub
     return { ok: true, status, data, headers }
   }
 
-  function forModule(moduleId: string): ModuleGitHubService {
+  function forModule(_moduleId: string): ModuleGitHubService {
     return {
       async request(request: ModuleGitHubRequest): Promise<ModuleGitHubResponse> {
-        if (!hasPermission(moduleId)) return failure('permission_missing', missingMessage(moduleId))
         if (typeof request !== 'object' || request === null) {
           return failure('invalid_route', 'request needs a route.')
         }
@@ -393,7 +384,6 @@ export function createModuleGitHubRegistry(deps: ModuleGitHubDeps): ModuleGitHub
       },
 
       async graphql(query: string, variables?: Record<string, unknown>): Promise<ModuleGitHubResponse> {
-        if (!hasPermission(moduleId)) return failure('permission_missing', missingMessage(moduleId))
         if (typeof query !== 'string' || query.trim() === '') {
           return failure('invalid_query', 'graphql needs a query document.')
         }
@@ -426,7 +416,6 @@ export function createModuleGitHubRegistry(deps: ModuleGitHubDeps): ModuleGitHub
       },
 
       async download(request: ModuleGitHubDownloadRequest): Promise<ModuleGitHubDownloadResponse> {
-        if (!hasPermission(moduleId)) return failure('permission_missing', missingMessage(moduleId))
         if (typeof request !== 'object' || request === null) {
           return failure('invalid_route', 'download needs a route.')
         }
@@ -506,7 +495,6 @@ export function createModuleGitHubRegistry(deps: ModuleGitHubDeps): ModuleGitHub
       },
 
       async status() {
-        if (!hasPermission(moduleId)) throw new Error(missingMessage(moduleId))
         const token = await readToken()
         if (!token) return { signedIn: false }
         if (loginCache && loginCache.token === token && now() - loginCache.at < LOGIN_CACHE_MS) {

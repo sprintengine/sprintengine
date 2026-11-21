@@ -296,7 +296,6 @@ test('plugin-lifecycle', async () => {
       const bundle = await writeBundle(temp, 'verified-plugin', components, signer, 1)
       const folders = new Map([['verified-plugin', bundle.files]])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundle.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -331,9 +330,7 @@ test('plugin-lifecycle', async () => {
       const bundle = await writeBundle(temp, 'community-plugin', components, signer, 1)
       bundle.entry.publisher.verified = false
       const folders = new Map([['community-plugin', bundle.files]])
-      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(folders), {})
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
       const blocked = await lifecycle.install({
@@ -372,9 +369,7 @@ test('plugin-lifecycle', async () => {
       }
       const bundle = await writeBundle(temp, 'unsigned-plugin', components, signer, 1, { unsigned: true })
       const folders = new Map([['unsigned-plugin', bundle.files]])
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {})
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
       const blocked = await lifecycle.install({
@@ -426,9 +421,7 @@ test('plugin-lifecycle', async () => {
       }
       const bundle = await writeBundle(temp, 'unsigned-skills-plugin', components, signer, 1, { unsigned: true })
       const folders = new Map([['unsigned-skills-plugin', bundle.files]])
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {})
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
       const blocked = await lifecycle.install({
@@ -468,9 +461,11 @@ test('plugin-lifecycle', async () => {
 
   async function testInlineMcpEntryRoutesThroughTrustAndSyncs(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(new Map()), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(
+        temp,
+        createGithubFetcher(new Map()),
+        {},
+      )
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const entry: MarketplacePluginEntry = {
         id: 'inline-mcp-plugin',
@@ -542,7 +537,6 @@ test('plugin-lifecycle', async () => {
       bundle.files.set(components.mcp!.path, `${JSON.stringify({ servers: [] }, null, 2)}\n`)
       const folders = new Map([['tampered-plugin', bundle.files]])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundle.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -572,7 +566,6 @@ test('plugin-lifecycle', async () => {
       const bundle = await writeBundle(temp, 'skill-plugin', components, signer, 1)
       const folders = new Map([['skill-plugin', bundle.files]])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundle.fingerprint]),
       })
       // A real, deterministic install failure: the harness skill directory is a
@@ -625,7 +618,6 @@ test('plugin-lifecycle', async () => {
         ['plugin-v2', v2.files],
       ])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([v1.fingerprint, v2.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -688,7 +680,6 @@ test('plugin-lifecycle', async () => {
       )
       const folders = new Map([['sweep-plugin', bundle.files]])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundle.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -736,7 +727,6 @@ test('plugin-lifecycle', async () => {
         ['plugin-v2', v2.files],
       ])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([v1.fingerprint, v2.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -782,9 +772,11 @@ test('plugin-lifecycle', async () => {
 
   async function testReceiptStoreValidationRejectsMalformedAndUnsafeState(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(new Map()), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(
+        temp,
+        createGithubFetcher(new Map()),
+        {},
+      )
       const lifecycle = createMarketplacePluginLifecycleService(services)
 
       await mkdir(dirname(receiptStorePath), { recursive: true })
@@ -889,9 +881,7 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginRequiresTrustGrant(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const result = await lifecycle.install({ entry: CLAUDE_LIFECYCLE_ENTRY, workspaceRoot })
@@ -906,9 +896,11 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginInstallsSkillsIntoClaudeHarnessAndUninstalls(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(
+        temp,
+        createClaudeLifecycleFetcher(),
+        {},
+      )
       services.packagedResourceResolver = await installClaudePayload(temp)
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const result = await lifecycle.install({
@@ -951,9 +943,11 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginDefaultFanOutUsesResolvedHarnesses(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(
+        temp,
+        createClaudeLifecycleFetcher(),
+        {},
+      )
       services.packagedResourceResolver = await installClaudePayload(temp)
       // The wired resolver (installed CLIs with native skill support + agents)
       // drives the default target set; the caller passes no skillHarnesses.
@@ -987,9 +981,7 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginAutoResolveUpdateNeverDeletesOnProbeHiccup(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       // First auto-resolved install lands claude+codex+agents.
       services.resolveSkillHarnesses = () => Promise.resolve(['claude', 'codex', 'agents'])
@@ -1030,9 +1022,7 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginExplicitHarnessNarrowingStillRemoves(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const first = await lifecycle.install({
@@ -1058,9 +1048,7 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginResolverFailureFallsBackToClaude(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       services.resolveSkillHarnesses = () => Promise.reject(new Error('probe blew up'))
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -1075,9 +1063,7 @@ test('plugin-lifecycle', async () => {
     })
 
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       // An empty resolved set must not install nowhere while claiming success.
       services.resolveSkillHarnesses = () => Promise.resolve([])
@@ -1094,9 +1080,7 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginHarnessChangeRemovesOrphanedCopies(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       const lifecycle = createMarketplacePluginLifecycleService(services)
       // First install targets claude + agents.
@@ -1125,9 +1109,7 @@ test('plugin-lifecycle', async () => {
 
   async function testClaudePluginRefusesForeignSkillDirCollision(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       // A hand-dropped skill dir this plugin does not own.
       await mkdir(join(workspaceRoot, '.claude', 'skills', 'alpha'), { recursive: true })
@@ -1164,7 +1146,6 @@ test('plugin-lifecycle', async () => {
         ['update-plugin-v2', bundleV2.files],
       ])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -1244,7 +1225,6 @@ test('plugin-lifecycle', async () => {
         ['tamper-plugin-v2', bundleV2.files],
       ])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -1291,7 +1271,6 @@ test('plugin-lifecycle', async () => {
       ])
       // Only the ORIGINAL publisher key is trusted.
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([bundleV1.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -1355,9 +1334,7 @@ test('plugin-lifecycle', async () => {
         },
       )
       const folders = new Map([['moving-plugin', reviewed.files]])
-      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {})
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const grant = await approve(services, reviewed.entry)
       assert.equal(grant.pin.commitSha, TEST_COMMIT, 'the approval is pinned to the commit verify read')
@@ -1382,9 +1359,7 @@ test('plugin-lifecycle', async () => {
   // commands does not install another.
   async function testInlineMcpRefusesServersThatWereNotReviewed(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(new Map()), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(new Map()), {})
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const server = {
         id: 'inline-mcp',
@@ -1445,7 +1420,6 @@ test('plugin-lifecycle', async () => {
         ['plugin-v2', v2.files],
       ])
       const { services, workspaceRoot, receiptStorePath } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
         trustedKeyFingerprints: new Set([v1.fingerprint]),
       })
       const lifecycle = createMarketplacePluginLifecycleService(services)
@@ -1478,9 +1452,7 @@ test('plugin-lifecycle', async () => {
   // the caller made up.
   async function testUnknownSkillHarnessesWriteNothing(): Promise<void> {
     await withTempDir(async (temp) => {
-      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createClaudeLifecycleFetcher(), {})
       services.packagedResourceResolver = await installClaudePayload(temp)
       const lifecycle = createMarketplacePluginLifecycleService(services)
       const result = await lifecycle.install({
@@ -1508,9 +1480,7 @@ test('plugin-lifecycle', async () => {
       const bundle = await writeBundle(temp, 'receiptless-plugin', components, signer, 1)
       bundle.entry.publisher.verified = false
       const folders = new Map([['receiptless-plugin', bundle.files]])
-      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(folders), {
-        trustedModules: new Map(),
-      })
+      const { services, workspaceRoot } = await createServices(temp, createGithubFetcher(folders), {})
 
       // Make only the receipt write fail: the store file is missing (an empty
       // store, as on a first install) inside a directory nothing may write to.

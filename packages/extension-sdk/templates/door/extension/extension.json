@@ -10,7 +10,7 @@
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
   "permissions": [
-    "ipc:workspace-read"
+    "workspace:read"
   ],
   "contributes": {
     "doors": [

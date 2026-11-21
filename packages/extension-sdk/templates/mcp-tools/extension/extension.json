@@ -10,8 +10,8 @@
   "name": "{{displayName}}",
   "description": "{{displayName}}, an extension for SprintEngine Studio.",
   "permissions": [
-    "mcp:tools",
-    "ipc:workspace-read"
+    "tools:contribute",
+    "workspace:read"
   ],
   "main": "dist/main.cjs",
   "contributes": {

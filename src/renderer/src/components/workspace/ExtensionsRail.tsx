@@ -81,9 +81,10 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
       if (result.status === 'failed') {
         setInstallMessage({ tone: 'error', text: result.message })
       } else if (result.status === 'installed') {
-        // Installation never grants trust. Land on the existing review surface,
-        // where requested access, signature state, trust, and enablement are all
-        // shown together instead of reimplementing that security decision here.
+        // Installation never approves anything. Land on the existing review
+        // surface, where requested access, signature state, approval and
+        // enablement are all shown together instead of reimplementing that
+        // security decision here.
         openSettingsOverlay({ initialTab: 'modules' })
       }
     } finally {

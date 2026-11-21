@@ -72,9 +72,12 @@ export type CapabilityManifest = {
 /** Trust classification: only 'trusted' modules are eligible to execute code. */
 export type ModuleTrustStatus = 'trusted' | 'signed' | 'unsigned' | 'invalid'
 
-// ── Permissions (install-time disclosure vocabulary) ─────────────────────────
+// ── Permissions ──────────────────────────────────────────────────────────────
 
-export { KNOWN_CAPABILITY_PERMISSIONS, type CapabilityPermission } from './permissions.js'
+export { EXTENSION_PERMISSIONS, isExtensionPermission, type ExtensionPermission } from './permissions.js'
+
+/** A scope a plugin bundle's plugin.json lists: shown to the person as it is, never checked. */
+export type CapabilityPermission = string
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
@@ -404,7 +407,7 @@ export type MainHost = {
    * letters, digits, dots and dashes; your module id is their namespace. The
    * whole batch is validated before one of it lands; a name you already
    * declared, a missing validator or a bad name throws. Unloading your module
-   * takes its methods with it. Declare the `module:bridge` permission.
+   * takes its methods with it. Your own methods need no permission.
    * Replaces host API 1's `registerIpc`.
    */
   registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
@@ -443,7 +446,7 @@ export type MainHost = {
    * the module is uninstalled. For data past module storage's 1 MB value
    * limit — caches, indexes, downloaded blobs — laid out however you like.
    * It is per user and per machine, never synced, and outside every project.
-   * Disclosed under the `storage` permission. Throws when the host has no
+   * Disclosed under the `storage:own` permission. Throws when the host has no
    * storage service (check `host.supports('module-data-dir')`).
    */
   getModuleDataDir(): string
@@ -462,8 +465,8 @@ export type MainHost = {
    * A workspace's checked-out branch and remotes, each remote with
    * `owner/repo` when it is on GitHub — so a VCS-aware module stops parsing
    * `.git` → gitdir → commondir → config itself, and needs no
-   * `filesystem:read-workspace` to do it. Declare `ipc:workspace-read`
-   * (checked: `permission_missing` without it). Never throws. The renderer
+   * `workspace:read` to do it. Declare `workspace:read`
+   * (checked: `not_permitted` without it). Never throws. The renderer
    * twin is `RendererHost.getWorkspaceGitInfo`. Check
    * `host.supports('workspace-git-info')` first.
    */
@@ -629,7 +632,8 @@ export type ModuleWorkspaceGitRemote = {
 }
 
 export type ModuleWorkspaceGitInfoErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'unknown_workspace'
   | 'no_folder'
   | 'not_a_repository'
@@ -641,7 +645,7 @@ export type ModuleWorkspaceGitInfoErrorCode =
  * A workspace's checked-out branch (null on a detached HEAD) and its remotes,
  * read by git from the workspace's own folder — so a worktree reports its own
  * branch and a submodule its own repository, and a remote whose SSH host is an
- * alias for github.com in ~/.ssh/config still carries `github`. (`Match`
+ * alias for github.com in ~/.ssh/config still carries `github:api`. (`Match`
  * blocks and `Include`d files are not followed when resolving an alias.)
  */
 export type ModuleWorkspaceGitInfoResult =
@@ -653,7 +657,7 @@ export type ModuleWorkspaceGitInfoResult =
  * resolution means "not currently resolvable" — an unknown id, or workspace
  * state that has not re-hydrated yet (e.g. right after app launch). Never a
  * throw, and never a deletion signal: retry later instead of discarding
- * per-workspace state. Declare the `ipc:workspace-read` permission
+ * per-workspace state. Declare the `workspace:read` permission
  * (install-time disclosure). The renderer twin is `RendererHost.getWorkspace`.
  */
 export type WorkspaceContextService = {
@@ -821,7 +825,7 @@ export type ScheduledAgentWriteResult = { ok: true; agent: ScheduledAgentView } 
  * `getScheduledAgentsService(host)`. Every method is pre-scoped to your
  * module: `create` stamps it as the owner, `list` returns only the ones it
  * owns, and every other call refuses an id it does not own as if the id did
- * not exist. Declare the `scheduled-agents.manage` permission (install-time
+ * not exist. Declare the `schedules:own` permission (install-time
  * disclosure). Studio starts the service ahead of every extension's worker.
  */
 export type ModuleScheduledAgentsService = {
@@ -989,7 +993,7 @@ export type CompanionAgentHandle = {
    * Relay the person's answer to an approval request that is still open (an
    * `approval_requested` event's `requestId`): one from a `tools: 'ask'` run
    * or from a `send` turn. Never answer on the person's behalf. Allowing
-   * (`once`) needs the `conversation:operate` permission, as answering an
+   * (`once`) needs the `conversation:own` permission, as answering an
    * approval in a chat does; without it a request can only be denied.
    * Answers `{ ok: false }` for a request that is not open. Check
    * `host.supports('companion-tools')`.
@@ -1066,7 +1070,7 @@ export type ModuleStorageResult<T> = ({ ok: true } & T) | { ok: false; code: Mod
  * `^[a-z0-9][a-z0-9._-]{0,63}$`; values must be JSON-serializable and at most
  * 1 MB; writes are atomic (write-then-rename). Pass `workspaceRoot` (absolute;
  * resolve it via the workspace context) for workspace-scoped keys, omit it for
- * the module's global store. Declare the `storage` permission (install-time
+ * the module's global store. Declare the `storage:own` permission (install-time
  * disclosure). Renderer panels reach storage through the module's own
  * declared methods (`MainHost.registerMethods`).
  *
@@ -1281,7 +1285,7 @@ export type RendererHost = {
   openGlobalSurface(id: string): boolean
   /**
    * The workspace's Backlog items as read-only views. Declare the
-   * `backlog.read` permission; the host checks it. Change items with the
+   * `backlog:read` permission; the host checks it. Change items with the
    * Backlog write methods below (or `getBacklogService` in the worker) —
    * never by writing an item's file. Rejects when the backlog module is
    * disabled.
@@ -1294,7 +1298,7 @@ export type RendererHost = {
    * `options.onError` hears why a snapshot could not be delivered (no project
    * folder, an unreadable Backlog); the watch stays open and a later readable
    * scan calls `cb` again. Throws when the backlog module is disabled or
-   * `backlog.read` is not declared.
+   * `backlog:read` is not declared.
    */
   watchBacklogItems(
     workspaceId: string,
@@ -1304,7 +1308,7 @@ export type RendererHost = {
   // ── Backlog writes (renderer twin of `getBacklogService`) ──
   // Each goes through the app's own Backlog service in main and answers a
   // result, never a throw. `itemId` is a `BacklogItemView.id`. Reads need
-  // `backlog.read`, writes `backlog.write`; `supports('backlog-write')` says
+  // `backlog:read`, writes `backlog:operate`; `supports('backlog-write')` says
   // whether the host has them.
   /** Where the workspace's Backlog lives. */
   getBacklogLocation(workspaceId: string): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>>
@@ -1334,7 +1338,7 @@ export type RendererHost = {
    * name, and mode. A null resolution means "not currently resolvable" (an
    * unknown id, or the shell hasn't wired workspace state yet at early
    * boot) — never a throw, and never a deletion signal: retry later instead
-   * of discarding per-workspace state. Declare the `ipc:workspace-read`
+   * of discarding per-workspace state. Declare the `workspace:read`
    * permission (install-time disclosure). The worker's twin is
    * `WorkspaceContextToken`.
    */
@@ -1344,7 +1348,7 @@ export type RendererHost = {
    * them — for a surface that is not mounted inside one workspace (a modal
    * floating over the window, a settings section) and so has no id to
    * resolve. Empty before the shell wires workspace state (early boot);
-   * never a throw. Declare the `ipc:workspace-read` permission (install-time
+   * never a throw. Declare the `workspace:read` permission (install-time
    * disclosure).
    */
   listWorkspaces(): Promise<ModuleWorkspaceView[]>
@@ -1353,8 +1357,8 @@ export type RendererHost = {
    * each with `owner/repo` when it is on GitHub — SSH host aliases from
    * ~/.ssh/config resolved. Read by git from the workspace's working root, so
    * a worktree reports its own branch. The worker's twin is
-   * `MainHost.getWorkspaceGitInfo`. Declare `ipc:workspace-read` (checked:
-   * `permission_missing` without it). Never throws. Check
+   * `MainHost.getWorkspaceGitInfo`. Declare `workspace:read` (checked:
+   * `not_permitted` without it). Never throws. Check
    * `host.supports('workspace-git-info')` first.
    */
   getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
@@ -1363,7 +1367,7 @@ export type RendererHost = {
    * on every change (deduped by value, so an unrelated store write does not
    * wake it). Returns the unsubscriber — call it on unmount. Before the shell
    * wires workspace state the first call reports an empty list. Declare
-   * `ipc:workspace-read`.
+   * `workspace:read`.
    */
   watchWorkspaces(cb: (workspaces: ModuleWorkspaceView[]) => void): () => void
   /**
@@ -1386,7 +1390,7 @@ export type RendererHost = {
    * means no state is recorded, the workspace id is unknown, or the shell
    * hasn't wired workspace state yet (early boot) — never a throw and never
    * a deletion signal; retry later instead of discarding state. Declare the
-   * `storage` permission (install-time disclosure).
+   * `storage:own` permission (install-time disclosure).
    */
   getWorkspaceModuleState<T = unknown>(workspaceId: string): T | undefined
   /**
@@ -1394,7 +1398,7 @@ export type RendererHost = {
    * null/undefined removes it. Keep entries JSON-serializable — they persist
    * into the workspace registry verbatim. False means the write was NOT
    * stored (unknown workspace id, or the shell hasn't wired workspace state
-   * yet) — surface it or retry; never assume success. Declare the `storage`
+   * yet) — surface it or retry; never assume success. Declare the `storage:own`
    * permission (install-time disclosure).
    */
   setWorkspaceModuleState(workspaceId: string, state: unknown): boolean
@@ -1410,7 +1414,7 @@ export type RendererHost = {
    * Scoped to your module: one module can never read another's. Persists with
    * app settings and survives a disable/enable cycle. It shares a keyspace with
    * your contributed Settings section's values, which are app-level module
-   * state by another name. Declare the `storage` permission.
+   * state by another name. Declare the `storage:own` permission.
    */
   getModuleAppState<T = unknown>(key: string): T | undefined
   /**
@@ -1418,7 +1422,7 @@ export type RendererHost = {
    * Keep values JSON-serializable — they persist into app settings verbatim.
    * False means the write was NOT stored (empty key, or the shell has not
    * wired the store yet) — surface it or retry; never assume success. Declare
-   * the `storage` permission.
+   * the `storage:own` permission.
    */
   setModuleAppState(key: string, value: unknown): boolean
   /**
@@ -1447,7 +1451,7 @@ export type RendererHost = {
    * worktree, for one) does live work under a worktree, and this
    * resolves that root. The live-runtime methods below
    * resolve workspace-relative paths against it. Null means "not currently
-   * resolvable" — never a throw. Declare `ipc:workspace-read`.
+   * resolvable" — never a throw. Declare `workspace:read`.
    */
   getWorkingRoot(workspaceId: string): Promise<string | null>
   /**
@@ -1456,7 +1460,7 @@ export type RendererHost = {
    * doesn't exist), then debounced (~300ms) on every change. Rejects with a
    * named cause for absolute/escaping paths, unknown/folderless workspaces,
    * or a disabled Agent Runtime module. Keep the resolved closure and call it
-   * on unmount. Declare `filesystem:read-workspace`.
+   * on unmount. Declare `workspace:read`.
    */
   watchWorkspaceFile(
     workspaceId: string,
@@ -1476,7 +1480,7 @@ export type RendererHost = {
    * module already opened under that key instead of opening another (check
    * `supports('chat.open-options')`). Expected failures come back as a
    * result, never a throw (`unavailable` when this window cannot open chats).
-   * Declare `chat:draft` to open drafts, or `conversation:operate`, which
+   * Declare `chat:draft` to open drafts, or `conversation:own`, which
    * `send: true` needs.
    */
   openChat(input: ModuleOpenChatInput): Promise<ModuleOpenChatResult>
@@ -1928,8 +1932,19 @@ export {
   type MarketplacePluginManifestResult,
 } from './plugin-manifest.js'
 
-// ── Published host services and what each needs ─────────────────────────────
-// The table a scaffolded project's smoke test and the `/testing` fakes read,
-// so neither keeps a copy of the host's rules that can go stale.
+// ── Every host method and what a call needs ─────────────────────────────────
+// The table Studio's gate checks every call against, which a scaffolded
+// project's smoke test and the `/testing` fakes read too, so neither keeps a
+// copy of the host's rules that can go stale.
 
-export { MODULE_SERVICE_REQUIREMENTS, moduleServiceRequirement, type ModuleServiceRequirement } from './services.js'
+export {
+  EXTENSION_HOST_REFUSALS,
+  EXTENSION_HOST_SERVICES,
+  EXTENSION_MAIN_HOST_METHODS,
+  EXTENSION_RENDERER_METHODS,
+  extensionHostService,
+  type ExtensionHostRefusalCode,
+  type ExtensionHostRequirement,
+  type ExtensionHostService,
+  type ExtensionInvokerRequirement,
+} from './services.js'

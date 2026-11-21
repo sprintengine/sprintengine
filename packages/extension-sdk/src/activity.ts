@@ -1,6 +1,6 @@
 // The person's own agent activity, read-only: token usage across every agent
 // session on this machine (`usage:read`), and the chats and prompts of their
-// Studio chats (`conversation:read-all`). Both are broad reads the person
+// Studio chats (`conversation:read`). Both are broad reads the person
 // consents to at install; neither lets a module change anything.
 
 import type { ModuleConversationStatus } from './conversation.js'
@@ -71,7 +71,7 @@ export type UsageSource = {
   error: string | null
 }
 
-export type ModuleUsageErrorCode = 'permission_missing' | 'invalid_input' | 'unavailable'
+export type ModuleUsageErrorCode = 'not_permitted' | 'approval_required' | 'invalid_input' | 'unavailable'
 
 export type ModuleUsageResult<T extends object = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleUsageErrorCode; message: string }
@@ -119,7 +119,7 @@ export function getUsageService(host: MainHost): ModuleUsageService {
   }
 }
 
-// ── Activity (permission `conversation:read-all`) ────────────────────────────
+// ── Activity (permission `conversation:read`) ────────────────────────────
 
 /** A Studio chat, summarised. Never its tool output. */
 export type ActivityChatSummary = {
@@ -165,7 +165,7 @@ export type ActivityPromptsInput = {
   limit?: number
 }
 
-export type ModuleActivityErrorCode = 'permission_missing' | 'invalid_input' | 'unavailable'
+export type ModuleActivityErrorCode = 'not_permitted' | 'approval_required' | 'invalid_input' | 'unavailable'
 
 export type ModuleActivityResult<T extends object = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleActivityErrorCode; message: string }
@@ -175,7 +175,7 @@ export type ModuleActivityResult<T extends object = object> =
  * `getActivityService(host)`. What it returns is summaries and the person's
  * own prompts with the tail of each reply — never tool calls, tool output,
  * attachments or anything secret-shaped. Chats in closed workspaces and agent
- * sessions outside Studio are not covered. Declare `conversation:read-all`:
+ * sessions outside Studio are not covered. Declare `conversation:read`:
  * the consent prompt flags it as a broad scope.
  */
 export type ModuleActivityService = {

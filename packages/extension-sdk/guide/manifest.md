@@ -26,7 +26,7 @@ you change it.
   "tier": "worker",
   "name": "Notes",
   "description": "A scratchpad beside your work.",
-  "permissions": ["storage", "module:bridge"],
+  "permissions": ["storage:own"],
   "main": "dist/main.cjs",
   "contributes": {
     "commands": [
@@ -91,7 +91,7 @@ or absent.
 `<publisher>.<id>`: the publisher comes from where it was installed from, and
 a folder install is `local`, so a project's `dev:install` lands in
 `~/.sprintengine/extensions/local.<id>/`. The install key is what
-`studio.moduleId` answers and what storage and trust are keyed by, so never
+`studio.moduleId` answers and what storage and approval are keyed by, so never
 change `id` after you release. Ids starting `studio-` or `sprintengine-` install
 only from Studio's own catalogue.
 
@@ -149,7 +149,7 @@ markers.
 | `license` | string |  | 0.13.0 |  | Its licence, as an SPDX expression. |
 | `repository` | string |  | 0.13.0 |  | Where its source lives. |
 | `homepage` | string |  | 0.13.0 |  | Its home page. |
-| `permissions` | `filesystem:read-workspace` \| `filesystem:write-workspace` \| `filesystem:read-home` \| `process:spawn` \| `network` \| `ipc:workspace-read` \| `ipc:workspace-write` \| `ipc:settings` \| `ipc:invoke` \| `module:bridge` \| `backlog.read` \| `backlog.write` \| `backlog.link.open` \| `scheduled-agents.manage` \| `agents:companion` \| `agents:generate` \| `storage` \| `conversation:read` \| `conversation:operate` \| `conversation:bypass` \| `chat:draft` \| `secrets` \| `github` \| `mcp:tools` \| `usage:read` \| `conversation:read-all`[] (at most 32) |  | 0.13.0 | ui | What it asks the person to allow. `content` and `declarative` extensions hold none. |
+| `permissions` | `workspace:read` \| `workspace:operate` \| `conversation:read` \| `backlog:read` \| `backlog:operate` \| `providers:read` \| `usage:read` \| `storage:own` \| `settings:own` \| `secrets:own` \| `notifications:show` \| `conversation:own` \| `conversation:bypass` \| `chat:draft` \| `schedules:own` \| `agents:generate` \| `agents:companion` \| `github:api` \| `tools:contribute`[] (at most 32) |  | 0.13.0 | ui | What it asks the person to allow. `content` and `declarative` extensions hold none. |
 | `main` | string |  | 0.13.0 | worker | The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it. |
 | `background` | boolean |  | 0.13.0 | worker | `true` keeps the worker running while the extension is on. |
 | `contributes` | object |  | 0.13.0 |  | What it adds to Studio. Every point defaults to empty. |
@@ -182,7 +182,7 @@ markers.
 | `contributes.settingsSections[].title` | string | yes | 0.13.0 |  | What Studio calls it. |
 | `contributes.settingsSections[].icon` | `extension` \| `chat` \| `branch` \| `folder` \| `schedule` \| `spark` \| `lock` \| `settings` \| `check` \| `warning` \| `copy` \| `notes` |  | 0.13.0 |  | Glyph beside the title. Defaults to `extension`. |
 | `contributes.settingsSections[].entry` | string | yes | 0.13.0 |  | What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function. |
-| `contributes.mcpTools` | object[] (at most 64) |  | 0.13.0 | worker | Tools agents reach through Studio’s MCP server. Needs the `mcp:tools` permission. |
+| `contributes.mcpTools` | object[] (at most 64) |  | 0.13.0 | worker | Tools agents reach through Studio’s MCP server. Needs the `tools:contribute` permission. |
 | `contributes.mcpTools[].name` | string | yes | 0.13.0 |  | The tool’s name on Studio’s MCP server. The worker serves it with `registerMcpTools`; a tool it registers that is not declared here is refused. |
 | `contributes.mcpTools[].description` | string | yes | 0.13.0 |  | What agents are told the tool does. |
 | `contributes.mcpTools[].access` | `read` \| `operate` | yes | 0.13.0 |  | `read` changes nothing; `operate` may, and agents are asked before it runs where their settings say so. |

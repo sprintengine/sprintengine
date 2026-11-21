@@ -180,7 +180,7 @@ function hubWithBoard() {
             version: 1,
             defaultEnabled: true,
             source: 'third-party',
-            permissions: ['module:bridge'],
+            permissions: [],
           }
         : undefined,
   })
@@ -358,7 +358,14 @@ function hubWithServices(provide: { backlog?: boolean; usage?: boolean } = { bac
   const kernel = createMainKernel({
     resolveModuleManifest: (id) =>
       id === 'acme.board'
-        ? { id, displayName: 'Board', version: 1, defaultEnabled: true, source: 'third-party', permissions: [] }
+        ? {
+            id,
+            displayName: 'Board',
+            version: 1,
+            defaultEnabled: true,
+            source: 'third-party',
+            permissions: ['backlog:read', 'backlog:operate', 'usage:read'],
+          }
         : undefined,
   })
   const calls: unknown[][] = []
@@ -372,7 +379,7 @@ function hubWithServices(provide: { backlog?: boolean; usage?: boolean } = { bac
       create: async (...args) => {
         calls.push(['create', ...args])
         return args[2].title === 'denied'
-          ? { ok: false, code: 'permission_missing', message: 'No backlog.write.' }
+          ? { ok: false, code: 'not_permitted', message: 'No backlog:operate.' }
           : { ok: true, id: 'backlog/unfiled/x.md', relativePath: 'unfiled/x.md', path: '/p/x.md' }
       },
       updateStatus: async (...args) => {
@@ -400,7 +407,7 @@ function hubWithServices(provide: { backlog?: boolean; usage?: boolean } = { bac
       },
     }))
   const hub = createStudioModuleHub()
-  hub.serveHostServicesFrom((moduleId) => kernel.hostServicesFor(moduleId))
+  hub.serveHostServicesFrom((moduleId, invoker) => kernel.hostServicesFor(moduleId, invoker))
   return { hub, calls }
 }
 
@@ -438,7 +445,7 @@ test('a module’s Backlog writes and usage query reach the services under its i
   // The service's own refusal is the answer, in its words.
   assert.deepEqual(
     answerOf(await request('extensionBacklog.create', { ...at, input: { title: 'denied' }, commandId: 'c6' })),
-    { ok: false, code: 'permission_missing', message: 'No backlog.write.' },
+    { ok: false, code: 'not_permitted', message: 'No backlog:operate.' },
   )
 })
 
@@ -480,7 +487,9 @@ test('a retried Backlog write is carried out once', async () => {
 
 test('a paired client reads the host services with extensions:read and writes them only with extensions:operate', async () => {
   const { hub, calls } = hubWithServices()
-  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['extensions:read']))
+  const reader = await caller(hub, (started) =>
+    pairFakeClient(started.auth, 'reader', ['extensions:read', 'workspaces:read']),
+  )
   assert.equal(
     (
       answerOf(await reader.request('extensionUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })) as {
@@ -491,7 +500,16 @@ test('a paired client reads the host services with extensions:read and writes th
   )
   const write = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'No' }, commandId: 'c1' }
   assert.equal(codeOf(await reader.request('extensionBacklog.create', write)), 'scope_required')
-  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['extensions:operate']))
+  // The extension may write the Backlog; a client that may not cannot write it through the extension.
+  const unentitled = await caller(hub, (started) => pairFakeClient(started.auth, 'unentitled', ['extensions:operate']))
+  const refused = answerOf(
+    await unentitled.request('extensionBacklog.create', { ...write, commandId: 'c0', input: { title: 'No' } }),
+  ) as { ok: boolean; code?: string; message?: string }
+  assert.equal(refused.code, 'not_permitted', JSON.stringify(refused))
+  assert.match(refused.message ?? '', /needs "backlog:operate", which "unentitled" does not hold/)
+  const operator = await caller(hub, (started) =>
+    pairFakeClient(started.auth, 'operator', ['extensions:operate', 'backlog:operate']),
+  )
   await operator.request('extensionBacklog.create', { ...write, input: { title: 'Yes' } })
   assert.deepEqual(
     calls.map((call) => call[0]),
@@ -541,7 +559,7 @@ test('the installed list names a folder Studio could not read by its place only 
     list: () => [],
     setEnabled: async () => ({ ok: true, module: null }),
     install: async () => ({ ok: false, message: 'no' }),
-    setTrust: async () => ({ ok: true }),
+    approve: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
     installed: async () => ({ modules: [], rejected }),
     rendererEntries: async () => ({ entries: [], failures: {} }),
@@ -573,7 +591,7 @@ test('a change to what runs is an owner’s: a paired client holding extensions:
     list: () => [],
     setEnabled: async (moduleId) => (changes.push(moduleId), { ok: true, module: null }),
     install: async () => ({ ok: false, message: 'no' }),
-    setTrust: async () => ({ ok: true }),
+    approve: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
     installed: async () => ({ modules: [], rejected: [] }),
     rendererEntries: async () => ({ entries: [], failures: {} }),
@@ -600,7 +618,7 @@ test('the window’s module report is an owner’s: a paired client holding exte
     list: () => [],
     setEnabled: async () => ({ ok: true, module: null }),
     install: async () => ({ ok: false, message: 'no' }),
-    setTrust: async () => ({ ok: true }),
+    approve: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
     installed: async () => ({ modules: [], rejected: [] }),
     rendererEntries: async () => ({ entries: [], failures: {} }),

@@ -68,7 +68,8 @@ export type ModuleConversationSummary = ModuleConversationRef & {
 }
 
 export type ModuleConversationErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'invalid_input'
   | 'unknown_workspace'
   | 'workspace_folder_missing'
@@ -107,7 +108,7 @@ export type ModuleConversationCreateInput = {
 export type ModuleConversationResult<T = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleConversationErrorCode; message: string }
 
-// `conversation:read` covers subscribe/transcript/list/watch; `conversation:operate`
+// `conversation:own` covers subscribe/transcript/list/watch; `conversation:own`
 // covers everything and implies read. A module reaches only the conversations
 // it created.
 export type ModuleConversationService = {
@@ -218,7 +219,8 @@ export type ModuleOpenChatResult =
   | {
       ok: false
       code:
-        | 'permission_missing'
+        | 'not_permitted'
+        | 'approval_required'
         | 'unknown_workspace'
         | 'workspace_folder_missing'
         | 'cli_not_conversational'
@@ -249,7 +251,8 @@ export type ModuleTextGenerationInput = {
 }
 
 export type ModuleTextGenerationErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'invalid_input'
   | 'unsupported'
   | 'unavailable'

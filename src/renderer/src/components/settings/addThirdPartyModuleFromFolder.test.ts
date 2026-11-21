@@ -18,7 +18,12 @@ test('addThirdPartyModuleFromFolder', async () => {
         {
           install: async () => {
             installs += 1
-            return { ok: true, moduleId: 'x', trust: 'unsigned', strippedLinks: [] }
+            return {
+              ok: true,
+              moduleId: 'x',
+              approval: { state: 'pending', fingerprint: 'sha256-x' },
+              strippedLinks: [],
+            }
           },
         },
       ),
@@ -34,12 +39,22 @@ test('addThirdPartyModuleFromFolder', async () => {
         {
           install: async (folder) => {
             selected = folder
-            return { ok: true, moduleId: 'local.compass', trust: 'unsigned', strippedLinks: [] }
+            return {
+              ok: true,
+              moduleId: 'local.compass',
+              approval: { state: 'pending', fingerprint: 'sha256-x' },
+              strippedLinks: [],
+            }
           },
         },
       ),
-      { status: 'installed', id: 'local.compass', trust: 'unsigned', strippedLinks: [] },
-      'a selected folder is installed through the Studio and keeps its trust classification',
+      {
+        status: 'installed',
+        id: 'local.compass',
+        approval: { state: 'pending', fingerprint: 'sha256-x' },
+        strippedLinks: [],
+      },
+      'a selected folder is installed through the Studio and says what it waits to have approved',
     )
     assert.equal(selected, '/extensions/compass')
 
@@ -50,20 +65,33 @@ test('addThirdPartyModuleFromFolder', async () => {
           install: async () => ({
             ok: true,
             moduleId: 'local.linked',
-            trust: 'unsigned',
+            approval: { state: 'pending', fingerprint: 'sha256-x' },
             strippedLinks: ['dist/shared.js', 'node_modules'],
           }),
         },
       ),
-      { status: 'installed', id: 'local.linked', trust: 'unsigned', strippedLinks: ['dist/shared.js', 'node_modules'] },
+      {
+        status: 'installed',
+        id: 'local.linked',
+        approval: { state: 'pending', fingerprint: 'sha256-x' },
+        strippedLinks: ['dist/shared.js', 'node_modules'],
+      },
       'the symbolic links left out of the copy come back for the install review to name',
     )
     assert.deepEqual(
       await addThirdPartyModuleFromFolder(
         { openDir: async () => '/extensions/older-studio' },
-        { install: async () => ({ ok: true, moduleId: 'local.older', trust: 'unsigned' }) as never },
+        {
+          install: async () =>
+            ({ ok: true, moduleId: 'local.older', approval: { state: 'pending', fingerprint: 'sha256-x' } }) as never,
+        },
       ),
-      { status: 'installed', id: 'local.older', trust: 'unsigned', strippedLinks: [] },
+      {
+        status: 'installed',
+        id: 'local.older',
+        approval: { state: 'pending', fingerprint: 'sha256-x' },
+        strippedLinks: [],
+      },
       'a Studio that reports no links reads as none stripped',
     )
 

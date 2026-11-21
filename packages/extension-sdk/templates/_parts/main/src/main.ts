@@ -9,8 +9,8 @@ import type { MainMethods } from './methods'
 // calls the `operate` method of its own id.
 //
 // `status` is a method a surface calls with
-// `studio.methods<MainMethods>().read('status', {})`; declaring methods needs
-// the "module:bridge" permission. Each method says who may call it (`read`, or
+// `studio.methods<MainMethods>().read('status', {})`; an extension's own
+// methods need no permission. Each method says who may call it (`read`, or
 // `operate` for one that changes something), reads its params, and answers
 // `{ ok: true, result }` or its own `{ ok: false, code, message }`. Replace it
 // with the extension's own; their contract is in ./methods.ts.

@@ -53,21 +53,28 @@ test('load-modules', async () => {
   // a built-in id like `scheduled-agents`; its activate may still resolve a
   // service any of the app's modules provides.
   function testAppModulesStartBeforeEveryExtension(): void {
-    const token = createServiceToken<{ ping(moduleId: string): string }>('scheduled-agents.module-service')
+    const token = createServiceToken<{ list(moduleId: string): string }>('scheduled-agents.module-service')
     const order: string[] = []
     const provider: CapabilityModule = {
       manifest: { id: 'zz-scheduled', displayName: 'Provider', version: 1, defaultEnabled: true },
       registerMain: (host) => {
         order.push('zz-scheduled')
-        host.provideService(token, () => ({ ping: (moduleId: string) => `pong ${moduleId}` }))
+        host.provideService(token, () => ({ list: (moduleId: string) => `pong ${moduleId}` }))
       },
     }
     let answer = ''
     const extension: CapabilityModule = {
-      manifest: { id: 'local.aaa', displayName: 'Aaa', version: '1.0.0', defaultEnabled: true, source: 'third-party' },
+      manifest: {
+        id: 'local.aaa',
+        displayName: 'Aaa',
+        version: '1.0.0',
+        defaultEnabled: true,
+        source: 'third-party',
+        permissions: ['schedules:own'],
+      },
       registerMain: (host) => {
         order.push('local.aaa')
-        answer = host.requireService(token).ping(host.moduleId)
+        answer = host.requireService(token).list(host.moduleId)
       },
     }
     const { report } = loadMainModules({ modules: [extension, provider] })
@@ -259,7 +266,7 @@ test('load-modules', async () => {
         version: 1,
         defaultEnabled: true,
         source: 'third-party',
-        permissions: ['module:bridge'],
+        permissions: [],
       },
       registerMain: async (host) => {
         host.registerMethods({ ping: answering('pong') })
@@ -409,8 +416,8 @@ test('load-modules', async () => {
     )
     const planned = planThirdPartyMainModules({
       modules: [
-        installedThirdPartyModule({ id: 'trusted', moduleRoot, trust: 'trusted', main: 'main.cjs' }),
-        installedThirdPartyModule({ id: 'default', moduleRoot: defaultRoot, trust: 'trusted', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'trusted', moduleRoot, standing: 'approved', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'default', moduleRoot: defaultRoot, standing: 'approved', main: 'main.cjs' }),
       ],
       rejected: [],
     })
@@ -432,9 +439,9 @@ test('load-modules', async () => {
     )
     const planned = planThirdPartyMainModules({
       modules: [
-        installedThirdPartyModule({ id: 'unsigned', moduleRoot: unsignedRoot, trust: 'unsigned', main: 'main.cjs' }),
-        installedThirdPartyModule({ id: 'signed', moduleRoot: signedRoot, trust: 'signed', main: 'main.cjs' }),
-        installedThirdPartyModule({ id: 'invalid', moduleRoot: invalidRoot, trust: 'invalid', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'unsigned', moduleRoot: unsignedRoot, standing: 'pending', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'signed', moduleRoot: signedRoot, standing: 'pending', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'invalid', moduleRoot: invalidRoot, standing: 'invalid', main: 'main.cjs' }),
       ],
       rejected: [],
     })
@@ -449,11 +456,11 @@ test('load-modules', async () => {
         { id: 'local.invalid', message: 'Extension "local.invalid" has an invalid signature and will not load.' },
         {
           id: 'local.signed',
-          message: 'Extension "local.signed" is not trusted yet; trust it in Settings → Extensions to enable.',
+          message: 'Extension "local.signed" waits for your approval; approve it in Settings → Extensions to enable.',
         },
         {
           id: 'local.unsigned',
-          message: 'Extension "local.unsigned" is not trusted yet; trust it in Settings → Extensions to enable.',
+          message: 'Extension "local.unsigned" waits for your approval; approve it in Settings → Extensions to enable.',
         },
       ],
     )
@@ -472,13 +479,23 @@ test('load-modules', async () => {
     }
     const planned = planThirdPartyMainModules({
       modules: [
-        installedThirdPartyModule({ id: 'code-free', moduleRoot: codeFreeRoot, trust: 'trusted' }),
-        installedThirdPartyModule({ id: 'escaped', moduleRoot: escapedRoot, trust: 'trusted', main: '../outside.cjs' }),
-        installedThirdPartyModule({ id: 'bad-export', moduleRoot: badExportRoot, trust: 'trusted', main: 'main.cjs' }),
+        installedThirdPartyModule({ id: 'code-free', moduleRoot: codeFreeRoot, standing: 'approved' }),
+        installedThirdPartyModule({
+          id: 'escaped',
+          moduleRoot: escapedRoot,
+          standing: 'approved',
+          main: '../outside.cjs',
+        }),
+        installedThirdPartyModule({
+          id: 'bad-export',
+          moduleRoot: badExportRoot,
+          standing: 'approved',
+          main: 'main.cjs',
+        }),
         installedThirdPartyModule({
           id: 'import-failure',
           moduleRoot: importFailureRoot,
-          trust: 'trusted',
+          standing: 'approved',
           main: 'main.cjs',
         }),
       ],
@@ -540,7 +557,7 @@ test('load-modules', async () => {
       registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
     const planned = planThirdPartyMainModules({
-      modules: [installedThirdPartyModule({ id: 'bad', moduleRoot: badRoot, trust: 'trusted', main: 'main.cjs' })],
+      modules: [installedThirdPartyModule({ id: 'bad', moduleRoot: badRoot, standing: 'approved', main: 'main.cjs' })],
       rejected: [],
     })
     const { report } = loadMainModules({ modules: [...planned.modules, good] })
@@ -567,14 +584,14 @@ test('load-modules', async () => {
         installedThirdPartyModule({
           id: 'declared',
           moduleRoot: declaredRoot,
-          trust: 'trusted',
+          standing: 'approved',
           main: 'main.cjs',
           mcpTools,
         }),
         installedThirdPartyModule({
           id: 'undeclared',
           moduleRoot: undeclaredRoot,
-          trust: 'trusted',
+          standing: 'approved',
           main: 'main.cjs',
           mcpTools,
         }),
@@ -616,7 +633,8 @@ test('load-modules', async () => {
   function installedThirdPartyModule(options: {
     id: string
     moduleRoot: string
-    trust: InstalledModule['trust']['status']
+    /** Approved as it is, waiting for approval, or with a signature its files do not match. */
+    standing: 'approved' | 'pending' | 'invalid'
     main?: string
     mcpTools?: ExtensionManifest['contributes']['mcpTools']
   }): InstalledModule {
@@ -624,7 +642,7 @@ test('load-modules', async () => {
       ? extensionManifest({
           id: options.id,
           main: options.main,
-          permissions: options.mcpTools ? ['module:bridge', 'mcp:tools'] : ['module:bridge'],
+          permissions: options.mcpTools ? ['tools:contribute'] : [],
           ...(options.mcpTools ? { contributes: { mcpTools: options.mcpTools } } : {}),
         })
       : extensionManifest({ id: options.id, tier: 'declarative', permissions: undefined, main: undefined })
@@ -634,7 +652,7 @@ test('load-modules', async () => {
     if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues))
     const extension: ExtensionManifest = options.main ? { ...parsed.manifest, main: options.main } : parsed.manifest
     const key = `local.${options.id}`
-    // A trusted extension is one whose files were verified; the loader holds
+    // An approved extension is one whose files were verified; the loader holds
     // the folder to those digests again before it requires the worker.
     const scan = computeModuleFileDigestsSync(options.moduleRoot)
     return {
@@ -643,10 +661,18 @@ test('load-modules', async () => {
       manifest: capabilityManifestOf(key, 'local', extension),
       extension,
       moduleRoot: options.moduleRoot,
-      trust:
-        options.trust === 'trusted'
-          ? { status: 'trusted', via: 'grant', verifiedFiles: scan.files }
-          : { status: options.trust },
+      standing:
+        options.standing === 'approved'
+          ? {
+              signature: 'unsigned',
+              approval: { state: 'approved', fingerprint: 'sha256-test' },
+              verifiedFiles: scan.files,
+              contentDigest: 'test',
+            }
+          : {
+              signature: options.standing === 'invalid' ? 'invalid' : 'unsigned',
+              approval: { state: 'pending', fingerprint: 'sha256-test', growth: [], reapproval: false },
+            },
     }
   }
 

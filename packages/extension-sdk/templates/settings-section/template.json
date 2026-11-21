@@ -3,7 +3,7 @@
   "title": "Settings section",
   "summary": "A section in Settings, and a command that opens Settings.",
   "permissions": [
-    "storage"
+    "settings:own"
   ],
   "capabilities": [
     "settings",

@@ -6,8 +6,8 @@ import { moduleAssetUrl } from '../../shared/modules/assets'
 import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './module-assets'
 import { discoverUserModules } from './user-module-registry'
 import { createModuleAssetOriginResolver } from './module-asset-origins'
-import { extensionContentSync } from './module-signature'
 import { extensionManifest, writeExtensionFolder } from '../../../tests/extension-folder'
+import { approvedContext } from './extension-approvals.test-helper'
 import { test } from 'vitest'
 
 test('module-assets', async () => {
@@ -28,16 +28,15 @@ test('module-assets', async () => {
     const root = await mkdtemp(join(tmpdir(), 'studio-module-assets-'))
     try {
       const directory = writeExtensionFolder(join(root, 'local.doom'), {
-        manifest: extensionManifest({ id: 'doom', tier: 'content', permissions: undefined, main: undefined }),
+        manifest: extensionManifest({ id: 'doom' }),
         files: {
+          'dist/main.cjs': 'exports.activate = () => {}\n',
           'runtime/index.html': '<script src="engine.js"></script>',
           'runtime/engine.wasm': '\u0000asm',
         },
       })
-      // The grant names the folder's content as it is, as trusting it in Settings records.
-      const content = extensionContentSync(directory)
-      assert.ok(content.ok)
-      const trustedModules = new Map([['local.doom', content.fingerprint]])
+      // The approval names the folder's content as it is, as approving it in Settings records.
+      const approved = approvedContext({ 'local.doom': directory })
       let enabled = true
       const assetOrigin = createModuleAssetOriginResolver(join(root, 'private-profile'))
       assert.equal(
@@ -48,7 +47,7 @@ test('module-assets', async () => {
       const asset = (id: string, path: string) => moduleAssetUrl(id, path, assetOrigin(id))
       const handler = createModuleAssetHandler({
         assetOrigin,
-        discoverModules: () => discoverUserModules(root, { trustedModules }),
+        discoverModules: () => discoverUserModules(root, approved),
         isEnabled: () => enabled,
       })
       const url = asset('local.doom', 'runtime/index.html')
@@ -78,7 +77,7 @@ test('module-assets', async () => {
       assert.equal((await handler(new Request(url))).status, 403)
       enabled = true
       assert.equal((await handler(new Request(`${url}/%2e%2e%2f%2e%2e%2fsecret`))).status, 400)
-      // Served bytes are the verified bytes: a file changed after the grant is
+      // Served bytes are the verified bytes: a file changed after the approval is
       // refused, and so is one the module was never verified with.
       await writeFile(join(directory, 'runtime', 'engine.wasm'), new Uint8Array([1, 2, 3, 4]))
       assert.equal((await handler(new Request(new URL('engine.wasm', url)))).status, 403)
@@ -88,9 +87,11 @@ test('module-assets', async () => {
       await symlink(join(root, 'secret'), join(directory, 'runtime', 'escape'))
       assert.equal((await handler(new Request(asset('local.doom', 'runtime/escape')))).status, 403)
       // A symlink in the folder is a file the module cannot vouch for, so the
-      // whole module stops being trusted, not only that path.
+      // whole module stops being served, not only that path.
       assert.equal((await handler(new Request(url))).status, 403)
-      trustedModules.clear()
+      await rm(join(directory, 'runtime', 'escape'))
+      assert.equal((await handler(new Request(url))).status, 200)
+      approved.approvals.clear()
       assert.equal((await handler(new Request(url))).status, 403)
     } finally {
       await rm(root, { recursive: true, force: true })

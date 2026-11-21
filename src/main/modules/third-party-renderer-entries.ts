@@ -5,14 +5,14 @@ import { readFile } from 'fs/promises'
 import type { ThirdPartyRendererEntriesResult, ThirdPartyRendererEntryView } from '../../shared/modules/manifest'
 import { EXTENSION_SURFACE_POINTS } from '../../shared/modules/third-party-manifest'
 import { resolveContainedEntry, sanitizeEntryMessage } from './entry-containment'
-import { isLoadEligible } from './module-signature'
+import { isExtensionRunnable } from './module-signature'
 import type { InstalledModule } from './user-module-registry'
 
-// Serves trusted extensions' window half: the `entry` bundle of each panel,
+// Serves approved extensions' window half: the `entry` bundle of each panel,
 // door and settings section, beside the manifest whose commands, menus and
 // top bar items the window registers (an extension with no window code is
-// served with no entries, for those). Same trust gate as the worker: only a trusted
-// extension's entries, resolving inside its folder and matching the digests
+// served with no entries, for those). Same approval gate as the worker: only
+// an approved extension's entries, resolving inside its folder and matching the digests
 // it was verified with, are served. The code travels over the Studio protocol
 // (`extension.rendererEntries`; the window imports each bundle as a blob
 // module), so a window loads the extensions of the Studio it is connected to,
@@ -40,11 +40,11 @@ function declaredEntries(installed: InstalledModule): string[] {
 // loads can never disagree.
 function resolveRendererEntries(installed: InstalledModule): RendererEntriesResolution {
   const declared = declaredEntries(installed)
-  if (!isLoadEligible(installed.trust.status)) {
+  if (!isExtensionRunnable(installed.standing)) {
     if (declared.length === 0) return { servable: false, view: { availability: 'none' } }
     return {
       servable: false,
-      view: { availability: 'blocked', message: 'Its window code is held back until the extension is trusted.' },
+      view: { availability: 'blocked', message: 'Its window code is held back until you approve the extension.' },
     }
   }
   const entries: EntryResolution[] = []
@@ -62,9 +62,9 @@ function resolveRendererEntries(installed: InstalledModule): RendererEntriesReso
     if (!existsSync(absolute)) {
       return { servable: false, view: { availability: 'error', message: `The window entry ${path} is missing.` } }
     }
-    // Trusted means the files were verified; an entry outside that set was
+    // Runnable means the files were verified; an entry outside that set was
     // never vouched for, whatever is on disk under its name now.
-    const expectedSha256 = installed.trust.verifiedFiles?.[path]
+    const expectedSha256 = installed.standing.verifiedFiles?.[path]
     if (expectedSha256 === undefined) {
       return {
         servable: false,
@@ -90,7 +90,7 @@ export async function collectThirdPartyRendererEntries(
   for (const installed of modules) {
     const resolution = resolveRendererEntries(installed)
     if (!resolution.servable) {
-      // Trust-blocked extensions are reported through their launch statuses;
+      // Extensions waiting for approval are reported through their launch statuses;
       // only a declared-but-broken entry is a serving failure.
       if (resolution.view.availability === 'error' && resolution.view.message) {
         result.failures[installed.key] = resolution.view.message

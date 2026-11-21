@@ -3,9 +3,8 @@
   "title": "Backlog action",
   "summary": "A Backlog item menu entry whose command the worker runs: it starts a planning chat for each item.",
   "permissions": [
-    "module:bridge",
-    "backlog.read",
-    "conversation:operate"
+    "backlog:read",
+    "conversation:own"
   ],
   "capabilities": [
     "backlog",

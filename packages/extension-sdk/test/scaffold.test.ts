@@ -39,7 +39,7 @@ import { afterAll, beforeAll, test } from 'vitest'
 
 import {
   EXTENSION_MANIFEST_SINCE,
-  KNOWN_CAPABILITY_PERMISSIONS,
+  isExtensionPermission,
   requiredExtensionTier,
   validateExtensionManifest,
 } from '../src/index.js'
@@ -303,7 +303,7 @@ for (const template of templates) {
     assert.equal(manifest.tier, requiredExtensionTier(manifest), `${template.id}: the least tier that carries it`)
     assert.deepEqual(manifest.permissions, template.permissions, `${template.id}: template.json permissions`)
     for (const permission of manifest.permissions) {
-      assert.ok(KNOWN_CAPABILITY_PERMISSIONS.includes(permission), `${template.id}: unknown permission ${permission}`)
+      assert.ok(isExtensionPermission(permission), `${template.id}: unknown permission ${permission}`)
     }
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
     assert.equal(pkg.devDependencies['@sprintengine/extension-sdk'], `^${SDK_VERSION}`)
@@ -360,7 +360,7 @@ test('projects composed from parts run the same loop, and a signed install verif
   const composedManifest = readManifest(composed)
   assert.equal(composedManifest.tier, 'worker', 'the worker raised the tier')
   assert.equal(composedManifest.main, 'dist/main.cjs')
-  assert.deepEqual(composedManifest.permissions, ['module:bridge', 'mcp:tools', 'storage'])
+  assert.deepEqual(composedManifest.permissions, ['tools:contribute', 'settings:own'])
   assert.deepEqual(
     composedManifest.contributes.mcpTools.map((tool) => tool.name),
     ['demo_composed_about'],
@@ -429,13 +429,14 @@ test('projects composed from parts run the same loop, and a signed install verif
   const declared = readFileSync(manifestPath, 'utf8')
   const smoke = () => spawnSync('node', ['--test', 'test/smoke.test.mjs'], { cwd: composed, env, encoding: 'utf8' })
 
-  // A worker that declares methods without "module:bridge".
-  const withoutBridge = JSON.parse(declared) as { permissions: string[] }
-  withoutBridge.permissions = withoutBridge.permissions.filter((permission) => permission !== 'module:bridge')
-  writeFileSync(manifestPath, JSON.stringify(withoutBridge, null, 2))
-  const unbridged = smoke()
-  assert.notEqual(unbridged.status, 0)
-  assert.match(unbridged.stdout, /needs the "module:bridge" permission/)
+  // A worker that calls into Studio for what its manifest does not ask for.
+  const unasked = JSON.parse(declared) as { permissions: string[]; contributes: Record<string, unknown> }
+  unasked.permissions = unasked.permissions.filter((permission) => permission !== 'tools:contribute')
+  unasked.contributes.mcpTools = []
+  writeFileSync(manifestPath, JSON.stringify(unasked, null, 2))
+  const refused = smoke()
+  assert.notEqual(refused.status, 0)
+  assert.match(refused.stdout, /was not approved for "tools:contribute"/)
 
   // A command without an action that the worker does not serve.
   const withCommand = JSON.parse(declared) as { contributes: Record<string, unknown> }

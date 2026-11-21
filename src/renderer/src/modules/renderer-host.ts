@@ -1004,12 +1004,12 @@ export type RendererHost = {
    * `extension_method_unknown`, `invalid_params`, …), is an answer.
    */
   methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
-  /** The workspace's Backlog items (read-only views; change them with the write methods below). Requires `backlog.read`. */
+  /** The workspace's Backlog items (read-only views; change them with the write methods below). Requires `backlog:read`. */
   listBacklogItems(workspaceId: string): Promise<BacklogItem[]>
   /**
    * Observe the workspace's Backlog: fires with the current snapshot, then on
    * change. `options.onError` hears why a snapshot could not be delivered; the
-   * watch stays open. Requires `backlog.read`.
+   * watch stays open. Requires `backlog:read`.
    */
   watchBacklogItems(workspaceId: string, cb: (items: BacklogItem[]) => void, options?: BacklogWatchOptions): () => void
   // ── Backlog writes and usage: the protocol's `extensionBacklog.*` and ──
@@ -1032,7 +1032,7 @@ export type RendererHost = {
    * Resolve a workspace id to its read-only view. Null means "not currently
    * resolvable" — an unknown id, or early boot before the shell wires the
    * resolver — never a throw and never a deletion signal.
-   * Disclosure permission: `ipc:workspace-read`.
+   * Permission: `workspace:read`.
    */
   getWorkspace(workspaceId: string): Promise<ModuleWorkspaceView | null>
   /**
@@ -1041,7 +1041,7 @@ export type RendererHost = {
    * floating over the window, a settings section — and so has no id to
    * resolve. Empty before the shell wires workspace state (early boot,
    * tests); never a throw.
-   * Disclosure permission: `ipc:workspace-read`.
+   * Permission: `workspace:read`.
    */
   listWorkspaces(): Promise<ModuleWorkspaceView[]>
   /**
@@ -1050,7 +1050,7 @@ export type RendererHost = {
    * from ~/.ssh/config resolved. Read by git from the workspace's working
    * root, so a worktree reports its own branch and a submodule its own
    * remotes. The `entry.main` twin is `MainHost.getWorkspaceGitInfo`.
-   * Requires `ipc:workspace-read` (checked: `permission_missing` without it).
+   * Requires `workspace:read` (checked: `not_permitted` without it).
    * Never throws.
    */
   getWorkspaceGitInfo(workspaceId: string): Promise<ModuleWorkspaceGitInfoResult>
@@ -1059,7 +1059,7 @@ export type RendererHost = {
    * on every change (deduped by value, so an unrelated store write does not
    * wake it). Returns the unsubscriber — call it on unmount. Before the shell
    * wires workspace state the first call reports an empty list.
-   * Disclosure permission: `ipc:workspace-read`.
+   * Permission: `workspace:read`.
    */
   watchWorkspaces(cb: (workspaces: ModuleWorkspaceView[]) => void): () => void
   /**
@@ -1078,7 +1078,7 @@ export type RendererHost = {
    * workspace, the workspace id is unknown, or the shell hasn't wired the
    * store yet (early boot, tests) — never a throw and never a deletion
    * signal; retry later instead of discarding state. Entries persist with the
-   * workspace and sync across windows. Disclosure permission: `storage`.
+   * workspace and sync across windows. Permission: `storage:own`.
    */
   getWorkspaceModuleState<T = unknown>(workspaceId: string): T | undefined
   /**
@@ -1086,8 +1086,8 @@ export type RendererHost = {
    * null/undefined removes it. Keep entries JSON-serializable — they persist
    * into the workspace registry verbatim. False means the write was NOT
    * stored (unknown workspace id, or the shell hasn't wired the store yet) —
-   * surface it or retry; never assume success. Disclosure permission:
-   * `storage`.
+   * surface it or retry; never assume success. Permission:
+   * `storage:own`.
    */
   setWorkspaceModuleState(workspaceId: string, state: unknown): boolean
   /**
@@ -1100,7 +1100,7 @@ export type RendererHost = {
    * the store yet, at early boot) — never a throw and never a deletion signal.
    * Scoped to the calling module: one module can never read another's.
    * Persists with app settings and survives a disable/enable cycle.
-   * Disclosure permission: `storage`.
+   * Permission: `storage:own`.
    */
   getModuleAppState<T = unknown>(key: string): T | undefined
   /**
@@ -1108,7 +1108,7 @@ export type RendererHost = {
    * Keep values JSON-serializable — they persist into app settings verbatim.
    * False means the write was NOT stored (empty key, or the shell has not
    * wired the store yet) — surface it or retry; never assume success.
-   * Disclosure permission: `storage`.
+   * Permission: `storage:own`.
    */
   setModuleAppState(key: string, value: unknown): boolean
   /**
@@ -1136,7 +1136,7 @@ export type RendererHost = {
    * worktree, and this resolves that root. The live-runtime methods below
    * (`watchWorkspaceFile`, `focusTab`) resolve workspace-relative
    * paths against it. Null means "not currently resolvable" — never a throw.
-   * Disclosure permission: `ipc:workspace-read`.
+   * Permission: `workspace:read`.
    */
   getWorkingRoot(workspaceId: string): Promise<string | null>
   /**
@@ -1146,7 +1146,7 @@ export type RendererHost = {
    * cause for absolute/escaping paths, unknown/folderless workspaces, an
    * unwired backend (early boot, tests), or a disabled Agent Runtime module.
    * Resolve the returned closure's promise, keep it, and call it on unmount.
-   * Disclosure permission: `filesystem:read-workspace`.
+   * Permission: `workspace:read`.
    */
   watchWorkspaceFile(
     workspaceId: string,
@@ -1601,14 +1601,13 @@ export function createRendererHost(): RendererKernel {
     }
     return backlogReader.reader
   }
-  // The Backlog reads are checked against the declared `backlog.read` for a
-  // third-party module. A bundled module is the app's own code and declares
-  // nothing; it is not held to a disclosure list.
+  // The Backlog reads are checked against the approved `backlog:read` for an
+  // extension. A bundled module is the app's own code and asks for nothing.
+  // (The window half runs in this window until frames; its calls to the
+  // server pass the host's gate there.)
   const requireBacklogRead = (moduleId: string, manifest: CapabilityManifest | undefined): void => {
-    if (manifest?.source !== 'third-party' || manifest.permissions?.includes('backlog.read')) return
-    throw new Error(
-      `Extension "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
-    )
+    if (manifest?.source !== 'third-party' || manifest.permissions?.includes('backlog:read')) return
+    throw new Error(`Extension "${moduleId}" was not approved for "backlog:read", so it cannot read the Backlog.`)
   }
   // A call into one of the host's services on the module's server, which
   // checks the module's permission. A refusal comes back as data.
@@ -2028,10 +2027,10 @@ export function createRendererHost(): RendererKernel {
           return workspaceListSource ? workspaceListSource.list() : []
         },
         async getWorkspaceGitInfo(workspaceId) {
-          if (!manifest?.permissions?.includes('ipc:workspace-read')) {
+          if (!manifest?.permissions?.includes('workspace:read')) {
             return {
               ok: false,
-              code: 'permission_missing',
+              code: 'not_permitted',
               message: appCopy.modules.rendererHost.moduleMustDeclareTheIpc(moduleId),
             }
           }
@@ -2122,13 +2121,13 @@ export function createRendererHost(): RendererKernel {
         async openChat(input) {
           // A draft the person reads and sends needs only `chat:draft`; a
           // prompt sent for them is driving the chat, which is
-          // `conversation:operate`'s, as it is everywhere else.
+          // `conversation:own`'s, as it is everywhere else.
           const permissions = manifest?.permissions ?? []
-          const operate = permissions.includes('conversation:operate')
+          const operate = permissions.includes('conversation:own')
           if (input?.send === true ? !operate : !operate && !permissions.includes('chat:draft')) {
             return {
               ok: false,
-              code: 'permission_missing',
+              code: 'not_permitted',
               message:
                 input?.send === true
                   ? appCopy.modules.rendererHost.moduleDoesNotDeclareThe(moduleId)

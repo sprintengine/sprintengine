@@ -418,7 +418,7 @@ test('every method the server serves has its call in the SDK, under the same sco
     'extension.list': 'request',
     'extension.setEnabled': 'request',
     'extension.install': 'request',
-    'extension.setTrust': 'request',
+    'extension.approve': 'request',
     'extension.uninstall': 'request',
     // The extensions installed there, their window halves, and what a window sets for them.
     'extension.installed': 'request',

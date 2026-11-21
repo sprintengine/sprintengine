@@ -34,7 +34,7 @@
 import type { CliPermissionPreset } from '../shared/cli-permission-preset'
 import { CONVERSATION_DEFAULT_MODEL_ID, conversationProviderForCli } from '../shared/conversation-harness'
 import { ceilingAllowsUnaskedTools } from '../shared/permission-ceiling'
-import { moduleToolCallerCeiling } from './module-host/module-tool-caller'
+import { invokerCeiling } from './module-host/extension-invocation'
 import type {
   ConversationEvent,
   ConversationInterruptInput,
@@ -630,7 +630,8 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
 }
 
 // The moduleId-first registry behind the SDK's getCompanionAgentsService helper.
-// It enforces the `agents:companion` permission at attach time, then delegates
+// The host's gate holds `attach` to `agents:companion` (extension-host-gate.ts);
+// this delegates
 // to the app's companion service under an agent id namespaced by the module
 // (`companionAgentIdFor`): a module picks its companion's id, and without the
 // namespace two modules picking the same one — or one picking the id of a chat
@@ -641,21 +642,20 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
 // one, which is as loose as `bypass`, so it needs `conversation:bypass` (and is
 // refused while the module serves a capped agent's tool call, as `allowedTools`
 // is); and allowing one with `respondToApproval` is relaying the person's
-// answer, as a module does for its chats, so it needs `conversation:operate`.
-// Without either, a module's companion acts only by what it says. Read per
-// call, never cached, like every other permission check.
+// answer, as a module does for its chats, so it needs `conversation:own`.
+// Without either, a module's companion acts only by what it says.
 export type CompanionAgentsModuleRegistry = {
   attach(moduleId: string, spec: CompanionAgentSpec): CompanionAgentHandle
 }
 
 export function createCompanionAgentsModuleRegistry(input: {
   service: CompanionAgentService
-  /** The permissions the module declared in its manifest (disclosure list). */
+  /** The permissions the extension's approval holds (`agents:companion` itself is the host's gate). */
   getModulePermissions: (moduleId: string) => readonly string[] | undefined
   /** The ceiling of the agent whose tool call into the module is running, if any. */
   getCallerPermissionCeiling?: () => CliPermissionPreset | null
 }): CompanionAgentsModuleRegistry {
-  const callerCeiling = input.getCallerPermissionCeiling ?? moduleToolCallerCeiling
+  const callerCeiling = input.getCallerPermissionCeiling ?? invokerCeiling
   // One module handle per app handle, so a second attach of the same companion
   // is the same handle here too.
   const handles = new WeakMap<CompanionAgentHandle, CompanionAgentHandle>()
@@ -676,7 +676,7 @@ export function createCompanionAgentsModuleRegistry(input: {
               new Error(
                 permissions.includes('conversation:bypass')
                   ? `Extension "${moduleId}" cannot run a companion task with tools: 'auto' while it serves an agent's tool call that asks before acting.`
-                  : `Extension "${moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
+                  : `Extension "${moduleId}" must be approved for "conversation:bypass" to run a companion task with tools: 'auto', which approves every tool call without asking.`,
               ),
             )
           }
@@ -685,10 +685,10 @@ export function createCompanionAgentsModuleRegistry(input: {
       },
       send: (message) => handle.send(message),
       respondToApproval: async (answer) => {
-        if (answer?.decision === 'once' && !declared(moduleId).includes('conversation:operate')) {
+        if (answer?.decision === 'once' && !declared(moduleId).includes('conversation:own')) {
           return {
             ok: false,
-            message: `Extension "${moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
+            message: `Extension "${moduleId}" must be approved for "conversation:own" to allow a tool call; without it a companion's approvals can only be denied.`,
           }
         }
         return handle.respondToApproval(answer)
@@ -701,11 +701,6 @@ export function createCompanionAgentsModuleRegistry(input: {
 
   return {
     attach(moduleId, spec) {
-      if (!declared(moduleId).includes('agents:companion')) {
-        throw new Error(
-          `Extension "${moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
-        )
-      }
       const handle = input.service.attach({ ...spec, agentId: companionAgentIdFor(moduleId, spec.agentId) })
       let wrapped = handles.get(handle)
       if (!wrapped) {

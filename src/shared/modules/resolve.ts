@@ -9,7 +9,7 @@ import type {
 export type ModuleResolutionOptions = {
   /**
    * Modules that cannot load regardless of enablement, keyed by id to the reason
-   * (e.g. an untrusted or invalid-signature third-party module). Computed outside
+   * (e.g. an unapproved or invalid-signature extension). Computed outside
    * this pure function (signature verification + trust store live in main); the
    * resolver just excludes them and cascades the effect to their dependents.
    */
@@ -66,7 +66,7 @@ export function resolveModuleEnablement(
     accepted.add(id)
   }
 
-  // 3b. Drop modules the caller marked ineligible (untrusted, invalid-signature
+  // 3b. Drop modules the caller marked ineligible (unapproved, invalid-signature
   //     or host-API-incompatible third-party). Done before dependency
   //     validation so a dependent of an ineligible module cascades to
   //     disabled_dependency below.
@@ -149,14 +149,14 @@ export function resolveModuleEnablement(
   }
 }
 
-// Each reason says what the user can do about it: trusting fixes an untrusted
-// extension, and nothing the user does fixes a tampered one.
+// Each reason says what the user can do about it: approving fixes an
+// unapproved extension, and nothing the user does fixes a tampered one.
 function ineligibleMessage(manifest: CapabilityManifest, reason: ModuleResolutionErrorCode): string {
   const id = manifest.id
   switch (reason) {
     case 'invalid_signature':
       return `Extension "${id}" has an invalid signature and will not load.`
     default:
-      return `Extension "${id}" is not trusted yet; trust it in Settings → Extensions to enable.`
+      return `Extension "${id}" waits for your approval; approve it in Settings → Extensions to enable.`
   }
 }

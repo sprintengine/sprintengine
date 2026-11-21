@@ -4,7 +4,7 @@ import type { MainHost } from '@sprintengine/extension-sdk'
 // connected to, served from the worker's `activate` (src/main.ts). Each one is
 // declared in extension.json (`contributes.mcpTools`) with what agents are
 // told it does and its access; a tool served here that is not declared there
-// is refused. Needs the "mcp:tools" permission.
+// is refused. Needs the "tools:contribute" permission.
 //
 // Tool names are a public contract: they start with the extension id, and
 // stay stable.

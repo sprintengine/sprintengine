@@ -20,6 +20,9 @@ import {
   movesWorkspaceList,
 } from '../../main/automation/conversation-lifecycle'
 import { launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
+import { tailnetDeviceGrant } from '../../main/automation/tailnet/tailnet-studio-endpoint'
+import { ownerInvoker } from '../../main/module-host/extension-invocation'
+import { studioGrantPrincipal, studioPrincipal } from '../../../packages/studio-protocol/src/permissions'
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { toolSuccess, toolError } from '../../shared/modules/mcp-tools'
@@ -193,9 +196,23 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   const resolveGatewayTools = createStudioGatewayTools({
     resolveModuleTools: () => options.resolveModuleTools?.() ?? [],
     isModuleEnabled: (moduleId) => options.isModuleEnabled?.(moduleId) ?? false,
-    // A module tool runs under its caller's launch cap, so a chat the module
-    // starts for a capped agent is no looser than that agent.
-    callerPermissionCeiling: (context) => launchPermissionCeiling(context, core.resolveAgentPermissionPreset),
+    // A module tool runs on its caller's behalf: an agent here is the person,
+    // under its own launch cap, so a chat the module starts for a capped agent
+    // is no looser than that agent; a paired device is what its Studio
+    // connection carries (the same route `/tailnet/v1/studio` grants), read as
+    // the device stands now, so a narrowed or revoked device holds less at once.
+    callerInvoker: (context) => {
+      if (context?.metadata.kind !== 'remote-tailnet')
+        return ownerInvoker(launchPermissionCeiling(context, core.resolveAgentPermissionPreset), 'the agent')
+      const deviceId = context.metadata.deviceId
+      const device = automation?.getTailnetStatus().devices.find((candidate) => candidate.id === deviceId)
+      const grant = device ? tailnetDeviceGrant(device) : null
+      return {
+        principal: grant ? studioGrantPrincipal(grant) : studioPrincipal({ owner: false, permissions: [] }),
+        permissionCeiling: grant?.ceiling ?? 'manual',
+        label: `the device "${context.metadata.deviceName ?? deviceId ?? 'unknown'}"`,
+      }
+    },
     warn: (details) => {
       void writeDiagnosticLog({
         level: 'warning',

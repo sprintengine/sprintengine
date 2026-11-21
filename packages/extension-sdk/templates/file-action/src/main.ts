@@ -9,8 +9,8 @@ import {
 // Files tree's menu (`contributes.menus`, where "file"). The command has no
 // `action`, so running it calls this worker's method of the same name, an
 // `operate` method, with what it was picked on: the workspace and the paths,
-// relative to the workspace's folder. Declaring methods needs the
-// "module:bridge" permission; writing the Backlog needs "backlog.write".
+// relative to the workspace's folder. Writing the Backlog needs
+// "backlog:operate", of the extension and of whoever runs the command.
 
 export type FileMethods = {
   'add-to-backlog': {

@@ -6,8 +6,9 @@
 // service (backlog-service.ts) — the path the Backlog panel, the phone and the
 // Studio MCP gateway use — made inside that project's mutation lane, so a
 // module's write cannot interleave with another writer's and ids, file names
-// and frontmatter follow the app's rules. The permissions are checked per call:
-// `backlog.read` for reads, `backlog.write` for writes.
+// and frontmatter follow the app's rules. Whether an extension may call it is
+// the host's gate (extension-host-gate.ts): `backlog:read` for reads and
+// `backlog:operate` for writes, of the extension and of whoever invoked it.
 
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -57,8 +58,6 @@ export type ModuleBacklogWorkspace = { id: string; name: string; folderPath: str
 export type ModuleBacklogDeps = {
   /** The workspace by id, read fresh on each call; null when unknown. */
   getWorkspace: (workspaceId: string) => ModuleBacklogWorkspace | null
-  /** The permissions the module declared in its manifest. */
-  getModulePermissions: (moduleId: string) => readonly string[] | undefined
 }
 
 type Failure = { ok: false; code: ModuleBacklogErrorCode; message: string }
@@ -121,16 +120,6 @@ function nodeBacklogFsIn(folder: string | null): BacklogFilesystemAdapter {
 }
 
 export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBacklogRegistry {
-  function denied(moduleId: string, permission: 'backlog.read' | 'backlog.write'): Failure | null {
-    if (deps.getModulePermissions(moduleId)?.includes(permission)) return null
-    return failure(
-      'permission_missing',
-      `Extension "${moduleId}" does not declare the "${permission}" permission, so it cannot ${
-        permission === 'backlog.read' ? 'read' : 'change'
-      } the Backlog.`,
-    )
-  }
-
   // The project folder a workspace's Backlog belongs to: its durable root, the
   // folder the Backlog panel reads, never a worktree a chat runs in.
   function folderOf(workspaceId: unknown): { folder: string; name: string } | Failure {
@@ -173,13 +162,10 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
 
   // A mutation of one existing item, in the project's lane.
   async function mutate(
-    moduleId: string,
     workspaceId: string,
     itemId: string,
     write: (folder: string, relativePath: string) => Promise<ModuleBacklogResult>,
   ): Promise<ModuleBacklogResult> {
-    const refused = denied(moduleId, 'backlog.write')
-    if (refused) return refused
     const resolved = folderOf(workspaceId)
     if ('ok' in resolved) return resolved
     try {
@@ -194,9 +180,7 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
   }
 
   return {
-    async list(moduleId, workspaceId) {
-      const refused = denied(moduleId, 'backlog.read')
-      if (refused) return refused
+    async list(_moduleId, workspaceId) {
       const resolved = folderOf(workspaceId)
       if ('ok' in resolved) return resolved
       try {
@@ -218,9 +202,7 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
       }
     },
 
-    async getLocation(moduleId, workspaceId) {
-      const refused = denied(moduleId, 'backlog.read')
-      if (refused) return refused
+    async getLocation(_moduleId, workspaceId) {
       const resolved = folderOf(workspaceId)
       if ('ok' in resolved) return resolved
       const located = await resolveBacklogLocation(resolved.folder)
@@ -229,9 +211,7 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
       return { ok: true, location: { root, isDefault, exists } }
     },
 
-    async create(moduleId, workspaceId, input) {
-      const refused = denied(moduleId, 'backlog.write')
-      if (refused) return refused
+    async create(_moduleId, workspaceId, input) {
       const resolved = folderOf(workspaceId)
       if ('ok' in resolved) return resolved
       const invalid = invalidCreateInput(input)
@@ -270,19 +250,19 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
       }
     },
 
-    updateStatus(moduleId, workspaceId, itemId, status) {
+    updateStatus(_moduleId, workspaceId, itemId, status) {
       if (typeof status !== 'string' || !STATUSES.has(status)) {
         return Promise.resolve(failure('invalid_input', `"${String(status)}" is not a Backlog item status.`))
       }
-      return mutate(moduleId, workspaceId, itemId, async (folder, relativePath) =>
+      return mutate(workspaceId, itemId, async (folder, relativePath) =>
         written(await updateBacklogStatus({ workspaceRoot: folder, relativePath, status })),
       )
     },
 
-    updateTriage(moduleId, workspaceId, itemId, triage) {
+    updateTriage(_moduleId, workspaceId, itemId, triage) {
       const invalid = invalidTriage(triage)
       if (invalid) return Promise.resolve(failure('invalid_input', invalid))
-      return mutate(moduleId, workspaceId, itemId, async (folder, relativePath) => {
+      return mutate(workspaceId, itemId, async (folder, relativePath) => {
         if (!('difficulty' in triage) && !('criticality' in triage) && !('risk' in triage)) return { ok: true }
         // Validated above, so each value is one of the app's or null.
         const update: BacklogTriageInput = { workspaceRoot: folder, relativePath }
@@ -297,7 +277,7 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
     addLink(moduleId, workspaceId, itemId, link) {
       const invalid = invalidLink(moduleId, link)
       if (invalid) return Promise.resolve(failure('invalid_input', invalid))
-      return mutate(moduleId, workspaceId, itemId, async (folder, relativePath) =>
+      return mutate(workspaceId, itemId, async (folder, relativePath) =>
         written(
           await addOrUpdateBacklogLink({
             workspaceRoot: folder,
@@ -315,7 +295,7 @@ export function createModuleBacklogRegistry(deps: ModuleBacklogDeps): ModuleBack
       } catch {
         return Promise.resolve(failure('invalid_input', 'Module metadata must be JSON-serializable.'))
       }
-      return mutate(moduleId, workspaceId, itemId, async (folder, relativePath) =>
+      return mutate(workspaceId, itemId, async (folder, relativePath) =>
         written(await updateBacklogModuleMetadata({ workspaceRoot: folder, relativePath, moduleId, value })),
       )
     },

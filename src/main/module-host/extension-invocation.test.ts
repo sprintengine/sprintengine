@@ -9,7 +9,7 @@ import { launchPermissionCeiling } from '../automation/launch-permission-cap'
 import { createStudioGatewayTools } from '../automation/studio-gateway-tools'
 import { createConversationLaunchService } from '../conversation-launch-service'
 import { createConversationModuleRegistry, type ModuleConversationWorkspace } from './module-conversation-service'
-import { clampToModuleToolCaller, moduleToolCallerCeiling, runAsModuleToolCall } from './module-tool-caller'
+import { clampToInvoker, invokerCeiling, runAsInvoker, ownerInvoker } from './extension-invocation'
 
 // A capped agent must not reach a looser chat through a module's MCP tool: the
 // gateway runs the handler as its caller, and the module conversation service
@@ -66,8 +66,8 @@ function harness(agentPresets: Record<string, CliPermissionPreset>) {
     writeAgent: () => ({ ok: false, message: 'unused' }),
     getWorkspaceAgents: () => workspaces,
     // `conversation:bypass`, so the module's own ceiling is not what lowers it.
-    getModulePermissions: () => ['conversation:operate', 'conversation:bypass', 'mcp:tools'],
-    getCallerPermissionCeiling: moduleToolCallerCeiling,
+    getModulePermissions: () => ['conversation:operate', 'conversation:bypass', 'tools:contribute'],
+    getCallerPermissionCeiling: invokerCeiling,
   })
   const acme = conversations.forModule('acme')
   const tools = createStudioGatewayTools({
@@ -91,8 +91,8 @@ function harness(agentPresets: Record<string, CliPermissionPreset>) {
       },
     ],
     isModuleEnabled: () => true,
-    callerPermissionCeiling: (context) =>
-      launchPermissionCeiling(context, ({ agentId }) => agentPresets[agentId] ?? null),
+    callerInvoker: (context) =>
+      ownerInvoker(launchPermissionCeiling(context, ({ agentId }) => agentPresets[agentId] ?? null)),
   })()
   const tool = tools.find((candidate) => candidate.name === 'acme.start_chat')!
   async function call(context?: McpConnectionContext) {
@@ -145,14 +145,14 @@ test('module-tool-caller', async () => {
   }
 
   // The clamp: lowered, never raised, and pinned when the module names none.
-  assert.equal(clampToModuleToolCaller('bypass', 'none'), 'none')
-  assert.equal(clampToModuleToolCaller('none', 'bypass'), 'none')
-  assert.equal(clampToModuleToolCaller(undefined, 'none'), 'none')
-  assert.equal(clampToModuleToolCaller(undefined, 'bypass'), undefined)
-  assert.equal(clampToModuleToolCaller('bypass', null), 'bypass')
+  assert.equal(clampToInvoker('bypass', 'none'), 'none')
+  assert.equal(clampToInvoker('none', 'bypass'), 'none')
+  assert.equal(clampToInvoker(undefined, 'none'), 'none')
+  assert.equal(clampToInvoker(undefined, 'bypass'), undefined)
+  assert.equal(clampToInvoker('bypass', null), 'bypass')
   assert.equal(
-    runAsModuleToolCall({ permissionCeiling: 'none' }, () => clampToModuleToolCaller('bypass')),
+    runAsInvoker(ownerInvoker('none'), () => clampToInvoker('bypass')),
     'none',
   )
-  assert.equal(moduleToolCallerCeiling(), null)
+  assert.equal(invokerCeiling(), null)
 })

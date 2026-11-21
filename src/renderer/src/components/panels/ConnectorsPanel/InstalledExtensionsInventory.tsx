@@ -46,7 +46,7 @@ import { showToast } from '../../../store/toastStore'
 import { ExtensionIcon } from '../../ui/ExtensionIcon'
 import { mcpIconSlug } from '../../ui/mcpIconSlug'
 import { PluginIcon } from '../../settings/BrowseStorefront'
-import { TRUST_PRESENTATION } from '../../settings/ThirdPartyModuleList'
+import { APPROVAL_PRESENTATION } from '../../settings/ThirdPartyModuleList'
 import { classifyVerification, summarizeInstallResult } from '../../settings/installFlow'
 import {
   deriveInstalledExtensions,
@@ -666,7 +666,7 @@ function InstalledRow({
       name={item.name}
       summary={item.summary}
       chips={item.chips}
-      status={item.kind === 'mcp' || (item.kind === 'module' && item.trust) ? <RowStatus item={item} /> : undefined}
+      status={item.kind === 'mcp' || (item.kind === 'module' && item.approval) ? <RowStatus item={item} /> : undefined}
       actions={rowActions.length > 0 ? rowActions : undefined}
     />
   )
@@ -683,18 +683,18 @@ function RevealedAction({ children }: { children: ReactNode }) {
   )
 }
 
-// The row's decision-relevant status — trust for capability modules,
+// The row's decision-relevant status — approval for extensions,
 // active/inactive for MCP servers — as a StatusDot always paired with its text
 // label, so status is never colour-only. Skills have no such axis
 // (presence is the only state), so they carry no dot.
 function RowStatus({ item }: { item: InstalledExtension }) {
-  if (item.kind === 'module' && item.trust) {
-    const trust = TRUST_PRESENTATION[item.trust]
+  if (item.kind === 'module' && item.approval) {
+    const approval = APPROVAL_PRESENTATION[item.approval]
     return (
       <>
-        {/* Decorative: the adjacent label already names the trust state. */}
-        <StatusDot tone={trust.tone} />
-        {trust.label}
+        {/* Decorative: the adjacent label already names the approval state. */}
+        <StatusDot tone={approval.tone} />
+        {approval.label}
       </>
     )
   }

@@ -3,8 +3,8 @@
   "title": "Chat companion",
   "summary": "A worker that starts and follows chats of its own, and a panel that lists them and opens chat drafts.",
   "permissions": [
-    "conversation:operate",
-    "module:bridge"
+    "conversation:own",
+    "notifications:show"
   ],
   "capabilities": [
     "worker",

@@ -203,7 +203,8 @@ export type ModuleConversationApprovalDecision = 'once' | 'conversation' | 'deny
 export type ModuleConversationPlanDecision = 'approve' | 'reject'
 
 export type ModuleConversationErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'invalid_input'
   | 'unknown_workspace'
   | 'workspace_folder_missing'
@@ -274,8 +275,10 @@ export type ModuleConversationResult<T = object> =
  * `getConversationService(host)`. A module reaches only the conversations it
  * created, never the user's own chats and never another module's.
  *
- * `conversation:read` covers `subscribe`, `follow`, `transcript`, `list` and
- * `watch`; `conversation:operate` covers everything and implies read. Check
+ * `conversation:own` covers every method. Whoever set the call off must also
+ * be able to do it themselves: read a chat for `subscribe`, `follow`,
+ * `transcript`, `reply`, `list` and `watch`, start one for `create`, drive one
+ * for the rest. Check
  * `host.supports('conversations')` before relying on it, and:
  *
  * - `conversation-controls` before `setPermissionPreset`, `setModel`, a
@@ -372,7 +375,7 @@ export type ModuleConversationService = {
    * a saved chat's workspace may not be loaded, and its events are delivered
    * from the moment it is. A ref that names no chat of this module's delivers
    * nothing, ever. Throws only for a mistake in the call: no
-   * `conversation:read`, or a ref without a `workspaceId` and `agentId`.
+   * `conversation:own`, or a ref without a `workspaceId` and `agentId`.
    * (A host from before this answered an unknown chat by throwing `not_owned`.)
    */
   subscribe(ref: ModuleConversationRef, cb: (event: ModuleConversationEvent) => void): () => void
@@ -384,7 +387,7 @@ export type ModuleConversationService = {
    *
    * Like `subscribe`, a chat the host does not know yet is followed from the
    * moment it is (its snapshot comes then), and a ref naming no chat of this
-   * module's delivers nothing. Throws for no `conversation:read`, a malformed
+   * module's delivers nothing. Throws for no `conversation:own`, a malformed
    * ref or cursor, or a known chat whose workspace has no project folder.
    */
   follow(
@@ -399,7 +402,7 @@ export type ModuleConversationService = {
    * last message of that turn (`turn_completed`'s `text`); for a turn recorded
    * before the host said it, the text the turn streamed. Answers `no_reply`
    * while no turn (or not that one) has finished. Covered by
-   * `conversation:read`. Check `host.supports('conversation-replies')`.
+   * `conversation:own`. Check `host.supports('conversation-replies')`.
    */
   reply(
     ref: ModuleConversationRef,
@@ -519,8 +522,8 @@ export type ModuleOpenChatInput = {
    * Send the prompt as the chat's first turn. Default false: the prompt lands
    * in the composer as a draft the user reads and sends themselves.
    *
-   * A draft needs `chat:draft` or `conversation:operate`; `send: true` needs
-   * `conversation:operate`, since it puts words in the agent's ear the person
+   * A draft needs `chat:draft` or `conversation:own`; `send: true` needs
+   * `conversation:own`, since it puts words in the agent's ear the person
    * has not read.
    */
   send?: boolean
@@ -547,7 +550,8 @@ export type ModuleOpenChatResult =
   | {
       ok: false
       code:
-        | 'permission_missing'
+        | 'not_permitted'
+        | 'approval_required'
         | 'unknown_workspace'
         | 'workspace_folder_missing'
         | 'cli_not_conversational'
@@ -611,7 +615,8 @@ export type ModuleTextGenerationInput = {
  * answered with nothing usable (or no JSON, when `json` was asked for).
  */
 export type ModuleTextGenerationErrorCode =
-  | 'permission_missing'
+  | 'not_permitted'
+  | 'approval_required'
   | 'invalid_input'
   | 'unsupported'
   | 'unavailable'

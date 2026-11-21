@@ -4,7 +4,7 @@ import { open, realpath } from 'node:fs/promises'
 import { extname, isAbsolute, relative } from 'node:path'
 import { MODULE_ASSET_SCHEME } from '../../shared/modules/assets'
 import { resolveContainedPath } from './entry-containment'
-import { isLoadEligible } from './module-signature'
+import { isExtensionRunnable } from './module-signature'
 import type { UserModuleListResult, InstalledModule } from './user-module-registry'
 
 export const MODULE_ASSET_MAX_BYTES = 128 * 1024 * 1024
@@ -34,7 +34,7 @@ export type ModuleAssetBackends = {
   isEnabled(module: InstalledModule, modules: InstalledModule[]): boolean
 }
 
-/** Every request rechecks trust and enablement; errors never expose disk paths. */
+/** Every request rechecks approval and enablement; errors never expose disk paths. */
 export function createModuleAssetHandler(backends: ModuleAssetBackends) {
   return async (request: Request): Promise<Response> => {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405 })
@@ -47,7 +47,7 @@ export function createModuleAssetHandler(backends: ModuleAssetBackends) {
       const installed = modules.find(
         (module) => new URL(backends.assetOrigin(module.manifest.id)).hostname === url.hostname,
       )
-      if (!installed || !isLoadEligible(installed.trust.status) || !backends.isEnabled(installed, modules)) {
+      if (!installed || !isExtensionRunnable(installed.standing) || !backends.isEnabled(installed, modules)) {
         return new Response(null, { status: 403 })
       }
       const path = decodeURIComponent(url.pathname.slice(1))
@@ -59,7 +59,7 @@ export function createModuleAssetHandler(backends: ModuleAssetBackends) {
       if (!within || within.startsWith('..') || isAbsolute(within)) return new Response(null, { status: 403 })
       // Only a file the module was verified with is served, and only with the
       // bytes it was verified with (checked below, on the bytes being sent).
-      const expectedSha256 = installed.trust.verifiedFiles?.[within.split(/[\\/]+/).join('/')]
+      const expectedSha256 = installed.standing.verifiedFiles?.[within.split(/[\\/]+/).join('/')]
       if (expectedSha256 === undefined) return new Response(null, { status: 403 })
       file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW)
       const info = await file.stat()

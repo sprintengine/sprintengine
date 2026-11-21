@@ -5,14 +5,14 @@
 // service's key, so the SDK's own helpers (`getModuleStorage(host)`,
 // `getConversationService(host)`, …) run unchanged against it, and each
 // applies the host's rules: the same key pattern, root rule and size cap for
-// storage, the same `permission_missing` answers (or throws, where a call has
-// no failure shape) for the permissions the host checks, the same ownership
-// answers for chats. Each also returns a handle a test drives the world with
+// storage, the same ceilings for chats an extension starts, the same
+// ownership answers for chats. Whether a call is permitted at all is the
+// host's gate, which `createFakeMainHost` applies in front of every fake. Each also returns a handle a test drives the world with
 // (`conversations.emitEvent`, `github.respond`, …).
 //
 // SERVICE_FAKES below is keyed by service key. Adding a fake for a new host
 // service is one entry there, one field on `FakeServices`, and its row in
-// MODULE_SERVICE_REQUIREMENTS (services.ts).
+// EXTENSION_HOST_SERVICES (services.ts).
 
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -114,7 +114,7 @@ const failure = <C extends string>(code: C, message: string): Failure<C> => ({ o
 /**
  * What `getWorkspaceGitInfo` answers for a workspace with a folder: its
  * branch (null when detached) and remotes, or one of the failures git itself
- * can produce. (`permission_missing`, `unknown_workspace` and `no_folder` the
+ * can produce. (`not_permitted`, `unknown_workspace` and `no_folder` the
  * fake answers on its own.)
  */
 export type FakeWorkspaceGitInfo =
@@ -544,18 +544,11 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
   let pendingFailure: Failure<string> | null = null
 
   const refKey = (ref: ModuleConversationRef): string => `${ref?.workspaceId}\u0000${ref?.agentId}`
-  const canOperate = (): boolean => context.permissions.has('conversation:operate')
-  const canRead = (): boolean => canOperate() || context.permissions.has('conversation:read')
-  const missing = (permission: string) =>
-    failure('permission_missing', `Extension "${context.moduleId}" must declare the "${permission}" permission.`)
   const notOwned = (ref: ModuleConversationRef) =>
     failure(
       'not_owned',
       `No conversation "${ref?.agentId}" in workspace "${ref?.workspaceId}" was started by this module.`,
     )
-  const requireRead = (): void => {
-    if (!canRead()) throw new Error(missing('conversation:read').message)
-  }
   // A ref is a mistake in the call when it does not name a workspace and an agent.
   const requireRef = (ref: ModuleConversationRef): void => {
     if (
@@ -682,14 +675,13 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
     notifyWatchers()
   }
 
-  // Every operating call: the permission, then ownership, then the command
+  // Every operating call: ownership, then the command
   // receipt. (The registry is loosely typed; the SDK helper types the answers.)
   const operate = async (
     ref: ModuleConversationRef,
     commandId: string | undefined,
     run: (record: FakeConversationRecord) => object,
   ): Promise<object> => {
-    if (!canOperate()) return missing('conversation:operate')
     const record = owned(ref)
     if (!record) return notOwned(ref)
     return once(commandId, async () => run(record))
@@ -728,7 +720,6 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
 
   const registry = {
     async create(_moduleId: string, input: ModuleConversationCreateInput) {
-      if (!canOperate()) return missing('conversation:operate')
       if (typeof input !== 'object' || input === null) return failure('invalid_input', 'create takes an object.')
       return once(input.commandId, async () => {
         if (typeof input.workspaceId !== 'string' || !input.workspaceId.trim()) {
@@ -736,8 +727,8 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
         }
         if (input.allowedTools?.length && !context.permissions.has('conversation:bypass')) {
           return failure(
-            'permission_missing',
-            `Extension "${context.moduleId}" must declare "conversation:bypass" to let a chat use tools without asking.`,
+            'not_permitted',
+            `Extension "${context.moduleId}" must be approved for "conversation:bypass" to let a chat use tools without asking.`,
           )
         }
         const worktree = input.worktree
@@ -861,7 +852,6 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
     // A chat the host does not know yet is attached all the same; a ref naming
     // no chat of the module's delivers nothing, ever.
     subscribe(_m: string, ref: ModuleConversationRef, cb: (event: ModuleConversationEvent) => void) {
-      requireRead()
       requireRef(ref)
       const key = refKey(ref)
       let set = subscribers.get(key)
@@ -877,7 +867,6 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
       options: { afterSeq?: number } | undefined,
       onFrame: (frame: ModuleConversationStreamFrame) => void,
     ) {
-      requireRead()
       requireRef(ref)
       const after = options?.afterSeq
       if (after !== undefined && (!Number.isSafeInteger(after) || after < 0)) {
@@ -905,14 +894,12 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
       }
     },
     async transcript(_m: string, ref: ModuleConversationRef) {
-      if (!canRead()) return missing('conversation:read')
       const record = owned(ref)
       if (!record) return notOwned(ref)
       return { ok: true as const, events: structuredClone(record.events) }
     },
     // The last finished turn's reply (or `turnId`'s), as the host reads it off the transcript.
     async reply(_m: string, ref: ModuleConversationRef, turnId?: string) {
-      if (!canRead()) return missing('conversation:read')
       if (turnId !== undefined && (typeof turnId !== 'string' || !turnId.trim())) {
         return failure('invalid_input', '"turnId" must be a turn id when provided.')
       }
@@ -945,11 +932,9 @@ function conversationsRegistry(context: FakeServiceContext): { registry: object;
       return { ok: true as const, turnId: id, text: streamed }
     },
     list(_m: string, filter?: { workspaceId?: string }) {
-      requireRead()
       return list(filter)
     },
     watch(_m: string, filter: { workspaceId?: string } | undefined, cb: (list: ModuleConversationSummary[]) => void) {
-      requireRead()
       const watcher = { filter, cb }
       watchers.add(watcher)
       cb(list(filter))
@@ -1340,7 +1325,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
         const tools = options.tools ?? 'none'
         if (tools === 'auto' && !context.permissions.has('conversation:bypass')) {
           throw new Error(
-            `Extension "${context.moduleId}" must declare the "conversation:bypass" permission to run a companion task with tools: 'auto', which approves every tool call without asking.`,
+            `Extension "${context.moduleId}" must be approved for "conversation:bypass" to run a companion task with tools: 'auto', which approves every tool call without asking.`,
           )
         }
         // A live intent spawns the session, as the host's first runStructured does.
@@ -1377,10 +1362,10 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
       async respondToApproval(input) {
         if (disposed) return { ok: false, message: 'Companion agent is disposed.' }
         // Relaying the person's "allow" is operating the agent, as in a chat.
-        if (input?.decision === 'once' && !context.permissions.has('conversation:operate')) {
+        if (input?.decision === 'once' && !context.permissions.has('conversation:own')) {
           return {
             ok: false,
-            message: `Extension "${context.moduleId}" must declare the "conversation:operate" permission to allow a tool call; without it a companion's approvals can only be denied.`,
+            message: `Extension "${context.moduleId}" must be approved for "conversation:own" to allow a tool call; without it a companion's approvals can only be denied.`,
           }
         }
         if (input?.decision !== 'once' && input?.decision !== 'deny') {
@@ -1415,11 +1400,6 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
 
   const registry = {
     attach(_moduleId: string, spec: CompanionAgentSpec): CompanionAgentHandle {
-      if (!context.permissions.has('agents:companion')) {
-        throw new Error(
-          `Extension "${context.moduleId}" must declare the "agents:companion" permission to attach a companion agent.`,
-        )
-      }
       if (!spec?.workspaceRoot || !isAbsolute(spec.workspaceRoot)) {
         throw new Error('A companion agent needs an absolute workspaceRoot.')
       }
@@ -1484,16 +1464,10 @@ export type FakeSecrets = {
 
 const SECRET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
-function secretsRegistry(context: FakeServiceContext): { registry: object; handle: FakeSecrets } {
+function secretsRegistry(_context: FakeServiceContext): { registry: object; handle: FakeSecrets } {
   const secrets = new Map<string, { value: string; allowedOrigins: string[] }>()
   const requests: FakeSecretRequest[] = []
   let answer: Parameters<FakeSecrets['respond']>[0] = () => ({ status: 200, body: '' })
-  const allowed = (): boolean => context.permissions.has('secrets')
-  const missing = () =>
-    failure<ModuleSecretsError>(
-      'permission_missing',
-      `Extension "${context.moduleId}" must declare the "secrets" permission.`,
-    )
   const badName = (name: unknown) =>
     typeof name === 'string' && SECRET_NAME_PATTERN.test(name)
       ? null
@@ -1512,7 +1486,6 @@ function secretsRegistry(context: FakeServiceContext): { registry: object; handl
 
   const registry = {
     async set(_m: string, name: string, value: string, options: { allowedOrigins: string[] }) {
-      if (!allowed()) return missing()
       const nameIssue = badName(name)
       if (nameIssue) return nameIssue
       if (typeof value !== 'string' || !value.trim()) throw new TypeError(`Secret "${name}" needs a string value.`)
@@ -1527,11 +1500,9 @@ function secretsRegistry(context: FakeServiceContext): { registry: object; handl
       return { ok: true as const }
     },
     async has(_m: string, name: string) {
-      if (!allowed()) throw new Error(missing().message)
       return !badName(name) && secrets.has(name)
     },
     async delete(_m: string, name: string) {
-      if (!allowed()) return missing()
       const nameIssue = badName(name)
       if (nameIssue) return nameIssue
       secrets.delete(name)
@@ -1543,7 +1514,6 @@ function secretsRegistry(context: FakeServiceContext): { registry: object; handl
       url: string,
       init: ModuleSecretFetchInit,
     ): Promise<ModuleSecretFetchResult> {
-      if (!allowed()) return missing()
       const nameIssue = badName(name)
       if (nameIssue) return nameIssue
       let target: URL
@@ -1733,7 +1703,7 @@ function graphqlTopLevelKeywords(query: string): string[] | null {
   return sawSelection ? keywords : null
 }
 
-function githubRegistry(context: FakeServiceContext): { registry: object; handle: FakeGitHub } {
+function githubRegistry(_context: FakeServiceContext): { registry: object; handle: FakeGitHub } {
   const answers = new Map<string, FakeGitHubAnswer>()
   const downloadAnswers = new Map<string, FakeGitHubDownloadAnswer>()
   let graphqlAnswer: FakeGitHubGraphqlAnswer | null = null
@@ -1742,8 +1712,6 @@ function githubRegistry(context: FakeServiceContext): { registry: object; handle
   const downloads: ModuleGitHubDownloadRequest[] = []
   let signedIn = true
   let login = 'dev'
-  const allowed = (): boolean => context.permissions.has('github')
-  const missingMessage = `Extension "${context.moduleId}" must declare the "github" permission.`
   const signedOut = () => failure('not_signed_in', 'Sign in to GitHub in Settings to let extensions use it.')
   const mediaIssue = (accept: unknown) =>
     accept !== undefined && (typeof accept !== 'string' || !GITHUB_MEDIA_TYPES.has(accept as ModuleGitHubMediaType))
@@ -1762,7 +1730,6 @@ function githubRegistry(context: FakeServiceContext): { registry: object; handle
 
   const registry = {
     async request(_m: string, request: ModuleGitHubRequest): Promise<ModuleGitHubResponse> {
-      if (!allowed()) return failure('permission_missing', missingMessage)
       if (typeof request?.route !== 'string' || !request.route.startsWith('/')) {
         return failure('invalid_route', 'request needs a route.')
       }
@@ -1803,7 +1770,6 @@ function githubRegistry(context: FakeServiceContext): { registry: object; handle
       return answer
     },
     async graphql(_m: string, query: string, variables?: Record<string, unknown>): Promise<ModuleGitHubResponse> {
-      if (!allowed()) return failure('permission_missing', missingMessage)
       if (typeof query !== 'string' || query.trim() === '') {
         return failure('invalid_query', 'graphql needs a query document.')
       }
@@ -1836,7 +1802,6 @@ function githubRegistry(context: FakeServiceContext): { registry: object; handle
       return settle(typeof graphqlAnswer === 'function' ? graphqlAnswer(structuredClone(input)) : graphqlAnswer)
     },
     async download(_m: string, request: ModuleGitHubDownloadRequest): Promise<ModuleGitHubDownloadResponse> {
-      if (!allowed()) return failure('permission_missing', missingMessage)
       if (typeof request?.route !== 'string' || !request.route.startsWith('/')) {
         return failure('invalid_route', 'download needs a route.')
       }
@@ -1865,7 +1830,6 @@ function githubRegistry(context: FakeServiceContext): { registry: object; handle
       }
     },
     async status() {
-      if (!allowed()) throw new Error(missingMessage)
       return signedIn ? { signedIn: true, login } : { signedIn: false }
     },
   }
@@ -1967,15 +1931,6 @@ function backlogRegistry(context: FakeServiceContext): { registry: object; handl
   }>()
   type BacklogFailure = Extract<ModuleBacklogResult, { ok: false }>
 
-  const denied = (permission: 'backlog.read' | 'backlog.write'): BacklogFailure | null =>
-    context.permissions.has(permission)
-      ? null
-      : failure(
-          'permission_missing',
-          `Extension "${context.moduleId}" does not declare the "${permission}" permission, so it cannot ${
-            permission === 'backlog.read' ? 'read' : 'change'
-          } the Backlog.`,
-        )
   const folderOf = (workspaceId: unknown): { folder: string } | BacklogFailure => {
     if (typeof workspaceId !== 'string' || !workspaceId.trim())
       return failure('invalid_input', 'A workspace id is required.')
@@ -2096,8 +2051,6 @@ function backlogRegistry(context: FakeServiceContext): { registry: object; handl
     itemId: unknown,
     change: (item: StoredBacklogItem) => void,
   ): Promise<ModuleBacklogResult> => {
-    const refused = denied('backlog.write')
-    if (refused) return refused
     const resolved = folderOf(workspaceId)
     if ('ok' in resolved) return resolved
     if (typeof itemId !== 'string' || !itemId.trim()) return failure('invalid_input', 'An item id is required.')
@@ -2112,8 +2065,6 @@ function backlogRegistry(context: FakeServiceContext): { registry: object; handl
 
   const registry = {
     async list(_m: string, workspaceId: string): Promise<ModuleBacklogResult<{ items: BacklogItemView[] }>> {
-      const refused = denied('backlog.read')
-      if (refused) return refused
       const resolved = folderOf(workspaceId)
       if ('ok' in resolved) return resolved
       const scanFailure = scanFailures.get(workspaceId)
@@ -2125,15 +2076,11 @@ function backlogRegistry(context: FakeServiceContext): { registry: object; handl
       _m: string,
       workspaceId: string,
     ): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>> {
-      const refused = denied('backlog.read')
-      if (refused) return refused
       const resolved = folderOf(workspaceId)
       if ('ok' in resolved) return resolved
       return { ok: true, location: locationOf(workspaceId, resolved.folder) }
     },
     async create(_m: string, workspaceId: string, input: ModuleBacklogCreateInput) {
-      const refused = denied('backlog.write')
-      if (refused) return refused
       const resolved = folderOf(workspaceId)
       if ('ok' in resolved) return resolved
       const invalid = invalidBacklogCreate(input)
@@ -2358,7 +2305,6 @@ function usageRegistry(context: FakeServiceContext): { registry: object; handle:
     { id: 'claude-code', found: 0, error: null },
     { id: 'codex', found: 0, error: null },
   ]
-  const permitted = (): boolean => context.permissions.has('usage:read')
   const invalid = (input: UsageQuery): string | null => {
     if (!input || typeof input !== 'object') return 'A query is required.'
     if (typeof input.from !== 'number' || !Number.isFinite(input.from)) return '"from" must be a time in epoch ms.'
@@ -2421,14 +2367,7 @@ function usageRegistry(context: FakeServiceContext): { registry: object; handle:
   }
 
   const registry = {
-    async query(moduleId: string, query: UsageQuery): Promise<UsageQueryResult> {
-      if (!permitted()) {
-        return {
-          ok: false,
-          code: 'permission_missing',
-          message: `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot read token usage.`,
-        }
-      }
+    async query(_moduleId: string, query: UsageQuery): Promise<UsageQueryResult> {
       const problem = invalid(query)
       if (problem) return { ok: false, code: 'invalid_input', message: problem }
       queries.push(structuredClone(query))
@@ -2436,12 +2375,7 @@ function usageRegistry(context: FakeServiceContext): { registry: object; handle:
       scannedAt ??= context.now()
       return { ok: true, rows: aggregate(query), scannedAt, sources: structuredClone(sources) }
     },
-    onChanged(moduleId: string, listener: () => void): () => void {
-      if (!permitted()) {
-        throw new Error(
-          `Extension "${moduleId}" does not declare the "usage:read" permission, so it cannot watch token usage.`,
-        )
-      }
+    onChanged(_moduleId: string, listener: () => void): () => void {
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
@@ -2486,13 +2420,6 @@ function activityRegistry(context: FakeServiceContext): { registry: object; hand
   const workspaces = context.workspaces as InternalWorkspaces
   const chats = new Map<string, ActivityChatSummary>()
   const prompts: ActivityPrompt[] = []
-  const denied = () =>
-    context.permissions.has('conversation:read-all')
-      ? null
-      : failure(
-          'permission_missing',
-          `Extension "${context.moduleId}" does not declare the "conversation:read-all" permission, so it cannot read your chats.`,
-        )
   const invalidWindow = (from: unknown, to: unknown, required: boolean): string | null => {
     for (const [name, value] of [
       ['from', from],
@@ -2514,8 +2441,6 @@ function activityRegistry(context: FakeServiceContext): { registry: object; hand
 
   const registry = {
     async listChats(_m: string, input?: ActivityListChatsInput) {
-      const refused = denied()
-      if (refused) return refused
       const invalid = invalidWindow(input?.from, input?.to, false) ?? invalidWorkspace(input?.workspaceId)
       if (invalid) return failure('invalid_input', invalid)
       const listed = [...chats.values()]
@@ -2529,8 +2454,6 @@ function activityRegistry(context: FakeServiceContext): { registry: object; hand
       return { ok: true as const, chats: structuredClone(listed) }
     },
     async prompts(_m: string, input: ActivityPromptsInput) {
-      const refused = denied()
-      if (refused) return refused
       const limitIssue =
         input?.limit === undefined ||
         (typeof input.limit === 'number' &&
@@ -2703,12 +2626,6 @@ function textGenerationRegistry(context: FakeServiceContext): { registry: object
 
   const registry = {
     async generate(_m: string, input: ModuleTextGenerationInput): Promise<ModuleTextGenerationResult> {
-      if (!context.permissions.has('agents:generate')) {
-        return refuse(
-          'permission_missing',
-          `Extension "${context.moduleId}" must declare the "agents:generate" permission.`,
-        )
-      }
       const problem = invalid(input)
       if (problem) return refuse('invalid_input', problem)
       const cli = input.cli?.trim() || preferred.cli
@@ -2781,7 +2698,7 @@ export type FakeServiceDefinition = {
 }
 
 /**
- * One fake per service key the SDK publishes (MODULE_SERVICE_REQUIREMENTS).
+ * One fake per service key the SDK publishes (EXTENSION_HOST_SERVICES).
  * A service added to the host gets its fake here, keyed the same way.
  */
 export const SERVICE_FAKES: Readonly<Record<string, FakeServiceDefinition>> = {

@@ -3,8 +3,8 @@
   "title": "MCP tools",
   "summary": "A worker serving tools any agent in a workspace can call through Studio's MCP server.",
   "permissions": [
-    "mcp:tools",
-    "ipc:workspace-read"
+    "tools:contribute",
+    "workspace:read"
   ],
   "capabilities": [
     "mcp-tools",

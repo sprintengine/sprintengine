@@ -10,7 +10,7 @@ import {
 // Backlog item's menu (`contributes.menus`, where "backlog.item"). The command
 // has no `action`, so running it calls this worker's method of the same name,
 // an `operate` method, with what it was picked on: the workspace and the
-// items. Declaring methods needs the "module:bridge" permission.
+// items. Its own methods need no permission.
 //
 // For each item it starts a chat with a planning prompt. The chat is a real
 // chat: it opens as a tab in the workspace, and the person reads and answers

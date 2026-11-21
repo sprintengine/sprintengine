@@ -132,7 +132,6 @@ test('plugin-verify', async () => {
       const fixture = createFixture({ permissions: ['network', 'process:spawn'] })
       const verifier = createMarketplacePluginVerifier({
         trustContext: () => ({
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         }),
         stagingRoot,
@@ -155,7 +154,7 @@ test('plugin-verify', async () => {
       const stagingRoot = join(temp, 'staging')
       const fixture = createFixture({ permissions: ['filesystem:read-workspace'], publisherVerified: false })
       const verifier = createMarketplacePluginVerifier({
-        trustContext: () => ({ trustedModules: new Map() }),
+        trustContext: () => ({}),
         stagingRoot,
         fetcher: createFetcher(`${JSON.stringify(fixture.manifest, null, 2)}\n`),
       })
@@ -197,7 +196,6 @@ test('plugin-verify', async () => {
       const fixture = createFixture({ omitPermissions: true })
       const verifier = createMarketplacePluginVerifier({
         trustContext: () => ({
-          trustedModules: new Map(),
           trustedKeyFingerprints: new Set([fixture.fingerprint]),
         }),
         stagingRoot,
@@ -219,7 +217,7 @@ test('plugin-verify', async () => {
       const fixture = createFixture({ permissions: ['ipc:settings'] })
       const { signature: _signature, ...unsigned } = fixture.manifest
       const verifier = createMarketplacePluginVerifier({
-        trustContext: () => ({ trustedModules: new Map() }),
+        trustContext: () => ({}),
         stagingRoot,
         // The registry entry is signed but the downloaded bundle is unsigned: a
         // signature was stripped. This is a registry mismatch (tamper), blocked as
@@ -248,7 +246,7 @@ test('plugin-verify', async () => {
       const { signature: _manifestSignature, ...unsignedManifest } = fixture.manifest
       const { signature: _entrySignature, ...unsignedEntry } = fixture.entry
       const verifier = createMarketplacePluginVerifier({
-        trustContext: () => ({ trustedModules: new Map() }),
+        trustContext: () => ({}),
         stagingRoot,
         fetcher: createFetcher(`${JSON.stringify(unsignedManifest, null, 2)}\n`),
       })
@@ -269,7 +267,7 @@ test('plugin-verify', async () => {
       const fixture = createFixture({ permissions: ['filesystem:write-workspace'] })
       const tampered = { ...fixture.manifest, displayName: 'Tampered Plugin' }
       const verifier = createMarketplacePluginVerifier({
-        trustContext: () => ({ trustedModules: new Map() }),
+        trustContext: () => ({}),
         stagingRoot,
         fetcher: createFetcher(`${JSON.stringify(tampered, null, 2)}\n`),
       })
@@ -303,7 +301,7 @@ test('plugin-verify', async () => {
         },
       ]
       const verifier = createMarketplacePluginVerifier({
-        trustContext: () => ({ trustedModules: new Map() }),
+        trustContext: () => ({}),
         stagingRoot,
         packagedResourceResolver: (relativePath) => (relativePath === 'skills/acme-skills' ? resourceDir : null),
       })
@@ -347,7 +345,7 @@ test('plugin-verify', async () => {
   // An inline entry has nothing to download: its servers ARE the disclosure,
   // with the names of what they set and never the values.
   async function testInlineMcpPreviewDisclosesServersWithoutSecrets(): Promise<void> {
-    const verifier = createMarketplacePluginVerifier({ trustContext: () => ({ trustedModules: new Map() }) })
+    const verifier = createMarketplacePluginVerifier({ trustContext: () => ({}) })
     const entry: MarketplacePluginEntry = {
       id: 'inline-mcp-plugin',
       name: 'Inline MCP Plugin',

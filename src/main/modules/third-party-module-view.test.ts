@@ -25,76 +25,78 @@ test('third-party-module-view', async () => {
 
   function testLaunchReadinessClasses(): void {
     const snapshot: ThirdPartyMainLaunchSnapshot = {
-      loaded: new Set(['trusted-main']),
+      loaded: new Set(['approved-main']),
       manifestOnly: new Set(['manifest-only']),
       errors: new Map([['broken-main', 'main must export activate(studio), as a named export or its default.']]),
     }
 
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'trusted-main', trust: 'trusted', main: 'main.cjs' }), snapshot)
+      toThirdPartyModuleView(installedModule({ id: 'approved-main', standing: 'approved', main: 'main.cjs' }), snapshot)
         .launch,
       {
-        status: 'trusted_executable',
+        status: 'runs_worker',
         hasMainEntry: true,
         expectedToLoad: true,
         mainLoaded: true,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted worker is eligible to run.',
+        message: 'Its worker runs.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'manifest-only', trust: 'trusted' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'manifest-only', standing: 'approved' }), snapshot).launch,
       {
-        status: 'trusted_manifest_only',
+        status: 'runs_without_worker',
         hasMainEntry: false,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted extension with no worker; nothing runs in the background.',
+        message: 'It has no worker; nothing runs in the background.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'unsigned', trust: 'unsigned', main: 'main.cjs' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'unsigned', standing: 'pending', main: 'main.cjs' }), snapshot)
+        .launch,
       {
-        status: 'blocked_unsigned',
+        status: 'awaiting_approval',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Unsigned extension is waiting for trust before it runs.',
+        message: 'It waits for your approval before it runs.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'signed', trust: 'signed', main: 'main.cjs' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'signed', standing: 'pending', main: 'main.cjs' }), snapshot).launch,
       {
-        status: 'blocked_signed',
+        status: 'awaiting_approval',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Signed extension is waiting for trust before it runs.',
+        message: 'It waits for your approval before it runs.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'invalid', trust: 'invalid', main: 'main.cjs' }), snapshot).launch,
+      toThirdPartyModuleView(installedModule({ id: 'invalid', standing: 'invalid', main: 'main.cjs' }), snapshot)
+        .launch,
       {
         status: 'blocked_invalid',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Invalid signature blocks startup execution.',
+        message: 'Its signature is invalid, so it will not run.',
       },
     )
     assert.equal(
       toThirdPartyModuleView(
-        installedModule({ id: 'tampered', trust: 'invalid', main: 'main.cjs', tampered: true }),
+        installedModule({ id: 'tampered', standing: 'invalid', main: 'main.cjs', tampered: true }),
         snapshot,
       ).launch.message,
       'Its files do not match the digests extension.sig signs (tampered), so it will not run.',
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'broken-main', trust: 'trusted', main: 'main.cjs' }), snapshot)
+      toThirdPartyModuleView(installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }), snapshot)
         .launch,
       {
         status: 'launch_error',
@@ -116,30 +118,30 @@ test('third-party-module-view', async () => {
 
     assert.deepEqual(
       toThirdPartyModuleView(
-        installedModule({ id: 'default-on-disabled', trust: 'trusted', main: 'main.cjs' }),
+        installedModule({ id: 'default-on-disabled', standing: 'approved', main: 'main.cjs' }),
         snapshot,
         { 'default-on-disabled': false },
       ).launch,
       {
-        status: 'trusted_executable',
+        status: 'runs_worker',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: true,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted worker is switched off until enabled.',
+        message: 'Its worker is switched off until you switch it on.',
       },
     )
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'switched-on', trust: 'trusted', main: 'main.cjs' }), snapshot, {
+      toThirdPartyModuleView(installedModule({ id: 'switched-on', standing: 'approved', main: 'main.cjs' }), snapshot, {
         'switched-on': true,
       }).launch,
       {
-        status: 'trusted_executable',
+        status: 'runs_worker',
         hasMainEntry: true,
         expectedToLoad: true,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Trusted worker is eligible to run.',
+        message: 'Its worker runs.',
       },
     )
   }
@@ -152,15 +154,15 @@ test('third-party-module-view', async () => {
     }
 
     assert.deepEqual(
-      toThirdPartyModuleView(installedModule({ id: 'changed-module', trust: 'unsigned', main: 'main.cjs' }), snapshot)
+      toThirdPartyModuleView(installedModule({ id: 'changed-module', standing: 'pending', main: 'main.cjs' }), snapshot)
         .launch,
       {
-        status: 'blocked_unsigned',
+        status: 'awaiting_approval',
         hasMainEntry: true,
         expectedToLoad: false,
         mainLoaded: false,
         rendererEntry: { availability: 'none' },
-        message: 'Unsigned extension is waiting for trust before it runs.',
+        message: 'It waits for your approval before it runs.',
       },
     )
   }
@@ -188,7 +190,7 @@ test('third-party-module-view', async () => {
       })
       assert.deepEqual(
         toThirdPartyModuleView(
-          installedModule({ id: 'broken-main', trust: 'trusted', main: 'main.cjs' }),
+          installedModule({ id: 'broken-main', standing: 'approved', main: 'main.cjs' }),
           readThirdPartyMainLaunchSnapshot(),
         ).launch,
         {
@@ -224,7 +226,7 @@ test('third-party-module-view', async () => {
 // `main`, the content tier otherwise.
 function installedModule(options: {
   id: string
-  trust: InstalledModule['trust']['status']
+  standing: 'approved' | 'pending' | 'invalid'
   main?: string
   tampered?: boolean
 }): InstalledModule {
@@ -240,26 +242,42 @@ function installedModule(options: {
     manifest: capabilityManifestOf(options.id, 'local', validated.manifest),
     extension: validated.manifest,
     moduleRoot: 'test-root',
-    trust: { status: options.trust, ...(options.tampered ? { tampered: true } : {}) },
+    standing:
+      options.standing === 'approved'
+        ? {
+            signature: 'unsigned',
+            approval: options.main ? { state: 'approved', fingerprint: 'sha256-test' } : { state: 'not-needed' },
+            verifiedFiles: {},
+          }
+        : {
+            signature: options.standing === 'invalid' ? 'invalid' : 'unsigned',
+            approval:
+              options.standing === 'invalid'
+                ? { state: 'unavailable' }
+                : { state: 'pending', fingerprint: 'sha256-test', growth: [], reapproval: false },
+            ...(options.tampered ? { tampered: true } : {}),
+          },
   }
 }
 
-test('the view carries how a trusted module was trusted, and what it registered this session', () => {
+test('the view carries the approval, the signature, and what it registered this session', () => {
   const snapshot: ThirdPartyMainLaunchSnapshot = { loaded: new Set(['m']), manifestOnly: new Set(), errors: new Map() }
-  const module = installedModule({ id: 'm', trust: 'trusted', main: 'dist/main.cjs' })
+  const module = installedModule({ id: 'm', standing: 'approved', main: 'dist/main.cjs' })
   const view = toThirdPartyModuleView(
-    { ...module, trust: { ...module.trust, via: 'grant' } },
+    { ...module, standing: { ...module.standing, signature: 'verified', signer: 'abc' } },
     snapshot,
     {},
     { mcpTools: ['m_search'] },
   )
-  assert.equal(view.trustedVia, 'grant')
+  assert.deepEqual(view.approval, { state: 'approved', fingerprint: 'sha256-test' })
+  assert.equal(view.signature, 'verified')
+  assert.equal(view.signer, 'abc')
   assert.deepEqual(view.mcpTools, ['m_search'])
   assert.equal(view.extension.id, 'm')
   assert.equal(view.launch.mainLoaded, true)
-  // An untrusted module has no trust route to report, whatever the classifier said.
-  const untrusted = installedModule({ id: 'u', trust: 'unsigned', main: 'dist/main.cjs' })
-  assert.equal(toThirdPartyModuleView(untrusted, snapshot).trustedVia, undefined)
+  // One waiting for approval names the fingerprint to approve; a first one lists no growth.
+  const waiting = installedModule({ id: 'u', standing: 'pending', main: 'dist/main.cjs' })
+  assert.deepEqual(toThirdPartyModuleView(waiting, snapshot).approval, { state: 'pending', fingerprint: 'sha256-test' })
 })
 
 test('the launch session groups each module’s MCP tools under it', () => {

@@ -19,15 +19,16 @@ import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import { forgetModules, isModuleIdSegment } from './forget-modules'
 import { createModuleAssetOriginResolver } from './module-asset-origins'
 import type { ModuleRegistryMirror } from './registry-mirror'
+import { approvalView } from './extension-approval-view'
 import type { ThirdPartyLaunchSession } from './third-party-main-loader'
 import { toThirdPartyModuleView } from './third-party-module-view'
 import { collectThirdPartyRendererEntries } from './third-party-renderer-entries'
-import { readModuleTrustContextSync } from './trust-context'
-import { setModuleTrust } from './trust-store'
+import { readExtensionStandingContextSync } from './extension-standing-context'
+import { accessGrowth, extensionAccess, writeExtensionApproval } from './extension-approvals'
 import { discoverUserModules, installModuleFolder } from './user-module-registry'
 
 // What runs on a Studio, changed through its server (`extension.setEnabled`,
-// `extension.install`, `extension.setTrust`, `extension.uninstall`) and read
+// `extension.install`, `extension.approve`, `extension.uninstall`) and read
 // (`extension.list`): the same steps in process and out of process, over the
 // data folder and the module root the server reads at load. Nothing here
 // needs Electron.
@@ -36,13 +37,15 @@ import { discoverUserModules, installModuleFolder } from './user-module-registry
 //   folder, then has the running kernel apply it: at once for an installed
 //   extension and the bundled modules that can (`liveModuleIds`), at the next
 //   start otherwise.
-// - Installing, trusting and uninstalling change what is on disk and in the
-//   trust store; the kernel reads them at its next start. `changed` tells the
-//   windows, which load a trusted extension's window half again.
+// - Installing, approving and uninstalling change what is on disk and in the
+//   approvals (extension-approvals.ts); the kernel reads them at its next
+//   start. `changed` tells the windows, which load an approved extension's
+//   window half again. Installing a new version of an approved extension keeps
+//   the approval when it asks for no more access; otherwise it waits.
 // - Listing the installed extensions (`extension.installed`) reads the disk, the
-//   trust store and the receipts now, with what this server run loaded; the
+//   approvals and the receipts now, with what this server run loaded; the
 //   window halves (`extension.rendererEntries`) are read and checked against
-//   their verified bytes per request, so revoking trust applies at once.
+//   their verified bytes per request, so an uninstall applies at once.
 // - The modules' Settings values (`extension.setAppState`) are kept in the data
 //   folder for their main halves; the registry a window resolved
 //   (`extension.reportRegistry`) is kept in memory for the agents' tools.
@@ -72,7 +75,7 @@ export type ModuleLifecycleView = {
   manifests(): readonly CapabilityManifest[]
   enabled(moduleId: string): boolean
   running(moduleId: string): boolean
-  /** Why a module the kernel holds may not run (its trust, its host API, its dependencies). */
+  /** Why a module the kernel holds may not run (its approval, its signature, its dependencies). */
   ineligible(moduleId: string): ModuleResolutionErrorCode | undefined
   /** Why a module failed to load. */
   loadError(moduleId: string): string | undefined
@@ -80,14 +83,14 @@ export type ModuleLifecycleView = {
 }
 
 export type ModuleLifecycleDeps = {
-  /** The data folder: enablement, trust grants and plugin receipts. */
+  /** The data folder: enablement, approvals and plugin receipts. */
   dataDir: string
   /** Where installed extensions live. */
   moduleRoot: () => string
   view: () => ModuleLifecycleView | null
   /** Apply these overrides to the running kernel; written first. */
   applyEnablement: (overrides: Record<string, boolean>) => Promise<{ ok: true } | { ok: false; message: string }>
-  /** What is installed or trusted changed: tell the windows. */
+  /** What is installed or approved changed: tell the windows. */
   changed: () => void
   /** What this server run's kernel loaded of the extensions' main halves, and their tools. */
   launchSession: () => ThirdPartyLaunchSession
@@ -99,7 +102,7 @@ export type ModuleLifecycle = {
   list(): StudioModuleSummary[]
   setEnabled(moduleId: string, enabled: boolean | null): Promise<Answer<'extension.setEnabled'>>
   install(path: string): Promise<Answer<'extension.install'>>
-  setTrust(moduleId: string, trusted: boolean): Promise<Answer<'extension.setTrust'>>
+  approve(moduleId: string, fingerprint: string): Promise<Answer<'extension.approve'>>
   uninstall(moduleId: string): Promise<Answer<'extension.uninstall'>>
   installed(): Promise<ThirdPartyModuleListResult>
   rendererEntries(): Promise<ThirdPartyRendererEntriesResult>
@@ -113,7 +116,7 @@ const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
   disabled_dependency: 'A module it needs is switched off.',
   conflict: 'It conflicts with a module that is switched on.',
   dependency_cycle: 'Its dependencies depend on it.',
-  untrusted: 'It waits to be trusted.',
+  unapproved: 'It waits for your approval.',
   invalid_signature: 'Its signature or its files do not match, so it will not run.',
 }
 
@@ -147,9 +150,9 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     queue = next.catch(() => undefined)
     return next
   }
-  const trustContext = () => readModuleTrustContextSync(deps.dataDir)
+  const standingContext = () => readExtensionStandingContextSync(deps.dataDir)
   const installed = async (moduleId: string) =>
-    (await discoverUserModules(deps.moduleRoot(), trustContext())).modules.find((module) => module.key === moduleId)
+    (await discoverUserModules(deps.moduleRoot(), standingContext())).modules.find((module) => module.key === moduleId)
   const failed = (error: unknown) => ({
     ok: false as const,
     message: error instanceof Error ? error.message : String(error),
@@ -166,7 +169,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
 
     async installed() {
-      const { modules, rejected } = await discoverUserModules(deps.moduleRoot(), trustContext())
+      const { modules, rejected } = await discoverUserModules(deps.moduleRoot(), standingContext())
       const session = deps.launchSession()
       const overrides = readModuleOverridesSync(deps.dataDir)
       return {
@@ -180,7 +183,7 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     },
 
     async rendererEntries() {
-      const { modules } = await discoverUserModules(deps.moduleRoot(), trustContext())
+      const { modules } = await discoverUserModules(deps.moduleRoot(), standingContext())
       return collectThirdPartyRendererEntries(modules, assetOriginOf)
     },
 
@@ -209,56 +212,73 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     install: (path) =>
       oneAtATime(async () => {
         try {
-          const result = await installModuleFolder(path, deps.moduleRoot(), trustContext())
+          const context = standingContext()
+          // Read before the copy replaces it: the version an update replaces,
+          // and whether the person approved it as it is.
+          const before = (await discoverUserModules(deps.moduleRoot(), context)).modules
+          const result = await installModuleFolder(path, deps.moduleRoot(), context)
           if (!result.ok)
             return {
               ok: false as const,
               message: result.message,
               ...(result.rejected.issues.length > 0 ? { issues: result.rejected.issues } : {}),
             }
-          deps.changed()
-          return {
-            ok: true as const,
-            moduleId: result.id,
-            trust: result.trust.status,
-            strippedLinks: result.strippedLinks,
+          let approval = approvalView(result.standing.approval)
+          const previous = before.find((module) => module.key === result.id)
+          const record = context.approvals.get(result.id)
+          // An update of an approved extension that asks for no more access
+          // keeps its approval, its new code included: trust once per access.
+          if (
+            result.standing.approval.state === 'pending' &&
+            previous?.standing.approval.state === 'approved' &&
+            record &&
+            accessGrowth(record.access, extensionAccess(result.extension)).length === 0
+          ) {
+            const carried = await writeExtensionApproval(deps.dataDir, result.id, {
+              fingerprint: result.standing.approval.fingerprint,
+              access: extensionAccess(result.extension),
+            })
+            if (carried.ok) approval = { state: 'approved', fingerprint: result.standing.approval.fingerprint }
           }
+          deps.changed()
+          return { ok: true as const, moduleId: result.id, approval, strippedLinks: result.strippedLinks }
         } catch (error) {
           return failed(error)
         }
       }),
 
-    setTrust: (moduleId, trusted) =>
+    approve: (moduleId, fingerprint) =>
       oneAtATime(async () => {
         try {
           if (!isModuleIdSegment(moduleId)) return { ok: false, message: 'That is not a module id.' }
-          if (!trusted) {
-            const { result } = await setModuleTrust(deps.dataDir, moduleId, null)
-            if (!result.ok) return { ok: false, message: result.message ?? 'Trust could not be withdrawn.' }
-            deps.changed()
-            return { ok: true }
-          }
-          // Trust binds to what is on disk now, never to a client's idea of it.
+          // The approval binds to what is on disk now, and only when that is
+          // what the person was shown: the fingerprint they approved.
           const target = await installed(moduleId)
           if (!target) return { ok: false, message: `Extension "${moduleId}" is not installed.` }
-          if (target.trust.status === 'invalid')
+          const { standing } = target
+          if (standing.signature === 'invalid')
             return {
               ok: false,
-              message: target.trust.tampered
-                ? `Extension "${moduleId}" does not match the file digests extension.sig signs and cannot be trusted.`
-                : `Extension "${moduleId}" has an invalid signature and cannot be trusted.`,
+              message: standing.tampered
+                ? `Extension "${moduleId}" does not match the file digests extension.sig signs and cannot be approved.`
+                : `Extension "${moduleId}" has an invalid signature and cannot be approved.`,
             }
-          // The grant binds to the content of the folder as it is now: every
-          // file, extension.json included. A folder whose files cannot all be
-          // digested (a symbolic link put there since) cannot be vouched for.
-          const content = target.trust.contentFingerprint
-          if (content === undefined)
+          if (standing.approval.state === 'not-needed' || standing.approval.state === 'approved') return { ok: true }
+          if (standing.approval.state === 'unavailable')
             return {
               ok: false,
-              message: `Extension "${moduleId}" holds files an extension cannot ship, so trusting it could not cover what runs. Install it again.`,
+              message: `Extension "${moduleId}" holds files an extension cannot ship, so approving it could not cover what runs. Install it again.`,
             }
-          const { result } = await setModuleTrust(deps.dataDir, moduleId, content)
-          if (!result.ok) return { ok: false, message: result.message ?? 'Trust could not be saved.' }
+          if (standing.approval.fingerprint !== fingerprint)
+            return {
+              ok: false,
+              message: `Extension "${moduleId}" changed since you reviewed it. Review what it asks for now, and approve that.`,
+            }
+          const written = await writeExtensionApproval(deps.dataDir, moduleId, {
+            fingerprint,
+            access: extensionAccess(target.extension),
+          })
+          if (!written.ok) return { ok: false, message: written.message }
           deps.changed()
           return { ok: true }
         } catch (error) {
@@ -275,14 +295,14 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
           const contained = await containedModuleFolder(deps.moduleRoot(), target.moduleRoot)
           if (!contained.ok) return { ok: false, message: contained.message }
           await rm(contained.path, { recursive: true, force: true })
-          // Nothing about it outlives it: trust, enablement, stored secrets.
-          const { result: revoked } = await setModuleTrust(deps.dataDir, moduleId, null)
+          // Nothing about it outlives it: its approval, enablement, stored secrets.
+          const revoked = await writeExtensionApproval(deps.dataDir, moduleId, null)
           await forgetModules(deps.dataDir, [moduleId])
           deps.changed()
           if (!revoked.ok)
             return {
               ok: false,
-              message: `Removed "${moduleId}" but could not withdraw its trust: ${revoked.message ?? 'unknown error'}`,
+              message: `Removed "${moduleId}" but could not forget its approval: ${revoked.message}`,
             }
           return { ok: true, removedModuleIds: [moduleId] }
         } catch (error) {
