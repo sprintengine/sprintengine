@@ -283,3 +283,19 @@ test('a background worker whose folder was removed or changed stops, stays stopp
   assert.equal(harness.workers.status('local.removed')?.state, 'stopped', 'and neither is restarted')
   assert.equal(harness.workers.status('local.changed')?.state, 'stopped')
 })
+
+test('the bell row for a worker that keeps crashing names no place on this disk; its log keeps the whole of it', async () => {
+  const main =
+    'exports.activate = () => { throw new Error("Cannot find module \'/Users/dev/.sprintengine/extensions/local.leaky/dist/missing.cjs\'") }\n'
+  harness = startWorkerHarness([worker('leaky', { main })], { maxRestarts: 0 })
+  const answer = await ping('leaky')
+  assert.equal(!answer.ok && answer.code, 'extension_unavailable')
+  assert.equal(harness.bell.length, 1)
+  const body = harness.bell[0]!.input.body ?? ''
+  assert.doesNotMatch(body, /\/Users\//)
+  assert.match(body, /crashed once\. Its log/)
+  assert.match(
+    readFileSync(join(harness.logDir, 'local.leaky.log'), 'utf8'),
+    /\/Users\/dev\/\.sprintengine\/extensions\/local\.leaky/,
+  )
+})

@@ -4,7 +4,7 @@ import { isModuleMethodName, type ModuleMethodAccess } from '../../../shared/mod
 import { HOST_CAPABILITIES } from '../../../shared/modules/host-api'
 import type { ModuleFileDigests } from '../../../shared/modules/manifest'
 import { isRecord, toolError, type McpToolRegistration, type McpToolResult } from '../../../shared/modules/mcp-tools'
-import type { ModuleNotifyInput } from '../../../shared/modules/notifications'
+import { sanitizeNotificationText, type ModuleNotifyInput } from '../../../shared/modules/notifications'
 import {
   settleMethodAnswer,
   type KernelWorkerPort,
@@ -680,10 +680,16 @@ export class ExtensionWorkers implements KernelWorkerPort {
     const backoff = this.options.backoffMs ?? WORKER_RESTART_BACKOFF_MS
     const id = entry.spec.extensionId
     if (entry.restarts >= maxRestarts) {
-      const message = `Extension "${id}"'s worker stopped after it crashed ${entry.restarts + 1} times; ${what}. Switch it off and on again to try once more.`
+      const message = `Extension "${id}"'s worker stopped after it crashed ${entry.restarts === 0 ? 'once' : `${entry.restarts + 1} times`}; ${what}. Switch it off and on again to try once more.`
       entry.log(`[studio] ${message}`)
       this.setState(entry, 'errored', message)
-      this.options.notify(id, { severity: 'error', title: `${entry.spec.displayName} stopped working`, body: message })
+      // A bell row reaches every window, paired ones too: no place on this disk
+      // goes with it. The log keeps the whole of it.
+      const body = sanitizeNotificationText(
+        message,
+        `Extension "${id}"'s worker stopped after it crashed ${entry.restarts === 0 ? 'once' : `${entry.restarts + 1} times`}. Its log, in Studio's logs folder under extensions, says why. Switch it off and on again to try once more.`,
+      )
+      this.options.notify(id, { severity: 'error', title: `${entry.spec.displayName} stopped working`, body })
       return null
     }
     const delay = backoff[Math.min(entry.restarts, backoff.length - 1)]!
