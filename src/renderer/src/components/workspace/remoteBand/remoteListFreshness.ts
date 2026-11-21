@@ -31,7 +31,7 @@ export type RemoteListFailure = {
  * this one share no protocol (`outdated`), or the pairing is gone from here
  * (`unpaired`).
  */
-export type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'unpaired'
+export type RemoteLastKnownReason = 'signed-out' | 'not-answering' | 'outdated' | 'unpaired' | 'superseded'
 
 export type RemoteLastKnown = {
   reason: RemoteLastKnownReason
@@ -171,6 +171,9 @@ export function remoteLastKnownWords(
       return said(words.signedOut, words.signedOut, true, words.refusedThisDevice(machineName))
     case 'unpaired':
       return said(words.notPaired, words.notPaired, true, words.noLongerPaired(machineName))
+    case 'superseded':
+      // Paired again already: nothing to pair, only the new pairing's row to open.
+      return said(words.oldPairing, words.oldPairing, false, words.pairedAgainSince(machineName))
     case 'outdated':
       return said(words.outOfDate, words.outOfDate, false, words.shareNoProtocol(machineName))
     case 'not-answering':

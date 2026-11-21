@@ -51,7 +51,7 @@ import {
   groupChatsByProject,
   chatSections,
   matchesChatSearch,
-  chatListSlowPollMs,
+  CHAT_LIST_SLOW_POLL_MS,
   chatListStaleWords,
   type ChatListRow,
   type ChatRowState,
@@ -130,7 +130,7 @@ export function ConversationsScreen({
     chats: rows,
     failures,
     stale,
-    failingReads,
+    poll,
     loaded,
     refreshing,
     refresh,
@@ -191,7 +191,7 @@ export function ConversationsScreen({
   const anyWorking = rows.some(
     (row) => row.thread.phase === "running" || row.thread.phase === "starting" || chatWorksInBackground(row.thread),
   );
-  const slowPollMs = chatListSlowPollMs(failingReads);
+
   const now = useNow(anyWorking);
   // Kept current while in front, not only when navigated back to: coming
   // back to the app, which focus does not announce, reads the chats, and so
@@ -206,18 +206,19 @@ export function ConversationsScreen({
       });
       // While nothing works, a slow poll still catches a list that moved
       // without this phone hearing, or a desktop that stopped answering or
-      // dropped this pairing; it waits longer each time a read fails.
-      const poll = setInterval(
+      // dropped this pairing. Both polls ask only the desktops due a read: a
+      // desktop that keeps failing waits out its own backoff (`chatListPollDue`).
+      const timer = setInterval(
         () => {
-          if (AppState.currentState === "active") void revalidate();
+          if (AppState.currentState === "active") void poll();
         },
-        anyWorking ? LIST_POLL_MS : slowPollMs,
+        anyWorking ? LIST_POLL_MS : CHAT_LIST_SLOW_POLL_MS,
       );
       return () => {
         subscription.remove();
-        clearInterval(poll);
+        clearInterval(timer);
       };
-    }, [anyWorking, slowPollMs, revalidate]),
+    }, [anyWorking, poll, revalidate]),
   );
   const showDesktop = streamingDesktops > 1;
   const sections = useMemo<Section[]>(() => {

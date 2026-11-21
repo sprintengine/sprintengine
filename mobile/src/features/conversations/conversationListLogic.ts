@@ -806,9 +806,27 @@ export interface ChatListStale {
 /** The codes a desktop refuses a pairing with: it no longer takes this phone. */
 const SIGNED_OUT_CODES = new Set(["unauthorized", "revoked", "peer_mismatch"]);
 
-/** What a failed list read means: the desktop refused this phone, or it did not answer. */
-export function chatListFailureKind(error: unknown): ChatListStaleKind {
+/**
+ * Refusals that are the answer about the chats rather than a failure to read
+ * them, as the desktop app reads them: a pairing that may not read them, or a
+ * desktop that does not serve them, lists none, and that list is current.
+ */
+const ANSWERED_CODES = new Set([
+  "conversations_unsupported",
+  "scope_required",
+  "owner_required",
+  "forbidden",
+  "outdated",
+  "unknown_method",
+]);
+
+/**
+ * What a failed list read means: null for a refusal that is itself the answer
+ * (the desktop lists none), else whether it refused this phone or did not answer.
+ */
+export function chatListFailureKind(error: unknown): ChatListStaleKind | null {
   const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : null;
+  if (typeof code === "string" && ANSWERED_CODES.has(code)) return null;
   return typeof code === "string" && SIGNED_OUT_CODES.has(code) ? "signed-out" : "not-answering";
 }
 
@@ -826,20 +844,38 @@ export function lastKnownChatRow(row: ChatListRow): ChatListRow {
   return { ...row, thread: { ...row.thread, phase: live ? "idle" : phase, backgroundWork: undefined } };
 }
 
-/** The line the list says for one desktop whose chats are last-known. */
+/**
+ * The line the list says for one desktop whose chats are last-known: why, and
+ * how old the chats kept for it are. With none kept (`since` null, as on a
+ * launch whose first read failed) it says only why.
+ */
 export function chatListStaleWords(stale: ChatListStale, now: number): string {
   const words = copy.phone.conversations.chatListStale;
   const name = stale.desktopName.trim() || words.thisDesktop;
-  const age = stale.since !== null ? formatTimestamp(new Date(stale.since).toISOString(), now) : null;
   const lead = stale.kind === "signed-out" ? words.signedOut(name) : words.notAnswering(name);
-  return `${lead} ${age ? words.chatsFrom(age) : words.chatsFromEarlier}`;
+  if (stale.since === null) return lead;
+  return `${lead} ${words.chatsFrom(formatTimestamp(new Date(stale.since).toISOString(), now))}`;
 }
 
-/** How often the list in front re-reads while nothing works: a few minutes, further apart while a desktop keeps failing. */
+/** How often the list in front re-reads while nothing works. */
 export const CHAT_LIST_SLOW_POLL_MS = 3 * 60_000;
+/** The longest a desktop that keeps failing waits between polled reads. */
 export const CHAT_LIST_SLOW_POLL_MAX_MS = 30 * 60_000;
 
-export function chatListSlowPollMs(failingReads: number): number {
-  if (failingReads <= 0) return CHAT_LIST_SLOW_POLL_MS;
-  return Math.min(CHAT_LIST_SLOW_POLL_MS * 2 ** failingReads, CHAT_LIST_SLOW_POLL_MAX_MS);
+/** How long after a failed read a poll asks that desktop again: doubled for each failure in a row. */
+export function chatListSlowPollMs(failures: number): number {
+  if (failures <= 0) return CHAT_LIST_SLOW_POLL_MS;
+  return Math.min(CHAT_LIST_SLOW_POLL_MS * 2 ** failures, CHAT_LIST_SLOW_POLL_MAX_MS);
+}
+
+/**
+ * Whether a poll asks this desktop now. One that answered last time is asked
+ * on every poll; one that keeps failing waits out its own backoff, so a quiet
+ * desktop does not slow the others and is not asked every few seconds while
+ * another desktop's chat works. A person's own asking (focus, foreground,
+ * pull to refresh) asks every desktop.
+ */
+export function chatListPollDue(history: { askedAt: number; failures: number } | undefined, now: number): boolean {
+  if (!history || history.failures <= 0) return true;
+  return now - history.askedAt >= chatListSlowPollMs(history.failures);
 }

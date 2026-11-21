@@ -525,7 +525,6 @@ test("a desktop whose list cannot be read keeps its chats, says why, and claims 
   await settle(h);
   assert.equal(h.value().chats.length, 2);
   assert.equal(h.value().stale.length, 0);
-  assert.equal(h.value().failingReads, 0);
 
   // Desktop one drops this pairing; desktop two stops answering.
   h.desk.fail.one = Object.assign(new Error("This phone is no longer paired with the desktop."), { code: "unauthorized" });
@@ -546,16 +545,63 @@ test("a desktop whose list cannot be read keeps its chats, says why, and claims 
     ],
   );
   assert.ok(stale.every((entry) => typeof entry.since === "number"), "each says when its chats were last listed");
-  assert.equal(h.value().failingReads, 1);
-  await h.value().refresh();
-  await settle(h);
-  assert.equal(h.value().failingReads, 2, "the slow poll backs off while a desktop keeps failing");
 
   // Paired again, and answering: the list is current.
   h.desk.fail = {};
   await h.value().refresh();
   await settle(h);
   assert.equal(h.value().stale.length, 0);
-  assert.equal(h.value().failingReads, 0);
   assert.equal(h.value().chats[0].thread.phase, "running");
+});
+
+test("a launch whose first read fails keeps nothing, so the list says only why", async () => {
+  const h = harness();
+  h.desk.fail.one = Object.assign(new Error("The desktop did not answer."), { code: "unavailable" });
+  h.render({ sessions: [desktop("one")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().chats.length, 0);
+  assert.equal(h.value().stale.length, 1);
+  assert.equal(h.value().stale[0].since, null, "no kept chats, so no age to give");
+});
+
+test("a refusal that is the answer is a current, empty list, as on the desktop", async () => {
+  const h = harness();
+  h.desk.fail.one = Object.assign(new Error("This pairing may not read chats."), { code: "scope_required" });
+  h.render({ sessions: [desktop("one")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().stale.length, 0);
+  assert.equal(h.value().failures.length, 0);
+});
+
+test("a poll backs off a failing desktop on its own, and keeps asking the one that answers", async () => {
+  const h = harness();
+  h.render({ sessions: [desktop("one"), desktop("two")], activeDeviceId: "one" });
+  await settle(h);
+  h.desk.fail.two = Object.assign(new Error("The desktop did not answer."), { code: "unavailable" });
+  await h.value().refresh();
+  await settle(h);
+  const before = h.reads.list;
+  await h.value().poll();
+  await settle(h);
+  assert.equal(h.reads.list, before + 1, "a poll asks the desktop that answers, and not the failing one yet");
+  assert.equal(h.value().stale.length, 1, "the failing desktop still says why");
+  assert.equal(h.value().chats.length, 6, "and keeps its chats");
+  // A person pulling to refresh asks every desktop.
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.reads.list, before + 3);
+});
+
+test("a desktop known to have revoked this phone keeps its chats and says so", async () => {
+  const h = harness();
+  h.render({ sessions: [desktop("one")], activeDeviceId: "one" });
+  await settle(h);
+  assert.equal(h.value().chats.length, 3);
+  // The chat screen learned the desktop revoked this phone.
+  h.render({ sessions: [{ ...desktop("one"), status: "revoked" }] });
+  await h.value().refresh();
+  await settle(h);
+  assert.equal(h.value().chats.length, 3, "its chats stay, as last listed");
+  assert.equal(h.value().stale.length, 1);
+  assert.equal(h.value().stale[0].kind, "signed-out");
 });

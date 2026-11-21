@@ -253,3 +253,89 @@ test('the rows read from over there are drawn on the tailnet, whatever this devi
   assert.equal(unattachedConversations(groups, true, []).length, 1)
   assert.equal(unattachedConversations(groups, false, []).length, 0, 'off the tailnet, none')
 })
+
+test('once the machine is paired again and answers, the old pairing does not ask to pair again', () => {
+  const now = 10 * DAY
+  // The refused pairing, and the new one made by Pair again to the same machine.
+  const fresh: MeshConnection = { ...miniPairing, id: 'c2', pairedAt: '2026-11-20T00:00:00.000Z' }
+  const opened = {
+    id: 'w1',
+    name: 'ada',
+    mode: 'standard',
+    folderPath: null,
+    remoteOrigin: {
+      connectionId: 'c1',
+      machineName: 'mac-mini',
+      workspaceId: 'rw-ada',
+      sessionId: 'conversation:rw-ada:ada',
+    },
+  } as unknown as Workspace
+  const freshEnvironment: EnvironmentEntry = { ...environment('up'), routes: [{ kind: 'tailnet', connection: 'c2' }] }
+  const groups = buildRemoteBand({
+    connections: [miniPairing, fresh],
+    browses: new Map([
+      [
+        'c1',
+        entry({
+          conversations: [chat('ada'), chat('bea')],
+          listFailure: { kind: 'unauthorized', message: 'Revoked.' },
+        }),
+      ],
+      ['c2', entry({ conversations: [chat('ada'), chat('bea')], listedAt: 9_000 })],
+    ]),
+    environments: [environment('up'), freshEnvironment],
+    workspaces: [opened],
+    connectionsListed: true,
+  })
+  const old = groups.find((group) => group.connectionId === 'c1')!
+  assert.equal(old.lastKnown?.reason, 'superseded')
+  assert.deepEqual(
+    old.rows.map((row) => row.title),
+    ['ada'],
+    'only the chat open here over it stays; the new pairing lists the rest',
+  )
+  assert.deepEqual(
+    unattachedConversations(groups, true, [opened]).map((conversation) => [
+      conversation.connectionId,
+      conversation.title,
+    ]),
+    [
+      ['c2', 'ada'],
+      ['c2', 'bea'],
+    ],
+    'the new pairing lists every chat once, and the old pairing none it has not opened here',
+  )
+  assert.equal(attachedConversations(groups, [opened]).get('w1')?.lastKnown?.reason, 'superseded')
+  const words = remoteLastKnownWords({ reason: 'superseded', since: null }, 'mac-mini', now)
+  assert.equal(words.text, 'Old pairing')
+  assert.equal(words.pairAgain, false, 'it does not point at a step already taken')
+
+  // A pairing forgotten when the machine was paired again (a reverse pairing adopted).
+  const forgotten = buildRemoteBand({
+    connections: [fresh],
+    browses: new Map([['c2', entry({ listedAt: 9_000 })]]),
+    environments: [freshEnvironment],
+    workspaces: [opened],
+    connectionsListed: true,
+  })
+  assert.equal(remoteLastKnownByConnection(forgotten).get('c1')?.reason, 'superseded')
+
+  // Another machine's refused pairing still says so.
+  const other: MeshConnection = {
+    ...miniPairing,
+    id: 'c3',
+    machineName: 'build-box',
+    endpoint: 'build-box.tail1234.ts.net:8471',
+  }
+  const unrelated = buildRemoteBand({
+    connections: [other, fresh],
+    browses: new Map([
+      ['c3', entry({ listFailure: { kind: 'unauthorized', message: 'Revoked.' } })],
+      ['c2', entry({ listedAt: 9_000 })],
+    ]),
+    environments: [freshEnvironment],
+    workspaces: [],
+    connectionsListed: true,
+  })
+  assert.equal(unrelated.find((group) => group.connectionId === 'c3')?.lastKnown?.reason, 'signed-out')
+})

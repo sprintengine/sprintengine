@@ -568,6 +568,23 @@ export function openSpecOf(row: RemoteSessionRow): RemoteSessionOpenSpec {
   }
 }
 
+/** A machine's name, as two pairings of one machine both carry it. */
+function machineNameKey(name: string): string {
+  return `name:${name.trim().toLowerCase()}`
+}
+
+/**
+ * What says two pairings reach the same machine: its Studio's environment
+ * id where the pairing knows it, else the host it is reached at.
+ */
+function sameMachineKeys(connection: MeshConnection): string[] {
+  const keys: string[] = []
+  if (connection.environmentId) keys.push(`env:${connection.environmentId}`)
+  const host = connection.endpoint.replace(/:\d+$/u, '').trim().toLowerCase()
+  if (host) keys.push(`host:${host}`)
+  return keys
+}
+
 /**
  * The band: one group per paired machine, in name order, plus a group for
  * any machine whose pairing is gone but whose rows are still here.
@@ -593,7 +610,7 @@ export function buildRemoteBand(input: {
 }): RemoteMachineGroup[] {
   const { connections, browses, environments, workspaces, reachability, connectionsListed = false } = input
   const paired = new Set(connections.map((connection) => connection.id))
-  const groups: RemoteMachineGroup[] = [...connections]
+  const listed: RemoteMachineGroup[] = [...connections]
     .sort((a, b) => a.machineName.localeCompare(b.machineName))
     .map((connection) => {
       const entry = browses.get(connection.id)
@@ -650,6 +667,35 @@ export function buildRemoteBand(input: {
       }
     })
 
+  // Pairing again makes a new pairing: the old one keeps its id, and so do
+  // the chats opened over it. Once another pairing to the same machine
+  // answers, the old pairing's "Signed out · pair again" or "Not paired ·
+  // pair again" points at a step already taken. Its rows that are not open
+  // here go (the new pairing lists them), and the chats open here over it
+  // say they were opened over an earlier pairing instead.
+  const answering = new Set<string>()
+  const answeringNames = new Set<string>()
+  for (const connection of connections) {
+    const group = listed.find((candidate) => candidate.connectionId === connection.id)
+    if (!group || group.lastKnown !== null || browses.get(connection.id)?.listedAt === undefined) continue
+    for (const key of sameMachineKeys(connection)) answering.add(key)
+    answeringNames.add(machineNameKey(connection.machineName))
+  }
+  // Only a pairing whose own list is last-known is asked: an answering one never matches itself.
+  const superseded = (connection: MeshConnection): boolean =>
+    sameMachineKeys(connection).some((key) => answering.has(key))
+  const groups: RemoteMachineGroup[] = listed.map((group) => {
+    const connection = connections.find((candidate) => candidate.id === group.connectionId)
+    if (!connection || group.lastKnown === null || !superseded(connection)) return group
+    const open = group.rows.filter((row) => row.attachedWorkspaceId !== null)
+    return {
+      ...group,
+      rows: open,
+      stale: open.length > 0,
+      lastKnown: { reason: 'superseded', since: group.lastKnown.since },
+    }
+  })
+
   // Rows born on a machine no longer paired here: grouped by the machine
   // their provenance names, with no phase — there is nothing to ask.
   const orphans = new Map<string, Workspace[]>()
@@ -670,8 +716,14 @@ export function buildRemoteBand(input: {
       parked,
       stale: false,
       // What was opened here from it stays, and says the pairing is gone
-      // once the list of pairings has been read and does not name it.
-      lastKnown: connectionsListed ? { reason: 'unpaired', since: null } : null,
+      // once the list of pairings has been read and does not name it, or,
+      // where that machine has been paired again and answers, that it was
+      // opened over an earlier pairing.
+      lastKnown: !connectionsListed
+        ? null
+        : answeringNames.has(machineNameKey(parked[0]!.remoteOrigin!.machineName))
+          ? { reason: 'superseded', since: null }
+          : { reason: 'unpaired', since: null },
       loading: false,
     })
   }

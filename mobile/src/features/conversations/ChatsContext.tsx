@@ -28,6 +28,7 @@ import {
   chatOpenedKey,
   chatRowTitle,
   chatListFailureKind,
+  chatListPollDue,
   chatWorkspaceKey,
   lastKnownChatRow,
   type ChatListRow,
@@ -109,8 +110,12 @@ export interface ChatsValue {
    * `chats` as they were last listed, and the list says they are last-known.
    */
   stale: ChatListStale[];
-  /** How many reads in a row some desktop failed, which the list's slow poll backs off by. */
-  failingReads: number;
+  /**
+   * Read the chats of the desktops due a read: every one that answered last
+   * time, and one that keeps failing once its own backoff has passed
+   * (`chatListPollDue`). What the list's polls call.
+   */
+  poll: () => Promise<void>;
   /** False until the first read has answered. */
   loaded: boolean;
   refreshing: boolean;
@@ -276,9 +281,13 @@ export function ChatsProvider({
   const [chats, setChats] = useState<ChatListRow[]>([]);
   const [failures, setFailures] = useState<string[]>([]);
   const [stale, setStale] = useState<ChatListStale[]>([]);
-  const [failingReads, setFailingReads] = useState(0);
   // When each desktop's chats were last listed here, for how old a kept list is.
   const listedAt = useRef(new Map<string, number>());
+  // When each desktop was last asked, and how many reads of it in a row failed: a poll's backoff.
+  const readHistory = useRef(new Map<string, { askedAt: number; failures: number }>());
+  // The rows as last drawn, for how many a failed desktop keeps.
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const generation = useRef(0);
@@ -310,21 +319,29 @@ export function ChatsProvider({
     );
   }, []);
 
-  const readChats = useCallback(async (workspacesFrom: "fresh" | "recent") => {
-    const request = ++generation.current;
+  const readChats = useCallback(async (workspacesFrom: "fresh" | "recent", onlyDue = false) => {
     const startedAt = Date.now();
+    // A poll asks only the desktops due a read; the rest keep what they have.
+    const asked = onlyDue
+      ? chatClients.filter(({ session }) => chatListPollDue(readHistory.current.get(session.deviceId), startedAt))
+      : chatClients;
+    if (asked.length === 0 && chatClients.length > 0) return;
+    const request = ++generation.current;
+    const askedIds = new Set(asked.map(({ session }) => session.deviceId));
     setRefreshing(true);
     const answers = await Promise.all(
-      chatClients.map(async ({ session, api }) => {
+      asked.map(async ({ session, api }) => {
         // The project pill comes from the desktop's workspace list. A pairing
         // that may not read it omits the pill rather than showing a workspace
         // id nobody chose.
         const reads = workspaceReads.get(session.deviceId);
         let listError: unknown = null;
         let [threads, workspaces] = await Promise.all([
+          // A refusal that is the answer (a pairing that may not read them, a
+          // desktop that does not serve them) lists none, and is current.
           api.list().catch((error: unknown) => {
             listError = error;
-            return null;
+            return chatListFailureKind(error) === null ? [] : null;
           }),
           reads?.[workspacesFrom]().catch(() => null) ?? Promise.resolve(null),
         ]);
@@ -389,44 +406,72 @@ export function ChatsProvider({
     // as a last-known list that claims no live work (`lastKnownChatRow`): they
     // used to vanish, which read as the chats being gone.
     const readAt = Date.now();
-    for (const answer of answers) if (!answer.failed) listedAt.current.set(answer.session.deviceId, readAt);
+    for (const answer of answers) {
+      if (!answer.failed) listedAt.current.set(answer.session.deviceId, readAt);
+      const before = readHistory.current.get(answer.session.deviceId);
+      readHistory.current.set(answer.session.deviceId, {
+        askedAt: startedAt,
+        failures: answer.failed ? (before?.failures ?? 0) + 1 : 0,
+      });
+    }
+    // A desktop this phone knows has revoked it is not asked at all; its
+    // chats are kept as last listed, and the list says it refused this phone.
+    const revoked = sessions.filter((session) => session.status === "revoked");
+    const kept = (deviceId: string) => chatsRef.current.some((row) => row.deviceId === deviceId);
     // Rows that read as they did stay the objects the list holds, so a read
     // that found one new chat draws one row, not every row again.
+    const keptRows = (previous: ChatListRow[], deviceId: string) =>
+      previous.filter((row) => row.deviceId === deviceId).map(lastKnownChatRow);
     setChats((previous) =>
       keepUnchanged(
         previous,
-        answers.flatMap((answer) =>
-          answer.failed
-            ? previous.filter((row) => row.deviceId === answer.session.deviceId).map(lastKnownChatRow)
-            : answer.rows,
-        ),
+        [
+          ...chatClients.flatMap(({ session }) => {
+            if (!askedIds.has(session.deviceId)) return previous.filter((row) => row.deviceId === session.deviceId);
+            const answer = answers.find((candidate) => candidate.session.deviceId === session.deviceId)!;
+            return answer.failed ? keptRows(previous, session.deviceId) : answer.rows;
+          }),
+          ...revoked.flatMap((session) => keptRows(previous, session.deviceId)),
+        ],
         chatKey,
       ),
     );
     setSettles((current) => settlesAfterRead(current, startedAt));
     setSnoozes((current) => snoozesAfterRead(current, startedAt));
-    setFailures(answers.filter((answer) => answer.failed).map((answer) => answer.session.desktopName));
-    setStale(
-      answers.flatMap((answer) =>
-        answer.failure
-          ? [
-              {
-                deviceId: answer.session.deviceId,
-                desktopName: answer.session.desktopName,
-                kind: answer.failure,
-                since: listedAt.current.get(answer.session.deviceId) ?? null,
-              },
-            ]
-          : [],
+    // How old a kept list is; null when nothing was kept, so the line says only why.
+    const sinceOf = (deviceId: string) => (kept(deviceId) ? (listedAt.current.get(deviceId) ?? null) : null);
+    setStale((previous) => [
+      ...chatClients.flatMap(({ session }): ChatListStale[] => {
+        if (!askedIds.has(session.deviceId)) return previous.filter((entry) => entry.deviceId === session.deviceId);
+        const answer = answers.find((candidate) => candidate.session.deviceId === session.deviceId)!;
+        return answer.failure
+          ? [{ deviceId: session.deviceId, desktopName: session.desktopName, kind: answer.failure, since: sinceOf(session.deviceId) }]
+          : [];
+      }),
+      ...revoked.map(
+        (session): ChatListStale => ({
+          deviceId: session.deviceId,
+          desktopName: session.desktopName,
+          kind: "signed-out",
+          since: sinceOf(session.deviceId),
+        }),
       ),
+    ]);
+    setFailures((previous) =>
+      chatClients
+        .filter(({ session }) =>
+          askedIds.has(session.deviceId)
+            ? answers.some((answer) => answer.session.deviceId === session.deviceId && answer.failed)
+            : previous.includes(session.desktopName),
+        )
+        .map(({ session }) => session.desktopName),
     );
-    setFailingReads((count) => (answers.some((answer) => answer.failed) ? count + 1 : 0));
     // An answer for no desktops is not an answer for the ones paired next:
     // the provider reads once before the stored pairings arrive, and that
     // empty answer drew "No chats yet" over a cold start's first real read.
     setLoaded(chatClients.length > 0);
     setRefreshing(false);
-  }, [workspaceReads, chatClients, noteRewind, offersOverride]);
+  }, [workspaceReads, chatClients, noteRewind, offersOverride, sessions]);
 
   // The read under way, and the pairings it is for. A refresh asked for while
   // one for the same pairings is in flight joins it: a cold start asked twice
@@ -447,6 +492,11 @@ export function ChatsProvider({
   }, [chatClients, readChats]);
   const refresh = useCallback(() => read("fresh"), [read]);
   const revalidate = useCallback(() => read("recent"), [read]);
+  // A poll joins a read already out, and otherwise asks only the desktops due one.
+  const poll = useCallback(
+    () => inFlight.current?.reading ?? readChats("recent", true),
+    [readChats],
+  );
 
   // Read on start and whenever the pairings change — a new desktop, a Studio
   // that updated and now streams chats — as well as whenever the list screen
@@ -635,8 +685,6 @@ export function ChatsProvider({
   const [visited, setVisited] = useState<Record<string, number>>({});
   const visitedRef = useRef(visited);
   visitedRef.current = visited;
-  const chatsRef = useRef(chats);
-  chatsRef.current = chats;
 
   const markUnreadChat = useCallback(
     async (row: ChatListRow) => {
@@ -789,7 +837,7 @@ export function ChatsProvider({
       chats: listedChats,
       failures,
       stale,
-      failingReads,
+      poll,
       loaded,
       refreshing,
       refresh,
@@ -813,7 +861,7 @@ export function ChatsProvider({
       desktops,
       failures,
       stale,
-      failingReads,
+      poll,
       listedChats,
       loaded,
       markChatOpened,

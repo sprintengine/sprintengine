@@ -142,9 +142,12 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
         setBrowses((current) => withEntry(current, connectionId, (entry) => ({ ...entry, loading: true })))
       // A read that hangs is a machine not answering, said once the grace has
       // passed; the read landing later replaces it either way.
-      const askedAt = Date.now()
-      const previous = history.current.get(connectionId)
-      history.current.set(connectionId, { askedAt, failures: previous?.failures ?? 0 })
+      // The clock and its backoff are about the chats: a browse on its own
+      // (a workspace push) leaves them alone.
+      if (wantList) {
+        const previous = history.current.get(connectionId)
+        history.current.set(connectionId, { askedAt: Date.now(), failures: previous?.failures ?? 0 })
+      }
       let landed = false
       const graceTimer = !wantList
         ? undefined
@@ -253,10 +256,18 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
           landed = true
           if (graceTimer !== undefined) window.clearTimeout(graceTimer)
           const asked = history.current.get(connectionId)
-          if (asked) history.current.set(connectionId, { ...asked, failures: failed ? asked.failures + 1 : 0 })
+          if (asked && wantList)
+            history.current.set(connectionId, { ...asked, failures: failed ? asked.failures + 1 : 0 })
           inFlight.current.delete(connectionId)
-          const waiting = queued.current.get(connectionId)
+          let waiting = queued.current.get(connectionId)
           queued.current.delete(connectionId)
+          // A machine whose chats did not answer has just answered a browse:
+          // its chats are read now, rather than left saying it is not
+          // answering until the clock comes round.
+          if (!wantList && !failed && browsesRef.current.get(connectionId)?.listFailure?.kind === 'unavailable') {
+            waiting = new Set<ReadPart>(waiting ?? [])
+            waiting.add('conversations')
+          }
           if (waiting) read(connectionId, waiting)
         })
     },

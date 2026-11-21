@@ -2717,7 +2717,6 @@ export const en = {
         signedOut: (desktop: unknown) => `${desktop} no longer accepts this phone.`,
         notAnswering: (desktop: unknown) => `${desktop} is not answering.`,
         chatsFrom: (ago: unknown) => `Its chats here are from ${ago}.`,
-        chatsFromEarlier: 'Its chats here are from an earlier read.',
         pairAgain: 'Pair again',
       },
       // mobile/src/features/conversations/ConversationsScreen.tsx
@@ -6421,6 +6420,9 @@ export const en = {
       remoteListFreshness: {
         signedOut: 'Signed out',
         notPaired: 'Not paired',
+        oldPairing: 'Old pairing',
+        pairedAgainSince: (machine: unknown) =>
+          `${machine} was paired again since this chat was opened here; open it from the list to follow it over the new pairing.`,
         outOfDate: 'Out of date',
         notAnswering: 'Not answering',
         pairAgain: 'pair again',

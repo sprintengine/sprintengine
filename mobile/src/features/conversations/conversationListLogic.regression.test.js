@@ -4,6 +4,7 @@ const {
   CHAT_LIST_SLOW_POLL_MAX_MS,
   CHAT_LIST_SLOW_POLL_MS,
   chatListFailureKind,
+  chatListPollDue,
   chatListSlowPollMs,
   chatListStaleWords,
   lastKnownChatRow,
@@ -553,6 +554,8 @@ test("a desktop's chats as a last-known list: why, how old, and polled further a
   assert.equal(chatListFailureKind({ code: "peer_mismatch" }), "signed-out");
   assert.equal(chatListFailureKind({ code: "unavailable" }), "not-answering");
   assert.equal(chatListFailureKind(new Error("socket closed")), "not-answering");
+  assert.equal(chatListFailureKind({ code: "scope_required" }), null, "a refusal that is the answer lists none");
+  assert.equal(chatListFailureKind({ code: "conversations_unsupported" }), null);
 
   const now = Date.UTC(2026, 10, 20, 12);
   assert.equal(
@@ -561,7 +564,8 @@ test("a desktop's chats as a last-known list: why, how old, and polled further a
   );
   assert.equal(
     chatListStaleWords({ deviceId: "d", desktopName: "mac-mini", kind: "not-answering", since: null }, now),
-    "mac-mini is not answering. Its chats here are from an earlier read.",
+    "mac-mini is not answering.",
+    "with nothing kept, only why",
   );
 
   const row = { deviceId: "d", thread: { workspaceId: "w", agentId: "a", phase: "running", backgroundWork: { agents: 1, monitors: 0 } } };
@@ -573,4 +577,8 @@ test("a desktop's chats as a last-known list: why, how old, and polled further a
   assert.equal(chatListSlowPollMs(0), CHAT_LIST_SLOW_POLL_MS);
   assert.equal(chatListSlowPollMs(1), CHAT_LIST_SLOW_POLL_MS * 2);
   assert.equal(chatListSlowPollMs(99), CHAT_LIST_SLOW_POLL_MAX_MS);
+  assert.equal(chatListPollDue(undefined, 0), true);
+  assert.equal(chatListPollDue({ askedAt: 0, failures: 0 }, 1), true, "a desktop that answers is asked on every poll");
+  assert.equal(chatListPollDue({ askedAt: 0, failures: 1 }, CHAT_LIST_SLOW_POLL_MS), false);
+  assert.equal(chatListPollDue({ askedAt: 0, failures: 1 }, CHAT_LIST_SLOW_POLL_MS * 2), true);
 });

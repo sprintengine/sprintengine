@@ -96,7 +96,7 @@ async function mount(input: {
     }),
   }
   const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
-  fakePairedStudios((dom.window as unknown as { api: object }).api, {
+  const studio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
     'workspaces.list': () => {
       calls.browse += 1
       return { workspaces: [] }
@@ -121,6 +121,7 @@ async function mount(input: {
   await settle()
   return {
     calls,
+    studio,
     entry: () => seen.latest!.browses.get('c1'),
     unmount: () => act(() => root.unmount()),
   }
@@ -248,6 +249,38 @@ test('a machine that refused this pairing is asked again when a person comes bac
     await refocus()
     assert.equal(mounted.calls.list, before + 1, 'coming back to the window asks it again')
     assert.equal(mounted.entry()?.conversations?.length, 1, 'and a pairing made again over there lists its chats')
+  } finally {
+    mounted.unmount()
+  }
+})
+
+test('a machine whose chats did not answer is listed again as soon as it answers a browse', async () => {
+  vi.spyOn(Date, 'now').mockImplementation(() => clock)
+  let down = false
+  const mounted = await mount({
+    running: true,
+    list: () => {
+      if (down) throw new StudioError('unavailable', 'The connection dropped.')
+      return { conversations: [chat] }
+    },
+  })
+  try {
+    down = true
+    clock += REMOTE_REREAD_MS
+    await act(async () => clockTick!())
+    await settle()
+    assert.equal(mounted.entry()?.listFailure?.kind, 'unavailable')
+    const lists = mounted.calls.list
+
+    // It comes back, and says its projects moved: the browse that answers
+    // reads its chats too, so the rows stop saying it is not answering.
+    down = false
+    await act(async () => {
+      mounted.studio.push('conversations.changed', { what: 'workspaces' })
+    })
+    await settle(400)
+    assert.equal(mounted.calls.list, lists + 1, 'its chats are read after the browse')
+    assert.equal(mounted.entry()?.listFailure, null)
   } finally {
     mounted.unmount()
   }
