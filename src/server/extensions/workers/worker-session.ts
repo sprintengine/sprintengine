@@ -243,9 +243,33 @@ export function createWorkerSession(deps: WorkerSessionDeps): WorkerSession {
   function decodeArgs(args: readonly WorkerArg[]): unknown[] {
     if (!Array.isArray(args)) throw new Error('A host call carries its arguments as a list.')
     return args.map((arg) => {
-      if (arg && typeof arg === 'object' && 'callback' in arg && typeof arg.callback === 'number')
-        return listener(arg.callback)
-      return (arg as { value?: unknown } | null)?.value
+      let value = (arg as { value?: unknown } | null)?.value
+      const found = Array.isArray(arg?.callbacks) ? arg.callbacks : []
+      for (const { path, callback } of found) {
+        if (typeof callback !== 'number' || !Array.isArray(path))
+          throw new Error('A callback is sent by its number and place.')
+        if (path.length === 0) {
+          value = listener(callback)
+          continue
+        }
+        // Only the argument's own plain objects and lists are walked: a path
+        // naming `__proto__` or anything inherited reaches nothing.
+        const ownPlace = (holder: unknown, step: string | number): boolean =>
+          holder !== null &&
+          typeof holder === 'object' &&
+          (Array.isArray(holder)
+            ? typeof step === 'number' && Number.isInteger(step) && step >= 0 && step < holder.length
+            : typeof step === 'string' && step !== '__proto__' && Object.hasOwn(holder, step))
+        let parent: unknown = value
+        for (const step of path.slice(0, -1)) {
+          if (!ownPlace(parent, step)) throw new Error('A callback names no place in its argument.')
+          parent = (parent as Record<string | number, unknown>)[step]
+        }
+        const last = path[path.length - 1]!
+        if (!ownPlace(parent, last)) throw new Error('A callback names no place in its argument.')
+        ;(parent as Record<string | number, unknown>)[last] = listener(callback)
+      }
+      return value
     })
   }
 

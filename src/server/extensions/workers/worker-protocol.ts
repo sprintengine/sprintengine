@@ -42,8 +42,13 @@ export type WorkerError = {
   invalidParams?: true
 }
 
-/** One argument of a host call: data, or a function the worker hands Studio to call back. */
-export type WorkerArg = { value: unknown } | { callback: number }
+/**
+ * One argument of a host call: its data, and where in it a function the worker
+ * hands Studio to call back sat (at any depth of plain objects and lists; the
+ * empty path for the argument itself). A function is sent as `null` in `value`
+ * and called back by its number.
+ */
+export type WorkerArg = { value: unknown; callbacks?: Array<{ path: Array<string | number>; callback: number }> }
 
 /**
  * What a host call answers that can be called: a function, or an object of

@@ -1348,7 +1348,7 @@ function companionsRegistry(context: FakeServiceContext): { registry: object; ha
             prompts.push({ agentId: spec.agentId, prompt, via: 'runStructured', tools })
             options.onPhase?.(attempt === 0 ? 'running' : 'retrying')
             const answer = await reply({ spec, prompt, attempt, tools })
-            const validated = options.validate(structuredClone(answer))
+            const validated = await options.validate(structuredClone(answer))
             if (validated.ok) return validated.value
             errors = validated.errors
           }

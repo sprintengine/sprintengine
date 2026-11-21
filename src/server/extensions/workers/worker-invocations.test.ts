@@ -215,3 +215,73 @@ test('a background extension’s own timers keep working after startup; one set 
   await new Promise((resolve) => setTimeout(resolve, 200))
   assert.deepEqual(await ask('late'), { ok: true, answer: { ok: true, result: 'invocation_ended' } })
 })
+
+// A companion's structured run, as the companion service runs one: it hears
+// the run's phases, and awaits the validator on each answer, retrying once.
+const COMPANIONS = {
+  attach: (_moduleId: string, spec: { workspaceId: string; agentId: string }) => ({
+    workspaceId: spec.workspaceId,
+    agentId: spec.agentId,
+    status: () => 'absent',
+    onStatus: () => () => undefined,
+    onEvent: () => () => undefined,
+    interrupt: () => undefined,
+    dispose: () => undefined,
+    send: async () => undefined,
+    respondToApproval: async () => ({ ok: true }),
+    runStructured: async (options: {
+      onPhase?: (phase: string) => void
+      validate: (
+        raw: unknown,
+      ) =>
+        | { ok: boolean; value?: unknown; errors?: string[] }
+        | Promise<{ ok: boolean; value?: unknown; errors?: string[] }>
+    }) => {
+      for (const [attempt, raw] of [{ wrong: true }, { score: 3 }].entries()) {
+        options.onPhase?.(attempt === 0 ? 'running' : 'retrying')
+        const result = await options.validate(raw)
+        if (result.ok) return result.value
+      }
+      throw new Error('No valid answer.')
+    },
+  }),
+}
+
+const STRUCTURED = `
+const read = (handler) => ({ access: 'read', params: (value) => ({ ok: true, params: value }), handler })
+exports.activate = (studio) => {
+  studio.registerMethods({
+    rate: read(async () => {
+      const companions = studio.requireService({ key: 'companion-agents.module-service' })
+      const guide = await companions.attach(studio.moduleId, {
+        workspaceId: 'ws-1', agentId: 'guide', name: 'Guide', workspaceRoot: '/Users/dev/project', systemPrompt: 'Help.',
+      })
+      const phases = []
+      const score = await guide.runStructured({
+        prompt: 'Rate it',
+        onPhase: (phase) => phases.push(phase),
+        validate: async (raw) =>
+          typeof raw.score === 'number' ? { ok: true, value: raw.score * 10 } : { ok: false, errors: ['score must be a number'] },
+      })
+      return { ok: true, result: { score, phases } }
+    }),
+  })
+}
+`
+
+test('a companion’s structured run crosses: its validator and its phases are called back, and the verdict returns', async () => {
+  harness = startWorkerHarness(
+    [{ id: 'rater', main: STRUCTURED, permissions: ['agents:companion'] }],
+    {},
+    { 'companion-agents.module-service': COMPANIONS },
+  )
+  const answer = await harness.load.kernel.callModuleMethod({
+    moduleId: 'local.rater',
+    method: 'rate',
+    access: 'read',
+    params: {},
+    clientId: 'test',
+    invoker: ownerInvoker(),
+  })
+  assert.deepEqual(answer, { ok: true, answer: { ok: true, result: { score: 30, phases: ['running', 'retrying'] } } })
+})

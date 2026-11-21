@@ -931,7 +931,8 @@ export type CompanionValidateResult<T> = { ok: true; value: T } | { ok: false; e
 
 export type CompanionRunStructuredOptions<T> = {
   prompt: string
-  validate: (raw: unknown) => CompanionValidateResult<T>
+  /** May answer a promise: it runs in the worker, and Studio awaits it. */
+  validate: (raw: unknown) => CompanionValidateResult<T> | Promise<CompanionValidateResult<T>>
   /** Validator errors are fed back to the agent and the turn retried. Default 1. */
   retries?: number
   onPhase?: (phase: string) => void

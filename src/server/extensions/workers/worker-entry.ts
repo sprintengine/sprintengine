@@ -79,11 +79,33 @@ function report(what: string, error: unknown): void {
   process.stderr.write(`[studio] ${what}: ${error instanceof Error ? error.message : String(error)}\n`)
 }
 
+function isPlain(value: unknown): value is Record<string, unknown> | unknown[] {
+  if (Array.isArray(value)) return true
+  if (value === null || typeof value !== 'object') return false
+  const prototype = Object.getPrototypeOf(value) as unknown
+  return prototype === Object.prototype || prototype === null
+}
+
+/** An argument as it crosses: functions, at any depth of plain objects and lists, become callback numbers. */
 function encodeArg(arg: unknown): WorkerArg {
-  if (typeof arg !== 'function') return { value: arg }
-  const id = nextCallback++
-  callbacks.set(id, arg as Fn)
-  return { callback: id }
+  const found: NonNullable<WorkerArg['callbacks']> = []
+  const seen = new Set<object>()
+  const walk = (value: unknown, path: Array<string | number>): unknown => {
+    if (typeof value === 'function') {
+      const id = nextCallback++
+      callbacks.set(id, value as Fn)
+      found.push({ path, callback: id })
+      return null
+    }
+    if (!isPlain(value) || seen.has(value)) return value
+    seen.add(value)
+    if (Array.isArray(value)) return value.map((item, index) => walk(item, [...path, index]))
+    const copy: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value)) copy[key] = walk(item, [...path, key])
+    return copy
+  }
+  const value = walk(arg, [])
+  return found.length > 0 ? { value, callbacks: found } : { value }
 }
 
 function hostCall(target: WorkerHostTarget, args: unknown[], shape?: readonly string[]): Promise<unknown> {
@@ -100,7 +122,13 @@ function hostCall(target: WorkerHostTarget, args: unknown[], shape?: readonly st
       resolve: (value) => resolveCall(value && isHandleRef(value) ? handleOf(value, shape ?? []) : value),
       reject: rejectCall,
     })
-    send(message)
+    try {
+      send(message)
+    } catch (error) {
+      // Not sent (something in it cannot be cloned): nothing will answer it.
+      pendingHost.delete(id)
+      rejectCall(error)
+    }
   })
 }
 
@@ -363,8 +391,8 @@ async function serve(call: WorkerCallMessage): Promise<unknown> {
     case 'callback': {
       const callback = callbacks.get(call.callback)
       if (!callback) throw new Error('That listener is not the worker’s.')
-      await callback(...call.args)
-      return undefined
+      // Its answer goes back: a validator's verdict is what Studio waits for.
+      return await callback(...call.args)
     }
     case 'shutdown':
       await runHooks(shutdownBeginHooks, 'shutdown-begin')

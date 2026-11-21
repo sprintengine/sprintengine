@@ -108,7 +108,8 @@ const COMPANION_TOOL_POLICIES: ReadonlySet<string> = new Set<CompanionToolPolicy
 
 type CompanionRunStructuredOptions<T> = {
   prompt: string
-  validate: (raw: unknown) => CompanionValidateResult<T>
+  /** May answer a promise: a worker's validator runs in its own process. */
+  validate: (raw: unknown) => CompanionValidateResult<T> | Promise<CompanionValidateResult<T>>
   /** Validator errors are fed back to the agent and the turn retried. Default 1. */
   retries?: number
   onPhase?: (phase: string) => void
@@ -524,7 +525,7 @@ export function createCompanionAgentService(options: CreateCompanionAgentService
       opts.onPhase?.('validating')
       const raw = extractJson(text)
       if (raw !== undefined) {
-        const result = opts.validate(raw)
+        const result = await opts.validate(raw)
         if (result.ok) return result.value
         lastErrors = result.errors.length > 0 ? result.errors : ['Validation failed.']
       } else {

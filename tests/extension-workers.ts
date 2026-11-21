@@ -42,19 +42,27 @@ export type WorkerHarness = {
   close(): Promise<void>
 }
 
-/** The workspace git reader `getWorkspaceGitInfo` reaches: a host method that needs `workspace:read` of its invoker. */
-const gitInfoProvider: CapabilityModule = {
-  manifest: { id: 'agent-runtime', displayName: 'Agent runtime', version: 1, defaultEnabled: true },
-  registerMain: (host) => {
-    host.provideService(createServiceToken(WORKSPACE_GIT_INFO_SERVICE_KEY), () => ({
-      read: async (workspaceId: string) => ({ ok: true, workspaceId, branch: 'main', remotes: [] }),
-    }))
-  },
+/**
+ * The app's part, providing the workspace git reader `getWorkspaceGitInfo`
+ * reaches (a host method that needs `workspace:read` of its invoker), and any
+ * stand-in services a suite names by key.
+ */
+function appModule(services: Record<string, unknown>): CapabilityModule {
+  return {
+    manifest: { id: 'agent-runtime', displayName: 'Agent runtime', version: 1, defaultEnabled: true },
+    registerMain: (host) => {
+      host.provideService(createServiceToken(WORKSPACE_GIT_INFO_SERVICE_KEY), () => ({
+        read: async (workspaceId: string) => ({ ok: true, workspaceId, branch: 'main', remotes: [] }),
+      }))
+      for (const [key, value] of Object.entries(services)) host.provideService(createServiceToken(key), () => value)
+    },
+  }
 }
 
 export function startWorkerHarness(
   extensions: TestExtension[],
   options: Partial<Omit<ExtensionWorkersOptions, 'gate' | 'toolNameProblem' | 'notify' | 'approvals'>> = {},
+  services: Record<string, unknown> = {},
 ): WorkerHarness {
   const scratch = mkdtempSync(join(tmpdir(), 'extension-workers-'))
   const root = join(scratch, 'extensions')
@@ -95,7 +103,7 @@ export function startWorkerHarness(
   if (listed.rejected.length > 0) throw new Error(JSON.stringify(listed.rejected))
   const plan = planInstalledExtensions(listed, () => workers)
   const load = loadMainModules({
-    modules: [gitInfoProvider, ...plan.modules],
+    modules: [appModule(services), ...plan.modules],
     moduleRoots: plan.moduleRoots,
     moduleVerifiedFiles: plan.verifiedFiles,
     moduleMcpTools: plan.mcpTools,
