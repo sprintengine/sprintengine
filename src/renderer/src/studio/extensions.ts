@@ -189,7 +189,12 @@ export const extensionsApi: ExtensionsApi = {
   hostedSourcesFeedGet: () => extensions('sourcesFeed.get', {}),
   listThirdPartyModules: () => modules('extension.installed', {}),
   listStudioModules: async () => (await modules('extension.list', {})).modules,
-  listExtensionContributions: () => modules('extension.contributions', {}),
+  // A Studio with no extension host (a WSL, SSH or headless one) adds nothing.
+  listExtensionContributions: async () => {
+    const client = await windowStudioClient()
+    if (!client.supports(STUDIO_EXTENSION_HOST_CAPABILITY)) return { extensions: [], failures: {} }
+    return client.request('extension.contributions', {})
+  },
   drawsExtensionFrames: async () => (await windowStudioClient()).supports(STUDIO_EXTENSION_FRAMES_CAPABILITY),
   extensionFrame: (request) => call(STUDIO_EXTENSION_FRAMES_CAPABILITY, 'extension.frame', request),
   extensionCall: (request) =>
