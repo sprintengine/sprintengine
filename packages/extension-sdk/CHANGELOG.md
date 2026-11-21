@@ -36,9 +36,9 @@ extension built against 3.x must be rewritten to this one.
 
 - A panel, door or settings section names an `entry`: a self-contained ESM
   bundle exporting `mount(root, studio)`, which draws into `root`, calls
-  `studio.ready()` once drawn, and may return a cleanup. Studio imports it as
-  a blob module and shares no React or UI kit with it, so it bundles what it
-  draws with. Style with Studio's `--sem-*` CSS custom properties.
+  `studio.ready()` once drawn, and may return a cleanup. Studio loads it into
+  a sandboxed frame of its own and shares no React or UI kit with it, so it
+  bundles what it draws with (see "Surfaces run in frames").
 - The worker is `main`: a CommonJS bundle exporting `activate(studio)`, named
   or as its default. It registers its methods (`registerMethods`) and serves
   the MCP tools extension.json declares (`registerMcpTools`; a tool not
@@ -81,13 +81,11 @@ extension built against 3.x must be rewritten to this one.
   React included; `build:main` builds the worker. `dev:install` copies
   `extension/` to `~/.sprintengine/extensions/local.<id>/` and signs the
   installed copy when a key is at hand.
-- `createFakeMainHost({ manifest })` and `createFakeRendererHost({ manifest,
-  main })` take the parsed extension.json; the install key defaults to
-  `local.<id>`. The renderer fake has `studio(surface)`, `mount(entry,
-  surface, root)`, `readied` and `openedDoors`; `registrations`, `render.*`,
-  `runCommand` and `installTestingKit` are gone. `renderToHtml` stays.
-- The guide's `ui-kit` topic is now `styling`: drawing a surface yourself,
-  with the `--sem-*` properties.
+- `createFakeMainHost({ manifest })` and `createFakeFrameStudio({ manifest,
+main })` take the parsed extension.json; the install key defaults to
+  `local.<id>`. `registrations`, `render.*`, `runCommand` and
+  `installTestingKit` are gone. `renderToHtml` stays.
+- The guide's `ui-kit` topic is now `styling`: drawing a surface yourself.
 
 ### Permissions checked at the host; approvals replace trust
 
@@ -111,14 +109,47 @@ extension built against 3.x must be rewritten to this one.
   failure shape, rejects for an async method with none, or throws. What a
   method hands back that can be called (a companion's handle, the function
   that stops a watch) has rows of its own (`returns`), and is checked at each
-  call. `EXTENSION_RENDERER_METHODS` rows carry their refusal, and the window
-  refuses what they do not cover, as the fakes do.
+  call.
 - A signature no longer lets an extension run: the person approves it, bound
   to a fingerprint over its permissions, tier, worker, background and files.
   A signature by a trusted publisher key is shown as verified.
 - The fake hosts refuse what the gate refuses, from the same table, and list
   each refusal in `undeclared` (`{ what, needs }`; `checked` is gone).
 - Templates and the fixture ask for the new names.
+
+### Surfaces run in frames
+
+- A panel, door or settings section runs in a sandboxed frame of its own, on
+  every client (the desktop app, a desktop window paired with another
+  machine, a browser): no Node, no network, nothing of Studio's window. The
+  `studio` its `mount` is handed is new, and is the only way out of the frame:
+  `surface`, `host.call(method, params, { signal })` and `host.has(method)`,
+  `methods<Contract>()` (the worker's declared methods), `on('push' |
+'theme')`, `theme` and `ready()`. `ExtensionFrameMethods` types the host
+  methods, and `EXTENSION_FRAME_METHODS` says what each needs of the
+  extension and of whoever opened the surface: `workspace.*`, `backlog.*`,
+  `usage.query`, `storage.*`, `settings.*`, `files.*`, `notify`, `toast`,
+  `chat.draft`, `tabs.focus`, `doors.open`, `worker.read` / `.operate`. A
+  refused call rejects with an `ExtensionFrameError` and its `code`.
+- New permissions `workspace-files:read` and `workspace-files:write`: a
+  surface's `files.read`, `.stat`, `.search` and `.write`, inside a
+  workspace's folder only and never through a link out of it.
+- Studio puts the person's theme in the frame as the `THEME_TOKENS` custom
+  properties (`--bg-surface`, `--text-default`, …), updated in place, and a
+  kit stylesheet (`se-heading`, `se-muted`, `se-button`, `se-input`,
+  `se-list`, `se-list-row`). The `--sem-*` properties do not reach a frame.
+- Removed: `RendererHost` and everything only it used (`ModuleToastInput`,
+  `ModuleOpenExternalResult`, `ModuleFocusTabInput`, `ModuleColorScheme`,
+  `WorkspaceFileWatchEvent`), `EXTENSION_RENDERER_METHODS`,
+  `extensionRendererRefusalMessage`, `getAssetUrl` and its asset scheme, and
+  the `chat.open`, `chat.open-options`, `module-assets`, `toast`,
+  `active-workspace` and `open-external` capabilities. A surface opens no
+  external link yet.
+- `createFakeRendererHost` is `createFakeFrameStudio`: the frame's `studio`
+  with a fake Studio behind `host.call`, checked as Studio checks it, against
+  the manifest and against what whoever opened the surface holds (`invoker`).
+- The approval says what a `ui` extension's code can do: it runs isolated,
+  and can do only what the person allows. A worker's still says full access.
 
 ## 3.0.0-beta.1
 

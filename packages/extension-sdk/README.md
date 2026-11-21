@@ -151,10 +151,10 @@ in it is relative to that folder.
   empty.
 - **A ui entry** (`panels[].entry`, `doors[].entry`,
   `settingsSections[].entry`) is a self-contained ESM bundle exporting
-  `mount(root, studio)`. Studio imports its text as a blob module, so it
-  bundles everything it imports, React included; Studio shares no React or UI
-  kit with it. `mount` draws into `root`, calls `studio.ready()` once drawn,
-  and may return a cleanup.
+  `mount(root, studio)`. Studio draws the surface in a sandboxed frame of its
+  own and loads the bundle there, so it bundles everything it imports, React
+  included; Studio shares no React or UI kit with it. `mount` draws into
+  `root`, calls `studio.ready()` once drawn, and may return a cleanup.
 - **The worker** (`main`) is a CommonJS bundle loaded with Node's `require`,
   exporting `activate(studio)` as a named export or its default. It registers
   its methods and serves the MCP tools extension.json declares.
@@ -190,8 +190,8 @@ still approves. Changed after signing, it is refused.
 
 ```ts
 import { createElement } from 'react'
-import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
-import { manifest } from './manifest'                      // extension.json, validated
+import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { manifest } from './manifest' // extension.json, validated
 import { activate } from '../src/main'
 import { Notes } from '../src/notes'
 
@@ -201,8 +201,8 @@ await main.methods.operate('start', { workspaceId: 'ws-app' })          // as a 
 main.services.conversations.emitEvent(ref, { type: 'turn_completed' })  // make the agent answer
 await main.tools.call('notes_search', { query: 'x' })                   // as an agent would
 
-const renderer = createFakeRendererHost({ manifest, main }) // methods and subscribe reach `main`
-const studio = renderer.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
+const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame; its worker is `main`
+const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
 const html = await renderToHtml(createElement(Notes, { studio }))
 ```
 
@@ -246,17 +246,20 @@ const html = await renderToHtml(createElement(Notes, { studio }))
   `skills.setStatus(root, id, status)` scripts `getSkillStatus`, and
   `setChatRuntimes` what `listChatRuntimes` answers. `emitted`,
   `notifications`, `startup()` and `shutdown()` cover the rest.
-- **`createFakeRendererHost({ manifest, main? })`** is the window's `studio`.
-  `studio(surface)` is what one `mount` is handed; `mount(entry, surface,
-  root)` runs a ui entry into a root you give it and resolves to its cleanup.
-  It records `readied` (surfaces that called `ready()`), `openedDoors`,
-  `openedChats`, `focusedTabs`, `toasts` (validated and clipped; press one's
-  `action.run()`) and `openedUrls`. Given `main`, the app state, the Backlog,
-  usage and git info are main's; alone, it keeps its own. `capabilities`
-  without a name tests a host that lacks it.
+- **`createFakeFrameStudio({ manifest, main? })`** is the `studio` a surface
+  is handed in its frame, with a fake Studio behind `host.call`: every call is
+  checked as Studio checks it, against the manifest's permissions and against
+  what whoever opened the surface holds (`invoker`, every permission unless
+  given), and carried out against the same fakes. `studio(surface)` is what
+  one `mount` is handed; `mount(entry, surface, root)` runs a ui entry into a
+  root you give it and resolves to its cleanup. It records `readied`,
+  `toasts`, `drafts`, `openedDoors`, `focusedTabs`, `notifications` and
+  `undeclared`; `settings()` and `file(workspaceId, path)` read back what was
+  written, `emit` delivers a worker event and `setColorScheme` a theme change.
+  Given `main`, the worker's methods, events, Settings values, storage,
+  Backlog and usage are main's; alone, it keeps its own.
 - **`renderToHtml(node)`** renders a React tree in Node, waiting for `lazy`
-  components. It is a server render: no effects run, and
-  `useSyncExternalStore` needs its third argument.
+  components. It is a server render: no effects run.
 
 A scaffolded project's tests are TypeScript: `npm test` bundles
 `test/**/*.test.ts` with esbuild into `test/.build/` and runs them with
@@ -291,19 +294,19 @@ the host, against two things, and a call goes through only when both hold:
 the permissions the person approved, and what whoever set the call off may do
 themselves (the person, a paired device, another app, an agent). A refused
 call answers `not_permitted` or `approval_required`, in the method's failure
-shape where it has one, or throws. A permission does not limit your own code:
-an extension with code runs inside Studio with full access to this machine,
-and the approval says so.
+shape where it has one, or throws. A `ui` extension's code runs in sandboxed
+frames, so what it is allowed is all it can do; a `worker` extension's code
+runs on this machine with full access, and the approval says so.
 
 | Permission | Checked on |
 | --- | --- |
 | `workspace:read` | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's workspace reads |
 | `workspace:operate` | `WorkspaceServiceToken`, `ensureSkillInstalled` |
-| `conversation:own` | The conversation service, `openChat` with `send: true`, and allowing a companion's tool call |
+| `conversation:own` | The conversation service, and allowing a companion's tool call |
 | `conversation:bypass` | Running the extension's chats on `bypass` (without it they go no looser than `auto`), `allowedTools`, and a companion task with `tools: 'auto'` |
-| `chat:draft` | `openChat` without `send` (a draft the person reads and sends) |
-| `storage:own` | `getModuleStorage`, `getModuleDataDir`, workspace module state |
-| `settings:own` | `getModuleAppState`, `watchModuleAppState`, a surface's module app state |
+| `chat:draft` | A surface's `chat.draft` (a draft the person reads and sends) |
+| `storage:own` | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*` |
+| `settings:own` | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.*` |
 | `notifications:show` | `notify` |
 | `secrets:own` | `getSecretsService` |
 | `github:api` | `getGitHubService` (only the person may set it off) |
@@ -311,17 +314,19 @@ and the approval says so.
 | `agents:companion` | `getCompanionAgentsService` |
 | `agents:generate` | `getTextGenerationService(studio).generate` |
 | `schedules:own` | `getScheduledAgentsService` |
-| `backlog:read` | `getBacklogService` reads; `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` |
-| `backlog:operate` | `getBacklogService` writes; `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` |
+| `backlog:read` | `getBacklogService` reads; a surface's `backlog.list`, `backlog.location` |
+| `backlog:operate` | `getBacklogService` writes; a surface's other `backlog.*` |
+| `workspace-files:read`, `workspace-files:write` | A surface's `files.read` / `.stat` / `.search`, and `files.write`, inside a workspace's folder |
 | `providers:read` | `listChatRuntimes` |
-| `usage:read` | `getUsageService`, `queryUsage` |
+| `usage:read` | `getUsageService`, a surface's `usage.query` |
 | `conversation:read` | `getActivityService`: every chat on this machine, read only (flagged broad in the approval) |
 
 Your own methods (`registerMethods`), events and files need no permission.
 The list is closed: `EXTENSION_PERMISSIONS` exports it, and a name not in it
 fails validation. What each host method needs, of your extension and of
-whoever set the call off, is `EXTENSION_HOST_SERVICES` and
-`EXTENSION_MAIN_HOST_METHODS`; the wording the person reads is in
+whoever set the call off, is `EXTENSION_HOST_SERVICES`,
+`EXTENSION_MAIN_HOST_METHODS` and, for a surface, `EXTENSION_FRAME_METHODS`;
+the wording the person reads is in
 [`docs/extension-authors/permissions.md`](../../docs/extension-authors/permissions.md)
 in the app repository.
 
@@ -438,39 +443,27 @@ reads its chats).
 - Failures come back as `{ ok: false, code, message }` with a
   `ModuleConversationErrorCode`, never a throw.
 
-### From a surface: open a chat for the person
+### From a surface: a chat draft for the person
 
 ```ts
-const runtimes = studio.listChatRuntimes() // [{ id, label, available, models, lastSelected }]
-const opened = await studio.openChat({
+const opened = await studio.host.call('chat.draft', {
   workspaceId,
   prompt: 'Review the open pull request against our style guide.',
-  skills: ['my-review-guide'],
+  name: 'Style review',
 })
-if (opened.ok) studio.focusTab({ workspaceId, kind: 'chat', id: opened.agentId })
 ```
 
-`openChat` adds a chat to the workspace and focuses it. By default the prompt
-lands in the composer as a **draft** the person reads and sends; `send: true`
-sends it as the first turn. Declare `chat:draft` for drafts, or
-`conversation:own`, which `send: true` needs; check
-`studio.supports('chat.open')` first (`unavailable` means this window cannot
-open chats). `name` titles the chat, and `dedupeKey` (your own key for it)
-focuses the chat this extension already opened under that key in the workspace
-instead of opening a second, answering `existing: true` and changing nothing
-in it (`studio.supports('chat.open-options')`). `listChatRuntimes()` is the
-catalog the shell's own chat picker reads, with the person's last choice
-marked — use it for a picker, and pass the chosen `id` / model as `cli` /
-`model`. The same list is `await studio.listChatRuntimes()` in the worker.
+`chat.draft` opens a chat in the window that drew the surface, with the prompt
+in its composer as a **draft** the person reads and sends. Declare
+`chat:draft`. A chat the extension drives itself is the worker's (above).
+`tabs.focus` (`{ workspaceId, kind: 'chat' | 'file', id }`) brings a chat or a
+file to the front.
 
 A runtime's `id` (`claude-code`, `codex`, `cursor`, `opencode`, `grok`) is the
 one id every API takes for it: a conversation's and a scheduled agent's
 `cli`, a companion's `engine.cli` (which also takes the older provider ids,
-`claude-agent` and the like) and text generation's `cli`.
-
-`focusTab({ workspaceId, kind, id })` focuses a chat by its agent id
-(`kind: 'chat'`) or a file tab by workspace-relative path (`kind: 'file'`).
-It returns `false` for an id that is not a chat in that workspace.
+`claude-agent` and the like) and text generation's `cli`. The worker's
+`await studio.listChatRuntimes()` lists them.
 
 ### Companion agents
 
@@ -632,41 +625,31 @@ when a launch token or the tailnet proved who is calling
 
 ## A surface's `studio`
 
-`ExtensionMountStudio`, handed to `mount`: the window's `RendererHost`, plus
-`surface` (`{ point, id, workspaceId? }`: which contribution this is, and a
-panel's workspace) and `ready()`.
+A panel, door or settings section runs in a sandboxed frame of its own, on
+every client: no Node, no network, and nothing of Studio's window. Its
+`mount(root, studio)` is handed the frame's root and an `ExtensionMountStudio`:
 
-- **Who you are:** `moduleId`, your install key — the extension your
-  `methods()` calls reach.
-- **Your doors:** `openGlobalSurface(id)` opens one of your doors; `false` for
-  an id that is not yours, or while the extension is off.
-- **Telling the person:** `toast({ tone, message, detail?, action? })` for
-  transient feedback (one optional button); the worker's `notify` for anything
-  they must find again.
-- **Links:** `openExternal(url)` opens an http(s) URL in the system browser
-  through the app's own link path; anything else is refused.
-- **The window:** `getActiveWorkspaceId()` and `watchActiveWorkspace(cb)`.
-- **Workspaces:** `getWorkspace`, `listWorkspaces`, `watchWorkspaces`,
-  `getWorkingRoot`, `getWorkspaceGitInfo` (declare `workspace:read`),
-  `watchWorkspaceFile` (`workspace:read`).
-- **Chats:** `openChat`, `listChatRuntimes`, `focusTab` (above).
-- **State:** `getWorkspaceModuleState` / `setWorkspaceModuleState` (your entry
-  on a workspace, synced across windows) and `getModuleAppState` /
-  `setModuleAppState` / `watchModuleAppState` (app-level, readable from the
-  worker). Declare `storage:own`.
-- **Backlog:** `listBacklogItems`, `watchBacklogItems(id, cb, { onError })`,
-  `getBacklogLocation` (declare `backlog:read`); `createBacklogItem`,
-  `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`,
-  `updateBacklogModuleMetadata` (declare `backlog:operate`). See "The Backlog".
-- **Usage:** `queryUsage(query)` (declare `usage:read`).
-- **Theme:** `watchColorScheme(cb)` for a runtime you host (an editor, a chart
-  library); ordinary styling uses the `--sem-*` properties.
-- **Methods and events:** `methods<Contract>()` (`read`, `operate`) and
-  `subscribe(topic, cb)`.
-- **Assets:** `getAssetUrl(relativePath)`.
+- **`surface`**: `{ point, id, workspaceId? }`, which contribution this is, and
+  a panel's workspace.
+- **`host.call(method, params, { signal }?)`**: ask Studio to do one thing.
+  Studio checks each call against the extension's approved permissions and
+  against what the person, device or browser that opened the surface may do;
+  a refusal rejects with an `Error` whose `code` says why. The methods
+  (`ExtensionFrameMethods`, and their requirements in `EXTENSION_FRAME_METHODS`):
+  `workspace.list` / `.get`; `backlog.list`, `.location`, `.create`,
+  `.updateStatus`, `.updateTriage`, `.addLink`, `.updateModuleMetadata`;
+  `usage.query`; `storage.get` / `.set` / `.delete` / `.list`; `settings.get` /
+  `.set`; `files.read` / `.stat` / `.search` / `.write` (inside a workspace's
+  folder only, never through a link out of it); `notify`; `toast`;
+  `chat.draft`; `tabs.focus`; `doors.open`.
+- **`host.has(method)`**: whether this Studio offers it.
+- **`methods<Contract>()`**: the worker's declared methods (below).
+- **`on('push' | 'theme', fn)`** and **`theme`**: the worker's events, and the
+  person's theme.
+- **`ready()`**: say the surface has drawn its content.
 
-The TSDoc on each member in `dist/index.d.ts` is the reference for its exact
-behaviour.
+A frame sends at most 120 messages in 10 seconds, each at most 64 KiB. The
+guide's `api-renderer` topic has the full table.
 
 ## Calling the worker from a surface
 
@@ -698,7 +681,7 @@ export function activate(studio: MainHost): void {
 // a surface
 const methods = studio.methods<EventsMethods>()
 const answer = await methods.operate('events.save', { events })
-if (!answer.ok) studio.toast({ tone: 'error', message: answer.message })
+if (!answer.ok) await studio.host.call('toast', { tone: 'error', message: answer.message })
 ```
 
 - **Access.** A `read` method changes nothing and is reached by a client
@@ -722,14 +705,14 @@ if (!answer.ok) studio.toast({ tone: 'error', message: answer.message })
   `workspaceId`, and `backlogItemIds`, `filePaths` or `notification` for a
   menu).
 
-They travel over the window's Studio connection to the server the extension
-runs on (`extension.read` / `extension.operate` on the Studio protocol), as
-every other client's calls do.
+They travel from the frame through the window that drew it to the server the
+extension runs on (`extension.call` on the Studio protocol), as the
+connection of that window.
 
 ## Events (worker → surfaces)
 
-The worker's `studio.emit(topic, payload?)` pushes to your surfaces'
-`studio.subscribe(topic, cb)`. Only your extension's subscribers receive
+The worker's `studio.emit(topic, payload?)` pushes to your open surfaces,
+which hear it with `studio.on('push', ({ topic, payload }) => …)`. Only your extension's subscribers receive
 it; one emit reaches every open window, in order per extension. **Nothing is
 replayed**: keep the durable answer readable through a `read` method and let
 the event say "read it again". Payloads must be JSON (they ride the Studio
@@ -937,17 +920,13 @@ it does not recognise. `hasFileDropData` is the `dragover`-safe presence check;
 ## Styling a surface
 
 A surface draws with what it bundles: React, another library, or plain DOM.
-It sits in Studio's document, so Studio's `--sem-*` CSS custom properties
-reach it — `--sem-color-bg-surface`, `--sem-color-text-default`,
-`--sem-color-text-muted`, `--sem-color-border-subtle`,
-`--sem-color-accent-primary`, `--sem-space-sm`, `--sem-font-family-ui`,
-`--sem-font-size-body` and the rest — and styling with them follows every
-theme. Only the names are contract; never copy a value as hex.
-
-Utility classes you write produce no CSS: Studio's stylesheet is built from
-its own source. Write plain CSS, put the `<style>` inside the root you are
-given, and prefix every selector with something of your own. The guide's
-`styling` topic has the details and an example.
+Studio puts the person's theme in its frame as CSS custom properties
+(`THEME_TOKENS`: `--bg-surface`, `--text-default`, `--text-muted`,
+`--border-subtle`, `--accent-primary` and the rest) and updates them in place,
+plus a small kit stylesheet (`se-heading`, `se-muted`, `se-button`,
+`se-input`, `se-list`, `se-list-row`). Only the names are contract; never copy
+a value as hex. The frame is the surface's own document, so its CSS touches
+nothing of Studio's. The guide's `styling` topic has the details.
 
 ## Signing and packaging
 
@@ -988,15 +967,11 @@ in this way, since the approval binds to exact contents. Settings → Extensions
 can also install a folder (`extension/`, or a packed copy); installed that way,
 a new build keeps its approval when it asks for no more access.
 
-## Packaged web runtimes and WebAssembly
+## Files a surface shows
 
-`studio.getAssetUrl('runtime/index.html')` returns a stable URL for a file in
-the installed extension — use it as an iframe `src`. Relative scripts,
-workers, WebAssembly (`application/wasm`) and IndexedDB work inside it, under
-a private per-installation origin. The host checks approval and enablement on
-every request and serves only files the extension was verified with, up to
-128 MiB. Never store secrets in the extension's folder or log these URLs; use
-the secrets broker. This is not a sandbox for hostile code.
+A surface's frame reaches no network and no file of the extension's: bundle
+what it shows, with images and fonts as `data:` URLs. A worker reads its own
+files with `studio.getAssetPath(path)`.
 
 ## Intentional narrowings
 

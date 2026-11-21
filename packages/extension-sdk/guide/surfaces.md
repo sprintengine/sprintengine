@@ -38,16 +38,18 @@ door. A cluster of controls belongs in a door.
 | Token usage and cost across agent sessions | worker: `getUsageService(studio)`; surface: `queryUsage` | `usage:read` |
 | Reading the person's own chats (standups, prompt coaching) | worker: `getActivityService(studio)` | `conversation:read` (broad) |
 | An agent doing work in a chat | worker: `getConversationService(studio)` | `conversation:own` (or `:read`) |
-| Hand the person a prepared chat | surface: `studio.openChat({ workspaceId, prompt, name, dedupeKey })` | `chat:draft` (`conversation:own` to send it) |
+| Hand the person a prepared chat | surface: `studio.host.call('chat.draft', { workspaceId, prompt, name })` | `chat:draft` |
 | Ask a model one question (summary, digest, JSON), no chat | worker: `getTextGenerationService(studio).generate` | `agents:generate` |
 | A background agent returning validated JSON | worker: `getCompanionAgentsService(studio)`, `runStructured({ tools: 'none' })` | `agents:companion` |
 | An agent that runs on a schedule | worker: `getScheduledAgentsService(studio)` (`tag`, `onRun` to trace runs) | `schedules:own` |
 | Calling an API with a key | worker: `getSecretsService(studio).fetchWithSecret` | `secrets:own` |
 | Calling GitHub as the person | worker: `getGitHubService(studio).request` / `.graphql` (read-only) / `.download` (logs) | `github:api` |
-| The workspaces, and a workspace's branch and GitHub remote | `listWorkspaces`, `watchWorkspaces`, `getWorkspaceGitInfo(workspaceId)` | `workspace:read` |
-| Saving data | surface: `get/setModuleAppState`, `get/setWorkspaceModuleState`; worker: `getModuleStorage(studio)` (`list({ prefix })`, `getMany`, `watch`), `studio.getModuleDataDir()` past 1 MB | `storage:own` |
-| A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.subscribe` | — |
-| Files inside the extension (HTML, WASM, images) | surface: `studio.getAssetUrl('runtime/index.html')`; worker: `studio.getAssetPath('dist/worker.cjs')` | — |
+| The workspaces, and a workspace's branch and GitHub remote | surface: `workspace.list`, `workspace.get`; worker: `WorkspaceContextToken`, `getWorkspaceGitInfo(workspaceId)` | `workspace:read` |
+| Saving data | surface: `storage.*` (per workspace with `workspaceId`); worker: `getModuleStorage(studio)` (`list({ prefix })`, `getMany`, `watch`), `studio.getModuleDataDir()` past 1 MB | `storage:own` |
+| Settings values | surface: `settings.get`, `settings.set`; worker: `getModuleAppState`, `watchModuleAppState` | `settings:own` |
+| Files in a workspace's folder | surface: `files.read`, `files.stat`, `files.search`, `files.write` | `workspace-files:read`, `workspace-files:write` |
+| A surface asking the worker | worker `studio.registerMethods<Contract>({ … })`, surface `studio.methods<Contract>().read` / `.operate`; worker → surface `studio.emit` / `studio.on('push', …)` | — |
+| Files inside the extension (WASM, data) | surface: bundle them (images and fonts as `data:` URLs); worker: `studio.getAssetPath('dist/worker.cjs')` | — |
 
 The details are in the `api-renderer`, `api-main`, `conversations`, `brokers`
 and `styling` topics.
@@ -56,8 +58,8 @@ and `styling` topics.
 
 Studio drives agents as chats. An extension starts, prompts, watches and stops
 its **own** chats through `getConversationService(studio)` in the worker, or
-opens one for the person with `studio.openChat` in a surface (a draft by
-default: the person reads and sends it). It never drives the person's own chats
+opens one for the person with `chat.draft` from a surface (a draft: the
+person reads and sends it). It never drives the person's own chats
 or another extension's; reading the person's chats is the separate, read-only
 `getActivityService(studio)` behind the broad `conversation:read` (the
 `api-main` topic). A question with one answer (a summary, a digest, a

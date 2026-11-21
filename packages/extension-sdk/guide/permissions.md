@@ -15,9 +15,16 @@ A refused call answers `not_permitted` (your approval, or the invoker, lacks
 what it needs) or `approval_required` (your extension is not approved as it is
 now), in the method's own failure shape where it has one, or throws.
 
-A permission does not limit your own code: a `ui` or `worker` extension runs
-inside Studio with full access to this machine, and the approval tells the
-person exactly that.
+What your code can do beyond that depends on where it runs. A `ui`
+extension's code runs in sandboxed frames with no network and no reach into
+Studio's window or this machine, so its permissions are all it can do, and the
+approval says so. A `worker` extension's code runs on this machine with full
+access, and the approval tells the person exactly that.
+
+`workspace-files:read` and `workspace-files:write` are a surface's way to the
+files in a workspace's folder (`files.*`): only inside the folder, never
+through a link out of it, and only for a person, device or browser that may
+read or write files on that machine themselves.
 
 Rules:
 
@@ -32,20 +39,22 @@ Rules:
 
 | Permission | The approval says | Ask for it when you use | Whoever set the call off needs |
 | --- | --- | --- | --- |
-| `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's `getWorkspace`, `listWorkspaces`, `watchWorkspaces`, `getWorkingRoot`, `watchWorkspaceFile` | `workspace:read` |
+| `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`, a surface's `workspace.list`, `workspace.get` | `workspace:read` |
 | `workspace:operate` | Make workspaces and put Studio’s skills in them | `WorkspaceServiceToken`, `ensureSkillInstalled` | `workspace:operate` |
 | `conversation:read` | Read every chat on this machine, including what you and the agents wrote (broad) | `getActivityService` | `conversation:read` |
-| `backlog:read` | Read Backlog items | `getBacklogService` reads, `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` | `backlog:read` |
-| `backlog:operate` | Create Backlog items and change their status, triage, links and metadata | `getBacklogService` writes, `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` | `backlog:operate` |
+| `backlog:read` | Read Backlog items | `getBacklogService` reads, a surface's `backlog.list`, `backlog.location` | `backlog:read` |
+| `backlog:operate` | Create Backlog items and change their status, triage, links and metadata | `getBacklogService` writes, a surface's `backlog.create`, `.updateStatus`, `.updateTriage`, `.addLink`, `.updateModuleMetadata` | `backlog:operate` |
 | `providers:read` | See which agents a chat can run on | `listChatRuntimes` | `providers:read` |
-| `usage:read` | See token usage and cost of every agent session on this machine | `getUsageService`, `queryUsage` | `workspace:read` |
-| `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`, workspace module state | `extension:read` / `extension:operate` |
-| `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`, a surface's module app state | `extension:read` |
+| `workspace-files:read` | Read the files in your workspaces’ folders | a surface's `files.read`, `files.stat`, `files.search` | `filesystem:read` |
+| `workspace-files:write` | Change and create files in your workspaces’ folders | a surface's `files.write` | `filesystem:write` |
+| `usage:read` | See token usage and cost of every agent session on this machine | `getUsageService`, a surface's `usage.query` | `workspace:read` |
+| `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`, a surface's `storage.*` | `extension:read` / `extension:operate` |
+| `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`, a surface's `settings.get`, `settings.set` | `extension:read` |
 | `secrets:own` | Store API keys and send them to the sites it names | `getSecretsService` | `extension:operate` |
 | `notifications:show` | Show notifications in the bell | `notify` | `extension:operate` |
-| `conversation:own` | Start chats of its own with your agents, send them messages, read them and stop them | `getConversationService`, `openChat` with `send: true`, allowing a companion's tool call | `conversation:create` / `operate` / `read` |
+| `conversation:own` | Start chats of its own with your agents, send them messages, read them and stop them | `getConversationService`, allowing a companion's tool call | `conversation:create` / `operate` / `read` |
 | `conversation:bypass` | Let the agents in its chats edit files and run commands without asking you first | `bypass` chats, `allowedTools`, a companion task with `tools: 'auto'` | a ceiling of `bypass` |
-| `chat:draft` | Open a chat with a message drafted for you to read and send | `openChat` without `send` | — |
+| `chat:draft` | Open a chat with a message drafted for you to read and send | a surface's `chat.draft` | `conversation:create` |
 | `schedules:own` | Schedule agents of its own that start a chat on a timer | `getScheduledAgentsService` | `workspace:operate` / `workspace:read` |
 | `agents:generate` | Send prompts to your AI models in the background, without opening a chat | `getTextGenerationService` | `conversation:create` |
 | `agents:companion` | Run its own background agents inside a workspace | `getCompanionAgentsService` | `conversation:create` |
@@ -64,4 +73,4 @@ fake host, which refuses what the real host refuses, from the same table
 (`EXTENSION_HOST_SERVICES` and `EXTENSION_MAIN_HOST_METHODS` in the SDK), so it
 cannot fall behind the host; every refusal is also listed in `undeclared`,
 which a clean extension leaves empty. A surface's tests do the same with
-`createFakeRendererHost`.
+`createFakeFrameStudio`, from the same table (`EXTENSION_FRAME_METHODS`).

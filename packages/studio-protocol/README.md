@@ -118,26 +118,27 @@ The `welcome`'s `grant` is what the connection may do:
   Go (`cards.run`) are an owner's.
 - `extensions:read` — hear what this Studio's modules say: the `extension.events`
   and `extension.notifications` streams, and call the methods they declare
-  `read` (`extension.read`), under the `modules` capability. It also reads the
-  host's services as a module's window half does, naming the module
-  (`extensionBacklog.location`, `extensionUsage.query`). Not an owner's only; a
-  pairing holds it when it was given it.
+  `read` (`extension.read`), under the `extension-host` capability. Under
+  `extension-frames` it also builds the document an extension's surface is
+  drawn from in a sandboxed frame (`extension.frame`) and carries the host
+  calls that frame makes (`extension.call`, once per `commandId`). Each call
+  is checked at the host against the extension's approved permissions and
+  against the client's own grant (`backlog:operate` for a Backlog write,
+  `filesystem:read` for a file read, `extension:operate` for a write to the
+  extension's own state, …), so an extension never lets a client do what it
+  could not do itself. Not an owner's only; a pairing holds it when it was
+  given it.
 - `extensions:operate` — call the methods modules declare `operate`
-  (`extension.operate`, once per `commandId`), and write the Backlog as a module
-  (`extensionBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink`,
-  `.updateModuleMetadata`); carries `extensions:read`. Every call is checked
-  at the host against the extension's approved permissions and against the
-  client's own grant (`backlog:operate` for a Backlog write, `workspace:read`
-  for usage), so an extension never lets a client do what it could not do
-  itself. A browser session never holds it.
+  (`extension.operate`, once per `commandId`); carries `extensions:read`. A
+  browser session never holds it.
 - No scope changes what runs: `extension.setEnabled`, `extension.install`,
   `extension.approve` and `extension.uninstall` are an owner's
   (`STUDIO_MODULES_OWNER`), because each installs, approves, starts or stops an
   extension's code on that machine. `extension.list`, what runs there, needs
   `extensions:read`, as do `extension.installed` (every installed extension, with
-  its approval, signature and origin), `extension.rendererEntries` (their window halves) and
-  the `extension.changed` stream. `extension.setAppState` (the modules' Settings
-  values) needs `settings:write`. `extension.reportRegistry` (the registry a
+  its approval, signature and origin), `extension.contributions` (what the
+  approved ones add to a client; no code) and the `extension.changed` stream.
+  `extension.reportRegistry` (the registry a
   window resolved) is an owner's: it is the report of the Studio's own window.
 - No scope installs code either: the marketplace's reviews, installs, updates
   and uninstalls, a GitHub repository's review and install

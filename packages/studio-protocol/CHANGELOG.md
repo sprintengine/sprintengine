@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed (extension surfaces run in frames)
+
+- New capability **`extension-frames`**: a client draws an extension's panels,
+  doors and settings sections only where its Studio offers it.
+  **`extension.frame`** `{ moduleId, point, id, theme? }` answers the document
+  one surface is drawn from (`{ hash, html }`: Studio's bootstrap, the theme's
+  tokens and the extension's verified entry), and keeps it for the web
+  listener's `/ext-frame/<hash>`. **`extension.call`**
+  `{ moduleId, method, params?, commandId }` carries one host call a frame
+  made, held to the extension's approval and to the connection's own grant,
+  and answers `{ ok: true, result }` or `{ ok: false, code, message }`.
+- **`extension.rendererEntries`** is **`extension.contributions`**: what the
+  approved extensions add to a client (`ExtensionContributionsResult`, no
+  code, no asset origin).
+- Removed with nothing in their place: `extension.setAppState` (an
+  extension's Settings values are kept by its Studio, written from its
+  frame), `extensionBacklog.*` and `extensionUsage.query` (a frame's
+  `backlog.*` and `usage.query` go through `extension.call`). The answer
+  shapes they used stay (`StudioModuleBacklogAnswer`, `StudioModuleUsageAnswer`, …).
+
 ### Changed (approvals replace trust for extensions)
 
 - **`extension.setTrust`** is gone. **`extension.approve`**
