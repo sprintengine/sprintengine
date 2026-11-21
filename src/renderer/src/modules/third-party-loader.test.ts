@@ -575,3 +575,45 @@ test('an extension switched off and then uninstalled is offered nowhere and draw
   const changed = served([{ key: 'local.gone', over: { version: '2.0.0' }, entries: { 'dist/panel.js': 'panel' } }])
   assert.deepEqual(reconcileThirdPartyRendererEntries([], changed), [])
 })
+
+test('trust revoked: its top bar button is gone, and running its command or action does nothing', async () => {
+  const { kernel, calls } = recordingKernel({ ok: true, value: null })
+  const ran: string[] = []
+  stopRunner = setAppCommandRunner((commandId) => {
+    ran.push(commandId)
+    return true
+  })
+  const shipped = served([
+    {
+      key: 'local.revoked',
+      over: { tier: 'worker', main: 'dist/main.cjs' },
+      contributes: {
+        commands: [
+          { id: 'revoked.run', title: 'Run it' },
+          { id: 'revoked.backlog', title: 'Show Backlog', action: 'panel.backlog.toggle' },
+        ],
+        topBarItems: [{ id: 'button', title: 'Show Backlog', command: 'revoked.backlog' }],
+      },
+    },
+  ])
+  const loaded = await loadThirdPartyRendererEntries(kernel, shipped, importerFor({}))
+  const enabledIn = (universe: typeof loaded) => (id: string) =>
+    new Set(resolveModuleEnablement(universe, {}).order).has(id)
+  assert.deepEqual(
+    kernel.getTopBarItems(enabledIn(loaded)).map((item) => item.id),
+    ['local.revoked:button'],
+  )
+
+  const kept = reconcileThirdPartyRendererEntries(loaded, served([]))
+  assert.deepEqual(kernel.getTopBarItems(enabledIn(kept)), [], 'its button is gone')
+  // A palette, menu or button drawn before the revocation still holds the
+  // command; running it now runs nothing.
+  await kernel
+    .getModuleCommand('local.revoked.revoked.backlog')!
+    .run({ activeWorkspaceId: null, activeWorkspaceMode: null })
+  await kernel
+    .getModuleCommand('local.revoked.revoked.run')!
+    .run({ activeWorkspaceId: null, activeWorkspaceMode: null })
+  assert.deepEqual(ran, [])
+  assert.deepEqual(calls, [])
+})

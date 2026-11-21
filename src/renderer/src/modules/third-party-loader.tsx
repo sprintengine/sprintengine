@@ -125,9 +125,13 @@ export function rendererEntriesForRefresh(served: ThirdPartyRendererEntriesResul
 /** Run one of an extension's commands, as the palette, a menu or the top bar does. */
 async function runExtensionCommand(
   host: InternalRendererHost,
+  live: () => boolean,
   command: ExtensionCommandContribution,
   context: ExtensionCommandContext,
 ): Promise<void> {
+  // Checked at the moment it runs, not only when the button or row was drawn:
+  // an extension switched off, uninstalled or no longer trusted runs nothing.
+  if (!live()) return
   if (command.action) {
     if (!runAppCommand(command.action)) host.toast({ tone: 'warn', message: `${command.title} is not available here.` })
     return
@@ -149,8 +153,10 @@ function registerContributions(
   key: string,
   extension: ExtensionManifest,
   mounts: ReadonlyMap<string, ExtensionMount>,
+  isEnabled: (moduleId: string) => boolean,
 ): void {
   const { contributes } = extension
+  const live = () => !retired.has(key) && isEnabled(key)
   for (const point of EXTENSION_SURFACE_POINTS) {
     for (const contribution of contributes[point]) {
       registerExtensionSurface({ key, point, contribution, mount: mounts.get(contribution.entry)!, host })
@@ -187,7 +193,7 @@ function registerContributions(
       scopes: ['global'],
       ...(command.when === 'workspace' ? { availability: ['activeWorkspace'] as const } : {}),
       run: (context) =>
-        runExtensionCommand(host, command, { where: 'palette', workspaceId: context?.activeWorkspaceId ?? null }),
+        runExtensionCommand(host, live, command, { where: 'palette', workspaceId: context?.activeWorkspaceId ?? null }),
     })
   }
   for (const menu of contributes.menus) {
@@ -198,7 +204,7 @@ function registerContributions(
         label: command.title,
         category: 'execute',
         run: (context) =>
-          runExtensionCommand(host, command, {
+          runExtensionCommand(host, live, command, {
             where: 'backlog.item',
             workspaceId: context.workspaceId,
             backlogItemIds: context.selection ? context.selection.items.map((item) => item.id) : [context.item.id],
@@ -209,7 +215,7 @@ function registerContributions(
         id: extensionSurfaceId(key, command.id),
         label: command.title,
         run: (context) =>
-          runExtensionCommand(host, command, {
+          runExtensionCommand(host, live, command, {
             where: 'file',
             workspaceId: context.workspaceId,
             filePaths: context.entries.map((entry) => relativeTo(context.workspaceRoot, entry.path)),
@@ -228,7 +234,7 @@ function registerContributions(
           id: command.id,
           label: command.title,
           run: () =>
-            runExtensionCommand(host, command, {
+            runExtensionCommand(host, live, command, {
               where: 'notification',
               workspaceId: notification.workspaceId ?? null,
               notification: {
@@ -245,8 +251,8 @@ function registerContributions(
     const command = item.command ? commands.get(item.command) : undefined
     const press = () => {
       if (command) {
-        void runExtensionCommand(host, command, { where: 'topBar', workspaceId: host.getActiveWorkspaceId() })
-      } else if (item.door) {
+        void runExtensionCommand(host, live, command, { where: 'topBar', workspaceId: host.getActiveWorkspaceId() })
+      } else if (item.door && live()) {
         host.openGlobalSurface(extensionSurfaceId(key, item.door))
       }
     }
@@ -303,7 +309,9 @@ export async function loadThirdPartyRendererEntries(
         }
       }
       if (entry.assetOrigin) kernel.setModuleAssetOrigin(entry.id, entry.assetOrigin)
-      registerContributions(kernel.hostFor(entry.id, entry.manifest), entry.id, extension, mounts)
+      registerContributions(kernel.hostFor(entry.id, entry.manifest), entry.id, extension, mounts, (id) =>
+        kernel.isModuleEnabled(id),
+      )
       loadStates.set(entry.id, { status: 'loaded' })
       loadedSignatures.set(entry.id, servedSignature(entry))
       loaded.push(entry.manifest)

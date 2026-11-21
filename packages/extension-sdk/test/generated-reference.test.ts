@@ -11,7 +11,12 @@ import { join } from 'node:path'
 
 import { expect, test } from 'vitest'
 
-import { extensionManifestJsonSchema, extensionManifestReference } from '../src/extension-manifest.js'
+import {
+  EXTENSION_MANIFEST_SINCE,
+  extensionManifestJsonSchema,
+  extensionManifestReference,
+  validateExtensionManifest,
+} from '../src/extension-manifest.js'
 
 const SDK = join(process.cwd(), 'packages/extension-sdk')
 const SCHEMA_PATH = join(SDK, 'extension.schema.json')
@@ -61,4 +66,25 @@ test('the schema says what a pattern can of paths, and that the worker tier need
   expect(JSON.stringify(schema.allOf)).toBe(
     '[{"if":{"properties":{"tier":{"const":"worker"}},"required":["tier"]},"then":{"required":["main"]}}]',
   )
+})
+
+test('the schema and the validator agree on a path’s suffix, whatever its case', () => {
+  const schema = extensionManifestJsonSchema() as { properties: Record<string, { pattern?: string }> }
+  const cover = new RegExp(schema.properties.cover!.pattern!, 'u')
+  const main = new RegExp(schema.properties.main!.pattern!, 'u')
+  const base = {
+    manifestVersion: 1,
+    id: 'demo',
+    version: '1.0.0',
+    engines: { studio: `>=${EXTENSION_MANIFEST_SINCE}` },
+    tier: 'worker',
+    name: 'Demo',
+    main: 'dist/main.cjs',
+  }
+  for (const path of ['images/cover.png', 'images/cover.PNG', 'images/cover.Jpeg', 'images/cover.gif']) {
+    expect(cover.test(path), path).toBe(validateExtensionManifest({ ...base, cover: path }).ok)
+  }
+  for (const path of ['dist/main.CJS', 'dist/Main.Mjs', 'dist/main.ts']) {
+    expect(main.test(path), path).toBe(validateExtensionManifest({ ...base, main: path }).ok)
+  }
 })

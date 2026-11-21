@@ -95,7 +95,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.png|\\.svg|\\.jpg|\\.jpeg|\\.webp)$",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$",
       "description": "A square image shown beside the name.",
       "x-since": "0.13.0",
       "examples": [
@@ -106,7 +106,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.png|\\.svg|\\.jpg|\\.jpeg|\\.webp)$",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$",
       "description": "A wide image for its listing.",
       "x-since": "0.13.0"
     },
@@ -117,7 +117,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 1024,
-        "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.png|\\.svg|\\.jpg|\\.jpeg|\\.webp)$"
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Pp][Nn][Gg]|\\.[Ss][Vv][Gg]|\\.[Jj][Pp][Gg]|\\.[Jj][Pp][Ee][Gg]|\\.[Ww][Ee][Bb][Pp])$"
       },
       "description": "Images of it at work, for its listing.",
       "x-since": "0.13.0"
@@ -197,7 +197,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs|\\.cjs)$",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss]|\\.[Cc][Jj][Ss])$",
       "description": "The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it.",
       "x-since": "0.13.0",
       "x-tier": "worker",
@@ -459,7 +459,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs)$",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the panel draws, as a tab in a workspace’s pane. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
                 "examples": [
@@ -533,7 +533,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs)$",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the door draws when it is open. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
                 "examples": [
@@ -607,7 +607,7 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1024,
-                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.js|\\.mjs)$",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss]|\\.[Mm][Jj][Ss])$",
                 "description": "What the section draws in Settings. A `.js` or `.mjs` module whose `mount(root, studio)` draws into `root` and may return a cleanup function.",
                 "x-since": "0.13.0",
                 "examples": [

@@ -175,13 +175,19 @@ const displayText = (max: number, min = 1): SchemaNode => ({
 // character. Device names stay the validator's.
 const SAFE_PATH_SCHEMA = String.raw`^(?!/)(?!.*(?:^|/)\.{1,2}(?:/|$))(?!.*//)[^\\:<>"|?*\u0000-\u001f]+`
 
+// A suffix as the validator compares it, whatever its case: `.png` is
+// `\.[Pp][Nn][Gg]`.
+function caselessSuffix(extension: string): string {
+  return [...extension]
+    .map((char) => (char === '.' ? '\\.' : /[a-z]/.test(char) ? `[${char.toUpperCase()}${char}]` : char))
+    .join('')
+}
+
 const pathNode = (extensions?: readonly string[]): SchemaNode => ({
   kind: 'string',
   min: 1,
   max: 1024,
-  schemaPattern: `${SAFE_PATH_SCHEMA}${
-    extensions ? `(?:${extensions.map((extension) => extension.replace('.', '\\.')).join('|')})` : ''
-  }$`,
+  schemaPattern: `${SAFE_PATH_SCHEMA}${extensions ? `(?:${extensions.map(caselessSuffix).join('|')})` : ''}$`,
   check: (value) => {
     if (!isSafeExtensionPath(value)) {
       return 'must be a relative path inside the extension, with / between folders and no "..", device names or drive letters.'
