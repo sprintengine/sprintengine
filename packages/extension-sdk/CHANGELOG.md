@@ -131,6 +131,18 @@ main })` take the parsed extension.json; the install key defaults to
   `usage.query`, `storage.*`, `settings.*`, `files.*`, `notify`, `toast`,
   `chat.draft`, `tabs.focus`, `doors.open`, `worker.read` / `.operate`. A
   refused call rejects with an `ExtensionFrameError` and its `code`.
+- A frame's calls are held to what the extension's approval held when its
+  document was built, as well as to what it holds now. When an update that
+  asks for more is approved while a surface is open, its next call is
+  refused on the Studio protocol as `frame_outdated` (`extension.call` names
+  the document it came from as `frame`): the call rejects with
+  `unavailable`, and Studio draws the surface again from the extension as it
+  is now.
+- A frame cannot navigate away from its document: in a browser tab it sits
+  inside Studio's wrapper document (`/ext-frame-host/<hash>`), whose policy
+  lets it load only that document, and the desktop app refuses the
+  navigation, so setting `location` or a meta refresh goes nowhere. A frame
+  that unloads anyway is closed.
 - New permissions `workspace-files:read` and `workspace-files:write`: a
   surface's `files.read`, `.stat`, `.search` and `.write`, inside a
   workspace's folder only, never through a link out of it, never to a file

@@ -271,13 +271,22 @@ nothing keeps the in-window mount). The frame's document is built by the
 Studio (`extension.frame`, under the new capability `extension-frames`): its
 policy (no network, `sandbox allow-scripts`), the theme's tokens and Studio's
 kit, a bootstrap that builds `studio`, and the extension's verified entry. A
-browser loads it from the Studio's `/ext-frame/<hash>`; a desktop window,
+browser loads it from the Studio's `/ext-frame/<hash>`, inside the Studio's
+wrapper document `/ext-frame-host/<hash>` on the same origin, whose policy
+(`frame-src` naming that one document, no script) keeps the frame from being
+navigated anywhere else; a desktop window,
 local or paired, stages it with its shell and loads it from
 `studio-ext://frame/<hash>`. The frame speaks an envelope
 (`{ se: 1, kind, … }`, `src/shared/extension-frames.ts`) to the window, which
 holds it to the frame's budget (64 KiB a message, 120 messages in 10 s) and
 passes each host call to the Studio as `extension.call`, checked there as the
-extension and as that window's connection. A client draws an extension's
+extension and as that window's connection. The call names its document
+(`frame`, the hash `extension.frame` answered with), and is held to what the
+approval held when the Studio built that document as well as to what it holds
+now; a document built before the approval grew, or one this Studio did not
+build, is refused `frame_outdated`, and the client draws the surface again.
+The frame posts `leaving` on `pagehide`, and the window drops its bridge. A
+client draws an extension's
 surfaces only where its Studio offers `extension-frames`; it says nothing
 about a Studio that does not.
 
@@ -967,9 +976,12 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 Studio are one build.
 `extension-frames` (2026-11-21) says the Studio draws its extensions'
 surfaces in frames: `extension.frame` (the document one surface is drawn from)
-and `extension.call` (a frame's host call, once per command id), under
-`extensions:read`, each call held to the extension's approval and to the
-connection's own grant. Offered with `extension-host`. A client draws no
+and `extension.call` (a frame's host call, once per command id, naming the
+frame document it came from as `frame`), under
+`extensions:read`, each call held to the extension's approval, the approval
+its document was built under (`frame_outdated` when that is less), and the
+connection's own grant. A browser draws the frame inside
+`/ext-frame-host/<hash>`. Offered with `extension-host`. A client draws no
 extension surface without it.
 `extension-host` (2026-11-18) is the `modules` capability renamed, with
 everything it offered: modules are called extensions everywhere a person or a
