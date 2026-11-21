@@ -43,6 +43,7 @@
     "packages/extension-sdk/src/methods.ts",
     "packages/extension-sdk/src/extension-manifest.ts",
     "packages/extension-sdk/src/manifest-schema.ts",
+    "packages/extension-sdk/src/content-syntaxes.ts",
     "packages/extension-sdk/src/permissions.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],

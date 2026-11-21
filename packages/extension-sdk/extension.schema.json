@@ -69,7 +69,7 @@
         "ui",
         "worker"
       ],
-      "description": "The most authority it needs, least first: `content`, `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
+      "description": "The most authority it needs, least first: `content` (syntaxes, keybindings, status bar items, settings: data Studio draws, no approval asked), `declarative` (commands, menus, top bar items), `ui` (panels, doors, settings sections, drawn by its own code), `worker` (`main`, running in the background). Each carries what the ones below it do; a contribution above it fails validation.",
       "x-since": "0.13.0",
       "examples": [
         "ui"
@@ -620,6 +620,362 @@
           "x-since": "0.13.0",
           "x-tier": "ui"
         },
+        "syntaxes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "title": "SyntaxContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Language id, unique among this extension’s syntaxes. A chat code block whose fence names it (```gleam), or one of its extensions without the dot, is highlighted with it.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "gleam"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "The language’s name.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Gleam"
+                ]
+              },
+              "scopeName": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_+-]+(?:\\.[A-Za-z0-9_+-]+)+$",
+                "description": "The grammar’s root scope, unique among this extension’s syntaxes; the grammar file’s own `scopeName` must match.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "source.gleam"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss][Oo][Nn])$",
+                "description": "A TextMate grammar in JSON, at most 1 MiB. Keys a TextMate engine does not read are dropped; every `#name` it includes must name a rule in a repository.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "syntaxes/gleam.tmLanguage.json"
+                ]
+              },
+              "configuration": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\\\:<>\"|?*\\u0000-\\u001f]+(?:\\.[Jj][Ss][Oo][Nn])$",
+                "description": "A language configuration, at most 64 KiB: `comments`, `brackets`, `autoClosingPairs` and `surroundingPairs`, which the editor reads.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "syntaxes/language-configuration.json"
+                ]
+              },
+              "extensions": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 64,
+                  "pattern": "^\\.[A-Za-z0-9_+-][A-Za-z0-9_.+-]*$"
+                },
+                "description": "File-name suffixes the editor opens in this language, ignoring case. A longer suffix wins over a shorter one, and one of Studio’s own languages that drives completions (TypeScript, JavaScript, JSON, CSS, SCSS, Less, HTML, Markdown) is never replaced.",
+                "x-since": "0.13.0",
+                "examples": [
+                  [
+                    ".gleam"
+                  ]
+                ]
+              },
+              "filenames": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[^<>:\"/\\\\|?*\\u0000-\\u001f]+$"
+                },
+                "description": "Exact file names the editor opens in this language, ignoring case; a name wins over any suffix.",
+                "x-since": "0.13.0",
+                "examples": [
+                  [
+                    "gleam.toml"
+                  ]
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "scopeName",
+              "path"
+            ]
+          },
+          "description": "Syntax highlighting for a language, in chat code blocks and the editor.",
+          "x-since": "0.13.0",
+          "x-tier": "content"
+        },
+        "keybindings": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "title": "KeybindingContribution",
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                "description": "The command the key runs. Either a command this extension contributes in `contributes.commands`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "panel.git.toggle"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "The key chord: modifiers and one key joined by `+`. `Mod` is Cmd on macOS and Ctrl elsewhere. It can be changed or removed in Settings ▸ Shortcuts like any of Studio’s.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Mod+Alt+G"
+                ]
+              },
+              "when": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "global",
+                  "workspace"
+                ],
+                "description": "Where the key works. `workspace` only while a workspace is open. Defaults to `global`.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "command",
+              "key"
+            ]
+          },
+          "description": "Keyboard shortcuts.",
+          "x-since": "0.13.0",
+          "x-tier": "content"
+        },
+        "statusBarItems": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "title": "StatusBarItemContribution",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Id, unique among this extension’s status bar items.",
+                "x-since": "0.13.0"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "description": "A short label. Give `text`, `icon` or both.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Gleam"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 32,
+                "enum": [
+                  "extension",
+                  "chat",
+                  "branch",
+                  "folder",
+                  "schedule",
+                  "spark",
+                  "lock",
+                  "settings",
+                  "check",
+                  "warning",
+                  "copy",
+                  "notes"
+                ],
+                "description": "A glyph before the text.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "notes"
+                ]
+              },
+              "tooltip": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "description": "Shown on hover. Defaults to the extension’s name.",
+                "x-since": "0.13.0"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                "description": "The command pressing the item runs. Without one, the item only shows. Either a command this extension contributes in `contributes.commands`, or one of Studio’s own command actions (listed below), which a content extension may bind without any code.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "panel.git.toggle"
+                ]
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "description": "Short status items, shown in the window’s band beside the top bar.",
+          "x-since": "0.13.0",
+          "x-tier": "content"
+        },
+        "settings": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "title": "SettingContribution",
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+                "description": "The key its value is read under (`settings.get` in a frame, `getModuleAppState` in a worker, both with `settings:own`).",
+                "x-since": "0.13.0",
+                "examples": [
+                  "serverUrl"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "Its label in Settings.",
+                "x-since": "0.13.0",
+                "examples": [
+                  "Server URL"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Help shown under the label.",
+                "x-since": "0.13.0"
+              },
+              "type": {
+                "type": "string",
+                "maxLength": 16,
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean"
+                ],
+                "description": "The value’s type.",
+                "x-since": "0.13.0"
+              },
+              "default": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ],
+                "maxLength": 4096,
+                "description": "The value read while the person has set none; of `type`.",
+                "x-since": "0.13.0"
+              },
+              "enum": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ],
+                  "maxLength": 256
+                },
+                "description": "The values allowed, of `type`; Settings shows a picker.",
+                "x-since": "0.13.0"
+              },
+              "enumLabels": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "The picker’s labels, one per `enum` value.",
+                "x-since": "0.13.0"
+              },
+              "minimum": {
+                "type": "number",
+                "description": "Numbers: the smallest value.",
+                "x-since": "0.13.0"
+              },
+              "maximum": {
+                "type": "number",
+                "description": "Numbers: the largest value.",
+                "x-since": "0.13.0"
+              },
+              "maxLength": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096,
+                "description": "Strings: the most characters. Defaults to 4096.",
+                "x-since": "0.13.0"
+              },
+              "multiline": {
+                "type": "boolean",
+                "description": "Strings: a box of several lines.",
+                "x-since": "0.13.0"
+              },
+              "placeholder": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "description": "Strings and numbers: a hint shown while empty.",
+                "x-since": "0.13.0"
+              }
+            },
+            "required": [
+              "key",
+              "title",
+              "type"
+            ]
+          },
+          "description": "Settings Studio shows under the extension in Settings, with no code of its own; the extension’s code reads their values with `settings:own`.",
+          "x-since": "0.13.0",
+          "x-tier": "content"
+        },
         "mcpTools": {
           "type": "array",
           "maxItems": 64,
@@ -712,12 +1068,6 @@
           "description": "Reserved for file icon themes; must be empty.",
           "x-since": "0.13.0"
         },
-        "syntaxes": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for syntax highlighting; must be empty.",
-          "x-since": "0.13.0"
-        },
         "fonts": {
           "type": "array",
           "maxItems": 0,
@@ -728,24 +1078,6 @@
           "type": "array",
           "maxItems": 0,
           "description": "Reserved for editor snippets; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "keybindings": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for keyboard shortcuts; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "statusBarItems": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for status bar items; must be empty.",
-          "x-since": "0.13.0"
-        },
-        "settings": {
-          "type": "array",
-          "maxItems": 0,
-          "description": "Reserved for declared settings; must be empty.",
           "x-since": "0.13.0"
         },
         "customEditors": {

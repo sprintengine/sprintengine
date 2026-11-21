@@ -92,6 +92,38 @@ export type ExtensionTopBarItemContributionView = {
 }
 export type ExtensionSurfaceContributionView = { id: string; title: string; icon?: string; entry: string }
 export type ExtensionMcpToolContributionView = { name: string; description: string; access: 'read' | 'operate' }
+export type ExtensionSyntaxContributionView = {
+  id: string
+  title: string
+  scopeName: string
+  path: string
+  configuration?: string
+  extensions?: string[]
+  filenames?: string[]
+}
+export type ExtensionKeybindingContributionView = { command: string; key: string; when?: 'global' | 'workspace' }
+export type ExtensionStatusBarItemContributionView = {
+  id: string
+  text?: string
+  icon?: string
+  tooltip?: string
+  command?: string
+}
+export type ExtensionSettingValueView = string | number | boolean
+export type ExtensionSettingContributionView = {
+  key: string
+  title: string
+  description?: string
+  type: 'string' | 'number' | 'integer' | 'boolean'
+  default?: ExtensionSettingValueView
+  enum?: ExtensionSettingValueView[]
+  enumLabels?: string[]
+  minimum?: number
+  maximum?: number
+  maxLength?: number
+  multiline?: boolean
+  placeholder?: string
+}
 export type ExtensionContributionsView = {
   commands: ExtensionCommandContributionView[]
   menus: ExtensionMenuContributionView[]
@@ -100,6 +132,10 @@ export type ExtensionContributionsView = {
   doors: ExtensionSurfaceContributionView[]
   settingsSections: ExtensionSurfaceContributionView[]
   mcpTools: ExtensionMcpToolContributionView[]
+  syntaxes: ExtensionSyntaxContributionView[]
+  keybindings: ExtensionKeybindingContributionView[]
+  statusBarItems: ExtensionStatusBarItemContributionView[]
+  settings: ExtensionSettingContributionView[]
 }
 export type ExtensionManifestView = {
   manifestVersion: 1
