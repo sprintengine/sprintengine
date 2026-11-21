@@ -2,9 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import { STUDIO_ERROR_CODES } from '../src/envelope'
-import { STUDIO_EXTENSION_HOST_CAPABILITY } from '../src/handshake'
+import { STUDIO_EXTENSION_FRAMES_CAPABILITY, STUDIO_EXTENSION_HOST_CAPABILITY } from '../src/handshake'
 import { STUDIO_METHODS, parseStudioMethodParams } from '../src/methods'
-import { STUDIO_MODULE_SERVICES_METHODS } from '../src/module-services'
 import {
   STUDIO_MODULE_METHOD_MAX_CHARS,
   STUDIO_MODULES_METHODS,
@@ -86,103 +85,58 @@ test('a method name is a lower-case word, then letters, digits, dots and dashes,
   assert.equal(isStudioModuleMethodName(`a${'b'.repeat(STUDIO_MODULE_METHOD_MAX_CHARS)}`), false)
 })
 
-// ── The host's services a module's window half calls ──────────────────────
+// ── An extension's frames ─────────────────────────────────────────────────
 
-test('a module’s host services are read under extensions:read and written under extensions:operate, behind the extension-host capability', () => {
-  for (const [method, spec] of Object.entries(STUDIO_MODULE_SERVICES_METHODS)) {
-    assert.equal(spec.owner, undefined, `${method} is not held to an owner`)
-    assert.equal(spec.capability, STUDIO_EXTENSION_HOST_CAPABILITY, method)
-    assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
-    assert.equal(spec.scope, spec.mutation ? 'extensions:operate' : 'extensions:read', method)
+test('a frame’s document and its host calls are offered under extension-frames, read under extensions:read', () => {
+  for (const method of ['extension.frame', 'extension.call'] as const) {
+    assert.equal(STUDIO_MODULES_METHODS[method].scope, 'extensions:read')
+    assert.equal(STUDIO_MODULES_METHODS[method].capability, STUDIO_EXTENSION_FRAMES_CAPABILITY)
   }
-  assert.deepEqual(
-    Object.entries(STUDIO_MODULE_SERVICES_METHODS)
-      .filter(([, spec]) => !spec.mutation)
-      .map(([method]) => method),
-    ['extensionBacklog.location', 'extensionUsage.query'],
-  )
+  assert.equal(STUDIO_MODULES_METHODS['extension.frame'].mutation, false)
+  // A call may write, so it carries a command id and a retry is answered from its receipt.
+  assert.equal(STUDIO_MODULES_METHODS['extension.call'].mutation, true)
 })
 
-test('a host-service call names its module, and a write its commandId', () => {
+test('a frame names its extension, the surface and, when it has one, the client’s theme', () => {
   assert.deepEqual(
-    parseStudioMethodParams('extensionBacklog.location', { moduleId: 'acme', workspaceId: 'ws', x: 1 }),
-    {
-      ok: true,
-      params: { moduleId: 'acme', workspaceId: 'ws' },
-    },
-  )
-  assert.equal(refusal(parseStudioMethodParams('extensionBacklog.location', { workspaceId: 'ws' })), 'invalid_params')
-  const status = { moduleId: 'acme', workspaceId: 'ws', itemId: 'backlog/a.md', status: 'ready' }
-  assert.equal(refusal(parseStudioMethodParams('extensionBacklog.updateStatus', status)), 'invalid_params')
-  assert.deepEqual(parseStudioMethodParams('extensionBacklog.updateStatus', { ...status, commandId: 'c1' }), {
-    ok: true,
-    params: { ...status, commandId: 'c1' },
-  })
-  assert.equal(
-    refusal(parseStudioMethodParams('extensionBacklog.updateStatus', { ...status, status: 'done', commandId: 'c1' })),
-    'invalid_params',
-  )
-})
-
-test('a new item, a triage, a link and a usage query are read member by member', () => {
-  const at = { moduleId: 'acme', workspaceId: 'ws', commandId: 'c1' }
-  assert.deepEqual(
-    parseStudioMethodParams('extensionBacklog.create', {
-      ...at,
-      input: { title: 'Ship', status: 'idea', epic: 'launch', stray: true },
+    parseStudioMethodParams('extension.frame', {
+      moduleId: 'local.a',
+      point: 'doors',
+      id: 'deck',
+      theme: 'nord',
+      x: 1,
     }),
-    { ok: true, params: { ...at, input: { title: 'Ship', status: 'idea', epic: 'launch' } } },
+    { ok: true, params: { moduleId: 'local.a', point: 'doors', id: 'deck', theme: 'nord' } },
   )
   assert.equal(
-    refusal(parseStudioMethodParams('extensionBacklog.create', { ...at, input: { body: 'x' } })),
+    refusal(parseStudioMethodParams('extension.frame', { moduleId: 'local.a', point: 'menus', id: 'x' })),
     'invalid_params',
   )
   assert.equal(
-    refusal(parseStudioMethodParams('extensionBacklog.create', { ...at, input: { title: 'x', risk: 3 } })),
-    'invalid_params',
-  )
-  const item = { ...at, itemId: 'backlog/a.md' }
-  assert.deepEqual(
-    parseStudioMethodParams('extensionBacklog.updateTriage', {
-      ...item,
-      triage: { risk: null, difficulty: 'm', x: 1 },
-    }),
-    { ok: true, params: { ...item, triage: { risk: null, difficulty: 'm' } } },
-  )
-  const link = { id: 'l1', type: 'review', label: 'PR', target: { kind: 'pr', id: '7', url: 'https://example.com/7' } }
-  assert.deepEqual(parseStudioMethodParams('extensionBacklog.addLink', { ...item, link: { ...link, extra: 1 } }), {
-    ok: true,
-    params: { ...item, link },
-  })
-  assert.equal(
-    refusal(parseStudioMethodParams('extensionBacklog.addLink', { ...item, link: { ...link, type: 'other' } })),
-    'invalid_params',
-  )
-  assert.deepEqual(parseStudioMethodParams('extensionBacklog.updateModuleMetadata', { ...item, value: { n: 1 } }), {
-    ok: true,
-    params: { ...item, value: { n: 1 } },
-  })
-  assert.deepEqual(parseStudioMethodParams('extensionBacklog.updateModuleMetadata', item), { ok: true, params: item })
-  assert.deepEqual(
-    parseStudioMethodParams('extensionUsage.query', { moduleId: 'acme', query: { from: 1, to: 2, groupBy: ['day'] } }),
-    { ok: true, params: { moduleId: 'acme', query: { from: 1, to: 2, groupBy: ['day'] } } },
-  )
-  assert.equal(
-    refusal(
-      parseStudioMethodParams('extensionUsage.query', {
-        moduleId: 'acme',
-        query: { from: 1, to: 2, groupBy: ['week'] },
-      }),
-    ),
-    'invalid_params',
-  )
-  assert.equal(
-    refusal(parseStudioMethodParams('extensionUsage.query', { moduleId: 'acme', query: { from: 1 } })),
+    refusal(parseStudioMethodParams('extension.frame', { moduleId: 'local.a', point: 'panels', id: '' })),
     'invalid_params',
   )
 })
 
-// ── What runs here ─────────────────────────────────────────────────────────
+test('a host call names its extension, the frame document it came from and a frame method, keeps its params as they came, and carries a commandId', () => {
+  const call = {
+    moduleId: 'local.a',
+    frame: 'f'.repeat(64),
+    method: 'files.read',
+    params: { workspaceId: 'w', path: 'a.md' },
+  }
+  assert.deepEqual(parseStudioMethodParams('extension.call', { ...call, commandId: 'c1', extra: true }), {
+    ok: true,
+    params: { ...call, commandId: 'c1' },
+  })
+  assert.equal(refusal(parseStudioMethodParams('extension.call', call)), 'invalid_params')
+  const { frame: _frame, ...unnamed } = call
+  assert.equal(refusal(parseStudioMethodParams('extension.call', { ...unnamed, commandId: 'c' })), 'invalid_params')
+  assert.equal(
+    refusal(parseStudioMethodParams('extension.call', { ...call, method: '../x', commandId: 'c' })),
+    'invalid_params',
+  )
+})
 
 test('switching, installing, trusting and uninstalling a module are an owner’s commands, with the reason said', () => {
   for (const method of [

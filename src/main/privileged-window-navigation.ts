@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url'
+import { EXTENSION_FRAME_SCHEME } from '../shared/extension-frames'
 import { isSealedVisualUrl } from '../shared/sealed-visual'
 
 // The app's own windows load the renderer with the preload's bridge to the
@@ -8,16 +9,19 @@ import { isSealedVisualUrl } from '../shared/sealed-visual'
 // was handed to the OS whatever its scheme, and a navigation of the window
 // itself, which nothing stopped. Both are closed here, for every such window.
 //
-// A third is a frame inside the window that runs an agent's script: a chat's
-// sealed visual (`shared/sealed-visual.ts`). Its sandbox keeps it off the
-// window and its policy keeps it off the network, but neither stops it from
-// navigating itself to a page on the web, so that is refused here.
+// A third is a frame inside the window that runs code the app did not write:
+// a chat's sealed visual (`shared/sealed-visual.ts`), and an extension's
+// surface (`studio-ext://frame/…`, main/extension-frames). Its sandbox keeps
+// it off the window and its policy keeps it off the network, but neither
+// stops it from navigating itself to a page on the web, carrying what it read
+// in the address, so that is refused here, on a navigation and on a redirect
+// alike.
 
 /** The subset of `WebContents` the guard touches, so it can be tested without Electron. */
 export type GuardedContents = {
   setWindowOpenHandler(handler: (details: { url: string }) => { action: 'deny' }): void
   on(event: 'will-navigate', listener: (event: { preventDefault(): void }, url: string) => void): unknown
-  on(event: 'will-frame-navigate', listener: (details: FrameNavigation) => void): unknown
+  on(event: 'will-frame-navigate' | 'will-redirect', listener: (details: FrameNavigation) => void): unknown
 }
 
 /** The part of a frame navigation the sealed-visual rule reads. */
@@ -28,11 +32,17 @@ export type FrameNavigation = {
   frame: { url: string } | null
 }
 
+/** Whether a frame shows an extension's surface (`studio-ext://frame/<hash>`). */
+function isExtensionFrameUrl(url: string | undefined): boolean {
+  return typeof url === 'string' && url.startsWith(`${EXTENSION_FRAME_SCHEME}:`)
+}
+
 /**
  * Whether a frame's navigation is refused: any that leaves a sealed visual's
- * document, wherever it is headed, its own address included. A visual is
- * replaced by a new frame, never by navigating the old one. A move within the
- * same document (a `#section` link) loads nothing and stays.
+ * or an extension surface's document, wherever it is headed, its own address
+ * included. Either is replaced by a new frame, never by navigating the old
+ * one. A move within the same document (a `#section` link) loads nothing and
+ * stays.
  */
 export function refusesFrameNavigation(details: Omit<FrameNavigation, 'preventDefault'>): boolean {
   if (details.isMainFrame || details.isSameDocument) return false
@@ -43,7 +53,7 @@ export function refusesFrameNavigation(details: Omit<FrameNavigation, 'preventDe
     // A frame already gone has nowhere to go.
     return false
   }
-  return isSealedVisualUrl(current)
+  return isSealedVisualUrl(current) || isExtensionFrameUrl(current)
 }
 
 // mailto stays: a markdown message's mail link opens through `window.open`, and
@@ -94,6 +104,9 @@ export function guardPrivilegedWindow(
     if (!isAppDocument(url, app)) event.preventDefault()
   })
   contents.on('will-frame-navigate', (details) => {
+    if (refusesFrameNavigation(details)) details.preventDefault()
+  })
+  contents.on('will-redirect', (details) => {
     if (refusesFrameNavigation(details)) details.preventDefault()
   })
 }

@@ -4,12 +4,13 @@
   "summary": "A worker that starts and follows chats of its own, and a panel that lists them and opens chat drafts.",
   "permissions": [
     "conversation:own",
+    "chat:draft",
     "notifications:show"
   ],
   "capabilities": [
     "worker",
     "panel",
     "conversations",
-    "chat.open"
+    "chat.draft"
   ]
 }

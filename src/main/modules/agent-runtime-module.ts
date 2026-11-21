@@ -173,9 +173,9 @@ export function createAgentRuntimeModule(
       // Per-module, per-workspace JSON storage (SDK getModuleStorage): the
       // host owns file placement so modules stop inventing locations.
       host.provideService(ModuleStorageToken, () => createModuleStorageRegistry({ userDataDir: () => paths.dataDir() }))
-      // Every module's app-level state (its Settings section's values), as the
-      // windows last pushed it: what `MainHost.getModuleAppState` reads, so
-      // `entry.main` sees the person's settings with no window open.
+      // Every extension's Settings values, which its frames write
+      // (`settings.set`) and `MainHost.getModuleAppState` reads, so a worker
+      // sees the person's settings with no window open.
       host.provideService(ModuleAppStateToken, () => moduleAppStateMirrorFor(paths.dataDir()))
       // Companion agents: workspace-bound background agents driven through the
       // shared conversation runtime. The core service is app-internal

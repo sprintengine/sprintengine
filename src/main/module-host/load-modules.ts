@@ -153,6 +153,10 @@ export function loadMainModules(options: {
    * Absent (tests), what was loaded stands.
    */
   currentApprovals?: () => ReadonlyMap<string, { access: { permissions: readonly string[] } }>
+  /** Folders a frame's `files.*` never reaches: see `MainKernelOptions.frameFileExclusions`. */
+  frameFileExclusions?: () => readonly string[]
+  /** What frame calls are held to: see `MainKernelOptions.resolveFrameGrant`. */
+  resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
 }): LoadMainModulesResult {
   const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
@@ -171,13 +175,15 @@ export function loadMainModules(options: {
     resolveModuleManifest: (moduleId) => byId.get(moduleId)?.manifest,
     // A module that runs and declares no such method is told apart from one not running.
     isModuleActive: (moduleId) => activeMainModules.has(moduleId),
-    // A module with only a window half still calls the host's services.
+    // An extension with surfaces only still calls the host from its frames.
     isModulePresent: (moduleId) => activeMainModules.has(moduleId) || activeManifestOnlyModules.has(moduleId),
     resolveModuleRoot: (moduleId) => options.moduleRoots?.[moduleId],
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
     ...(options.coreMcpToolNames ? { coreMcpToolNames: options.coreMcpToolNames } : {}),
     resolveModuleVerifiedFiles: (moduleId) => options.moduleVerifiedFiles?.[moduleId],
     resolveDeclaredMcpTools: (moduleId) => options.moduleMcpTools?.[moduleId],
+    ...(options.frameFileExclusions ? { frameFileExclusions: options.frameFileExclusions } : {}),
+    ...(options.resolveFrameGrant ? { resolveFrameGrant: options.resolveFrameGrant } : {}),
     resolveExtensionGrant: (moduleId) => {
       // Without the loader's record (tests), an extension holds what its manifest asks.
       if (!options.extensionApprovals) return byId.get(moduleId)?.manifest.permissions ?? []

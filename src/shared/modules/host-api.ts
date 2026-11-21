@@ -1,5 +1,4 @@
-// What this host provides: what `supports()` answers on every MainHost and
-// RendererHost. Which Studio an extension needs at all is `engines.studio` in
+// What this host provides: what `supports()` answers on every MainHost. Which Studio an extension needs at all is `engines.studio` in
 // its extension.json (shared/modules/third-party-manifest.ts).
 
 import type { HostCapability } from '../../../packages/extension-sdk/src/host-api'
@@ -8,13 +7,8 @@ export type { HostCapability } from '../../../packages/extension-sdk/src/host-ap
 
 // Only what exists today. A capability joins this list in the same change that
 // makes it real, so `supports()` never promises a service nobody provides.
-// `chat.open` is not here: it is a renderer's, and true only once the window's
-// shell has registered its chat opener (renderer-host.ts answers it live).
-// The same goes for every capability whose answer depends on wiring rather
-// than on this build: `notifications` (main-host.ts: a client delivery is
-// wired; renderer-host.ts: the window's bell is), `toast` and
-// `open-external` (renderer-host.ts: the window's toast region and link
-// opener are).
+// `notifications` is not here: its answer depends on wiring rather than on
+// this build (main-host.ts: a client delivery is wired).
 const HOST_CAPABILITIES: ReadonlySet<HostCapability> = new Set<HostCapability>([
   'conversations',
   'conversation-controls',
@@ -27,15 +21,12 @@ const HOST_CAPABILITIES: ReadonlySet<HostCapability> = new Set<HostCapability>([
   'scheduled-agents',
   'storage',
   'mcp-tools',
-  'module-assets',
   // Backlog, usage and activity services (main/module-host/module-backlog.ts,
   // main/usage, main/module-host/module-activity.ts).
   'backlog-write',
   'usage',
   'activity',
-  // Shell surfaces & renderer host: real in every window of this build.
   'module-id',
-  'active-workspace',
   'chart-tokens',
   // Main-host plumbing: settings, workspaces, storage, GitHub, skills, MCP.
   'skill-status',

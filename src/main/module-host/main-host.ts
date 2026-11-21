@@ -35,9 +35,9 @@ import {
   getSkillStatus as getSkillStatusOnDisk,
 } from '../builtin-skills'
 import { resolveContainedPath } from '../modules/entry-containment'
-import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
-import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
-import { EXTENSION_PERMISSIONS } from '../../../packages/extension-sdk/src/permissions'
+import type { StudioExtensionCallAnswer } from '../../../packages/studio-protocol/src/public'
+import { createExtensionFrameCalls, type ExtensionFrameCallRequest } from './extension-frame-calls'
+import type { ModuleAppStateMirror } from './module-app-state-mirror'
 import {
   EXTENSION_MAIN_HOST_METHODS,
   extensionHostService,
@@ -277,8 +277,7 @@ export type MainHost = {
   getModuleDataDir(): string
   /**
    * The absolute path of a file the module was verified with, while its bytes
-   * still match — the main-side twin of `RendererHost.getAssetUrl`. Throws for
-   * anything else.
+   * still match. Throws for anything else.
    */
   getAssetPath(relativePath: string): string
   /**
@@ -359,13 +358,12 @@ export type MainKernel = {
    */
   callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
   /**
-   * The host's services a module's window half calls on this server (the
-   * protocol's `extensionBacklog.*` and `extensionUsage.query`), for a module that
-   * runs here: its main half loaded, or its manifest alone. Every call passes
-   * the host's gate, held to the extension's approval and to `invoker`, the
-   * connection that sent it; one this Studio does not provide is null.
+   * One host call an extension's frame made (`extension.call`): checked
+   * against the method's row, the extension's approval and `invoker`, the
+   * connection whose client drew the frame, then carried out here (a client
+   * method is only admitted). Refusals are answers.
    */
-  hostServicesFor(moduleId: string, invoker: ExtensionInvoker): ModuleHostServicesOutcome
+  callFrameMethod(request: ExtensionFrameCallRequest): Promise<StudioExtensionCallAnswer>
   /** Module-contributed Studio gateway tools, in registration order. */
   mcpToolRegistrations(): ReadonlyArray<McpToolContribution>
   startupHooks(): ReadonlyArray<StartupHook>
@@ -421,16 +419,6 @@ export type ModuleMethodCallRequest = {
   invoker: ExtensionInvoker
 }
 
-/** The host's services a module's window half reaches, each null where this Studio does not provide it. */
-export type ModuleHostServices = {
-  backlog: Omit<ModuleBacklogRegistry, 'list'> | null
-  usage: Pick<ModuleUsageRegistry, 'query'> | null
-}
-
-/** A module's host services, or why it has none here. */
-export type ModuleHostServicesOutcome =
-  { ok: true; services: ModuleHostServices } | { ok: false; code: 'extension_unavailable'; message: string }
-
 /** What a call came to: the module's answer, or why the host refused it before the module heard it. */
 export type ModuleMethodCallOutcome =
   | { ok: true; answer: ModuleMethodAnswer<ModuleMethodContract> }
@@ -466,8 +454,8 @@ export type MainKernelOptions = {
    */
   isModuleActive?: (moduleId: string) => boolean
   /**
-   * Whether a module runs here at all: its main half loaded, or (a module
-   * with only a window half) its manifest. What a host-service call checks.
+   * Whether a module runs here at all: its main half loaded, or (an
+   * extension with surfaces only) its manifest. What a frame's call checks.
    * Absent, a module runs when its manifest resolves.
    */
   isModulePresent?: (moduleId: string) => boolean
@@ -501,6 +489,15 @@ export type MainKernelOptions = {
    * uninstall). Absent (tests), its manifest's permissions.
    */
   resolveExtensionGrant?: (moduleId: string) => readonly string[] | null
+  /** Folders a frame's `files.*` may never reach, even inside a workspace (Studio's data, the installed extensions). */
+  frameFileExclusions?: () => readonly string[]
+  /**
+   * What an extension's frame calls are held to (extension-frame-grant.ts):
+   * its approval's permissions as they stand now, pinned to those its
+   * document was built under, or null when it is not an approved, switched-on
+   * extension. Absent (tests), the extensions the kernel was started with.
+   */
+  resolveFrameGrant?: (moduleId: string, frame: string) => { grant: readonly string[]; outdated: boolean } | null
 }
 
 // Flood bounds: a module may emit at most this many notifications per window;
@@ -620,62 +617,6 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     methods.set(moduleId, next)
   }
 
-  function hostServicesFor(moduleId: string, invoker: ExtensionInvoker): ModuleHostServicesOutcome {
-    const present = options.isModulePresent
-      ? options.isModulePresent(moduleId)
-      : options.resolveModuleManifest?.(moduleId) !== undefined
-    if (!present || moduleId.startsWith('@'))
-      return {
-        ok: false,
-        code: 'extension_unavailable',
-        message: `Extension "${moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
-      }
-    const backlog = services.get('backlog.module-service')?.value as ModuleBacklogRegistry | undefined
-    const usage = services.get('usage.module-service')?.value as ModuleUsageRegistry | undefined
-    return {
-      ok: true,
-      services: {
-        backlog:
-          typeof backlog?.create === 'function'
-            ? gatedRegistry(moduleId, 'backlog.module-service', backlog, invoker)
-            : null,
-        usage:
-          typeof usage?.query === 'function' ? gatedRegistry(moduleId, 'usage.module-service', usage, invoker) : null,
-      },
-    }
-  }
-
-  // A host service as a window half's call reaches it over the Studio
-  // protocol: each method through the gate, as the connection that sent it.
-  // The window half names its own module first, as the worker's helpers do.
-  // The module id is the client's word, so naming one of the app's own
-  // modules is no way around the gate: their calls still need of the
-  // connection what the method needs of any invoker.
-  function gatedRegistry<T extends object>(moduleId: string, key: string, registry: T, invoker: ExtensionInvoker): T {
-    const methods = extensionHostService(key)?.methods ?? {}
-    const thirdParty = isThirdParty(moduleId)
-    const gated: Record<string, unknown> = {}
-    for (const name of memberNames(registry)) {
-      const member: unknown = Reflect.get(registry, name, registry)
-      if (typeof member !== 'function' || typeof name !== 'string') continue
-      gated[name] = (...args: unknown[]) => {
-        const requirement = methods[name]
-        const decision = thirdParty
-          ? gate(moduleId, `${key}.${name}`, requirement, invoker)
-          : gateExtensionHostCall({
-              extensionId: moduleId,
-              method: `${key}.${name}`,
-              requirement,
-              grant: EXTENSION_PERMISSIONS,
-              invoker,
-            })
-        if (!decision.ok) return refuseExtensionHostCall(requirement, decision)
-        return (member as (...given: unknown[]) => unknown).apply(registry, args)
-      }
-    }
-    return gated as T
-  }
-
   /** The host's gate, for an extension; the app's own modules pass. */
   function gate(
     moduleId: string,
@@ -689,6 +630,28 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
     return gateExtensionHostCall({ extensionId: moduleId, method, requirement, grant, invoker })
   }
+
+  // A frame's host calls, against the same services the worker reaches.
+  const frameCalls = createExtensionFrameCalls({
+    // The approvals as they stand now where the server says so; otherwise
+    // (tests) the extensions this kernel was started with.
+    grantOf: (moduleId, frame) => {
+      if (options.resolveFrameGrant) return options.resolveFrameGrant(moduleId, frame)
+      const present = options.isModulePresent
+        ? options.isModulePresent(moduleId)
+        : options.resolveModuleManifest?.(moduleId) !== undefined
+      if (!isThirdParty(moduleId) || !present) return null
+      const grant = options.resolveExtensionGrant
+        ? options.resolveExtensionGrant(moduleId)
+        : (options.resolveModuleManifest?.(moduleId)?.permissions ?? [])
+      return grant === null ? null : { grant, outdated: false }
+    },
+    service: (key) => services.get(key)?.value,
+    callModuleMethod: (request) => callModuleMethod(request),
+    emitNotification,
+    appState: () => services.get(MODULE_APP_STATE_SERVICE_KEY)?.value as ModuleAppStateMirror | undefined,
+    fileExclusions: () => options.frameFileExclusions?.() ?? [],
+  })
 
   async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
     const own = methods.get(request.moduleId)
@@ -1095,7 +1058,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     return typeof root === 'function' ? guardMember(root, undefined, top, pinned) : facadeOf(root, top, pinned)
   }
 
-  // A module asset by path: the same refusals `moduleAssetUrl` makes, then
+  // A module asset by path: a module-relative path with no traversal, then
   // only a verified file, held to the bytes it was verified with.
   function resolveAssetPath(moduleId: string, relativePath: string): string {
     if (
@@ -1450,7 +1413,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     declaredMethods: (moduleId) =>
       [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
     callModuleMethod,
-    hostServicesFor,
+    callFrameMethod: (request) => frameCalls(request),
     mcpToolRegistrations: () =>
       [...mcpTools.values()].map(({ owner, registration }) => ({
         moduleId: owner,

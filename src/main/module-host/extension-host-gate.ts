@@ -1,7 +1,7 @@
 // The gate every call an extension makes into Studio passes. Pure, and the
 // same for every way a call arrives: the extension's worker calling a service
-// or a `MainHost` method in process, and its window half calling a host
-// service over the Studio protocol.
+// or a `MainHost` method in process, and its surface's frame calling a host
+// method over the Studio protocol (`extension.call`).
 //
 // A call goes through only when all of these hold, checked in this order:
 //

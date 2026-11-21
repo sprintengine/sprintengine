@@ -148,13 +148,12 @@ module reads and changes items through the host's Backlog service, served by
   writes the calling module's key only.
 - Answers are result-shaped (`{ ok: false, code, message }`); vocabulary the app
   does not know is `invalid_input`.
-- The renderer methods reach the same service on the module's server over the
-  window's Studio connection (`extensionBacklog.location`, `.create`,
-  `.updateStatus`, `.updateTriage`, `.addLink` and `.updateModuleMetadata`;
-  `extensionUsage.query` for `queryUsage`), naming the calling module; the
-  server answers `extension_unavailable` for a module that does not run there.
-  A write is carried out once per command id. They are refused while the
-  Backlog module is disabled.
+- An extension's surface reaches the same service from its frame
+  (`backlog.list`, `.location`, `.create`, `.updateStatus`, `.updateTriage`,
+  `.addLink`, `.updateModuleMetadata` through `studio.host.call`), which the
+  window that drew the frame passes to the extension's server
+  (`extension.call`), held to the extension's approval and to that window's
+  own grant. A write is carried out once per command id.
 
 ## Link Providers
 

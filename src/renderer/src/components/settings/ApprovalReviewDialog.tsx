@@ -1,14 +1,15 @@
 import React, { useId, type JSX } from 'react'
 
 import type { ThirdPartyModuleView } from '../../../../shared/modules/manifest'
-import { extensionApprovalCopy } from '../../../../shared/modules/permissions'
+import { extensionApprovalCopy, grantsFullAccess } from '../../../../shared/modules/permissions'
 import { AccessCareList, AccessChips, InlineNotice, RefreshIcon, type AccessItem } from '../ui'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from '../ui/Modal'
 import { copy } from '../../../../shared/copy'
 
 // Review → approve and turn on, in one step. The dialog is the consent: what
-// the extension is (its tier, said plainly: code that runs with full access to
-// this machine, where it has code), what needs care with a short why for each,
+// the extension is (its tier, said plainly: a worker's code runs with full
+// access to this machine, a ui extension's runs isolated unless it asks to
+// change project files, which is full access too), what needs care with a short why for each,
 // the rest as quiet pills, and for an update, what it asks beyond what was
 // approved before. Approving names the fingerprint the person was shown, so a
 // change since is refused rather than approved unseen.
@@ -51,10 +52,15 @@ export function ApprovalReviewDialog({
         leading={icon}
       />
       <ModalBody className="space-y-4">
-        {module.extension.tier === 'declarative' ? (
-          <p className="text-body text-[color:var(--text-default)]">{extensionApprovalCopy('declarative')}</p>
+        {module.extension.tier === 'worker' ||
+        (module.extension.tier === 'ui' && grantsFullAccess(module.extension.permissions)) ? (
+          <InlineNotice tone="warn">
+            {extensionApprovalCopy(module.extension.tier, module.extension.permissions)}
+          </InlineNotice>
         ) : (
-          <InlineNotice tone="warn">{extensionApprovalCopy(module.extension.tier)}</InlineNotice>
+          <p className="text-body text-[color:var(--text-default)]">
+            {extensionApprovalCopy(module.extension.tier, module.extension.permissions)}
+          </p>
         )}
         {growth && growth.length > 0 ? (
           <section aria-label={t.newInThisVersion}>

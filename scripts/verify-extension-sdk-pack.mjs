@@ -215,7 +215,7 @@ console.log(`the fixture builds: ${surfaces.map((surface) => surface.entry).join
 
 // The built fixture against the tarball's own validator and fakes, in plain
 // Node, the way a scaffolded project's smoke test runs. The probe panel is
-// mounted into a small stand-in document: it is plain DOM, and it must draw
+// mounted, as its frame would mount it, into a small stand-in document: it is plain DOM, and it must draw
 // its 200 rows and say it is ready.
 const runtimeProbe = join(fixtureDir, 'runtime-probe.mjs')
 writeFileSync(
@@ -226,7 +226,7 @@ writeFileSync(
     "import { createRequire } from 'node:module'",
     "import { pathToFileURL } from 'node:url'",
     "import { validateExtensionManifest } from '@sprintengine/extension-sdk'",
-    "import { createFakeMainHost, createFakeRendererHost } from '@sprintengine/extension-sdk/testing'",
+    "import { createFakeFrameStudio, createFakeMainHost } from '@sprintengine/extension-sdk/testing'",
     `const surfaces = ${JSON.stringify(surfaces)}`,
     "const result = validateExtensionManifest(JSON.parse(readFileSync('extension/extension.json', 'utf8')), { authoring: true })",
     'assert.ok(result.ok, JSON.stringify(result.ok ? [] : result.issues))',
@@ -251,17 +251,17 @@ writeFileSync(
     '  remove() {},',
     '})',
     "const root = { ...element('div'), ownerDocument: { createElement: element } }",
-    'const renderer = createFakeRendererHost({ manifest, main })',
+    'const frame = createFakeFrameStudio({ manifest, main })',
     'for (const surface of surfaces) {',
     '  const entry = await import(pathToFileURL(surface.built).href)',
     "  assert.equal(typeof entry.mount, 'function', surface.entry)",
     "  if (surface.id !== 'probe') continue",
-    "  const close = await renderer.mount(entry, { point: surface.point, id: surface.id, workspaceId: 'ws-app' }, root)",
+    "  const close = await frame.mount(entry, { point: surface.point, id: surface.id, workspaceId: 'ws-app' }, root)",
     "  assert.equal(root.children.at(-1).children.length, 200, 'the probe draws 200 rows')",
-    "  assert.deepEqual(renderer.readied.map((ready) => ready.id), ['probe'])",
+    "  assert.deepEqual(frame.readied.map((ready) => ready.id), ['probe'])",
     '  close()',
     '}',
-    'assert.deepEqual(renderer.undeclared, [])',
+    'assert.deepEqual(frame.undeclared, [])',
   ].join('\n')}\n`,
 )
 try {

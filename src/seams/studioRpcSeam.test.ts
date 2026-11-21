@@ -420,19 +420,13 @@ test('every method the server serves has its call in the SDK, under the same sco
     'extension.install': 'request',
     'extension.approve': 'request',
     'extension.uninstall': 'request',
-    // The extensions installed there, their window halves, and what a window sets for them.
+    // The extensions installed there, what they add to a client, and the window's report.
     'extension.installed': 'request',
-    'extension.rendererEntries': 'request',
-    'extension.setAppState': 'request',
+    'extension.contributions': 'request',
     'extension.reportRegistry': 'request',
-    // The host's services a renderer half calls, by name too.
-    'extensionBacklog.location': 'request',
-    'extensionBacklog.create': 'request',
-    'extensionBacklog.updateStatus': 'request',
-    'extensionBacklog.updateTriage': 'request',
-    'extensionBacklog.addLink': 'request',
-    'extensionBacklog.updateModuleMetadata': 'request',
-    'extensionUsage.query': 'request',
+    // Their surfaces' frames: the document, and each host call a frame makes.
+    'extension.frame': 'request',
+    'extension.call': 'request',
     // And what a client reads before it starts a chat.
     'workspaces.list': 'request',
     'cliRuntimes.list': 'request',

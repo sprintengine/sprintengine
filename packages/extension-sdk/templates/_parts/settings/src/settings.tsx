@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extension-sdk'
@@ -6,49 +6,32 @@ import type { ExtensionMount, ExtensionMountStudio } from '@sprintengine/extensi
 const NAME = '{{displayName}}'
 
 // A section in Settings, declared in extension.json
-// (`contributes.settingsSections`, id "settings"). It saves into the
-// extension's app state, so the rest of the extension reads the value with
-// `studio.getModuleAppState('label')`, a worker included ("storage" permission).
-export function Settings({ studio }: { studio: ExtensionMountStudio }) {
-  const subscribe = useCallback((onChange: () => void) => studio.watchModuleAppState(() => onChange()), [studio])
-  const readLabel = useCallback(() => studio.getModuleAppState<string>('label') ?? '', [studio])
-  const label = useSyncExternalStore(subscribe, readLabel, readLabel)
-
+// (`contributes.settingsSections`, id "settings"). It saves the extension's
+// Settings values through Studio (`settings.get`, `settings.set`, permission
+// `settings:own`), which keeps them, so a worker reads the value with
+// `studio.getModuleAppState('label')`.
+export function Settings({ studio, initial }: { studio: ExtensionMountStudio; initial: string }) {
+  const [label, setLabel] = useState(initial)
   useEffect(() => studio.ready(), [studio])
-
   return (
-    <label
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--sem-space-xs)',
-        fontFamily: 'var(--sem-font-family-ui)',
-        fontSize: 'var(--sem-font-size-body)',
-        color: 'var(--sem-color-text-default)',
-      }}
-    >
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 16 }}>
       Label
       <input
+        className="se-input"
         value={label}
-        onChange={(event) => studio.setModuleAppState('label', event.target.value || undefined)}
-        style={{
-          font: 'inherit',
-          color: 'inherit',
-          padding: 'var(--sem-space-xs) var(--sem-space-sm)',
-          border: '1px solid var(--sem-color-border-default)',
-          borderRadius: 'var(--sem-radius-control)',
-          background: 'var(--sem-color-bg-surface-raised)',
+        onChange={(event) => {
+          setLabel(event.target.value)
+          void studio.host.call('settings.set', { key: 'label', value: event.target.value || null })
         }}
       />
-      <span style={{ color: 'var(--sem-color-text-muted)', fontSize: 'var(--sem-font-size-meta)' }}>
-        Shown wherever {NAME} names itself.
-      </span>
+      <span className="se-muted">Shown wherever {NAME} names itself.</span>
     </label>
   )
 }
 
-export const mount: ExtensionMount = (root, studio) => {
+export const mount: ExtensionMount = async (root, studio) => {
+  const saved = await studio.host.call('settings.get', {})
   const view = createRoot(root)
-  view.render(<Settings studio={studio} />)
+  view.render(<Settings studio={studio} initial={typeof saved.label === 'string' ? saved.label : ''} />)
   return () => view.unmount()
 }

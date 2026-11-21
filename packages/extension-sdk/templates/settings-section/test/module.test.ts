@@ -7,7 +7,7 @@ import { test } from 'node:test'
 
 import { createElement } from 'react'
 
-import { createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { createFakeFrameStudio, renderToHtml } from '@sprintengine/extension-sdk/testing'
 
 import { GreetingSettings, greetingFrom } from '../src/greeting'
 import { manifest } from './manifest'
@@ -19,11 +19,12 @@ test('the greeting follows the name and the tone', () => {
 })
 
 test('the section shows what was saved', async () => {
-  const renderer = createFakeRendererHost({ manifest, appState: { name: 'Night shift', tone: 'warm' } })
-  const studio = renderer.studio({ point: 'settingsSections', id: 'greeting' })
-  const html = await renderToHtml(createElement(GreetingSettings, { studio }))
+  const frame = createFakeFrameStudio({ manifest, settings: { name: 'Night shift', tone: 'warm' } })
+  const studio = frame.studio({ point: 'settingsSections', id: 'greeting' })
+  const initial = await studio.host.call('settings.get', {})
+  const html = await renderToHtml(createElement(GreetingSettings, { studio, initial }))
   assert.match(html, /Good to see you, Night shift!/)
-  assert.deepEqual(renderer.undeclared, [], 'everything it used is declared in extension/extension.json')
+  assert.deepEqual(frame.undeclared, [], 'everything it used is declared in extension/extension.json')
 })
 
 test('the command opens Settings without any code of its own', () => {

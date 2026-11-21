@@ -1,31 +1,27 @@
 import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
-import type { ExtensionManifestView, ThirdPartyRendererEntriesResult } from '../../../shared/modules/manifest'
+import type { ExtensionContributionsResult, ExtensionManifestView } from '../../../shared/modules/manifest'
 import type { AppNotification } from '../../../shared/workspace'
 import { setAppCommandRunner } from '../commands/appCommandRunner'
 import { getExtensionPanels, getExtensionSurface } from './extension-surfaces'
 import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { createRendererHost, type ModuleMethodCall, type RendererKernel } from './renderer-host'
 import {
-  getThirdPartyRendererLoadState,
-  loadThirdPartyRendererEntries,
-  reconcileThirdPartyRendererEntries,
-  rendererEntriesForRefresh,
-  type ThirdPartyEntryImporter,
-} from './third-party-loader'
+  contributionsForRefresh,
+  getExtensionContributionsState as getThirdPartyRendererLoadState,
+  loadExtensionContributions,
+  reconcileExtensionContributions as reconcileThirdPartyRendererEntries,
+} from './extension-contributions'
 
-// The loader is the execution boundary for an extension's window code: it
-// evaluates each `entry` a panel, door or settings section names, requires a
-// `mount`, and registers what extension.json declares through the
-// extension's scoped host, under ids its install key prefixes. One broken
-// extension never blocks its neighbours, and only one that loaded cleanly
-// joins the enablement universe. Bundle evaluation itself (a blob URL import)
-// runs in the real app; here the importer is injected, and a bundle's "code"
-// is the name of the exports the importer hands back.
+// The window registers what each approved extension's extension.json declares
+// through the extension's scoped host, under ids its install key prefixes,
+// and runs none of its code: its panels, doors and settings sections are drawn
+// in frames. One broken extension never blocks its neighbours, and only one
+// registered cleanly joins the enablement universe.
 //
-// The loader keeps one load state per install key for the window's session,
-// so every test uses keys of its own.
+// The registrar keeps one state per install key for the window's session, so
+// every test uses keys of its own.
 
 type Contributes = ExtensionManifestView['contributes']
 
@@ -58,13 +54,11 @@ function served(
     manifestId?: string
     contributes?: Partial<Contributes>
     over?: Partial<ExtensionManifestView>
-    entries?: Record<string, string>
-    assetOrigin?: string
   }>,
   failures: Record<string, string> = {},
-): ThirdPartyRendererEntriesResult {
+): ExtensionContributionsResult {
   return {
-    entries: entries.map((entry) => {
+    extensions: entries.map((entry) => {
       const id = entry.key.slice(entry.key.indexOf('.') + 1)
       return {
         id: entry.key,
@@ -76,25 +70,20 @@ function served(
           source: 'third-party',
         },
         extension: extension(id, entry.contributes, entry.over),
-        entries: entry.entries ?? {},
-        ...(entry.assetOrigin ? { assetOrigin: entry.assetOrigin } : {}),
       }
     }),
     failures,
   }
 }
 
-const mount = () => undefined
-
-/** The importer: a bundle's code names its exports in `bundles`; an Error is thrown at import. */
-const importerFor =
-  (bundles: Record<string, unknown>): ThirdPartyEntryImporter =>
-  async (code) => {
-    if (!(code in bundles)) throw new Error(`Unexpected import of "${code}"`)
-    const value = bundles[code]
-    if (value instanceof Error) throw value
-    return value
-  }
+/** Register what is served, where the Studio draws frames unless told otherwise. */
+async function loadThirdPartyRendererEntries(
+  kernel: RendererKernel,
+  contributions: ExtensionContributionsResult,
+  drawsFrames = true,
+) {
+  return loadExtensionContributions(kernel, contributions, drawsFrames)
+}
 
 let stopRunner: (() => void) | null = null
 afterEach(() => {
@@ -118,16 +107,13 @@ function recordingKernel(answer: { ok: true; value: unknown } | { ok: false; cod
   return { kernel, calls, toasts }
 }
 
-test('an extension’s surfaces register under its install key, each drawn by the mount its entry exports', async () => {
+test('an extension’s surfaces register under its install key, to be drawn in frames', async () => {
   const kernel = createRendererHost()
-  const panelMount = () => undefined
-  const doorMount = () => undefined
   const loaded = await loadThirdPartyRendererEntries(
     kernel,
     served([
       {
         key: 'acme.notes',
-        assetOrigin: 'studio-module://' + 'a'.repeat(64),
         contributes: {
           panels: [{ id: 'notes', title: 'Notes', icon: 'notes', entry: 'dist/panel.js' }],
           doors: [{ id: 'board', title: 'Board', entry: 'dist/door.js' }],
@@ -138,10 +124,8 @@ test('an extension’s surfaces register under its install key, each drawn by th
             { id: 'run', title: 'Open Backlog', command: 'notes.open' },
           ],
         },
-        entries: { 'dist/panel.js': 'panel', 'dist/door.js': 'door' },
       },
     ]),
-    importerFor({ panel: { mount: panelMount }, door: { mount: doorMount } }),
   )
   assert.deepEqual(
     loaded.map((manifest) => manifest.id),
@@ -149,9 +133,9 @@ test('an extension’s surfaces register under its install key, each drawn by th
   )
   assert.deepEqual(getThirdPartyRendererLoadState('acme.notes'), { status: 'loaded' })
 
-  assert.equal(getExtensionSurface('acme.notes', 'panels', 'notes')?.mount, panelMount)
-  assert.equal(getExtensionSurface('acme.notes', 'doors', 'board')?.mount, doorMount)
-  assert.equal(getExtensionSurface('acme.notes', 'settingsSections', 'prefs')?.mount, panelMount)
+  assert.equal(getExtensionSurface('acme.notes', 'panels', 'notes')?.contribution.entry, 'dist/panel.js')
+  assert.equal(getExtensionSurface('acme.notes', 'doors', 'board')?.contribution.entry, 'dist/door.js')
+  assert.equal(getExtensionSurface('acme.notes', 'settingsSections', 'prefs')?.contribution.title, 'Notes')
   assert.ok(getExtensionPanels().some((surface) => surface.key === 'acme.notes'))
   assert.equal(
     getExtensionPanels((moduleId) => moduleId !== 'acme.notes').some((surface) => surface.key === 'acme.notes'),
@@ -173,10 +157,28 @@ test('an extension’s surfaces register under its install key, each drawn by th
     ['acme.notes:open-board', 'acme.notes:run'],
   )
   assert.equal(kernel.getModuleCommand('acme.notes.notes.open')?.category, 'Ext notes')
-  assert.equal(
-    kernel.hostFor('acme.notes').getAssetUrl('img/logo.png'),
-    'studio-module://' + 'a'.repeat(64) + '/img/logo.png',
+})
+
+test('where the Studio draws no frames, an extension adds its commands and no surface', async () => {
+  const kernel = createRendererHost()
+  await loadThirdPartyRendererEntries(
+    kernel,
+    served([
+      {
+        key: 'acme.frameless',
+        contributes: {
+          panels: [{ id: 'p', title: 'P', entry: 'p.js' }],
+          doors: [{ id: 'd', title: 'D', entry: 'd.js' }],
+          commands: [{ id: 'go', title: 'Go', action: 'panel.backlog.toggle' }],
+          topBarItems: [{ id: 'open', title: 'Open', door: 'd' }],
+        },
+      },
+    ]),
+    false,
   )
+  assert.equal(getExtensionSurface('acme.frameless', 'panels', 'p'), undefined)
+  assert.equal(kernel.getGlobalSurface('acme.frameless:d'), undefined)
+  assert.ok(kernel.getModuleCommand('acme.frameless.go'))
 })
 
 test('a command without an action calls the worker method of its id; one with an action runs the Studio command', async () => {
@@ -201,7 +203,6 @@ test('a command without an action calls the worker method of its id; one with an
         },
       },
     ]),
-    importerFor({}),
   )
   const clear = kernel.getModuleCommand('acme.cmds.notes.clear')!
   assert.deepEqual(clear.availability, ['activeWorkspace'], 'a workspace command waits for a workspace')
@@ -235,7 +236,6 @@ test('a worker method that refuses is said in a toast', async () => {
         contributes: { commands: [{ id: 'notes.clear', title: 'Clear notes' }] },
       },
     ]),
-    importerFor({}),
   )
   await kernel.getModuleCommand('acme.refuses.notes.clear')!.run({ activeWorkspaceId: null, activeWorkspaceMode: null })
   assert.deepEqual(toasts, ['Clear notes did not run.'])
@@ -258,7 +258,6 @@ test('menu items run their command with what they were picked on, under ids the 
       // Another extension with the same command id: its items are its own.
       { key: 'other.menus', over: { tier: 'worker', main: 'm.cjs' }, contributes },
     ]),
-    importerFor({}),
   )
   assert.deepEqual(
     loaded.map((manifest) => manifest.id),
@@ -323,88 +322,15 @@ test('menu items run their command with what they were picked on, under ids the 
   )
 })
 
-test('a served extension whose manifest names another key is refused without evaluation', async () => {
-  let imported = 0
+test('a served extension whose manifest names another key is refused', async () => {
   const loaded = await loadThirdPartyRendererEntries(
     createRendererHost(),
-    served([{ key: 'acme.mismatch', manifestId: 'acme.other', entries: { 'a.js': 'a' } }]),
-    async () => {
-      imported += 1
-      return { mount }
-    },
+    served([{ key: 'acme.mismatch', manifestId: 'acme.other' }]),
   )
   assert.deepEqual(loaded, [])
-  assert.equal(imported, 0)
   const state = getThirdPartyRendererLoadState('acme.mismatch')
   assert.equal(state?.status, 'error')
   assert.match(state.status === 'error' ? state.message : '', /does not match its install key/)
-})
-
-test('an entry without a mount, or a surface whose entry was not served, is a load error', async () => {
-  const kernel = createRendererHost()
-  const loaded = await loadThirdPartyRendererEntries(
-    kernel,
-    served([
-      {
-        key: 'acme.no-mount',
-        contributes: { panels: [{ id: 'p', title: 'P', entry: 'dist/p.js' }] },
-        entries: { 'dist/p.js': 'nomount' },
-      },
-      {
-        key: 'acme.unserved',
-        contributes: { doors: [{ id: 'd', title: 'D', entry: 'dist/d.js' }] },
-      },
-    ]),
-    importerFor({ nomount: { render: () => {} } }),
-  )
-  assert.deepEqual(loaded, [])
-  assert.deepEqual(getThirdPartyRendererLoadState('acme.no-mount'), {
-    status: 'error',
-    message: 'dist/p.js must export mount(root, studio).',
-  })
-  assert.deepEqual(getThirdPartyRendererLoadState('acme.unserved'), {
-    status: 'error',
-    message: 'dist/d.js was not served.',
-  })
-  assert.equal(kernel.getGlobalSurface('acme.unserved:d'), undefined, 'nothing of it registers')
-})
-
-test('a broken bundle is isolated from its neighbours, and an absolute path never reaches Settings', async () => {
-  const kernel = createRendererHost()
-  const loaded = await loadThirdPartyRendererEntries(
-    kernel,
-    served([
-      {
-        key: 'acme.broken',
-        contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-        entries: { 'p.js': 'broken' },
-      },
-      {
-        key: 'acme.leaky',
-        contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-        entries: { 'p.js': 'leaky' },
-      },
-      {
-        key: 'acme.healthy',
-        contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-        entries: { 'p.js': 'ok' },
-      },
-    ]),
-    importerFor({
-      broken: new Error('boom at import time'),
-      leaky: new Error('ENOENT: /Users/dev/.sprintengine/extensions/acme.leaky/p.js'),
-      ok: { mount },
-    }),
-  )
-  assert.deepEqual(
-    loaded.map((manifest) => manifest.id),
-    ['acme.healthy'],
-  )
-  assert.deepEqual(getThirdPartyRendererLoadState('acme.broken'), { status: 'error', message: 'boom at import time' })
-  const leaky = getThirdPartyRendererLoadState('acme.leaky')
-  assert.equal(leaky?.status, 'error')
-  assert.doesNotMatch(leaky.status === 'error' ? leaky.message : '', /\/Users\//)
-  assert.ok(getExtensionSurface('acme.healthy', 'panels', 'p'))
 })
 
 test('a registration that fails halfway keeps the extension out of the enablement universe', async () => {
@@ -422,15 +348,12 @@ test('a registration that fails halfway keeps the extension out of the enablemen
             { id: 'second', title: 'Second', entry: 'd.js' },
           ],
         },
-        entries: { 'd.js': 'door' },
       },
       {
         key: 'acme.after',
         contributes: { doors: [{ id: 'x', title: 'X', entry: 'd.js' }] },
-        entries: { 'd.js': 'door' },
       },
     ]),
-    importerFor({ door: { mount } }),
   )
   assert.deepEqual(
     loaded.map((manifest) => manifest.id),
@@ -445,82 +368,62 @@ test('a registration that fails halfway keeps the extension out of the enablemen
 
 test('serving failures are recorded, and a duplicate key keeps its first definition', async () => {
   const kernel = createRendererHost()
-  await loadThirdPartyRendererEntries(
-    kernel,
-    served([], { 'acme.unservable': 'The window entry p.js is missing.' }),
-    importerFor({}),
-  )
+  await loadThirdPartyRendererEntries(kernel, served([], { 'acme.unservable': 'The window entry p.js is missing.' }))
   assert.deepEqual(getThirdPartyRendererLoadState('acme.unservable'), {
     status: 'error',
     message: 'The window entry p.js is missing.',
   })
 
-  const evaluated: string[] = []
   const loaded = await loadThirdPartyRendererEntries(
     kernel,
     served([
       {
         key: 'acme.dupe',
-        contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-        entries: { 'p.js': 'first' },
+        contributes: { panels: [{ id: 'p', title: 'First', entry: 'p.js' }] },
       },
       {
         key: 'acme.dupe',
-        contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-        entries: { 'p.js': 'second' },
+        contributes: { panels: [{ id: 'p', title: 'Second', entry: 'p.js' }] },
       },
     ]),
-    async (code) => {
-      evaluated.push(code)
-      return { mount }
-    },
   )
   assert.deepEqual(
     loaded.map((manifest) => manifest.id),
     ['acme.dupe'],
   )
-  assert.deepEqual(evaluated, ['first'])
+  assert.equal(getExtensionSurface('acme.dupe', 'panels', 'p')?.contribution.title, 'First')
   assert.deepEqual(getThirdPartyRendererLoadState('acme.dupe'), { status: 'loaded' })
 })
 
-test('a live refresh adds only extensions this window has not evaluated, and none with a worker', async () => {
+test('a live refresh adds only extensions this window has not registered, and none with a worker', async () => {
   const kernel = createRendererHost()
   const newlyInstalled = served([
     {
       key: 'acme.refresh-ui',
       contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-      entries: { 'p.js': 'ok' },
     },
     { key: 'acme.refresh-worker', over: { tier: 'worker', main: 'm.cjs' } },
-    {
-      key: 'acme.refresh-broken',
-      contributes: { panels: [{ id: 'p', title: 'P', entry: 'p.js' }] },
-      entries: { 'p.js': 'bad' },
-    },
   ])
-  const eligible = rendererEntriesForRefresh(newlyInstalled)
+  const eligible = contributionsForRefresh(newlyInstalled)
   assert.deepEqual(
-    eligible.entries.map((entry) => entry.id),
-    ['acme.refresh-ui', 'acme.refresh-broken'],
+    eligible.extensions.map((entry) => entry.id),
+    ['acme.refresh-ui'],
     'a worker’s methods load only at the server’s next start',
   )
-  let evaluations = 0
-  const importFresh: ThirdPartyEntryImporter = async (code) => {
-    evaluations += 1
-    if (code === 'bad') throw new Error('broken window code')
-    return { mount }
-  }
-  const fresh = await loadThirdPartyRendererEntries(kernel, eligible, importFresh)
+  const fresh = await loadThirdPartyRendererEntries(kernel, eligible)
   assert.deepEqual(
     fresh.map((manifest) => manifest.id),
     ['acme.refresh-ui'],
   )
-  await loadThirdPartyRendererEntries(kernel, rendererEntriesForRefresh(newlyInstalled), importFresh)
-  assert.equal(evaluations, 2, 'neither a loaded nor a failed extension is evaluated again')
   assert.deepEqual(
-    rendererEntriesForRefresh({ entries: [], failures: { 'acme.refresh-ui': 'updated file missing' } }).failures,
+    contributionsForRefresh(newlyInstalled).extensions,
+    [],
+    'a registered extension is not registered again',
+  )
+  assert.deepEqual(
+    contributionsForRefresh({ extensions: [], failures: { 'acme.refresh-ui': 'updated file missing' } }).failures,
     {},
-    'an update failure cannot overwrite the state of code already running',
+    'an update failure cannot overwrite the state of an extension already registered',
   )
 })
 
@@ -533,10 +436,9 @@ test('an extension switched off and then uninstalled is offered nowhere and draw
         panels: [{ id: 'notes', title: 'Notes', entry: 'dist/panel.js' }],
         commands: [{ id: 'gone.open', title: 'Open Backlog', action: 'panel.backlog.toggle' }],
       },
-      entries: { 'dist/panel.js': 'panel' },
     },
   ])
-  const loaded = await loadThirdPartyRendererEntries(kernel, shipped, importerFor({ panel: { mount } }))
+  const loaded = await loadThirdPartyRendererEntries(kernel, shipped)
   assert.deepEqual(
     loaded.map((manifest) => manifest.id),
     ['local.gone'],
@@ -552,7 +454,7 @@ test('an extension switched off and then uninstalled is offered nowhere and draw
   const kept = reconcileThirdPartyRendererEntries(loaded, served([]))
   assert.deepEqual(kept, [])
   assert.equal(offered(kept), false, 'its default does not bring it back')
-  assert.equal(getExtensionSurface('local.gone', 'panels', 'notes'), undefined, 'its panel does not mount')
+  assert.equal(getExtensionSurface('local.gone', 'panels', 'notes'), undefined, 'its panel is not drawn')
   assert.deepEqual(
     getExtensionPanels().filter((panel) => panel.key === 'local.gone'),
     [],
@@ -563,7 +465,7 @@ test('an extension switched off and then uninstalled is offered nowhere and draw
     'its command is not offered',
   )
 
-  // Served again exactly as it was (trusted again): it comes back without a second evaluation.
+  // Served again exactly as it was (trusted again): it comes back without registering twice.
   const back = reconcileThirdPartyRendererEntries(kept, shipped)
   assert.deepEqual(
     back.map((manifest) => manifest.id),
@@ -572,7 +474,7 @@ test('an extension switched off and then uninstalled is offered nowhere and draw
   assert.ok(getExtensionSurface('local.gone', 'panels', 'notes'))
   // Served changed (a new version): it waits for the window to reload.
   reconcileThirdPartyRendererEntries(back, served([]))
-  const changed = served([{ key: 'local.gone', over: { version: '2.0.0' }, entries: { 'dist/panel.js': 'panel' } }])
+  const changed = served([{ key: 'local.gone', over: { version: '2.0.0' } }])
   assert.deepEqual(reconcileThirdPartyRendererEntries([], changed), [])
 })
 
@@ -596,7 +498,7 @@ test('trust revoked: its top bar button is gone, and running its command or acti
       },
     },
   ])
-  const loaded = await loadThirdPartyRendererEntries(kernel, shipped, importerFor({}))
+  const loaded = await loadThirdPartyRendererEntries(kernel, shipped)
   const enabledIn = (universe: typeof loaded) => (id: string) =>
     new Set(resolveModuleEnablement(universe, {}).order).has(id)
   assert.deepEqual(

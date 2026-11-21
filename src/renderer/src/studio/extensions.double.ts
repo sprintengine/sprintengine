@@ -58,9 +58,12 @@ function blank(): Api {
     hostedSourcesFeedGet: async () => ({ ok: false, state: 'offline', feedUrl: '', message: NONE }),
     listThirdPartyModules: async () => ({ modules: [], rejected: [] }),
     listStudioModules: async () => [],
-    listThirdPartyRendererEntries: async () => ({ entries: [], failures: {} }),
+    listExtensionContributions: async () => ({ extensions: [], failures: {} }),
+    drawsExtensionFrames: async () => true,
+    extensionFrame: async () => ({ hash: '', html: '' }),
+    extensionCall: async () => ({ ok: false, code: 'unavailable', message: NONE }),
+    onExtensionEvents: () => () => undefined,
     onThirdPartyModulesChanged: () => () => undefined,
-    setModuleAppState: async () => undefined,
     setModuleRegistrySnapshot: async () => ({ ok: true }),
   }
 }

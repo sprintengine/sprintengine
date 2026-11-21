@@ -6,7 +6,7 @@ import { toModuleWorkspaceView, type ModuleWorkspaceView } from '../../../shared
 import { STUDIO_EXTENSION_HOST_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
 import { isModuleEvent } from '../../../shared/modules/events'
 import { followWindowStudioPush } from '../studio/windowStudioPush'
-import { windowModuleMethodCaller, windowModuleServiceCaller } from '../studio/moduleMethods'
+import { windowModuleMethodCaller } from '../studio/moduleMethods'
 import { markStartup } from '../utils/startupTimeline'
 import { agentRuntimeRendererModule } from './agent-runtime-module'
 import { backlogRendererModule } from './backlog-module'
@@ -340,8 +340,6 @@ if (typeof window !== 'undefined') {
         // A module's renderer half calls its own declared methods over the
         // same client: `extension.read` and `extension.operate`.
         rendererHost.setModuleMethodCaller(windowModuleMethodCaller())
-        // And the host's services (the Backlog's writes, the usage query).
-        rendererHost.setModuleServiceCaller(windowModuleServiceCaller())
         rendererHost.setModuleEventSource((cb) =>
           followWindowStudioPush({
             topic: 'extension.events',
@@ -486,7 +484,7 @@ export function getRendererHost(): ReturnType<typeof createRendererHost> {
   return rendererHost
 }
 
-// Trusted third-party renderer modules join the same host and the same
+// Approved extensions' contributions join the same host and the same
 // enablement universe as bundled modules. Initial loading runs before the
 // React root renders; later install/trust changes can add renderer-only
 // modules. Consumers are signalled after complete batches, never during a
@@ -531,15 +529,19 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
     // Older preload bundles may not carry the bridge yet; treat that as "no
     // third-party renderer entries" rather than failing the boot.
     if (!windowHasStudio()) return
-    const served = await extensionsApi.listThirdPartyRendererEntries()
-    const { loadThirdPartyRendererEntries, reconcileThirdPartyRendererEntries, rendererEntriesForRefresh } =
-      await import('./third-party-loader')
+    const [served, drawsFrames] = await Promise.all([
+      extensionsApi.listExtensionContributions(),
+      extensionsApi.drawsExtensionFrames(),
+    ])
+    const { loadExtensionContributions, reconcileExtensionContributions, contributionsForRefresh } =
+      await import('./extension-contributions')
     // What the Studio no longer serves (uninstalled, not approved) leaves first.
     const before = thirdPartyRendererManifests
-    const kept = reconcileThirdPartyRendererEntries(before, served)
-    const loaded = await loadThirdPartyRendererEntries(
+    const kept = reconcileExtensionContributions(before, served)
+    const loaded = loadExtensionContributions(
       rendererHost,
-      refresh ? rendererEntriesForRefresh(served) : served,
+      refresh ? contributionsForRefresh(served) : served,
+      drawsFrames,
     )
     thirdPartyRendererManifests = [...kept, ...loaded]
     if (loaded.length > 0 || kept.length !== before.length || kept.some((manifest, i) => manifest !== before[i])) {

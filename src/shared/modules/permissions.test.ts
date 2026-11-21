@@ -7,6 +7,7 @@ import {
   capabilityAccess,
   describeCapabilityPermission,
   extensionApprovalCopy,
+  grantsFullAccess,
   isBroadCapabilityPermission,
   isKnownCapabilityPermission,
   partitionCapabilityAccess,
@@ -39,11 +40,17 @@ test('every permission in the vocabulary is described, and only reading every ch
     assert.equal(isKnownCapabilityPermission(retired), false, retired)
 })
 
-test('the approval says plainly that code runs with full access to this machine', () => {
-  for (const tier of ['ui', 'worker'] as const) {
-    assert.match(extensionApprovalCopy(tier), /full access to this machine|on this machine with full access/)
-    assert.match(extensionApprovalCopy(tier), /its own code is not limited/)
-  }
+test('the approval says what each tier’s code can do, as this build enforces it', () => {
+  // A worker's code runs as the person: said plainly.
+  assert.match(extensionApprovalCopy('worker'), /on this machine with full access/)
+  assert.match(extensionApprovalCopy('worker'), /its own code is not limited/)
+  // A ui extension's code runs in sandboxed frames: what it is allowed is all it can do.
+  assert.match(extensionApprovalCopy('ui'), /runs isolated and can do only what you allow/)
+  assert.doesNotMatch(extensionApprovalCopy('ui'), /full access/)
+  // Changing a project's files is running code as the person.
+  assert.match(extensionApprovalCopy('ui', ['workspace-files:write']), /full access to your account/)
+  assert.doesNotMatch(extensionApprovalCopy('ui', ['workspace-files:read']), /full access/)
+  assert.equal(grantsFullAccess(['backlog:read', 'workspace-files:write']), true)
   assert.match(extensionApprovalCopy('declarative'), /runs no code of its own/)
   assert.match(extensionApprovalCopy('content'), /runs nothing/)
 })
@@ -60,6 +67,7 @@ const NEEDS_CARE = [
   'secrets:own',
   'usage:read',
   'backlog:operate',
+  'workspace-files:write',
 ]
 
 test('every permission has a short title, and exactly the sensitive ones need care', () => {

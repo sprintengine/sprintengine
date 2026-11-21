@@ -41,13 +41,12 @@ npx sprintengine-extension add main|mcp|settings|door   # add a part: files, tes
 Write tests in TypeScript as `test/*.test.ts`. `npm test` bundles them with
 esbuild into `test/.build/` (ignored) and runs them with `node --test`. Import
 the source (`../src/main`, `../src/<surface>`) and drive it with
-`createFakeMainHost` / `createFakeRendererHost` from
+`createFakeMainHost` (the worker) / `createFakeFrameStudio` (a surface) from
 `@sprintengine/extension-sdk/testing`, handing them `manifest` from
 `./manifest`: they keep Studio's rules, so a missing permission fails here
 rather than in Studio. `renderToHtml` renders a React component in Node.
 
-After `dev:install`, trust the extension in Studio (Settings → Extensions)
-unless it is signed with a key you trust.
+After `dev:install`, approve the extension in Studio (Settings → Extensions).
 
 ## Rules
 
@@ -56,15 +55,21 @@ unless it is signed with a key you trust.
   tools. Code never registers a surface. Keep `tier` the least that carries
   what it declares, and `permissions` minimal: they are shown to the person
   installing, and Studio enforces many of them.
-- A surface's bundle is imported on its own: bundle everything it uses, React
-  included. Style it with Studio's `--sem-*` CSS custom properties, keep your
-  CSS inside the root you are given, and call `studio.ready()` once it is drawn.
+- A surface runs in a sandboxed frame of its own: no network, no Node, and
+  nothing of Studio's window. Its bundle is loaded on its own, so bundle
+  everything it uses, React included. It reaches Studio only through
+  `studio.host.call(method, params)`, which Studio checks against the
+  permissions in extension.json. Style it with the theme's CSS custom
+  properties (`--bg-surface`, `--text-default`, …) and Studio's kit classes
+  (`se-button`, `se-input`, `se-list-row`, …), and call `studio.ready()` once
+  it is drawn.
 - A command without an `action` runs the worker method of the same name: declare
   it with `registerMethods` as an `operate` method.
-- Agents are chats: start them with the conversation service or `openChat`.
+- Agents are chats: start them with the conversation service in the worker, or
+  draft one for the person from a surface (`chat.draft`).
   There is no terminal-agent API.
-- Store data with `getModuleStorage(studio)` or the extension's app state, never
-  files in the home folder. Reach secrets and GitHub through the brokers, never
+- Store data with `getModuleStorage(studio)` in the worker, `storage.*` or
+  `settings.*` from a surface, never files in the home folder. Reach secrets and GitHub through the brokers, never
   by holding a token.
 - Text an agent or a web page produced is untrusted input: never evaluate it,
   and never let it choose a path, a URL or a command unchecked.

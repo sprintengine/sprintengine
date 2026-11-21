@@ -12,8 +12,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 export type CspInput = {
   /** The origin the page was served from, for `connect-src` (explicit for older WebKit). */
   origin: string
-  /** Third-party renderer modules evaluate as `blob:` scripts; only when the owner turned them on (R61). */
-  blobScripts: boolean
   /** Who may frame the page: nobody, unless it is an embed with registered origins. */
   frameAncestors?: readonly string[]
 }
@@ -23,12 +21,13 @@ export function contentSecurityPolicy(input: CspInput): string {
   const url = new URL(input.origin)
   const socket = `${url.protocol === 'https:' ? 'wss:' : 'ws:'}//${url.host}`
   // A preview is on the same host and a port of its own (spec 3.6), framed by
-  // the preview pane; nothing else is framed but sandboxed `blob:` documents.
+  // the preview pane; nothing else is framed but sandboxed `blob:` documents and
+  // extensions' frames, which this origin serves (`/ext-frame/<hash>`).
   const previews = `${url.protocol}//${url.hostname}:*`
   const ancestors = input.frameAncestors && input.frameAncestors.length > 0 ? input.frameAncestors.join(' ') : "'none'"
   return [
     "default-src 'self'",
-    `script-src 'self'${input.blobScripts ? ' blob:' : ''}`,
+    "script-src 'self'",
     // Monaco, the canvas editor and React's style props write inline styles.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",

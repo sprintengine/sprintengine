@@ -1,20 +1,14 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import type { ExtensionMount, ExtensionMountStudio, ModuleWorkspaceView } from '@sprintengine/extension-sdk'
 
 // A door: a full-window surface with its own row in the Extensions drawer,
 // declared in extension.json (`contributes.doors`). Studio draws the drawer
-// row and the window around it; everything inside the element `mount` is
-// handed is this extension's. `studio.openGlobalSurface('workspaces')` opens
-// it from another of the extension's surfaces.
-
-const text: CSSProperties = {
-  fontFamily: 'var(--sem-font-family-ui)',
-  fontSize: 'var(--sem-font-size-body)',
-  color: 'var(--sem-color-text-default)',
-}
-const muted: CSSProperties = { color: 'var(--sem-color-text-muted)' }
+// row and the window around it, and the door in a sandboxed frame of its own:
+// everything inside the element `mount` is handed is this extension's, and it
+// reaches Studio only through `studio.host.call`. Another of the extension's
+// surfaces opens it with `studio.host.call('doors.open', { id: 'workspaces' })`.
 
 export type WorkspacesViewProps = {
   workspaces: readonly ModuleWorkspaceView[]
@@ -26,51 +20,44 @@ export type WorkspacesViewProps = {
 export function WorkspacesView({ workspaces, selectedId, onSelect }: WorkspacesViewProps) {
   const selected = workspaces.find((workspace) => workspace.id === selectedId) ?? null
   return (
-    <div style={{ ...text, display: 'flex', height: '100%', background: 'var(--sem-color-bg-surface)' }}>
+    <div style={{ display: 'flex', height: '100%' }}>
       <nav
         aria-label="Workspaces"
-        style={{
-          width: 240,
-          padding: 'var(--sem-space-sm)',
-          borderRight: '1px solid var(--sem-color-border-subtle)',
-          overflowY: 'auto',
-        }}
+        style={{ width: 240, borderRight: '1px solid var(--border-subtle)', overflowY: 'auto' }}
       >
-        {workspaces.length === 0 ? <p style={muted}>No workspace is open.</p> : null}
-        {workspaces.map((workspace) => (
-          <button
-            key={workspace.id}
-            type="button"
-            aria-pressed={workspace.id === selectedId}
-            onClick={() => onSelect(workspace.id)}
-            style={{
-              ...text,
-              display: 'block',
-              width: '100%',
-              padding: 'var(--sem-space-xs) var(--sem-space-sm)',
-              border: 'none',
-              borderRadius: 'var(--sem-radius-control)',
-              textAlign: 'left',
-              cursor: 'pointer',
-              background: workspace.id === selectedId ? 'var(--sem-color-bg-selected)' : 'transparent',
-            }}
-          >
-            {workspace.name}
-          </button>
-        ))}
+        {workspaces.length === 0 ? (
+          <p className="se-muted" style={{ padding: 12 }}>
+            No workspace is open.
+          </p>
+        ) : null}
+        <ul className="se-list">
+          {workspaces.map((workspace) => (
+            <li key={workspace.id} className="se-list-row">
+              <button
+                type="button"
+                className="se-button"
+                aria-pressed={workspace.id === selectedId}
+                onClick={() => onSelect(workspace.id)}
+                style={{ width: '100%', justifyContent: 'flex-start' }}
+              >
+                {workspace.name}
+              </button>
+            </li>
+          ))}
+        </ul>
       </nav>
-      <section style={{ flex: 1, padding: 'var(--sem-space-lg)' }}>
+      <section style={{ flex: 1, padding: 16 }}>
         {selected === null ? (
-          <p style={muted}>Pick a workspace to see where it lives.</p>
+          <p className="se-muted">Pick a workspace to see where it lives.</p>
         ) : (
           <>
-            <h2 style={{ marginTop: 0, color: 'var(--sem-color-text-primary)' }}>{selected.name}</h2>
+            <h2 className="se-heading">{selected.name}</h2>
             <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 16px', margin: 0 }}>
-              <dt style={muted}>Folder</dt>
-              <dd style={{ margin: 0, fontFamily: 'var(--sem-font-family-mono)' }}>
+              <dt className="se-muted">Folder</dt>
+              <dd style={{ margin: 0, fontFamily: 'ui-monospace, monospace' }}>
                 {selected.folderPath ?? 'None (a workspace without a folder)'}
               </dd>
-              <dt style={muted}>Type</dt>
+              <dt className="se-muted">Type</dt>
               <dd style={{ margin: 0 }}>{selected.mode}</dd>
             </dl>
           </>
@@ -80,19 +67,25 @@ export function WorkspacesView({ workspaces, selectedId, onSelect }: WorkspacesV
   )
 }
 
-// `watchWorkspaces` calls back with the current list at once, then on every
-// change, so the door is drawn as soon as the first list arrives.
+// `workspace.list` answers the open workspaces now (permission
+// `workspace:read`); the door draws as soon as they arrive.
 export function WorkspacesDoor({ studio }: { studio: ExtensionMountStudio }) {
   const [workspaces, setWorkspaces] = useState<ModuleWorkspaceView[] | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  useEffect(() => studio.watchWorkspaces(setWorkspaces), [studio])
+  useEffect(() => {
+    void studio.host.call('workspace.list', {}).then(setWorkspaces, () => setWorkspaces([]))
+  }, [studio])
   useEffect(() => {
     if (workspaces !== null) studio.ready()
   }, [workspaces, studio])
 
   if (workspaces === null)
-    return <p style={{ ...text, ...muted, padding: 'var(--sem-space-lg)' }}>Reading workspaces…</p>
+    return (
+      <p className="se-muted" style={{ padding: 16 }}>
+        Reading workspaces…
+      </p>
+    )
   return <WorkspacesView workspaces={workspaces} selectedId={selectedId} onSelect={setSelectedId} />
 }
 

@@ -14,6 +14,7 @@ import {
 } from '../../main/modules/third-party-main-loader'
 import { readExtensionStandingContextSync } from '../../main/modules/extension-standing-context'
 import { createExtensionApprovalReader } from '../../main/modules/extension-approvals'
+import { createExtensionFrameGrant } from '../../main/modules/extension-frame-grant'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
@@ -81,10 +82,11 @@ export function createServerModules(deps: {
           message: `Extension "${request.moduleId}" is not running on this Studio.`,
         },
   )
-  hub.serveHostServicesFrom((moduleId, invoker) =>
+  // The host calls an extension's frames make, over the Studio RPC's `extension.call`.
+  hub.serveFrameCallsFrom(async (request) =>
     load
-      ? load.kernel.hostServicesFor(moduleId, invoker)
-      : { ok: false, code: 'extension_unavailable', message: `Extension "${moduleId}" is not running on this Studio.` },
+      ? load.kernel.callFrameMethod(request)
+      : { ok: false, code: 'unavailable', message: `Extension "${request.moduleId}" is not running on this Studio.` },
   )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
@@ -200,6 +202,8 @@ export function createServerModules(deps: {
         // What each extension runs under; its calls are refused once that approval is gone.
         extensionApprovals: thirdParty.approvals,
         currentApprovals: createExtensionApprovalReader(dataDir),
+        resolveFrameGrant: createExtensionFrameGrant({ approvals: createExtensionApprovalReader(dataDir), dataDir }),
+        frameFileExclusions: () => [dataDir, defaultUserModuleRoot()],
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
         deliverModuleEvent: (event) => hub.deliverEvent(event),

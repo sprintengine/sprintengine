@@ -210,9 +210,11 @@ An extension is a folder with an `extension.json` at its root, built against
 `@sprintengine/extension-sdk` and run by whatever Studio later loads it, so the
 contract between them — the manifest's fields, the `mount(root, studio)` a
 panel, door or settings section exports, the `activate(studio)` its worker
-exports, the `studio` objects (the SDK's `RendererHost` and `MainHost`) and
-the services behind the SDK's `get*Service` helpers — is a wire in the sense of
-this file, even though nothing crosses a network.
+exports, the `studio` objects (the frame's `ExtensionMountStudio` and the
+worker's `MainHost`) and the services behind the SDK's `get*Service` helpers —
+is a wire in the sense of this file. A surface's `studio` also crosses one: its
+calls travel as `postMessage` envelopes to the window that drew its frame, and
+on to the Studio as `extension.call`.
 
 - **The manifest.** `extension.json` (`manifestVersion: 1`) is validated by
   one strict validator in the SDK, which the app, the CLI and the templates all
@@ -250,7 +252,8 @@ this file, even though nothing crosses a network.
 - **Permissions and approvals.** `permissions` is a closed vocabulary
   (`EXTENSION_PERMISSIONS`), and every host method an extension can call has a
   row in the SDK's table (`EXTENSION_HOST_SERVICES`,
-  `EXTENSION_MAIN_HOST_METHODS`): the permission the extension's approval must
+  `EXTENSION_MAIN_HOST_METHODS`, and a surface's `EXTENSION_FRAME_METHODS`):
+  the permission the extension's approval must
   hold, and what whoever invoked it must hold, in the Studio protocol's
   permission names. Studio's gate checks both on every call and answers
   `not_permitted` or `approval_required`. Anything above the `content` tier
@@ -259,6 +262,47 @@ this file, even though nothing crosses a network.
   approval when it asks for no more. Adding a method adds its row; changing a
   row's requirement is a change to what an approved extension may do, and is
   said here.
+
+### Extension surfaces run in frames (no compatibility)
+
+A panel, door or settings section runs in a sandboxed frame of its own on
+every client that draws extensions (owner ruling: there are no users yet, so
+nothing keeps the in-window mount). The frame's document is built by the
+Studio (`extension.frame`, under the new capability `extension-frames`): its
+policy (no network, `sandbox allow-scripts`), the theme's tokens and Studio's
+kit, a bootstrap that builds `studio`, and the extension's verified entry. A
+browser loads it from the Studio's `/ext-frame/<hash>`, inside the Studio's
+wrapper document `/ext-frame-host/<hash>` on the same origin, whose policy
+(`frame-src` naming that one document, no script) keeps the frame from being
+navigated anywhere else; a desktop window,
+local or paired, stages it with its shell and loads it from
+`studio-ext://frame/<hash>`. The frame speaks an envelope
+(`{ se: 1, kind, … }`, `src/shared/extension-frames.ts`) to the window, which
+holds it to the frame's budget (64 KiB a message, 120 messages in 10 s) and
+passes each host call to the Studio as `extension.call`, checked there as the
+extension and as that window's connection. The call names its document
+(`frame`, the hash `extension.frame` answered with), and is held to what the
+approval held when the Studio built that document as well as to what it holds
+now; a document built before the approval grew, or one this Studio did not
+build, is refused `frame_outdated`, and the client draws the surface again.
+The frame posts `leaving` on `pagehide`, and the window drops its bridge. A
+client draws an extension's
+surfaces only where its Studio offers `extension-frames`; it says nothing
+about a Studio that does not.
+
+Gone at once, with nothing bridging them: the SDK's `RendererHost` and the
+in-window mount, `extension.rendererEntries` (now `extension.contributions`,
+which carries no code), `extension.setAppState` (an extension's Settings
+values are kept by its Studio and written from its frame with `settings.set`),
+the host services `extensionBacklog.*` and `extensionUsage.query` (a frame's
+`backlog.*` and `usage.query`), `getAssetUrl` and the `studio-module://`
+asset scheme, and the web listener's switch for extension scripts in a
+browser tab. New permissions `workspace-files:read` and
+`workspace-files:write` give a frame the files of a workspace's folder
+(`files.*`), and need `filesystem:read` / `filesystem:write` of whoever opened
+the surface. The approval of a `ui` extension says its code runs isolated and
+can do only what the person allows, unless it holds `workspace-files:write`,
+which is full access; a worker's says full access, as before.
 
 ### Permissions checked at the host; approvals replace trust (no compatibility)
 
@@ -930,6 +974,15 @@ from a window is the chat's `conversation.markUnread`. The window's 14
 `workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
 `chats:projectless-*` IPC channels are gone; a desktop's window and its own
 Studio are one build.
+`extension-frames` (2026-11-21) says the Studio draws its extensions'
+surfaces in frames: `extension.frame` (the document one surface is drawn from)
+and `extension.call` (a frame's host call, once per command id, naming the
+frame document it came from as `frame`), under
+`extensions:read`, each call held to the extension's approval, the approval
+its document was built under (`frame_outdated` when that is less), and the
+connection's own grant. A browser draws the frame inside
+`/ext-frame-host/<hash>`. Offered with `extension-host`. A client draws no
+extension surface without it.
 `extension-host` (2026-11-18) is the `modules` capability renamed, with
 everything it offered: modules are called extensions everywhere a person or a
 client reads it. Its methods are `extension.read`, `.operate`, `.list`,

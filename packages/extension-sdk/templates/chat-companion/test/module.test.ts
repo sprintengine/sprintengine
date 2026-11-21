@@ -8,7 +8,7 @@ import { test } from 'node:test'
 
 import { createElement } from 'react'
 
-import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
 
 import { CompanionPanel } from '../src/companion'
 import { activate } from '../src/main'
@@ -62,9 +62,9 @@ test('a bad request is answered, not thrown', async () => {
 test('the panel draws, and reaches the worker’s methods', async () => {
   const main = createFakeMainHost({ manifest })
   activate(main.host)
-  const renderer = createFakeRendererHost({ manifest, main })
-  const studio = renderer.studio({ point: 'panels', id: 'chats', workspaceId: 'ws-app' })
+  const frame = createFakeFrameStudio({ manifest, main })
+  const studio = frame.studio({ point: 'panels', id: 'chats', workspaceId: 'ws-app' })
   assert.match(await renderToHtml(createElement(CompanionPanel, { studio })), /Summarise this project/)
   assert.deepEqual(await studio.methods().read('list', {}), { ok: true, result: [] })
-  assert.deepEqual(renderer.undeclared, [])
+  assert.deepEqual(frame.undeclared, [])
 })

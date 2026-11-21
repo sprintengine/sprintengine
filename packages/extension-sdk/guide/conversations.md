@@ -1,12 +1,12 @@
-# Chats: the conversation service and openChat
+# Chats: the conversation service and chat drafts
 
 Studio runs agents as chats on the agent runtimes installed on the machine
 (Claude Code, Codex, and the rest). An extension works with agents in these
 ways, and only these:
 
-| | Where | Permission | Who sends |
+|  | Where | Permission | Who sends |
 | --- | --- | --- | --- |
-| `studio.openChat(input)` | surface | `chat:draft` (a draft) or `conversation:own` (needed for `send: true`) | The person: the prompt lands as a draft unless `send: true` |
+| `studio.host.call('chat.draft', input)` | surface | `chat:draft` | The person: the prompt lands as a draft in a new chat |
 | `getConversationService(studio)` | worker | `conversation:own` | The extension |
 | `getTextGenerationService(studio)` | worker | `agents:generate` | The extension: one prompt, one answer, no chat at all |
 | `getCompanionAgentsService(studio)` | worker | `agents:companion` | The extension: a background agent with a structured task API (the `api-main` topic) |
@@ -19,16 +19,16 @@ chats, read-only, is `getActivityService(studio)` behind the broad
 terminal-agent API; do not spawn agent CLIs from the worker to work around
 that.
 
-Check `studio.supports('conversations')` (the worker) or `studio.supports('chat.open')`
-(a surface) first, and tell the person when the host does not offer it.
+Check `studio.supports('conversations')` (the worker) or
+`studio.host.has('chat.draft')` (a surface) first, and tell the person when the
+host does not offer it.
 `studio.supports('conversation-controls')` says the host also takes the four
 presets, `setPermissionPreset`, `setModel` and approval `decision`s;
 `conversation-streams` says it takes `follow` and `commandId`;
 `conversation-requests`, `answerQuestion` and `resolvePlan`;
 `conversation-permissions`, `permissionMode` and `allowedTools`;
 `conversation-replies`, `reply` and `turn_completed`'s `text` and `usage`;
-`conversation-worktrees`, `create`'s `worktree`; `chat.open-options`
-(a surface), `openChat`'s `name` and `dedupeKey`; `chat-runtimes`,
+`conversation-worktrees`, `create`'s `worktree`; `chat-runtimes`,
 `MainHost.listChatRuntimes()`; and `text-generation`,
 `getTextGenerationService`.
 
@@ -36,37 +36,28 @@ presets, `setPermissionPreset`, `setModel` and approval `decision`s;
 
 One id space names an agent runtime everywhere a extension picks one: the id
 `listChatRuntimes()` lists (`claude-code`, `codex`, `cursor`, `opencode`,
-`grok`) is what `openChat`'s and `create`'s `cli`, a scheduled agent's `cli`,
+`grok`) is what `create`'s `cli`, a scheduled agent's `cli`,
 a companion's `engine.cli` and `generate`'s `cli` take. A companion's
 `engine.cli` also takes the conversation provider behind a runtime
-(`claude-agent`, `codex-agent`, …), its older spelling. A surface's
-`studio.listChatRuntimes()` answers at once; the worker's
+(`claude-agent`, `codex-agent`, …), its older spelling. The worker's
 `await studio.listChatRuntimes()` may probe which CLIs are installed (cached for
 a minute) and lists the missing ones with `available: false`.
 
-## openChat (a surface)
+## A chat draft (a surface)
 
 ```ts
-const opened = await studio.openChat({
-  workspaceId,                       // required; a workspace with a folder
+const opened = await studio.host.call('chat.draft', {
+  workspaceId, // required; a workspace with a folder
   prompt: 'Plan the change described in docs/plan.md.',
-  skills: ['my-skill'],              // optional: installed and invoked in the first turn
-  cli: 'codex', model: undefined,    // optional; absent = the runtime the person last chose
-  name: 'Plan: search rewrite',      // optional: the chat's title
-  dedupeKey: 'plan:search-rewrite',  // optional: asking again focuses this chat instead of opening another
-  send: false,                       // default: a draft
+  name: 'Plan: search rewrite', // optional: the chat's title
 })
-if (!opened.ok) showError(opened.message)  // not_permitted | unknown_workspace | workspace_folder_missing | cli_not_conversational | unavailable | invalid_input
-else studio.focusTab({ workspaceId, kind: 'chat', id: opened.agentId })  // openChat already focuses; this re-focuses later
+if (!opened.ok) showError(opened.message)
 ```
 
-Prefer the draft. A prompt the person reads before it runs is a prompt they
-agreed to, and a extension that only drafts declares just `chat:draft`.
-`dedupeKey` finds the chat this extension opened in the workspace under that key;
-when it is still there it comes to the front, the answer says
-`existing: true`, and nothing else in the input is applied (its draft is the
-person's by then, and nothing is sent). `listChatRuntimes()` lists
-`{ id, label, available, models, lastSelected }` for a picker of your own.
+The chat opens in the window that drew the surface, with the prompt in its
+composer: the person reads it and sends it. A prompt the person reads before it
+runs is a prompt they agreed to, so a surface only drafts; a chat the
+extension drives itself is the worker's (below).
 
 ## The conversation service (the worker)
 

@@ -16,8 +16,9 @@ import type {
 } from '../../../packages/studio-protocol/src/public'
 import type { BacklogItem, BacklogItemLink, BacklogItemStatus } from '../backlog/scan'
 
-// The wire shapes are the Studio protocol's (`module-services.ts`): a module's
-// window half sends these calls to its server, so they are defined there once.
+// The wire shapes are the Studio protocol's (`module-service-types.ts`): an
+// extension's frame reads these answers through `extension.call`, so they are
+// defined there once.
 export type ModuleBacklogErrorCode = StudioModuleBacklogErrorCode
 export type ModuleBacklogResult<T extends object = object> = StudioModuleBacklogAnswer<T>
 export type ModuleBacklogLocation = StudioModuleBacklogLocation

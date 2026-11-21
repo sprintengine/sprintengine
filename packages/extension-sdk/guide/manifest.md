@@ -149,7 +149,7 @@ markers.
 | `license` | string |  | 0.13.0 |  | Its licence, as an SPDX expression. |
 | `repository` | string |  | 0.13.0 |  | Where its source lives. |
 | `homepage` | string |  | 0.13.0 |  | Its home page. |
-| `permissions` | `workspace:read` \| `workspace:operate` \| `conversation:read` \| `backlog:read` \| `backlog:operate` \| `providers:read` \| `usage:read` \| `storage:own` \| `settings:own` \| `secrets:own` \| `notifications:show` \| `conversation:own` \| `conversation:bypass` \| `chat:draft` \| `schedules:own` \| `agents:generate` \| `agents:companion` \| `github:api` \| `tools:contribute`[] (at most 32) |  | 0.13.0 | ui | What it asks the person to allow. `content` and `declarative` extensions hold none. |
+| `permissions` | `workspace:read` \| `workspace:operate` \| `conversation:read` \| `backlog:read` \| `backlog:operate` \| `providers:read` \| `usage:read` \| `workspace-files:read` \| `workspace-files:write` \| `storage:own` \| `settings:own` \| `secrets:own` \| `notifications:show` \| `conversation:own` \| `conversation:bypass` \| `chat:draft` \| `schedules:own` \| `agents:generate` \| `agents:companion` \| `github:api` \| `tools:contribute`[] (at most 32) |  | 0.13.0 | ui | What it asks the person to allow. `content` and `declarative` extensions hold none. |
 | `main` | string |  | 0.13.0 | worker | The worker’s entry: a module whose `activate(studio)` (its default export, or a named `activate`) registers what it serves. Worker tier only, and required by it. |
 | `background` | boolean |  | 0.13.0 | worker | `true` keeps the worker running while the extension is on. |
 | `contributes` | object |  | 0.13.0 |  | What it adds to Studio. Every point defaults to empty. |

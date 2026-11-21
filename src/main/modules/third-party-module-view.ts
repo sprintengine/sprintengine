@@ -6,7 +6,7 @@ import type {
 import { approvalView } from './extension-approval-view'
 import { isExtensionRunnable } from './module-signature'
 import { readThirdPartyMainLaunchSnapshot, type ThirdPartyMainLaunchSnapshot } from './third-party-main-loader'
-import { rendererEntryView } from './third-party-renderer-entries'
+import { surfaceEntriesView } from './extension-surface-entries'
 import type { InstalledModule } from './user-module-registry'
 
 // One installed extension as `extension.installed` answers it: what is on disk,
@@ -38,7 +38,7 @@ function launchViewFor(
   return {
     ...mainEntryLaunchView(module, launchSnapshot, enablementOverrides),
     mainLoaded: launchSnapshot.loaded.has(module.key),
-    rendererEntry: rendererEntryView(module),
+    rendererEntry: surfaceEntriesView(module),
   }
 }
 

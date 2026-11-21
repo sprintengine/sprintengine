@@ -6,23 +6,27 @@ import type {
   StudioModuleDeclaredMethod,
   StudioModulesMethodMap,
   StudioModuleSummary,
+  ExtensionContributionsResult,
+  StudioExtensionFrameRequest,
   ThirdPartyModuleListResult,
-  ThirdPartyRendererEntriesResult,
 } from '../../../packages/studio-protocol/src/public'
+import { EXTENSION_FRAME_THEMES } from '../../shared/extension-frame-themes.generated'
+import { extensionFrameDocuments } from '../../server/extensions/frames/frame-cache'
+import { buildExtensionFrameDocument, extensionFrameHash } from '../../server/extensions/frames/frame-document'
 import {
   LIVE_ENABLED_MODULE_IDS,
   type CapabilityManifest,
   type ModuleResolutionErrorCode,
 } from '../../shared/modules/manifest'
 import { readModuleOverridesSync, writeModuleOverrides } from '../module-host/enablement-store'
-import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import { forgetModules, isModuleIdSegment } from './forget-modules'
-import { createModuleAssetOriginResolver } from './module-asset-origins'
 import type { ModuleRegistryMirror } from './registry-mirror'
 import { approvalView } from './extension-approval-view'
 import type { ThirdPartyLaunchSession } from './third-party-main-loader'
 import { toThirdPartyModuleView } from './third-party-module-view'
-import { collectThirdPartyRendererEntries } from './third-party-renderer-entries'
+import { collectExtensionContributions, readExtensionSurfaceEntry } from './extension-surface-entries'
+import { isExtensionRunnable } from './module-signature'
+import { pinExtensionFrame } from './extension-frame-grant'
 import { readExtensionStandingContextSync } from './extension-standing-context'
 import { accessGrowth, extensionAccess, writeExtensionApproval } from './extension-approvals'
 import { discoverUserModules, installModuleFolder } from './user-module-registry'
@@ -39,16 +43,18 @@ import { discoverUserModules, installModuleFolder } from './user-module-registry
 //   start otherwise.
 // - Installing, approving and uninstalling change what is on disk and in the
 //   approvals (extension-approvals.ts); the kernel reads them at its next
-//   start. `changed` tells the windows, which load an approved extension's
-//   window half again. Installing a new version of an approved extension keeps
+//   start. `changed` tells the clients, which list what the approved
+//   extensions add again. Installing a new version of an approved extension keeps
 //   the approval when it asks for no more access; otherwise it waits.
 // - Listing the installed extensions (`extension.installed`) reads the disk, the
-//   approvals and the receipts now, with what this server run loaded; the
-//   window halves (`extension.rendererEntries`) are read and checked against
-//   their verified bytes per request, so an uninstall applies at once.
-// - The modules' Settings values (`extension.setAppState`) are kept in the data
-//   folder for their main halves; the registry a window resolved
-//   (`extension.reportRegistry`) is kept in memory for the agents' tools.
+//   approvals and the receipts now, with what this server run loaded; what
+//   the approved extensions add to a client (`extension.contributions`) is read
+//   per request, so an uninstall applies at once.
+// - A surface's frame document (`extension.frame`) is built per request from
+//   its entry, read and checked against its verified bytes then, and kept by
+//   hash for the web listener to serve (server/extensions/frames).
+// - The registry a window resolved (`extension.reportRegistry`) is kept in
+//   memory for the agents' tools.
 // Every change runs one at a time: two switches arriving together must not
 // each write the overrides they read before the other's.
 
@@ -105,8 +111,11 @@ export type ModuleLifecycle = {
   approve(moduleId: string, fingerprint: string): Promise<Answer<'extension.approve'>>
   uninstall(moduleId: string): Promise<Answer<'extension.uninstall'>>
   installed(): Promise<ThirdPartyModuleListResult>
-  rendererEntries(): Promise<ThirdPartyRendererEntriesResult>
-  setAppState(state: Record<string, Record<string, unknown>>): void
+  contributions(): Promise<ExtensionContributionsResult>
+  /** One surface's frame document, or why it is not drawn here. */
+  frame(
+    request: StudioExtensionFrameRequest,
+  ): Promise<{ ok: true; hash: string; html: string } | { ok: false; message: string }>
   reportRegistry(snapshot: unknown): ModuleRegistrySnapshotWriteResult
 }
 
@@ -158,10 +167,6 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     message: error instanceof Error ? error.message : String(error),
   })
 
-  // Built when first asked: the secret it keeps is written on first use.
-  let assetOrigin: ((moduleId: string) => string) | undefined
-  const assetOriginOf = (moduleId: string) => (assetOrigin ??= createModuleAssetOriginResolver(deps.dataDir))(moduleId)
-
   return {
     list() {
       const view = deps.view()
@@ -182,13 +187,33 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
       }
     },
 
-    async rendererEntries() {
+    async contributions() {
       const { modules } = await discoverUserModules(deps.moduleRoot(), standingContext())
-      return collectThirdPartyRendererEntries(modules, assetOriginOf)
+      return collectExtensionContributions(modules)
     },
 
-    setAppState(state) {
-      moduleAppStateMirrorFor(deps.dataDir).set(state)
+    async frame({ moduleId, point, id, theme }) {
+      const unavailable = {
+        ok: false as const,
+        message: `Extension "${moduleId}" is not available here: it is not installed, not approved as it is now, or switched off.`,
+      }
+      const target = await installed(moduleId)
+      if (!target || !isExtensionRunnable(target.standing)) return unavailable
+      if (readModuleOverridesSync(deps.dataDir)[moduleId] === false) return unavailable
+      const entry = await readExtensionSurfaceEntry(target, point, id)
+      if (!entry.ok) return entry
+      const html = buildExtensionFrameDocument({
+        surface: { point, id },
+        entryPath: entry.entryPath,
+        entryCode: entry.code,
+        theme:
+          theme !== undefined && Object.hasOwn(EXTENSION_FRAME_THEMES, theme) ? EXTENSION_FRAME_THEMES[theme]! : null,
+      })
+      const hash = extensionFrameHash(html)
+      extensionFrameDocuments.put(hash, html)
+      // What this document's calls may use at most: what the approval held now.
+      pinExtensionFrame(hash, moduleId, standingContext().approvals.get(moduleId)?.access.permissions ?? [])
+      return { ok: true, hash, html }
     },
 
     reportRegistry: (snapshot) => deps.registry.write(snapshot),

@@ -42,9 +42,11 @@ up there first, with the validator Studio itself runs.
 | A call answers `extension_unavailable` | The worker is not running on that Studio: switched off, refused or failed to load (see Settings) |
 | A call answers `extension_method_unknown` | No method of that name, or it is declared with the other access (`read` vs `operate`) |
 | A call answers `invalid_params` | Your own params validator refused what was sent; the message is yours |
-| `openChat` → `not_permitted` | Declare `chat:draft`, or `conversation:own` to send |
-| `openChat` → `workspace_folder_missing` | Chats need a workspace with a folder |
-| `openChat` → `unavailable` | This window cannot open chats; try the main window |
+| `chat.draft` → `not_permitted` | Declare `chat:draft` |
+| `chat.draft` → `workspace_folder_missing` | Chats need a workspace with a folder |
+| `chat.draft` → `unavailable` | This window cannot open chats; try the main window |
+| A `host.call` → `not_permitted` naming a permission the extension holds | Whoever opened the surface (a paired device, a browser) does not hold it themselves |
+| A surface's `fetch` or image URL fails | A surface has no network: bundle the data, inline images as `data:` URLs |
 | Conversation service → `not_owned` | The chat was not created by this extension |
 | `studio.supports('…')` is false | This Studio (or its providing module) does not offer it; degrade with a message |
 | Secrets → `origin_not_allowed` | The URL's origin was not in `allowedOrigins` when the secret was set; set it again with the origin |

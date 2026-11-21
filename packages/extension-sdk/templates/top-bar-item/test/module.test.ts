@@ -7,7 +7,7 @@ import { test } from 'node:test'
 
 import { createElement } from 'react'
 
-import { createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { createFakeFrameStudio, renderToHtml } from '@sprintengine/extension-sdk/testing'
 
 import { FocusTimer, formatRemaining } from '../src/timer'
 import { manifest } from './manifest'
@@ -26,15 +26,17 @@ test('the top bar button opens the timer door', () => {
 })
 
 test('with no timer running, the door offers to start one', async () => {
-  const renderer = createFakeRendererHost({ manifest })
-  const html = await renderToHtml(createElement(FocusTimer, { studio: renderer.studio(surface) }))
+  const frame = createFakeFrameStudio({ manifest })
+  const html = await renderToHtml(createElement(FocusTimer, { studio: frame.studio(surface), initialEndsAt: null }))
   assert.match(html, /Start 25 minutes of focus/)
-  assert.deepEqual(renderer.undeclared, [], 'everything it used is declared in extension/extension.json')
+  assert.deepEqual(frame.undeclared, [], 'everything it used is declared in extension/extension.json')
 })
 
 test('a timer that ran out says so', async () => {
-  const renderer = createFakeRendererHost({ manifest, appState: { focusEndsAt: Date.now() - 1000 } })
-  const html = await renderToHtml(createElement(FocusTimer, { studio: renderer.studio(surface) }))
+  const frame = createFakeFrameStudio({ manifest })
+  const html = await renderToHtml(
+    createElement(FocusTimer, { studio: frame.studio(surface), initialEndsAt: Date.now() - 1000 }),
+  )
   assert.match(html, /Time is up/)
 })
 

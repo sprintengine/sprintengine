@@ -1,8 +1,3 @@
-import { moduleAssetUrl } from '../../../shared/modules/assets'
-import {
-  EXTENSION_RENDERER_METHODS,
-  extensionRendererRefusalMessage,
-} from '../../../../packages/extension-sdk/src/services'
 import type { ComponentType, LazyExoticComponent } from 'react'
 import type { RowBadge } from '../components/workspace/SidebarNavButton'
 
@@ -34,18 +29,7 @@ import type {
   ModuleOpenChatResult,
 } from '../../../shared/modules/conversation-service'
 import { getWorkspaceChatOpener } from './chat-opener'
-import type {
-  BacklogWatchError,
-  BacklogWatchOptions,
-  ModuleBacklogCreated,
-  ModuleBacklogCreateInput,
-  ModuleBacklogLinkInput,
-  ModuleBacklogLocation,
-  ModuleBacklogResult,
-  ModuleBacklogTriageInput,
-} from '../../../shared/modules/backlog-service'
-import type { UsageQuery, UsageQueryResult } from '../../../shared/modules/activity-service'
-import type { StudioModuleServicesMethodMap } from '../../../../packages/studio-protocol/src/public'
+import type { BacklogWatchError, BacklogWatchOptions } from '../../../shared/modules/backlog-service'
 import { publishSurfaceView } from '../components/workspace/surfaceView'
 import { copy as appCopy } from '../../../shared/copy'
 
@@ -830,42 +814,6 @@ export type ModuleMethodCall = {
 // every refusal, the host's or the module's, is an answer.
 export type ModuleMethodCaller = (call: ModuleMethodCall) => Promise<ModuleCallAnswer<ModuleMethodContract>>
 
-/** A host service a module's renderer half calls on its server: `extensionBacklog.*`, `extensionUsage.query`. */
-export type ModuleServiceMethod = keyof StudioModuleServicesMethodMap
-/** What a host-service call takes: the protocol's params, less the command id the caller makes. */
-export type ModuleServiceParams<M extends ModuleServiceMethod> = Omit<
-  StudioModuleServicesMethodMap[M]['params'],
-  'commandId'
->
-/** What it answers: the service's own result, its refusals included. */
-export type ModuleServiceAnswer<M extends ModuleServiceMethod> = StudioModuleServicesMethodMap[M]['result']
-
-// Caller of the host's services: modules/index.ts wires it over the window's
-// Studio client. It never throws: a refusal the protocol or the connection
-// gave comes back in the service's own vocabulary (`moduleServiceRefusal`).
-export type ModuleServiceCaller = <M extends ModuleServiceMethod>(
-  method: M,
-  params: ModuleServiceParams<M>,
-) => Promise<ModuleServiceAnswer<M>>
-
-/**
- * A refusal of a host-service call in the service's words: params the
- * protocol refused are the service's `invalid_input`, anything else its
- * "unavailable" code (`backlog_unavailable` for the Backlog).
- */
-export function moduleServiceRefusal<M extends ModuleServiceMethod>(
-  method: M,
-  code: string,
-  message: string,
-): ModuleServiceAnswer<M> {
-  const unavailable = method.startsWith('extensionBacklog.') ? 'backlog_unavailable' : 'unavailable'
-  return {
-    ok: false,
-    code: code === 'invalid_params' || code === 'too_large' ? 'invalid_input' : unavailable,
-    message,
-  } as ModuleServiceAnswer<M>
-}
-
 // ── Shell feedback, links and context for module code ──────────────────────
 
 /** A toast's tone: the toast region's own vocabulary (components/ui/tokens `Tone`). */
@@ -918,8 +866,6 @@ export type RendererHost = {
   readonly moduleId: string
   /** Whether this host provides `capability` now; false for names it does not know. */
   supports(capability: HostCapability): boolean
-  /** Stable URL for a file packaged inside this trusted module. Relative HTML assets and workers retain this module origin. */
-  getAssetUrl(relativePath: string): string
   registerPanel(componentId: string, component: WorkspacePanelComponent): void
   registerWorkspaceType(definition: WorkspaceTypeDefinition): void
   /** Create or focus a workspace of this module's zero-config type. */
@@ -1016,22 +962,6 @@ export type RendererHost = {
    * watch stays open. Requires `backlog:read`.
    */
   watchBacklogItems(workspaceId: string, cb: (items: BacklogItem[]) => void, options?: BacklogWatchOptions): () => void
-  // ── Backlog writes and usage: the protocol's `extensionBacklog.*` and ──
-  // `extensionUsage.query` on the module's server. Result-shaped, never a throw.
-  getBacklogLocation(workspaceId: string): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>>
-  createBacklogItem(
-    workspaceId: string,
-    input: ModuleBacklogCreateInput,
-  ): Promise<ModuleBacklogResult<ModuleBacklogCreated>>
-  updateBacklogStatus(workspaceId: string, itemId: string, status: BacklogItemStatus): Promise<ModuleBacklogResult>
-  updateBacklogTriage(
-    workspaceId: string,
-    itemId: string,
-    triage: ModuleBacklogTriageInput,
-  ): Promise<ModuleBacklogResult>
-  addBacklogLink(workspaceId: string, itemId: string, link: ModuleBacklogLinkInput): Promise<ModuleBacklogResult>
-  updateBacklogModuleMetadata(workspaceId: string, itemId: string, value: unknown): Promise<ModuleBacklogResult>
-  queryUsage(query: UsageQuery): Promise<UsageQueryResult>
   /**
    * Resolve a workspace id to its read-only view. Null means "not currently
    * resolvable" — an unknown id, or early boot before the shell wires the
@@ -1338,7 +1268,6 @@ export type RendererKernel = {
    * every lookup resolves to null.
    */
   setWorkspaceResolver(resolver: (workspaceId: string) => ModuleWorkspaceView | null): void
-  setModuleAssetOrigin(moduleId: string, origin: string): void
   setWorkspaceOpener(opener: (typeId: string) => Promise<string>): void
   /**
    * Surface backend for `RendererHost.openGlobalSurface` / `openModalSurface`.
@@ -1377,12 +1306,6 @@ export type RendererKernel = {
    * is answered `unavailable`.
    */
   setModuleMethodCaller(caller: ModuleMethodCaller): void
-  /**
-   * Caller for the Backlog writes and `queryUsage`. Wired once at boot by
-   * modules/index.ts over the window's Studio client; absent, a call is
-   * answered with the service's "unavailable" refusal.
-   */
-  setModuleServiceCaller(caller: ModuleServiceCaller): void
   /**
    * Working-root source for `RendererHost.getWorkingRoot`. Wired once at boot
    * by modules/index.ts (store + worktree resolution); absent (early boot,
@@ -1518,7 +1441,6 @@ export function createRendererHost(): RendererKernel {
   const globalSurfaces = new Map<string, RegisteredGlobalSurface>()
   const modalSurfaces = new Map<string, RegisteredModalSurface>()
   let backlogReader: { moduleId: string; reader: BacklogReader } | null = null
-  const moduleAssetOrigins = new Map<string, string>()
   let moduleEnabledResolver: ((moduleId: string) => boolean) | null = null
   let workspaceResolver: ((workspaceId: string) => ModuleWorkspaceView | null) | null = null
   let workspaceOpener: ((typeId: string) => Promise<string>) | null = null
@@ -1535,7 +1457,6 @@ export function createRendererHost(): RendererKernel {
   const moduleEventSubscribers = new Set<ModuleEventSubscriber>()
   let detachModuleEventSource: (() => void) | null = null
   let moduleMethodCaller: ModuleMethodCaller | null = null
-  let moduleServiceCaller: ModuleServiceCaller | null = null
   type ModuleAppStateWatcher = {
     moduleId: string
     cb: (values: Readonly<Record<string, unknown>>) => void
@@ -1604,57 +1525,6 @@ export function createRendererHost(): RendererKernel {
       throw new Error('Backlog is turned off.')
     }
     return backlogReader.reader
-  }
-  // An extension's surface reaches this window's host through a stand-in that
-  // refuses what its approval does not cover (EXTENSION_RENDERER_METHODS), as
-  // the server's gate refuses its calls there. A bundled module is the app's
-  // own code and asks for nothing. (The surface runs in this window until
-  // frames, so this holds an honest extension to what it asked for.)
-  const gatedRendererHost = (
-    moduleId: string,
-    manifest: CapabilityManifest,
-    host: InternalRendererHost,
-  ): InternalRendererHost => {
-    // The window serves only an approved extension's surfaces, so its manifest's are the approved permissions.
-    const granted = manifest.permissions ?? []
-    const gated = { ...host } as Record<string, unknown>
-    for (const [method, requirement] of Object.entries(EXTENSION_RENDERER_METHODS)) {
-      const member = (host as unknown as Record<string, unknown>)[method]
-      if (typeof member !== 'function' || method === 'openChat') continue
-      gated[method] = (...args: unknown[]) => {
-        if (requirement.permissions.some((permission) => granted.includes(permission)))
-          return (member as (...given: unknown[]) => unknown).apply(host, args)
-        const message = extensionRendererRefusalMessage(moduleId, method, requirement.permissions)
-        if (requirement.refusal === 'answer') return Promise.resolve({ ok: false, code: 'not_permitted', message })
-        if (requirement.refusal === 'reject') return Promise.reject(new Error(message))
-        throw new Error(message)
-      }
-    }
-    return gated as unknown as InternalRendererHost
-  }
-  // A call into one of the host's services on the module's server, which
-  // checks the module's permission. A refusal comes back as data.
-  const callModuleService = <M extends ModuleServiceMethod>(
-    method: M,
-    params: ModuleServiceParams<M>,
-  ): Promise<ModuleServiceAnswer<M>> =>
-    moduleServiceCaller
-      ? moduleServiceCaller(method, params)
-      : Promise.resolve(moduleServiceRefusal(method, 'unavailable', 'The host services are not available here.'))
-  // The Backlog writes follow the Backlog module's enablement like its reads:
-  // switched off, the Backlog is off for modules too.
-  const callBacklog = <M extends Exclude<ModuleServiceMethod, 'extensionUsage.query'>>(
-    method: M,
-    params: ModuleServiceParams<M>,
-  ): Promise<ModuleServiceAnswer<M>> => {
-    if (backlogReader && moduleEnabledResolver && !moduleEnabledResolver(backlogReader.moduleId)) {
-      return Promise.resolve({
-        ok: false,
-        code: 'backlog_unavailable',
-        message: appCopy.modules.rendererHost.theBacklogModuleIsDisabled,
-      } as ModuleServiceAnswer<M>)
-    }
-    return callModuleService(method, params)
   }
   const enabledModuleCommands = (moduleEnabled?: (moduleId: string) => boolean): RegisteredModuleCommand[] =>
     [...moduleCommands.values()]
@@ -1999,38 +1869,6 @@ export function createRendererHost(): RendererKernel {
               : undefined,
           )
         },
-        getBacklogLocation(workspaceId) {
-          return callBacklog('extensionBacklog.location', { moduleId, workspaceId })
-        },
-        createBacklogItem(workspaceId, input) {
-          return callBacklog('extensionBacklog.create', { moduleId, workspaceId, input })
-        },
-        updateBacklogStatus(workspaceId, itemId, status) {
-          return callBacklog('extensionBacklog.updateStatus', { moduleId, workspaceId, itemId, status })
-        },
-        updateBacklogTriage(workspaceId, itemId, triage) {
-          return callBacklog('extensionBacklog.updateTriage', { moduleId, workspaceId, itemId, triage })
-        },
-        addBacklogLink(workspaceId, itemId, link) {
-          return callBacklog('extensionBacklog.addLink', { moduleId, workspaceId, itemId, link })
-        },
-        updateBacklogModuleMetadata(workspaceId, itemId, value) {
-          return callBacklog('extensionBacklog.updateModuleMetadata', {
-            moduleId,
-            workspaceId,
-            itemId,
-            ...(value === undefined ? {} : { value }),
-          })
-        },
-        queryUsage(query) {
-          return callModuleService('extensionUsage.query', { moduleId, query })
-        },
-        getAssetUrl(relativePath) {
-          if (moduleEnabledResolver && !moduleEnabledResolver(moduleId)) throw new Error('Module is disabled.')
-          const origin = moduleAssetOrigins.get(moduleId)
-          if (!origin) throw new Error('Module assets are unavailable until its trusted entry loads.')
-          return moduleAssetUrl(moduleId, relativePath, origin)
-        },
         async getWorkspace(workspaceId) {
           return workspaceResolver ? workspaceResolver(workspaceId) : null
         },
@@ -2284,7 +2122,7 @@ export function createRendererHost(): RendererKernel {
           }
         },
       }
-      return manifest?.source === 'third-party' ? gatedRendererHost(moduleId, manifest, host) : host
+      return host
     },
     getPanel(componentId) {
       return panels.get(componentId)
@@ -2418,9 +2256,6 @@ export function createRendererHost(): RendererKernel {
     setModuleMethodCaller(caller) {
       moduleMethodCaller = caller
     },
-    setModuleServiceCaller(caller) {
-      moduleServiceCaller = caller
-    },
     setModuleEventSource(source) {
       // One listener on the source, whoever subscribed and whenever. Re-wiring
       // replaces the old attachment rather than stacking a second dispatcher.
@@ -2429,10 +2264,6 @@ export function createRendererHost(): RendererKernel {
     },
     setWorkspaceResolver(resolver) {
       workspaceResolver = resolver
-    },
-    setModuleAssetOrigin(moduleId, origin) {
-      if (!/^studio-module:\/\/[a-f0-9]{64}$/.test(origin)) throw new Error('Invalid module asset origin.')
-      moduleAssetOrigins.set(moduleId, origin)
     },
     setWorkspaceOpener(opener) {
       workspaceOpener = opener

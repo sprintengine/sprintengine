@@ -40,6 +40,9 @@ const bare: CapabilityManifest = {
 }
 const bundled: CapabilityManifest = { id: 'bundled', displayName: 'Bundled', version: 1, defaultEnabled: true }
 
+/** The frame document a call names; a kernel with no frame grant reader does not read it. */
+const FRAME = 'a'.repeat(64)
+
 /** A paired device with workspace access only, over its Studio connection. */
 const DEVICE: ExtensionInvoker = {
   principal: studioGrantPrincipal({ owner: false, scopes: ['workspaces:read', 'workspaces:operate'] }),
@@ -204,23 +207,52 @@ test('an extension’s method runs as whoever called it, and what it reaches is 
   assert.deepEqual(calls, ['list:local.reader'])
 })
 
-test('a window half’s host services are held to the connection that sent the call', async () => {
+test('a frame’s host calls are held to the extension’s approval and to the connection that drew it', async () => {
   const { kernel, calls } = setup()
-  const found = kernel.hostServicesFor('local.reader', DEVICE)
-  assert.ok(found.ok)
-  const refused = await found.services.backlog!.create('local.reader', 'ws', { title: 'x' })
+  const call = (moduleId: string, method: string, invoker: ExtensionInvoker, params: unknown = {}) =>
+    kernel.callFrameMethod({ moduleId, frame: FRAME, method, params, clientId: 'c', commandId: 'k', invoker })
+  const create = { workspaceId: 'ws', input: { title: 'x' } }
+  // The device holds no backlog:operate of its own.
+  const refused = await call('local.reader', 'backlog.create', DEVICE, create)
   assert.equal(!refused.ok && refused.code, 'not_permitted')
-  const asOwner = kernel.hostServicesFor('local.reader', ownerInvoker())
-  assert.ok(asOwner.ok)
-  assert.deepEqual(await asOwner.services.backlog!.create('local.reader', 'ws', { title: 'x' }), { ok: true })
+  assert.deepEqual(await call('local.reader', 'backlog.create', ownerInvoker(), create), {
+    ok: true,
+    result: { ok: true },
+  })
+  // The extension was not approved for it, whoever asks.
+  const bareCall = await call('local.bare', 'backlog.create', ownerInvoker(), create)
+  assert.equal(!bareCall.ok && bareCall.code, 'not_permitted')
+  // Naming one of the app's own modules reaches nothing: frames are extensions'.
+  const named = await call('bundled', 'backlog.create', ownerInvoker(), create)
+  assert.equal(!named.ok && named.code, 'approval_required')
+  // A method no row names is refused before anything runs.
+  const unknown = await call('local.reader', 'shell.run', ownerInvoker())
+  assert.equal(!unknown.ok && unknown.code, 'unknown_method')
   assert.deepEqual(calls, ['backlog:local.reader'])
-  // The module id is the client's word: naming one of the app's own modules
-  // does not skip what the connection itself must hold.
-  const named = kernel.hostServicesFor('bundled', DEVICE)
-  assert.ok(named.ok)
-  const viaBundled = await named.services.backlog!.create('bundled', 'ws', { title: 'x' })
-  assert.equal(!viaBundled.ok && viaBundled.code, 'not_permitted')
-  assert.deepEqual(calls, ['backlog:local.reader'])
+})
+
+test('a frame’s client method is admitted at the host and carried out by the window', async () => {
+  const { kernel } = setup()
+  const call = (moduleId: string, method: string, invoker: ExtensionInvoker) =>
+    kernel.callFrameMethod({ moduleId, frame: FRAME, method, params: {}, clientId: 'c', commandId: 'k', invoker })
+  assert.deepEqual(await call('local.reader', 'toast', ownerInvoker()), { ok: true, result: null })
+  // A draft needs `chat:draft`, which neither extension was approved for.
+  const draft = await call('local.reader', 'chat.draft', ownerInvoker())
+  assert.equal(!draft.ok && draft.code, 'not_permitted')
+})
+
+test('an extension no longer approved has its frame calls refused as unavailable', async () => {
+  const { kernel } = setup(() => null)
+  const refused = await kernel.callFrameMethod({
+    moduleId: 'local.reader',
+    frame: FRAME,
+    method: 'backlog.location',
+    params: { workspaceId: 'ws' },
+    clientId: 'c',
+    commandId: 'k',
+    invoker: ownerInvoker(),
+  })
+  assert.equal(!refused.ok && refused.code, 'approval_required')
 })
 
 test('the app’s own modules are not held to the gate', async () => {

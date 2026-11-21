@@ -11,12 +11,42 @@ import {
   signExtensionFolder,
   writeExtensionFolder,
 } from '../../../tests/extension-folder'
-import { capabilityManifestOf } from '../../shared/modules/third-party-manifest'
+import { capabilityManifestOf, EXTENSION_SURFACE_POINTS } from '../../shared/modules/third-party-manifest'
 import type { ExtensionStandingContext } from './module-signature'
 import { approvedContext } from './extension-approvals.test-helper'
-import { collectThirdPartyRendererEntries, rendererEntryView } from './third-party-renderer-entries'
+import {
+  collectExtensionContributions,
+  readExtensionSurfaceEntry,
+  surfaceEntriesView as rendererEntryView,
+} from './extension-surface-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
 import { test } from 'vitest'
+
+/**
+ * What a client is offered (`extension.contributions`), with every surface's
+ * entry read as a frame would read it: the entries by path, or the
+ * extension's failure.
+ */
+async function offeredAndDrawn(modules: readonly InstalledModule[]) {
+  const contributions = collectExtensionContributions(modules)
+  const failures: Record<string, string> = { ...contributions.failures }
+  const entries: Array<(typeof contributions.extensions)[number] & { entries: Record<string, string> }> = []
+  for (const extension of contributions.extensions) {
+    const installed = modules.find((module) => module.key === extension.id)!
+    const code: Record<string, string> = {}
+    let failed: string | null = null
+    for (const point of EXTENSION_SURFACE_POINTS) {
+      for (const contribution of installed.extension.contributes[point]) {
+        const read = await readExtensionSurfaceEntry(installed, point, contribution.id)
+        if (read.ok) code[read.entryPath] = read.code
+        else failed = read.message
+      }
+    }
+    if (failed) failures[extension.id] = failed
+    else entries.push({ ...extension, entries: code })
+  }
+  return { entries, failures }
+}
 
 const EMPTY_TRUST: ExtensionStandingContext = { approvals: new Map() }
 const ABSOLUTE_PATH_PATTERN = /(^|[\s'"])(?:\/[\w.-]|[A-Za-z]:\\)/
@@ -75,7 +105,7 @@ test('only an approved extension’s entries are served', async () => {
       'local.unapproved': ['unsigned', 'pending'],
     })
 
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(
       served.entries.map((entry) => entry.id),
       ['local.approved'],
@@ -83,7 +113,6 @@ test('only an approved extension’s entries are served', async () => {
     assert.deepEqual(served.entries[0]!.entries, { 'dist/panel.js': HELLO_MOUNT_SOURCE })
     assert.equal(served.entries[0]!.extension.id, 'approved')
     assert.equal(served.entries[0]!.manifest.id, 'local.approved')
-    assert.equal(served.entries[0]!.assetOrigin, undefined)
     assert.deepEqual(served.failures, {}, 'extensions waiting for approval are not serving failures')
 
     const views = Object.fromEntries(modules.map((module) => [module.key, rendererEntryView(module)]))
@@ -107,7 +136,7 @@ test('each distinct entry is served once, whichever surfaces share it', async ()
       files: { 'dist/panel.js': HELLO_MOUNT_SOURCE, 'dist/settings.mjs': 'export function mount() {}\n' },
     })
     const { modules } = await discoverUserModules(root, grantsFor(folder))
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(Object.keys(served.entries[0]!.entries), ['dist/panel.js', 'dist/settings.mjs'])
   })
 })
@@ -128,7 +157,7 @@ test('an approved code-free extension is served with no entries', async () => {
     })
     const { modules } = await discoverUserModules(root, grantsFor(folder))
     assert.equal(rendererEntryView(modules[0]!).availability, 'none')
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(
       served.entries.map((entry) => [entry.id, entry.entries]),
       [['local.aliases', {}]],
@@ -176,7 +205,7 @@ test('an entry outside the extension’s folder is never served', async () => {
       assert.equal(view.message, 'entry must resolve inside the module root.')
       assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
-      const served = await collectThirdPartyRendererEntries([crafted])
+      const served = await offeredAndDrawn([crafted])
       assert.deepEqual(served.entries, [], `${id} entry is never served, even for an approved extension`)
       assert.equal(served.failures[id], 'entry must resolve inside the module root.')
     }
@@ -213,7 +242,7 @@ test('a changed file takes an approved extension out of the served set', async (
 
     const before = await discoverUserModules(root, approvals)
     assert.equal(before.modules[0]!.standing.approval.state, 'approved')
-    assert.equal((await collectThirdPartyRendererEntries(before.modules)).entries.length, 1)
+    assert.equal((await offeredAndDrawn(before.modules)).entries.length, 1)
 
     await writeFile(
       join(folder, 'extension.json'),
@@ -221,7 +250,7 @@ test('a changed file takes an approved extension out of the served set', async (
     )
     const after = await discoverUserModules(root, approvals)
     assert.equal(after.modules[0]!.standing.approval.state, 'pending')
-    const served = await collectThirdPartyRendererEntries(after.modules)
+    const served = await offeredAndDrawn(after.modules)
     assert.deepEqual(served.entries, [], 'changed content is no longer servable')
     assert.equal(rendererEntryView(after.modules[0]!).availability, 'blocked')
   })
@@ -239,20 +268,20 @@ test('a missing entry is a serving failure; a content-only extension with no ent
     const missingModule = modules.find((module) => module.key === 'local.missing-entry')!
     const view = rendererEntryView(missingModule)
     assert.equal(view.availability, 'error')
-    assert.equal(view.message, 'The window entry dist/panel.js is missing.')
+    assert.equal(view.message, 'The surface entry dist/panel.js is missing.')
     assert.doesNotMatch(view.message ?? '', ABSOLUTE_PATH_PATTERN)
 
     const contentOnly = modules.find((module) => module.key === 'local.content-only')!
     assert.equal(contentOnly.standing.approval.state, 'not-needed')
     assert.equal(rendererEntryView(contentOnly).availability, 'none')
 
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     // Content needs no approval: it is served, with nothing to run.
     assert.deepEqual(
       served.entries.map((entry) => [entry.id, entry.entries]),
       [['local.content-only', {}]],
     )
-    assert.equal(served.failures['local.missing-entry'], 'The window entry dist/panel.js is missing.')
+    assert.equal(served.failures['local.missing-entry'], 'The surface entry dist/panel.js is missing.')
     assert.equal('local.content-only' in served.failures, false)
   })
 })
@@ -262,26 +291,11 @@ test('an entry that changed after verification is not served', async () => {
     const folder = writePanelExtension(root, 'swapped')
     const { modules } = await discoverUserModules(root, grantsFor(folder))
     await writeFile(join(folder, 'dist', 'panel.js'), 'export function mount() { /* swapped */ }\n')
-    const served = await collectThirdPartyRendererEntries(modules)
+    const served = await offeredAndDrawn(modules)
     assert.deepEqual(served.entries, [])
     assert.equal(
       served.failures['local.swapped'],
-      'A window entry changed after the extension was verified, so it was not served.',
-    )
-  })
-})
-
-// What `extension.rendererEntries` serves: only the approved entries, each with
-// the private origin its assets are served at in this Studio's windows.
-test('each served extension carries its asset origin', async () => {
-  await withTempDir(async (root) => {
-    const approved = writePanelExtension(root, 'approved')
-    writePanelExtension(root, 'unapproved')
-    const { modules } = await discoverUserModules(root, grantsFor(approved))
-    const result = await collectThirdPartyRendererEntries(modules, (id) => `module-asset://${id}.test`)
-    assert.deepEqual(
-      result.entries.map((entry) => [entry.id, entry.assetOrigin]),
-      [['local.approved', 'module-asset://local.approved.test']],
+      'A surface’s entry changed after the extension was verified, so it was not drawn.',
     )
   })
 })

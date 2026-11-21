@@ -1,4 +1,4 @@
-import { app, ipcMain, protocol, session, shell } from 'electron'
+import { app, ipcMain, protocol, shell } from 'electron'
 import { shellTrash } from './cards/shell-trash'
 import { createElectronThumbnailer } from './artifacts/artifact-thumbnail-electron'
 import { askToSetUpArtifacts } from './artifacts/artifacts-setup-consent-electron'
@@ -16,8 +16,9 @@ import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
 import type { CapabilityManifest } from '../shared/modules/manifest'
 import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
-import { isExtensionRunnable, type ExtensionStandingContext } from './modules/module-signature'
+import type { ExtensionStandingContext } from './modules/module-signature'
 import { createExtensionApprovalReader } from './modules/extension-approvals'
+import { createExtensionFrameGrant } from './modules/extension-frame-grant'
 import { readExtensionStandingContextSync } from './modules/extension-standing-context'
 import {
   planThirdPartyMainModules,
@@ -26,12 +27,8 @@ import {
   recordThirdPartyMainLaunchReport,
 } from './modules/third-party-main-loader'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
-import { pathToFileURL } from 'node:url'
-import { join } from 'node:path'
-import { MODULE_ASSET_SCHEME } from '../shared/modules/assets'
-import { createModuleAssetOriginResolver } from './modules/module-asset-origins'
-import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './modules/module-assets'
-import { defaultUserModuleRoot, discoverUserModules, discoverUserModulesSync } from './modules/user-module-registry'
+import { handleExtensionFrameScheme, stagedExtensionFrames } from './extension-frames/extension-frame-shell'
+import { defaultUserModuleRoot, discoverUserModulesSync } from './modules/user-module-registry'
 import { watchUserModuleRoot } from './modules/user-module-watch'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
@@ -65,7 +62,7 @@ const BOOT_SERVER_WAIT_MS = 15_000
 // The app proper, loaded by the entry (index.ts) only in the process that holds
 // the single-instance lock. By the time this runs the startup timeline is
 // attached, the userData override is applied, the Electron platform is
-// installed and the module-asset scheme is registered.
+// installed and the extension frame scheme is registered.
 
 // Build-identity check. Registered next to the startup marks and for
 // the same reason: a window reports the moment it starts, and the listener has
@@ -190,6 +187,11 @@ const moduleLoad = loadMainModules({
   // What each extension runs under; its calls are refused once that approval is gone.
   extensionApprovals: thirdPartyMainLoad.approvals,
   currentApprovals: createExtensionApprovalReader(app.getPath('userData')),
+  resolveFrameGrant: createExtensionFrameGrant({
+    approvals: createExtensionApprovalReader(app.getPath('userData')),
+    dataDir: app.getPath('userData'),
+  }),
+  frameFileExclusions: () => [app.getPath('userData'), defaultUserModuleRoot()],
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
   // Module events reach every client following the Studio's `extension.events`
@@ -206,8 +208,8 @@ const moduleLoad = loadMainModules({
 services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
 // A module's declared methods, called over the Studio RPC's `extension.read` and `extension.operate`.
 services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
-// The host's services a module's window half calls: `extensionBacklog.*` and `extensionUsage.query`.
-services.moduleHub.serveHostServicesFrom((moduleId, invoker) => moduleLoad.kernel.hostServicesFor(moduleId, invoker))
+// The host calls an extension's frames make: `extension.call`.
+services.moduleHub.serveFrameCallsFrom((request) => moduleLoad.kernel.callFrameMethod(request))
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,
 // agent-runtime) all resolve. Recompute mirrors the renderer's
@@ -299,7 +301,6 @@ recordThirdPartyMainLaunchReport(
   thirdPartyMainLoad.modules.map((module) => module.manifest.id),
   moduleLoad.report,
 )
-const moduleAssetOrigin = createModuleAssetOriginResolver(app.getPath('userData'))
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
@@ -328,25 +329,8 @@ void app.whenReady().then(() => {
       console.warn('[auth] retired-entitlement-cache-remove-failed', { message: result.message })
     }
   })
-  const shellUrl = process.env['ELECTRON_RENDERER_URL'] ?? pathToFileURL(join(__dirname, '../renderer/index.html')).href
-  session.defaultSession.webRequest.onBeforeRequest({ urls: [`${MODULE_ASSET_SCHEME}://*/*`] }, (details, callback) => {
-    callback({ cancel: !isAllowedModuleAssetRequest(details, shellUrl) })
-  })
-  protocol.handle(
-    MODULE_ASSET_SCHEME,
-    createModuleAssetHandler({
-      assetOrigin: moduleAssetOrigin,
-      discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readExtensionStanding()),
-      isEnabled: (installed, modules) => {
-        const runnable = modules.filter((module) => isExtensionRunnable(module.standing))
-        const manifests = [
-          ...mainModuleManifests.filter((manifest) => !modules.some((module) => module.manifest.id === manifest.id)),
-          ...runnable.map((module) => module.manifest),
-        ]
-        return resolveModuleEnablement(manifests, readModuleEnablementOverrides()).order.includes(installed.manifest.id)
-      },
-    }),
-  )
+  // Extension frames: the documents this app's windows stage (extension-frames/).
+  handleExtensionFrameScheme(protocol, stagedExtensionFrames)
 })
 if (DIAGNOSTICS_ENABLED) {
   console.info('[modules] extension roots:', extensionFolders.moduleRoot, extensionFolders.pluginRoot)

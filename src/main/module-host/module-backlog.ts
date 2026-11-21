@@ -1,6 +1,6 @@
-// The Backlog for capability modules (SDK `getBacklogService`, and the
-// renderer's Backlog write methods over the protocol's `extensionBacklog.*`): list,
-// locate, create and change items of a workspace's Backlog.
+// The Backlog for extensions (SDK `getBacklogService` in the worker, and a
+// surface's `backlog.*` through `extension.call`): list, locate, create and
+// change items of a workspace's Backlog.
 //
 // Nothing here writes a file. Every write is a call into the app's own Backlog
 // service (backlog-service.ts) — the path the Backlog panel, the phone and the

@@ -13,7 +13,6 @@ import {
   type StudioConversationKey,
   type StudioCreatedConversation,
   type StudioErrorBody,
-  type StudioModuleBacklogAnswer,
   type StudioErrorCode,
   type FileWatchEvent,
   type SkillSourceUpdateCheck,
@@ -65,7 +64,6 @@ import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import { createStudioAgentSkillsHandlers, skillSourceUpdatesShown } from './studio-agent-skills'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
-import type { ModuleHostServices } from '../../main/module-host/main-host'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-file-system'
 import { createStudioFileSystemHandlers } from './studio-file-system'
@@ -901,53 +899,6 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // have sent to a chat, so only a Studio with no modules at all is tried again.
   const operateRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
     moduleRefusedBefore(settled) && (settled.error?.code !== 'unavailable' || !options.modules)
-  /**
-   * A call into one of the host's services a module's window half reaches,
-   * under the calling module's id: `extension_unavailable` for a module not
-   * running here; the service's own answer otherwise, a service this Studio
-   * does not provide answered in its own vocabulary.
-   */
-  function moduleService<K extends keyof ModuleHostServices, A extends { ok: boolean }>(
-    method: StudioMethod,
-    moduleId: string,
-    grant: StudioGrant,
-    service: K,
-    missing: A,
-    work: (served: NonNullable<ModuleHostServices[K]>) => Promise<A>,
-  ): Promise<{ ok: true; result: A } | Refused<'unavailable' | 'extension_unavailable'>> | Refused<'unavailable'> {
-    const modules = options.modules
-    if (!modules) return unserved(method)
-    const found = modules.hostServices(moduleId, extensionInvokerOf(grant))
-    if (!found.ok) return Promise.resolve(refuse(found.code, found.message))
-    const served = found.services[service]
-    if (!served) return Promise.resolve({ ok: true as const, result: missing })
-    return work(served as NonNullable<ModuleHostServices[K]>).then((result) => ({ ok: true as const, result }))
-  }
-  const BACKLOG_MISSING = {
-    ok: false,
-    code: 'backlog_unavailable',
-    message: 'This Studio has no Backlog service for modules.',
-  } as const
-  const USAGE_MISSING = {
-    ok: false,
-    code: 'unavailable',
-    message: 'This Studio has no usage service for modules.',
-  } as const
-  /** A Backlog write, carried out once under its id: a retry is answered with the first answer. */
-  function backlogWrite<M extends StudioMethod, T extends object>(
-    method: M,
-    params: { moduleId: string; commandId: string },
-    context: Asking,
-    work: (backlog: NonNullable<ModuleHostServices['backlog']>) => Promise<StudioModuleBacklogAnswer<T>>,
-  ) {
-    return once(
-      keptId(method, context.grant, params.commandId),
-      () => Promise.resolve(moduleService(method, params.moduleId, context.grant, 'backlog', BACKLOG_MISSING, work)),
-      context.voice,
-      method,
-      moduleRefusedBefore,
-    )
-  }
   /** A change to what runs here, carried out once under its id by the modules' lifecycle. */
   function lifecycleCommand<
     M extends
@@ -955,7 +906,6 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       | 'extension.install'
       | 'extension.approve'
       | 'extension.uninstall'
-      | 'extension.setAppState'
       | 'extension.reportRegistry',
     R,
   >(method: M, context: Asking, commandId: string, work: (lifecycle: ModuleLifecycle) => Promise<R>) {
@@ -2394,8 +2344,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ),
     'extension.uninstall': ({ moduleId, commandId }, context) =>
       lifecycleCommand('extension.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
-    // The installed extensions and their window halves, read now; what a
-    // window sets for them and the registry it resolved, kept here.
+    // The installed extensions and what they add to a client, read now; the
+    // registry a window resolved, kept here.
     'extension.installed': async (_params, asking) => {
       const lifecycle = options.modules?.lifecycle()
       if (!lifecycle) return unserved('extension.installed')
@@ -2404,52 +2354,48 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // name any path; anyone else is told the folder by its name.
       return { ok: true, result: namesAnyPath(asking) ? installed : withFolderNamesOnly(installed) }
     },
-    'extension.rendererEntries': async () => {
+    'extension.contributions': async () => {
       const lifecycle = options.modules?.lifecycle()
-      return lifecycle ? { ok: true, result: await lifecycle.rendererEntries() } : unserved('extension.rendererEntries')
+      return lifecycle ? { ok: true, result: await lifecycle.contributions() } : unserved('extension.contributions')
     },
-    'extension.setAppState': ({ state, commandId }, context) =>
-      lifecycleCommand('extension.setAppState', context, commandId, async (lifecycle) => {
-        lifecycle.setAppState(state)
-        return {}
-      }),
     'extension.reportRegistry': ({ snapshot, commandId }, context) =>
       lifecycleCommand('extension.reportRegistry', context, commandId, async (lifecycle) =>
         lifecycle.reportRegistry(snapshot),
       ),
 
-    // The host's services a module's window half calls, under its own id;
-    // the host's gate holds it to the extension's approval and to this
-    // connection's grant. A write is carried out
-    // once per command id.
-    'extensionBacklog.location': ({ moduleId, workspaceId }, { grant }) =>
-      moduleService('extensionBacklog.location', moduleId, grant, 'backlog', BACKLOG_MISSING, (backlog) =>
-        backlog.getLocation(moduleId, workspaceId),
-      ),
-    'extensionBacklog.create': (params, context) =>
-      backlogWrite('extensionBacklog.create', params, context, (backlog) =>
-        backlog.create(params.moduleId, params.workspaceId, params.input),
-      ),
-    'extensionBacklog.updateStatus': (params, context) =>
-      backlogWrite('extensionBacklog.updateStatus', params, context, (backlog) =>
-        backlog.updateStatus(params.moduleId, params.workspaceId, params.itemId, params.status),
-      ),
-    'extensionBacklog.updateTriage': (params, context) =>
-      backlogWrite('extensionBacklog.updateTriage', params, context, (backlog) =>
-        backlog.updateTriage(params.moduleId, params.workspaceId, params.itemId, params.triage),
-      ),
-    'extensionBacklog.addLink': (params, context) =>
-      backlogWrite('extensionBacklog.addLink', params, context, (backlog) =>
-        backlog.addLink(params.moduleId, params.workspaceId, params.itemId, params.link),
-      ),
-    'extensionBacklog.updateModuleMetadata': (params, context) =>
-      backlogWrite('extensionBacklog.updateModuleMetadata', params, context, (backlog) =>
-        backlog.updateModuleMetadata(params.moduleId, params.workspaceId, params.itemId, params.value),
-      ),
-    'extensionUsage.query': ({ moduleId, query }, { grant }) =>
-      moduleService('extensionUsage.query', moduleId, grant, 'usage', USAGE_MISSING, (usage) =>
-        usage.query(moduleId, query),
-      ),
+    // An extension's surfaces, drawn in frames: the document one is drawn
+    // from, built for a connection that may read the extensions, and each host
+    // call a frame makes, held by the host's gate to the extension's approval
+    // and to this connection's grant, carried out once per command id.
+    'extension.frame': async (params) => {
+      const lifecycle = options.modules?.lifecycle()
+      if (!lifecycle) return unserved('extension.frame')
+      const built = await lifecycle.frame(params)
+      return built.ok
+        ? { ok: true, result: { hash: built.hash, html: built.html } }
+        : refuse('extension_unavailable', built.message)
+    },
+    'extension.call': ({ commandId, ...params }, { grant, voice }) => {
+      const modules = options.modules
+      if (!modules) return unserved('extension.call')
+      return once(
+        keptId('extension.call', grant, commandId),
+        async () => ({
+          ok: true as const,
+          result: await modules.frameCall({
+            moduleId: params.moduleId,
+            frame: params.frame,
+            method: params.method,
+            params: params.params,
+            clientId: grant.clientId,
+            commandId: runtimeId(grant, commandId),
+            invoker: extensionInvokerOf(grant),
+          }),
+        }),
+        voice,
+        'extension.call',
+      )
+    },
     // ── Scheduled agents ───────────────────────────────────────────────────
 
     ...createStudioSchedulesHandlers({

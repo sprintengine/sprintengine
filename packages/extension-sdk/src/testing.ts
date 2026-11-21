@@ -11,11 +11,12 @@
 //   invoker, who holds every permission. `methods.read` / `methods.operate`
 //   call the module's declared methods the way its renderer would and
 //   `tools.call` calls its MCP tools the way an agent would.
-// - `createFakeRendererHost` is the window's `studio` (a `RendererHost`) that
-//   records every toast and opened link; `studio(surface)` is what one
-//   `mount` is handed, and `mount` runs a ui entry against a root you give
-//   it. `methods`, `subscribe`, the extension's app state, the Backlog and
-//   usage reach a fake main host when given one.
+// - `createFakeFrameStudio` is the `studio` a surface's `mount` is handed in
+//   its frame, with a fake Studio behind `host.call`: each call checked as
+//   Studio checks it (the extension's permissions, and what whoever opened
+//   the surface holds) and carried out against the same fakes. Its worker
+//   methods, events, Settings values, storage, Backlog and usage reach a fake
+//   main host when given one.
 // - `renderToHtml` renders a React tree in Node, for an extension whose
 //   surfaces draw with React.
 //
@@ -34,44 +35,39 @@ import { jsonValueProblem } from './json-value.js'
 import { isModuleMethodName, MODULE_METHOD_MAX_CHARS } from './methods.js'
 import type { HostCapability } from './host-api.js'
 import type {
-  BacklogItemView,
+  ExtensionFrameError,
+  ExtensionFrameErrorCode,
+  ExtensionFrameMethod,
   ExtensionMountStudio,
   ExtensionSurface,
+} from './frame.js'
+import type {
   MainHost,
   McpConnectionMetadata,
   McpToolRegistration,
   McpToolResult,
   ModuleCallAnswer,
-  ModuleColorScheme,
   ModuleMethodAccess,
   ModuleMethodContract,
-  ModuleMethodContracts,
   ModuleMethodRegistration,
   ModuleMethodsClient,
-  ModuleFocusTabInput,
   ModuleNotificationTarget,
   ModuleNotifyInput,
-  ModuleOpenExternalResult,
   ModuleSkillStatus,
   ModuleSkillStatusResult,
-  ModuleToastInput,
   ModuleToastTone,
   ModuleWorkspaceView,
-  RendererHost,
   ServiceToken,
   SidecarSpec,
-  WorkspaceFileWatchEvent,
 } from './index.js'
-import type { ModuleChatRuntimeOption, ModuleOpenChatInput, ModuleOpenChatResult } from './conversation.js'
+import type { ModuleChatRuntimeOption } from './conversation.js'
 import {
   EXTENSION_HOST_REFUSALS,
   EXTENSION_MAIN_HOST_METHODS,
-  EXTENSION_RENDERER_METHODS,
+  extensionFrameMethod,
   extensionHostService,
-  extensionRendererRefusalMessage,
   type ExtensionHostRequirement,
 } from './services.js'
-import type { UsageQuery, UsageQueryResult } from './activity.js'
 import {
   createFakeWorkspaces,
   SERVICE_FAKES,
@@ -133,14 +129,12 @@ const KNOWN_CAPABILITIES: readonly HostCapability[] = [
   'conversation-streams',
   'conversation-requests',
   'conversation-permissions',
-  'chat.open',
   'companion-agents',
   // Agents, conversations and scheduled agents.
   'companion-tools',
   'conversation-replies',
   'text-generation',
   'conversation-worktrees',
-  'chat.open-options',
   'chat-runtimes',
   'scheduled-agent-runs',
   'scheduled-agents',
@@ -148,17 +142,12 @@ const KNOWN_CAPABILITIES: readonly HostCapability[] = [
   'github',
   'storage',
   'mcp-tools',
-  'module-assets',
   'notifications',
   // Backlog, usage and activity services.
   'backlog-write',
   'usage',
   'activity',
-  // The window's studio.
-  'toast',
   'module-id',
-  'active-workspace',
-  'open-external',
   'chart-tokens',
   'electron-main',
   // Main-host plumbing: settings, workspaces, storage, GitHub, skills, MCP.
@@ -943,90 +932,65 @@ export async function renderToHtml(node: ReactNode): Promise<string> {
   return chunks.join('').replaceAll('<!-- -->', '')
 }
 
-// ── The renderer host ────────────────────────────────────────────────────────
+// ── A surface in its frame ──────────────────────────────────────────────────
 
-export type FakeRendererHostOptions = FakeModuleIdentity & {
+export type FakeFrameStudioOptions = FakeModuleIdentity & {
   /**
-   * The module's main half: `methods` reaches its declared methods, `subscribe` hears
-   * its `emit`, and the module app state, the Backlog, usage and workspace
-   * git info are its.
+   * The extension's worker: `methods` (`worker.read` / `worker.operate`)
+   * reaches its declared methods, `on('push')` hears its `emit`, and the
+   * Settings values, storage, Backlog and usage are its.
    */
   main?: FakeMainHost
   /** The open workspaces. Default: the main fake's, or one `ws-app`. */
   workspaces?: readonly ModuleWorkspaceView[]
-  /** The workspace this window shows (`getActiveWorkspaceId`). Default: the first workspace, or null. */
-  activeWorkspaceId?: string | null
   /** Backlog items per workspace id, seeded into the Backlog (`services.backlog`). */
   backlogItems?: Record<string, readonly FakeBacklogItemInput[]>
-  /** Module app state already saved (added to the main fake's, given one). */
-  appState?: Record<string, unknown>
-  /** Workspace module state already saved, per workspace id. */
-  workspaceState?: Record<string, unknown>
-  colorScheme?: ModuleColorScheme
-  /** What `listChatRuntimes` answers. Default: the main fake's, or Claude Code (last chosen) and Codex. */
-  chatRuntimes?: ModuleChatRuntimeOption[]
-  /** What `supports` answers true for. Default: every capability this SDK knows. */
-  capabilities?: readonly string[]
-  /** The clock the renderer's own Backlog and usage fakes stamp with. Default: `Date.now`. */
+  /** Settings values already saved (added to the main fake's, given one). */
+  settings?: Record<string, unknown>
+  /** The files of each workspace's folder, by workspace id and path relative to it. */
+  files?: Record<string, Record<string, string>>
+  /**
+   * What whoever opened the surface holds, in Studio protocol permission names.
+   * Default: every one (the person at this machine). Give a paired device's to
+   * see what it is refused.
+   */
+  invoker?: readonly string[]
+  /** Default: `light`. */
+  colorScheme?: 'light' | 'dark'
+  /** The clock the fakes stamp with. Default: `Date.now`. */
   now?: () => number
 }
 
-/** A toast the module showed, as the toast region got it (trimmed and clipped). */
-export type FakeToast = {
-  tone: ModuleToastTone
-  message: string
-  detail?: string
-  /** Its button: call `run()` to press it, as the person would. */
-  action?: ModuleToastInput['action']
-  /** Whether the module called the dismisser `toast` returned. */
-  dismissed: boolean
-}
-
-export type FakeRendererHost = {
-  /** The window's studio, as every surface of the extension shares it. */
-  host: RendererHost
-  permissions: Set<string>
-  /** Every host method called, with its arguments, in order. */
-  calls: Array<{ method: string; args: unknown[] }>
-  openedChats: ModuleOpenChatInput[]
-  focusedTabs: ModuleFocusTabInput[]
-  /** The doors `openGlobalSurface` opened, by id. */
+export type FakeFrameStudio = {
+  /** Every host call, with its params, in order (refused ones too). */
+  calls: Array<{ method: string; params: unknown }>
+  /** Calls the manifest's permissions do not cover. A clean extension leaves this empty. */
+  undeclared: FakeUndeclaredUse[]
+  /** Toasts shown, in order. */
+  toasts: Array<{ tone: ModuleToastTone; message: string; detail?: string }>
+  /** Chats opened with a drafted message. */
+  drafts: Array<{ workspaceId: string; prompt: string; name?: string }>
+  /** Doors opened, by id. */
   openedDoors: string[]
+  /** Chats and files brought to the front. */
+  focusedTabs: Array<{ workspaceId: string; kind: 'chat' | 'file'; id: string }>
+  /** Bell rows raised with `notify`. */
+  notifications: ModuleNotifyInput[]
   /** Every surface that called `ready()`, in order. */
   readied: ExtensionSurface[]
-  /** Every toast shown, in order (none while `supports('toast')` is false). */
-  toasts: FakeToast[]
-  /** Every URL `openExternal` handed to the system browser, normalised. */
-  openedUrls: string[]
-  /** Host methods used without a permission that covers them. A clean module leaves this empty. */
-  undeclared: FakeUndeclaredUse[]
-  /**
-   * The world the renderer reads and writes: the main fake's when given one.
-   * `workspaces.setGitInfo` scripts `getWorkspaceGitInfo`, `backlog` holds the
-   * Backlog, `usage` the token usage `queryUsage` sums.
-   */
-  services: Pick<FakeServices, 'workspaces' | 'backlog' | 'usage'>
-  /** Module app state as saved. */
-  appState(): Record<string, unknown>
-  /** Workspace module state as saved for a workspace. */
-  workspaceState(workspaceId: string): unknown
-  /** Deliver an event to `subscribe` listeners, as the module's main half would. */
+  /** The world the surface reads and writes: the main fake's when given one. */
+  services: Pick<FakeServices, 'workspaces' | 'backlog' | 'usage' | 'storage'>
+  /** The Settings values as saved. */
+  settings(): Record<string, unknown>
+  /** A workspace's file as it is now, or undefined. */
+  file(workspaceId: string, path: string): string | undefined
+  /** Deliver a worker event to `on('push')` listeners. */
   emit(topic: string, payload?: unknown): void
-  /** Change the open workspaces; `watchWorkspaces` listeners hear it. */
-  setWorkspaces(workspaces: readonly ModuleWorkspaceView[]): void
-  /** Show another workspace in this window (null for none); `watchActiveWorkspace` listeners hear it. */
-  setActiveWorkspace(workspaceId: string | null): void
-  /** Replace the Backlog of a workspace (`services.backlog.seed`); `watchBacklogItems` listeners hear it. */
-  setBacklogItems(workspaceId: string, items: readonly FakeBacklogItemInput[]): void
-  setColorScheme(scheme: ModuleColorScheme): void
-  /** Deliver a change to a `watchWorkspaceFile` watch. */
-  changeWorkspaceFile(workspaceId: string, relativePath: string, event: WorkspaceFileWatchEvent): void
-  /** The studio one surface's `mount` is handed: the window's, with that surface and its `ready()`. */
+  /** Change the theme; `on('theme')` listeners hear it. */
+  setColorScheme(scheme: 'light' | 'dark'): void
+  /** The `studio` one surface's `mount` is handed. */
   studio(surface: ExtensionSurface): ExtensionMountStudio
-  /**
-   * Run a ui entry's `mount` into `root` (from your DOM of choice) as Studio
-   * does when the surface opens. Resolves to what closing it runs.
-   */
+  /** Run a ui entry's `mount` into `root` as Studio does in the frame. Resolves to what closing it runs. */
   mount(
     entry: { mount: (root: HTMLElement, studio: ExtensionMountStudio) => unknown },
     surface: ExtensionSurface,
@@ -1034,472 +998,300 @@ export type FakeRendererHost = {
   ): Promise<() => void>
 }
 
-// The window's host methods an extension's surface calls need a permission of
-// the extension (EXTENSION_RENDERER_METHODS). The fake refuses one the
-// manifest does not cover as the window's host does (an answer, a rejection or
-// a throw, as the row says), and lists it in `undeclared`.
-
-// A chat's title fits a tab and a sidebar row; a key is an id, not a document.
-const MAX_CHAT_NAME_CHARS = 120
-const MAX_CHAT_DEDUPE_KEY_CHARS = 200
-
 const TOAST_TONES: ReadonlySet<string> = new Set<ModuleToastTone>(['neutral', 'accent', 'good', 'warn', 'error'])
-const MAX_TOAST_MESSAGE_LENGTH = 200
-const MAX_TOAST_DETAIL_LENGTH = 500
 
-// What `openExternal` takes: an absolute http(s) URL with no credentials.
-function externalHttpUrl(url: unknown): string | null {
-  if (typeof url !== 'string' || url.trim().length === 0) return null
-  try {
-    const parsed = new URL(url.trim())
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
-    if (parsed.username || parsed.password) return null
-    return parsed.toString()
-  } catch {
-    return null
-  }
+type Registry = Record<string, (moduleId: string, ...args: never[]) => Promise<unknown>>
+
+function frameError(code: ExtensionFrameErrorCode, message: string): ExtensionFrameError {
+  return Object.assign(new Error(message), { code, retryable: false })
 }
 
-type BacklogRegistry = {
-  list(moduleId: string, workspaceId: string): Promise<{ ok: boolean; items?: BacklogItemView[]; message?: string }>
-} & Record<string, (moduleId: string, ...args: never[]) => Promise<unknown>>
-type UsageRegistry = { query(moduleId: string, query: UsageQuery): Promise<UsageQueryResult> }
+function filePathParts(path: unknown): string[] | null {
+  if (typeof path !== 'string' || !path || path.startsWith('/') || /[\\\0]/.test(path)) return null
+  const parts = path.split('/')
+  return parts.some((part) => !part || part === '.' || part === '..') ? null : parts
+}
 
-export function createFakeRendererHost(options: FakeRendererHostOptions): FakeRendererHost {
+/**
+ * The `studio` a surface's `mount` is handed in its frame, with a fake Studio
+ * behind `host.call`: every call is checked as Studio checks it, against the
+ * manifest's permissions and against what whoever opened the surface holds
+ * (`invoker`), and carried out against stateful fakes.
+ */
+export function createFakeFrameStudio(options: FakeFrameStudioOptions): FakeFrameStudio {
   const main = options.main
-  // Given only the main half, the renderer is the same module with the same
-  // (live) permissions.
   const { moduleId, permissions } =
     !options.moduleId && !options.manifest && main
       ? { moduleId: main.host.moduleId, permissions: main.permissions }
       : identityOf(options)
   const internals = main ? mainInternals.get(main) : undefined
-  const capabilities = new Set<string>(options.capabilities ?? KNOWN_CAPABILITIES)
-  let workspaces: ModuleWorkspaceView[] = (
-    options.workspaces ??
-    internals?.workspaces.all() ??
-    DEFAULT_FAKE_WORKSPACES
-  ).map((workspace) => ({ ...workspace }))
+  const invoker = options.invoker ? new Set(options.invoker) : null
+  const doors = new Set((options.manifest?.contributes?.doors ?? []).map((door) => door.id))
 
-  // The services behind the renderer's Backlog, usage and git-info methods:
-  // the main fake's (the host bridges to main's registries), or the
-  // renderer's own when it is tested alone.
   const world = ((): {
-    workspaces: ReturnType<typeof createFakeWorkspaces>
-    backlog: { registry: BacklogRegistry; handle: FakeBacklog }
-    usage: { registry: UsageRegistry; handle: FakeUsage }
-    appState: AppStateStore
+    workspaces: FakeWorkspaces
+    registry: (key: string) => Registry
+    handles: Pick<FakeServices, 'backlog' | 'usage' | 'storage'>
+    settings: AppStateStore
   } => {
     if (main && internals) {
       return {
         workspaces: internals.workspaces,
-        backlog: {
-          registry: internals.registry('backlog.module-service') as BacklogRegistry,
-          handle: main.services.backlog,
-        },
-        usage: { registry: internals.registry('usage.module-service') as UsageRegistry, handle: main.services.usage },
-        appState: internals.appState,
+        registry: (key) => internals.registry(key) as Registry,
+        handles: { backlog: main.services.backlog, usage: main.services.usage, storage: main.services.storage },
+        settings: internals.appState,
       }
     }
-    const own = createFakeWorkspaces(workspaces, options.now)
+    const own = createFakeWorkspaces(options.workspaces ?? DEFAULT_FAKE_WORKSPACES, options.now)
     const context: FakeServiceContext = { moduleId, permissions, now: options.now ?? Date.now, workspaces: own }
-    const backlog = SERVICE_FAKES['backlog.module-service']!.create(context)
-    const usage = SERVICE_FAKES['usage.module-service']!.create(context)
+    const made = new Map<string, { registry: unknown; handle?: unknown }>()
+    for (const key of ['backlog.module-service', 'usage.module-service', 'core.module-storage']) {
+      made.set(key, SERVICE_FAKES[key]!.create(context))
+    }
     return {
       workspaces: own,
-      backlog: { registry: backlog.registry as BacklogRegistry, handle: backlog.handle as FakeBacklog },
-      usage: { registry: usage.registry as UsageRegistry, handle: usage.handle as FakeUsage },
-      appState: createAppStateStore(undefined),
+      registry: (key) => made.get(key)!.registry as Registry,
+      handles: {
+        backlog: made.get('backlog.module-service')!.handle as FakeBacklog,
+        usage: made.get('usage.module-service')!.handle as FakeUsage,
+        storage: made.get('core.module-storage')!.handle as FakeServices['storage'],
+      },
+      settings: createAppStateStore(undefined),
     }
   })()
-  for (const [key, value] of Object.entries(options.appState ?? {})) world.appState.set(key, value)
+  for (const [key, value] of Object.entries(options.settings ?? {})) world.settings.set(key, value)
   for (const [workspaceId, items] of Object.entries(options.backlogItems ?? {})) {
-    world.backlog.handle.seed(workspaceId, items)
+    world.handles.backlog.seed(workspaceId, items)
+  }
+  const files = new Map<string, Map<string, string>>(
+    Object.entries(options.files ?? {}).map(([id, byPath]) => [id, new Map(Object.entries(byPath))]),
+  )
+
+  let colorScheme: 'light' | 'dark' = options.colorScheme ?? 'light'
+  const listeners = { theme: new Set<(payload: unknown) => void>(), push: new Set<(payload: unknown) => void>() }
+  const hear = (event: 'theme' | 'push', payload: unknown) => {
+    for (const listener of [...listeners[event]]) listener(structuredClone(payload))
   }
 
-  const workspaceState = new Map(Object.entries(structuredClone(options.workspaceState ?? {})))
-  let colorScheme: ModuleColorScheme = options.colorScheme ?? 'light'
-  let activeWorkspaceId: string | null =
-    options.activeWorkspaceId !== undefined ? options.activeWorkspaceId : (workspaces[0]?.id ?? null)
-  const chatRuntimes = (): ModuleChatRuntimeOption[] =>
-    structuredClone(options.chatRuntimes ?? internals?.chatRuntimes() ?? [...DEFAULT_FAKE_CHAT_RUNTIMES])
-  // The chats this window opened under a `dedupeKey`, by workspace and key.
-  const keyedChats = new Map<string, string>()
+  const workspace = (workspaceId: unknown): ModuleWorkspaceView => {
+    const found = world.workspaces.all().find((candidate) => candidate.id === workspaceId)
+    if (!found?.folderPath) throw frameError('invalid_params', `No workspace "${String(workspaceId)}" with a folder.`)
+    return found
+  }
+  const fileOf = (workspaceId: unknown, path: unknown): { byPath: Map<string, string>; key: string } => {
+    const id = workspace(workspaceId).id
+    const parts = filePathParts(path)
+    if (!parts) throw frameError('invalid_params', '"path" is a path inside the workspace, relative to its folder.')
+    let byPath = files.get(id)
+    if (!byPath) files.set(id, (byPath = new Map()))
+    return { byPath, key: parts.join('/') }
+  }
+  const storageRoot = (workspaceId: unknown) =>
+    workspaceId === undefined ? {} : { workspaceRoot: workspace(workspaceId).folderPath! }
 
-  const subscribers = new Set<{ topic: string; cb: (payload: unknown) => void }>()
-  const workspaceWatchers = new Set<(list: ModuleWorkspaceView[]) => void>()
-  const activeWorkspaceWatchers = new Set<(workspaceId: string | null) => void>()
-  const schemeWatchers = new Set<(scheme: ModuleColorScheme) => void>()
-  const fileWatchers = new Set<{ key: string; cb: (event: WorkspaceFileWatchEvent) => void }>()
-  let nextChat = 1
+  type Params = Record<string, unknown>
+  const serve: Record<ExtensionFrameMethod, (params: Params) => unknown> = {
+    'workspace.list': () => world.workspaces.all(),
+    'workspace.get': (p) => world.workspaces.all().find((candidate) => candidate.id === p.workspaceId) ?? null,
+    'backlog.list': (p) => world.registry('backlog.module-service').list(moduleId, p.workspaceId as never),
+    'backlog.location': (p) => world.registry('backlog.module-service').getLocation(moduleId, p.workspaceId as never),
+    'backlog.create': (p) =>
+      world.registry('backlog.module-service').create(moduleId, p.workspaceId as never, p.input as never),
+    'backlog.updateStatus': (p) =>
+      world
+        .registry('backlog.module-service')
+        .updateStatus(moduleId, p.workspaceId as never, p.itemId as never, p.status as never),
+    'backlog.updateTriage': (p) =>
+      world
+        .registry('backlog.module-service')
+        .updateTriage(moduleId, p.workspaceId as never, p.itemId as never, p.triage as never),
+    'backlog.addLink': (p) =>
+      world
+        .registry('backlog.module-service')
+        .addLink(moduleId, p.workspaceId as never, p.itemId as never, p.link as never),
+    'backlog.updateModuleMetadata': (p) =>
+      world
+        .registry('backlog.module-service')
+        .updateModuleMetadata(moduleId, p.workspaceId as never, p.itemId as never, p.value as never),
+    'usage.query': (p) => world.registry('usage.module-service').query(moduleId, p.query as never),
+    'storage.get': (p) =>
+      world.registry('core.module-storage').get(moduleId, { key: p.key, ...storageRoot(p.workspaceId) } as never),
+    'storage.set': (p) =>
+      world
+        .registry('core.module-storage')
+        .set(moduleId, { key: p.key, value: p.value, ...storageRoot(p.workspaceId) } as never),
+    'storage.delete': (p) =>
+      world.registry('core.module-storage').delete(moduleId, { key: p.key, ...storageRoot(p.workspaceId) } as never),
+    'storage.list': (p) =>
+      world.registry('core.module-storage').list(moduleId, {
+        ...(p.prefix === undefined ? {} : { prefix: p.prefix }),
+        ...storageRoot(p.workspaceId),
+      } as never),
+    'settings.get': () => world.settings.all(),
+    'settings.set': (p) => {
+      if (typeof p.key !== 'string' || !p.key) throw frameError('invalid_params', '"key" is the setting\'s name.')
+      world.settings.set(p.key, p.value === null ? undefined : p.value)
+      return { ok: true }
+    },
+    'files.read': (p) => {
+      const { byPath, key } = fileOf(p.workspaceId, p.path)
+      const content = byPath.get(key)
+      if (content === undefined) throw frameError('action_failed', `${key} does not exist.`)
+      return { content, size: new TextEncoder().encode(content).byteLength }
+    },
+    'files.stat': (p) => {
+      const { byPath, key } = fileOf(p.workspaceId, p.path)
+      const content = byPath.get(key)
+      if (content !== undefined)
+        return { type: 'file', size: new TextEncoder().encode(content).byteLength, modifiedAt: 0 }
+      if ([...byPath.keys()].some((path) => path.startsWith(`${key}/`)))
+        return { type: 'directory', size: 0, modifiedAt: 0 }
+      throw frameError('action_failed', `${key} does not exist.`)
+    },
+    'files.search': (p) => {
+      const id = workspace(p.workspaceId).id
+      const query = String(p.query ?? '').toLowerCase()
+      const limit = typeof p.limit === 'number' ? p.limit : 200
+      const paths = [...(files.get(id)?.keys() ?? [])]
+        .filter((path) => (path.split('/').at(-1) ?? '').toLowerCase().includes(query))
+        .sort()
+      return { paths: paths.slice(0, limit), truncated: paths.length > limit }
+    },
+    'files.write': (p) => {
+      const { byPath, key } = fileOf(p.workspaceId, p.path)
+      if (typeof p.content !== 'string') throw frameError('invalid_params', '"content" is the text to write.')
+      const exists = byPath.has(key)
+      if (p.create === true && exists) throw frameError('action_failed', `${key} already exists.`)
+      byPath.set(key, p.content)
+      return { size: new TextEncoder().encode(p.content).byteLength, created: !exists }
+    },
+    notify: (p) => {
+      fake.notifications.push(validateNotify(moduleId, p))
+      return { ok: true }
+    },
+    'worker.read': (p) =>
+      main
+        ? main.methods.read(p.method as never, p.params as never)
+        : { ok: false, code: 'extension_unavailable', message: 'No worker in this test.' },
+    'worker.operate': (p) =>
+      main
+        ? main.methods.operate(p.method as never, p.params as never)
+        : { ok: false, code: 'extension_unavailable', message: 'No worker in this test.' },
+    toast: (p) => {
+      if (!TOAST_TONES.has(String(p.tone)) || typeof p.message !== 'string' || !p.message.trim())
+        throw frameError('invalid_params', 'A toast needs a tone and a message.')
+      fake.toasts.push({
+        tone: p.tone as ModuleToastTone,
+        message: p.message.trim(),
+        ...(typeof p.detail === 'string' ? { detail: p.detail } : {}),
+      })
+      return { ok: true }
+    },
+    'chat.draft': (p) => {
+      workspace(p.workspaceId)
+      fake.drafts.push({
+        workspaceId: String(p.workspaceId),
+        prompt: String(p.prompt ?? ''),
+        ...(typeof p.name === 'string' ? { name: p.name } : {}),
+      })
+      return { ok: true }
+    },
+    'tabs.focus': (p) => {
+      if (p.kind !== 'chat' && p.kind !== 'file') throw frameError('invalid_params', '"kind" is chat or file.')
+      fake.focusedTabs.push({ workspaceId: String(p.workspaceId), kind: p.kind, id: String(p.id) })
+      return { focused: true }
+    },
+    'doors.open': (p) => {
+      const opened = typeof p.id === 'string' && doors.has(p.id)
+      if (opened) fake.openedDoors.push(p.id as string)
+      return { opened }
+    },
+  }
 
-  const fake: FakeRendererHost = {
-    host: undefined as unknown as RendererHost,
-    permissions,
+  async function call(method: string, params: unknown): Promise<unknown> {
+    fake.calls.push({ method, params: structuredClone(params) })
+    const requirement = extensionFrameMethod(method)
+    if (!requirement) throw frameError('unknown_method', `"${method}" is not a host method a frame may call.`)
+    if (requirement.extension !== null && !permissions.has(requirement.extension)) {
+      fake.undeclared.push({ what: method, needs: [requirement.extension] })
+      throw frameError(
+        'not_permitted',
+        `Extension "${moduleId}" was not approved for "${requirement.extension}", which "${method}" needs.`,
+      )
+    }
+    if (invoker && requirement.invoker !== null && !invoker.has(requirement.invoker))
+      throw frameError(
+        'not_permitted',
+        `"${method}" needs "${requirement.invoker}", which whoever opened it does not hold.`,
+      )
+    const given = (params ?? {}) as Params
+    if (typeof given !== 'object' || Array.isArray(given)) throw frameError('invalid_params', 'Params are an object.')
+    return structuredClone(await serve[method as ExtensionFrameMethod](given))
+  }
+
+  const fake: FakeFrameStudio = {
     calls: [],
-    openedChats: [],
-    focusedTabs: [],
-    openedDoors: [],
-    readied: [],
-    toasts: [],
-    openedUrls: [],
     undeclared: [],
-    services: { workspaces: world.workspaces, backlog: world.backlog.handle, usage: world.usage.handle },
-    appState: () => world.appState.all(),
-    workspaceState: (workspaceId) => structuredClone(workspaceState.get(workspaceId)),
-    emit(topic, payload) {
-      for (const subscriber of subscribers) {
-        if (subscriber.topic === topic) subscriber.cb(structuredClone(payload))
-      }
-    },
-    setWorkspaces(next) {
-      workspaces = next.map((workspace) => ({ ...workspace }))
-      if (!main) {
-        for (const workspace of world.workspaces.all()) world.workspaces.remove(workspace.id)
-        for (const workspace of workspaces) world.workspaces.add(workspace)
-      }
-      for (const cb of workspaceWatchers) cb(workspaces.map((workspace) => ({ ...workspace })))
-    },
-    setActiveWorkspace(workspaceId) {
-      if (workspaceId === activeWorkspaceId) return
-      activeWorkspaceId = workspaceId
-      for (const cb of [...activeWorkspaceWatchers]) cb(workspaceId)
-    },
-    setBacklogItems(workspaceId, items) {
-      world.backlog.handle.seed(workspaceId, items)
-    },
+    toasts: [],
+    drafts: [],
+    openedDoors: [],
+    focusedTabs: [],
+    notifications: [],
+    readied: [],
+    services: { workspaces: world.workspaces, ...world.handles },
+    settings: () => world.settings.all(),
+    file: (workspaceId, path) => files.get(workspaceId)?.get(path),
+    emit: (topic, payload) => hear('push', payload === undefined ? { topic } : { topic, payload }),
     setColorScheme(scheme) {
       colorScheme = scheme
-      for (const cb of schemeWatchers) cb(scheme)
-    },
-    changeWorkspaceFile(workspaceId, relativePath, event) {
-      for (const watcher of fileWatchers) {
-        if (watcher.key === `${workspaceId}\u0000${relativePath}`) watcher.cb(event)
-      }
+      hear('theme', { colorScheme })
     },
     studio(surface) {
       let readied = false
-      return {
-        ...fake.host,
-        surface: { ...surface },
+      const methods = (): ModuleMethodsClient => {
+        const answered = (method: 'worker.read' | 'worker.operate', name: string, params: unknown) =>
+          call(method, { method: name, params }).catch((error: { code?: string; message?: string }) => ({
+            ok: false,
+            code: error?.code ?? 'unavailable',
+            message: error?.message ?? String(error),
+          }))
+        return {
+          read: (name, params) => answered('worker.read', name, params) as never,
+          operate: (name, params) => answered('worker.operate', name, params) as never,
+        }
+      }
+      return Object.freeze({
+        api: Object.freeze({ version: 1 as const }),
+        surface: Object.freeze({ ...surface }),
+        host: Object.freeze({
+          call: (method: string, params: unknown) => call(method, params),
+          has: (method: string) => extensionFrameMethod(method) !== undefined,
+        }),
+        methods,
+        get theme() {
+          return { colorScheme }
+        },
+        on(event: 'theme' | 'push', listener: (payload: never) => void) {
+          const set = listeners[event]
+          if (!set) throw new TypeError(`No frame event "${String(event)}".`)
+          const entry = (payload: unknown) => listener(payload as never)
+          set.add(entry)
+          return { dispose: () => set.delete(entry) }
+        },
         ready() {
           if (readied) return
           readied = true
           fake.readied.push({ ...surface })
         },
-      }
+      }) as ExtensionMountStudio
     },
     async mount(entry, surface, root) {
-      if (typeof entry?.mount !== 'function') throw new Error('A ui entry must export mount(root, studio).')
       const cleanup = await entry.mount(root, fake.studio(surface))
-      return typeof cleanup === 'function' ? (cleanup as () => void) : () => {}
-    },
-  }
-
-  function record(method: string, args: unknown[]): void {
-    fake.calls.push({ method, args })
-  }
-  // Whether the manifest covers what a method needs; a call it does not is listed.
-  function covers(method: string, needs: readonly string[]): boolean {
-    if (needs.some((permission) => permissions.has(permission))) return true
-    if (!fake.undeclared.some((use) => use.what === method)) fake.undeclared.push({ what: method, needs })
-    return false
-  }
-  const resolveWorkspace = (id: string): ModuleWorkspaceView | null => {
-    const found = workspaces.find((workspace) => workspace.id === id)
-    return found ? { ...found } : null
-  }
-  const backlogCall = <T>(method: string, args: unknown[]): Promise<T> =>
-    (world.backlog.registry[method] as (moduleId: string, ...rest: unknown[]) => Promise<T>)(moduleId, ...args)
-
-  const host: RendererHost = {
-    moduleId,
-    supports: (capability) => capabilities.has(capability),
-    getAssetUrl(relativePath) {
-      record('getAssetUrl', [relativePath])
-      return `module-asset://${moduleId}/${validateAssetPath(relativePath, moduleId).map(encodeURIComponent).join('/')}`
-    },
-    openGlobalSurface(id) {
-      record('openGlobalSurface', [id])
-      const doors = options.manifest?.contributes?.doors
-      if (doors && !doors.some((door) => door.id === id)) return false
-      fake.openedDoors.push(id)
-      return true
-    },
-    async listBacklogItems(workspaceId) {
-      record('listBacklogItems', [workspaceId])
-      const listed = await world.backlog.registry.list(moduleId, workspaceId)
-      if (!listed.ok) throw new Error(listed.message)
-      return listed.items ?? []
-    },
-    watchBacklogItems(workspaceId, cb, watchOptions) {
-      record('watchBacklogItems', [workspaceId, cb, watchOptions])
-      return world.backlog.handle.watch(workspaceId, cb, watchOptions?.onError)
-    },
-    getBacklogLocation(workspaceId) {
-      record('getBacklogLocation', [workspaceId])
-      return backlogCall('getLocation', [workspaceId])
-    },
-    createBacklogItem(workspaceId, input) {
-      record('createBacklogItem', [workspaceId, input])
-      return backlogCall('create', [workspaceId, input])
-    },
-    updateBacklogStatus(workspaceId, itemId, status) {
-      record('updateBacklogStatus', [workspaceId, itemId, status])
-      return backlogCall('updateStatus', [workspaceId, itemId, status])
-    },
-    updateBacklogTriage(workspaceId, itemId, triage) {
-      record('updateBacklogTriage', [workspaceId, itemId, triage])
-      return backlogCall('updateTriage', [workspaceId, itemId, triage])
-    },
-    addBacklogLink(workspaceId, itemId, link) {
-      record('addBacklogLink', [workspaceId, itemId, link])
-      return backlogCall('addLink', [workspaceId, itemId, link])
-    },
-    updateBacklogModuleMetadata(workspaceId, itemId, value) {
-      record('updateBacklogModuleMetadata', [workspaceId, itemId, value])
-      return backlogCall('updateModuleMetadata', [workspaceId, itemId, value])
-    },
-    queryUsage(query) {
-      record('queryUsage', [query])
-      return world.usage.registry.query(moduleId, query)
-    },
-    async getWorkspace(workspaceId) {
-      record('getWorkspace', [workspaceId])
-      return resolveWorkspace(workspaceId)
-    },
-    async listWorkspaces() {
-      record('listWorkspaces', [])
-      return workspaces.map((workspace) => ({ ...workspace }))
-    },
-    async getWorkspaceGitInfo(workspaceId) {
-      record('getWorkspaceGitInfo', [workspaceId])
-      return world.workspaces.gitInfo(workspaceId)
-    },
-    watchWorkspaces(cb) {
-      record('watchWorkspaces', [cb])
-      workspaceWatchers.add(cb)
-      cb(workspaces.map((workspace) => ({ ...workspace })))
       return () => {
-        workspaceWatchers.delete(cb)
-      }
-    },
-    watchColorScheme(cb) {
-      record('watchColorScheme', [cb])
-      schemeWatchers.add(cb)
-      cb(colorScheme)
-      return () => {
-        schemeWatchers.delete(cb)
-      }
-    },
-    getWorkspaceModuleState<T = unknown>(workspaceId: string): T | undefined {
-      record('getWorkspaceModuleState', [workspaceId])
-      return resolveWorkspace(workspaceId)
-        ? (structuredClone(workspaceState.get(workspaceId)) as T | undefined)
-        : undefined
-    },
-    setWorkspaceModuleState(workspaceId, state) {
-      record('setWorkspaceModuleState', [workspaceId, state])
-      if (!resolveWorkspace(workspaceId)) return false
-      workspaceState.set(workspaceId, structuredClone(state))
-      return true
-    },
-    getModuleAppState<T = unknown>(key: string): T | undefined {
-      record('getModuleAppState', [key])
-      return world.appState.get(key) as T | undefined
-    },
-    setModuleAppState(key, value) {
-      record('setModuleAppState', [key, value])
-      world.appState.set(key, value)
-      return true
-    },
-    watchModuleAppState(cb) {
-      record('watchModuleAppState', [cb])
-      const stop = world.appState.subscribe(cb)
-      cb(world.appState.all())
-      return stop
-    },
-    subscribe(topic, cb) {
-      record('subscribe', [topic, cb])
-      const subscriber = { topic, cb }
-      subscribers.add(subscriber)
-      return () => {
-        subscribers.delete(subscriber)
-      }
-    },
-    async getWorkingRoot(workspaceId) {
-      record('getWorkingRoot', [workspaceId])
-      return resolveWorkspace(workspaceId)?.folderPath ?? null
-    },
-    async watchWorkspaceFile(workspaceId, relativePath, cb) {
-      record('watchWorkspaceFile', [workspaceId, relativePath, cb])
-      const watcher = { key: `${workspaceId}\u0000${relativePath}`, cb }
-      fileWatchers.add(watcher)
-      return () => {
-        fileWatchers.delete(watcher)
-      }
-    },
-    focusTab(input) {
-      record('focusTab', [input])
-      fake.focusedTabs.push({ ...input })
-      return true
-    },
-    async openChat(input): Promise<ModuleOpenChatResult> {
-      // A draft the person reads and sends needs only `chat:draft`; a prompt
-      // sent for them is driving the chat, which is `conversation:own`'s.
-      const sends = input?.send === true
-      record('openChat', [input])
-      if (!covers('openChat', sends ? ['conversation:own'] : ['chat:draft', 'conversation:own'])) {
-        return {
-          ok: false,
-          code: 'not_permitted',
-          message: sends
-            ? `Extension "${moduleId}" was not approved for "conversation:own", so it cannot open a chat and send its prompt.`
-            : `Extension "${moduleId}" was approved for neither "chat:draft" nor "conversation:own", so it cannot open a chat.`,
-        }
-      }
-      const optionalText = (value: unknown, max: number): string | null | undefined => {
-        if (value === undefined) return undefined
-        if (typeof value !== 'string' || value.length > max) return null
-        return value.trim() || undefined
-      }
-      const name = optionalText(input.name, MAX_CHAT_NAME_CHARS)
-      if (name === null) {
-        return {
-          ok: false,
-          code: 'invalid_input',
-          message: `"name" must be a title of at most ${MAX_CHAT_NAME_CHARS} characters.`,
-        }
-      }
-      const dedupeKey = optionalText(input.dedupeKey, MAX_CHAT_DEDUPE_KEY_CHARS)
-      if (dedupeKey === null) {
-        return {
-          ok: false,
-          code: 'invalid_input',
-          message: `"dedupeKey" must be a string of at most ${MAX_CHAT_DEDUPE_KEY_CHARS} characters.`,
-        }
-      }
-      const workspace = resolveWorkspace(input.workspaceId)
-      if (!workspace) return { ok: false, code: 'unknown_workspace', message: `No workspace "${input.workspaceId}".` }
-      // Asked again under the same key: that chat comes to the front, untouched.
-      const keyed = dedupeKey ? keyedChats.get(`${input.workspaceId}\u0000${dedupeKey}`) : undefined
-      if (keyed) return { ok: true, agentId: keyed, existing: true }
-      if (!workspace.folderPath) {
-        return {
-          ok: false,
-          code: 'workspace_folder_missing',
-          message: `Workspace "${input.workspaceId}" has no project folder.`,
-        }
-      }
-      fake.openedChats.push(structuredClone(input))
-      // The chat belongs to the module, as one `openChat` opens does: the main
-      // half's conversation service sees it (whichever permission opened it).
-      const agentId = `chat-${nextChat++}`
-      main?.services.conversations.restore({
-        workspaceId: input.workspaceId,
-        agentId,
-        status: input.send ? 'active' : 'ready',
-        ...(name ? { name } : {}),
-        ...(input.cli ? { cli: input.cli } : {}),
-        ...(input.model ? { modelId: input.model } : {}),
-        events: [
-          { type: 'session_started' },
-          ...(input.send && input.prompt ? [{ type: 'user_message' as const, payload: { text: input.prompt } }] : []),
-        ],
-      })
-      if (dedupeKey) keyedChats.set(`${input.workspaceId}\u0000${dedupeKey}`, agentId)
-      return { ok: true, agentId }
-    },
-    listChatRuntimes() {
-      record('listChatRuntimes', [])
-      return chatRuntimes()
-    },
-    toast(input) {
-      record('toast', [input])
-      if (!input || typeof input !== 'object') throw new Error('toast(...) requires a payload object.')
-      if (typeof input.tone !== 'string' || !TOAST_TONES.has(input.tone)) {
-        throw new Error('toast(...) tone must be "neutral", "accent", "good", "warn" or "error".')
-      }
-      const message = typeof input.message === 'string' ? input.message.trim() : ''
-      if (message.length === 0) throw new Error('toast(...) requires a non-empty message.')
-      if (input.detail !== undefined && typeof input.detail !== 'string') {
-        throw new Error('toast(...) detail must be a string when provided.')
-      }
-      const action = input.action
-      if (
-        action !== undefined &&
-        (!action || typeof action.label !== 'string' || !action.label.trim() || typeof action.run !== 'function')
-      ) {
-        throw new Error('toast(...) action must be { label, run } with a non-empty label.')
-      }
-      // A window with no toast region shows nothing; the dismisser does nothing.
-      if (!capabilities.has('toast')) return () => {}
-      const detail = input.detail?.trim()
-      const shown: FakeToast = {
-        tone: input.tone,
-        message: message.slice(0, MAX_TOAST_MESSAGE_LENGTH),
-        ...(detail ? { detail: detail.slice(0, MAX_TOAST_DETAIL_LENGTH) } : {}),
-        ...(action ? { action: { label: action.label.trim(), run: action.run } } : {}),
-        dismissed: false,
-      }
-      fake.toasts.push(shown)
-      return () => {
-        shown.dismissed = true
-      }
-    },
-    getActiveWorkspaceId() {
-      record('getActiveWorkspaceId', [])
-      return activeWorkspaceId
-    },
-    watchActiveWorkspace(cb) {
-      record('watchActiveWorkspace', [cb])
-      activeWorkspaceWatchers.add(cb)
-      cb(activeWorkspaceId)
-      return () => {
-        activeWorkspaceWatchers.delete(cb)
-      }
-    },
-    async openExternal(url): Promise<ModuleOpenExternalResult> {
-      record('openExternal', [url])
-      const safe = externalHttpUrl(url)
-      if (!safe) return { ok: false, code: 'invalid_url', message: 'Only an absolute http(s) URL can be opened.' }
-      if (!capabilities.has('open-external')) {
-        return { ok: false, code: 'unavailable', message: 'This window cannot open links yet.' }
-      }
-      fake.openedUrls.push(safe)
-      return { ok: true }
-    },
-    methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs> {
-      record('methods', [])
-      const absent = (): Promise<ModuleCallAnswer<ModuleMethodContract>> =>
-        Promise.resolve({
-          ok: false,
-          code: 'extension_unavailable',
-          message: `Extension "${moduleId}" is not running: the fake renderer host was given no main.`,
-        })
-      return {
-        read: (method, params) => (main ? main.methods.read(method, params) : absent()) as never,
-        operate: (method, params, options) =>
-          (main ? main.methods.operate(method, params, options) : absent()) as never,
+        if (typeof cleanup === 'function') (cleanup as () => void)()
       }
     },
   }
-  // The window's gate, in front of every method of the table (openChat checks its own).
-  const gated = { ...host } as Record<string, unknown>
-  for (const [method, requirement] of Object.entries(EXTENSION_RENDERER_METHODS)) {
-    const member = (host as unknown as Record<string, unknown>)[method]
-    if (typeof member !== 'function' || method === 'openChat') continue
-    gated[method] = (...args: unknown[]) => {
-      if (covers(method, requirement.permissions)) return (member as (...given: unknown[]) => unknown).apply(host, args)
-      record(method, args)
-      const message = extensionRendererRefusalMessage(moduleId, method, requirement.permissions)
-      if (requirement.refusal === 'answer')
-        return Promise.resolve({ ok: false, code: EXTENSION_HOST_REFUSALS.notPermitted, message })
-      if (requirement.refusal === 'reject') return Promise.reject(new Error(message))
-      throw new Error(message)
-    }
-  }
-  fake.host = gated as unknown as RendererHost
   main?.onEmit((topic, payload) => fake.emit(topic, payload))
   return fake
 }

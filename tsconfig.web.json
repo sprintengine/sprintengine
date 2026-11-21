@@ -38,6 +38,7 @@
     "packages/extension-sdk/src/backlog.ts",
     "packages/extension-sdk/src/activity.ts",
     "packages/extension-sdk/src/services.ts",
+    "packages/extension-sdk/src/frame.ts",
     "packages/extension-sdk/src/json-value.ts",
     "packages/extension-sdk/src/methods.ts",
     "packages/extension-sdk/src/extension-manifest.ts",

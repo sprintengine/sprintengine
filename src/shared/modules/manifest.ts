@@ -32,8 +32,8 @@ export type {
   ThirdPartyModuleLaunchView,
   ThirdPartyModuleListResult,
   ThirdPartyModuleView,
-  ThirdPartyRendererEntriesResult,
-  ThirdPartyRendererEntry,
+  ExtensionContributions,
+  ExtensionContributionsResult,
   ThirdPartyRendererEntryView,
 } from '../../../packages/studio-protocol/src/public'
 

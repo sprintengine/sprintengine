@@ -7,7 +7,7 @@ import { test } from 'node:test'
 
 import { createElement } from 'react'
 
-import { createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { createFakeFrameStudio, renderToHtml } from '@sprintengine/extension-sdk/testing'
 
 import { NotesPanel } from '../src/notes'
 import { manifest } from './manifest'
@@ -15,19 +15,17 @@ import { manifest } from './manifest'
 const surface = { point: 'panels', id: 'notes', workspaceId: 'ws-app' } as const
 
 test('the panel shows what was saved', async () => {
-  const renderer = createFakeRendererHost({ manifest, appState: { notes: 'Buy milk' } })
-  const html = await renderToHtml(createElement(NotesPanel, { studio: renderer.studio(surface) }))
+  const frame = createFakeFrameStudio({ manifest, settings: { notes: 'Buy milk' } })
+  const studio = frame.studio(surface)
+  const saved = await studio.host.call('settings.get', {})
+  const html = await renderToHtml(createElement(NotesPanel, { studio, initial: String(saved.notes) }))
   assert.match(html, /Buy milk/)
   assert.match(html, /Saved/)
-  assert.deepEqual(renderer.undeclared, [], 'everything it used is declared in extension/extension.json')
+  assert.deepEqual(frame.undeclared, [], 'everything it used is declared in extension/extension.json')
 })
 
-test('what the panel saves is there for every window', () => {
-  const renderer = createFakeRendererHost({ manifest })
-  const studio = renderer.studio(surface)
-  const heard: unknown[] = []
-  studio.watchModuleAppState((values) => heard.push(values.notes))
-  assert.equal(studio.setModuleAppState('notes', 'Call the plumber'), true)
-  assert.deepEqual(renderer.appState(), { notes: 'Call the plumber' })
-  assert.equal(heard.at(-1), 'Call the plumber', 'a watcher hears the change')
+test('what the panel saves Studio keeps', async () => {
+  const frame = createFakeFrameStudio({ manifest })
+  await frame.studio(surface).host.call('settings.set', { key: 'notes', value: 'Call the plumber' })
+  assert.deepEqual(frame.settings(), { notes: 'Call the plumber' })
 })

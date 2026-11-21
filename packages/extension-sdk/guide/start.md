@@ -10,8 +10,8 @@ not.
 Code comes in two kinds, and each is optional:
 
 - **A ui entry** for each panel, door or settings section: an ESM bundle
-  exporting `mount(root, studio)`. Studio imports it into its own window and
-  hands it an element to draw in.
+  exporting `mount(root, studio)`. Studio loads it into a sandboxed frame of
+  its own, on every client, and hands it the frame's root to draw in.
 - **The worker**, `main`: a CommonJS bundle exporting `activate(studio)`. It
   runs in the background with Node, and serves the extension's commands,
   methods and MCP tools.
@@ -72,8 +72,9 @@ npm run dev:install  # build, validate, copy extension/ to ~/.sprintengine/exten
 
 Then in Studio: **Settings → Extensions**, find the extension, approve it.
 Only the person can approve it; never try to do it for them. The approval
-tells them what it asks for, and that its code runs with full access to this
-machine. `extension.status` (a Studio tool) says whether Studio sees the
+tells them what it asks for, and what its code can do: a `ui` extension's
+runs isolated in frames and can do only what they allow; a worker's runs with
+full access to this machine. `extension.status` (a Studio tool) says whether Studio sees the
 installed extension, whether it is approved, and why it is not running when it
 is not.
 
@@ -94,7 +95,7 @@ and runs them with `node --test`:
 
 ```ts
 import { createElement } from 'react'
-import { createFakeMainHost, createFakeRendererHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
+import { createFakeFrameStudio, createFakeMainHost, renderToHtml } from '@sprintengine/extension-sdk/testing'
 import { manifest } from './manifest'
 import { activate } from '../src/main'
 import { Notes } from '../src/notes'
@@ -105,9 +106,10 @@ await main.methods.operate('plan-in-chat', { where: 'palette', workspaceId: 'ws-
 main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // what the agent would do
 assert.deepEqual(main.undeclared, [])                                   // nothing used undeclared
 
-const renderer = createFakeRendererHost({ manifest, main })
-const studio = renderer.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
+const frame = createFakeFrameStudio({ manifest, main }) // a surface in its frame
+const studio = frame.studio({ point: 'panels', id: 'notes', workspaceId: 'ws-app' })
 assert.match(await renderToHtml(createElement(Notes, { studio })), /Saved/)
+await studio.host.call('files.read', { workspaceId: 'ws-app', path: 'a.md' }) // rejects: not declared
 ```
 
 Every service and host method has a fake you can arrange and read back:
@@ -120,14 +122,16 @@ watch hears), `github.respond(...)` / `respondGraphql(...)` /
 `conversations.restore(...)` (a saved chat appearing after launch),
 `companions.requestApproval(...)` (an agent asking for a tool mid-run),
 `scheduledAgents.fire(id)` (a run, with its chat and `onRun`),
-`main.setChatRuntimes(...)`. On the window side: `renderer.toasts`,
-`renderer.openedUrls`, `renderer.openedDoors`, `renderer.readied` (the
-surfaces that called `ready()`), `renderer.setActiveWorkspace(id)`, and
-`renderer.mount(entry, surface, root)` runs a `mount` into a root you give it.
-Pass `capabilities: [...]` to test a host without one.
+`main.setChatRuntimes(...)`. On a surface's side: `frame.toasts`,
+`frame.drafts`, `frame.openedDoors`, `frame.focusedTabs`, `frame.readied`
+(the surfaces that called `ready()`), `frame.settings()`, `frame.file(...)`,
+`frame.emit(topic, payload)` (a worker event), `frame.setColorScheme(...)`,
+and `frame.mount(entry, surface, root)` runs a `mount` into a root you give
+it. Pass `invoker: [...]` to call as a paired device or browser that holds
+only those permissions. Pass `capabilities: [...]` to test a worker's host
+without one.
 
-`renderToHtml` is a server render: effects do not run, and
-`useSyncExternalStore` needs its third argument. The smoke test checks that
+`renderToHtml` is a server render: effects do not run. The smoke test checks that
 each ui entry is a self-contained bundle exporting `mount`, that the worker
 activates, that every command without an `action` has an `operate` method of
 the same name, and that every declared MCP tool is served.

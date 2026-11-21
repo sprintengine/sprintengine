@@ -18,7 +18,7 @@ import type { ModuleConversationStatus } from './conversation-service'
 
 // ── Usage ────────────────────────────────────────────────────────────────────
 
-// The wire shapes are the Studio protocol's (`module-services.ts`).
+// The wire shapes are the Studio protocol's (`module-service-types.ts`).
 export type UsageGroupBy = StudioModuleUsageGroupBy
 export type UsageQuery = StudioModuleUsageQuery
 export type UsageTokens = StudioModuleUsageTokens

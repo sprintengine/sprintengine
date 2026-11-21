@@ -13,14 +13,17 @@ fixes follow.
    one at runtime.
 3. **Lowest tier, fewest permissions.** The tier and the permissions are what
    the person is asked to allow. A field above the tier fails validation.
-4. **Your Tailwind classes compile to nothing.** Style with the `--sem-*`
-   properties, in inline styles or CSS of your own placed inside your root.
-5. **Relative URLs resolve to nothing** in a surface. Reach the extension's
-   files with `studio.getAssetUrl(path)`.
+4. **A surface is a sandboxed frame.** No network, no Node, nothing of
+   Studio's window: bundle everything it shows, and ask Studio for the rest
+   with `studio.host.call`. Style with the theme's properties (`--bg-surface`,
+   `--text-default`, …) and Studio's kit classes (`se-button`, …).
+5. **Relative URLs resolve to nothing** in a surface. Inline images and fonts
+   as `data:` URLs.
 6. **Any change to `extension/` is new contents.** An approval binds to exact
    contents and access, and a signature to exact files. Rebuild →
    `dev:install` → approve again, or sign again.
-7. **Store with the host**: `getModuleStorage`, app state, workspace state.
+7. **Store with the host**: `getModuleStorage` in the worker, `storage.*` and
+   `settings.*` from a surface.
    Never JSON files in the home folder; never a raw `localStorage` key.
 8. **Keys stay out of the project.** `npm run keygen` writes
    `~/.sprintengine/keys/<id>.key`. Never commit `*.key` / `*.pem`.
@@ -105,12 +108,9 @@ missed everything. Keep the truth readable through a `read` method.
 
 ## Look and feel
 
-**The `--sem-*` properties only, never hex.** A soft fill is
-`color-mix(in srgb, var(--sem-color-accent-primary) 15%, transparent)`. The
-`styling` topic lists them.
-
-**Stay inside your root.** Your `<style>` goes in it, your selectors carry a
-prefix of your own, and nothing styles `body` or Studio's classes.
+**The theme's properties only, never hex.** A soft fill is
+`color-mix(in srgb, var(--accent-primary) 15%, transparent)`. The `styling`
+topic lists them, and Studio's kit classes.
 
 **No status dots.** Studio draws states as words, lifecycle glyphs, timers or
 its working mark. A little coloured circle is not one of them.
@@ -129,7 +129,7 @@ week, and don't notify for every click: an `info` notify files nothing.
 
 ## Agents and untrusted input
 
-**Agents are chats.** `getConversationService` / `openChat`. There is no
+**Agents are chats.** `getConversationService`, or a surface's `chat.draft`. There is no
 terminal-agent API, and spawning an agent CLI yourself from the worker
 bypasses the person's runtime choice, approvals and visibility.
 
@@ -140,8 +140,8 @@ and check any path, URL or command they name against what your extension
 allows before acting. When you feed such content to an agent, say in the
 prompt that it is data to analyse, not instructions.
 
-**Draft by default.** `openChat` without `send: true` lets the person read the
-prompt before anything runs. `permissionPreset: 'bypass'` only when they asked,
+**Draft by default.** A surface's `chat.draft` lets the person read the prompt
+before anything runs. `permissionPreset: 'bypass'` only when they asked,
 and it needs `conversation:bypass` in extension.json; without it the chat runs
 on `auto`.
 

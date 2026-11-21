@@ -26,11 +26,13 @@ device or an agent do something that device or agent could not do itself: a
 device paired with workspace access only cannot read chats through an
 extension's MCP tool, even if the extension may.
 
-A permission does **not** limit the extension's own code. A `ui` or `worker`
-extension's code runs inside Studio with full access to this machine: its
-files, its programs, its network and its accounts. The approval says so in
-those words. Do not describe your extension as "sandboxed" or "restricted to"
-its permissions.
+What the extension's own code can do depends on its tier. A `ui` extension's
+code runs in sandboxed frames: no network, no Node, nothing of Studio's window
+or this machine, so the calls above are all it can do, and the approval says
+it runs isolated and can do only what the person allows. A `worker`
+extension's code runs on this machine with full access: its files, its
+programs, its network and its accounts. The approval says so in those words;
+do not describe a worker as "sandboxed" or "restricted to" its permissions.
 
 A refused call answers, in the method's own failure shape where it has one
 (`{ ok: false, code, message }`), or throws where it has none:
@@ -42,8 +44,9 @@ A refused call answers, in the method's own failure shape where it has one
 
 The table of every host method and what it needs is
 `packages/extension-sdk/src/services.ts` (`EXTENSION_HOST_SERVICES`,
-`EXTENSION_MAIN_HOST_METHODS`, `EXTENSION_RENDERER_METHODS`). Studio's gate
-reads it, and so do the fake hosts in `@sprintengine/extension-sdk/testing`.
+`EXTENSION_MAIN_HOST_METHODS`, and a surface's `EXTENSION_FRAME_METHODS`).
+Studio's gate reads it, and so do the fake hosts in
+`@sprintengine/extension-sdk/testing`.
 
 ## Approval
 
@@ -79,17 +82,19 @@ whoever set the call off must hold, in the Studio protocol's permission names.
 | `workspace:read` | See your workspaces, their folders, branches and remotes | `WorkspaceContextToken`, `getWorkspaceGitInfo`, `getSkillStatus`; a surface's workspace reads | `workspace:read` |
 | `workspace:operate` | Make workspaces and put Studio's skills in them | `WorkspaceServiceToken`, `ensureSkillInstalled` | `workspace:operate` |
 | `conversation:read` | Read every chat on this machine (broad) | `getActivityService` | `conversation:read` |
-| `backlog:read` | Read Backlog items | `getBacklogService` reads; a surface's `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` | `backlog:read` |
-| `backlog:operate` | Create Backlog items and change them | `getBacklogService` writes; a surface's Backlog write methods | `backlog:operate` |
+| `backlog:read` | Read Backlog items | `getBacklogService` reads; a surface's `backlog.list`, `backlog.location` | `backlog:read` |
+| `backlog:operate` | Create Backlog items and change them | `getBacklogService` writes; a surface's other `backlog.*` | `backlog:operate` |
 | `providers:read` | See which agents a chat can run on | `listChatRuntimes` | `providers:read` |
-| `usage:read` | See token usage and cost of every agent session | `getUsageService`, a surface's `queryUsage` | `workspace:read` |
-| `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`; a surface's workspace state | `extension:read` to read, `extension:operate` to write |
-| `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`; a surface's app state | `extension:read` |
+| `usage:read` | See token usage and cost of every agent session | `getUsageService`, a surface's `usage.query` | `workspace:read` |
+| `workspace-files:read` | Read the files in your workspaces' folders | a surface's `files.read`, `files.stat`, `files.search` | `filesystem:read` |
+| `workspace-files:write` | Change and create files in your workspaces' folders | a surface's `files.write` | `filesystem:write` |
+| `storage:own` | Save its own data | `getModuleStorage`, `getModuleDataDir`; a surface's `storage.*` | `extension:read` to read, `extension:operate` to write |
+| `settings:own` | Read the values of its own Settings section | `getModuleAppState`, `watchModuleAppState`; a surface's `settings.get`, `settings.set` | `extension:read` to read, `extension:operate` to write |
 | `secrets:own` | Store API keys and send them to the sites it names | `getSecretsService` | `extension:operate` |
 | `notifications:show` | Show notifications in the bell | `notify` | `extension:operate` |
-| `conversation:own` | Start chats of its own, drive them and read them | `getConversationService`; `openChat` with `send: true` | `conversation:create` to start, `conversation:operate` to drive, `conversation:read` to read |
+| `conversation:own` | Start chats of its own, drive them and read them | `getConversationService` | `conversation:create` to start, `conversation:operate` to drive, `conversation:read` to read |
 | `conversation:bypass` | Let its chats run without asking | `bypass` and `allowedTools` for its chats, `tools: 'auto'` for a companion | (the chat's ceiling, below) |
-| `chat:draft` | Open a chat with a drafted message | `openChat` without `send` | — |
+| `chat:draft` | Open a chat with a drafted message | a surface's `chat.draft` | `conversation:create` |
 | `schedules:own` | Schedule agents of its own | `getScheduledAgentsService` | `workspace:operate` to change, `workspace:read` to read |
 | `agents:generate` | Send prompts to your models, with no chat | `getTextGenerationService` | `conversation:create` |
 | `agents:companion` | Run its own background agents | `getCompanionAgentsService` | `conversation:create` |
