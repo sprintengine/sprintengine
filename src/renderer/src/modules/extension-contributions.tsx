@@ -8,8 +8,9 @@ import {
   type ExtensionManifest,
 } from '../../../shared/modules/third-party-manifest'
 import { runAppCommand } from '../commands/appCommandRunner'
+import { getCommandDefinition } from '../commands/commandRegistry'
 import { ExtensionSurfaceMount } from '../components/extensions/ExtensionSurfaceMount'
-import { IconButton, Tooltip } from '../components/ui'
+import { GhostButton, IconButton, Tooltip } from '../components/ui'
 import { extensionGlyph } from './extension-glyphs'
 import { registerExtensionSurface, retireExtensionSurfaces, type LoadedExtensionSurface } from './extension-surfaces'
 import type { InternalRendererHost, RendererKernel } from './renderer-host'
@@ -25,7 +26,14 @@ import type { InternalRendererHost, RendererKernel } from './renderer-host'
 //   command, one without calls the worker method of its id;
 // - menus add items to the backlog-item, file and notification menus, each
 //   running one of the extension's commands with what it was picked on;
-// - top bar items run a command or open a door.
+// - top bar items run a command or open a door;
+// - keybindings bind a key to one of its commands, or to one of Studio's own
+//   (a content extension binds Studio's without any code), joining Settings ▸
+//   Shortcuts like Studio's, where they can be changed or removed;
+// - status bar items show a short label, and run a command when pressed.
+//
+// Its syntaxes are registered apart from these (lib/highlight/
+// contributedSyntaxes.ts), as data the window's languages read.
 //
 // The shell registers on the extension's behalf, under its install key,
 // through the same scoped host the app's own modules use, so enablement gates
@@ -124,6 +132,12 @@ async function runExtensionCommand(
   if (!answer.ok) host.toast({ tone: 'error', message: `${command.title} did not run.`, detail: answer.message })
 }
 
+/** Run one of Studio's own commands for an extension that bound it, while the extension is live. */
+function runStudioAction(host: InternalRendererHost, live: () => boolean, action: string, title: string): void {
+  if (!live()) return
+  if (!runAppCommand(action)) host.toast({ tone: 'warn', message: `${title} is not available here.` })
+}
+
 function relativeTo(root: string, path: string): string {
   const normalizedRoot = root.replace(/[\\/]+$/, '')
   return path.startsWith(`${normalizedRoot}/`) || path.startsWith(`${normalizedRoot}\\`)
@@ -171,12 +185,20 @@ function registerContributions(
     })
   })
   const commands = new Map(contributes.commands.map((command) => [command.id, command]))
+  // Each keybinding's key, by the command it runs: one of the extension's own
+  // commands, or a Studio command action it binds.
+  const keysFor = new Map<string, string[]>()
+  for (const binding of contributes.keybindings) {
+    keysFor.set(binding.command, [...(keysFor.get(binding.command) ?? []), binding.key])
+  }
   for (const command of contributes.commands) {
+    const keys = keysFor.get(command.id)
     host.registerCommand({
       id: command.id,
       title: command.title,
       category: extension.name,
       scopes: ['global'],
+      ...(keys ? { defaultKeybindings: keys } : {}),
       ...(command.when === 'workspace' ? { availability: ['activeWorkspace'] as const } : {}),
       run: (context) =>
         runExtensionCommand(host, live, command, { where: 'palette', workspaceId: context?.activeWorkspaceId ?? null }),
@@ -232,6 +254,79 @@ function registerContributions(
         })),
     })
   }
+  // A key bound to one of Studio's own commands: a command of the extension's,
+  // titled as Studio's, that runs Studio's. It is listed under the extension in
+  // the palette and in Settings ▸ Shortcuts, where the person can change or
+  // remove its key without touching Studio's own.
+  const boundActions = new Map<string, { keys: string[]; workspace: boolean }>()
+  for (const binding of contributes.keybindings) {
+    if (commands.has(binding.command)) continue
+    const bound = boundActions.get(binding.command) ?? { keys: [], workspace: true }
+    bound.keys.push(binding.key)
+    bound.workspace &&= binding.when === 'workspace'
+    boundActions.set(binding.command, bound)
+  }
+  for (const [action, bound] of boundActions) {
+    const title = getCommandDefinition(action)?.title ?? action
+    host.registerCommand({
+      id: `run.${action}`,
+      title,
+      category: extension.name,
+      scopes: ['global'],
+      defaultKeybindings: bound.keys,
+      ...(bound.workspace ? { availability: ['activeWorkspace'] as const } : {}),
+      run: () => runStudioAction(host, live, action, title),
+    })
+  }
+  // A status bar item's command: one of the extension's own, or Studio's.
+  const runFromStatusBar = (command: string) => {
+    const own = commands.get(command)
+    if (own) {
+      void runExtensionCommand(host, live, own, { where: 'topBar', workspaceId: host.getActiveWorkspaceId() })
+      return
+    }
+    runStudioAction(host, live, command, getCommandDefinition(command)?.title ?? command)
+  }
+  contributes.statusBarItems.forEach((item, index) => {
+    const Glyph = item.icon ? extensionGlyph(item.icon) : null
+    const tooltip = item.tooltip ?? extension.name
+    const label = (
+      <>
+        {Glyph ? <Glyph className="icon-sm" /> : null}
+        {item.text ? <span className="truncate">{item.text}</span> : null}
+      </>
+    )
+    host.registerTopBarItem({
+      id: extensionSurfaceId(key, `status.${item.id}`),
+      // After the extension's buttons: a status reads after the controls.
+      order: 100 + index,
+      Component: function ExtensionStatusBarItem() {
+        const command = item.command
+        return (
+          <Tooltip content={tooltip} placement="bottom">
+            {command ? (
+              <GhostButton
+                size="sm"
+                className="app-no-drag max-w-48 gap-1"
+                aria-label={item.text ? `${item.text}, ${tooltip}` : tooltip}
+                onClick={() => runFromStatusBar(command)}
+              >
+                {label}
+              </GhostButton>
+            ) : (
+              <span
+                role="status"
+                aria-label={item.text ? `${item.text}, ${tooltip}` : tooltip}
+                className="app-no-drag inline-flex h-control-sm max-w-48 items-center gap-1 px-2 text-body text-[color:var(--text-muted)]"
+              >
+                {label}
+              </span>
+            )}
+          </Tooltip>
+        )
+      },
+    })
+  })
   contributes.topBarItems.forEach((item, index) => {
     const Glyph = extensionGlyph(item.icon)
     const command = item.command ? commands.get(item.command) : undefined

@@ -523,3 +523,83 @@ test('trust revoked: its top bar button is gone, and running its command or acti
   assert.deepEqual(ran, [])
   assert.deepEqual(calls, [])
 })
+
+test('the sample content extension binds its key, shows its status item, and runs none of its code', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { parseExtensionManifest } = await import('../../../shared/modules/third-party-manifest')
+  const parsed = parseExtensionManifest(
+    readFileSync(join(process.cwd(), 'packages/extension-sdk/examples/content-sample/extension.json'), 'utf8'),
+  )
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  const { kernel, calls } = recordingKernel({ ok: true, value: null })
+  const ran: string[] = []
+  stopRunner = setAppCommandRunner((commandId) => {
+    ran.push(commandId)
+    return true
+  })
+  const key = 'local.tally-language'
+  const loaded = await loadThirdPartyRendererEntries(kernel, {
+    extensions: [
+      {
+        id: key,
+        manifest: {
+          id: key,
+          displayName: 'Tally language',
+          version: '1.0.0',
+          defaultEnabled: true,
+          source: 'third-party',
+        },
+        extension: parsed.manifest,
+      },
+    ],
+    failures: {},
+  })
+  assert.deepEqual(
+    loaded.map((manifest) => manifest.id),
+    [key],
+  )
+
+  // Its key is bound to Studio's own command, as a command of the extension's
+  // titled as Studio's, so Settings ▸ Shortcuts lists it under the extension.
+  const bound = kernel.getModuleCommand(`${key}.run.panel.git.toggle`)
+  assert.ok(bound, 'the keybinding registers a command')
+  assert.deepEqual(bound.defaultKeybindings, ['primary+alt+g'], "Mod is the platform's primary modifier")
+  assert.equal(bound.category, 'Tally language')
+  await bound.run({} as never)
+  assert.deepEqual(ran, ['panel.git.toggle'])
+
+  // The status item sits in the band, after the extension's own buttons.
+  const status = kernel.getTopBarItems().find((item) => item.id === `${key}:status.tally`)
+  assert.ok(status, 'the status item is in the band')
+  assert.equal(status.moduleId, key)
+
+  assert.deepEqual(calls, [], 'no worker method was ever called')
+  // Switched off, none of it shows.
+  assert.equal(
+    kernel.getTopBarItems((moduleId) => moduleId !== key).some((item) => item.moduleId === key),
+    false,
+  )
+})
+
+test('a key bound to an extension’s own command joins that command', async () => {
+  const kernel = createRendererHost()
+  await loadThirdPartyRendererEntries(
+    kernel,
+    served([
+      {
+        key: 'acme.keyed',
+        over: { tier: 'declarative' },
+        contributes: {
+          commands: [{ id: 'notes.open', title: 'Open notes', action: 'panel.files.toggle' }],
+          keybindings: [{ command: 'notes.open', key: 'Mod+Shift+Y' }],
+          statusBarItems: [{ id: 'quiet', icon: 'notes' }],
+        },
+      },
+    ]),
+  )
+  assert.deepEqual(kernel.getModuleCommand('acme.keyed.notes.open')?.defaultKeybindings, ['primary+shift+y'])
+  assert.equal(kernel.getModuleCommand('acme.keyed.run.notes.open'), undefined)
+  assert.ok(kernel.getTopBarItems().some((item) => item.id === 'acme.keyed:status.quiet'))
+})
