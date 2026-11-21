@@ -29,6 +29,9 @@ import { build } from 'esbuild'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ENTRY = 'src/server/main.ts'
+// The entry an extension's worker process is forked from, built beside the
+// server as `extension-worker.cjs` (src/server/extensions/workers/worker-process.ts).
+const WORKER_ENTRY = 'src/server/extensions/workers/worker-entry.ts'
 export const DEFAULT_SERVER_OUTFILE = join(ROOT, 'out', 'server', 'server.cjs')
 export const DEFAULT_WSL_SERVER_DIR = join(ROOT, 'out', 'wsl-server')
 
@@ -86,6 +89,7 @@ export async function buildStudioServer({ outfile = DEFAULT_SERVER_OUTFILE, sour
     sourcemap,
     define: { __STUDIO_SERVER_BUILD__: JSON.stringify(buildIdentity()), __STUDIO_SERVER_SELF_CONTAINED__: 'false' },
   })
+  await buildWorkerEntry(join(dirname(outfile), 'extension-worker.cjs'), sourcemap)
   return outfile
 }
 
@@ -119,6 +123,7 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
     },
     banner: { js: "const __studioImportMetaUrl = require('node:url').pathToFileURL(__filename).href;" },
   })
+  await buildWorkerEntry(join(outDir, 'extension-worker.cjs'), false)
   writeFileSync(join(outDir, 'build.json'), `${JSON.stringify(identity, null, 2)}\n`)
   // The relay: WSL's stdio bridge, and an SSH machine's multiplexing relay
   // (`bridge.mjs --mux`, phase 8), which imports its codec from beside it.
@@ -128,6 +133,16 @@ export async function buildWslServerTree({ outDir = DEFAULT_WSL_SERVER_DIR } = {
     cpSync(join(ROOT, 'resources', name), join(outDir, 'resources', name), { recursive: true })
   }
   return outDir
+}
+
+/** The worker entry: one file, Node's own modules only. */
+async function buildWorkerEntry(outfile, sourcemap) {
+  await build({
+    ...common(),
+    entryPoints: [WORKER_ENTRY],
+    outfile,
+    sourcemap,
+  })
 }
 
 function common() {

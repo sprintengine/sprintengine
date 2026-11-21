@@ -70,6 +70,11 @@ export default defineConfig({
           // starts it from beside main's entry), so reading gigabytes of agent
           // session logs never runs on the main thread.
           'usage-scan-worker': resolve('src/main/usage/usage-scan-worker.ts'),
+          // The entry every extension's worker process is forked from
+          // (src/server/extensions/workers/worker-process.ts). It imports
+          // nothing but Node's own modules, so it shares no chunk with main
+          // and runs from app.asar.unpacked (asarUnpack in package.json).
+          'extension-worker': resolve('src/server/extensions/workers/worker-entry.ts'),
         },
         // Every chunk beside the entries, as with one entry: main's code finds
         // the renderer and the resources relative to its own `__dirname`, which
